@@ -535,6 +535,117 @@ input.code-input {
 .pile.empty .pile-count { color: #e0a0a0; }
 .sheet-card { position: relative; overflow: hidden; }
 
+/* ===== メニュー・設定（追加） ===== */
+.menu-split { display: flex; gap: 10px; margin-top: 6px; }
+.menu-split .btn { flex: 1; }
+.menu .btn-block { width: 100%; }
+
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.seg-btn {
+  padding: 8px 14px; min-height: 42px; background: #15131f; color: var(--ink-dim);
+  border: none; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+}
+.seg-btn + .seg-btn { border-left: 1px solid var(--line); }
+.seg-btn.on { background: linear-gradient(180deg, var(--gold-bright), var(--gold)); color: #2a2010; }
+.count-seg { width: 100%; }
+.count-seg .seg-btn { flex: 1; }
+
+.setup .panel { max-width: 420px; }
+.seat-list { display: flex; flex-direction: column; gap: 10px; }
+.seat-row { background: rgba(0, 0, 0, 0.2); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+.seat-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.seat-no {
+  width: 24px; height: 24px; border-radius: 50%; background: var(--gold); color: #2a2010;
+  font-weight: 800; display: flex; align-items: center; justify-content: center; font-size: 13px; flex: 0 0 auto;
+}
+.seat-head input { flex: 1; min-height: 40px; }
+.seat-opts { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ===== ページ（遊び方・カード一覧） ===== */
+.page { padding-bottom: 24px; }
+.page-top {
+  position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 10px;
+  padding: 10px 0; background: linear-gradient(180deg, var(--bg0) 72%, rgba(20, 19, 31, 0));
+}
+.page-top h2 { margin: 0; font-size: 20px; }
+.rules { display: flex; flex-direction: column; gap: 14px; }
+.rules-section { background: rgba(0, 0, 0, 0.22); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.rules-section h3 { margin: 0 0 6px; font-size: 16px; color: var(--gold-bright); }
+.rules-section p, .rules-section li { font-size: 14px; line-height: 1.7; color: var(--ink); }
+.rules-section ul, .rules-section ol { margin: 4px 0; padding-left: 1.2em; }
+
+.cardlist-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; }
+.list-group { margin-bottom: 14px; }
+
+/* ===== カード共通サイズ・重ねバッジ ===== */
+.card { width: auto; min-height: 148px; }
+.count-badge {
+  position: absolute; top: -7px; left: -7px; z-index: 3;
+  background: #15131f; border: 1px solid var(--gold); color: var(--gold-bright);
+  font-weight: 800; font-size: 12px; padding: 1px 7px; border-radius: 10px; font-family: 'Cinzel', serif;
+}
+.hand-zone { display: flex; flex-direction: column; gap: 10px; }
+.hand-group .hg-label { font-size: 11px; color: var(--ink-dim); letter-spacing: .1em; margin: 0 2px 4px; }
+.hand-cards { display: flex; flex-wrap: wrap; gap: 8px; }
+.hand-cards.big .card { width: 104px; min-height: 150px; }
+.hand-cards.small .card { width: 78px; min-height: 112px; }
+.card.sm { min-height: 112px; }
+.cardlist-grid .card { width: 100%; min-height: 132px; }
+
+/* ===== サプライ（種類別） ===== */
+.supply-section { margin-bottom: 8px; }
+.sup-title { font-size: 12px; color: var(--ink-dim); letter-spacing: .08em; margin: 8px 2px 6px; }
+.supply-grid.small { grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); }
+.supply-grid.big { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
+.supply-grid.big .pile { min-height: 104px; }
+.pile.sm { min-height: 68px; }
+.pile.sm .pname { font-size: 11px; }
+
+/* ===== 他プレイヤー・CPUバナー ===== */
+.others { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 8px; }
+.opp-chip { flex: 0 0 auto; min-width: 96px; background: rgba(20, 18, 32, 0.6); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+.opp-chip.on { border-color: var(--gold); background: rgba(216, 180, 106, 0.12); }
+.opp-name { font-size: 13px; font-weight: 700; }
+.opp-mini { font-size: 11px; color: var(--ink-dim); margin-top: 2px; }
+.cpu-banner {
+  text-align: center; font-size: 13px; color: var(--gold-bright);
+  background: rgba(216, 180, 106, 0.1); border: 1px solid rgba(216, 180, 106, 0.35);
+  border-radius: 10px; padding: 8px; margin: 6px 0;
+}
+
+/* ===== 拡大表示（タップで拡大） ===== */
+.zoom-wrap { display: flex; justify-content: center; align-items: center; margin-bottom: 12px; position: relative; }
+.zoom-img { max-width: min(72vw, 300px); max-height: 54vh; width: auto; height: auto; object-fit: contain; border-radius: 12px; box-shadow: var(--shadow); }
+.zoom-wrap .zoom-fallback { display: none; }
+.zoom-wrap.noimg { min-height: 160px; width: 100%; border: 1px dashed var(--line); border-radius: 12px; }
+.zoom-wrap.noimg .zoom-fallback { display: block; font-size: 22px; font-weight: 800; }
+.zoom-info { background: rgba(0, 0, 0, 0.25); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+.zoom-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.zoom-cost {
+  width: 34px; height: 34px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, var(--gold-bright), var(--gold));
+  color: #2a2010; font-weight: 800; font-size: 17px; display: flex; align-items: center; justify-content: center;
+  font-family: 'Cinzel', serif; flex: 0 0 auto;
+}
+.zoom-name { margin: 0; font-size: 20px; }
+.zoom-type { font-size: 12px; color: var(--ink-dim); }
+.zoom-text { white-space: pre-line; font-size: 15px; line-height: 1.6; }
+.zoom-remain { margin-top: 8px; font-size: 13px; color: var(--gold); }
+
+/* ===== レスポンシブ（狭いスマホ / タブレット・PC） ===== */
+@media (min-width: 600px) {
+  #app { max-width: 600px; }
+  .hand-cards.big .card { width: 118px; min-height: 168px; }
+  .supply-grid.big { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+}
+@media (max-width: 380px) {
+  #app { padding: 0 8px 12px; }
+  .hand-cards.big .card { width: 92px; min-height: 132px; }
+  .hand-cards.small .card { width: 70px; min-height: 100px; }
+  .supply-grid.big { grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); }
+  .supply-grid.small { grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); }
+  .resources .badge { min-width: 40px; }
+}
+
 .toast {
   position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%);
   background: rgba(0,0,0,.85); color: var(--ink);
