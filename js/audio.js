@@ -41,18 +41,44 @@
   }
   function chord(freqs, start, dur, vol, type) { freqs.forEach((f) => blip(f, start, dur, vol, type)); }
 
+  // 紙・布・木などの「質感」音はノイズをフィルタして作る（カードをめくる音など）
+  let noiseBuf = null;
+  function getNoise() {
+    const c = getCtx(); if (!c) return null;
+    if (noiseBuf) return noiseBuf;
+    const len = Math.floor(c.sampleRate * 0.5);
+    const buf = c.createBuffer(1, len, c.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    noiseBuf = buf; return buf;
+  }
+  function noise(start, dur, vol, filterType, freq, q) {
+    const c = getCtx(); if (!c) return;
+    const buf = getNoise(); if (!buf) return;
+    const t = c.currentTime + start;
+    const src = c.createBufferSource(); src.buffer = buf;
+    const f = c.createBiquadFilter(); f.type = filterType || 'bandpass'; f.frequency.value = freq || 2000; if (q) f.Q.value = q;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f); f.connect(g); g.connect(c.destination);
+    src.start(t); src.stop(t + dur + 0.02);
+  }
+
+  // 中世ファンタジー寄りの有機的な効果音（紙・木・ハープ・ベル・金貨・ファンファーレ）
   const SE = {
-    tap: () => blip(1300, 0, 0.05, 0.10, 'square', 950),
-    action: () => { blip(523.3, 0, 0.10, 0.16, 'triangle'); blip(784.0, 0.06, 0.12, 0.14, 'triangle'); },
-    coin: () => { blip(1568, 0, 0.06, 0.13, 'sine'); blip(2093, 0.05, 0.07, 0.11, 'sine'); blip(1318, 0.10, 0.06, 0.08, 'sine'); },
-    buy: () => { blip(392, 0, 0.08, 0.16, 'triangle'); blip(523.3, 0.07, 0.08, 0.16, 'triangle'); blip(784, 0.14, 0.16, 0.16, 'triangle'); },
-    gain: () => { blip(523.3, 0, 0.09, 0.14, 'triangle'); blip(659.3, 0.08, 0.14, 0.13, 'triangle'); },
-    trash: () => blip(320, 0, 0.22, 0.16, 'sawtooth', 110),
-    discard: () => blip(240, 0, 0.10, 0.12, 'sine', 150),
-    shield: () => { chord([440, 660], 0, 0.16, 0.12, 'square'); blip(880, 0.05, 0.14, 0.08, 'triangle'); },
-    turn: () => { blip(659.3, 0, 0.12, 0.12, 'sine'); blip(880, 0.10, 0.16, 0.10, 'sine'); },
-    victory: () => { [523.3, 659.3, 784, 1046.5].forEach((f, i) => blip(f, i * 0.12, 0.30, 0.18, 'triangle')); chord([523.3, 659.3, 784], 0.48, 0.5, 0.12, 'triangle'); },
-    error: () => blip(200, 0, 0.14, 0.12, 'square', 150),
+    tap: () => { noise(0, 0.07, 0.09, 'bandpass', 2600, 1.1); blip(190, 0, 0.06, 0.05, 'triangle', 120); }, // カードをめくる/木の軽いタップ
+    action: () => { noise(0, 0.10, 0.09, 'bandpass', 1700, 0.8); blip(523.3, 0.04, 0.13, 0.10, 'triangle'); blip(784.0, 0.10, 0.13, 0.08, 'triangle'); }, // カードを置く＋ハープ
+    coin: () => { blip(1175, 0, 0.07, 0.10, 'sine'); blip(1568, 0.05, 0.08, 0.09, 'sine'); blip(2093, 0.10, 0.10, 0.06, 'sine'); blip(1318, 0.15, 0.07, 0.05, 'sine'); }, // 金貨の音
+    buy: () => { [392, 523.3, 659.3, 880].forEach((f, i) => blip(f, i * 0.07, 0.16, 0.13, 'triangle')); noise(0.02, 0.18, 0.05, 'highpass', 4000, 0.4); blip(196, 0, 0.3, 0.06, 'triangle'); }, // ハープのアルペジオ＋きらめき
+    gain: () => { blip(523.3, 0, 0.11, 0.10, 'triangle'); blip(659.3, 0.08, 0.16, 0.09, 'triangle'); noise(0, 0.06, 0.04, 'highpass', 5000); },
+    trash: () => { noise(0, 0.22, 0.10, 'lowpass', 900, 0.7); blip(200, 0, 0.20, 0.10, 'sawtooth', 80); }, // 燃やす/崩す
+    discard: () => noise(0, 0.12, 0.08, 'lowpass', 1500, 0.6), // 紙を捨てる
+    shield: () => { noise(0, 0.08, 0.06, 'highpass', 3200, 0.5); blip(660, 0, 0.18, 0.08, 'square'); blip(988, 0.02, 0.18, 0.05, 'square'); }, // 金属の盾
+    turn: () => { blip(659.3, 0, 0.20, 0.09, 'sine'); blip(987.8, 0.10, 0.26, 0.06, 'sine'); }, // 鐘
+    victory: () => { [523.3, 659.3, 784, 1046.5].forEach((f, i) => { blip(f, i * 0.12, 0.32, 0.14, 'triangle'); blip(f / 2, i * 0.12, 0.32, 0.05, 'triangle'); }); chord([523.3, 659.3, 784, 1046.5], 0.50, 0.7, 0.10, 'triangle'); }, // 勝利ファンファーレ
+    error: () => blip(196, 0, 0.16, 0.10, 'triangle', 150),
   };
   function play(name) {
     if (!seOn) return;

@@ -562,6 +562,32 @@ input.code-input {
 .seat-head input { flex: 1; min-height: 40px; }
 .seat-opts { display: flex; gap: 8px; flex-wrap: wrap; }
 
+/* ===== 世界観の装飾（金の縁取り・飾り） ===== */
+/* パネル/モーダルに上品な金のコーナー飾り */
+.panel, .modal, .rules-section, .score-row, .lobby .panel {
+  position: relative;
+}
+.panel::before, .panel::after,
+.modal::before, .modal::after {
+  content: ''; position: absolute; width: 15px; height: 15px;
+  border: 2px solid var(--gold); opacity: 0.5; pointer-events: none;
+}
+.panel::before, .modal::before { top: 7px; left: 7px; border-right: none; border-bottom: none; border-top-left-radius: 5px; }
+.panel::after, .modal::after { bottom: 7px; right: 7px; border-left: none; border-top: none; border-bottom-right-radius: 5px; }
+
+/* タイトルに淡い金の輝き */
+.home h1 { text-shadow: 0 2px 16px rgba(216, 180, 106, 0.28); }
+
+/* 見出し下などの飾り罫 */
+.flourish { display: flex; align-items: center; gap: 10px; width: 210px; max-width: 70%; margin: -6px 0 6px; color: var(--gold); }
+.flourish::before, .flourish::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--gold), transparent); }
+.flourish span { font-size: 12px; opacity: 0.85; }
+
+/* ボタンに微かな金のハイライトで質感を */
+.btn { box-shadow: inset 0 1px 0 rgba(216, 180, 106, 0.10); }
+.btn-primary { box-shadow: 0 4px 14px rgba(216, 180, 106, 0.28), inset 0 1px 0 rgba(255, 246, 222, 0.55); }
+.btn:not(.btn-primary):not(.btn-ghost):hover { border-color: rgba(216, 180, 106, 0.45); }
+
 /* ===== サウンド設定バー ===== */
 .audio-bar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
 .audio-bar .btn { background: #15131f; }
@@ -570,17 +596,33 @@ input.code-input {
 /* ===== ゲーム中のTOPへ戻るボタン・確認ダイアログ ===== */
 .home-btn {
   flex: 0 0 auto;
-  width: 38px; height: 38px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: #15131f;
-  font-size: 18px; line-height: 1;
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  border: 1.5px solid var(--gold);
+  background: radial-gradient(circle at 38% 30%, #36314f, #14131f 76%);
+  box-shadow:
+    inset 0 1px 3px rgba(240, 210, 138, 0.30),
+    inset 0 -2px 5px rgba(0, 0, 0, 0.55),
+    0 2px 7px rgba(0, 0, 0, 0.45),
+    0 0 12px rgba(216, 180, 106, 0.20);
+  color: var(--gold-bright);
+  font-size: 17px; line-height: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
+  transition: transform 0.06s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
-.home-btn:active { transform: translateY(1px); }
+.home-btn:active { transform: translateY(1px) scale(0.94); filter: brightness(1.15); }
 .confirm-modal { max-width: 360px; text-align: center; border-color: var(--gold); }
 .confirm-msg { font-size: 16px; margin: 6px 0 16px; line-height: 1.6; }
+
+/* ===== 接続中スピナー ===== */
+.spinner {
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 3px solid var(--line); border-top-color: var(--gold);
+  animation: spin 0.9s linear infinite; margin: 8px 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ===== ロビー ===== */
 .lobby .panel { max-width: 380px; }

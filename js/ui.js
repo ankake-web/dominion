@@ -151,6 +151,7 @@
       h('div', { class: 'crest' }, '👑'),
       h('h1', null, 'Dominion'),
       h('p', { class: 'sub' }, 'ドミニオン  基本セット'),
+      h('div', { class: 'flourish' }, h('span', null, '❖')),
       h('div', { class: 'menu' },
         h('button', { class: 'btn btn-primary btn-block', onclick: () => go('setup') }, '対戦をはじめる'),
         h('button', { class: 'btn btn-block', onclick: () => go('localSetup') }, '1台で2人プレイ（クイック）'),
@@ -311,6 +312,19 @@
   function copy(text) {
     if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => toast('コピーしました'), () => toast(text));
     else toast(text);
+  }
+
+  function viewConnecting() {
+    const cn = UI.connecting || {};
+    return h('div', { class: 'home' },
+      h('div', { class: 'crest' }, '🛡️'),
+      h('h2', null, 'サーバーに接続中です'),
+      h('div', { class: 'spinner' }),
+      h('p', { class: 'muted', style: 'max-width:320px;font-size:13px;line-height:1.7' },
+        '無料サーバーは初回アクセス時に起動します。混雑時や初回は30〜60秒ほどかかることがあります。そのままお待ちください…'),
+      cn.tries > 0 ? h('p', { class: 'muted', style: 'font-size:12px' }, '再試行中…（' + cn.tries + '回目）') : null,
+      h('button', { class: 'btn btn-ghost', onclick: () => cancelConnecting() }, 'キャンセル')
+    );
   }
 
   /* ============================================================
@@ -702,43 +716,79 @@
   }
 
   /* ---------- オンライン（WebSocket / サーバ権威） ---------- */
-  function connectNet() {
+  // 接続→作成/参加。Render無料枠のコールドスタート（起動待ち）に備え、
+  // 「サーバー接続中です」を表示しつつタイムアウト＋自動リトライする。
+  function startOnline(mode, name, code) {
+    UI.connecting = { mode, name, code, tries: 0 };
+    UI.mode = 'online';
+    UI.view = 'connecting';
+    render();
+    tryConnect();
+  }
+  function tryConnect() {
+    const cn = UI.connecting;
+    if (!cn) return;
+    if (UI.netClient) { try { UI.netClient.close(); } catch (e) { /* noop */ } }
     const client = DOM.NetClient(onNetMessage);
     UI.netClient = client;
-    UI.mode = 'online';
     UI.store = DOM.NetStore(client);
-    client.setOnClose(() => onNetDisconnect());
-    return client.connect();
+    let settled = false;
+    const to = setTimeout(() => {
+      if (settled) return; settled = true;
+      try { client.close(); } catch (e) { /* noop */ }
+      retryConnect();
+    }, 13000); // 起動待ちでも応答しない場合は閉じて再試行
+    client.connect().then(() => {
+      if (settled) return; settled = true; clearTimeout(to);
+      if (!UI.connecting) { try { client.close(); } catch (e) { /* noop */ } return; } // キャンセル済み
+      if (cn.mode === 'create') client.send({ t: 'create', name: cn.name });
+      else { UI.roomCode = cn.code; client.send({ t: 'join', code: cn.code, name: cn.name }); }
+    }).catch(() => {
+      if (settled) return; settled = true; clearTimeout(to);
+      retryConnect();
+    });
   }
-  function createRoom(name) {
-    UI._pendingName = name || 'ホスト';
-    connectNet().then(() => UI.netClient.send({ t: 'create', name: UI._pendingName }))
-      .catch((e) => { toast('サーバに接続できません: ' + e.message); resetOnline(); render(); });
+  function retryConnect() {
+    const cn = UI.connecting;
+    if (!cn) return;
+    cn.tries++;
+    if (cn.tries >= 8) { toast('サーバーに接続できませんでした。少し待って再度お試しください'); cancelConnecting(); return; }
+    render(); // 試行回数を表示更新
+    setTimeout(tryConnect, Math.min(1500 + cn.tries * 800, 5000));
   }
+  function cancelConnecting() {
+    UI.connecting = null;
+    resetOnline();
+    go('home');
+  }
+  function createRoom(name) { startOnline('create', name || 'ホスト'); }
   function joinRoom(code, name) {
     code = (code || '').trim();
     if (!/^[0-9]{4}$/.test(code)) { toast('コードは数字4桁です'); return; }
-    UI._pendingName = name || '対戦相手';
-    UI.roomCode = code;
-    connectNet().then(() => UI.netClient.send({ t: 'join', code, name: UI._pendingName }))
-      .catch((e) => { toast('サーバに接続できません: ' + e.message); resetOnline(); render(); });
+    startOnline('join', name || '対戦相手', code);
   }
 
   // サーバ → クライアント メッセージ処理
   function onNetMessage(msg) {
     switch (msg.t) {
       case 'joined':
+        UI.connecting = null;
         UI.roomCode = msg.code; UI.mySeat = msg.you; UI.isHost = msg.isHost; UI.netToken = msg.token;
         UI.reconnecting = false; UI._reconnectTries = 0;
+        // 以後の不意の切断は自動再接続（resume）に委ねる
+        if (UI.netClient) UI.netClient.setOnClose(() => onNetDisconnect());
         if (!msg.started && UI.view !== 'game') UI.view = 'lobby';
         render();
         break;
       case 'lobby':
+        UI.connecting = null;
         UI.lobby = msg; UI.roomCode = msg.code;
-        if (UI.view !== 'game') UI.view = 'lobby';
+        if (UI.view !== 'game' && UI.view !== 'connecting') UI.view = 'lobby';
+        else if (UI.view === 'connecting') UI.view = 'lobby';
         render();
         break;
       case 'started':
+        UI.connecting = null;
         UI.mySeat = msg.you; UI.reconnecting = false; UI._reconnectTries = 0;
         UI.store.setState(msg.state);
         UI.view = 'game';
@@ -750,6 +800,7 @@
         break;
       case 'error':
         toast(msg.message);
+        if (UI.connecting) { UI.connecting = null; resetOnline(); go(msg.fatal ? 'home' : 'onlineMenu'); break; }
         if (msg.fatal) { resetOnline(); go('home'); }
         break;
     }
@@ -779,7 +830,7 @@
     if (UI.netClient) { try { UI.netClient.close(); } catch (e) { /* noop */ } }
     UI.netClient = null; UI.store = null; UI.mode = 'local';
     UI.mySeat = null; UI.roomCode = null; UI.isHost = false; UI.lobby = null;
-    UI.netToken = null; UI.reconnecting = false; UI._reconnectTries = 0;
+    UI.netToken = null; UI.reconnecting = false; UI._reconnectTries = 0; UI.connecting = null;
   }
   function leaveOnline() {
     if (UI._cpuTimer) { clearTimeout(UI._cpuTimer); UI._cpuTimer = null; }
@@ -845,6 +896,7 @@
       case 'onlineMenu': root = viewOnlineMenu(); break;
       case 'createRoom': root = viewCreateRoom(); break;
       case 'joinRoom': root = viewJoinRoom(); break;
+      case 'connecting': root = viewConnecting(); break;
       case 'lobby': root = viewLobby(); break;
       case 'rules': root = viewRules(); break;
       case 'cardList': root = viewCardList(); break;
