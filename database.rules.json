@@ -1,11 +1,10 @@
 {
   "rules": {
     "rooms": {
-      ".read": true,
-      ".write": true,
       "$code": {
         ".read": true,
-        ".write": true
+        ".write": true,
+        ".validate": "$code.matches(/^[A-Z0-9]{4}$/)"
       }
     }
   }

@@ -35,10 +35,16 @@
     return supply;
   }
 
-  /* ---------- 初期状態 ---------- */
-  function createInitialState(playerNames, kingdom) {
+  /* ---------- 初期状態 ----------
+     playerConfigs: 文字列(名前)または {name, isCpu, level} の配列（2〜4人） */
+  function createInitialState(playerConfigs, kingdom) {
     kingdom = kingdom || DOM.KINGDOM;
-    const players = playerNames.map((name, i) => {
+    const cfgs = (playerConfigs || []).map((x) =>
+      typeof x === 'string'
+        ? { name: x, isCpu: false, level: 'normal' }
+        : { name: x.name, isCpu: !!x.isCpu, level: x.level || 'normal' }
+    );
+    const players = cfgs.map((cfg, i) => {
       const start = [];
       for (let n = 0; n < 7; n++) start.push('copper');
       for (let n = 0; n < 3; n++) start.push('estate');
@@ -46,7 +52,9 @@
       const hand = deck.splice(0, 5);
       return {
         id: i,
-        name: name || `プレイヤー${i + 1}`,
+        name: cfg.name || `プレイヤー${i + 1}`,
+        isCpu: cfg.isCpu,
+        cpuLevel: cfg.level,
         deck,
         hand,
         discard: [],
@@ -116,6 +124,15 @@
     );
   }
 
+  // 民兵：次の対象プレイヤーへ進む（いなければ選択待ち解除）
+  function advanceMilitia(state, pd) {
+    if (pd.queue && pd.queue.length) {
+      state.pending = { type: 'militia', player: pd.queue[0], source: pd.source, queue: pd.queue.slice(1) };
+    } else {
+      state.pending = null;
+    }
+  }
+
   /* ---------- アクションカードの効果 ---------- */
   function applyEffect(state, cardId, pi) {
     const t = state.turn;
@@ -134,10 +151,14 @@
         break;
       case 'militia': {
         t.coins += 2;
-        // 他のプレイヤーは手札3枚まで捨てる
-        const opp = (pi + 1) % state.players.length;
-        if (state.players[opp].hand.length > 3) {
-          state.pending = { type: 'militia', player: opp, source: pi };
+        // 他の全プレイヤーは手札3枚まで捨てる（手番順に処理）
+        const others = [];
+        for (let k = 1; k < state.players.length; k++) {
+          const idx = (pi + k) % state.players.length;
+          if (state.players[idx].hand.length > 3) others.push(idx);
+        }
+        if (others.length) {
+          state.pending = { type: 'militia', player: others[0], source: pi, queue: others.slice(1) };
         }
         break;
       }
@@ -360,7 +381,7 @@
           p.discard.push(c);
         });
         log(state, `${p.name} は手札を ${discardCards.length}枚 捨てた。`);
-        state.pending = null;
+        advanceMilitia(state, pd);
         return state;
       }
       case 'MOAT_REVEAL': {
@@ -369,7 +390,7 @@
         const p = state.players[pd.player];
         if (p.hand.indexOf('moat') < 0) return state;
         log(state, `${p.name} は「堀」を公開し、アタックを無効化した。`);
-        state.pending = null;
+        advanceMilitia(state, pd);
         return state;
       }
 

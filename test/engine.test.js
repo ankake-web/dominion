@@ -272,6 +272,58 @@ ok(nothand.pending !== null, '手札に無いカード指定は拒否');
 let good = E.reduce(s2, { type: 'MILITIA_RESOLVE', cards: ['copper', 'copper'] }); // 残3
 ok(good.pending === null && good.players[1].hand.length === 3, 'ちょうど3枚は受理');
 
+console.log('=== 3〜4人: サプライ枚数 ===');
+s = E.createInitialState(['A', 'B', 'C']);
+ok(s.players.length === 3, '3人');
+ok(s.supply.estate === 12 && s.supply.province === 12 && s.supply.duchy === 12, '3人は勝利点各12');
+ok(s.supply.curse === 20, '3人は呪い20');
+ok(s.supply.copper === 60 - 21, '3人は銅貨39: ' + s.supply.copper);
+ok(s.supply.village === 10, '王国は常に10');
+s = E.createInitialState(['A', 'B', 'C', 'D']);
+ok(s.players.length === 4, '4人');
+ok(s.supply.province === 12, '4人も勝利点12');
+ok(s.supply.curse === 30, '4人は呪い30');
+ok(s.supply.copper === 60 - 28, '4人は銅貨32: ' + s.supply.copper);
+
+console.log('=== CPU設定の保持 ===');
+s = E.createInitialState([{ name: 'わたし', isCpu: false }, { name: 'CPU強', isCpu: true, level: 'hard' }]);
+ok(s.players[0].isCpu === false && s.players[1].isCpu === true, 'isCpu保持');
+ok(s.players[1].cpuLevel === 'hard', 'CPUレベル保持');
+ok(s.players[0].name === 'わたし' && s.players[1].name === 'CPU強', '名前保持');
+
+console.log('=== 民兵: 3人で全員が対象（キュー処理） ===');
+s = E.createInitialState(['A', 'B', 'C']);
+s.players[0].hand = ['militia'];
+s.players[1].hand = ['copper', 'copper', 'silver', 'estate', 'duchy'];
+s.players[2].hand = ['gold', 'gold', 'estate', 'estate', 'copper'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'militia' });
+ok(s2.pending && s2.pending.player === 1, '最初はB(席1)が対象');
+ok(s2.pending.queue && s2.pending.queue[0] === 2, 'C(席2)がキューに');
+s2 = E.reduce(s2, { type: 'MILITIA_RESOLVE', cards: ['copper', 'copper'] });
+ok(s2.pending && s2.pending.player === 2, '次はC(席2)が対象');
+ok(s2.players[1].hand.length === 3, 'Bは3枚に');
+s2 = E.reduce(s2, { type: 'MILITIA_RESOLVE', cards: ['estate', 'estate'] });
+ok(s2.pending === null, '全員処理で選択待ち解除');
+ok(s2.players[2].hand.length === 3, 'Cも3枚に');
+
+console.log('=== 民兵3人: 1人だけ3枚以下ならスキップ ===');
+s = E.createInitialState(['A', 'B', 'C']);
+s.players[0].hand = ['militia'];
+s.players[1].hand = ['copper', 'copper', 'estate']; // 3枚以下→対象外
+s.players[2].hand = ['gold', 'gold', 'estate', 'estate', 'copper'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'militia' });
+ok(s2.pending && s2.pending.player === 2, '3枚以下のBは飛ばしてCが対象');
+ok(!s2.pending.queue || s2.pending.queue.length === 0, 'キューは空');
+
+console.log('=== 4人: 手番が一周する ===');
+s = E.createInitialState(['A', 'B', 'C', 'D']);
+for (let turn = 0; turn < 4; turn++) {
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });
+}
+ok(s.turn.active === 0, '4人で一周して席0に戻る: ' + s.turn.active);
+ok(s.players.every((p) => p.turns === 1), '全員1ターンずつ');
+
 console.log('\n========================================');
 console.log(`結果: ${pass} 件成功, ${fail} 件失敗`);
 console.log('========================================');
