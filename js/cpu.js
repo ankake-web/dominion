@@ -4,7 +4,9 @@
    常に合法かつ局面を前進させる手を返すので、繰り返し適用すると必ずターンが進む。
    ============================================================ */
 (function () {
-  const DOM = (window.DOM = window.DOM || {});
+  const root = (typeof window !== 'undefined') ? window
+    : (typeof global !== 'undefined') ? global : globalThis;
+  const DOM = (root.DOM = root.DOM || {});
   const C = () => DOM.CARDS;
   const isType = (id, t) => DOM.isType(id, t);
   const isTreasure = (id) => isType(id, 'treasure');
@@ -187,4 +189,6 @@
   }
 
   DOM.cpu = { decide, delayFor };
+
+  if (typeof module !== 'undefined' && module.exports) module.exports = DOM;
 })();

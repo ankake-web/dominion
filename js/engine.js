@@ -4,7 +4,9 @@
    reduce(state, action) -> newState という形で状態遷移する。
    ============================================================ */
 (function () {
-  const DOM = (window.DOM = window.DOM || {});
+  const root = (typeof window !== 'undefined') ? window
+    : (typeof global !== 'undefined') ? global : globalThis;
+  const DOM = (root.DOM = root.DOM || {});
 
   const clone = (s) => JSON.parse(JSON.stringify(s));
   const C = () => DOM.CARDS;
@@ -479,6 +481,24 @@
     }
   }
 
+  /* ---------- 視点別マスク（サーバ→各クライアント配信用） ----------
+     seat 番のプレイヤーから見て、自分の手札・山札は見えるが、
+     他人の手札・山札は中身を伏せる（枚数だけ保つ）。捨て札・場・廃棄・サプライは公開。
+     技術的にも他人の手札が覗けないよう、配列の中身を 'back' に置換して配信する。 */
+  function maskStateFor(state, seat) {
+    const s = clone(state);
+    s.players = s.players.map((p, i) => {
+      if (i === seat) return p; // 自分は全部見える
+      return Object.assign({}, p, {
+        deck: new Array(p.deck.length).fill('back'),
+        hand: new Array(p.hand.length).fill('back'),
+        // discard / inPlay は公開情報（場・捨て札は表向き）なのでそのまま
+      });
+    });
+    s.you = seat;
+    return s;
+  }
+
   /* ---------- 公開API ---------- */
   DOM.engine = {
     createInitialState,
@@ -487,7 +507,10 @@
     scoreGame,
     isGameOver,
     emptyPileCount,
+    maskStateFor,
     // 「誰が今操作すべきか」: 選択待ちならその人、なければ手番のプレイヤー
     actor: (state) => (state.pending ? state.pending.player : state.turn.active),
   };
+
+  if (typeof module !== 'undefined' && module.exports) module.exports = DOM;
 })();

@@ -2,7 +2,10 @@
    ドミニオン 基本セット - カード定義
    ============================================================ */
 (function () {
-  const DOM = (window.DOM = window.DOM || {});
+  // ブラウザ(window)でもNode(global)でも同じ DOM 名前空間に載せる（サーバと共有）
+  const root = (typeof window !== 'undefined') ? window
+    : (typeof global !== 'undefined') ? global : globalThis;
+  const DOM = (root.DOM = root.DOM || {});
 
   // 各カードの定義
   // types: treasure(財宝) / victory(勝利点) / curse(呪い) / action(アクション) / attack / reaction
@@ -65,4 +68,6 @@
     const c = DOM.CARDS[cardId];
     return c && c.types.indexOf(t) >= 0;
   };
+
+  if (typeof module !== 'undefined' && module.exports) module.exports = DOM;
 })();
