@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>ドミニオン カードテンプレート プレビュー</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Shippori+Mincho:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/cards.css" />
+  <style>
+    :root { --cw: 200px; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 0 16px 48px; color: #f3ecdc;
+      background:
+        radial-gradient(1200px 700px at 50% -10%, #322c4e 0%, rgba(50,44,78,0) 60%),
+        linear-gradient(160deg, #14131f, #1d1b2e 60%, #272340);
+      background-attachment: fixed; min-height: 100vh;
+      font-family: 'Shippori Mincho', serif;
+    }
+    header { text-align: center; padding: 22px 0 6px; }
+    h1 { font-family: 'Cinzel', serif; font-size: 26px; margin: 0;
+      background: linear-gradient(180deg, #f0d28a, #d8b46a); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .sub { color: #b6ad97; font-size: 13px; margin: 4px 0 0; }
+    .controls { display: flex; gap: 16px; align-items: center; justify-content: center; flex-wrap: wrap; margin: 14px 0 4px; font-size: 13px; color: #cfc6b0; }
+    .controls input[type="range"] { width: 180px; }
+    .section-title { text-align: center; color: #d8b46a; letter-spacing: .12em; font-size: 13px; margin: 26px 0 10px; }
+    .grid { display: flex; flex-wrap: wrap; gap: 18px; justify-content: center; align-items: flex-start; }
+    .cell { width: var(--cw); }
+    .small-grid .cell { width: 96px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ドミニオン カードテンプレート</h1>
+    <p class="sub">枠・コスト・名前・種別・効果はすべて CSS/SVG。中央イラストだけ PNG（assets/art/&lt;id&gt;.png）を差し替え。</p>
+    <div class="controls">
+      <label>カードの大きさ <input id="size" type="range" min="120" max="320" value="200" /></label>
+      <span id="sizeval">200px</span>
+    </div>
+  </header>
+
+  <div class="section-title">全17種（同一レイアウト）</div>
+  <div id="grid" class="grid"></div>
+
+  <div class="section-title">小さく表示（名前・コスト・種別が読めるか）</div>
+  <div id="smallgrid" class="grid small-grid"></div>
+
+  <script src="js/carddata.js"></script>
+  <script src="js/cardview.js"></script>
+  <script>
+    (function () {
+      const DOM = window.DOM;
+      const grid = document.getElementById('grid');
+      const small = document.getElementById('smallgrid');
+      function build(list) {
+        grid.innerHTML = ''; small.innerHTML = '';
+        list.forEach((c) => {
+          const cell = document.createElement('div'); cell.className = 'cell';
+          cell.appendChild(DOM.cardView(c));
+          grid.appendChild(cell);
+          const s = document.createElement('div'); s.className = 'cell';
+          s.appendChild(DOM.cardView(c));
+          small.appendChild(s);
+        });
+        requestAnimationFrame(() => DOM.fitAllCards(document));
+      }
+      const size = document.getElementById('size');
+      const sizeval = document.getElementById('sizeval');
+      size.addEventListener('input', () => {
+        document.documentElement.style.setProperty('--cw', size.value + 'px');
+        sizeval.textContent = size.value + 'px';
+      });
+      DOM.loadCards().then((map) => build(DOM.CARD_DATA_LIST || Object.values(map)));
+    })();
+  </script>
+</body>
+</html>

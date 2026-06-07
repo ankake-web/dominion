@@ -1,0 +1,159 @@
+/* ============================================================
+   css/cards.css — ドミニオン風カードテンプレート
+   - 枠/コスト/名前/種別/効果欄はすべて CSS+SVG で描画
+   - 中央イラストだけ PNG（assets/art/<id>.png）を差し替え
+   - 全サイズで比率・レイアウトを統一するため container query 単位(cqw)で寸法指定
+     （1cqw = カード幅の 1%）。カードの実寸は外側の width だけで決まる。
+   ============================================================ */
+
+.dcard {
+  /* 744:1040 の縦長カード。幅は親が決め、高さは比率で自動。 */
+  position: relative;
+  width: 100%;
+  aspect-ratio: 744 / 1040;
+  container-type: inline-size;
+  border-radius: 5.5cqw;
+  box-shadow: 0 1.5cqw 4cqw rgba(0, 0, 0, 0.45);
+  user-select: none;
+
+  /* 種別ごとのテーマ（既定=アクション青）。.theme-* で上書き */
+  --accent: #3f6ea8;
+  --accent-dark: #28486f;
+  --accent-soft: rgba(63, 110, 168, 0.16);
+  --ink: #2c2316;
+  --parch1: #fcf3da;
+  --parch2: #efdcb2;
+}
+
+/* 種別カラー */
+.dcard.theme-treasure { --accent: #c2962f; --accent-dark: #8a6a1f; --accent-soft: rgba(194, 150, 47, 0.18); }
+.dcard.theme-victory  { --accent: #4f8a3f; --accent-dark: #356128; --accent-soft: rgba(79, 138, 63, 0.16); }
+.dcard.theme-curse    { --accent: #7a4fa0; --accent-dark: #533472; --accent-soft: rgba(122, 79, 160, 0.18); }
+.dcard.theme-action   { --accent: #3f6ea8; --accent-dark: #28486f; --accent-soft: rgba(63, 110, 168, 0.16); }
+.dcard.theme-attack   { --accent: #b6483d; --accent-dark: #7e2e26; --accent-soft: rgba(182, 72, 61, 0.16); }
+.dcard.theme-reaction { --accent: #2f9d8f; --accent-dark: #1f6e64; --accent-soft: rgba(47, 157, 143, 0.16); }
+
+/* 金の装飾フレーム（全カード共通） */
+.dcard-frame {
+  position: absolute; inset: 0; border-radius: 5.5cqw;
+  background:
+    linear-gradient(135deg, #f7e6a8 0%, #d8b463 28%, #9c7728 55%, #e7c87f 75%, #b78f3c 100%);
+  box-shadow: inset 0 0 0 0.4cqw rgba(255, 245, 210, 0.5);
+}
+
+/* カード面（羊皮紙） */
+.dcard-face {
+  position: absolute; inset: 2.6cqw; border-radius: 3.6cqw;
+  background:
+    radial-gradient(120% 60% at 50% 0%, var(--accent-soft), transparent 60%),
+    linear-gradient(180deg, var(--parch1), var(--parch2));
+  box-shadow: inset 0 0 0 0.35cqw rgba(120, 90, 40, 0.45), inset 0 0 3cqw rgba(120, 90, 40, 0.18);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  padding: 3cqw 4cqw 3.5cqw;
+}
+/* 内側の角飾り（控えめなL字） */
+.dcard-face::before, .dcard-face::after {
+  content: ''; position: absolute; width: 6cqw; height: 6cqw; border: 0.5cqw solid var(--accent);
+  opacity: 0.35; pointer-events: none;
+}
+.dcard-face::before { top: 1.6cqw; left: 1.6cqw; border-right: none; border-bottom: none; border-top-left-radius: 1.5cqw; }
+.dcard-face::after  { bottom: 1.6cqw; right: 1.6cqw; border-left: none; border-top: none; border-bottom-right-radius: 1.5cqw; }
+
+/* コストバッジ（左上・大きく）。外=種別色リング / 内=金のジェム */
+.dcard-cost {
+  position: absolute; top: 1.2cqw; left: 1.2cqw; z-index: 3;
+  width: 21cqw; aspect-ratio: 1;
+  clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
+  background: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  filter: drop-shadow(0 0.6cqw 0.9cqw rgba(0, 0, 0, 0.45));
+}
+.dcard-cost .gem {
+  width: 84%; height: 84%;
+  clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
+  background: radial-gradient(circle at 38% 30%, #fbe9b0, #d3a647 55%, #9c7726 100%);
+  display: flex; align-items: center; justify-content: center;
+  color: #3a2806; font-family: 'Cinzel', serif; font-weight: 800; font-size: 12cqw;
+  text-shadow: 0 0.3cqw 0.3cqw rgba(255, 255, 255, 0.4);
+}
+
+/* カード名（上部中央・大きく） */
+.dcard-name {
+  margin-top: 1.5cqw; padding: 0 9cqw; min-height: 11cqw;
+  text-align: center;
+  font-family: 'Cinzel', 'Shippori Mincho', serif; font-weight: 800;
+  font-size: 9.5cqw; line-height: 1.0; color: var(--ink);
+  letter-spacing: 0.02em;
+  display: flex; align-items: center; justify-content: center;
+  text-shadow: 0 0.3cqw 0 rgba(255, 250, 235, 0.6);
+}
+.dcard-name.long { font-size: 7.6cqw; }
+
+/* 種別バナー（名前の下） */
+.dcard-type {
+  margin: 1.4cqw auto 0; padding: 1cqw 4cqw; border-radius: 4cqw;
+  background: linear-gradient(180deg, var(--accent), var(--accent-dark));
+  color: #fff; font-size: 3.9cqw; font-weight: 700; letter-spacing: 0.04em;
+  box-shadow: inset 0 0.3cqw 0 rgba(255, 255, 255, 0.25), 0 0.4cqw 0.8cqw rgba(0, 0, 0, 0.25);
+  text-shadow: 0 0.2cqw 0.3cqw rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+}
+
+/* 中央イラスト枠 */
+.dcard-art {
+  position: relative; flex: 1; margin: 2.4cqw 0;
+  border-radius: 2.6cqw; overflow: hidden;
+  background:
+    radial-gradient(130% 90% at 50% 18%, #ffffff55, transparent 55%),
+    linear-gradient(170deg, color-mix(in srgb, var(--accent) 22%, #fff), color-mix(in srgb, var(--accent) 45%, #2a2236));
+  box-shadow: inset 0 0 0 0.7cqw rgba(255, 246, 214, 0.7), inset 0 0 0 1.5cqw var(--accent-dark);
+}
+.dcard-art img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block;
+}
+/* 画像未配置時のプレースホルダ（大きな主題アイコン1つ） */
+.dcard-art .ph {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1cqw; text-align: center;
+}
+.dcard-art .ph .sym { font-size: 34cqw; line-height: 1; filter: drop-shadow(0 1cqw 1.5cqw rgba(0, 0, 0, 0.3)); }
+.dcard-art .ph .ph-label { font-size: 3.4cqw; color: rgba(40, 30, 15, 0.55); letter-spacing: 0.1em; }
+
+/* 効果欄（羊皮紙ボックス・全カード共通デザイン） */
+.dcard-effects {
+  --eff-fs: 5cqw;
+  height: 33cqw; flex: 0 0 auto;
+  border-radius: 2.6cqw; padding: 1.6cqw 2cqw;
+  background: linear-gradient(180deg, #fffaf0, #f3e6c8);
+  box-shadow: inset 0 0 0 0.4cqw rgba(150, 115, 55, 0.55), 0 0.5cqw 1cqw rgba(0, 0, 0, 0.12);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.dcard-eff {
+  flex: 1 1 0; min-height: 0;
+  display: flex; align-items: center; gap: 2.2cqw;
+}
+.dcard-eff .diamond {
+  flex: 0 0 auto; width: 3.6cqw; height: 3.6cqw;
+  transform: rotate(45deg);
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+  box-shadow: inset 0 0 0 0.35cqw rgba(255, 250, 235, 0.6);
+  border-radius: 0.5cqw;
+}
+.dcard-eff .eff-text {
+  flex: 1; color: #3a2e1a; font-size: var(--eff-fs); line-height: 1.2; font-weight: 600;
+  font-family: 'Shippori Mincho', serif;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+/* 効果が多いほど少し小さく（行が詰まっても整然と） */
+.dcard-effects[data-count="3"] { --eff-fs: 4.4cqw; }
+.dcard-effects[data-count="4"] { --eff-fs: 4cqw; }
+
+/* 下部の装飾（文章なし） */
+.dcard-foot {
+  flex: 0 0 auto; height: 5cqw; margin-top: 1.2cqw;
+  display: flex; align-items: center; justify-content: center;
+}
+.dcard-foot svg { height: 3.4cqw; width: 46%; opacity: 0.9; }
+.dcard-foot svg path, .dcard-foot svg circle { fill: none; stroke: var(--accent); stroke-width: 2; }
+.dcard-foot svg .fill { fill: var(--accent); stroke: none; }
