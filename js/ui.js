@@ -295,7 +295,6 @@
     ) : h('p', { class: 'muted', style: 'text-align:center' }, 'ホストの開始を待っています…');
 
     return h('div', { class: 'home lobby' },
-      UI.reconnecting ? h('div', { class: 'cpu-banner' }, '🔄 再接続中…') : null,
       h('h2', null, '待機ロビー'),
       h('p', { class: 'muted', style: 'font-size:13px' }, 'コードまたは参加リンクを相手に送ってください'),
       h('div', { class: 'code-display' }, UI.roomCode || '----'),
