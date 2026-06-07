@@ -385,6 +385,7 @@
     const me = state.players[viewer];
 
     const top = h('div', { class: 'topbar' },
+      h('button', { class: 'home-btn', title: 'TOPに戻る', onclick: () => confirmLeaveGame() }, '🏠'),
       h('div', { class: 'turn-tag' },
         h('div', { class: 'who' }, active.name + ' の番' + (active.isCpu ? '（CPU・' + LEVEL_JP[active.cpuLevel] + '）' : '')),
         h('div', { class: 'phase' }, phaseLabel(t.phase))),
@@ -770,6 +771,31 @@
     go('home');
   }
 
+  // 対戦を中断してTOPへ（オンラインは退室、オフラインは破棄）
+  function quitToHome() {
+    UI.confirm = null;
+    if (UI.mode === 'online') { leaveOnline(); return; }
+    if (UI._cpuTimer) { clearTimeout(UI._cpuTimer); UI._cpuTimer = null; }
+    UI.store = null; UI.mode = 'local'; UI.mySeat = null;
+    go('home');
+  }
+  function confirmLeaveGame() {
+    UI.confirm = {
+      message: UI.mode === 'online' ? 'この対戦から退出してTOPに戻りますか？' : '対戦を中断してTOPに戻りますか？',
+      yesLabel: 'TOPに戻る',
+      onYes: quitToHome,
+    };
+    render();
+  }
+  function viewConfirm() {
+    const c = UI.confirm;
+    return h('div', { class: 'modal-scrim', onclick: (e) => { if (e.target.classList.contains('modal-scrim')) { UI.confirm = null; render(); } } },
+      h('div', { class: 'modal confirm-modal' },
+        h('p', { class: 'confirm-msg' }, c.message),
+        h('button', { class: 'btn btn-primary btn-block', onclick: c.onYes }, c.yesLabel || 'OK'),
+        h('button', { class: 'btn btn-ghost btn-block', style: 'margin-top:8px', onclick: () => { UI.confirm = null; render(); } }, 'つづける')));
+  }
+
   // CPUの自動進行（局面が変わるたびに呼ぶ）
   function maybeRunCpu() {
     const s = UI.store && UI.store.state;
@@ -811,6 +837,7 @@
     }
     app.appendChild(root);
     if (UI.sheet) app.appendChild(viewSheet());
+    if (UI.confirm) app.appendChild(viewConfirm());
     if (UI.toast) app.appendChild(h('div', { class: 'toast' }, UI.toast));
     maybeRunCpu();
   }

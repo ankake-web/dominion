@@ -179,6 +179,19 @@ try {
   ok($all('.score-row').length === 2, '2人のスコア');
   ok(byText('.result .btn', 'もう一度（同設定）'), '再戦ボタン');
 
+  console.log('=== ゲーム中にTOPへ戻る ===');
+  go('home');
+  clickText('button', '1台で2人プレイ（クイック）');
+  clickText('button', 'ゲーム開始');
+  ok($('.board') && $('.home-btn'), '盤面にTOPボタンがある');
+  $('.home-btn').click();
+  ok($('.confirm-modal'), '確認ダイアログ表示');
+  clickText('.confirm-modal .btn', 'つづける');
+  ok(!$('.confirm-modal'), '「つづける」で閉じる・対戦継続');
+  $('.home-btn').click();
+  clickText('.confirm-modal .btn', 'TOPに戻る');
+  ok(UI.view === 'home' && $('.home h1'), 'TOPに戻った');
+
   ok(runtimeError === null, '実行時エラーなし: ' + (runtimeError ? (runtimeError.stack || runtimeError) : ''));
 } catch (e) {
   fail++;
