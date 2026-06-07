@@ -9,7 +9,7 @@
   //   Render で払い出される https://xxxx.onrender.com を wss:// に変えて入れる。
   //   例: 'wss://dominion-abcd.onrender.com'
   // ============================================================
-  const PROD_SERVER_URL = 'wss://REPLACE-WITH-YOUR-RENDER-URL.onrender.com';
+  const PROD_SERVER_URL = 'wss://dominion-server-1hc9.onrender.com';
 
   // ローカル/LAN で WebSocket サーバを動かすポート（静的配信ポートとは別）
   const LOCAL_WS_PORT = 8787;
