@@ -13,10 +13,12 @@ mine, moat, remodel, smithy, village, woodcutter, workshop
 - 中央枠は `object-fit: cover` で切り取り表示。横長/正方形どちらでも可。
 - 重い画像は `sips -s format jpeg -s formatOptions 88 -Z 850 入力 --out assets/art/<id>.jpg` 程度に縮小推奨。
 
-## 枠画像（assets/frames/）
-種別ごとに6種：`treasure.jpg`(金) / `victory.jpg`(緑) / `curse.jpg`(紫) /
-`action.jpg`(青) / `attack.jpg`(赤) / `reaction.jpg`(青緑)。
-全種で同じ領域配置（コストバッジ・名前バナー・種別バナー・中央枠・効果欄）。
-差し替える場合は同じ領域配置のものにすると、文字の位置がそのまま合います。
+## 枠画像（assets/frames/、透明窓つきPNG）
+8種：財宝は金属別に `copper.png`(銅) / `silver.png`(銀) / `gold.png`(金)、
+ほかは `victory.png`(緑) / `curse.png`(紫) / `action.png`(青) / `attack.png`(赤) / `reaction.png`(青緑)。
+- **中央窓は透明**。イラストは枠の**背面**に置き、窓から見える分だけが表示される（金縁が絵の縁に被さる“はめ込み”）。
+- 全種で同じ領域配置（コストバッジ・名前バナー・種別バナー・中央窓・効果欄）。差し替えは同配置のものに。
+- カードとフレームの対応は `js/cardview.js` の `TREASURE_FRAME`（銅/銀/金）と `card.type`（それ以外）で決まる。
+- 窓が市松模様（不透明）で書き出された枠は、中央bbox内の低彩度ピクセルを alpha=0 にして透明窓化している（canvas処理）。
 
-> 元の高解像度PNGは `pictier/` に保管（git管理外）。
+> 元の高解像度PNG（`frame_*.png` 等）は `pictier/` に保管（git管理外）。

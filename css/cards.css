@@ -34,7 +34,7 @@
 
 /* 中央イラスト（枠の背面。透明窓から見える分だけが表示される） */
 .dcard-art {
-  position: absolute; left: 6%; top: 20%; width: 88%; height: 50%;
+  position: absolute; left: 4%; top: 24%; width: 92%; height: 52%;
   z-index: 1; overflow: hidden;
 }
 .dcard-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; z-index: 1; }
@@ -44,43 +44,43 @@
 }
 .dcard-art .ph .sym { font-size: 26cqw; line-height: 1; filter: drop-shadow(0 1cqw 1.4cqw rgba(0, 0, 0, 0.3)); }
 
-/* コスト（左上バッジ位置） */
+/* コスト（左上バッジの中央に重ねる。最重要：擦れないよう中央へ） */
 .dcard-cost {
-  position: absolute; left: 5.2%; top: 4.4%; width: 15%; height: 10.5%;
+  position: absolute; left: 5.5%; top: 4.6%; width: 13%; height: 10%;
   z-index: 3; display: flex; align-items: center; justify-content: center;
 }
 .dcard-cost span {
-  font-family: 'Cinzel', serif; font-weight: 800; font-size: 9cqw; color: #3a2806;
+  font-family: 'Cinzel', serif; font-weight: 800; font-size: 8cqw; color: #3a2806;
   text-shadow: 0 0.35cqw 0.4cqw rgba(255, 248, 220, 0.55);
 }
 
 /* カード名（上部バナー） */
 .dcard-name {
-  position: absolute; left: 24%; top: 6.6%; width: 72%; height: 7.2%;
+  position: absolute; left: 25%; top: 4.8%; width: 68%; height: 12%;
   z-index: 3; display: flex; align-items: center; justify-content: center; text-align: center;
 }
 .dcard-name span {
-  font-family: 'Cinzel', 'Shippori Mincho', serif; font-weight: 800; font-size: 9.6cqw;
+  font-family: 'Cinzel', 'Shippori Mincho', serif; font-weight: 800; font-size: 8.6cqw;
   color: var(--ink); line-height: 1; white-space: nowrap; letter-spacing: 0.01em;
 }
-.dcard-name.long span { font-size: 7cqw; }
+.dcard-name.long span { font-size: 6.4cqw; }
 
 /* 種別（名前下バナー） */
 .dcard-type {
-  position: absolute; left: 24%; top: 17.3%; width: 64%; height: 3.7%;
+  position: absolute; left: 27%; top: 20.3%; width: 46%; height: 5%;
   z-index: 3; display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
 .dcard-type span {
-  font-size: 3.3cqw; font-weight: 700; color: var(--accent-dark);
+  font-size: 3cqw; font-weight: 700; color: var(--accent-dark);
   letter-spacing: 0.02em; white-space: nowrap;
 }
 
 /* 効果欄（下部の羊皮紙領域。左上から順番に・余白をとって） */
 .dcard-effects {
-  position: absolute; left: 11%; top: 72%; width: 78%; height: 21.5%;
+  position: absolute; left: 19%; top: 76.5%; width: 62%; height: 16.5%;
   z-index: 3; --eff-fs: 4.2cqw;
   display: flex; flex-direction: column; justify-content: flex-start;
-  gap: 1.8cqw; padding: 1cqw 1cqw 0;
+  gap: 1.7cqw; padding: 0.5cqw 0.5cqw 0;
 }
 .dcard-eff { flex: 0 0 auto; min-height: 0; display: flex; align-items: flex-start; gap: 2.2cqw; }
 .dcard-eff .diamond {

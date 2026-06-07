@@ -31,11 +31,13 @@
     const root = el('div', 'dcard theme-' + theme);
     if (opts.onClick) { root.style.cursor = 'pointer'; root.addEventListener('click', () => opts.onClick(card)); }
 
-    // 枠画像（背景）。読めなければ .dcard の地色で代替。
+    // 枠画像（透明窓つき）。財宝は金属別フレーム、それ以外は種別フレーム。
+    const TREASURE_FRAME = { copper: 'copper', silver: 'silver', gold: 'gold' };
+    const frameKey = TREASURE_FRAME[card.id] || theme;
     const frame = el('img', 'dcard-frame-img');
     frame.alt = ''; frame.setAttribute('aria-hidden', 'true'); frame.loading = 'lazy';
     frame.addEventListener('error', () => { frame.style.display = 'none'; root.classList.add('noframe'); });
-    frame.src = 'assets/frames/' + theme + '.png';
+    frame.src = 'assets/frames/' + frameKey + '.png';
     root.appendChild(frame);
 
     // 中央イラスト
