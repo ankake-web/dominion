@@ -21,16 +21,12 @@
 <body>
   <div id="app"></div>
 
-  <!-- Firebase（オンライン対戦用。未設定でも 1台プレイは動きます） -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-  <script src="firebase-config.js"></script>
-
-  <!-- ゲーム本体 -->
+  <!-- ゲーム本体（オフラインで完結。オンラインは js/net.js が WebSocket 接続） -->
   <script src="js/cards.js"></script>
   <script src="js/engine.js"></script>
   <script src="js/cpu.js"></script>
   <script src="js/store.js"></script>
+  <script src="js/net.js"></script>
   <script src="js/ui.js"></script>
 </body>
 </html>

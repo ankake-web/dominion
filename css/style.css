@@ -562,6 +562,16 @@ input.code-input {
 .seat-head input { flex: 1; min-height: 40px; }
 .seat-opts { display: flex; gap: 8px; flex-wrap: wrap; }
 
+/* ===== ロビー ===== */
+.lobby .panel { max-width: 380px; }
+.lobby-list { display: flex; flex-direction: column; gap: 8px; }
+.lobby-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: rgba(0, 0, 0, 0.22); border: 1px solid var(--line); }
+.lobby-row.me { border-color: var(--gold); background: rgba(216, 180, 106, 0.1); }
+.lobby-name { font-weight: 700; font-size: 15px; flex: 1; }
+.lobby-tag { font-size: 11px; color: var(--ink-dim); }
+.lobby-host { display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+.cpu-count { font-size: 22px; font-weight: 800; font-family: 'Cinzel', serif; min-width: 32px; text-align: center; color: var(--gold-bright); }
+
 /* ===== ページ（遊び方・カード一覧） ===== */
 .page { padding-bottom: 24px; }
 .page-top {

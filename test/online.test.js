@@ -1,136 +1,113 @@
-/* オンライン同期テスト（モックFirebaseで2台のスマホを再現）
+/* オンライン対戦 E2E（実サーバ + jsdom 2ブラウザ + 実WebSocket）
    使い方: node test/online.test.js
-   実際のFirebaseは使わず、共有メモリDBで「部屋作成→参加→同期→手番ガード」を検証。
+   - 2つの「ブラウザ」(jsdom)が実サーバへ WebSocket 接続し、
+     部屋作成→参加→ロビー→開始→同期 を行う。
+   - 相手の手札がクライアントに届かない(マスク)ことを確認。
 */
+const http = require('node:http');
+const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
 const { JSDOM } = require('jsdom');
-
-/* ---------- モック Firebase（2クライアントで共有する1つのDB） ---------- */
-function createMockFirebase() {
-  const data = {};        // path -> value
-  const listeners = {};   // path -> [cb]
-  const clone = (v) => (v == null ? v : JSON.parse(JSON.stringify(v)));
-  const snap = (v) => ({ val: () => (v === undefined ? null : clone(v)) });
-  function setPath(p, v) {
-    data[p] = clone(v);
-    (listeners[p] || []).forEach((cb) => cb(snap(data[p])));
-  }
-  function ref(p) {
-    return {
-      set(v) { setPath(p, v); return Promise.resolve(); },
-      on(ev, cb) { (listeners[p] = listeners[p] || []).push(cb); if (data[p] !== undefined) cb(snap(data[p])); },
-      off() { listeners[p] = []; },
-      once() { return Promise.resolve(snap(data[p])); },
-      transaction(update, onComplete) {
-        const cur = data[p] === undefined ? null : clone(data[p]);
-        const res = update(cur);
-        if (res === undefined) { onComplete && onComplete(null, false, snap(data[p])); return; }
-        setPath(p, res);
-        onComplete && onComplete(null, true, snap(data[p]));
-      },
-    };
-  }
-  return { ref };
-}
-
-/* ---------- 1クライアント（1台のスマホ）を作る ---------- */
-function makeClient(mockDb) {
-  const dom = new JSDOM('<!DOCTYPE html><html><body><div id="app"></div></body></html>',
-    { url: 'https://example.com/', runScripts: 'outside-only', pretendToBeVisual: true });
-  const win = dom.window;
-  const load = (f) => win.eval(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'));
-  load('js/cards.js');
-  load('js/engine.js');
-  load('js/store.js');
-  win.DOM.db = mockDb;          // Firebase の代わりにモックを差し込む
-  load('js/ui.js');
-  win.document.dispatchEvent(new win.Event('DOMContentLoaded'));
-  const doc = win.document;
-  return {
-    win, doc, DOM: win.DOM, UI: win.DOM.UI,
-    $: (s) => doc.querySelector(s),
-    $all: (s) => Array.from(doc.querySelectorAll(s)),
-    clickText(sel, text) {
-      const el = this.$all(sel).find((e) => e.textContent.trim() === text);
-      if (!el) throw new Error('要素なし: ' + sel + ' = ' + text);
-      el.click();
-    },
-    setInput(el, v) { el.value = v; el.dispatchEvent(new win.Event('input')); },
-  };
-}
+const { attachGameServer, WS_PATH, __reset } = require('../server/gameServer');
 
 let pass = 0, fail = 0;
 function ok(c, m) { if (c) pass++; else { fail++; console.log('  ✗ FAIL: ' + m); } }
-const tick = () => new Promise((r) => setTimeout(r, 0));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function waitUntil(pred, ms = 3000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) { if (pred()) return true; await sleep(20); }
+  return false;
+}
+
+function makeBrowser(port) {
+  const dom = new JSDOM('<!DOCTYPE html><body><div id="app"></div></body>',
+    { url: 'http://localhost:8000/', runScripts: 'outside-only', pretendToBeVisual: true });
+  const win = dom.window;
+  win.WebSocket = WebSocket; // 実WebSocketをブラウザのWebSocketとして注入
+  const load = (f) => win.eval(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'));
+  ['js/cards.js', 'js/engine.js', 'js/cpu.js', 'js/store.js', 'js/net.js', 'js/ui.js'].forEach(load);
+  win.DOM.resolveServerUrl = () => `ws://127.0.0.1:${port}${WS_PATH}`; // 接続先をテストサーバへ
+  win.document.dispatchEvent(new win.Event('DOMContentLoaded'));
+  const doc = win.document;
+  return {
+    win, doc, UI: win.DOM.UI,
+    $: (s) => doc.querySelector(s),
+    $all: (s) => Array.from(doc.querySelectorAll(s)),
+    clickText(t) {
+      const el = Array.from(doc.querySelectorAll('button,.btn,.seg-btn'))
+        .find((e) => e.textContent.trim() === t) || Array.from(doc.querySelectorAll('button,.btn,.seg-btn')).find((e) => e.textContent.includes(t));
+      if (!el) throw new Error('要素なし: ' + t);
+      el.click();
+    },
+    setInput(sel, v) { const el = doc.querySelector(sel); el.value = v; el.dispatchEvent(new win.Event('input')); },
+  };
+}
 
 (async () => {
- try {
-  const mock = createMockFirebase();
-  const host = makeClient(mock);
-  const guest = makeClient(mock);
+  const server = http.createServer((req, res) => { res.writeHead(200); res.end('ok'); });
+  attachGameServer(server, { cpuStepMs: 15, graceMs: 500 });
+  await new Promise((r) => server.listen(0, r));
+  const port = server.address().port;
 
-  console.log('=== ホストが部屋を作る ===');
-  host.clickText('button', 'オンラインで対戦（2台）');
-  host.clickText('button', '部屋を作る（ホスト）');
-  host.clickText('button', '部屋を作成');
-  await tick(); // createRoom の set().then() を待つ
-  ok(host.UI.view === 'waitGuest', 'ホストは待機画面');
-  const code = host.UI.roomCode;
-  ok(code && code.length === 4, '部屋コード生成: ' + code);
-  ok(host.UI.mySeat === 0, 'ホストは座席0');
+  try {
+    console.log('=== ホストが部屋を作成 ===');
+    const host = makeBrowser(port);
+    host.clickText('オンラインで対戦');
+    host.clickText('部屋を作る（ホスト）');
+    host.clickText('部屋を作成');
+    ok(await waitUntil(() => host.UI.view === 'lobby' && host.UI.roomCode), 'ホストがロビーへ');
+    const code = host.UI.roomCode;
+    ok(/^[0-9]{4}$/.test(code), '数字4桁コード: ' + code);
+    ok(host.UI.isHost === true && host.UI.mySeat === 0, 'ホストは席0');
 
-  console.log('=== ゲストが参加する ===');
-  guest.clickText('button', 'オンラインで対戦（2台）');
-  guest.clickText('button', '部屋に参加する');
-  const codeInput = guest.$('.code-input');
-  guest.setInput(codeInput, code);
-  const nameInputs = guest.$all('.panel input[type="text"]');
-  guest.setInput(nameInputs[nameInputs.length - 1], 'つま');
-  guest.clickText('button', '参加する');
-  await tick();
+    console.log('=== ゲストが参加 ===');
+    const guest = makeBrowser(port);
+    guest.clickText('オンラインで対戦');
+    guest.clickText('部屋に参加する');
+    guest.setInput('.code-input', code);
+    const ninputs = guest.$all('.panel input[type="text"]');
+    const nameInput = ninputs[ninputs.length - 1];
+    nameInput.value = 'ゲスト'; nameInput.dispatchEvent(new guest.win.Event('input'));
+    guest.clickText('参加する');
+    ok(await waitUntil(() => guest.UI.view === 'lobby' && guest.UI.mySeat === 1), 'ゲストがロビー・席1');
+    ok(await waitUntil(() => host.UI.lobby && host.UI.lobby.players.length >= 2), 'ホストのロビーに2人表示');
 
-  ok(guest.UI.view === 'game', 'ゲストはゲーム画面へ');
-  ok(guest.UI.mySeat === 1, 'ゲストは座席1');
-  ok(host.UI.view === 'game', 'ホストも自動でゲーム画面へ（参加を検知）');
-  ok(host.UI.store.state.seats[1] === 'つま', 'ホスト側に相手名が同期');
-  ok(guest.UI.store.state.players[1].name === 'つま', 'ゲスト名が反映');
+    console.log('=== CPUを0にして2人で開始 ===');
+    // ホストがCPU人数を0に（−ボタン）
+    host.clickText('−');
+    ok(await waitUntil(() => host.UI.lobby && host.UI.lobby.cpuCount === 0), 'CPU0に');
+    ok(await waitUntil(() => host.UI.lobby && host.UI.lobby.canStart), '2人で開始可能');
+    host.clickText('ゲーム開始');
+    ok(await waitUntil(() => host.UI.view === 'game' && host.UI.store.state), 'ホストがゲーム画面');
+    ok(await waitUntil(() => guest.UI.view === 'game' && guest.UI.store.state), 'ゲストがゲーム画面');
 
-  console.log('=== 満員の部屋には入れない ===');
-  const guest3 = makeClient(mock);
-  guest3.clickText('button', 'オンラインで対戦（2台）');
-  guest3.clickText('button', '部屋に参加する');
-  guest3.setInput(guest3.$('.code-input'), code);
-  guest3.clickText('button', '参加する');
-  await tick();
-  ok(guest3.UI.view !== 'game', '3人目は参加できない');
+    console.log('=== マスキング（相手手札が届かない） ===');
+    const hs = host.UI.store.state;
+    ok(hs.players[0].hand.every((c) => c !== 'back') && hs.players[0].hand.length === 5, 'ホスト自分の手札は実物');
+    ok(hs.players[1].hand.every((c) => c === 'back'), 'ホストから見て相手手札は伏せ(back)');
+    const gs = guest.UI.store.state;
+    ok(gs.players[1].hand.every((c) => c !== 'back'), 'ゲスト自分の手札は実物');
+    ok(gs.players[0].hand.every((c) => c === 'back'), 'ゲストから見て相手手札は伏せ');
 
-  console.log('=== 手番の同期（ホスト→ゲスト） ===');
-  // ホストは座席0＝先攻。アクション→購入→ターン終了でゲストの番へ
-  host.UI.store.dispatch({ type: 'END_ACTION_PHASE' });
-  host.UI.store.dispatch({ type: 'END_TURN' });
-  ok(host.UI.store.state.turn.active === 1, 'ホスト側: 手番がゲストへ');
-  ok(guest.UI.store.state.turn.active === 1, 'ゲスト側にも手番交代が同期');
-  const vAfterHost = guest.UI.store.state.version;
-
-  console.log('=== 手番ガード（自分の番でないと書けない） ===');
-  // いまはゲスト(座席1)の番。ホスト(座席0)が操作しても弾かれる
-  host.UI.store.dispatch({ type: 'END_ACTION_PHASE' });
-  ok(guest.UI.store.state.version === vAfterHost, 'ホストの不正操作はDBに書かれない（version不変）');
-  ok(guest.UI.store.state.turn.phase === 'action', 'ゲストの番のフェーズは保持');
-
-  console.log('=== ゲストの操作がホストに同期 ===');
-  guest.UI.store.dispatch({ type: 'END_ACTION_PHASE' });
-  ok(guest.UI.store.state.turn.phase === 'buy', 'ゲスト: 購入フェーズへ');
-  ok(host.UI.store.state.turn.phase === 'buy', 'ホストにも同期');
+    console.log('=== 盤面描画・手番同期 ===');
+    ok(host.$('.board') && host.$('.others .opp-chip'), 'ホスト盤面描画');
+    ok(host.UI.store.state.turn.active === 0, 'ホスト(席0)が先手');
+    // ホストがターンを終える（手札にアクションは無いので END_ACTION_PHASE → END_TURN）
+    host.clickText('購入フェーズへ ▶');
+    ok(await waitUntil(() => host.UI.store.state.turn.phase === 'buy'), '購入フェーズへ');
+    host.clickText('ターンを終える');
+    ok(await waitUntil(() => guest.UI.store.state.turn.active === 1), 'ゲストに手番交代が同期');
+    ok(await waitUntil(() => host.UI.store.state.turn.active === 1), 'ホストにも反映');
 
   } catch (e) {
-    fail++;
-    console.log('  ✗ 例外: ' + (e.stack || e.message));
+    fail++; console.log('  ✗ 例外: ' + (e.stack || e.message));
   }
 
+  __reset();
+  try { server.close(); } catch (e) { /* noop */ }
   console.log('\n========================================');
-  console.log(`オンラインテスト結果: ${pass} 件成功, ${fail} 件失敗`);
+  console.log(`オンラインE2E結果: ${pass} 件成功, ${fail} 件失敗`);
   console.log('========================================');
   process.exit(fail ? 1 : 0);
 })();

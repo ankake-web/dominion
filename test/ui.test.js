@@ -19,7 +19,7 @@ function pump(max) { let n = 0; while (timers.length && n < (max || 3000)) { tim
 let runtimeError = null;
 win.addEventListener('error', (e) => { runtimeError = e.error || e.message; });
 function load(f) { win.eval(fs.readFileSync(path.join(__dirname, '..', f), 'utf8')); }
-['firebase-config.js', 'js/cards.js', 'js/engine.js', 'js/cpu.js', 'js/store.js', 'js/ui.js'].forEach(load);
+['js/cards.js', 'js/engine.js', 'js/cpu.js', 'js/store.js', 'js/net.js', 'js/ui.js'].forEach(load);
 win.document.dispatchEvent(new win.Event('DOMContentLoaded'));
 
 const doc = win.document;

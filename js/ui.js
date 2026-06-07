@@ -22,6 +22,13 @@
     _t: null,
     _cpuTimer: null,
     lastConfigs: null,
+    // オンライン(WebSocket)用
+    netClient: null,
+    isHost: false,
+    lobby: null,
+    netToken: null,
+    reconnecting: false,
+    _reconnectTries: 0,
     setup: {
       seats: [
         { name: 'あなた', type: 'human', level: 'normal' },
@@ -111,10 +118,7 @@
     clearTimeout(UI._t);
     UI._t = setTimeout(() => { UI.toast = null; render(); }, 2400);
   }
-  function onStoreChange(state) {
-    if (UI.view === 'waitGuest' && state && state.seats && state.seats[1]) UI.view = 'game';
-    render();
-  }
+  function onStoreChange() { render(); }
   function firstHuman(state) {
     const i = state.players.findIndex((p) => !p.isCpu);
     return i >= 0 ? i : 0;
@@ -141,9 +145,7 @@
           h('button', { class: 'btn btn-ghost', onclick: () => go('rules') }, '📖 遊び方'),
           h('button', { class: 'btn btn-ghost', onclick: () => { UI._listReturn = 'home'; go('cardList'); } }, '🃏 カード一覧')
         )
-      ),
-      DOM.db ? null : h('p', { class: 'muted', style: 'font-size:12px;max-width:300px' },
-        'オンライン対戦には Firebase の設定が必要です（手順は README）。それ以外は今すぐ遊べます。')
+      )
     );
   }
 
@@ -215,7 +217,7 @@
       h('div', { class: 'panel' },
         h('button', { class: 'btn btn-primary btn-block', onclick: () => go('createRoom') }, '部屋を作る（ホスト）'),
         h('button', { class: 'btn btn-block', onclick: () => go('joinRoom') }, '部屋に参加する'),
-        DOM.db ? null : h('p', { class: 'muted', style: 'font-size:12px' }, '※ いまは Firebase 未設定のため使えません。設定後にご利用ください。')
+        h('p', { class: 'muted', style: 'font-size:12px' }, '2〜4人。空席はCPUで埋められます。')
       ),
       h('button', { class: 'btn btn-ghost', onclick: () => go('home') }, '戻る')
     );
@@ -235,30 +237,61 @@
   function viewJoinRoom() {
     let name = '対戦相手';
     let code = UI.prefillCode || '';
-    const ci = h('input', { type: 'text', class: 'code-input', maxlength: '4', value: code,
-      oninput: (e) => { code = e.target.value.toUpperCase(); e.target.value = code; } });
+    const ci = h('input', { type: 'text', class: 'code-input', maxlength: '4', inputmode: 'numeric', pattern: '[0-9]*', value: code,
+      oninput: (e) => { code = e.target.value.replace(/\D/g, '').slice(0, 4); e.target.value = code; } });
     const ni = h('input', { type: 'text', value: name, oninput: (e) => (name = e.target.value) });
     return h('div', { class: 'home' },
       h('h2', null, '部屋に参加'),
       h('div', { class: 'panel' },
-        h('div', { class: 'field' }, h('label', null, '部屋コード（4文字）'), ci),
+        h('div', { class: 'field' }, h('label', null, '部屋コード（数字4桁）'), ci),
         h('div', { class: 'field' }, h('label', null, 'あなたの名前'), ni),
         h('button', { class: 'btn btn-primary btn-block', onclick: () => joinRoom(code, name) }, '参加する')
       ),
       h('button', { class: 'btn btn-ghost', onclick: () => go('onlineMenu') }, '戻る')
     );
   }
-  function viewWaitGuest() {
+  function viewLobby() {
+    const lb = UI.lobby;
     const link = location.origin + location.pathname + '?room=' + UI.roomCode;
-    return h('div', { class: 'home' },
-      h('div', { class: 'crest' }, '⏳'),
-      h('h2', null, '相手の参加を待っています'),
-      h('p', { class: 'muted' }, 'この部屋コードを相手に伝えてください'),
-      h('div', { class: 'code-display' }, UI.roomCode),
+    const players = lb ? lb.players : [];
+    const list = h('div', { class: 'lobby-list' },
+      players.map((p) =>
+        h('div', { class: 'lobby-row' + (p.seat === UI.mySeat ? ' me' : '') },
+          h('span', { class: 'seat-no' }, p.seat + 1),
+          h('span', { class: 'lobby-name' }, p.name + (p.seat === UI.mySeat ? '（あなた）' : '')),
+          h('span', { class: 'lobby-tag' },
+            p.isCpu ? 'CPU・' + LEVEL_JP[p.level || 'normal'] : (p.isHost ? 'ホスト' : '') + (p.connected ? '' : ' 🔌')))));
+
+    const hostControls = (lb && UI.isHost) ? h('div', { class: 'lobby-host' },
+      h('div', { class: 'field' },
+        h('label', null, 'CPUの人数（空席を埋める）'),
+        h('div', { class: 'row center' },
+          h('button', { class: 'btn btn-sm', onclick: () => setCpuCount(lb.cpuCount - 1) }, '−'),
+          h('div', { class: 'cpu-count' }, lb.cpuCount),
+          h('button', { class: 'btn btn-sm', onclick: () => setCpuCount(lb.cpuCount + 1) }, '＋'),
+          h('span', { class: 'muted', style: 'font-size:11px' }, '（最大' + lb.maxCpu + '）'))),
+      h('div', { class: 'field' },
+        h('label', null, 'CPUの強さ'),
+        segmented([{ value: 'easy', label: '弱' }, { value: 'normal', label: '普通' }, { value: 'hard', label: '強' }],
+          lb.cpuLevel, (v) => UI.netClient.send({ t: 'setConfig', cpuLevel: v }))),
+      h('button', { class: 'btn btn-primary btn-block', disabled: lb.canStart ? null : 'disabled', onclick: () => UI.netClient.send({ t: 'start' }) },
+        lb.canStart ? 'ゲーム開始' : '人間1人以上・合計2〜4人で開始')
+    ) : h('p', { class: 'muted', style: 'text-align:center' }, 'ホストの開始を待っています…');
+
+    return h('div', { class: 'home lobby' },
+      UI.reconnecting ? h('div', { class: 'cpu-banner' }, '🔄 再接続中…') : null,
+      h('h2', null, '待機ロビー'),
+      h('p', { class: 'muted', style: 'font-size:13px' }, 'コードまたは参加リンクを相手に送ってください'),
+      h('div', { class: 'code-display' }, UI.roomCode || '----'),
       h('button', { class: 'btn btn-block', onclick: () => copy(link) }, '参加用リンクをコピー'),
-      h('p', { class: 'muted', style: 'font-size:12px;word-break:break-all;max-width:320px' }, link),
-      h('button', { class: 'btn btn-ghost', onclick: () => leaveOnline() }, 'キャンセル')
+      h('div', { class: 'panel', style: 'gap:14px' }, list, hostControls),
+      h('button', { class: 'btn btn-ghost', onclick: () => leaveOnline() }, '退出')
     );
+  }
+  function setCpuCount(n) {
+    if (!UI.lobby) return;
+    const v = Math.max(0, Math.min(n, UI.lobby.maxCpu));
+    UI.netClient.send({ t: 'setCpu', count: v });
   }
   function copy(text) {
     if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => toast('コピーしました'), () => toast(text));
@@ -651,49 +684,89 @@
     UI.store.dispatch({ type: 'NEW_GAME', players: UI.lastConfigs, kingdom: st.kingdom });
   }
 
+  /* ---------- オンライン（WebSocket / サーバ権威） ---------- */
+  function connectNet() {
+    const client = DOM.NetClient(onNetMessage);
+    UI.netClient = client;
+    UI.mode = 'online';
+    UI.store = DOM.NetStore(client);
+    client.setOnClose(() => onNetDisconnect());
+    return client.connect();
+  }
   function createRoom(name) {
-    if (!DOM.db) { toast('Firebase が未設定です'); return; }
-    const code = DOM.makeRoomCode();
-    const st = E().createInitialState([name || 'ホスト', '対戦相手']);
-    st.seats = [name || 'ホスト', null]; st.online = true; st.version = 1;
-    DOM.db.ref('rooms/' + code + '/state').set(st).then(() => {
-      UI.mode = 'online'; UI.mySeat = 0; UI.roomCode = code;
-      UI.store = DOM.OnlineStore(DOM.db, code, 0);
-      UI.store.subscribe(onStoreChange);
-      UI.view = 'waitGuest'; render();
-    }).catch((e) => toast('作成に失敗: ' + e.message));
+    UI._pendingName = name || 'ホスト';
+    connectNet().then(() => UI.netClient.send({ t: 'create', name: UI._pendingName }))
+      .catch((e) => { toast('サーバに接続できません: ' + e.message); resetOnline(); render(); });
   }
   function joinRoom(code, name) {
-    if (!DOM.db) { toast('Firebase が未設定です'); return; }
-    code = (code || '').toUpperCase().trim();
-    if (code.length !== 4) { toast('コードは4文字です'); return; }
-    const myName = name || '対戦相手';
-    const ref = DOM.db.ref('rooms/' + code + '/state');
-    ref.transaction((st) => {
-      if (st === null) return null;
-      if (st.seats && st.seats[1]) return;
-      st.players[1].name = myName;
-      st.seats = st.seats || [st.players[0].name, null];
-      st.seats[1] = myName;
-      st.log = st.log || [];
-      st.log.push(myName + ' が参加しました。');
-      st.version = (st.version || 0) + 1;
-      return st;
-    }, (err, committed, snap) => {
-      if (err) { toast('参加に失敗: ' + err.message); return; }
-      const st = snap && snap.val();
-      if (!st) { toast('その部屋は見つかりません'); return; }
-      if (!committed || !st.seats || st.seats[1] !== myName) { toast('この部屋は満員です'); return; }
-      UI.mode = 'online'; UI.mySeat = 1; UI.roomCode = code;
-      UI.store = DOM.OnlineStore(DOM.db, code, 1);
-      UI.store.subscribe(onStoreChange);
-      UI.view = 'game'; render();
-    });
+    code = (code || '').trim();
+    if (!/^[0-9]{4}$/.test(code)) { toast('コードは数字4桁です'); return; }
+    UI._pendingName = name || '対戦相手';
+    UI.roomCode = code;
+    connectNet().then(() => UI.netClient.send({ t: 'join', code, name: UI._pendingName }))
+      .catch((e) => { toast('サーバに接続できません: ' + e.message); resetOnline(); render(); });
+  }
+
+  // サーバ → クライアント メッセージ処理
+  function onNetMessage(msg) {
+    switch (msg.t) {
+      case 'joined':
+        UI.roomCode = msg.code; UI.mySeat = msg.you; UI.isHost = msg.isHost; UI.netToken = msg.token;
+        UI.reconnecting = false; UI._reconnectTries = 0;
+        if (!msg.started && UI.view !== 'game') UI.view = 'lobby';
+        render();
+        break;
+      case 'lobby':
+        UI.lobby = msg; UI.roomCode = msg.code;
+        if (UI.view !== 'game') UI.view = 'lobby';
+        render();
+        break;
+      case 'started':
+        UI.mySeat = msg.you; UI.reconnecting = false; UI._reconnectTries = 0;
+        UI.store.setState(msg.state);
+        UI.view = 'game';
+        render();
+        break;
+      case 'state':
+        UI.store.setState(msg.state);
+        render();
+        break;
+      case 'error':
+        toast(msg.message);
+        if (msg.fatal) { resetOnline(); go('home'); }
+        break;
+    }
+  }
+
+  // 予期しない切断 → 自動再接続（resume）を試みる
+  function onNetDisconnect() {
+    if (UI.mode !== 'online') return;
+    if (UI.view === 'home') return;
+    if (!UI.netToken || !UI.roomCode) { resetOnline(); go('home'); return; }
+    if (UI._reconnectTries >= 8) { toast('サーバに再接続できませんでした'); resetOnline(); go('home'); return; }
+    UI._reconnectTries++;
+    UI.reconnecting = true; render();
+    setTimeout(() => {
+      const client = DOM.NetClient(onNetMessage);
+      UI.netClient = client;
+      if (!UI.store || UI.store.mode !== 'online') UI.store = DOM.NetStore(client);
+      else UI.store.client = client;
+      client.setOnClose(() => onNetDisconnect());
+      client.connect()
+        .then(() => client.send({ t: 'resume', code: UI.roomCode, you: UI.mySeat, token: UI.netToken }))
+        .catch(() => onNetDisconnect());
+    }, Math.min(1500 * UI._reconnectTries, 6000));
+  }
+
+  function resetOnline() {
+    if (UI.netClient) { try { UI.netClient.close(); } catch (e) { /* noop */ } }
+    UI.netClient = null; UI.store = null; UI.mode = 'local';
+    UI.mySeat = null; UI.roomCode = null; UI.isHost = false; UI.lobby = null;
+    UI.netToken = null; UI.reconnecting = false; UI._reconnectTries = 0;
   }
   function leaveOnline() {
-    if (UI.store && UI.store.detach) UI.store.detach();
     if (UI._cpuTimer) { clearTimeout(UI._cpuTimer); UI._cpuTimer = null; }
-    UI.store = null; UI.mode = 'local'; UI.mySeat = null; UI.roomCode = null;
+    resetOnline();
     go('home');
   }
 
@@ -730,7 +803,7 @@
       case 'onlineMenu': root = viewOnlineMenu(); break;
       case 'createRoom': root = viewCreateRoom(); break;
       case 'joinRoom': root = viewJoinRoom(); break;
-      case 'waitGuest': root = viewWaitGuest(); break;
+      case 'lobby': root = viewLobby(); break;
       case 'rules': root = viewRules(); break;
       case 'cardList': root = viewCardList(); break;
       case 'game': root = viewGameDispatch(); break;
@@ -747,7 +820,7 @@
   function boot() {
     const params = new URLSearchParams(location.search);
     const room = params.get('room');
-    if (room) { UI.prefillCode = room.toUpperCase().slice(0, 4); UI.view = DOM.db ? 'joinRoom' : 'onlineMenu'; }
+    if (room) { UI.prefillCode = room.replace(/\D/g, '').slice(0, 4); UI.view = 'joinRoom'; }
     render();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
