@@ -25,6 +25,9 @@ const WS_PATH = '/ws';
 const MAX_PLAYERS = 4;
 const MIN_PLAYERS = 2;
 const LEVELS = ['easy', 'normal', 'hard'];
+// CPUのキャラ名（席ごとに一定 → ロビーと対戦で同じ名前になる）
+const CPU_NAMES = ['鉄腕のゴラン', '賢者エルミ', '守銭奴バルト', '策士リオン', '黄金のドレイク', '辺境伯ノルド'];
+function cpuName(seat) { return CPU_NAMES[seat % CPU_NAMES.length]; }
 
 // タイミング（attachGameServer で上書き可能。テストでは短縮値を注入）
 let CPU_STEP_MS = 850;        // CPUの一手ごとの間(ms)
@@ -81,7 +84,7 @@ function lobbyPlayers(room) {
   const humans = [...room.members]
     .sort((a, b) => a.seat - b.seat)
     .map((m) => ({ seat: m.seat, name: m.name, isHost: m.isHost, connected: m.connected, isCpu: false }));
-  const cpus = cpuSeats(room).map((seat, i) => ({ seat, name: 'CPU' + (i + 1), isHost: false, connected: true, isCpu: true, level: room.cpuLevel }));
+  const cpus = cpuSeats(room).map((seat) => ({ seat, name: cpuName(seat), isHost: false, connected: true, isCpu: true, level: room.cpuLevel }));
   return [...humans, ...cpus].sort((a, b) => a.seat - b.seat);
 }
 function broadcastLobby(room) {
@@ -116,7 +119,7 @@ function buildConfigs(room) {
   const bySeat = {};
   for (const m of room.members) bySeat[m.seat] = { name: m.name, isCpu: false, level: 'normal' };
   const cseats = cpuSeats(room);
-  cseats.forEach((seat, i) => { bySeat[seat] = { name: 'CPU' + (i + 1), isCpu: true, level: room.cpuLevel }; });
+  cseats.forEach((seat) => { bySeat[seat] = { name: cpuName(seat), isCpu: true, level: room.cpuLevel }; });
   // 座席 0..total-1 を詰めて並べる（members は最小空席から割当・CPUも最小空席を埋めるので連続）
   const seats = Object.keys(bySeat).map(Number).sort((a, b) => a - b);
   // members の seat を 0..total-1 の連番へ正規化（途中退室で歯抜けがあっても詰める）

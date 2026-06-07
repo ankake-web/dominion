@@ -6,7 +6,36 @@
   const E = () => DOM.engine;
   const LEVEL_JP = { easy: '弱', normal: '普通', hard: '強' };
 
+  /* ---------- ランダムな初期名（世界観に合う領主名） ---------- */
+  // 「あなた／対戦相手」だと盛り下がるので、入力欄の初期値をランダムな名前にする。
+  const NAME_POOL = [
+    'アルヴィス', 'セシリア', 'ガウェイン', 'イザベラ', 'ロドリク', 'エルザ', 'コンラート', 'フィオナ',
+    'レオンハルト', 'マルグリット', 'ダリウス', 'ヴィオラ', 'ジークフリート', 'アデル', 'テオドール',
+    'ミレーユ', 'ラインハルト', 'ユーフェミア', 'ギルベルト', 'ソフィア', 'エドガー', 'リーゼロット',
+    'フェルナン', 'カトリーヌ', 'オズワルド', 'クラリス', 'バルトロ', 'ブリジット', 'ヴァレリー', 'ノエル',
+  ];
+  // CPUは少しキャラ立ちした称号つきの名前で（盤面では🤖も付く）。
+  const CPU_NAME_POOL = [
+    '鉄腕のゴラン', '賢者エルミ', '守銭奴バルト', '策士リオン', '黄金のドレイク', '辺境伯ノルド',
+    '魔女セルマ', '女王アデル', '隠者カイル', '豪商メルカ', '騎士団長グレイ', '占星術師ニナ',
+  ];
+  function randPick(pool, exclude) {
+    const avail = pool.filter((n) => !(exclude || []).includes(n));
+    const list = avail.length ? avail : pool;
+    return list[Math.floor(Math.random() * list.length)];
+  }
+  // キーごとに一度だけランダム名を決めて記憶（再描画でブレない）。excludeKeyの名前は避ける。
+  function defaultName(key, pool, excludeKey) {
+    UI._names = UI._names || {};
+    if (!UI._names[key]) {
+      const ex = excludeKey && UI._names[excludeKey] ? [UI._names[excludeKey]] : [];
+      UI._names[key] = randPick(pool || NAME_POOL, ex);
+    }
+    return UI._names[key];
+  }
+
   /* ---------- UI 状態 ---------- */
+  const _humanName = randPick(NAME_POOL);
   const UI = {
     view: 'home',
     mode: 'local',
@@ -31,8 +60,8 @@
     _reconnectTries: 0,
     setup: {
       seats: [
-        { name: 'あなた', type: 'human', level: 'normal' },
-        { name: 'CPU', type: 'cpu', level: 'normal' },
+        { name: _humanName, type: 'human', level: 'normal' },
+        { name: CPU_NAME_POOL[Math.floor(Math.random() * CPU_NAME_POOL.length)], type: 'cpu', level: 'normal' },
       ],
     },
   };
@@ -179,7 +208,7 @@
       [{ value: 2, label: '2人' }, { value: 3, label: '3人' }, { value: 4, label: '4人' }],
       seats.length,
       (n) => {
-        while (seats.length < n) seats.push({ name: 'CPU' + (seats.length), type: 'cpu', level: 'normal' });
+        while (seats.length < n) seats.push({ name: randPick(CPU_NAME_POOL, seats.map((s) => s.name)), type: 'cpu', level: 'normal' });
         while (seats.length > n) seats.pop();
         render();
       }, 'count-seg');
@@ -211,7 +240,7 @@
   }
 
   function viewLocalSetup() {
-    let n1 = 'プレイヤー1', n2 = 'プレイヤー2';
+    let n1 = defaultName('p1'), n2 = defaultName('p2', NAME_POOL, 'p1');
     const i1 = h('input', { type: 'text', value: n1, oninput: (e) => (n1 = e.target.value) });
     const i2 = h('input', { type: 'text', value: n2, oninput: (e) => (n2 = e.target.value) });
     return h('div', { class: 'home' },
@@ -239,7 +268,7 @@
     );
   }
   function viewCreateRoom() {
-    let name = 'あなた';
+    let name = defaultName('host');
     const inp = h('input', { type: 'text', value: name, oninput: (e) => (name = e.target.value) });
     return h('div', { class: 'home' },
       h('h2', null, '部屋を作る'),
@@ -251,7 +280,7 @@
     );
   }
   function viewJoinRoom() {
-    let name = '対戦相手';
+    let name = defaultName('guest');
     let code = UI.prefillCode || '';
     const ci = h('input', { type: 'text', class: 'code-input', maxlength: '4', inputmode: 'numeric', pattern: '[0-9]*', value: code,
       oninput: (e) => { code = e.target.value.replace(/\D/g, '').slice(0, 4); e.target.value = code; } });
@@ -791,11 +820,11 @@
     resetOnline();
     go('home');
   }
-  function createRoom(name) { startOnline('create', name || 'ホスト'); }
+  function createRoom(name) { startOnline('create', name || defaultName('host')); }
   function joinRoom(code, name) {
     code = (code || '').trim();
     if (!/^[0-9]{4}$/.test(code)) { toast('コードは数字4桁です'); return; }
-    startOnline('join', name || '対戦相手', code);
+    startOnline('join', name || defaultName('guest'), code);
   }
 
   // サーバ → クライアント メッセージ処理
