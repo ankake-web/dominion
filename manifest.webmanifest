@@ -1,0 +1,13 @@
+{
+  "name": "ドミニオン",
+  "short_name": "ドミニオン",
+  "description": "ドミニオン基本セット 2人対戦",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#14131f",
+  "theme_color": "#14131f",
+  "icons": [
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

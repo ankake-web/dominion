@@ -1,0 +1,14 @@
+{
+  "name": "dominion",
+  "version": "1.0.0",
+  "description": "ドミニオン基本セット スマホ2台対戦Webアプリ",
+  "scripts": {
+    "test": "node test/engine.test.js && node test/ui.test.js && node test/online.test.js",
+    "serve": "python3 -m http.server 8000"
+  },
+  "keywords": ["dominion", "boardgame", "firebase"],
+  "license": "MIT",
+  "devDependencies": {
+    "jsdom": "^24.1.3"
+  }
+}
