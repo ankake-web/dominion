@@ -27,8 +27,10 @@ const MIN_PLAYERS = 2;
 const LEVELS = ['easy', 'normal', 'hard'];
 
 // タイミング（attachGameServer で上書き可能。テストでは短縮値を注入）
-let CPU_STEP_MS = 850;   // CPUの一手ごとの間(ms)
-let GRACE_MS = 90000;    // 切断→席解放/ルーム破棄までの猶予(ms)
+let CPU_STEP_MS = 850;        // CPUの一手ごとの間(ms)
+let GRACE_MS = 60000;         // ロビー中の切断→席解放までの猶予(ms)
+let STARTED_GRACE_MS = 300000; // 対戦中の切断→席を保持する猶予(ms, 5分)。この間は同じplayerIdで復帰可
+let HEARTBEAT_MS = 25000;     // サーバ→クライアントの死活ping間隔(ms)
 
 // 同期を許可する操作（サーバ側ホワイトリスト）
 const ALLOWED = new Set([
@@ -155,22 +157,35 @@ function scheduleCpuTick(room, delay) {
   }, delay);
 }
 
-/* ---------- 切断時：席を一時CPU化／復帰 ---------- */
+/* ---------- 切断・復帰の席状態 ---------- */
 function setSeatCpu(room, seat, isCpu) {
   if (!room.state) return;
   const p = room.state.players[seat];
-  if (!p || p.isCpu === isCpu) return;
-  p.isCpu = isCpu;
-  if (isCpu) p.cpuLevel = room.cpuLevel;
+  if (!p) return;
+  if (isCpu) { p.isCpu = true; p.cpuLevel = room.cpuLevel; }
+  else { p.isCpu = false; }
+}
+// 席を「切断中(再接続待ち)」としてマーク。dc=true の人間席は CPU が代行しない（手札を保持して待つ）。
+function setSeatDc(room, seat, dc) {
+  if (!room.state) return;
+  const p = room.state.players[seat];
+  if (p) p.dc = !!dc;
 }
 function scheduleRelease(room, member) {
   if (member.graceTimer) clearTimeout(member.graceTimer);
+  const grace = room.started ? room.startedGraceMs : room.graceMs;
   member.graceTimer = setTimeout(() => {
     member.graceTimer = null;
-    if (member.connected) return;
+    if (member.connected) return; // 既に復帰済み
     if (room.started) {
-      // 開始後は席を解放しない（token で復帰可能）。全員不在になったらルーム破棄。
-      if (connectedHumans(room) === 0) destroyRoom(room);
+      // 猶予切れ：この席はもう戻らない扱い。CPUに引き継いで残りのプレイヤーが続行できるようにする。
+      member.expired = true;
+      setSeatDc(room, member.seat, false);
+      setSeatCpu(room, member.seat, true);
+      broadcastState(room);
+      scheduleCpuTick(room, room.cpuStepMs);
+      // 接続中の人間が誰もおらず、全メンバーの猶予が切れていれば部屋を破棄。
+      if (connectedHumans(room) === 0 && room.members.every((m) => m.expired)) destroyRoom(room);
       return;
     }
     // ロビー中は席を解放
@@ -178,7 +193,7 @@ function scheduleRelease(room, member) {
     if (member.isHost && room.members.length && !room.members.some((m) => m.isHost)) room.members[0].isHost = true;
     if (room.members.length === 0) { destroyRoom(room); return; }
     broadcastLobby(room);
-  }, room.graceMs);
+  }, grace);
 }
 function destroyRoom(room) {
   if (room.cpuTimer) { clearTimeout(room.cpuTimer); room.cpuTimer = null; }
@@ -198,6 +213,10 @@ function handleConnection(ws) {
     let msg;
     try { msg = JSON.parse(String(data)); } catch { return; }
 
+    // キープアライブ：クライアントのpingに即pongを返す（NAT/Renderのアイドル切断防止＆死活確認）
+    if (msg.t === 'ping') { ws.isAlive = true; send(ws, { t: 'pong' }); return; }
+    if (msg.t === 'pong') { ws.isAlive = true; return; }
+
     switch (msg.t) {
       case 'create': {
         if (room) return;
@@ -206,10 +225,10 @@ function handleConnection(ws) {
         room = {
           code, members: [], started: false, state: null,
           cpuCount: 1, cpuLevel: 'normal', cpuTimer: null,
-          graceMs: GRACE_MS, cpuStepMs: CPU_STEP_MS,
+          graceMs: GRACE_MS, startedGraceMs: STARTED_GRACE_MS, cpuStepMs: CPU_STEP_MS,
         };
         rooms.set(code, room);
-        me = { ws, seat: 0, name: sanitizeName(msg.name) || 'ホスト', isHost: true, connected: true, token: genToken(), graceTimer: null };
+        me = { ws, seat: 0, name: sanitizeName(msg.name) || 'ホスト', isHost: true, connected: true, token: genToken(), graceTimer: null, expired: false };
         room.members.push(me);
         send(ws, { t: 'joined', code, you: me.seat, isHost: true, token: me.token, started: false });
         broadcastLobby(room);
@@ -227,7 +246,7 @@ function handleConnection(ws) {
         const seat = nextFreeSeat(target);
         if (seat < 0) { send(ws, { t: 'error', message: 'ルームが満員です（最大4人）' }); return; }
         room = target;
-        me = { ws, seat, name: sanitizeName(msg.name) || ('プレイヤー' + (seat + 1)), isHost: false, connected: true, token: genToken(), graceTimer: null };
+        me = { ws, seat, name: sanitizeName(msg.name) || ('プレイヤー' + (seat + 1)), isHost: false, connected: true, token: genToken(), graceTimer: null, expired: false };
         room.members.push(me);
         send(ws, { t: 'joined', code: room.code, you: me.seat, isHost: false, token: me.token, started: false });
         broadcastLobby(room);
@@ -236,18 +255,20 @@ function handleConnection(ws) {
       case 'resume': {
         if (room) return;
         const target = rooms.get(String(msg.code || '').trim());
-        if (!target) { send(ws, { t: 'error', message: '接続が切れました。入り直してください', fatal: true }); return; }
+        // 部屋がもう無い（サーバ再起動など）→ 復帰不能を明示（ROOM_GONE）
+        if (!target) { send(ws, { t: 'error', message: 'この対戦はもう存在しません', fatal: true, reason: 'ROOM_GONE' }); return; }
         const member = target.members.find((m) => m.seat === msg.you && m.token === msg.token);
-        if (!member) { send(ws, { t: 'error', message: '接続が切れました。入り直してください', fatal: true }); return; }
+        if (!member) { send(ws, { t: 'error', message: 'この対戦に復帰できませんでした', fatal: true, reason: 'ROOM_GONE' }); return; }
         if (member.ws && member.ws !== ws) { try { member.ws.close(); } catch (e) { /* noop */ } }
         if (member.graceTimer) { clearTimeout(member.graceTimer); member.graceTimer = null; }
-        member.ws = ws; member.connected = true;
+        member.ws = ws; member.connected = true; member.expired = false;
         room = target; me = member;
         send(ws, { t: 'joined', code: target.code, you: member.seat, isHost: member.isHost, token: member.token, started: target.started });
         if (target.started && target.state) {
-          setSeatCpu(target, member.seat, false); // 本人復帰→人間へ
+          setSeatDc(target, member.seat, false);   // 切断中マーク解除
+          setSeatCpu(target, member.seat, false);  // CPU代行していたら人間へ戻す
           send(ws, { t: 'started', you: member.seat, state: E.maskStateFor(target.state, member.seat) });
-          broadcastState(target);                  // 他メンバーへも「人間へ復帰」を反映
+          broadcastState(target);                  // 他メンバーへも「復帰」を反映（再接続中…表示が消える）
           scheduleCpuTick(target, target.cpuStepMs);
         } else {
           broadcastLobby(target);
@@ -303,12 +324,14 @@ function handleConnection(ws) {
       broadcastLobby(room);
       scheduleRelease(room, me);
     } else {
-      setSeatCpu(room, me.seat, true); // 切断中はCPUが代行
+      // 対戦中：席を「切断中(再接続待ち)」にする。猶予の間はCPU代行せず手札を保持して待つ。
+      // 相手には dc=true が配信され「再接続中…」が表示される。
+      setSeatDc(room, me.seat, true);
       if (connectedHumans(room) === 0) {
         if (room.cpuTimer) { clearTimeout(room.cpuTimer); room.cpuTimer = null; }
       } else {
         broadcastState(room);
-        scheduleCpuTick(room, room.cpuStepMs);
+        // dc席はCPU化しないので、その席の手番なら進行は止まり「再接続中…」のまま待機する。
       }
       scheduleRelease(room, me);
     }
@@ -327,7 +350,9 @@ function isOriginAllowed(origin, allowlist) {
 function attachGameServer(httpServer, opts = {}) {
   const allowedOrigins = opts.allowedOrigins;
   if (opts.graceMs != null) GRACE_MS = opts.graceMs;
+  if (opts.startedGraceMs != null) STARTED_GRACE_MS = opts.startedGraceMs;
   if (opts.cpuStepMs != null) CPU_STEP_MS = opts.cpuStepMs;
+  const heartbeatMs = opts.heartbeatMs != null ? opts.heartbeatMs : HEARTBEAT_MS;
   const wss = new WebSocketServer({ noServer: true });
   httpServer.on('upgrade', (req, socket, head) => {
     let pathname = '/';
@@ -336,8 +361,24 @@ function attachGameServer(httpServer, opts = {}) {
     if (!isOriginAllowed(req.headers.origin, allowedOrigins)) {
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); return;
     }
-    wss.handleUpgrade(req, socket, head, (ws) => handleConnection(ws));
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      ws.isAlive = true;
+      ws.on('pong', () => { ws.isAlive = true; });
+      handleConnection(ws);
+    });
   });
+
+  // 死活監視：応答の無い（半開き）ソケットを検出して切断扱いにする。
+  // WebSocketプロトコルのping/pongを送り、前回からpongが無ければ terminate する。
+  const hb = setInterval(() => {
+    wss.clients.forEach((ws) => {
+      if (ws.isAlive === false) { try { ws.terminate(); } catch (e) { /* noop */ } return; }
+      ws.isAlive = false;
+      try { ws.ping(); } catch (e) { /* noop */ }
+    });
+  }, heartbeatMs);
+  if (hb.unref) hb.unref();
+  wss.on('close', () => clearInterval(hb));
   return wss;
 }
 

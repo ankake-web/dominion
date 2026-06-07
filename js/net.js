@@ -32,26 +32,54 @@
   DOM.resolveServerUrl = resolveServerUrl;
   DOM.PROD_SERVER_URL = PROD_SERVER_URL;
 
-  /* ---------- WebSocket クライアント ---------- */
+  /* ---------- WebSocket クライアント（キープアライブ付き） ---------- */
+  const PING_MS = 22000;   // 定期pingでアイドル切断を防ぎ、Render無料枠を眠らせない
+  const DEAD_MS = 35000;   // この時間 何も受信しなければ「死んでいる」とみなして閉じる→再接続
+
   DOM.NetClient = function (handler) {
     let ws = null;
     let closedByUs = false;
     let onCloseCb = null;
+    let pingTimer = null;
+    let monitorTimer = null;
+    let lastRecv = 0;
+
+    function stopHeartbeat() {
+      if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+      if (monitorTimer) { clearInterval(monitorTimer); monitorTimer = null; }
+    }
+    function startHeartbeat() {
+      stopHeartbeat();
+      lastRecv = Date.now();
+      pingTimer = setInterval(() => {
+        try { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'ping' })); } catch (e) { /* noop */ }
+      }, PING_MS);
+      monitorTimer = setInterval(() => {
+        // pongも含め一定時間 何も来なければ半開き＝実質切断。閉じて onclose→再接続に委ねる。
+        if (Date.now() - lastRecv > DEAD_MS) { stopHeartbeat(); try { if (ws) ws.close(); } catch (e) { /* noop */ } }
+      }, 5000);
+    }
+
     const api = {
       connect() {
         return new Promise((resolve, reject) => {
           let url;
           try { url = (DOM.resolveServerUrl || resolveServerUrl)(); ws = new WebSocket(url); }
           catch (e) { reject(e); return; }
-          ws.onopen = () => resolve();
-          ws.onerror = () => reject(new Error('サーバに接続できませんでした'));
-          ws.onmessage = (ev) => { let m; try { m = JSON.parse(String(ev.data)); } catch (e) { return; } handler(m); };
-          ws.onclose = () => { if (closedByUs) return; if (onCloseCb) onCloseCb(); };
+          ws.onopen = () => { startHeartbeat(); resolve(); };
+          ws.onerror = () => { reject(new Error('サーバに接続できませんでした')); };
+          ws.onmessage = (ev) => {
+            lastRecv = Date.now();
+            let m; try { m = JSON.parse(String(ev.data)); } catch (e) { return; }
+            if (m.t === 'pong') return; // キープアライブ応答はUIに渡さない
+            handler(m);
+          };
+          ws.onclose = () => { stopHeartbeat(); if (closedByUs) return; if (onCloseCb) onCloseCb(); };
         });
       },
       send(msg) { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg)); },
       setOnClose(cb) { onCloseCb = cb; },
-      close() { closedByUs = true; if (ws) { try { ws.close(); } catch (e) { /* noop */ } } ws = null; },
+      close() { closedByUs = true; stopHeartbeat(); if (ws) { try { ws.close(); } catch (e) { /* noop */ } } ws = null; },
       isOpen() { return !!ws && ws.readyState === WebSocket.OPEN; },
     };
     return api;

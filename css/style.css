@@ -616,6 +616,23 @@ input.code-input {
 .confirm-modal { max-width: 360px; text-align: center; border-color: var(--gold); }
 .confirm-msg { font-size: 16px; margin: 6px 0 16px; line-height: 1.6; }
 
+/* ===== 切断〜再接続オーバーレイ ===== */
+.reconnect-scrim {
+  position: fixed; inset: 0; z-index: 70;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: rgba(8, 6, 14, 0.72);
+  animation: fade 0.15s ease;
+}
+.reconnect-box {
+  max-width: 340px; text-align: center; align-items: center;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.reconnect-box h3 { color: var(--gold-bright); font-size: 18px; }
+.reconnect-box p { white-space: pre-line; }
+.dc-banner { color: #ffd27a; background: rgba(216, 120, 60, 0.12); border-color: rgba(216, 140, 80, 0.4); }
+.opp-chip.dc { border-color: #c98a4a; background: rgba(201, 138, 74, 0.14); }
+.opp-chip.dc .opp-mini { color: #e0b070; }
+
 /* ===== 接続中スピナー ===== */
 .spinner {
   width: 40px; height: 40px; border-radius: 50%;

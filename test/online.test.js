@@ -9,7 +9,7 @@ const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
 const { JSDOM } = require('jsdom');
-const { attachGameServer, WS_PATH, __reset } = require('../server/gameServer');
+const { attachGameServer, WS_PATH, __reset, rooms } = require('../server/gameServer');
 
 let pass = 0, fail = 0;
 function ok(c, m) { if (c) pass++; else { fail++; console.log('  ✗ FAIL: ' + m); } }
@@ -99,6 +99,21 @@ function makeBrowser(port) {
     host.clickText('ターンを終える');
     ok(await waitUntil(() => guest.UI.store.state.turn.active === 1), 'ゲストに手番交代が同期');
     ok(await waitUntil(() => host.UI.store.state.turn.active === 1), 'ホストにも反映');
+
+    console.log('=== 切断 → 自動再接続で元の対戦に復帰 ===');
+    ok(!!guest.win.localStorage.getItem('dom_online_session'), 'セッションがlocalStorageに保存されている');
+    // サーバ側からゲストの接続を切る（ネット断を模擬）
+    const room = [...rooms.values()][0];
+    const guestMember = room.members.find((m) => m.seat === 1);
+    guestMember.ws.close();
+    ok(await waitUntil(() => host.UI.store.state.players[1].dc === true, 4000), 'ホストに「相手が再接続中(dc)」が伝わる');
+    ok(await waitUntil(() => guest.UI.reconnecting === true, 4000), 'ゲストは再接続中になる');
+    // ゲストは自動で resume して対戦画面に復帰
+    ok(await waitUntil(() => guest.UI.reconnecting === false && guest.UI.view === 'game' && !!guest.UI.store.state, 9000), 'ゲストが自動再接続して復帰');
+    ok(await waitUntil(() => guest.UI.mySeat === 1, 3000), '同じ席(1)に戻る');
+    ok(await waitUntil(() => host.UI.store.state.players[1].dc === false, 4000), 'ホスト側の再接続中表示が消える');
+    const gs2 = guest.UI.store.state;
+    ok(gs2.players[1].hand.every((c) => c !== 'back') && gs2.players[0].hand.every((c) => c === 'back'), '復帰後も手札の秘匿は維持');
 
   } catch (e) {
     fail++; console.log('  ✗ 例外: ' + (e.stack || e.message));

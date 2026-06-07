@@ -327,6 +327,34 @@
     );
   }
 
+  // 対戦中の切断〜再接続オーバーレイ（操作を一旦無効化）
+  function viewReconnectOverlay() {
+    const tries = UI._reconnectTries || 0;
+    return h('div', { class: 'reconnect-scrim' },
+      h('div', { class: 'reconnect-box panel' },
+        h('div', { class: 'spinner' }),
+        h('h3', { style: 'margin:2px 0 0' }, '接続が切れました'),
+        h('p', { class: 'muted', style: 'font-size:13px;line-height:1.6' }, '自動で再接続しています…' + (tries ? '（' + tries + '回目）' : '') + '\nスマホはロック解除すると戻ります。'),
+        h('div', { class: 'row center' },
+          h('button', { class: 'btn btn-sm btn-primary', onclick: () => manualReconnect() }, '今すぐ再接続'),
+          h('button', { class: 'btn btn-sm btn-ghost', onclick: () => confirmLeaveGame() }, '対戦をやめる'))
+      ));
+  }
+
+  // サーバ再起動などで対戦が消えた場合の案内
+  function viewServerGone() {
+    return h('div', { class: 'home' },
+      h('div', { class: 'crest' }, '🧭'),
+      h('h2', null, '対戦が終了しました'),
+      h('p', { class: 'muted', style: 'max-width:320px;font-size:13px;line-height:1.7' },
+        'サーバーが再起動したため、この対戦のデータが失われました。お手数ですが新しい部屋を作って遊び直してください。'),
+      h('div', { class: 'menu' },
+        h('button', { class: 'btn btn-primary btn-block', onclick: () => go('createRoom') }, '新しい部屋を作る'),
+        h('button', { class: 'btn btn-block', onclick: () => go('joinRoom') }, '部屋に参加する'),
+        h('button', { class: 'btn btn-ghost btn-block', onclick: () => go('home') }, 'ホームへ'))
+    );
+  }
+
   /* ============================================================
      遊び方 / カード一覧
      ============================================================ */
@@ -431,15 +459,18 @@
       others.map((i) => {
         const p = state.players[i];
         const isAct = i === t.active;
-        return h('div', { class: 'opp-chip' + (isAct ? ' on' : '') },
-          h('div', { class: 'opp-name' }, (isAct ? '▶ ' : '') + p.name + (p.isCpu ? ' 🤖' : '')),
-          h('div', { class: 'opp-mini' }, '山' + p.deck.length + ' 手' + p.hand.length + ' 捨' + p.discard.length));
+        return h('div', { class: 'opp-chip' + (isAct ? ' on' : '') + (p.dc ? ' dc' : '') },
+          h('div', { class: 'opp-name' }, (isAct ? '▶ ' : '') + p.name + (p.dc ? ' 🔌' : (p.isCpu ? ' 🤖' : ''))),
+          h('div', { class: 'opp-mini' }, p.dc ? '再接続中…' : ('山' + p.deck.length + ' 手' + p.hand.length + ' 捨' + p.discard.length)));
       }));
 
-    // CPU進行中バナー
-    const banner = state.players[actor].isCpu
-      ? h('div', { class: 'cpu-banner' }, '🤖 ' + state.players[actor].name + ' が考えています…')
-      : null;
+    // 相手切断中バナー（dc席があれば「再接続中…」、無ければCPU進行中）
+    const dcSeat = others.find((i) => state.players[i].dc);
+    const banner = dcSeat != null
+      ? h('div', { class: 'cpu-banner dc-banner' }, '🔌 ' + state.players[dcSeat].name + ' が再接続中です…そのままお待ちください')
+      : (state.players[actor].isCpu
+        ? h('div', { class: 'cpu-banner' }, '🤖 ' + state.players[actor].name + ' が考えています…')
+        : null);
 
     // サプライ（種類ごと）
     const buyableId = (id) => interactive && t.phase === 'buy' && !state.pending &&
@@ -772,62 +803,113 @@
   function onNetMessage(msg) {
     switch (msg.t) {
       case 'joined':
-        UI.connecting = null;
+        UI.connecting = null; UI.reconnecting = false; UI._reconnectTries = 0; stopReconnect();
         UI.roomCode = msg.code; UI.mySeat = msg.you; UI.isHost = msg.isHost; UI.netToken = msg.token;
-        UI.reconnecting = false; UI._reconnectTries = 0;
-        // 以後の不意の切断は自動再接続（resume）に委ねる
         if (UI.netClient) UI.netClient.setOnClose(() => onNetDisconnect());
+        saveSession(); // 再読込/切断後も元の席へ戻れるよう永続化
         if (!msg.started && UI.view !== 'game') UI.view = 'lobby';
         render();
         break;
       case 'lobby':
         UI.connecting = null;
         UI.lobby = msg; UI.roomCode = msg.code;
-        if (UI.view !== 'game' && UI.view !== 'connecting') UI.view = 'lobby';
-        else if (UI.view === 'connecting') UI.view = 'lobby';
+        if (UI.view === 'connecting' || (UI.view !== 'game')) UI.view = 'lobby';
         render();
         break;
       case 'started':
-        UI.connecting = null;
-        UI.mySeat = msg.you; UI.reconnecting = false; UI._reconnectTries = 0;
+        UI.connecting = null; UI.reconnecting = false; UI._reconnectTries = 0; stopReconnect();
+        UI.mySeat = msg.you;
         UI.store.setState(msg.state);
         UI.view = 'game';
+        saveSession();
         render();
         break;
       case 'state':
         UI.store.setState(msg.state);
+        if (msg.state && msg.state.gameOver) clearSession(); // 対戦終了→以後の自動復帰は不要
+        else touchSession();
         render();
         break;
       case 'error':
+        if (UI.connecting) { toast(msg.message); UI.connecting = null; resetOnline(); go(msg.fatal ? 'home' : 'onlineMenu'); break; }
+        if (msg.fatal) { showServerGone(); break; } // 再接続できない＝対戦が消えた
         toast(msg.message);
-        if (UI.connecting) { UI.connecting = null; resetOnline(); go(msg.fatal ? 'home' : 'onlineMenu'); break; }
-        if (msg.fatal) { resetOnline(); go('home'); }
         break;
     }
   }
 
-  // 予期しない切断 → 自動再接続（resume）を試みる
+  /* ---------- セッション永続化（再読込/タブ破棄でも元の席へ戻る） ---------- */
+  const SESSION_KEY = 'dom_online_session';
+  function saveSession() {
+    try {
+      if (UI.roomCode && UI.netToken && UI.mySeat != null)
+        localStorage.setItem(SESSION_KEY, JSON.stringify({ code: UI.roomCode, seat: UI.mySeat, token: UI.netToken, ts: Date.now() }));
+    } catch (e) { /* noop */ }
+  }
+  function touchSession() {
+    // ts を更新（猶予判定を新しく保つ）。書き込みは間引く。
+    const now = Date.now();
+    if (now - (UI._sessionTs || 0) < 20000) return;
+    UI._sessionTs = now; saveSession();
+  }
+  function loadSession() { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch (e) { return null; } }
+  function clearSession() { try { localStorage.removeItem(SESSION_KEY); } catch (e) { /* noop */ } UI._sessionTs = 0; }
+
+  /* ---------- 自動再接続（指数バックオフ＋復帰イベント） ---------- */
+  function stopReconnect() { if (UI._reconnectTimer) { clearTimeout(UI._reconnectTimer); UI._reconnectTimer = null; } }
+  // 予期しない切断 → 再接続ループ開始
   function onNetDisconnect() {
-    if (UI.mode !== 'online') return;
-    if (UI.view === 'home') return;
-    if (!UI.netToken || !UI.roomCode) { resetOnline(); go('home'); return; }
-    if (UI._reconnectTries >= 8) { toast('サーバに再接続できませんでした'); resetOnline(); go('home'); return; }
-    UI._reconnectTries++;
-    UI.reconnecting = true; render();
-    setTimeout(() => {
-      const client = DOM.NetClient(onNetMessage);
-      UI.netClient = client;
-      if (!UI.store || UI.store.mode !== 'online') UI.store = DOM.NetStore(client);
-      else UI.store.client = client;
-      client.setOnClose(() => onNetDisconnect());
-      client.connect()
-        .then(() => client.send({ t: 'resume', code: UI.roomCode, you: UI.mySeat, token: UI.netToken }))
-        .catch(() => onNetDisconnect());
-    }, Math.min(1500 * UI._reconnectTries, 6000));
+    if (UI.mode !== 'online' || UI.view === 'serverGone') return;
+    if (!UI.netToken || !UI.roomCode) return;
+    if (!UI.reconnecting) { UI.reconnecting = true; render(); }
+    scheduleReconnect(false);
+  }
+  function scheduleReconnect(immediate) {
+    stopReconnect();
+    if (UI.mode !== 'online' || !UI.netToken || !UI.roomCode) return;
+    const tries = UI._reconnectTries || 0;
+    const delay = immediate ? 200 : Math.min(1000 * Math.pow(2, Math.min(tries, 4)), 15000); // 1,2,4,8,16→上限15s
+    UI._reconnectTimer = setTimeout(doReconnect, delay);
+  }
+  function doReconnect() {
+    UI._reconnectTimer = null;
+    if (UI.mode !== 'online' || !UI.netToken || !UI.roomCode) return;
+    UI._reconnectTries = (UI._reconnectTries || 0) + 1;
+    if (UI.netClient) { try { UI.netClient.close(); } catch (e) { /* noop */ } }
+    const client = DOM.NetClient(onNetMessage);
+    UI.netClient = client;
+    if (!UI.store || UI.store.mode !== 'online') UI.store = DOM.NetStore(client);
+    else UI.store.client = client;
+    client.setOnClose(() => onNetDisconnect());
+    render();
+    client.connect()
+      .then(() => client.send({ t: 'resume', code: UI.roomCode, you: UI.mySeat, token: UI.netToken }))
+      .catch(() => scheduleReconnect(false)); // 接続失敗→バックオフで粘る（あきらめない）
+  }
+  // ネット復帰・画面/タブ復帰で即再接続（スマホのロック解除など）
+  function onResumeTrigger() {
+    if (UI.mode !== 'online' || !UI.netToken || !UI.roomCode) return;
+    if (UI.netClient && UI.netClient.isOpen() && !UI.reconnecting) return; // 健全
+    UI._reconnectTries = 0;
+    if (!UI.reconnecting) { UI.reconnecting = true; render(); }
+    scheduleReconnect(true);
+  }
+  function manualReconnect() { UI._reconnectTries = 0; UI.reconnecting = true; scheduleReconnect(true); }
+  // サーバ再起動などで対戦が消えた → 明示して新規部屋作成へ誘導（無限再接続にしない）
+  function showServerGone() {
+    stopReconnect();
+    if (UI.netClient) { try { UI.netClient.close(); } catch (e) { /* noop */ } }
+    clearSession();
+    UI.netClient = null; UI.store = null; UI.mySeat = null; UI.roomCode = null;
+    UI.netToken = null; UI.reconnecting = false; UI._reconnectTries = 0; UI.lobby = null;
+    UI.mode = 'local'; UI.connecting = null; UI.view = 'serverGone';
+    render();
   }
 
   function resetOnline() {
+    stopReconnect();
     if (UI.netClient) { try { UI.netClient.close(); } catch (e) { /* noop */ } }
+    clearSession();
     UI.netClient = null; UI.store = null; UI.mode = 'local';
     UI.mySeat = null; UI.roomCode = null; UI.isHost = false; UI.lobby = null;
     UI.netToken = null; UI.reconnecting = false; UI._reconnectTries = 0; UI.connecting = null;
@@ -900,12 +982,15 @@
       case 'lobby': root = viewLobby(); break;
       case 'rules': root = viewRules(); break;
       case 'cardList': root = viewCardList(); break;
+      case 'serverGone': root = viewServerGone(); break;
       case 'game': root = viewGameDispatch(); break;
       default: root = viewHome();
     }
     app.appendChild(root);
     if (UI.sheet) app.appendChild(viewSheet());
     if (UI.confirm) app.appendChild(viewConfirm());
+    // 対戦中/ロビーで切断〜再接続中はオーバーレイで操作を一旦無効化
+    if (UI.reconnecting && (UI.view === 'game' || UI.view === 'lobby')) app.appendChild(viewReconnectOverlay());
     if (UI.toast) app.appendChild(h('div', { class: 'toast' }, UI.toast));
     maybeRunCpu();
     audioTick();
@@ -930,7 +1015,24 @@
   function boot() {
     const params = new URLSearchParams(location.search);
     const room = params.get('room');
-    if (room) { UI.prefillCode = room.replace(/\D/g, '').slice(0, 4); UI.view = 'joinRoom'; }
+    if (room) {
+      UI.prefillCode = room.replace(/\D/g, '').slice(0, 4); UI.view = 'joinRoom';
+    } else {
+      // 直前の対戦があり（猶予内）クリーンに抜けていなければ、自動で元の席へ復帰を試みる。
+      const saved = loadSession();
+      if (saved && saved.code && saved.token && saved.seat != null && Date.now() - (saved.ts || 0) < 15 * 60 * 1000) {
+        UI.mode = 'online'; UI.roomCode = saved.code; UI.mySeat = saved.seat; UI.netToken = saved.token;
+        UI.reconnecting = true; UI.view = 'game'; UI._reconnectTries = 0;
+        scheduleReconnect(true);
+      }
+    }
+    // 復帰イベントで即再接続（スマホのロック解除/タブ復帰/ネット復帰）
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      window.addEventListener('online', onResumeTrigger);
+      window.addEventListener('focus', onResumeTrigger);
+      window.addEventListener('pageshow', onResumeTrigger);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) onResumeTrigger(); });
+    }
     // 最初のタップで音声を解禁（ブラウザの自動再生制限対策）。BGMがオンなら開始。
     if (DOM.audio && typeof document.addEventListener === 'function') {
       const unlock = () => {

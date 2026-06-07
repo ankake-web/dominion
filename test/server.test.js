@@ -40,7 +40,7 @@ function mkClient(url) {
 
 (async () => {
   const server = http.createServer((req, res) => { res.writeHead(200); res.end('ok'); });
-  attachGameServer(server, { cpuStepMs: 15, graceMs: 300 });
+  attachGameServer(server, { cpuStepMs: 15, graceMs: 300, startedGraceMs: 500, heartbeatMs: 100000 });
   await new Promise((r) => server.listen(0, r));
   const port = server.address().port;
   const URL = `ws://127.0.0.1:${port}${WS_PATH}`;
@@ -117,7 +117,15 @@ function mkClient(url) {
     h.close();
     await sleep(50);
 
-    console.log('=== 切断→CPU代行→再接続で復帰 ===');
+    console.log('=== ping / pong キープアライブ ===');
+    const pc = mkClient(URL); await pc.open();
+    pc.send({ t: 'ping' });
+    const pong = await pc.waitFor((m) => m.t === 'pong', 1000);
+    ok(pong && pong.t === 'pong', 'ping に pong が返る');
+    pc.close();
+    await sleep(30);
+
+    console.log('=== 切断中は「再接続中(dc)」・席と手札を保持、token再接続で完全復元 ===');
     const a = mkClient(URL); await a.open();
     a.send({ t: 'create', name: 'A' });
     const aj = await a.waitFor((m) => m.t === 'joined');
@@ -129,24 +137,42 @@ function mkClient(url) {
     await a.waitFor((m) => m.t === 'lobby' && m.cpuCount === 0);
     a.send({ t: 'start' });
     await a.waitFor((m) => m.t === 'started');
-    await b.waitFor((m) => m.t === 'started');
-    // B が切断 → サーバは席1をCPU化して進行継続
+    const bStarted = await b.waitFor((m) => m.t === 'started');
+    const bHand0 = bStarted.state.players[1].hand.slice(); // B の手札を控える
+    // B が切断 → A は dc=true / isCpu=false を受信（CPUに即置換しない）
     b.close();
-    await sleep(80);
-    // A がターンを終える → 席1(CPU代行)が自動で進み、A に戻ってくる
-    a.send({ t: 'action', action: { type: 'END_ACTION_PHASE' } });
-    await a.waitFor((m) => m.t === 'state' && m.state.turn.phase === 'buy');
-    a.send({ t: 'action', action: { type: 'END_TURN' } });
-    const cont = await a.waitFor((m) => m.t === 'state' && m.state.players[1].isCpu === true, 3000);
-    ok(cont.state.players[1].isCpu === true, '切断中は席1がCPU代行');
-    // B が token で再接続 → 人間へ復帰
+    const dcState = await a.waitFor((m) => m.t === 'state' && m.state.players[1].dc === true, 2000);
+    ok(dcState.state.players[1].dc === true && dcState.state.players[1].isCpu === false, '(a) 切断中は dc=true・CPU化しない（手札保持）');
+    ok(a.ws.readyState === 1, '(c) 相手(A)の接続は維持される（落ちない）');
+    // B が token で素早く再接続（猶予内）→ 同じ席・同じ手札・盤面が戻る
     const b2 = mkClient(URL); await b2.open();
     b2.send({ t: 'resume', code: code2, you: bj.you, token: bj.token });
-    const reStarted = await b2.waitFor((m) => m.t === 'started', 3000);
-    ok(reStarted.you === 1, '再接続で席1へ復帰');
-    const human = await a.waitFor((m) => m.t === 'state' && m.state.players[1].isCpu === false, 3000);
-    ok(human.state.players[1].isCpu === false, '再接続で席1が人間へ戻る');
+    const reStarted = await b2.waitFor((m) => m.t === 'started', 2000);
+    ok(reStarted.you === 1, '(a) 同じ席(1)へ復帰');
+    ok(JSON.stringify(reStarted.state.players[1].hand) === JSON.stringify(bHand0), '(b) 同じ手札が復元される');
+    ok(!!reStarted.state.supply && !!reStarted.state.turn, '(b) 盤面（サプライ・手番）も復元される');
+    const cleared = await a.waitFor((m) => m.t === 'state' && m.state.players[1].dc === false, 2000);
+    ok(cleared.state.players[1].dc === false, 'A 側の「再接続中」表示が消える');
     a.close(); b2.close();
+    await sleep(50);
+
+    console.log('=== 猶予切れ → CPUが引き継いで進行継続 ===');
+    const a3 = mkClient(URL); await a3.open();
+    a3.send({ t: 'create', name: 'A3' });
+    const a3j = await a3.waitFor((m) => m.t === 'joined');
+    const b3 = mkClient(URL); await b3.open();
+    b3.send({ t: 'join', code: a3j.code, name: 'B3' });
+    await b3.waitFor((m) => m.t === 'joined');
+    a3.send({ t: 'setCpu', count: 0 });
+    await a3.waitFor((m) => m.t === 'lobby' && m.cpuCount === 0);
+    a3.send({ t: 'start' });
+    await a3.waitFor((m) => m.t === 'started');
+    await b3.waitFor((m) => m.t === 'started');
+    b3.close();
+    // startedGraceMs(500ms) を過ぎると席1がCPUに引き継がれ、A3 に配信される
+    const cpuTaken = await a3.waitFor((m) => m.t === 'state' && m.state.players[1].isCpu === true, 3000);
+    ok(cpuTaken.state.players[1].isCpu === true && cpuTaken.state.players[1].dc === false, '猶予切れで席1がCPUに引き継がれる');
+    a3.close();
 
   } catch (e) {
     fail++; console.log('  ✗ 例外: ' + (e.stack || e.message));
