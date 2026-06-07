@@ -1,28 +1,18 @@
-# カード中央イラスト（PNG）の置き場所
+# カード中央イラストの置き場所
 
-このフォルダに、各カードの**中央イラストだけ**を PNG で置きます。
-カード枠・コスト・名前・種別・効果欄は CSS/SVG で描画するので、**イラストに文字を焼き込まないでください**。
+各カードの**中央イラストだけ**を置きます（カード枠・コスト・名前・種別・効果欄は CSS/SVG で描画）。
+アプリは `assets/art/<id>.jpg` を読み込みます（元の高解像度PNGは `pictier/` に保管・gitには載せません）。
 
-## 期待するファイル名（17種）
+## 現在の収録状況（17種中16種）
 
-| ファイル名 | カード | ファイル名 | カード |
-|---|---|---|---|
-| `copper.png` | 銅貨 | `cellar.png` | 地下貯蔵庫 |
-| `silver.png` | 銀貨 | `market.png` | 市場 |
-| `gold.png` | 金貨 | `militia.png` | 民兵 |
-| `estate.png` | 屋敷 | `mine.png` | 鉱山 |
-| `duchy.png` | 公領 | `moat.png` | 堀 |
-| `province.png` | 属州 | `remodel.png` | 改築 |
-| `curse.png` | 呪い | `smithy.png` | 鍛冶屋 |
-| | | `village.png` | 村 |
-| | | `woodcutter.png` | 木こり |
-| | | `workshop.png` | 工房 |
+配置済み（16）: copper, silver, gold, duchy, province, curse, cellar, market, militia,
+mine, moat, remodel, smithy, village, woodcutter, workshop
 
-## 作るときのコツ
-- **大きな主題を1つ**に絞る（小さく表示してもカードの違いが分かるように）。
-- **明るめ・カラフル**に。背景まで描き込んでOK（中央枠が `object-fit: cover` で切り取って表示します）。
-- 文字・枠・コストは**入れない**（テンプレート側で描画）。
-- 推奨サイズの目安: 正方形〜やや縦長（例 800×800〜800×1000px）の PNG。
-- ファイルが無い間は、テンプレートが各カードのアイコン（絵文字）で仮表示します。
+未配置（1）: **estate（屋敷）** … イラストが無いため、テンプレートのアイコン（🏡）で仮表示。
+`assets/art/estate.jpg` を置けば自動で反映されます。
 
-置いたら `cards.html`（プレビュー）や本体UIで自動的に反映されます。
+## 差し替え・追加のしかた
+- ファイル名は `assets/art/<id>.jpg`（例: 屋敷なら `estate.jpg`）。
+- **大きな主題を1つ**・明るめ/カラフルに。文字・枠・コストは入れない（テンプレ側で描画）。
+- 中央枠は `object-fit: cover` で切り取り表示。横長/正方形どちらでも可。
+- 重い画像は `sips -s format jpeg -s formatOptions 88 -Z 850 入力 --out assets/art/<id>.jpg` 程度に縮小推奨。
