@@ -1,14 +1,16 @@
 {
   "name": "dominion",
   "version": "1.0.0",
-  "description": "ドミニオン基本セット スマホ2台対戦Webアプリ",
+  "description": "ドミニオン基本セット スマホ対戦Webアプリ（CPU・2〜4人・オンライン）",
   "scripts": {
-    "test": "node test/engine.test.js && node test/ui.test.js && node test/online.test.js",
+    "test": "node test/engine.test.js && node test/cpu.test.js && node test/ui.test.js && node test/online.test.js",
+    "verify:visual": "node test/verify-visual.js",
     "serve": "python3 -m http.server 8000"
   },
-  "keywords": ["dominion", "boardgame", "firebase"],
+  "keywords": ["dominion", "boardgame", "firebase", "cpu"],
   "license": "MIT",
   "devDependencies": {
-    "jsdom": "^24.1.3"
+    "jsdom": "^24.1.3",
+    "puppeteer": "^25.1.0"
   }
 }
