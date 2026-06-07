@@ -35,7 +35,7 @@
     const frame = el('img', 'dcard-frame-img');
     frame.alt = ''; frame.setAttribute('aria-hidden', 'true'); frame.loading = 'lazy';
     frame.addEventListener('error', () => { frame.style.display = 'none'; root.classList.add('noframe'); });
-    frame.src = 'assets/frames/' + theme + '.jpg';
+    frame.src = 'assets/frames/' + theme + '.png';
     root.appendChild(frame);
 
     // 中央イラスト
