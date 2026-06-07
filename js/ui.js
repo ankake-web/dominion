@@ -112,7 +112,21 @@
   function go(view) { UI.view = view; UI.sheet = null; render(); }
   function dispatch(action) { UI.sheet = null; UI.store.dispatch(action); }
   function closeSheet() { UI.sheet = null; render(); }
-  function showSheet(cardId, primary) { UI.sheet = { cardId, primary }; render(); }
+  function showSheet(cardId, primary) { UI.sheet = { cardId, primary }; sfx('tap'); render(); }
+  function sfx(n) { if (DOM.audio) DOM.audio.sfx(n); }
+  function toggleBgm() { if (DOM.audio) { DOM.audio.toggleBgm(); render(); } }
+  function toggleSe() { if (DOM.audio) { DOM.audio.toggleSe(); render(); } }
+  function cycleTrack() { if (DOM.audio) { DOM.audio.setTrack(DOM.audio.track() + 1); render(); } }
+  // サウンド設定バー（ホーム用）
+  function audioBar() {
+    if (!DOM.audio) return null;
+    const bgm = DOM.audio.isBgm(), se = DOM.audio.isSe();
+    const trackName = DOM.audio.tracks()[DOM.audio.track()] || '';
+    return h('div', { class: 'audio-bar' },
+      h('button', { class: 'btn btn-sm' + (bgm ? ' on' : ''), onclick: toggleBgm }, (bgm ? '🎵' : '🔇') + ' BGM'),
+      bgm ? h('button', { class: 'btn btn-sm', onclick: cycleTrack }, '♪ ' + trackName) : null,
+      h('button', { class: 'btn btn-sm' + (se ? ' on' : ''), onclick: toggleSe }, (se ? '🔊' : '🔇') + ' 効果音'));
+  }
   function toast(msg) {
     UI.toast = msg; render();
     clearTimeout(UI._t);
@@ -144,7 +158,8 @@
         h('div', { class: 'menu-split' },
           h('button', { class: 'btn btn-ghost', onclick: () => go('rules') }, '📖 遊び方'),
           h('button', { class: 'btn btn-ghost', onclick: () => { UI._listReturn = 'home'; go('cardList'); } }, '🃏 カード一覧')
-        )
+        ),
+        audioBar()
       )
     );
   }
@@ -386,6 +401,7 @@
 
     const top = h('div', { class: 'topbar' },
       h('button', { class: 'home-btn', title: 'TOPに戻る', onclick: () => confirmLeaveGame() }, '🏠'),
+      DOM.audio ? h('button', { class: 'home-btn', title: 'BGM切替', onclick: toggleBgm }, DOM.audio.isBgm() ? '🎵' : '🔇') : null,
       h('div', { class: 'turn-tag' },
         h('div', { class: 'who' }, active.name + ' の番' + (active.isCpu ? '（CPU・' + LEVEL_JP[active.cpuLevel] + '）' : '')),
         h('div', { class: 'phase' }, phaseLabel(t.phase))),
@@ -840,14 +856,40 @@
     if (UI.confirm) app.appendChild(viewConfirm());
     if (UI.toast) app.appendChild(h('div', { class: 'toast' }, UI.toast));
     maybeRunCpu();
+    audioTick();
   }
   DOM.render = render;
+
+  // 効果音: ゲーム中はログの更新に合わせて鳴らす。勝敗成立で勝利ファンファーレ。
+  function audioTick() {
+    if (!DOM.audio) return;
+    const s = UI.store && UI.store.state;
+    if (UI.view === 'game' && s) {
+      DOM.audio.reactToLog(s.log || []);
+      if (s.gameOver && !UI._gameOverSounded) { UI._gameOverSounded = true; DOM.audio.victory(); }
+      if (!s.gameOver) UI._gameOverSounded = false;
+    } else {
+      DOM.audio.resetLog();
+      UI._gameOverSounded = false;
+    }
+  }
 
   /* ---------- 起動 ---------- */
   function boot() {
     const params = new URLSearchParams(location.search);
     const room = params.get('room');
     if (room) { UI.prefillCode = room.replace(/\D/g, '').slice(0, 4); UI.view = 'joinRoom'; }
+    // 最初のタップで音声を解禁（ブラウザの自動再生制限対策）。BGMがオンなら開始。
+    if (DOM.audio && typeof document.addEventListener === 'function') {
+      const unlock = () => {
+        DOM.audio.unlock();
+        if (DOM.audio.isBgm()) DOM.audio.startBgm();
+        document.removeEventListener('pointerdown', unlock);
+        document.removeEventListener('click', unlock);
+      };
+      document.addEventListener('pointerdown', unlock);
+      document.addEventListener('click', unlock);
+    }
     render();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

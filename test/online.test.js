@@ -26,7 +26,7 @@ function makeBrowser(port) {
   const win = dom.window;
   win.WebSocket = WebSocket; // 実WebSocketをブラウザのWebSocketとして注入
   const load = (f) => win.eval(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'));
-  ['js/cards.js', 'js/engine.js', 'js/cpu.js', 'js/store.js', 'js/net.js', 'js/ui.js'].forEach(load);
+  ['js/cards.js', 'js/engine.js', 'js/cpu.js', 'js/store.js', 'js/net.js', 'js/audio.js', 'js/ui.js'].forEach(load);
   win.DOM.resolveServerUrl = () => `ws://127.0.0.1:${port}${WS_PATH}`; // 接続先をテストサーバへ
   win.document.dispatchEvent(new win.Event('DOMContentLoaded'));
   const doc = win.document;
