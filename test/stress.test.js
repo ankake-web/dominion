@@ -43,15 +43,19 @@ function mkClient(url) {
 }
 
 (async () => {
+  // attachGameServer がプロセスガードを設置することを確認するため、設置前の数を控える
+  const baseUE = process.listenerCount('uncaughtException');
+  const baseUR = process.listenerCount('unhandledRejection');
+
+  const server = http.createServer((req, res) => { res.writeHead(200); res.end('ok'); });
+  const wss = attachGameServer(server, { cpuStepMs: 10, graceMs: 200, startedGraceMs: 400, heartbeatMs: 100000 });
+  await new Promise((r) => server.listen(0, r));
+
   // テスト中に万一の未処理例外/Rejectionが出たら検出して失敗にする（サーバが握れていない印）
   let uncaught = null;
   const onUncaught = (e) => { uncaught = e; };
   process.on('uncaughtException', onUncaught);
   process.on('unhandledRejection', onUncaught);
-
-  const server = http.createServer((req, res) => { res.writeHead(200); res.end('ok'); });
-  const wss = attachGameServer(server, { cpuStepMs: 10, graceMs: 200, startedGraceMs: 400, heartbeatMs: 100000 });
-  await new Promise((r) => server.listen(0, r));
   const port = server.address().port;
   const URL = `ws://127.0.0.1:${port}${WS_PATH}`;
 
@@ -73,8 +77,8 @@ function mkClient(url) {
 
   try {
     console.log('=== 堅牢化の前提: ハンドラが付いている ===');
-    ok(process.listenerCount('uncaughtException') >= 1, 'process に uncaughtException ハンドラ');
-    ok(process.listenerCount('unhandledRejection') >= 1, 'process に unhandledRejection ハンドラ');
+    ok(process.listenerCount('uncaughtException') > baseUE, 'attachGameServer が uncaughtException ハンドラを設置');
+    ok(process.listenerCount('unhandledRejection') > baseUR, 'attachGameServer が unhandledRejection ハンドラを設置');
 
     const probe = mkClient(URL); await probe.open();
     probe.send({ t: 'ping' });

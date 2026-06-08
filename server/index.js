@@ -11,7 +11,12 @@
 //                      オリジン（例 https://<user>.github.io）を設定する。未設定=全許可。
 
 const http = require('node:http');
-const { attachGameServer } = require('./gameServer');
+const { attachGameServer, installProcessGuards } = require('./gameServer');
+
+// プロセスごと落とさない最後の砦。Render で落ちると in-memory の全対戦が消えて復帰不能になるため、
+// 未処理例外/Rejection はログに残して稼働を継続する（uncaughtException/unhandledRejection を捕捉）。
+// 起動直後から有効化（attachGameServer 内でも冪等に呼ばれる）。
+installProcessGuards();
 
 const PORT = Number(process.env.PORT) || 8787;
 const allowedOrigins = process.env.ALLOWED_ORIGINS

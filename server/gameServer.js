@@ -46,8 +46,25 @@ const ALLOWED = new Set([
 const rooms = new Map();
 
 /* ---------- 小物 ---------- */
+// 送信は必ず握りつぶす。ws.send は OPEN 判定後でも throw し得る(ERR_STREAM_DESTROYED 等)、
+// JSON.stringify も理論上 throw し得る。broadcast やタイマー内で呼ばれるため、ここで止めないと
+// 例外が setTimeout/forEach の外へ伝播し uncaughtException → プロセス即死になる。
 function send(ws, msg) {
-  if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
+  try {
+    if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
+  } catch (e) { /* 1接続の送信失敗で全体を巻き込まない */ }
+}
+
+// プロセス全体の最後の砦。各所で try/catch するが、漏れた例外でも“プロセスごと”落とさない。
+// （Render では落ちると in-memory の全対戦が消えて復帰不能になるため、稼働継続を優先）
+let _guardsInstalled = false;
+function installProcessGuards() {
+  if (_guardsInstalled) return;
+  _guardsInstalled = true;
+  if (typeof process !== 'undefined' && process.on) {
+    process.on('uncaughtException', (err) => { try { console.error('[dominion] uncaughtException:', (err && (err.stack || err.message)) || err); } catch (e) { /* noop */ } });
+    process.on('unhandledRejection', (reason) => { try { console.error('[dominion] unhandledRejection:', (reason && (reason.stack || reason.message)) || reason); } catch (e) { /* noop */ } });
+  }
 }
 function genToken() { return randomBytes(24).toString('base64url'); }
 function genCode() {
@@ -151,12 +168,16 @@ function scheduleCpuTick(room, delay) {
   if (connectedHumans(room) === 0) return; // 観戦者ゼロなら一時停止（再接続で再開）
   room.cpuTimer = setTimeout(() => {
     room.cpuTimer = null;
-    if (!room.started || !currentIsCpu(room)) return;
-    let action;
-    try { action = CPU.decide(room.state); } catch { return; }
-    try { room.state = E.reduce(room.state, action); } catch { return; }
-    broadcastState(room);
-    scheduleCpuTick(room, CPU.delayFor(action));
+    // タイマー内の例外は uncaughtException → プロセス死になるため、全体を保護する。
+    try {
+      if (!room.started || !currentIsCpu(room) || room._destroyed) return;
+      const action = CPU.decide(room.state);
+      room.state = E.reduce(room.state, action);
+      broadcastState(room);
+      scheduleCpuTick(room, CPU.delayFor(action));
+    } catch (e) {
+      try { console.error('[dominion] CPU tick error:', (e && e.message) || e); } catch (e2) { /* noop */ }
+    }
   }, delay);
 }
 
@@ -179,28 +200,40 @@ function scheduleRelease(room, member) {
   const grace = room.started ? room.startedGraceMs : room.graceMs;
   member.graceTimer = setTimeout(() => {
     member.graceTimer = null;
-    if (member.connected) return; // 既に復帰済み
-    if (room.started) {
-      // 猶予切れ：この席はもう戻らない扱い。CPUに引き継いで残りのプレイヤーが続行できるようにする。
-      member.expired = true;
-      setSeatDc(room, member.seat, false);
-      setSeatCpu(room, member.seat, true);
-      broadcastState(room);
-      scheduleCpuTick(room, room.cpuStepMs);
-      // 接続中の人間が誰もおらず、全メンバーの猶予が切れていれば部屋を破棄。
-      if (connectedHumans(room) === 0 && room.members.every((m) => m.expired)) destroyRoom(room);
-      return;
+    // 猶予タイマー内の例外も uncaughtException → プロセス死になるため保護する。
+    try {
+      if (member.connected || room._destroyed) return; // 既に復帰済み/破棄済み
+      if (room.started) {
+        // 猶予切れ：この席はもう戻らない扱い。CPUに引き継いで残りのプレイヤーが続行できるようにする。
+        member.expired = true;
+        setSeatDc(room, member.seat, false);
+        setSeatCpu(room, member.seat, true);
+        broadcastState(room);
+        scheduleCpuTick(room, room.cpuStepMs);
+        // 接続中の人間が誰もおらず、全メンバーの猶予が切れていれば部屋を破棄。
+        if (connectedHumans(room) === 0 && room.members.every((m) => m.expired)) destroyRoom(room);
+        return;
+      }
+      // ロビー中は席を解放
+      room.members = room.members.filter((m) => m !== member);
+      if (member.isHost && room.members.length && !room.members.some((m) => m.isHost)) room.members[0].isHost = true;
+      if (room.members.length === 0) { destroyRoom(room); return; }
+      broadcastLobby(room);
+    } catch (e) {
+      try { console.error('[dominion] grace timer error:', (e && e.message) || e); } catch (e2) { /* noop */ }
     }
-    // ロビー中は席を解放
-    room.members = room.members.filter((m) => m !== member);
-    if (member.isHost && room.members.length && !room.members.some((m) => m.isHost)) room.members[0].isHost = true;
-    if (room.members.length === 0) { destroyRoom(room); return; }
-    broadcastLobby(room);
   }, grace);
 }
 function destroyRoom(room) {
+  if (room._destroyed) return;          // 冪等化：二重破棄でも無害
+  room._destroyed = true;
   if (room.cpuTimer) { clearTimeout(room.cpuTimer); room.cpuTimer = null; }
-  for (const m of room.members) if (m.graceTimer) { clearTimeout(m.graceTimer); m.graceTimer = null; }
+  for (const m of room.members) {
+    if (m.graceTimer) { clearTimeout(m.graceTimer); m.graceTimer = null; }
+    // 破棄時点でメンバーは切断済み(ws=null)が前提。万一残っていれば閉じるだけ（リスナーは
+    // 触らない＝ws内部のclients掃除/errorハンドラを巻き添えにしない）。
+    if (m.ws) { try { m.ws.close(); } catch (e) { /* noop */ } m.ws = null; }
+  }
   rooms.delete(room.code);
 }
 
@@ -212,15 +245,22 @@ function handleConnection(ws) {
   let me = null;
   let badJoins = 0;
 
+  // ★最重要: 各WebSocketに 'error' リスナーを必ず付ける。
+  // ws(EventEmitter)は 'error' をリスナー無しで emit すると throw → プロセス即死。
+  // 本番では ECONNRESET / NATタイムアウト等で頻繁に 'error' が飛ぶため、ここで握らないと落ちる。
+  ws.on('error', (err) => { try { console.error('[dominion] ws error:', (err && err.code) || (err && err.message) || err); } catch (e) { /* noop */ } });
+
   ws.on('message', (data) => {
     let msg;
     try { msg = JSON.parse(String(data)); } catch { return; }
+    if (!msg || typeof msg !== 'object') return;
+    // メッセージ処理全体を保護。switch内のどこで throw しても、emitの外へ出さない（=プロセス死を防ぐ）。
+    try {
+      // キープアライブ：クライアントのpingに即pongを返す（NAT/Renderのアイドル切断防止＆死活確認）
+      if (msg.t === 'ping') { ws.isAlive = true; send(ws, { t: 'pong' }); return; }
+      if (msg.t === 'pong') { ws.isAlive = true; return; }
 
-    // キープアライブ：クライアントのpingに即pongを返す（NAT/Renderのアイドル切断防止＆死活確認）
-    if (msg.t === 'ping') { ws.isAlive = true; send(ws, { t: 'pong' }); return; }
-    if (msg.t === 'pong') { ws.isAlive = true; return; }
-
-    switch (msg.t) {
+      switch (msg.t) {
       case 'create': {
         if (room) return;
         let code;
@@ -262,7 +302,15 @@ function handleConnection(ws) {
         if (!target) { send(ws, { t: 'error', message: 'この対戦はもう存在しません', fatal: true, reason: 'ROOM_GONE' }); return; }
         const member = target.members.find((m) => m.seat === msg.you && m.token === msg.token);
         if (!member) { send(ws, { t: 'error', message: 'この対戦に復帰できませんでした', fatal: true, reason: 'ROOM_GONE' }); return; }
-        if (member.ws && member.ws !== ws) { try { member.ws.close(); } catch (e) { /* noop */ } }
+        // 旧接続を片付ける。先に member.ws を外して旧wsのcloseハンドラを無効化する
+        // （close側の me.ws!==ws チェックで早期returnする）。旧wsは close すれば ws ライブラリが
+        // 内部リスナーで wss.clients から除去し、参照が切れて GC される（リスナーは手動除去しない
+        // ＝ライブラリ内部のclients掃除リスナーを巻き添えにしないため）。
+        if (member.ws && member.ws !== ws) {
+          const oldWs = member.ws;
+          member.ws = null;
+          try { oldWs.close(); } catch (e) { /* noop */ }
+        }
         if (member.graceTimer) { clearTimeout(member.graceTimer); member.graceTimer = null; }
         member.ws = ws; member.connected = true; member.expired = false;
         room = target; me = member;
@@ -308,14 +356,18 @@ function handleConnection(ws) {
       }
       case 'action': {
         if (!room || !me || !room.started || !room.state) return;
+        if (room.state.gameOver) { send(ws, { t: 'error', message: 'この対戦は終了しました' }); return; }
         const action = msg.action;
-        if (!action || !ALLOWED.has(action.type)) { send(ws, { t: 'error', message: 'この操作は対応していません' }); return; }
+        if (!action || typeof action !== 'object' || !ALLOWED.has(action.type)) { send(ws, { t: 'error', message: 'この操作は対応していません' }); return; }
         if (E.actor(room.state) !== me.seat) { send(ws, { t: 'error', message: 'あなたの操作できる場面ではありません' }); return; }
         try { room.state = E.reduce(room.state, action); } catch { send(ws, { t: 'error', message: '無効な操作です' }); return; }
         broadcastState(room);
         scheduleCpuTick(room, room.cpuStepMs);
         break;
       }
+      }
+    } catch (e) {
+      try { console.error('[dominion] message handler error:', (e && e.message) || e); } catch (e2) { /* noop */ }
     }
   });
 
@@ -351,38 +403,50 @@ function isOriginAllowed(origin, allowlist) {
 
 /* ---------- HTTPサーバに WebSocket を相乗りさせる ---------- */
 function attachGameServer(httpServer, opts = {}) {
+  installProcessGuards(); // プロセス全体の最後の砦（index.js 経由でもテスト経由でも有効に）
   const allowedOrigins = opts.allowedOrigins;
   if (opts.graceMs != null) GRACE_MS = opts.graceMs;
   if (opts.startedGraceMs != null) STARTED_GRACE_MS = opts.startedGraceMs;
   if (opts.cpuStepMs != null) CPU_STEP_MS = opts.cpuStepMs;
   const heartbeatMs = opts.heartbeatMs != null ? opts.heartbeatMs : HEARTBEAT_MS;
-  const wss = new WebSocketServer({ noServer: true });
+  // maxPayload: 巨大ペイロードでheap爆発→プロセス死を防ぐ（正規メッセージは数KB）。
+  const maxPayload = opts.maxPayload != null ? opts.maxPayload : 64 * 1024;
+  const wss = new WebSocketServer({ noServer: true, maxPayload });
+  wss.on('error', (err) => { try { console.error('[dominion] wss error:', (err && err.message) || err); } catch (e) { /* noop */ } });
   httpServer.on('upgrade', (req, socket, head) => {
+    // upgrade中のrawソケットにも 'error' を付けておく（ハンドシェイク中のリセットで落とさない）。
+    socket.on('error', (err) => { try { console.error('[dominion] upgrade socket error:', (err && err.code) || err); } catch (e) { /* noop */ } });
     let pathname = '/';
     try { pathname = new URL(req.url || '/', 'http://localhost').pathname; } catch (e) { /* noop */ }
-    if (pathname !== WS_PATH) return;
+    if (pathname !== WS_PATH) { try { socket.destroy(); } catch (e) { /* noop */ } return; }
     if (!isOriginAllowed(req.headers.origin, allowedOrigins)) {
-      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); return;
+      try { socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); } catch (e) { /* noop */ } return;
     }
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      ws.isAlive = true;
-      ws.on('pong', () => { ws.isAlive = true; });
-      handleConnection(ws);
-    });
+    try {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        ws.isAlive = true;
+        ws.on('pong', () => { ws.isAlive = true; });
+        handleConnection(ws);
+      });
+    } catch (e) { try { socket.destroy(); } catch (e2) { /* noop */ } }
   });
 
   // 死活監視：応答の無い（半開き）ソケットを検出して切断扱いにする。
   // WebSocketプロトコルのping/pongを送り、前回からpongが無ければ terminate する。
   const hb = setInterval(() => {
     wss.clients.forEach((ws) => {
-      if (ws.isAlive === false) { try { ws.terminate(); } catch (e) { /* noop */ } return; }
-      ws.isAlive = false;
-      try { ws.ping(); } catch (e) { /* noop */ }
+      try {
+        if (ws.isAlive === false) { ws.terminate(); return; }
+        ws.isAlive = false;
+        ws.ping();
+      } catch (e) { /* noop */ }
     });
   }, heartbeatMs);
   if (hb.unref) hb.unref();
-  wss.on('close', () => clearInterval(hb));
+  const stopHb = () => clearInterval(hb);
+  wss.on('close', stopHb);
+  httpServer.on('close', stopHb); // noServer では wss 'close' が発火しないため、httpの閉鎖でも確実に止める
   return wss;
 }
 
-module.exports = { attachGameServer, WS_PATH, isOriginAllowed, rooms, __reset: () => { for (const r of rooms.values()) destroyRoom(r); rooms.clear(); } };
+module.exports = { attachGameServer, installProcessGuards, WS_PATH, isOriginAllowed, rooms, __reset: () => { for (const r of rooms.values()) destroyRoom(r); rooms.clear(); } };
