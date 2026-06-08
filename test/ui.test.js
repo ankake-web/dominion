@@ -143,7 +143,7 @@ try {
   byText('.hand-cards.big .card .cname', '工房').closest('.card').click();
   clickText('.sheet .btn', '使う');
   ok($('.modal') && $('.modal h3').textContent.includes('工房'), '工房モーダル');
-  clickContains('.modal .chip', '村');
+  clickContains('.modal .card', '村');
   ok(UI.store.state.players[0].discard.includes('village'), '工房で村を獲得');
 
   console.log('=== 民兵→相手CPUの対応も自動 ===');
@@ -190,8 +190,8 @@ try {
   ok($('.board') && $('.home-btn'), '盤面にTOPボタンがある');
   $('.home-btn').click();
   ok($('.confirm-modal'), '確認ダイアログ表示');
-  clickText('.confirm-modal .btn', 'つづける');
-  ok(!$('.confirm-modal'), '「つづける」で閉じる・対戦継続');
+  clickText('.confirm-modal .btn', '戻る');
+  ok(!$('.confirm-modal'), '「戻る」で閉じる・対戦継続');
   $('.home-btn').click();
   clickText('.confirm-modal .btn', 'TOPに戻る');
   ok(UI.view === 'home' && $('.home h1'), 'TOPに戻った');

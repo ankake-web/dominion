@@ -55,6 +55,7 @@
     reconnecting: false,
     _reconnectTries: 0,
     setup: {
+      randomOrder: false,
       seats: [
         { name: _humanName, type: 'human', level: 'normal' },
         { name: CPU_NAME_POOL[Math.floor(Math.random() * CPU_NAME_POOL.length)], type: 'cpu', level: 'normal' },
@@ -95,6 +96,18 @@
     return 'type-action';
   }
   function typeLabel(id) { return DOM.CARDS[id].types.map((t) => TYPE_JP[t]).join('・'); }
+  // 財宝は枚数で色分け（場のチップで金貨/銀貨/銅貨を見分けやすく）
+  function coinClass(id) { return (id === 'copper' || id === 'silver' || id === 'gold') ? ' c-' + id : ''; }
+  // 直近の「誰が何をした」行（手番案内・ゲーム進行行は除く）。全員に見せる用。
+  function lastMove(log) {
+    if (!Array.isArray(log)) return null;
+    for (let i = log.length - 1; i >= 0; i--) {
+      const l = log[i];
+      if (!l || /の番です|ゲーム開始|ゲーム終了|を引いた/.test(l)) continue;
+      return l;
+    }
+    return null;
+  }
   function cardArt(id) {
     return h('img', {
       class: 'card-art', src: 'assets/' + id + '.jpg', alt: DOM.CARDS[id].name, loading: 'lazy',
@@ -229,7 +242,9 @@
       h('div', { class: 'panel' },
         h('div', { class: 'field' }, h('label', null, '人数'), countSeg),
         h('div', { class: 'seat-list' }, rows),
-        h('button', { class: 'btn btn-primary btn-block', onclick: () => startConfigured() }, 'この設定で開始')
+        h('div', { class: 'field' }, h('label', null, '手番の順番'),
+          segmented([{ value: false, label: '上から順' }, { value: true, label: 'ランダム' }], UI.setup.randomOrder, (v) => { UI.setup.randomOrder = v; render(); })),
+        h('button', { class: 'btn btn-primary btn-block', onclick: () => startConfigured(null, { shuffle: UI.setup.randomOrder }) }, 'この設定で開始')
       ),
       h('button', { class: 'btn btn-ghost', onclick: () => go('home') }, '戻る')
     );
@@ -512,7 +527,7 @@
 
     // 場（プレイ済み）
     const playArea = active.inPlay.length
-      ? h('div', { class: 'play-area' }, active.inPlay.map((id) => h('div', { class: 'chip-card ' + typeClass(id) }, DOM.CARDS[id].name)))
+      ? h('div', { class: 'play-area' }, active.inPlay.map((id) => h('div', { class: 'chip-card ' + typeClass(id) + coinClass(id) }, DOM.CARDS[id].name)))
       : h('div', { class: 'play-area' }, h('div', { class: 'empty-note' }, 'まだ場にカードはありません'));
 
     // 手札（種類でグループ化・重ね表示）
@@ -536,8 +551,12 @@
     const logLines = state.log.slice(-6);
     const logBox = h('div', { class: 'log' }, logLines.map((l, i) => h('div', { class: i === logLines.length - 1 ? 'latest' : '' }, l)));
 
+    const moveLine = lastMove(state.log);
+    const moveBar = h('div', { class: 'last-move' }, moveLine ? h('span', null, '🃏 ' + moveLine) : h('span', { class: 'muted' }, 'まだ動きはありません'));
+
     return h('div', { class: 'board' },
       top,
+      moveBar,
       othersStrip,
       UI.mode === 'online' ? h('div', { class: 'muted', style: 'font-size:11px;text-align:center;margin:-2px 0 4px' }, '部屋 ' + UI.roomCode + '　/　あなた: ' + me.name) : null,
       banner,
@@ -655,10 +674,14 @@
   }
   function modalMultiHand(p, title, desc, confirmLabel, allowZero, onConfirm) {
     const chips = p.hand.map((id, idx) =>
-      handChip(id, idx, UI.selection.includes(idx), () => {
-        const i = UI.selection.indexOf(idx);
-        if (i >= 0) UI.selection.splice(i, 1); else UI.selection.push(idx);
-        render();
+      cardEl(id, {
+        size: 'sm',
+        extra: UI.selection.includes(idx) ? 'selected' : 'selectable',
+        onClick: () => {
+          const i = UI.selection.indexOf(idx);
+          if (i >= 0) UI.selection.splice(i, 1); else UI.selection.push(idx);
+          render();
+        },
       }));
     const n = UI.selection.length;
     return modalShell(title, desc, chips,
@@ -667,10 +690,14 @@
   }
   function modalMilitia(p, need, hasMoat) {
     const chips = p.hand.map((id, idx) =>
-      handChip(id, idx, UI.selection.includes(idx), () => {
-        const i = UI.selection.indexOf(idx);
-        if (i >= 0) UI.selection.splice(i, 1); else if (UI.selection.length < need) UI.selection.push(idx);
-        render();
+      cardEl(id, {
+        size: 'sm',
+        extra: UI.selection.includes(idx) ? 'selected' : 'selectable',
+        onClick: () => {
+          const i = UI.selection.indexOf(idx);
+          if (i >= 0) UI.selection.splice(i, 1); else if (UI.selection.length < need) UI.selection.push(idx);
+          render();
+        },
       }));
     const remain = need - UI.selection.length;
     const buttons = h('div', null,
@@ -682,7 +709,9 @@
   }
   function modalSingleHand(p, title, desc, filter, onPick, skip) {
     const elig = p.hand.map((id, idx) => ({ id, idx })).filter((x) => filter(x.id));
-    const chips = elig.length ? elig.map((x) => handChip(x.id, x.idx, false, () => onPick(x.id))) : [h('p', { class: 'muted' }, '対象のカードがありません')];
+    const chips = elig.length
+      ? elig.map((x) => cardEl(x.id, { size: 'sm', extra: 'selectable', onClick: () => onPick(x.id) }))
+      : [h('p', { class: 'muted' }, '対象のカードがありません')];
     const btn = skip ? h('button', { class: 'btn btn-block', onclick: skip.on }, skip.label) : null;
     return modalShell(title, desc, chips, btn);
   }
@@ -690,8 +719,9 @@
     const order = DOM.SUPPLY_ORDER(state.kingdom);
     const elig = order.filter((id) => filter(id) && (state.supply[id] || 0) > 0);
     const chips = elig.length
-      ? elig.map((id) => h('div', { class: 'chip ' + typeClass(id), onclick: () => onPick(id) },
-          h('span', { class: 'cc' }, DOM.CARDS[id].cost), DOM.CARDS[id].name, h('span', { class: 'muted', style: 'font-size:11px' }, '残' + state.supply[id])))
+      ? elig.map((id) => h('div', { class: 'pick-supply' },
+          cardEl(id, { size: 'sm', extra: 'selectable', onClick: () => onPick(id) }),
+          h('div', { class: 'pick-remain' }, '残' + state.supply[id])))
       : [h('p', { class: 'muted' }, '獲得できるカードがありません')];
     const footer = (!elig.length && skipOnEmpty) ? h('button', { class: 'btn btn-block', onclick: skipOnEmpty }, '獲得せずに進む') : null;
     return modalShell(title, desc, chips, footer);
@@ -753,10 +783,14 @@
   /* ============================================================
      ゲーム開始・部屋管理・CPU駆動
      ============================================================ */
-  function startConfigured(configs) {
+  function startConfigured(configs, opts) {
     configs = configs || UI.setup.seats.map((s) => ({ name: s.name, isCpu: s.type === 'cpu', level: s.level }));
     // 名前の空欄を補完
     configs = configs.map((c, i) => ({ name: (c.name && c.name.trim()) || ('プレイヤー' + (i + 1)), isCpu: !!c.isCpu, level: c.level || 'normal' }));
+    // 手番をランダムにする場合はシャッフル（Fisher-Yates）
+    if (opts && opts.shuffle) {
+      for (let i = configs.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = configs[i]; configs[i] = configs[j]; configs[j] = t; }
+    }
     UI.lastConfigs = configs;
     const st = E().createInitialState(configs);
     UI.mode = 'local'; UI.mySeat = null; UI.localViewer = firstHuman(st);
@@ -982,7 +1016,7 @@
       h('div', { class: 'modal confirm-modal' },
         h('p', { class: 'confirm-msg' }, c.message),
         h('button', { class: 'btn btn-primary btn-block', onclick: c.onYes }, c.yesLabel || 'OK'),
-        h('button', { class: 'btn btn-ghost btn-block', style: 'margin-top:8px', onclick: () => { UI.confirm = null; render(); } }, 'つづける')));
+        h('button', { class: 'btn btn-ghost btn-block', style: 'margin-top:8px', onclick: () => { UI.confirm = null; render(); } }, c.noLabel || '戻る')));
   }
 
   // CPUの自動進行（局面が変わるたびに呼ぶ）
