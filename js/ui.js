@@ -6,19 +6,15 @@
   const E = () => DOM.engine;
   const LEVEL_JP = { easy: '弱', normal: '普通', hard: '強' };
 
-  /* ---------- ランダムな初期名（世界観に合う領主名） ---------- */
-  // 「あなた／対戦相手」だと盛り下がるので、入力欄の初期値をランダムな名前にする。
+  /* ---------- ランダムな初期名（普通の短い名前） ---------- */
+  // 「あなた／対戦相手」だと盛り下がるので入力欄の初期値をランダムに。称号はつけない。
   const NAME_POOL = [
-    'アルヴィス', 'セシリア', 'ガウェイン', 'イザベラ', 'ロドリク', 'エルザ', 'コンラート', 'フィオナ',
-    'レオンハルト', 'マルグリット', 'ダリウス', 'ヴィオラ', 'ジークフリート', 'アデル', 'テオドール',
-    'ミレーユ', 'ラインハルト', 'ユーフェミア', 'ギルベルト', 'ソフィア', 'エドガー', 'リーゼロット',
-    'フェルナン', 'カトリーヌ', 'オズワルド', 'クラリス', 'バルトロ', 'ブリジット', 'ヴァレリー', 'ノエル',
+    'アン', 'ケン', 'ユイ', 'レオ', 'ミオ', 'ソラ', 'ハル', 'リク', 'エマ', 'ルカ',
+    'ナオ', 'アヤ', 'カイ', 'メイ', 'ユウ', 'リオ', 'サラ', 'ニコ', 'ルナ', 'テオ',
+    'マヤ', 'セナ', 'ジン', 'ノア', 'リン', 'コウ', 'モモ', 'ショウ', 'アオ', 'ヒロ',
   ];
-  // CPUは少しキャラ立ちした称号つきの名前で（盤面では🤖も付く）。
-  const CPU_NAME_POOL = [
-    '鉄腕のゴラン', '賢者エルミ', '守銭奴バルト', '策士リオン', '黄金のドレイク', '辺境伯ノルド',
-    '魔女セルマ', '女王アデル', '隠者カイル', '豪商メルカ', '騎士団長グレイ', '占星術師ニナ',
-  ];
+  // CPUも普通の名前（盤面では🤖が付くので区別できる）。
+  const CPU_NAME_POOL = NAME_POOL;
   function randPick(pool, exclude) {
     const avail = pool.filter((n) => !(exclude || []).includes(n));
     const list = avail.length ? avail : pool;
@@ -133,7 +129,7 @@
       h('div', { class: 'pcost' }, c.cost),
       h('div', { class: 'pname' }, c.name),
       cardArt(id),
-      h('div', { class: 'pile-count' }, '残' + n)
+      h('div', { class: 'pile-count' + (n <= 2 ? ' lo' : n <= 5 ? ' mid' : '') }, '残' + n)
     );
   }
 
@@ -611,7 +607,7 @@
     }
     if (t.phase === 'action') {
       return h('div', { class: 'actions-bar' },
-        h('button', { class: 'btn btn-primary btn-block', onclick: () => dispatch({ type: 'END_ACTION_PHASE' }) }, '購入フェーズへ ▶'));
+        h('button', { class: 'btn btn-primary btn-block', onclick: () => endActionPhase(state, viewer) }, '購入フェーズへ ▶'));
     }
     const hasTreasure = state.players[viewer].hand.some((c) => DOM.CARDS[c].types.includes('treasure'));
     return h('div', { class: 'actions-bar' },
@@ -964,6 +960,21 @@
       onYes: quitToHome,
     };
     render();
+  }
+  // アクションがまだ使えるのに購入フェーズへ進もうとしたら確認する
+  function endActionPhase(state, viewer) {
+    const t = state.turn;
+    const hasAction = t.actions > 0 && state.players[viewer].hand.some((c) => DOM.CARDS[c] && DOM.CARDS[c].types.includes('action'));
+    if (hasAction) {
+      UI.confirm = {
+        message: 'まだアクションカードが使えます。購入フェーズに進みますか？',
+        yesLabel: '購入フェーズへ進む',
+        onYes: () => { UI.confirm = null; dispatch({ type: 'END_ACTION_PHASE' }); },
+      };
+      render();
+    } else {
+      dispatch({ type: 'END_ACTION_PHASE' });
+    }
   }
   function viewConfirm() {
     const c = UI.confirm;

@@ -534,6 +534,12 @@ input.code-input {
   border: 1px solid rgba(216, 180, 106, 0.45);
 }
 .pile.empty .pile-count { color: #e0a0a0; }
+/* 残りが少なくなったら残数の色で警告（残5以下=琥珀、残2以下=赤） */
+.pile-count.mid { color: #ffd36b; border-color: rgba(255, 200, 90, 0.7); }
+.pile-count.lo {
+  color: #ff9a86; border-color: rgba(255, 120, 90, 0.85);
+  background: rgba(70, 12, 12, 0.88); box-shadow: 0 0 8px rgba(255, 80, 60, 0.5);
+}
 .sheet-card { position: relative; overflow: hidden; }
 
 /* ===== メニュー・設定（追加） ===== */

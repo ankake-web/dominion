@@ -98,7 +98,11 @@ try {
 
   console.log('=== 購入フェーズ → 銀貨購入 ===');
   clickText('.actions-bar button', '購入フェーズへ ▶');
-  ok(UI.store.state.turn.phase === 'buy', '購入フェーズ');
+  // 村を引いてアクションがまだ使えるので、購入フェーズ移行に確認ダイアログが出る
+  ok(byText('.confirm-modal .btn', '購入フェーズへ進む'), 'アクションが使えるのに購入フェーズへ→確認が出る');
+  ok(UI.store.state.turn.phase === 'action', '確認中はまだアクションフェーズ');
+  byText('.confirm-modal .btn', '購入フェーズへ進む').click(); // 進む
+  ok(UI.store.state.turn.phase === 'buy', '確認OKで購入フェーズへ');
   clickText('.actions-bar button', '財宝を全部出す');
   st = UI.store.state; st.turn.coins = 6; st.turn.buys = 1; setState(st);
   byText('.supply-grid .pile .pname', '銀貨').closest('.pile').click();

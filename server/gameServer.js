@@ -25,8 +25,8 @@ const WS_PATH = '/ws';
 const MAX_PLAYERS = 4;
 const MIN_PLAYERS = 2;
 const LEVELS = ['easy', 'normal', 'hard'];
-// CPUのキャラ名（席ごとに一定 → ロビーと対戦で同じ名前になる）
-const CPU_NAMES = ['鉄腕のゴラン', '賢者エルミ', '守銭奴バルト', '策士リオン', '黄金のドレイク', '辺境伯ノルド'];
+// CPUの名前（普通の短い名前。席ごとに一定 → ロビーと対戦で同じ名前になる）
+const CPU_NAMES = ['ケン', 'ユイ', 'レオ', 'ミオ', 'ソラ', 'ハル'];
 function cpuName(seat) { return CPU_NAMES[seat % CPU_NAMES.length]; }
 
 // タイミング（attachGameServer で上書き可能。テストでは短縮値を注入）
