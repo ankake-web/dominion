@@ -110,7 +110,7 @@
   }
   function cardArt(id) {
     return h('img', {
-      class: 'card-art', src: 'assets/' + id + '.jpg', alt: DOM.CARDS[id].name, loading: 'lazy',
+      class: 'card-art', src: 'asset/' + id + '.jpg', alt: DOM.CARDS[id].name, loading: 'lazy',
       onerror: function () { this.style.display = 'none'; if (this.parentElement) this.parentElement.classList.add('art-failed'); },
     });
   }
@@ -746,7 +746,7 @@
       h('div', { class: 'sheet' },
         h('div', { class: 'grip' }),
         h('div', { class: 'zoom-wrap ' + typeClass(id) },
-          h('img', { class: 'zoom-img', src: 'assets/' + id + '.jpg', alt: c.name, onerror: function () { this.style.display = 'none'; if (this.parentElement) this.parentElement.classList.add('noimg'); } }),
+          h('img', { class: 'zoom-img', src: 'asset/' + id + '.jpg', alt: c.name, onerror: function () { this.style.display = 'none'; if (this.parentElement) this.parentElement.classList.add('noimg'); } }),
           h('div', { class: 'zoom-fallback' }, c.name)),
         h('div', { class: 'zoom-info' },
           h('div', { class: 'zoom-head' },
@@ -1144,7 +1144,7 @@
     const a = centerOf(src), b = centerOf(dst);
     const fly = document.createElement('div');
     fly.className = 'fly-card ' + typeClass(id);
-    const img = document.createElement('img'); img.src = 'assets/' + id + '.jpg'; img.alt = '';
+    const img = document.createElement('img'); img.src = 'asset/' + id + '.jpg'; img.alt = '';
     img.onerror = function () { this.style.display = 'none'; };
     const nm = document.createElement('div'); nm.className = 'fln'; nm.textContent = DOM.CARDS[id].name;
     fly.appendChild(img); fly.appendChild(nm);
