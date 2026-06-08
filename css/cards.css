@@ -34,7 +34,7 @@
 
 /* 中央イラスト（枠の背面。透明窓から見える分だけが表示される） */
 .dcard-art {
-  position: absolute; left: 4%; top: 24%; width: 92%; height: 52%;
+  position: absolute; left: 4%; top: 21%; width: 92%; height: 50%;
   z-index: 1; overflow: hidden;
 }
 .dcard-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; z-index: 1; }
@@ -46,7 +46,7 @@
 
 /* コスト（左上バッジの中央に重ねる。最重要：擦れないよう中央へ） */
 .dcard-cost {
-  position: absolute; left: 5.5%; top: 6.4%; width: 13%; height: 10%;
+  position: absolute; left: 4.3%; top: 3.4%; width: 12.5%; height: 9.5%;
   z-index: 3; display: flex; align-items: center; justify-content: center;
 }
 .dcard-cost span {
@@ -56,7 +56,7 @@
 
 /* カード名（上部バナー。大きめ・気持ち下げる） */
 .dcard-name {
-  position: absolute; left: 25%; top: 6%; width: 68%; height: 11%;
+  position: absolute; left: 23%; top: 4.6%; width: 68%; height: 11%;
   z-index: 3; display: flex; align-items: center; justify-content: center; text-align: center;
 }
 .dcard-name span {
@@ -67,7 +67,7 @@
 
 /* 種別（名前下バナー。日本語のみ・枠中央に） */
 .dcard-type {
-  position: absolute; left: 29%; top: 20.2%; width: 46%; height: 5.2%;
+  position: absolute; left: 28%; top: 17.4%; width: 44%; height: 4.5%;
   z-index: 3; display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
 .dcard-type span {
@@ -77,10 +77,10 @@
 
 /* 効果欄（下部の羊皮紙領域。左上から順番に・余白をとって） */
 .dcard-effects {
-  position: absolute; left: 19%; top: 76.5%; width: 62%; height: 16.5%;
+  position: absolute; left: 15%; top: 74.5%; width: 70%; height: 20%;
   z-index: 3; --eff-fs: 4.2cqw;
   display: flex; flex-direction: column; justify-content: flex-start;
-  gap: 1.7cqw; padding: 0.5cqw 0.5cqw 0;
+  gap: 1.7cqw; padding: 1cqw 0.5cqw 0;
 }
 .dcard-eff { flex: 0 0 auto; min-height: 0; display: flex; align-items: flex-start; gap: 2.2cqw; }
 .dcard-eff .diamond {

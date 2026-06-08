@@ -31,9 +31,9 @@
     const root = el('div', 'dcard theme-' + theme);
     if (opts.onClick) { root.style.cursor = 'pointer'; root.addEventListener('click', () => opts.onClick(card)); }
 
-    // 枠画像（透明窓つき）。財宝は金属別フレーム、それ以外は種別フレーム。
+    // 枠画像（透明窓つき）。財宝は金属別フレーム、堀(リアクション)はアクション枠を流用。
     const TREASURE_FRAME = { copper: 'copper', silver: 'silver', gold: 'gold' };
-    const frameKey = TREASURE_FRAME[card.id] || theme;
+    const frameKey = TREASURE_FRAME[card.id] || (theme === 'reaction' ? 'action' : theme);
     const frame = el('img', 'dcard-frame-img');
     frame.alt = ''; frame.setAttribute('aria-hidden', 'true'); frame.loading = 'lazy';
     frame.addEventListener('error', () => { frame.style.display = 'none'; root.classList.add('noframe'); });
