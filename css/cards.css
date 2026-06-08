@@ -46,7 +46,7 @@
 
 /* コスト（左上バッジの中央に重ねる。最重要：擦れないよう中央へ） */
 .dcard-cost {
-  position: absolute; left: 5.5%; top: 4.6%; width: 13%; height: 10%;
+  position: absolute; left: 5.5%; top: 6.4%; width: 13%; height: 10%;
   z-index: 3; display: flex; align-items: center; justify-content: center;
 }
 .dcard-cost span {
@@ -54,25 +54,25 @@
   text-shadow: 0 0.35cqw 0.4cqw rgba(255, 248, 220, 0.55);
 }
 
-/* カード名（上部バナー） */
+/* カード名（上部バナー。大きめ・気持ち下げる） */
 .dcard-name {
-  position: absolute; left: 25%; top: 4.8%; width: 68%; height: 12%;
+  position: absolute; left: 25%; top: 6%; width: 68%; height: 11%;
   z-index: 3; display: flex; align-items: center; justify-content: center; text-align: center;
 }
 .dcard-name span {
-  font-family: 'Cinzel', 'Shippori Mincho', serif; font-weight: 800; font-size: 8.6cqw;
+  font-family: 'Cinzel', 'Shippori Mincho', serif; font-weight: 800; font-size: 9.8cqw;
   color: var(--ink); line-height: 1; white-space: nowrap; letter-spacing: 0.01em;
 }
-.dcard-name.long span { font-size: 6.4cqw; }
+.dcard-name.long span { font-size: 7.2cqw; }
 
-/* 種別（名前下バナー） */
+/* 種別（名前下バナー。日本語のみ・枠中央に） */
 .dcard-type {
-  position: absolute; left: 27%; top: 20.3%; width: 46%; height: 5%;
+  position: absolute; left: 29%; top: 20.2%; width: 46%; height: 5.2%;
   z-index: 3; display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
 .dcard-type span {
-  font-size: 3cqw; font-weight: 700; color: var(--accent-dark);
-  letter-spacing: 0.02em; white-space: nowrap;
+  font-size: 3.5cqw; font-weight: 700; color: var(--accent-dark);
+  letter-spacing: 0.04em; white-space: nowrap;
 }
 
 /* 効果欄（下部の羊皮紙領域。左上から順番に・余白をとって） */
