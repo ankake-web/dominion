@@ -757,3 +757,55 @@ input.code-input {
   max-width: 90%;
   text-align: center;
 }
+
+/* ============================================================
+   演出: 購入カードが捨札へ飛ぶ / アクション使用エフェクト
+   ============================================================ */
+#dom-fx { position: fixed; inset: 0; pointer-events: none; z-index: 90; overflow: hidden; }
+.fly-card {
+  position: fixed; width: 64px; height: 90px; border-radius: 7px; overflow: hidden;
+  background: #2a2336; border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+  transition: transform 0.6s cubic-bezier(0.45, 0.02, 0.4, 1), opacity 0.6s ease;
+  will-change: transform, opacity;
+}
+.fly-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fly-card .fln {
+  position: absolute; left: 0; right: 0; bottom: 0; font-size: 9px; line-height: 1.25;
+  text-align: center; background: rgba(15, 12, 20, 0.72); color: #fff; padding: 1px 2px;
+}
+
+.fx-burst { position: fixed; transform: translate(-50%, -50%); pointer-events: none; display: flex; flex-direction: column; align-items: center; }
+.fx-burst .backdrop {
+  position: absolute; left: 50%; top: 50%; width: 280px; height: 280px; transform: translate(-50%, -50%);
+  border-radius: 50%; opacity: 0;
+  background: radial-gradient(circle, rgba(18, 10, 28, 0.6) 0%, rgba(18, 10, 28, 0.25) 45%, rgba(18, 10, 28, 0) 72%);
+}
+.fx-burst .ring {
+  width: 70px; height: 70px; border-radius: 50%; border: 3px solid rgba(255, 226, 150, 0.95);
+  box-shadow: 0 0 26px rgba(255, 206, 110, 0.85), inset 0 0 18px rgba(255, 206, 110, 0.5); opacity: 0;
+}
+.fx-burst .lbl {
+  margin-top: 10px; font-family: 'Cinzel', 'Shippori Mincho', serif; font-weight: 800; font-size: 17px;
+  color: #ffe7a8; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.95); white-space: nowrap; opacity: 0;
+  background: rgba(20, 13, 28, 0.62); padding: 4px 16px; border-radius: 999px;
+  border: 1px solid rgba(255, 210, 120, 0.55); box-shadow: 0 0 18px rgba(255, 200, 90, 0.35);
+}
+.fx-burst.go .backdrop { animation: fxBack 0.95s ease forwards; }
+.fx-burst.go .ring { animation: fxRing 0.85s ease-out forwards; }
+.fx-burst.go .lbl { animation: fxLbl 1s ease forwards; }
+@keyframes fxBack { 0% { opacity: 0; } 22% { opacity: 1; } 65% { opacity: 0.9; } 100% { opacity: 0; } }
+@keyframes fxRing { 0% { opacity: 0.95; transform: scale(0.35); } 100% { opacity: 0; transform: scale(2.4); } }
+@keyframes fxLbl {
+  0% { opacity: 0; transform: translateY(6px) scale(0.9); }
+  25% { opacity: 1; transform: translateY(0) scale(1.05); }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-8px) scale(1); }
+}
+
+.play-area .chip-card.fx-cast { animation: chipCast 0.72s ease; }
+@keyframes chipCast {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.16); box-shadow: 0 0 16px rgba(255, 206, 110, 0.9), 0 0 4px rgba(255, 235, 170, 0.9); }
+  100% { transform: scale(1); }
+}

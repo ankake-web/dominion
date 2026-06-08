@@ -129,7 +129,7 @@
     const n = state.supply[id] || 0;
     const cls = 'pile has-art ' + (opts.size === 'sm' ? 'sm ' : '') + typeClass(id) +
       (n <= 0 ? ' empty' : '') + (opts.buyable ? ' buyable' : '') + (opts.gainable ? ' gainable' : '');
-    return h('div', { class: cls, onclick: opts.onClick },
+    return h('div', { class: cls, onclick: opts.onClick, 'data-pile': id },
       h('div', { class: 'pcost' }, c.cost),
       h('div', { class: 'pname' }, c.name),
       cardArt(id),
@@ -487,7 +487,7 @@
       others.map((i) => {
         const p = state.players[i];
         const isAct = i === t.active;
-        return h('div', { class: 'opp-chip' + (isAct ? ' on' : '') + (p.dc ? ' dc' : '') },
+        return h('div', { class: 'opp-chip' + (isAct ? ' on' : '') + (p.dc ? ' dc' : ''), 'data-seat': i },
           h('div', { class: 'opp-name' }, (isAct ? '▶ ' : '') + p.name + (p.dc ? ' 🔌' : (p.isCpu ? ' 🤖' : ''))),
           h('div', { class: 'opp-mini' }, p.dc ? '再接続中…' : ('山' + p.deck.length + ' 手' + p.hand.length + ' 捨' + p.discard.length)));
       }));
@@ -549,7 +549,8 @@
       supply,
       h('div', { class: 'zone-h' }, h('span', { class: 't' }, '場')),
       playArea,
-      h('div', { class: 'zone-h' }, h('span', { class: 't' }, me.name + ' の手札'), h('span', { class: 'c' }, me.hand.length + ' 枚')),
+      h('div', { class: 'zone-h' }, h('span', { class: 't' }, me.name + ' の手札'),
+        h('span', { class: 'c', 'data-self-pile': '1' }, '山' + me.deck.length + '・捨' + me.discard.length + '・手' + me.hand.length)),
       h('div', { class: 'hand-zone' }, handBlocks),
       logBox,
       viewActionBar(state, viewer, actor, interactive)
@@ -1022,6 +1023,7 @@
     if (UI.toast) app.appendChild(h('div', { class: 'toast' }, UI.toast));
     maybeRunCpu();
     audioTick();
+    boardFxTick();
   }
   DOM.render = render;
 
@@ -1037,6 +1039,95 @@
       DOM.audio.resetLog();
       UI._gameOverSounded = false;
     }
+  }
+
+  /* ---------- 演出: 購入カードが捨札へ飛ぶ / アクション使用エフェクト ----------
+     state差分（サプライ減・場の増加）から検知。描画後にDOM位置を取って動かす。 */
+  function fxLayer() {
+    let l = document.getElementById('dom-fx');
+    if (!l) { l = document.createElement('div'); l.id = 'dom-fx'; document.body.appendChild(l); }
+    return l;
+  }
+  function snapshotForFx(s) {
+    const a = s.turn.active;
+    return {
+      supply: Object.assign({}, s.supply),
+      active: a,
+      inPlay: (s.players[a].inPlay || []).slice(),
+      discardLens: s.players.map((p) => (p.discard ? p.discard.length : 0)),
+    };
+  }
+  function boardFxTick() {
+    if (UI.view !== 'game' || !DOM.CARDS) { UI._fxSnap = null; return; }
+    const s = UI.store && UI.store.state;
+    if (!s || s.gameOver) { UI._fxSnap = s ? snapshotForFx(s) : null; return; }
+    const cur = snapshotForFx(s);
+    const prev = UI._fxSnap;
+    UI._fxSnap = cur;
+    if (!prev || UI.reconnecting) return;            // 初回/再接続直後は演出しない
+    try { runBoardFx(prev, cur); } catch (e) { /* 演出失敗は無視 */ }
+  }
+  function runBoardFx(prev, cur) {
+    // 1) 購入/獲得: サプライが減った山 → 捨札が増えた人へカードが飛ぶ
+    const dec = []; let total = 0;
+    for (const id in cur.supply) {
+      const d = (prev.supply[id] || 0) - (cur.supply[id] || 0);
+      if (d > 0) { dec.push(id); total += d; }
+    }
+    if (dec.length && total <= 3) {                  // 大量変化(初期配布/復元)は演出しない
+      let buyer = -1, best = 0;
+      for (let i = 0; i < cur.discardLens.length; i++) {
+        const g = cur.discardLens[i] - (prev.discardLens[i] || 0);
+        if (g > best) { best = g; buyer = i; }
+      }
+      if (buyer < 0) buyer = cur.active;
+      dec.forEach((id) => flyPurchase(id, buyer));
+    }
+    // 2) アクション使用: 同じ手番で場(inPlay)が増え、追加がアクションなら演出
+    if (prev.active === cur.active && cur.inPlay.length > prev.inPlay.length) {
+      cur.inPlay.slice(prev.inPlay.length).forEach((id) => {
+        const c = DOM.CARDS[id];
+        if (c && c.types && c.types.includes('action')) actionCastFx(id);
+      });
+    }
+  }
+  function centerOf(el) { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
+  function flyPurchase(id, buyer) {
+    const src = document.querySelector('[data-pile="' + id + '"]');
+    const dst = document.querySelector('[data-seat="' + buyer + '"]') || document.querySelector('[data-self-pile]');
+    if (!src || !dst || !DOM.CARDS[id]) return;
+    const a = centerOf(src), b = centerOf(dst);
+    const fly = document.createElement('div');
+    fly.className = 'fly-card ' + typeClass(id);
+    const img = document.createElement('img'); img.src = 'assets/' + id + '.jpg'; img.alt = '';
+    img.onerror = function () { this.style.display = 'none'; };
+    const nm = document.createElement('div'); nm.className = 'fln'; nm.textContent = DOM.CARDS[id].name;
+    fly.appendChild(img); fly.appendChild(nm);
+    fly.style.left = (a.x - 32) + 'px'; fly.style.top = (a.y - 45) + 'px';
+    fxLayer().appendChild(fly);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      fly.style.transform = 'translate(' + (b.x - a.x) + 'px,' + (b.y - a.y) + 'px) scale(.3) rotate(7deg)';
+      fly.style.opacity = '0.12';
+    }));
+    setTimeout(() => { try { fly.remove(); } catch (e) { /* noop */ } }, 720);
+  }
+  function actionCastFx(id) {
+    if (!DOM.CARDS[id]) return;
+    const chips = Array.prototype.slice.call(document.querySelectorAll('.play-area .chip-card'));
+    const chip = chips.reverse().find((c) => c.textContent === DOM.CARDS[id].name) || chips[0];
+    if (chip) { chip.classList.add('fx-cast'); setTimeout(() => chip.classList.remove('fx-cast'), 760); }
+    // バーストは画面中央（盤面が縦長でも必ず見える位置）に出す
+    const at = { x: (window.innerWidth || 360) / 2, y: (window.innerHeight || 640) * 0.4 };
+    const burst = document.createElement('div');
+    burst.className = 'fx-burst';
+    burst.style.left = at.x + 'px'; burst.style.top = at.y + 'px';
+    const back = document.createElement('div'); back.className = 'backdrop';
+    const ring = document.createElement('div'); ring.className = 'ring';
+    const lbl = document.createElement('div'); lbl.className = 'lbl'; lbl.textContent = DOM.CARDS[id].name + ' を使った！';
+    burst.appendChild(back); burst.appendChild(ring); burst.appendChild(lbl);
+    fxLayer().appendChild(burst);
+    requestAnimationFrame(() => burst.classList.add('go'));
+    setTimeout(() => { try { burst.remove(); } catch (e) { /* noop */ } }, 1080);
   }
 
   /* ---------- 起動 ---------- */
