@@ -199,8 +199,9 @@ input.code-input {
   background: #15131f;
   border: 1px solid var(--line);
 }
-.badge .v { font-size: 18px; font-weight: 700; font-family: 'Cinzel', serif; }
-.badge .k { font-size: 10px; color: var(--ink-dim); }
+.badge .v { font-size: 18px; font-weight: 700; font-family: 'Cinzel', serif; line-height: 1.1; }
+/* 英語1語ラベル。改行させず1行で揃える */
+.badge .k { font-size: 9px; color: var(--ink-dim); white-space: nowrap; letter-spacing: 0.02em; font-weight: 700; }
 .badge.coin .v { color: var(--gold-bright); }
 .badge.act .v { color: #9fd1ff; }
 .badge.buy .v { color: #c0e6a8; }
@@ -541,11 +542,15 @@ input.code-input {
 }
 /* サプライもカード全体が見えるように（中央表示） */
 .pile .card-art { object-position: center; }
-/* 画像が乗るので、はみ出すコストバッジは隠す（読み込み失敗時は復活） */
-.has-art > .pcost,
-.has-art > .ccost { display: none; }
+/* 画像が乗るので、文字類は隠す（読み込み失敗時だけ復活）。
+   ※テキストの長短でカード高さが変わって大きさが不揃いになるのを防ぐ。 */
+.has-art > .pcost, .has-art > .ccost,
+.has-art > .cname, .has-art > .ctype, .has-art > .ctext,
+.has-art > .pname { display: none; }
 .art-failed > .pcost,
 .art-failed > .ccost { display: flex; }
+.art-failed > .cname, .art-failed > .ctype, .art-failed > .ctext,
+.art-failed > .pname { display: block; }
 /* サプライの残数オーバーレイ（画像の上に常に表示） */
 .pile-count {
   position: absolute;
@@ -743,9 +748,16 @@ input.code-input {
 .board-head .others { padding: 2px 0 4px; }
 .board-head .last-move { margin: 2px 0 0; }
 
-/* ハンバーガーメニュー */
+/* ハンバーガーメニュー（丸で囲わずフラットなアイコン） */
 .menu-wrap { position: relative; flex: 0 0 auto; }
-.menu-btn { font-size: 20px; }
+.menu-btn {
+  flex: 0 0 auto; width: 34px; height: 40px; padding: 0;
+  background: transparent; border: none; cursor: pointer;
+  color: var(--gold-bright); font-size: 24px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.menu-btn:active { transform: scale(0.9); filter: brightness(1.15); }
 .menu-scrim { position: fixed; inset: 0; z-index: 40; background: transparent; }
 .top-menu {
   position: absolute; top: 46px; left: 0; z-index: 41; min-width: 190px;

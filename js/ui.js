@@ -499,15 +499,15 @@
 
     const top = h('div', { class: 'topbar' },
       h('div', { class: 'menu-wrap' },
-        h('button', { class: 'icon-btn menu-btn', title: 'メニュー', onclick: () => { UI.menuOpen = !UI.menuOpen; render(); } }, '☰'),
+        h('button', { class: 'menu-btn', title: 'メニュー', onclick: () => { UI.menuOpen = !UI.menuOpen; render(); } }, '☰'),
         UI.menuOpen ? viewTopMenu() : null),
       h('div', { class: 'turn-tag' },
         h('div', { class: 'who' }, active.name + ' の番' + (active.isCpu ? '（CPU・' + LEVEL_JP[active.cpuLevel] + '）' : '')),
         h('div', { class: 'phase' }, phaseLabel(t.phase))),
       h('div', { class: 'resources' },
-        h('div', { class: 'badge act' }, h('div', { class: 'v' }, t.actions), h('div', { class: 'k' }, 'アクション')),
-        h('div', { class: 'badge buy' }, h('div', { class: 'v' }, t.buys), h('div', { class: 'k' }, '購入')),
-        h('div', { class: 'badge coin' }, h('div', { class: 'v' }, t.coins), h('div', { class: 'k' }, 'コイン')))
+        h('div', { class: 'badge act' }, h('div', { class: 'v' }, t.actions), h('div', { class: 'k' }, 'ACTION')),
+        h('div', { class: 'badge buy' }, h('div', { class: 'v' }, t.buys), h('div', { class: 'k' }, 'BUY')),
+        h('div', { class: 'badge coin' }, h('div', { class: 'v' }, t.coins), h('div', { class: 'k' }, 'COIN')))
     );
 
     // 他プレイヤー（複数対応）
