@@ -144,6 +144,9 @@ try {
   clickText('.sheet .btn', '使う');
   ok($('.modal') && $('.modal h3').textContent.includes('工房'), '工房モーダル');
   clickContains('.modal .card', '村');
+  // タップ→拡大確認→「獲得するを確定」で初めて獲得
+  ok($('.pickzoom'), '獲得カードの拡大確認が出る');
+  clickContains('.pickzoom-actions .btn', '獲得する');
   ok(UI.store.state.players[0].discard.includes('village'), '工房で村を獲得');
 
   console.log('=== 民兵→相手CPUの対応も自動 ===');
@@ -187,12 +190,14 @@ try {
   go('home');
   clickText('button', '1台で2人プレイ（クイック）');
   clickText('button', 'ゲーム開始');
-  ok($('.board') && $('.home-btn'), '盤面にTOPボタンがある');
-  $('.home-btn').click();
+  ok($('.board') && $('.menu-btn'), '盤面にメニュー(ハンバーガー)ボタンがある');
+  $('.menu-btn').click(); // メニューを開く
+  clickContains('.top-menu .menu-item', 'TOPに戻る');
   ok($('.confirm-modal'), '確認ダイアログ表示');
   clickText('.confirm-modal .btn', '戻る');
   ok(!$('.confirm-modal'), '「戻る」で閉じる・対戦継続');
-  $('.home-btn').click();
+  $('.menu-btn').click();
+  clickContains('.top-menu .menu-item', 'TOPに戻る');
   clickText('.confirm-modal .btn', 'TOPに戻る');
   ok(UI.view === 'home' && $('.home h1'), 'TOPに戻った');
 

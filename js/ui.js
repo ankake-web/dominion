@@ -109,8 +109,10 @@
     return null;
   }
   function cardArt(id) {
+    // 盤面（手札・サプライ）は軽量サムネを使う。拡大表示だけフル画像。
+    // eager + async decode で「スマホでカードが表示されない」を防ぐ（サムネは軽いので一括読込でOK）。
     return h('img', {
-      class: 'card-art', src: 'asset/' + id + '.jpg', alt: DOM.CARDS[id].name, loading: 'lazy',
+      class: 'card-art', src: 'asset/thumb/' + id + '.jpg', alt: DOM.CARDS[id].name, decoding: 'async',
       onerror: function () { this.style.display = 'none'; if (this.parentElement) this.parentElement.classList.add('art-failed'); },
     });
   }
@@ -475,14 +477,30 @@
 
   function phaseLabel(ph) { return ph === 'action' ? 'アクション フェーズ' : '購入 フェーズ'; }
 
+  // ハンバーガーメニュー（ホーム・BGM・効果音をまとめる）
+  function viewTopMenu() {
+    const items = [
+      h('button', { class: 'menu-item', onclick: () => { UI.menuOpen = false; confirmLeaveGame(); } }, '🏠　TOPに戻る'),
+    ];
+    if (DOM.audio) {
+      items.push(h('button', { class: 'menu-item', onclick: () => { DOM.audio.toggleBgm(); render(); } }, (DOM.audio.isBgm() ? '🎵' : '🔇') + '　BGM：' + (DOM.audio.isBgm() ? 'オン' : 'オフ')));
+      items.push(h('button', { class: 'menu-item', onclick: () => { DOM.audio.toggleSe(); render(); } }, (DOM.audio.isSe() ? '🔊' : '🔈') + '　効果音：' + (DOM.audio.isSe() ? 'オン' : 'オフ')));
+      if (DOM.audio.isBgm()) items.push(h('button', { class: 'menu-item', onclick: () => cycleTrack() }, '♪　曲：' + (DOM.audio.tracks()[DOM.audio.track()] || '')));
+    }
+    return h('div', null,
+      h('div', { class: 'menu-scrim', onclick: () => { UI.menuOpen = false; render(); } }),
+      h('div', { class: 'top-menu' }, items));
+  }
+
   function viewBoard(state, viewer, actor, interactive) {
     const t = state.turn;
     const active = state.players[t.active];
     const me = state.players[viewer];
 
     const top = h('div', { class: 'topbar' },
-      h('button', { class: 'home-btn', title: 'TOPに戻る', onclick: () => confirmLeaveGame() }, '🏠'),
-      DOM.audio ? h('button', { class: 'home-btn', title: 'BGM切替', onclick: toggleBgm }, DOM.audio.isBgm() ? '🎵' : '🔇') : null,
+      h('div', { class: 'menu-wrap' },
+        h('button', { class: 'icon-btn menu-btn', title: 'メニュー', onclick: () => { UI.menuOpen = !UI.menuOpen; render(); } }, '☰'),
+        UI.menuOpen ? viewTopMenu() : null),
       h('div', { class: 'turn-tag' },
         h('div', { class: 'who' }, active.name + ' の番' + (active.isCpu ? '（CPU・' + LEVEL_JP[active.cpuLevel] + '）' : '')),
         h('div', { class: 'phase' }, phaseLabel(t.phase))),
@@ -521,8 +539,10 @@
           ids.map((id) => pileEl(id, state, { size: size === 'small' ? 'sm' : 'lg', buyable: buyableId(id), onClick: () => onPileTap(state, id, interactive) }))));
 
     const supply = h('div', null,
-      supSection('財宝', DOM.TREASURES, 'small'),
-      supSection('勝利点', DOM.VICTORY.concat(['curse']), 'small'),
+      // 財宝・勝利点は基本カード。デスクトップでは横並びにして縦スペースを節約。
+      h('div', { class: 'supply-basics' },
+        supSection('財宝', DOM.TREASURES, 'small'),
+        supSection('勝利点', DOM.VICTORY.concat(['curse']), 'small')),
       supSection('王国カード（アクション）', state.kingdom, 'big'));
 
     // 場（プレイ済み）
@@ -555,9 +575,8 @@
     const moveBar = h('div', { class: 'last-move' }, moveLine ? h('span', null, '🃏 ' + moveLine) : h('span', { class: 'muted' }, 'まだ動きはありません'));
 
     return h('div', { class: 'board' },
-      top,
-      moveBar,
-      othersStrip,
+      // スクロールしても常に見えるヘッダー（手番・残量・相手・直近の行動）
+      h('div', { class: 'board-head' }, top, othersStrip, moveBar),
       UI.mode === 'online' ? h('div', { class: 'muted', style: 'font-size:11px;text-align:center;margin:-2px 0 4px' }, '部屋 ' + UI.roomCode + '　/　あなた: ' + me.name) : null,
       banner,
       h('div', { class: 'section-h' }, 'サプライ（場の山札）'),
@@ -710,7 +729,7 @@
   function modalSingleHand(p, title, desc, filter, onPick, skip) {
     const elig = p.hand.map((id, idx) => ({ id, idx })).filter((x) => filter(x.id));
     const chips = elig.length
-      ? elig.map((x) => cardEl(x.id, { size: 'sm', extra: 'selectable', onClick: () => onPick(x.id) }))
+      ? elig.map((x) => cardEl(x.id, { size: 'sm', extra: 'selectable', onClick: () => openPickZoom(x.id, '廃棄する', () => onPick(x.id)) }))
       : [h('p', { class: 'muted' }, '対象のカードがありません')];
     const btn = skip ? h('button', { class: 'btn btn-block', onclick: skip.on }, skip.label) : null;
     return modalShell(title, desc, chips, btn);
@@ -720,7 +739,7 @@
     const elig = order.filter((id) => filter(id) && (state.supply[id] || 0) > 0);
     const chips = elig.length
       ? elig.map((id) => h('div', { class: 'pick-supply' },
-          cardEl(id, { size: 'sm', extra: 'selectable', onClick: () => onPick(id) }),
+          cardEl(id, { size: 'sm', extra: 'selectable', onClick: () => openPickZoom(id, '獲得する', () => onPick(id)) }),
           h('div', { class: 'pick-remain' }, '残' + state.supply[id])))
       : [h('p', { class: 'muted' }, '獲得できるカードがありません')];
     const footer = (!elig.length && skipOnEmpty) ? h('button', { class: 'btn btn-block', onclick: skipOnEmpty }, '獲得せずに進む') : null;
@@ -733,6 +752,20 @@
         h('p', { class: 'desc' }, desc),
         h('div', { class: 'chip-grid' }, chips),
         footer || null));
+  }
+  // 廃棄/獲得のカードを拡大して確認してから確定する
+  function openPickZoom(id, label, onConfirm) { UI.pickZoom = { id, label, onConfirm }; render(); }
+  function viewPickZoom() {
+    const pz = UI.pickZoom;
+    const c = DOM.CARDS[pz.id];
+    return h('div', { class: 'scrim pickzoom-scrim', onclick: (e) => { if (e.target.classList.contains('scrim')) { UI.pickZoom = null; render(); } } },
+      h('div', { class: 'pickzoom' },
+        h('div', { class: 'zoom-wrap ' + typeClass(pz.id) },
+          h('img', { class: 'zoom-img', src: 'asset/' + pz.id + '.jpg', alt: c.name, onerror: function () { this.style.display = 'none'; if (this.parentElement) this.parentElement.classList.add('noimg'); } }),
+          h('div', { class: 'zoom-fallback' }, c.name)),
+        h('div', { class: 'pickzoom-actions' },
+          h('button', { class: 'btn btn-primary btn-block', onclick: () => { const f = pz.onConfirm; UI.pickZoom = null; if (f) f(); } }, (pz.label || 'これにする') + 'を確定'),
+          h('button', { class: 'btn btn-ghost btn-block', style: 'margin-top:8px', onclick: () => { UI.pickZoom = null; render(); } }, 'もどる'))));
   }
 
   /* ---------- 拡大表示（タップで拡大） ---------- */
@@ -1044,6 +1077,7 @@
   function render() {
     const app = document.getElementById('app');
     app.innerHTML = '';
+    if (UI.view !== 'game') UI.menuOpen = false; // 対戦外ではメニューを閉じておく
     let root;
     switch (UI.view) {
       case 'home': root = viewHome(); break;
@@ -1062,6 +1096,7 @@
     }
     app.appendChild(root);
     if (UI.sheet) app.appendChild(viewSheet());
+    if (UI.pickZoom) app.appendChild(viewPickZoom()); // 廃棄/獲得カードの拡大確認（最前面）
     if (UI.confirm) app.appendChild(viewConfirm());
     // 対戦中/ロビーで切断〜再接続中はオーバーレイで操作を一旦無効化
     if (UI.reconnecting && (UI.view === 'game' || UI.view === 'lobby')) app.appendChild(viewReconnectOverlay());
@@ -1144,7 +1179,7 @@
     const a = centerOf(src), b = centerOf(dst);
     const fly = document.createElement('div');
     fly.className = 'fly-card ' + typeClass(id);
-    const img = document.createElement('img'); img.src = 'asset/' + id + '.jpg'; img.alt = '';
+    const img = document.createElement('img'); img.src = 'asset/thumb/' + id + '.jpg'; img.alt = '';
     img.onerror = function () { this.style.display = 'none'; };
     const nm = document.createElement('div'); nm.className = 'fln'; nm.textContent = DOM.CARDS[id].name;
     fly.appendChild(img); fly.appendChild(nm);

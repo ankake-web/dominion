@@ -30,13 +30,13 @@ jobs:
       # 公開に必要なファイルだけを _site にまとめる（原本PNG等の重いものは除外）。
       - name: Assemble site
         run: |
-          mkdir -p _site/css _site/js _site/asset _site/data
+          mkdir -p _site/css _site/js _site/asset _site/asset/thumb _site/data
           cp index.html cards.html manifest.webmanifest favicon.svg _site/
           cp css/*.css _site/css/
           cp js/*.js _site/js/
           cp data/cards.json _site/data/
           cp asset/*.jpg _site/asset/
-          cp favicon.svg _site/asset/ 2>/dev/null || true
+          cp asset/thumb/*.jpg _site/asset/thumb/ 2>/dev/null || true
           touch _site/.nojekyll
 
       - name: Setup Pages

@@ -168,14 +168,12 @@ input.code-input {
 
 /* ---------- ゲーム上部バー ---------- */
 .topbar {
-  position: sticky;
-  top: 0;
+  position: relative;       /* 固定は親 .board-head が担当 */
   z-index: 20;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 4px 8px;
-  background: linear-gradient(180deg, var(--bg0) 70%, rgba(20,19,31,0));
+  padding: 8px 2px 6px;
 }
 .turn-tag {
   display: flex;
@@ -183,9 +181,11 @@ input.code-input {
   line-height: 1.15;
   flex: 1 1 auto;      /* 名前が長くても伸縮し、残量バッジを押さない */
   min-width: 0;
+  overflow: hidden;
 }
-.turn-tag .who { font-weight: 700; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.turn-tag .phase { font-size: 12px; color: var(--gold); letter-spacing: .08em; white-space: nowrap; }
+.turn-tag .who { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* フェーズは隣のバッジにかぶらないよう、収まらなければ改行する */
+.turn-tag .phase { font-size: 12px; color: var(--gold); letter-spacing: .06em; white-space: normal; line-height: 1.15; }
 
 .resources { display: flex; gap: 6px; margin-left: auto; flex: 0 0 auto; }
 .badge {
@@ -251,12 +251,13 @@ input.code-input {
 }
 .pile {
   position: relative;
-  border-radius: 10px;
-  padding: 6px 4px 5px;
-  min-height: 70px;
+  border-radius: 9px;
+  padding: 0;
+  aspect-ratio: 1060 / 1484;   /* カード全体が見えるよう、カードと同じ縦長比に */
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   text-align: center;
   cursor: pointer;
@@ -538,8 +539,8 @@ input.code-input {
   display: block;
   pointer-events: none;
 }
-/* サプライは小さいので、上部（カード名・コスト）が見えるように */
-.pile .card-art { object-position: top center; }
+/* サプライもカード全体が見えるように（中央表示） */
+.pile .card-art { object-position: center; }
 /* 画像が乗るので、はみ出すコストバッジは隠す（読み込み失敗時は復活） */
 .has-art > .pcost,
 .has-art > .ccost { display: none; }
@@ -627,7 +628,7 @@ input.code-input {
 .audio-bar .btn.on { border-color: var(--gold); color: var(--gold-bright); }
 
 /* ===== ゲーム中のTOPへ戻るボタン・確認ダイアログ ===== */
-.home-btn {
+.home-btn, .icon-btn {
   flex: 0 0 auto;
   width: 40px; height: 40px;
   border-radius: 50%;
@@ -645,7 +646,7 @@ input.code-input {
   display: flex; align-items: center; justify-content: center;
   transition: transform 0.06s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
-.home-btn:active { transform: translateY(1px) scale(0.94); filter: brightness(1.15); }
+.home-btn:active, .icon-btn:active { transform: translateY(1px) scale(0.94); filter: brightness(1.15); }
 .confirm-modal { max-width: 360px; text-align: center; border-color: var(--gold); }
 .confirm-msg { font-size: 16px; margin: 6px 0 16px; line-height: 1.6; }
 
@@ -730,6 +731,46 @@ input.code-input {
 .opp-chip.on { border-color: var(--gold); background: rgba(216, 180, 106, 0.12); }
 .opp-name { font-size: 13px; font-weight: 700; }
 .opp-mini { font-size: 11px; color: var(--ink-dim); margin-top: 2px; }
+
+/* スクロールしても手番・相手・直近の行動が常に見えるよう、ヘッダーを固定 */
+.board-head {
+  position: sticky; top: 0; z-index: 25;
+  margin: 0 -8px; padding: 2px 8px 5px;
+  background: linear-gradient(180deg, var(--bg0) 86%, rgba(20, 19, 31, 0.92));
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
+}
+.board-head .others { padding: 2px 0 4px; }
+.board-head .last-move { margin: 2px 0 0; }
+
+/* ハンバーガーメニュー */
+.menu-wrap { position: relative; flex: 0 0 auto; }
+.menu-btn { font-size: 20px; }
+.menu-scrim { position: fixed; inset: 0; z-index: 40; background: transparent; }
+.top-menu {
+  position: absolute; top: 46px; left: 0; z-index: 41; min-width: 190px;
+  background: linear-gradient(180deg, var(--bg2), var(--bg1));
+  border: 1px solid var(--gold); border-radius: 12px; padding: 6px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+}
+.menu-item {
+  display: block; width: 100%; text-align: left;
+  background: transparent; border: none; color: var(--ink);
+  font-size: 14px; font-weight: 600; padding: 10px 12px; border-radius: 8px; cursor: pointer;
+}
+.menu-item:active { background: rgba(216, 180, 106, 0.16); }
+
+/* 財宝・勝利点（基本カード）はデスクトップで横並びにして縦を節約 */
+.supply-basics { display: grid; grid-template-columns: 1fr; gap: 2px; }
+@media (min-width: 760px) {
+  .supply-basics { grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+}
+
+/* 廃棄/獲得カードの拡大確認オーバーレイ（モーダルより前面） */
+.pickzoom-scrim { z-index: 60; }
+.pickzoom { width: 100%; max-width: 380px; display: flex; flex-direction: column; align-items: center; }
+.pickzoom .zoom-wrap { margin-bottom: 14px; }
+.pickzoom-actions { width: 100%; }
 .cpu-banner {
   text-align: center; font-size: 13px; color: var(--gold-bright);
   background: rgba(216, 180, 106, 0.1); border: 1px solid rgba(216, 180, 106, 0.35);
