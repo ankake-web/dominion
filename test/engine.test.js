@@ -250,13 +250,115 @@ s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'remodel' });
 s2 = E.reduce(s2, { type: 'REMODEL_TRASH', card: 'copper' });
 ok(s2.pending === null, '改築: 獲得対象0なら廃棄後に終了');
 
-// 各 GAIN に card:null を渡すと安全に終了
+console.log('=== 獲得は強制（公式）: 獲得可能なら null 辞退を拒否、枯渇時のみ受理 ===');
+// 工房: サプライに獲得対象がある限り「獲得しない」は通らない
 s = E.createInitialState(['A', 'B']);
 s.players[0].hand = ['workshop', 'copper'];
 s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'workshop' });
 ok(s2.pending && s2.pending.type === 'workshop', '工房 pending');
-s2 = E.reduce(s2, { type: 'WORKSHOP_GAIN', card: null });
-ok(s2.pending === null, 'WORKSHOP_GAIN(null)で終了');
+let refuse = E.reduce(s2, { type: 'WORKSHOP_GAIN', card: null });
+ok(refuse.pending !== null, '工房: 獲得対象がある間は null 辞退を拒否');
+// pending 後にサプライが枯渇した（防御的経路）場合のみ null を受理
+let drained = JSON.parse(JSON.stringify(s2));
+Object.keys(drained.supply).forEach((k) => { if (DOM.CARDS[k].cost <= 4) drained.supply[k] = 0; });
+drained = E.reduce(drained, { type: 'WORKSHOP_GAIN', card: null });
+ok(drained.pending === null, '工房: 枯渇時のみ null で安全に終了');
+// 鉱山・改築も同様に獲得辞退を拒否
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['mine', 'copper', 'estate', 'estate', 'estate'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'mine' });
+s2 = E.reduce(s2, { type: 'MINE_TRASH', card: 'copper' });
+ok(E.reduce(s2, { type: 'MINE_GAIN', card: null }).pending !== null, '鉱山: 銀貨が獲得できるのに null 辞退は拒否');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['remodel', 'estate', 'copper', 'copper', 'copper'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'remodel' });
+s2 = E.reduce(s2, { type: 'REMODEL_TRASH', card: 'estate' });
+ok(E.reduce(s2, { type: 'REMODEL_GAIN', card: null }).pending !== null, '改築: 獲得対象があるのに null 辞退は拒否');
+
+console.log('=== 不正入力ガード: 未知ID・非配列でも throw せず状態不変 ===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['copper', 'copper', 'copper', 'copper', 'copper'];
+s2 = E.reduce(s, { type: 'END_ACTION_PHASE' });
+let g1 = E.reduce(s2, { type: 'BUY', card: 'hackcard' });
+ok(g1.supply.copper === s2.supply.copper && g1.turn.buys === 1, 'BUY: 未知IDは状態不変');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['workshop', 'copper'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'workshop' });
+ok(E.reduce(s2, { type: 'WORKSHOP_GAIN', card: 'hackcard' }).pending !== null, 'WORKSHOP_GAIN: 未知IDは拒否');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['remodel', 'estate'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'remodel' });
+s2 = E.reduce(s2, { type: 'REMODEL_TRASH', card: 'estate' });
+ok(E.reduce(s2, { type: 'REMODEL_GAIN', card: 'hackcard' }).pending !== null, 'REMODEL_GAIN: 未知IDは拒否');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['cellar', 'estate', 'copper'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'cellar' });
+let gc = E.reduce(s2, { type: 'CELLAR_RESOLVE', cards: {} }); // 非配列
+ok(gc.pending === null && gc.players[0].hand.length === 2, 'CELLAR_RESOLVE: 非配列は0枚扱いで安全に終了');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['militia'];
+s.players[1].hand = ['copper', 'copper', 'silver', 'estate', 'duchy'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'militia' });
+ok(E.reduce(s2, { type: 'MILITIA_RESOLVE', cards: 'copper' }).pending !== null, 'MILITIA_RESOLVE: 非配列は拒否され pending 継続');
+
+console.log('=== BUY のガード: 在庫0・購入権0・コイン不足 ===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = [];
+s2 = E.reduce(s, { type: 'END_ACTION_PHASE' });
+s2.turn.coins = 10;
+s2.supply.silver = 0;
+ok(E.reduce(s2, { type: 'BUY', card: 'silver' }).supply.silver === 0, '在庫0は購入不可（マイナスにならない）');
+s2.supply.silver = 5; s2.turn.buys = 0;
+let gb = E.reduce(s2, { type: 'BUY', card: 'silver' });
+ok(gb.supply.silver === 5 && gb.turn.coins === 10, '購入権0は不可');
+s2.turn.buys = 1; s2.turn.coins = 2;
+ok(E.reduce(s2, { type: 'BUY', card: 'silver' }).supply.silver === 5, 'コイン不足は不可');
+
+console.log('=== 山札も捨て札も空: 引けるだけ引いて止まる（無限ループしない） ===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['smithy', 'copper'];
+s.players[0].deck = ['gold']; s.players[0].discard = [];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'smithy' });
+ok(s2.players[0].hand.length === 2, '完全枯渇: 3枚中1枚だけ引いて手札2: ' + s2.players[0].hand.length);
+ok(s2.players[0].deck.length === 0 && s2.players[0].discard.length === 0, '山・捨てとも空のまま');
+
+console.log('=== 完全同点（VP・ターン数同一）は共同勝利 ===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].deck = ['province']; s.players[0].hand = []; s.players[0].discard = []; s.players[0].inPlay = [];
+s.players[1].deck = ['province']; s.players[1].hand = []; s.players[1].discard = []; s.players[1].inPlay = [];
+s.players[0].turns = 10; s.players[1].turns = 10;
+const rTie = E.scoreGame(s);
+ok(rTie.winners.length === 2, '完全同点は winners が2人: ' + JSON.stringify(rTie.winners));
+
+console.log('=== 開始プレイヤーの指定（startActive） ===');
+s = E.createInitialState(['A', 'B'], null, { startActive: 1 });
+ok(s.turn.active === 1, 'startActive:1 で席1から開始');
+ok(s.log[0].includes('B'), '開始ログも席1の名前: ' + s.log[0]);
+s = E.createInitialState(['A', 'B', 'C'], null, { startActive: 'random' });
+ok(s.turn.active >= 0 && s.turn.active < 3, "startActive:'random' は範囲内: " + s.turn.active);
+s = E.createInitialState(['A', 'B'], null, { startActive: 99 });
+ok(s.turn.active === 0, '範囲外は席0に丸める');
+s = E.createInitialState(['A', 'B']);
+ok(s.turn.active === 0, '省略時は従来通り席0');
+
+console.log('=== マスキング: 相手の捨て札も伏せる（自分のは見える） ===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].discard = ['gold', 'province'];
+s.players[1].discard = ['silver', 'duchy', 'curse'];
+s.players[1].inPlay = ['village'];
+let masked = E.maskStateFor(s, 0);
+ok(masked.players[0].discard.join(',') === 'gold,province', '自分の捨て札は実物');
+ok(masked.players[1].discard.length === 3 && masked.players[1].discard.every((c) => c === 'back'), '相手の捨て札は枚数のみ(back)');
+ok(masked.players[1].inPlay.join(',') === 'village', '場(inPlay)は公開のまま');
+ok(masked.players[1].hand.every((c) => c === 'back') && masked.players[1].deck.every((c) => c === 'back'), '手札・山札も伏せたまま');
+
+console.log('=== 得点内訳（vpCards）が結果に含まれる ===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].deck = ['province', 'province', 'estate', 'curse'];
+s.players[0].hand = []; s.players[0].discard = []; s.players[0].inPlay = [];
+const rBd = E.scoreGame(s);
+ok(rBd.scores[0].vpCards.province === 2 && rBd.scores[0].vpCards.estate === 1 && rBd.scores[0].vpCards.curse === 1,
+  '内訳 属州2・屋敷1・呪い1: ' + JSON.stringify(rBd.scores[0].vpCards));
 
 console.log('=== 民兵: 捨て足りない不正入力は拒否 ===');
 s = E.createInitialState(['A', 'B']);

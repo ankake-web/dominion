@@ -38,9 +38,12 @@
   }
 
   /* ---------- 初期状態 ----------
-     playerConfigs: 文字列(名前)または {name, isCpu, level} の配列（2〜4人） */
-  function createInitialState(playerConfigs, kingdom) {
+     playerConfigs: 文字列(名前)または {name, isCpu, level} の配列（2〜4人）
+     opts.startActive: 開始プレイヤー。整数(席番号) または 'random'。
+       公式ルールは「ランダムに決める」。省略時は席0（既存テスト互換）。 */
+  function createInitialState(playerConfigs, kingdom, opts) {
     kingdom = kingdom || DOM.KINGDOM;
+    opts = opts || {};
     const cfgs = (playerConfigs || []).map((x) =>
       typeof x === 'string'
         ? { name: x, isCpu: false, level: 'normal' }
@@ -65,15 +68,22 @@
       };
     });
 
+    // 開始プレイヤー（公式: ランダム）。範囲外は席0に丸める。
+    let startActive = 0;
+    if (opts.startActive === 'random') startActive = Math.floor(Math.random() * players.length);
+    else if (Number.isInteger(opts.startActive) && opts.startActive >= 0 && opts.startActive < players.length)
+      startActive = opts.startActive;
+
     return {
       version: 0,
       kingdom,
       players,
       supply: initSupply(players.length, kingdom),
       trash: [],
-      turn: { active: 0, phase: 'action', actions: 1, buys: 1, coins: 0 },
+      turn: { active: startActive, phase: 'action', actions: 1, buys: 1, coins: 0 },
       pending: null, // 選択待ち {type, player, ...}
-      log: [`ゲーム開始。${players[0].name} の番です。`],
+      logSeq: 1, // ログの通し番号（効果音などが「新しい行」を確実に検知するため）
+      log: [`ゲーム開始。${players[startActive].name} の番です。`],
       gameOver: false,
       result: null,
     };
@@ -82,7 +92,8 @@
   /* ---------- ログ ---------- */
   function log(state, msg) {
     state.log.push(msg);
-    if (state.log.length > 60) state.log = state.log.slice(-60);
+    state.logSeq = (state.logSeq || 0) + 1;
+    if (state.log.length > 200) state.log = state.log.slice(-200);
   }
 
   /* ---------- カード操作 ---------- */
@@ -214,11 +225,13 @@
     return allCards(p).reduce((sum, c) => sum + (C()[c].vp || 0), 0);
   }
   function scoreGame(state) {
-    const scores = state.players.map((p) => ({
-      name: p.name,
-      vp: vpOf(p),
-      turns: p.turns,
-    }));
+    const scores = state.players.map((p) => {
+      // 勝敗画面用の内訳（例: {province:2, duchy:1, estate:3, curse:1}）。
+      // マスク配信後はクライアントから再計算できないため、ここで確定して持たせる。
+      const vpCards = {};
+      allCards(p).forEach((c) => { if (C()[c].vp) vpCards[c] = (vpCards[c] || 0) + 1; });
+      return { name: p.name, vp: vpOf(p), turns: p.turns, vpCards };
+    });
     // 勝者判定：勝利点が多い → 同点ならターン数が少ない
     let best = null;
     let winners = [];
@@ -273,7 +286,7 @@
     switch (action.type) {
       /* ---- 新規ゲーム ---- */
       case 'NEW_GAME':
-        return createInitialState(action.players, action.kingdom);
+        return createInitialState(action.players, action.kingdom, { startActive: action.startActive });
 
       /* ---- アクションカードを使う ---- */
       case 'PLAY_ACTION': {
@@ -321,6 +334,7 @@
         if (state.pending) return state;
         if (t.phase !== 'buy') return state;
         const card = action.card;
+        if (!C()[card]) return state; // 未知のカードIDは状態不変で拒否（throwしない）
         const cost = C()[card].cost;
         if ((state.supply[card] || 0) <= 0) return state;
         if (t.buys <= 0) return state;
@@ -351,7 +365,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'cellar') return state;
         const p = state.players[pd.player];
-        const discardCards = action.cards || [];
+        const discardCards = Array.isArray(action.cards) ? action.cards : [];
         let count = 0;
         discardCards.forEach((c) => {
           if (removeOne(p.hand, c)) {
@@ -370,7 +384,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'militia') return state;
         const p = state.players[pd.player];
-        const discardCards = action.cards || [];
+        const discardCards = Array.isArray(action.cards) ? action.cards : [];
         // 指定カードがすべて手札にあり、捨てた後ちょうど3枚になること
         const target = Math.min(3, p.hand.length);
         if (p.hand.length - discardCards.length !== target) return state;
@@ -422,9 +436,13 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'mine' || pd.stage !== 'gain') return state;
         const card = action.card;
-        if (card == null) { state.pending = null; return state; } // 獲得しない
-        if (!DOM.isType(card, 'treasure')) return state;
-        if (C()[card].cost > pd.maxCost) return state;
+        const canGain = (id) => DOM.isType(id, 'treasure') && C()[id].cost <= pd.maxCost;
+        if (card == null) {
+          // 獲得は強制（公式ルール）。獲得できる財宝が残っていない場合のみ辞退できる。
+          if (anyGainable(state, canGain)) return state;
+          state.pending = null; return state;
+        }
+        if (!canGain(card)) return state;
         if ((state.supply[card] || 0) <= 0) return state;
         gain(state, pd.player, card, 'hand');
         log(state, `${state.players[pd.player].name} は「${C()[card].name}」を手札に獲得した。`);
@@ -453,8 +471,13 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'remodel' || pd.stage !== 'gain') return state;
         const card = action.card;
-        if (card == null) { state.pending = null; return state; } // 獲得しない
-        if (C()[card].cost > pd.maxCost) return state;
+        const canGain = (id) => !!C()[id] && C()[id].cost <= pd.maxCost;
+        if (card == null) {
+          // 獲得は強制（公式ルール）。獲得できるカードが無い場合のみ辞退できる。
+          if (anyGainable(state, canGain)) return state;
+          state.pending = null; return state;
+        }
+        if (!canGain(card)) return state;
         if ((state.supply[card] || 0) <= 0) return state;
         gain(state, pd.player, card, 'discard');
         log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した。`);
@@ -467,8 +490,13 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'workshop') return state;
         const card = action.card;
-        if (card == null) { state.pending = null; return state; } // 獲得しない
-        if (C()[card].cost > 4) return state;
+        const canGain = (id) => !!C()[id] && C()[id].cost <= 4;
+        if (card == null) {
+          // 獲得は強制（公式ルール）。獲得できるカードが無い場合のみ辞退できる。
+          if (anyGainable(state, canGain)) return state;
+          state.pending = null; return state;
+        }
+        if (!canGain(card)) return state;
         if ((state.supply[card] || 0) <= 0) return state;
         gain(state, pd.player, card, 'discard');
         log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した。`);
@@ -482,9 +510,11 @@
   }
 
   /* ---------- 視点別マスク（サーバ→各クライアント配信用） ----------
-     seat 番のプレイヤーから見て、自分の手札・山札は見えるが、
-     他人の手札・山札は中身を伏せる（枚数だけ保つ）。捨て札・場・廃棄・サプライは公開。
-     技術的にも他人の手札が覗けないよう、配列の中身を 'back' に置換して配信する。 */
+     seat 番のプレイヤーから見て、自分の手札・山札・捨て札は見えるが、
+     他人の手札・山札・捨て札は中身を伏せる（枚数だけ保つ）。場(inPlay)・廃棄・サプライは公開。
+     捨て札も伏せるのは、クリーンアップ直後は捨て札の末尾＝相手が使わなかった手札そのもので、
+     配信JSONを覗けば事後的に手札が分かってしまうため（公式でも捨て札の中身は確認不可）。
+     技術的にも覗けないよう、配列の中身を 'back' に置換して配信する。 */
   function maskStateFor(state, seat) {
     const s = clone(state);
     s.players = s.players.map((p, i) => {
@@ -492,7 +522,8 @@
       return Object.assign({}, p, {
         deck: new Array(p.deck.length).fill('back'),
         hand: new Array(p.hand.length).fill('back'),
-        // discard / inPlay は公開情報（場・捨て札は表向き）なのでそのまま
+        discard: new Array(p.discard.length).fill('back'),
+        // inPlay は場に表向きで出ているカードなのでそのまま
       });
     });
     s.you = seat;
