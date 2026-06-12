@@ -8,13 +8,15 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>ドミニオン</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="favicon.svg" />
+  <!-- iOS は SVG 非対応のため PNG（180px）。ホーム画面追加時のアイコンに使われる -->
+  <link rel="apple-touch-icon" href="icon-180.png" />
   <link rel="manifest" href="manifest.webmanifest" />
 
-  <!-- フォント（オフライン時は serif にフォールバック） -->
+  <!-- フォント（非ブロック読込: 電波が悪くても初回描画を止めない。オフライン時は serif にフォールバック） -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Shippori+Mincho:wght@500;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Shippori+Mincho:wght@500;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Shippori+Mincho:wght@500;700;800&display=swap" rel="stylesheet" /></noscript>
 
   <link rel="stylesheet" href="css/style.css" />
 </head>
@@ -29,5 +31,13 @@
   <script src="js/net.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/ui.js"></script>
+  <script>
+    // Service Worker（オフライン起動＋画像キャッシュ）。https / localhost のみ。
+    if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('./sw.js').catch(function () { /* 非対応・失敗は無視 */ });
+      });
+    }
+  </script>
 </body>
 </html>

@@ -31,7 +31,8 @@ jobs:
       - name: Assemble site
         run: |
           mkdir -p _site/css _site/js _site/asset _site/asset/thumb _site/data
-          cp index.html cards.html manifest.webmanifest favicon.svg _site/
+          cp index.html cards.html manifest.webmanifest favicon.svg sw.js _site/
+          cp icon-180.png icon-192.png icon-512.png _site/
           cp css/*.css _site/css/
           cp js/*.js _site/js/
           cp data/cards.json _site/data/

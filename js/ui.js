@@ -708,10 +708,6 @@
     return h('div');
   }
 
-  function handChip(id, idx, on, onClick) {
-    const c = DOM.CARDS[id];
-    return h('div', { class: 'chip ' + typeClass(id) + (on ? ' on' : ''), onclick: onClick }, h('span', { class: 'cc' }, c.cost), c.name);
-  }
   function modalMultiHand(p, title, desc, confirmLabel, allowZero, onConfirm) {
     const chips = p.hand.map((id, idx) =>
       cardEl(id, {
@@ -1192,6 +1188,21 @@
     } catch (e) { /* 非対応環境は無視 */ }
   }
 
+  /* ---------- フル画像の先読み ----------
+     拡大表示(asset/<id>.jpg 約300KB)はタップ時に初取得だとモバイル回線で待たされる。
+     対戦に入ったら手すきの時間に全カードを裏で読み込んでおく（SWがあればキャッシュにも残る）。 */
+  function preloadFullArt() {
+    if (UI._artPreloaded || !DOM.CARDS) return;
+    UI._artPreloaded = true;
+    const kick = () => {
+      try {
+        Object.keys(DOM.CARDS).forEach((id) => { const im = new Image(); im.src = 'asset/' + id + '.jpg'; });
+      } catch (e) { /* noop */ }
+    };
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(kick, { timeout: 4000 });
+    else setTimeout(kick, 1200);
+  }
+
   // CPUの自動進行（局面が変わるたびに呼ぶ）
   function maybeRunCpu() {
     const s = UI.store && UI.store.state;
@@ -1253,6 +1264,7 @@
     syncWakeLock();
     audioTick();
     boardFxTick();
+    if (UI.view === 'game') preloadFullArt();
   }
   DOM.render = render;
 

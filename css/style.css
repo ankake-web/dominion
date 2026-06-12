@@ -307,17 +307,6 @@ input.code-input {
 .zone-h .t { font-size: 14px; letter-spacing: .1em; }
 .zone-h .c { font-size: 12px; color: var(--ink-dim); }
 
-.hand-row {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 6px 2px 12px;
-  scroll-snap-type: x proximity;
-  -webkit-overflow-scrolling: touch;
-}
-.hand-row::-webkit-scrollbar { height: 6px; }
-.hand-row::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
-
 .card {
   position: relative;
   flex: 0 0 auto;
@@ -424,23 +413,6 @@ input.code-input {
 }
 @keyframes rise { from { transform: translateY(20px) scale(.97); opacity: .4; } to { transform: none; opacity: 1; } }
 .sheet .grip { display: none; }
-.sheet-card {
-  width: 150px; min-height: 210px; margin: 0 auto 14px;
-  border-radius: 14px; padding: 12px;
-  display: flex; flex-direction: column; gap: 8px;
-  border: 1px solid rgba(0,0,0,.35);
-  box-shadow: var(--shadow);
-}
-.sheet-card .cname { font-size: 19px; font-weight: 800; }
-.sheet-card .ctype { font-size: 11px; letter-spacing: .1em; opacity: .7; }
-.sheet-card .ctext { font-size: 13px; line-height: 1.5; white-space: pre-line; margin-top: auto; }
-.sheet-card .ccost {
-  position: static; width: 30px; height: 30px; font-size: 16px; align-self: flex-start;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, var(--gold-bright), var(--gold));
-  color: #2a2010; display: flex; align-items: center; justify-content: center;
-  border: 1px solid #b8954f; font-family: 'Cinzel', serif; font-weight: 800;
-}
 .sheet .info-line { text-align: center; color: var(--ink-dim); font-size: 13px; margin-bottom: 12px; }
 
 /* ---------- 選択モーダル ---------- */
@@ -584,7 +556,6 @@ input.code-input {
   color: #ff9a86; border-color: rgba(255, 120, 90, 0.85);
   background: rgba(70, 12, 12, 0.88); box-shadow: 0 0 8px rgba(255, 80, 60, 0.5);
 }
-.sheet-card { position: relative; overflow: hidden; }
 
 /* ===== メニュー・設定（追加） ===== */
 .menu-split { display: flex; gap: 10px; margin-top: 6px; }
