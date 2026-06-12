@@ -54,11 +54,11 @@
     // 効果の大きいターミナル
     if (has('smithy')) return 'smithy';
     if (has('militia')) return 'militia';
+    if (has('moat')) return 'moat'; // +2ドロー。リアクションは公開制のため温存する理由が無い
     if (has('mine') && p.hand.some((c) => isTreasure(c))) return 'mine';
     if (has('remodel')) return 'remodel';
     if (has('workshop')) return 'workshop';
     if (has('woodcutter')) return 'woodcutter';
-    if (has('cellar') && dead) return 'cellar';
     return null;
   }
 
@@ -67,15 +67,59 @@
     return (state.kingdom || []).filter((id) => C()[id].cost <= coins && sup(state, id) > 0);
   }
 
+  /* ---------- 終局認識（強CPU用） ----------
+     「この1枚を買うとゲームが終わるか」「終わった場合に自分が勝つか」を判定する。
+     これが無いと、負け確定でも最後の属州を買って自滅したり（不自然な介錯）、
+     大差リード中に山切れで勝ち確で閉じられる手を逃したりする。 */
+  function vpOfPlayer(p) {
+    return allCards(p).reduce((sum, c) => sum + (C()[c].vp || 0), 0);
+  }
+  function buyEndsGame(state, id) {
+    const after = (k) => (state.supply[k] || 0) - (k === id ? 1 : 0);
+    if (after('province') <= 0) return true;
+    let empty = 0;
+    Object.keys(state.supply).forEach((k) => { if (after(k) <= 0) empty++; });
+    return empty >= 3;
+  }
+  // seat が id を獲得して即終了した場合に勝てる（同点の共同勝利を含む）か
+  function winsIfEnds(state, seat, id) {
+    const myVp = vpOfPlayer(state.players[seat]) + (C()[id].vp || 0);
+    const myTurns = state.players[seat].turns + 1; // 今のターンはクリーンアップで+1される
+    return state.players.every((p, i) => {
+      if (i === seat) return true;
+      const v = vpOfPlayer(p);
+      if (v > myVp) return false;
+      if (v === myVp && p.turns < myTurns) return false;
+      return true;
+    });
+  }
+
   function chooseBuyStrong(state, p, coins) {
+    const seat = state.turn.active;
+    // 1) 勝って終われる購入があれば最優先（得点→コストの高い順）
+    let winningEnd = null, bestKey = -Infinity;
+    Object.keys(state.supply).forEach((id) => {
+      if (sup(state, id) <= 0 || C()[id].cost > coins) return;
+      if (!buyEndsGame(state, id) || !winsIfEnds(state, seat, id)) return;
+      const key = (C()[id].vp || 0) * 100 + C()[id].cost;
+      if (key > bestKey) { bestKey = key; winningEnd = id; }
+    });
+    if (winningEnd) return winningEnd;
+
     const province = sup(state, 'province');
-    if (coins >= 8 && province > 0) return 'province';
-    if (province <= 4 && coins >= 5 && sup(state, 'duchy') > 0) return 'duchy';
-    if (province <= 2 && coins >= 2 && sup(state, 'estate') > 0) return 'estate';
-    if (coins >= 6 && sup(state, 'gold') > 0) return 'gold';
-    if (coins >= 4 && sup(state, 'smithy') > 0 && owned(p, 'smithy') < 1) return 'smithy';
-    if (coins >= 3 && sup(state, 'silver') > 0) return 'silver';
-    return null;
+    let pick = null;
+    if (coins >= 8 && province > 0) pick = 'province';
+    else if (province <= 4 && coins >= 5 && sup(state, 'duchy') > 0) pick = 'duchy';
+    else if (province <= 2 && coins >= 2 && sup(state, 'estate') > 0) pick = 'estate';
+    else if (coins >= 6 && sup(state, 'gold') > 0) pick = 'gold';
+    else if (coins >= 4 && sup(state, 'smithy') > 0 && owned(p, 'smithy') < 1) pick = 'smithy';
+    else if (coins >= 3 && sup(state, 'silver') > 0) pick = 'silver';
+
+    // 2) 負けて終わる購入は避ける（ゲームを閉じない次善手か、何も買わない）
+    if (pick && buyEndsGame(state, pick) && !winsIfEnds(state, seat, pick)) {
+      pick = ['gold', 'silver'].find((id) => coins >= C()[id].cost && sup(state, id) > 0 && !buyEndsGame(state, id)) || null;
+    }
+    return pick;
   }
 
   function chooseBuyNormal(state, p, coins) {
@@ -119,11 +163,23 @@
     const sorted = hand.map((c, i) => ({ c, i, v: keepValue(c) })).sort((a, b) => a.v - b.v);
     return sorted.slice(0, need).map((x) => x.c);
   }
-  function lowestValueCard(hand) {
-    let best = hand[0];
-    let bv = keepValue(best);
-    for (const c of hand) { const v = keepValue(c); if (v < bv) { bv = v; best = c; } }
-    return best;
+
+  /* 改築で廃棄するカードを選ぶ。
+     keepValue は「民兵で捨てる」用（捨てても失点しない＝勝利点が最安）なので流用しない。
+     廃棄は得点を失うため、公領/属州は他に何も無いときの最後の手段にする。 */
+  function pickRemodelTrash(state, p) {
+    if (p.hand.includes('curse')) return 'curse';
+    // 終盤は金貨→属州の格上げが強い
+    if (sup(state, 'province') > 0 && sup(state, 'province') <= 4 && p.hand.includes('gold')) return 'gold';
+    if (p.hand.includes('estate')) return 'estate';
+    if (p.hand.includes('copper')) return 'copper';
+    // 安いアクションから1段上のカードへ
+    const actions = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => C()[a].cost - C()[b].cost);
+    if (actions.length) return actions[0];
+    if (p.hand.includes('silver')) return 'silver';
+    if (p.hand.includes('gold')) return 'gold';
+    if (p.hand.includes('duchy')) return 'duchy'; // 勝利点しか無い場合のみ
+    return p.hand[0];
   }
 
   function decidePending(state, pd, p) {
@@ -143,13 +199,7 @@
         }
         return { type: 'MINE_GAIN', card: bestGain(state, pd.maxCost, { treasureOnly: true }) };
       case 'remodel':
-        if (pd.stage === 'trash') {
-          if (p.hand.includes('curse')) return { type: 'REMODEL_TRASH', card: 'curse' };
-          if (sup(state, 'province') > 0 && sup(state, 'province') <= 4 && p.hand.includes('gold'))
-            return { type: 'REMODEL_TRASH', card: 'gold' };
-          if (p.hand.includes('estate')) return { type: 'REMODEL_TRASH', card: 'estate' };
-          return { type: 'REMODEL_TRASH', card: lowestValueCard(p.hand) };
-        }
+        if (pd.stage === 'trash') return { type: 'REMODEL_TRASH', card: pickRemodelTrash(state, p) };
         return { type: 'REMODEL_GAIN', card: bestGain(state, pd.maxCost) };
       case 'workshop':
         return { type: 'WORKSHOP_GAIN', card: bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) };

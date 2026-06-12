@@ -78,14 +78,14 @@ console.log('=== 難易度の序列: 強は弱に勝ち越す ===');
 function winRate(levelA, levelB, games) {
   let aWins = 0, valid = 0;
   for (let g = 0; g < games; g++) {
-    const r = playGame([
-      { name: 'A', isCpu: true, level: levelA },
-      { name: 'B', isCpu: true, level: levelB },
-    ]);
+    const aSeat = g % 2; // 2人戦は先手有利のため、席を交互にして偏りを消す
+    const cfgA = { name: 'A', isCpu: true, level: levelA };
+    const cfgB = { name: 'B', isCpu: true, level: levelB };
+    const r = playGame(aSeat === 0 ? [cfgA, cfgB] : [cfgB, cfgA]);
     if (!r.state.gameOver) continue;
     valid++;
     const w = r.state.result.winners;
-    if (w.length === 1 && w[0] === 0) aWins++;
+    if (w.length === 1 && w[0] === aSeat) aWins++;
   }
   return aWins / valid;
 }
@@ -100,6 +100,77 @@ ok(strongVsNormal >= 0.45, '強は普通に対して互角以上（>=45%）: ' +
 const normalVsWeak = winRate('normal', 'easy', 40);
 console.log(`  普通 vs 弱 勝率: ${(normalVsWeak * 100).toFixed(0)}%`);
 ok(normalVsWeak >= 0.55, '普通は弱に勝ち越す（>=55%）: ' + (normalVsWeak * 100).toFixed(0) + '%');
+
+console.log('=== 選択待ち解決の決定論テスト ===');
+function st2(level) {
+  return E.createInitialState([
+    { name: 'A', isCpu: true, level: level || 'normal' },
+    { name: 'B', isCpu: true, level: level || 'normal' },
+  ]);
+}
+// 民兵: 堀があれば公開して無効化
+let s = st2();
+s.players[0].hand = ['militia', 'copper', 'copper', 'copper', 'copper'];
+s.players[1].hand = ['moat', 'gold', 'silver', 'copper', 'estate'];
+s = E.reduce(s, { type: 'PLAY_ACTION', card: 'militia' });
+ok(CPU.decide(s).type === 'MOAT_REVEAL', '民兵に対し堀があれば公開して無効化');
+// 民兵: 呪い・勝利点から捨てる
+s = st2();
+s.players[0].hand = ['militia', 'copper', 'copper', 'copper', 'copper'];
+s.players[1].hand = ['gold', 'silver', 'estate', 'copper', 'curse'];
+s = E.reduce(s, { type: 'PLAY_ACTION', card: 'militia' });
+let d = CPU.decide(s);
+ok(d.type === 'MILITIA_RESOLVE' && d.cards.includes('curse') && d.cards.includes('estate'),
+  '民兵の捨て札は呪い・勝利点から: ' + JSON.stringify(d.cards));
+// 鉱山: 銀→金 / 獲得は金貨
+s = st2();
+s.players[0].hand = ['mine', 'silver', 'copper', 'copper', 'copper'];
+s = E.reduce(s, { type: 'PLAY_ACTION', card: 'mine' });
+ok(CPU.decide(s).card === 'silver', '鉱山: 銀貨を廃棄して格上げ');
+s = E.reduce(s, CPU.decide(s));
+ok(CPU.decide(s).card === 'gold', '鉱山: 獲得は金貨');
+// 堀をアクションとしてプレイする（旧実装は一切プレイしなかった）
+s = st2();
+s.players[0].hand = ['moat', 'copper', 'copper', 'estate', 'estate'];
+d = CPU.decide(s);
+ok(d.type === 'PLAY_ACTION' && d.card === 'moat', '堀を+2ドローとしてプレイする');
+// 改築: 公領/属州は廃棄しない（銅貨を選ぶ）
+s = st2();
+s.players[0].hand = ['remodel', 'duchy', 'copper', 'silver', 'gold'];
+s = E.reduce(s, { type: 'PLAY_ACTION', card: 'remodel' });
+d = CPU.decide(s);
+ok(d.type === 'REMODEL_TRASH' && d.card === 'copper', '改築: 公領ではなく銅貨を廃棄: ' + d.card);
+// 改築: 勝利点しか無ければ公領を選び属州は守る
+s = st2();
+s.players[0].hand = ['remodel', 'duchy', 'province'];
+s = E.reduce(s, { type: 'PLAY_ACTION', card: 'remodel' });
+ok(CPU.decide(s).card === 'duchy', '改築: 勝利点のみなら公領を選び属州は守る');
+
+console.log('=== 強CPUの終局認識 ===');
+// 負け確定なら最後の属州を買って自滅しない
+s = st2('hard');
+s.supply.province = 1;
+s.players[1].deck = s.players[1].deck.concat(['province', 'province', 'province']); // 相手が大差リード
+s.players[0].hand = [];
+s.turn.phase = 'buy'; s.turn.coins = 8; s.turn.buys = 1;
+d = CPU.decide(s);
+ok(!(d.type === 'BUY' && d.card === 'province'), '負け確定では最後の属州を買わない: ' + JSON.stringify(d));
+// リード中なら最後の属州で勝ち切る
+s = st2('hard');
+s.supply.province = 1;
+s.players[0].deck = s.players[0].deck.concat(['province', 'province']); // 自分がリード
+s.players[0].hand = [];
+s.turn.phase = 'buy'; s.turn.coins = 8; s.turn.buys = 1;
+d = CPU.decide(s);
+ok(d.type === 'BUY' && d.card === 'province', 'リード中は最後の属州で勝ち切る');
+// 3山目: 大差リードなら安いカードでも閉じて勝つ
+s = st2('hard');
+s.supply.village = 0; s.supply.smithy = 0; s.supply.moat = 1;
+s.players[0].deck = s.players[0].deck.concat(['province', 'province']); // 大差リード
+s.players[0].hand = [];
+s.turn.phase = 'buy'; s.turn.coins = 2; s.turn.buys = 1;
+d = CPU.decide(s);
+ok(d.type === 'BUY' && d.card === 'moat', '3山目を閉じて勝ち確で終局: ' + JSON.stringify(d));
 
 console.log('\n========================================');
 console.log(`CPUテスト結果: ${pass} 件成功, ${fail} 件失敗`);
