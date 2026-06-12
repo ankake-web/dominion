@@ -115,6 +115,15 @@ function makeBrowser(port) {
     const gs2 = guest.UI.store.state;
     ok(gs2.players[1].hand.every((c) => c !== 'back') && gs2.players[0].hand.every((c) => c === 'back'), '復帰後も手札の秘匿は維持');
 
+    console.log('=== 再接続後も操作がサーバへ届く（NetStore.dispatch が新ソケットを使う） ===');
+    // 再接続後はゲスト(席1)の手番。store.dispatch がサーバに届き双方へ同期されること。
+    // （旧バグ: dispatch が閉じた旧WebSocketをクロージャで掴んだまま無言で捨てていた）
+    if (guest.UI.store.state.turn.phase === 'action') guest.UI.store.dispatch({ type: 'END_ACTION_PHASE' });
+    ok(await waitUntil(() => guest.UI.store.state.turn.phase === 'buy', 4000), '再接続後のゲスト操作が自分に反映');
+    ok(await waitUntil(() => host.UI.store.state.turn.phase === 'buy', 4000), '再接続後のゲスト操作がホストにも同期');
+    guest.UI.store.dispatch({ type: 'END_TURN' });
+    ok(await waitUntil(() => host.UI.store.state.turn.active === 0 && guest.UI.store.state.turn.active === 0, 4000), '再接続後にターン終了が通りホストへ手番が戻る');
+
   } catch (e) {
     fail++; console.log('  ✗ 例外: ' + (e.stack || e.message));
   }

@@ -1095,6 +1095,9 @@
       default: root = viewHome();
     }
     app.appendChild(root);
+    // ログ欄は常に最新行が見える位置へ（全再構築で scrollTop が0に戻るため毎回合わせる）
+    const logEl = app.querySelector('.log');
+    if (logEl) logEl.scrollTop = logEl.scrollHeight;
     if (UI.sheet) app.appendChild(viewSheet());
     if (UI.pickZoom) app.appendChild(viewPickZoom()); // 廃棄/獲得カードの拡大確認（最前面）
     if (UI.confirm) app.appendChild(viewConfirm());

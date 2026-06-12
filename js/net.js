@@ -96,7 +96,9 @@
       mySeat: null,
       state: null,
       client,
-      dispatch(action) { client.send({ t: 'action', action }); },
+      // 再接続時に ui.js が api.client を新しい接続へ差し替えるため、
+      // クロージャの client ではなく必ず api.client を経由する（旧ソケット握りバグ防止）。
+      dispatch(action) { api.client.send({ t: 'action', action }); },
       setState(s) { api.state = s; if (s && s.you != null) api.mySeat = s.you; emit(); },
       subscribe(fn) { subs.push(fn); return () => subs.splice(subs.indexOf(fn), 1); },
     };
