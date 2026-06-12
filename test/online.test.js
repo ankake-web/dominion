@@ -46,7 +46,7 @@ function makeBrowser(port) {
 
 (async () => {
   const server = http.createServer((req, res) => { res.writeHead(200); res.end('ok'); });
-  attachGameServer(server, { cpuStepMs: 15, graceMs: 500 });
+  attachGameServer(server, { cpuStepMs: 15, graceMs: 500, startActive: 0 }); // startActive注入で決定論化
   await new Promise((r) => server.listen(0, r));
   const port = server.address().port;
 

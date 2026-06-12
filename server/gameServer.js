@@ -34,6 +34,7 @@ let CPU_STEP_MS = 850;        // CPUの一手ごとの間(ms)
 let GRACE_MS = 60000;         // ロビー中の切断→席解放までの猶予(ms)
 let STARTED_GRACE_MS = 300000; // 対戦中の切断→席を保持する猶予(ms, 5分)。この間は同じplayerIdで復帰可
 let HEARTBEAT_MS = 25000;     // サーバ→クライアントの死活ping間隔(ms)
+let START_ACTIVE = 'random';  // 開始プレイヤー（公式ルール: ランダム）。テストは 0 を注入して決定論化
 
 // 同期を許可する操作（サーバ側ホワイトリスト）
 const ALLOWED = new Set([
@@ -148,7 +149,7 @@ function buildConfigs(room) {
 function startGame(room) {
   const configs = buildConfigs(room);
   if (configs.length < MIN_PLAYERS) return;
-  room.state = E.createInitialState(configs);
+  room.state = E.createInitialState(configs, null, { startActive: START_ACTIVE });
   room.started = true;
   for (const m of room.members) {
     send(m.ws, { t: 'started', you: m.seat, state: E.maskStateFor(room.state, m.seat) });
@@ -354,6 +355,24 @@ function handleConnection(ws) {
         startGame(room);
         break;
       }
+      case 'rematch': {
+        // 終局後、同じ部屋・同じメンバーで再戦（ホストのみ）。部屋コードの共有し直しが不要になる。
+        if (!room || !me || !me.isHost || !room.started || !room.state || !room.state.gameOver) return;
+        // 切断中（結果画面から退出済み等）のメンバーは外し、席は buildConfigs が詰め直す
+        for (const m of room.members.slice()) {
+          if (!m.connected) {
+            if (m.graceTimer) { clearTimeout(m.graceTimer); m.graceTimer = null; }
+            room.members.splice(room.members.indexOf(m), 1);
+          }
+        }
+        clampCpu(room);
+        // 相手が抜けて1人になっていたら CPU を補充して対戦を成立させる
+        if (room.members.length + room.cpuCount < MIN_PLAYERS) {
+          room.cpuCount = Math.min(MAX_PLAYERS - room.members.length, MIN_PLAYERS - room.members.length);
+        }
+        startGame(room);
+        break;
+      }
       case 'action': {
         if (!room || !me || !room.started || !room.state) return;
         if (room.state.gameOver) { send(ws, { t: 'error', message: 'この対戦は終了しました' }); return; }
@@ -408,6 +427,7 @@ function attachGameServer(httpServer, opts = {}) {
   if (opts.graceMs != null) GRACE_MS = opts.graceMs;
   if (opts.startedGraceMs != null) STARTED_GRACE_MS = opts.startedGraceMs;
   if (opts.cpuStepMs != null) CPU_STEP_MS = opts.cpuStepMs;
+  if (opts.startActive != null) START_ACTIVE = opts.startActive;
   const heartbeatMs = opts.heartbeatMs != null ? opts.heartbeatMs : HEARTBEAT_MS;
   // maxPayload: 巨大ペイロードでheap爆発→プロセス死を防ぐ（正規メッセージは数KB）。
   const maxPayload = opts.maxPayload != null ? opts.maxPayload : 64 * 1024;

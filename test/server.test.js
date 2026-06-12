@@ -3,7 +3,7 @@
 */
 const http = require('node:http');
 const WebSocket = require('ws');
-const { attachGameServer, WS_PATH, isOriginAllowed, __reset } = require('../server/gameServer');
+const { attachGameServer, WS_PATH, isOriginAllowed, __reset, rooms } = require('../server/gameServer');
 
 let pass = 0, fail = 0;
 function ok(c, m) { if (c) pass++; else { fail++; console.log('  ✗ FAIL: ' + m); } }
@@ -40,7 +40,8 @@ function mkClient(url) {
 
 (async () => {
   const server = http.createServer((req, res) => { res.writeHead(200); res.end('ok'); });
-  attachGameServer(server, { cpuStepMs: 15, graceMs: 300, startedGraceMs: 500, heartbeatMs: 100000 });
+  // startActive: 0 を注入して決定論化（本番は公式ルール通りランダム開始）
+  attachGameServer(server, { cpuStepMs: 15, graceMs: 300, startedGraceMs: 500, heartbeatMs: 100000, startActive: 0 });
   await new Promise((r) => server.listen(0, r));
   const port = server.address().port;
   const URL = `ws://127.0.0.1:${port}${WS_PATH}`;
@@ -162,7 +163,7 @@ function mkClient(url) {
     const a3j = await a3.waitFor((m) => m.t === 'joined');
     const b3 = mkClient(URL); await b3.open();
     b3.send({ t: 'join', code: a3j.code, name: 'B3' });
-    await b3.waitFor((m) => m.t === 'joined');
+    const b3j = await b3.waitFor((m) => m.t === 'joined');
     a3.send({ t: 'setCpu', count: 0 });
     await a3.waitFor((m) => m.t === 'lobby' && m.cpuCount === 0);
     a3.send({ t: 'start' });
@@ -172,7 +173,107 @@ function mkClient(url) {
     // startedGraceMs(500ms) を過ぎると席1がCPUに引き継がれ、A3 に配信される
     const cpuTaken = await a3.waitFor((m) => m.t === 'state' && m.state.players[1].isCpu === true, 3000);
     ok(cpuTaken.state.players[1].isCpu === true && cpuTaken.state.players[1].dc === false, '猶予切れで席1がCPUに引き継がれる');
-    a3.close();
+
+    console.log('=== 猶予切れCPU化のあとでも本人は token で人間に復帰できる ===');
+    // 「電池切れ/お風呂で5分以上離脱 → 戻ったら自分の席が返ってくる」の生命線
+    const b3r = mkClient(URL); await b3r.open();
+    b3r.send({ t: 'resume', code: a3j.code, you: b3j.you, token: b3j.token });
+    const b3Back = await b3r.waitFor((m) => m.t === 'started', 2000);
+    ok(b3Back.you === 1, '猶予切れ後も同じ席(1)へ復帰');
+    ok(b3Back.state.players[1].isCpu === false && b3Back.state.players[1].dc === false, 'CPU代行から人間に戻る');
+    a3.close(); b3r.close();
+    await sleep(50);
+
+    console.log('=== 不正token: 実在部屋への resume は拒否され席を乗っ取れない ===');
+    const h1 = mkClient(URL); await h1.open();
+    h1.send({ t: 'create', name: 'H1' });
+    const h1j = await h1.waitFor((m) => m.t === 'joined');
+    const g1 = mkClient(URL); await g1.open();
+    g1.send({ t: 'join', code: h1j.code, name: 'G1' });
+    await g1.waitFor((m) => m.t === 'joined');
+    h1.send({ t: 'setCpu', count: 0 });
+    await h1.waitFor((m) => m.t === 'lobby' && m.cpuCount === 0);
+    h1.send({ t: 'start' });
+    await h1.waitFor((m) => m.t === 'started');
+    await g1.waitFor((m) => m.t === 'started');
+    const hacker = mkClient(URL); await hacker.open();
+    hacker.send({ t: 'resume', code: h1j.code, you: 1, token: 'wrong-token' });
+    const herr = await hacker.waitFor((m) => m.t === 'error', 2000);
+    ok(herr.fatal === true, '不正tokenは fatal エラーで拒否（手札は配信されない）');
+    ok(g1.ws.readyState === 1, '正規ゲストの接続は乗っ取られず無傷');
+    // 正規ゲストには引き続き state が届く（ホストが操作 → 同期）
+    h1.send({ t: 'action', action: { type: 'END_ACTION_PHASE' } });
+    const g1Sync = await g1.waitFor((m) => m.t === 'state' && m.state.turn.phase === 'buy', 2000);
+    ok(!!g1Sync, '不正resume試行後も正規ゲストへ同期が続く');
+    hacker.close();
+
+    console.log('=== 再戦（rematch）: 終局後にホストが同メンバーで新対戦を開始 ===');
+    // ゲーム終了状態を直接作る（フルプレイは別テストで担保済み）
+    const room1 = rooms.get(h1j.code);
+    room1.state.gameOver = true;
+    // 非ホストの rematch は無視される
+    g1.send({ t: 'rematch' });
+    await sleep(80);
+    ok(rooms.get(h1j.code).state.gameOver === true, '非ホストの rematch は無視');
+    // ホストの rematch で新しい盤面が両者に配られる
+    h1.send({ t: 'rematch' });
+    const r0 = await h1.waitFor((m) => m.t === 'started', 2000);
+    const r1 = await g1.waitFor((m) => m.t === 'started', 2000);
+    ok(!r0.state.gameOver && !r1.state.gameOver, '再戦: 新しい対戦が開始される');
+    ok(r0.you === 0 && r1.you === 1, '再戦: 同じ席のまま');
+    ok(r0.state.players[0].hand.length === 5 && r0.state.players[0].hand.every((c) => c !== 'back'), '再戦: 新しい手札が配られる');
+    ok(r1.state.players[0].hand.every((c) => c === 'back'), '再戦: マスキングも維持');
+
+    console.log('=== 再戦: 相手が退出済みなら CPU を補充して成立させる ===');
+    rooms.get(h1j.code).state.gameOver = true;
+    g1.close();
+    await sleep(60); // close が connected=false になるのを待つ
+    h1.send({ t: 'rematch' });
+    const rSolo = await h1.waitFor((m) => m.t === 'started', 2000);
+    ok(rSolo.state.players.length === 2 && rSolo.state.players[1].isCpu === true, '退出者を外しCPU補充で再戦成立');
+    h1.close();
+    await sleep(50);
+
+    console.log('=== 全員切断 → 猶予切れで部屋が破棄される（リーク防止） ===');
+    const x1 = mkClient(URL); await x1.open();
+    x1.send({ t: 'create', name: 'X1' });
+    const x1j = await x1.waitFor((m) => m.t === 'joined');
+    const x2 = mkClient(URL); await x2.open();
+    x2.send({ t: 'join', code: x1j.code, name: 'X2' });
+    await x2.waitFor((m) => m.t === 'joined');
+    x1.send({ t: 'setCpu', count: 0 });
+    await x1.waitFor((m) => m.t === 'lobby' && m.cpuCount === 0);
+    x1.send({ t: 'start' });
+    await x1.waitFor((m) => m.t === 'started');
+    await x2.waitFor((m) => m.t === 'started');
+    x1.close(); x2.close();
+    ok(await (async () => { // startedGraceMs(500ms)+α で部屋が消える
+      for (let i = 0; i < 40; i++) { if (!rooms.has(x1j.code)) return true; await sleep(50); }
+      return false;
+    })(), '全員の猶予切れで部屋が rooms から破棄される');
+
+    console.log('=== 人間ゼロの間は CPU が一時停止し、復帰で再開する ===');
+    const y1 = mkClient(URL); await y1.open();
+    y1.send({ t: 'create', name: 'Y1' }); // 既定 cpuCount=1 → 1人間+1CPU
+    const y1j = await y1.waitFor((m) => m.t === 'joined');
+    y1.send({ t: 'start' });
+    await y1.waitFor((m) => m.t === 'started');
+    // 人間がターンを終えてCPUの手番にした直後に切断
+    y1.send({ t: 'action', action: { type: 'END_ACTION_PHASE' } });
+    await y1.waitFor((m) => m.t === 'state' && m.state.turn.phase === 'buy');
+    y1.send({ t: 'action', action: { type: 'END_TURN' } });
+    y1.close();
+    await sleep(200); // 切断反映後・猶予(500ms)内
+    const yRoom = rooms.get(y1j.code);
+    ok(yRoom && yRoom.cpuTimer === null, '観戦者ゼロで cpuTimer が止まる（CPU空回しなし）');
+    ok(yRoom && yRoom.state.turn.active === 1, 'CPUは手番の途中で凍結している');
+    // 本人が復帰するとCPUが再開し、1ターン消化して人間に手番が戻る
+    const y2 = mkClient(URL); await y2.open();
+    y2.send({ t: 'resume', code: y1j.code, you: 0, token: y1j.token });
+    await y2.waitFor((m) => m.t === 'started', 2000);
+    const yBack = await y2.waitFor((m) => m.t === 'state' && m.state.turn.active === 0 && m.state.players[1].turns >= 1, 6000);
+    ok(!!yBack, '復帰でCPUが再開し手番が人間に戻る');
+    y2.close();
 
   } catch (e) {
     fail++; console.log('  ✗ 例外: ' + (e.stack || e.message));
