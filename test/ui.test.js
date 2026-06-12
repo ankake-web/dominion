@@ -177,14 +177,79 @@ try {
   clickText('.gate .btn', 'タップして手札を見る');
   ok(!$('.gate') && UI.store.state.turn.active === 1, 'ゲート解除で相手の番');
 
+  console.log('=== アクション0枚なら自動で購入フェーズへ ===');
+  st = UI.store.state;
+  st.turn = { active: 1, phase: 'action', actions: 1, buys: 1, coins: 0 };
+  st.players[1].hand = ['copper', 'copper', 'estate'];
+  UI.localViewer = 1;
+  setState(st); // setState は render 後にタイマー配列を消すので、予約フラグを解除してから再render
+  UI._autoSkipTimer = null;
+  DOM.render(); // 自動スキップの予約が入る
+  pump(5);
+  ok(UI.store.state.turn.phase === 'buy', 'アクション0枚は自動で購入フェーズへ: ' + UI.store.state.turn.phase);
+
+  console.log('=== 手札ヘッダに勝利点表示 ===');
+  ok(/｜\d+点/.test($('[data-self-pile]').textContent), 'VP合計が表示される: ' + $('[data-self-pile]').textContent);
+
+  console.log('=== ログ全履歴モーダル ===');
+  $('.log').click();
+  ok($('.log-history'), 'ログタップで全履歴モーダル');
+  clickText('.modal .btn', 'とじる');
+  ok(!$('.log-history'), 'とじるで閉じる');
+
+  console.log('=== 買い忘れ防止: 財宝/コインを残したターン終了に確認 ===');
+  st = UI.store.state;
+  st.turn = { active: 1, phase: 'buy', actions: 0, buys: 1, coins: 0 };
+  st.players[1].hand = ['copper', 'copper'];
+  setState(st);
+  clickText('.actions-bar button', 'ターンを終える');
+  ok($('.confirm-modal') && doc.body.textContent.includes('財宝'), '財宝が手札に残っていると確認が出る');
+  ok(UI.store.state.turn.active === 1, '確認中はターン継続');
+  clickText('.confirm-modal .btn', 'ターンを終える');
+  ok(UI.store.state.turn.active === 0, '確認OKでターン終了');
+  st = UI.store.state;
+  st.turn = { active: 1, phase: 'buy', actions: 0, buys: 1, coins: 5 };
+  st.players[1].hand = [];
+  UI.localViewer = 1;
+  setState(st);
+  clickText('.actions-bar button', 'ターンを終える');
+  ok($('.confirm-modal') && doc.body.textContent.includes('コイン'), 'コインを残すと確認が出る');
+  clickText('.confirm-modal .btn', '戻る');
+  ok(!$('.confirm-modal') && UI.store.state.turn.active === 1, '「戻る」で対戦継続');
+  st = UI.store.state;
+  st.turn.coins = 1; st.turn.buys = 0;
+  setState(st);
+  clickText('.actions-bar button', 'ターンを終える');
+  ok(UI.store.state.turn.active === 0, '購入済み(buys=0)なら確認なしで終了');
+
   console.log('=== 勝敗画面 ===');
   st = UI.store.state;
   st.gameOver = true;
-  st.result = { scores: [{ name: 'P1', vp: 12, turns: 8 }, { name: 'P2', vp: 9, turns: 8 }], winners: [0], reason: '属州の山が尽きた' };
+  st.result = {
+    scores: [
+      { name: 'P1', vp: 12, turns: 8, vpCards: { province: 2 } },
+      { name: 'P2', vp: 9, turns: 8, vpCards: { duchy: 3 } },
+    ],
+    winners: [0], reason: '属州の山が尽きた',
+  };
   setState(st);
   ok($('.result') && $('.result h1').textContent.includes('勝ち'), '勝敗画面');
   ok($all('.score-row').length === 2, '2人のスコア');
   ok(byText('.result .btn', 'もう一度（同設定）'), '再戦ボタン');
+  ok($all('.vbd').length === 2 && doc.body.textContent.includes('属州×2'), '点数の内訳（属州×2など）');
+
+  console.log('=== 勝敗画面（オンライン）: ホストに再戦ボタン ===');
+  let rematchSent = null;
+  UI.mode = 'online'; UI.isHost = true;
+  UI.netClient = { send: (m) => { rematchSent = m; }, close: () => {}, isOpen: () => true, setOnClose: () => {} };
+  DOM.render();
+  ok(byText('.result .btn', 'もう一度（同じメンバー）'), 'オンライン: ホストに再戦ボタン');
+  byText('.result .btn', 'もう一度（同じメンバー）').click();
+  ok(rematchSent && rematchSent.t === 'rematch', '再戦要求がサーバへ送られる');
+  UI.isHost = false;
+  DOM.render();
+  ok(!byText('.result .btn', 'もう一度（同じメンバー）') && doc.body.textContent.includes('再戦できます'), 'ゲストには案内のみ');
+  UI.mode = 'local'; UI.netClient = null; UI.isHost = false;
 
   console.log('=== ゲーム中にTOPへ戻る ===');
   go('home');

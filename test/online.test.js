@@ -93,10 +93,12 @@ function makeBrowser(port) {
     console.log('=== 盤面描画・手番同期 ===');
     ok(host.$('.board') && host.$('.others .opp-chip'), 'ホスト盤面描画');
     ok(host.UI.store.state.turn.active === 0, 'ホスト(席0)が先手');
-    // ホストがターンを終える（手札にアクションは無いので END_ACTION_PHASE → END_TURN）
-    host.clickText('購入フェーズへ ▶');
-    ok(await waitUntil(() => host.UI.store.state.turn.phase === 'buy'), '購入フェーズへ');
+    // 初期手札はアクション0枚 → 自動で購入フェーズへ進む（自動スキップ）
+    ok(await waitUntil(() => host.UI.store.state.turn.phase === 'buy', 4000), 'アクション0枚は自動で購入フェーズへ');
+    // 財宝を手札に残したままターン終了 → 買い忘れ確認が出る → 確定で終了
     host.clickText('ターンを終える');
+    ok(!!host.$('.confirm-modal'), '買い忘れ確認モーダルが出る（財宝が手札に残っている）');
+    host.$all('.confirm-modal .btn').find((e) => e.textContent.trim() === 'ターンを終える').click();
     ok(await waitUntil(() => guest.UI.store.state.turn.active === 1), 'ゲストに手番交代が同期');
     ok(await waitUntil(() => host.UI.store.state.turn.active === 1), 'ホストにも反映');
 

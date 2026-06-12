@@ -149,7 +149,7 @@
   }
 
   /* ---------- 共通操作 ---------- */
-  function go(view) { UI.view = view; UI.sheet = null; render(); }
+  function go(view) { UI.view = view; UI.sheet = null; UI.logModal = false; render(); }
   function dispatch(action) { UI.sheet = null; UI.store.dispatch(action); }
   function closeSheet() { UI.sheet = null; render(); }
   function showSheet(cardId, primary) { UI.sheet = { cardId, primary }; sfx('tap'); render(); }
@@ -569,7 +569,9 @@
     if (!me.hand.length) handBlocks.push(h('div', { class: 'empty-note' }, '手札がありません'));
 
     const logLines = state.log.slice(-6);
-    const logBox = h('div', { class: 'log' }, logLines.map((l, i) => h('div', { class: i === logLines.length - 1 ? 'latest' : '' }, l)));
+    const logBox = h('div', { class: 'log', onclick: () => { UI.logModal = true; sfx('tap'); render(); } },
+      logLines.map((l, i) => h('div', { class: i === logLines.length - 1 ? 'latest' : '' }, l)),
+      h('div', { class: 'log-more' }, '📜 タップで全履歴'));
 
     const moveLine = lastMove(state.log);
     const moveBar = h('div', { class: 'last-move' }, moveLine ? h('span', null, '🃏 ' + moveLine) : h('span', { class: 'muted' }, 'まだ動きはありません'));
@@ -584,7 +586,8 @@
       h('div', { class: 'zone-h' }, h('span', { class: 't' }, '場')),
       playArea,
       h('div', { class: 'zone-h' }, h('span', { class: 't' }, me.name + ' の手札'),
-        h('span', { class: 'c', 'data-self-pile': '1' }, '山' + me.deck.length + '・捨' + me.discard.length + '・手' + me.hand.length)),
+        h('span', { class: 'c', 'data-self-pile': '1' },
+          '山' + me.deck.length + '・捨' + me.discard.length + '・手' + me.hand.length + '｜' + E().vpOf(me) + '点')),
       h('div', { class: 'hand-zone' }, handBlocks),
       logBox,
       viewActionBar(state, viewer, actor, interactive)
@@ -650,7 +653,25 @@
     const hasTreasure = state.players[viewer].hand.some((c) => DOM.CARDS[c].types.includes('treasure'));
     return h('div', { class: 'actions-bar' },
       h('button', { class: 'btn btn-block', disabled: hasTreasure ? null : 'disabled', onclick: () => dispatch({ type: 'PLAY_ALL_TREASURES' }) }, '財宝を全部出す'),
-      h('button', { class: 'btn btn-primary btn-block', onclick: () => dispatch({ type: 'END_TURN' }) }, 'ターンを終える'));
+      h('button', { class: 'btn btn-primary btn-block', onclick: () => endTurnTap(state, viewer) }, 'ターンを終える'));
+  }
+
+  // 買い忘れ防止: 財宝を出していない／2コイン以上残して購入権があるときは確認を挟む
+  function endTurnTap(state, viewer) {
+    const t = state.turn;
+    const hasTreasure = state.players[viewer].hand.some((c) => DOM.CARDS[c].types.includes('treasure'));
+    if (t.buys > 0 && (hasTreasure || t.coins >= 2)) {
+      UI.confirm = {
+        message: hasTreasure
+          ? 'まだ手札に財宝があります。出さずにターンを終えますか？'
+          : 'まだ ' + t.coins + ' コインあります。購入せずにターンを終えますか？',
+        yesLabel: 'ターンを終える',
+        onYes: () => { UI.confirm = null; dispatch({ type: 'END_TURN' }); },
+      };
+      render();
+    } else {
+      dispatch({ type: 'END_TURN' });
+    }
   }
 
   /* ---------- パスゲート ---------- */
@@ -797,20 +818,49 @@
     const winNames = r.winners.map((i) => state.players[i].name).join('・');
     const tie = r.winners.length > 1;
     const order = state.players.map((p, i) => ({ p, i, s: r.scores[i] })).sort((a, b) => b.s.vp - a.s.vp || a.s.turns - b.s.turns);
+    // 点数の内訳（属州2・公領1…）。scoreGame が vpCards で確定済み（マスク配信でも出せる）
+    const breakdown = (sc) => {
+      const v = sc.vpCards || {};
+      const parts = ['province', 'duchy', 'estate', 'curse'].filter((id) => v[id])
+        .map((id) => DOM.CARDS[id].name + '×' + v[id]);
+      return parts.length ? parts.join('・') : null;
+    };
     return h('div', { class: 'result' },
       h('div', { class: 'trophy' }, tie ? '🤝' : '🏆'),
       h('h1', null, tie ? '引き分け' : winNames + ' の勝ち！'),
       h('p', { class: 'muted' }, r.reason + 'ため終了'),
       h('div', { class: 'score-table' },
-        order.map((row) =>
-          h('div', { class: 'score-row ' + (r.winners.includes(row.i) ? 'win' : '') },
+        order.map((row) => {
+          const bd = breakdown(row.s);
+          return h('div', { class: 'score-row ' + (r.winners.includes(row.i) ? 'win' : '') },
             h('div', null,
               h('div', { class: 'nm' }, row.p.name + (row.p.isCpu ? '（CPU・' + LEVEL_JP[row.p.cpuLevel] + '）' : '')),
-              h('div', { class: 'tn' }, row.s.turns + ' ターン')),
-            h('div', { class: 'vp' }, row.s.vp + ' 点')))),
+              h('div', { class: 'tn' }, row.s.turns + ' ターン'),
+              bd ? h('div', { class: 'vbd' }, bd) : null),
+            h('div', { class: 'vp' }, row.s.vp + ' 点'));
+        })),
       h('div', { class: 'row center' },
         UI.mode === 'local' ? h('button', { class: 'btn btn-primary', onclick: () => restartLocal() }, 'もう一度（同設定）') : null,
-        h('button', { class: 'btn btn-ghost', onclick: () => leaveOnline() }, 'ホームへ')));
+        UI.mode === 'online' && UI.isHost
+          ? h('button', { class: 'btn btn-primary', onclick: () => { sfx('tap'); if (UI.netClient) UI.netClient.send({ t: 'rematch' }); } }, 'もう一度（同じメンバー）')
+          : null,
+        h('button', { class: 'btn btn-ghost', onclick: () => leaveOnline() }, 'ホームへ')),
+      UI.mode === 'online' && !UI.isHost
+        ? h('p', { class: 'muted', style: 'font-size:12px' }, 'ホストが「もう一度」を押すとこのメンバーで再戦できます')
+        : null);
+  }
+
+  /* ---------- ログ全履歴モーダル ---------- */
+  function viewLogModal() {
+    const s = UI.store && UI.store.state;
+    const lines = (s && s.log) || [];
+    const close = () => { UI.logModal = false; render(); };
+    return h('div', { class: 'modal-scrim', onclick: (e) => { if (e.target.classList.contains('modal-scrim')) close(); } },
+      h('div', { class: 'modal' },
+        h('h3', null, 'これまでの記録'),
+        h('div', { class: 'log-history' },
+          lines.map((l, i) => h('div', { class: i === lines.length - 1 ? 'latest' : '' }, l))),
+        h('button', { class: 'btn btn-block', onclick: close }, 'とじる')));
   }
 
   /* ============================================================
@@ -1006,8 +1056,12 @@
     UI.mySeat = null; UI.roomCode = null; UI.isHost = false; UI.lobby = null;
     UI.netToken = null; UI.reconnecting = false; UI._reconnectTries = 0; UI.connecting = null;
   }
-  function leaveOnline() {
+  function clearGameTimers() {
     if (UI._cpuTimer) { clearTimeout(UI._cpuTimer); UI._cpuTimer = null; }
+    if (UI._autoSkipTimer) { clearTimeout(UI._autoSkipTimer); UI._autoSkipTimer = null; }
+  }
+  function leaveOnline() {
+    clearGameTimers();
     resetOnline();
     go('home');
   }
@@ -1016,7 +1070,7 @@
   function quitToHome() {
     UI.confirm = null;
     if (UI.mode === 'online') { leaveOnline(); return; }
-    if (UI._cpuTimer) { clearTimeout(UI._cpuTimer); UI._cpuTimer = null; }
+    clearGameTimers();
     UI.store = null; UI.mode = 'local'; UI.mySeat = null;
     go('home');
   }
@@ -1050,6 +1104,92 @@
         h('p', { class: 'confirm-msg' }, c.message),
         h('button', { class: 'btn btn-primary btn-block', onclick: c.onYes }, c.yesLabel || 'OK'),
         h('button', { class: 'btn btn-ghost btn-block', style: 'margin-top:8px', onclick: () => { UI.confirm = null; render(); } }, c.noLabel || '戻る')));
+  }
+
+  /* ---------- アクションフェーズの自動スキップ ----------
+     手札にアクションカードが1枚も無ければ選択肢はゼロなので、
+     少し間を置いて自動で購入フェーズへ進める（毎ターンの無駄タップをなくす）。 */
+  function maybeAutoSkipAction() {
+    const s = UI.store && UI.store.state;
+    if (!s || s.gameOver || UI.view !== 'game' || s.pending) return;
+    if (UI.sheet || UI.pickZoom || UI.confirm) return; // 何か見ている間は送らない
+    if (s.turn.phase !== 'action') return;
+    const actor = E().actor(s);
+    const p = s.players[actor];
+    if (!p || p.isCpu) return;
+    // 操作者本人の画面でのみ（ローカル: パスゲート通過後 / オンライン: 自分の番）
+    if (UI.mode === 'local' ? actor !== UI.localViewer : actor !== UI.mySeat) return;
+    if (p.hand.some((c) => DOM.isType(c, 'action'))) return;
+    if (UI._autoSkipTimer) return;
+    UI._autoSkipTimer = setTimeout(() => {
+      UI._autoSkipTimer = null;
+      const cur = UI.store && UI.store.state;
+      if (!cur || cur.gameOver || cur.pending || UI.view !== 'game') return;
+      if (cur.turn.phase !== 'action') return;
+      const a2 = E().actor(cur);
+      if (!cur.players[a2] || cur.players[a2].isCpu) return;
+      if (UI.mode === 'local' ? a2 !== UI.localViewer : a2 !== UI.mySeat) return;
+      if (cur.players[a2].hand.some((c) => DOM.isType(c, 'action'))) return;
+      UI.store.dispatch({ type: 'END_ACTION_PHASE' });
+    }, 350);
+  }
+
+  /* ---------- 「あなたの番です」通知（バイブ＋専用音＋フラッシュ） ----------
+     相手の長考中にスマホから目を離しても、自分の番が来たことに気づけるように。
+     オンライン: 自分の番（民兵への対応含む）になった瞬間。
+     ローカル: CPUの手番から自分に戻った瞬間のみ（パスゲートの手渡しでは鳴らさない）。 */
+  function turnNoticeTick() {
+    const s = UI.store && UI.store.state;
+    let mine = false;
+    let actorCpu = false;
+    if (UI.view === 'game' && s && !s.gameOver) {
+      const actor = E().actor(s);
+      const p = s.players[actor];
+      actorCpu = !!(p && p.isCpu);
+      if (p && !p.isCpu) {
+        mine = UI.mode === 'online' ? actor === UI.mySeat : actor === UI.localViewer;
+      }
+    }
+    const was = UI._wasMyTurn;
+    const prevCpu = UI._prevActorCpu;
+    UI._wasMyTurn = mine;
+    UI._prevActorCpu = actorCpu;
+    if (!mine || was !== false) return; // false→true の遷移のみ通知
+    if (UI.mode === 'local' && !prevCpu) return; // ローカルは「CPU→自分」のみ
+    if (DOM.audio) DOM.audio.sfx('yourturn');
+    try { if (navigator.vibrate) navigator.vibrate([120, 60, 120]); } catch (e) { /* 非対応は無視 */ }
+    flashYourTurn();
+  }
+  function flashYourTurn() {
+    const b = document.createElement('div');
+    b.className = 'fx-turn-banner';
+    b.textContent = '⚔ あなたの番です';
+    fxLayer().appendChild(b);
+    requestAnimationFrame(() => requestAnimationFrame(() => b.classList.add('go')));
+    setTimeout(() => { try { b.remove(); } catch (e) { /* noop */ } }, 1500);
+  }
+
+  /* ---------- 画面スリープ防止（Wake Lock） ----------
+     対戦中にスマホが自動ロックすると WebSocket が切れて「再接続中…」が出るため、
+     対戦画面の間はスリープさせない（非対応環境では静かに何もしない）。 */
+  function syncWakeLock() {
+    try {
+      const nav = (typeof navigator !== 'undefined') ? navigator : null;
+      if (!nav || !nav.wakeLock || !nav.wakeLock.request) return;
+      const want = UI.view === 'game' && !document.hidden;
+      if (want && !UI._wakeLock && !UI._wakeLockPending) {
+        UI._wakeLockPending = true;
+        nav.wakeLock.request('screen').then((wl) => {
+          UI._wakeLockPending = false;
+          UI._wakeLock = wl;
+          wl.addEventListener('release', () => { if (UI._wakeLock === wl) UI._wakeLock = null; });
+          if (UI.view !== 'game') { try { wl.release(); } catch (e) { /* noop */ } }
+        }).catch(() => { UI._wakeLockPending = false; });
+      } else if (!want && UI._wakeLock) {
+        const wl = UI._wakeLock; UI._wakeLock = null;
+        try { wl.release(); } catch (e) { /* noop */ }
+      }
+    } catch (e) { /* 非対応環境は無視 */ }
   }
 
   // CPUの自動進行（局面が変わるたびに呼ぶ）
@@ -1099,12 +1239,18 @@
     const logEl = app.querySelector('.log');
     if (logEl) logEl.scrollTop = logEl.scrollHeight;
     if (UI.sheet) app.appendChild(viewSheet());
+    if (UI.logModal) app.appendChild(viewLogModal());
     if (UI.pickZoom) app.appendChild(viewPickZoom()); // 廃棄/獲得カードの拡大確認（最前面）
     if (UI.confirm) app.appendChild(viewConfirm());
     // 対戦中/ロビーで切断〜再接続中はオーバーレイで操作を一旦無効化
     if (UI.reconnecting && (UI.view === 'game' || UI.view === 'lobby')) app.appendChild(viewReconnectOverlay());
     if (UI.toast) app.appendChild(h('div', { class: 'toast' }, UI.toast));
+    const histEl = app.querySelector('.log-history');
+    if (histEl) histEl.scrollTop = histEl.scrollHeight;
     maybeRunCpu();
+    maybeAutoSkipAction();
+    turnNoticeTick();
+    syncWakeLock();
     audioTick();
     boardFxTick();
   }
@@ -1115,8 +1261,14 @@
     if (!DOM.audio) return;
     const s = UI.store && UI.store.state;
     if (UI.view === 'game' && s) {
-      DOM.audio.reactToLog(s.log || []);
-      if (s.gameOver && !UI._gameOverSounded) { UI._gameOverSounded = true; DOM.audio.victory(); }
+      DOM.audio.reactToLog(s.log || [], s.logSeq);
+      if (s.gameOver && !UI._gameOverSounded) {
+        UI._gameOverSounded = true;
+        // オンラインで負けた側にはファンファーレではなく控えめな音
+        const w = (s.result && s.result.winners) || [];
+        if (UI.mode === 'online' && UI.mySeat != null && !w.includes(UI.mySeat)) DOM.audio.sfx('defeat');
+        else DOM.audio.victory();
+      }
       if (!s.gameOver) UI._gameOverSounded = false;
     } else {
       DOM.audio.resetLog();
@@ -1233,7 +1385,7 @@
       window.addEventListener('online', onResumeTrigger);
       window.addEventListener('focus', onResumeTrigger);
       window.addEventListener('pageshow', onResumeTrigger);
-      document.addEventListener('visibilitychange', () => { if (!document.hidden) onResumeTrigger(); });
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) { onResumeTrigger(); syncWakeLock(); } });
     }
     // 最初のタップで音声を解禁（ブラウザの自動再生制限対策）。BGMがオンなら開始。
     if (DOM.audio && typeof document.addEventListener === 'function') {

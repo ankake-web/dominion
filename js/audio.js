@@ -77,7 +77,9 @@
     discard: () => noise(0, 0.12, 0.08, 'lowpass', 1500, 0.6), // 紙を捨てる
     shield: () => { noise(0, 0.08, 0.06, 'highpass', 3200, 0.5); blip(660, 0, 0.18, 0.08, 'square'); blip(988, 0.02, 0.18, 0.05, 'square'); }, // 金属の盾
     turn: () => { blip(659.3, 0, 0.20, 0.09, 'sine'); blip(987.8, 0.10, 0.26, 0.06, 'sine'); }, // 鐘
+    yourturn: () => { blip(784, 0, 0.14, 0.12, 'triangle'); blip(1046.5, 0.12, 0.18, 0.12, 'triangle'); blip(1318.5, 0.26, 0.3, 0.10, 'triangle'); }, // 自分の番（上昇トランペット風）
     victory: () => { [523.3, 659.3, 784, 1046.5].forEach((f, i) => { blip(f, i * 0.12, 0.32, 0.14, 'triangle'); blip(f / 2, i * 0.12, 0.32, 0.05, 'triangle'); }); chord([523.3, 659.3, 784, 1046.5], 0.50, 0.7, 0.10, 'triangle'); }, // 勝利ファンファーレ
+    defeat: () => { blip(392, 0, 0.4, 0.08, 'triangle', 370); blip(311.1, 0.34, 0.55, 0.07, 'triangle', 290); }, // 敗北（控えめな下降）
     error: () => blip(196, 0, 0.16, 0.10, 'triangle', 150),
   };
   function play(name) {
@@ -87,14 +89,17 @@
     const fn = SE[name]; if (fn) try { fn(); } catch (e) { /* noop */ }
   }
 
-  /* ---------- ログから効果音を鳴らす（人間/CPU/相手すべて共通） ---------- */
-  let lastEntry; // 直近に鳴らしたログ行
-  function reactToLog(log) {
+  /* ---------- ログから効果音を鳴らす（人間/CPU/相手すべて共通） ----------
+     seq はエンジンのログ通し番号（state.logSeq）。文字列比較だと
+     「銀貨を連続購入」など同一行の連続で2回目が無音になるため、番号で判定する。 */
+  let lastSeq; // 直近に鳴らしたログ通し番号
+  function reactToLog(log, seq) {
     if (!Array.isArray(log) || !log.length) return;
+    if (seq == null) seq = log.length; // 旧stateとの後方互換
+    if (lastSeq === undefined) { lastSeq = seq; return; } // 初回はベースライン（鳴らさない）
+    if (seq === lastSeq) return;
+    lastSeq = seq;
     const latest = log[log.length - 1];
-    if (lastEntry === undefined) { lastEntry = latest; return; } // 初回はベースライン（鳴らさない）
-    if (latest === lastEntry) return;
-    lastEntry = latest;
     if (latest.includes('ゲーム終了')) return; // 勝敗演出は別途
     if (latest.includes('を使った')) play('action');
     else if (latest.includes('購入した')) play('buy');
@@ -105,7 +110,7 @@
     else if (latest.includes('捨て')) play('discard');
     else if (latest.includes('の番です')) play('turn');
   }
-  function resetLog() { lastEntry = undefined; }
+  function resetLog() { lastSeq = undefined; }
 
   /* ---------- BGM（手続き生成・低音量ループ） ---------- */
   const TRACKS = [
@@ -184,6 +189,6 @@
     stopBgm: bgmStop,
     tracks: () => TRACKS.map((t) => t.name),
     track: () => trackIdx,
-    setTrack(i) { trackIdx = ((i % TRACKS.length) + TRACKS.length) % TRACKS.length; saveBool; try { localStorage.setItem(K.track, String(trackIdx)); } catch (e) { /* noop */ } if (bgmOn) bgmStart(); return trackIdx; },
+    setTrack(i) { trackIdx = ((i % TRACKS.length) + TRACKS.length) % TRACKS.length; try { localStorage.setItem(K.track, String(trackIdx)); } catch (e) { /* noop */ } if (bgmOn) bgmStart(); return trackIdx; },
   };
 })();
