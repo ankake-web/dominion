@@ -18,9 +18,9 @@ async function clickText(page, t) {
     if (el) { el.click(); return true; } return false;
   }, t);
 }
-async function waitUI(page, fn, ms = 5000) {
+async function waitUI(page, fn, ms = 5000, arg) {
   const t0 = Date.now();
-  while (Date.now() - t0 < ms) { if (await page.evaluate(fn)) return true; await sleep(80); }
+  while (Date.now() - t0 < ms) { if (await page.evaluate(fn, arg)) return true; await sleep(80); }
   return false;
 }
 
@@ -77,10 +77,21 @@ async function waitUI(page, fn, ms = 5000) {
     ok(guestSees.opp.every((c) => c === 'back'), 'ゲスト: 相手の手札は back');
 
     console.log('— 手番同期 —');
-    await clickText(host, '購入フェーズへ');
-    await waitUI(host, () => window.DOM.UI.store.state.turn.phase === 'buy');
-    await clickText(host, 'ターンを終える');
-    ok(await waitUI(guest, () => window.DOM.UI.store.state.turn.active === 1), 'ゲストに手番交代が同期');
+    // 先手は公式ルール通りランダム。先手側のページを特定して1ターン回す。
+    const active = await host.evaluate(() => window.DOM.UI.store.state.turn.active);
+    const actorPage = active === 0 ? host : guest;
+    const otherPage = active === 0 ? guest : host;
+    console.log('   先手: 席' + active);
+    // 初期手札はアクション0枚 → 自動で購入フェーズへ進む
+    ok(await waitUI(actorPage, () => window.DOM.UI.store.state.turn.phase === 'buy'), 'アクション0枚は自動で購入フェーズへ');
+    await clickText(actorPage, 'ターンを終える');
+    // 財宝を残したターン終了 → 買い忘れ確認モーダルを確定
+    await actorPage.evaluate(() => {
+      const b = [...document.querySelectorAll('.confirm-modal .btn')].find((e) => e.textContent.trim() === 'ターンを終える');
+      if (b) b.click();
+    });
+    const next = (active + 1) % 2;
+    ok(await waitUI(otherPage, (n) => window.DOM.UI.store.state.turn.active === n, 5000, next), '相手に手番交代が同期');
 
     await sleep(400);
     await host.screenshot({ path: OUT + '/online_host.png', fullPage: true });
