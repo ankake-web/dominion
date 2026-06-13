@@ -6,8 +6,11 @@
 - 対戦画面・拡大表示・カード一覧(cards.html) すべてこの画像を表示します。
   - 対戦画面/拡大: `js/ui.js` が `asset/<id>.jpg` を読み込み
   - 一覧/プレビュー: `js/carddata.js`・`data/cards.json` の `art` が `asset/<id>.jpg`
-- 17種: copper, silver, gold, estate, duchy, province, curse, cellar, market,
+- 基本17種: copper, silver, gold, estate, duchy, province, curse, cellar, market,
   militia, mine, moat, remodel, smithy, village, woodcutter, workshop
+- 拡張(陰謀)14種: courtyard, pawn, shanty_town, steward, wishing_well, baron, bridge,
+  conspirator, ironworks, mining_village, torturer, duke, nobles, harem
+- 生成元PNGの置き場 `asset/260313_assets/` は .gitignore 済み（配信しない原本置き場）。
 
 ## 差し替え・追加のしかた
 - ファイル名は `asset/<id>.jpg`（例: 銅貨なら `copper.jpg`）。縦長（カード比 ~1060:1484）。

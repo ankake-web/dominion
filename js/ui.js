@@ -56,6 +56,7 @@
     _reconnectTries: 0,
     setup: {
       randomOrder: false,
+      kingdomSet: 'basic', // 'basic' | 'intrigue' | 'random'
       seats: [
         { name: _humanName, type: 'human', level: 'normal' },
         { name: CPU_NAME_POOL[Math.floor(Math.random() * CPU_NAME_POOL.length)], type: 'cpu', level: 'normal' },
@@ -98,6 +99,8 @@
   function typeLabel(id) { return DOM.CARDS[id].types.map((t) => TYPE_JP[t]).join('・'); }
   // 財宝は枚数で色分け（場のチップで金貨/銀貨/銅貨を見分けやすく）
   function coinClass(id) { return (id === 'copper' || id === 'silver' || id === 'gold') ? ' c-' + id : ''; }
+  // 実コスト（「橋」等のこのターンのコスト軽減を反映）。表示・購入判定で共通利用。
+  function effCost(state, id) { return (state && E() && E().cardCost) ? E().cardCost(state, id) : DOM.CARDS[id].cost; }
   // 直近の「誰が何をした」行（手番案内・ゲーム進行行は除く）。全員に見せる用。
   function lastMove(log) {
     if (!Array.isArray(log)) return null;
@@ -138,10 +141,12 @@
     opts = opts || {};
     const c = DOM.CARDS[id];
     const n = state.supply[id] || 0;
+    const ec = effCost(state, id);
     const cls = 'pile has-art ' + (opts.size === 'sm' ? 'sm ' : '') + typeClass(id) +
-      (n <= 0 ? ' empty' : '') + (opts.buyable ? ' buyable' : '') + (opts.gainable ? ' gainable' : '');
+      (n <= 0 ? ' empty' : '') + (opts.buyable ? ' buyable' : '') + (opts.gainable ? ' gainable' : '') +
+      (ec < c.cost ? ' discounted' : '');
     return h('div', { class: cls, onclick: opts.onClick, 'data-pile': id },
-      h('div', { class: 'pcost' }, c.cost),
+      h('div', { class: 'pcost' }, ec),
       h('div', { class: 'pname' }, c.name),
       cardArt(id),
       h('div', { class: 'pile-count' + (n <= 2 ? ' lo' : n <= 5 ? ' mid' : '') }, '残' + n)
@@ -244,6 +249,11 @@
       h('div', { class: 'panel' },
         h('div', { class: 'field' }, h('label', null, '人数'), countSeg),
         h('div', { class: 'seat-list' }, rows),
+        h('div', { class: 'field' }, h('label', null, '使う王国カード'),
+          segmented([{ value: 'basic', label: '基本' }, { value: 'intrigue', label: '陰謀(拡張)' }, { value: 'random', label: 'ランダム10種' }], UI.setup.kingdomSet, (v) => { UI.setup.kingdomSet = v; render(); })),
+        UI.setup.kingdomSet === 'random'
+          ? h('p', { class: 'muted', style: 'font-size:12px;margin:-4px 0 0' }, '基本＋陰謀の全カードから毎回10種をランダムに選びます。')
+          : null,
         h('div', { class: 'field' }, h('label', null, '手番の順番'),
           segmented([{ value: false, label: '上から順' }, { value: true, label: 'ランダム' }], UI.setup.randomOrder, (v) => { UI.setup.randomOrder = v; render(); })),
         h('button', { class: 'btn btn-primary btn-block', onclick: () => startConfigured(null, { shuffle: UI.setup.randomOrder }) }, 'この設定で開始')
@@ -260,9 +270,13 @@
       h('h2', null, '1台で2人プレイ'),
       h('p', { class: 'muted', style: 'font-size:13px;max-width:320px' }, '端末を回しながら遊びます。相手の番になると手札を隠す画面をはさみます。'),
       h('div', { class: 'panel' },
-        h('div', { class: 'field' }, h('label', null, 'プレイヤー1（先攻）'), i1),
+        h('div', { class: 'field' }, h('label', null, 'プレイヤー1'), i1),
         h('div', { class: 'field' }, h('label', null, 'プレイヤー2'), i2),
-        h('button', { class: 'btn btn-primary btn-block', onclick: () => startConfigured([{ name: n1 || 'プレイヤー1', type: 'human' }, { name: n2 || 'プレイヤー2', type: 'human' }]) }, 'ゲーム開始')
+        h('div', { class: 'field' }, h('label', null, '使う王国カード'),
+          segmented([{ value: 'basic', label: '基本' }, { value: 'intrigue', label: '陰謀(拡張)' }, { value: 'random', label: 'ランダム10種' }], UI.setup.kingdomSet, (v) => { UI.setup.kingdomSet = v; render(); })),
+        h('div', { class: 'field' }, h('label', null, '先攻'),
+          segmented([{ value: false, label: 'プレイヤー1' }, { value: true, label: 'ランダム' }], UI.setup.randomOrder, (v) => { UI.setup.randomOrder = v; render(); })),
+        h('button', { class: 'btn btn-primary btn-block', onclick: () => startConfigured([{ name: n1 || 'プレイヤー1', type: 'human' }, { name: n2 || 'プレイヤー2', type: 'human' }], { shuffle: UI.setup.randomOrder }) }, 'ゲーム開始')
       ),
       h('button', { class: 'btn btn-ghost', onclick: () => go('home') }, '戻る')
     );
@@ -332,6 +346,10 @@
         h('label', null, 'CPUの強さ'),
         segmented([{ value: 'easy', label: '弱' }, { value: 'normal', label: '普通' }, { value: 'hard', label: '強' }],
           lb.cpuLevel, (v) => UI.netClient.send({ t: 'setConfig', cpuLevel: v }))),
+      h('div', { class: 'field' },
+        h('label', null, '使う王国カード'),
+        segmented([{ value: 'basic', label: '基本' }, { value: 'intrigue', label: '陰謀(拡張)' }, { value: 'random', label: 'ランダム10種' }],
+          lb.kingdomSet || 'basic', (v) => UI.netClient.send({ t: 'setConfig', kingdomSet: v }))),
       h('button', { class: 'btn btn-primary btn-block', disabled: lb.canStart ? null : 'disabled', onclick: () => UI.netClient.send({ t: 'start' }) },
         lb.canStart ? 'ゲーム開始' : '人間1人以上・合計2〜4人で開始')
     ) : h('p', { class: 'muted', style: 'text-align:center' }, 'ホストの開始を待っています…');
@@ -443,7 +461,8 @@
       h('p', { class: 'muted', style: 'font-size:12px;padding:0 4px' }, 'タップで拡大（コスト・効果つき）。'),
       group('財宝', DOM.TREASURES),
       group('勝利点・呪い', DOM.VICTORY.concat(['curse'])),
-      group('王国カード（アクション）', DOM.KINGDOM)
+      group('王国カード（基本セット）', DOM.KINGDOM),
+      group('王国カード（陰謀・拡張）', (DOM.KINGDOM_POOL || DOM.KINGDOM).slice(DOM.KINGDOM.length))
     );
   }
 
@@ -531,7 +550,7 @@
 
     // サプライ（種類ごと）
     const buyableId = (id) => interactive && t.phase === 'buy' && !state.pending &&
-      (state.supply[id] || 0) > 0 && t.buys > 0 && DOM.CARDS[id].cost <= t.coins;
+      (state.supply[id] || 0) > 0 && t.buys > 0 && effCost(state, id) <= t.coins;
     const supSection = (title, ids, size) =>
       h('div', { class: 'supply-section' },
         h('div', { class: 'sup-title' }, title),
@@ -599,11 +618,13 @@
     const counts = {};
     hand.forEach((c) => (counts[c] = (counts[c] || 0) + 1));
     const present = order.filter((id) => counts[id]);
+    // 多重タイプ（貴族=勝利点+アクション、後宮=財宝+勝利点）は1グループだけに入れる。
+    // 優先: アクション → 財宝 → 勝利点/呪い（手札での操作はこの順で扱える）。
     return {
       counts,
       actions: present.filter((id) => DOM.isType(id, 'action')),
-      coins: present.filter((id) => DOM.isType(id, 'treasure')),
-      vp: present.filter((id) => DOM.isType(id, 'victory') || DOM.isType(id, 'curse')),
+      coins: present.filter((id) => DOM.isType(id, 'treasure') && !DOM.isType(id, 'action')),
+      vp: present.filter((id) => (DOM.isType(id, 'victory') || DOM.isType(id, 'curse')) && !DOM.isType(id, 'action') && !DOM.isType(id, 'treasure')),
     };
   }
 
@@ -628,7 +649,7 @@
   }
   function onPileTap(state, id, interactive) {
     const t = state.turn;
-    const cost = DOM.CARDS[id].cost;
+    const cost = effCost(state, id);
     const canBuy = interactive && !state.pending && t.phase === 'buy' && (state.supply[id] || 0) > 0 && t.buys > 0 && cost <= t.coins;
     if (canBuy) showSheet(id, { label: '購入する（' + cost + 'コイン）', cls: 'btn-primary', on: () => dispatch({ type: 'BUY', card: id }) });
     else showSheet(id, null);
@@ -704,7 +725,37 @@
     if (pd.type === 'remodel' && pd.stage === 'gain') return modalGainSupply(state, '改築 — 獲得', 'コスト ' + pd.maxCost + ' 以下のカードを獲得します。',
       (id) => DOM.CARDS[id].cost <= pd.maxCost, (id) => dispatch({ type: 'REMODEL_GAIN', card: id }), () => dispatch({ type: 'REMODEL_GAIN', card: null }));
     if (pd.type === 'workshop') return modalGainSupply(state, '工房 — 獲得', 'コスト 4 以下のカードを獲得します。',
-      (id) => DOM.CARDS[id].cost <= 4, (id) => dispatch({ type: 'WORKSHOP_GAIN', card: id }), () => dispatch({ type: 'WORKSHOP_GAIN', card: null }));
+      (id) => effCost(state, id) <= 4, (id) => dispatch({ type: 'WORKSHOP_GAIN', card: id }), () => dispatch({ type: 'WORKSHOP_GAIN', card: null }));
+
+    /* ===== 拡張: 陰謀 ===== */
+    if (pd.type === 'courtyard') return modalSingleHand(p, '中庭 — 山札の上に置く', '手札から1枚を選び、山札の一番上に置きます（次のターンに引きます）。',
+      () => true, (id) => dispatch({ type: 'COURTYARD_PUT', card: id }), null, '山札の上に置く');
+    if (pd.type === 'pawn') return modalChooseTwo(p);
+    if (pd.type === 'steward' && pd.stage === 'choose') return modalOptions('執事', '次から1つを選びます。', [
+      { label: '+2 カード', on: () => dispatch({ type: 'STEWARD_RESOLVE', choice: 'cards' }) },
+      { label: '+2 コイン', on: () => dispatch({ type: 'STEWARD_RESOLVE', choice: 'coins' }) },
+      { label: '手札を2枚 廃棄', on: () => dispatch({ type: 'STEWARD_RESOLVE', choice: 'trash' }) },
+    ]);
+    if (pd.type === 'steward' && pd.stage === 'trash') return modalTrashHand(p, '執事 — 廃棄', '手札から2枚を選んで廃棄します。',
+      Math.min(2, p.hand.length), (cards) => dispatch({ type: 'STEWARD_TRASH', cards }));
+    if (pd.type === 'wishing') return modalNameCard(state, '願いの井戸 — 宣言', 'カードを1種宣言します。山札の一番上がそれなら手札に加わります。',
+      (id) => dispatch({ type: 'WISHING_RESOLVE', card: id }));
+    if (pd.type === 'baron') return modalOptions('男爵', '屋敷の使い方を選びます。', [
+      { label: '屋敷を捨てて +4 コイン', cls: 'btn-primary', on: () => dispatch({ type: 'BARON_RESOLVE', discard: true }) },
+      { label: '屋敷を獲得する（捨てない）', on: () => dispatch({ type: 'BARON_RESOLVE', discard: false }) },
+    ]);
+    if (pd.type === 'ironworks') return modalGainSupply(state, '鉄工所 — 獲得', 'コスト4以下を1枚獲得。アクション＝+1アクション／財宝＝+1コイン／勝利点＝+1カード。',
+      (id) => effCost(state, id) <= 4, (id) => dispatch({ type: 'IRONWORKS_GAIN', card: id }), () => dispatch({ type: 'IRONWORKS_GAIN', card: null }));
+    if (pd.type === 'mining_village') return modalOptions('鉱山の村', '場のこのカードを廃棄すると +2 コインになります。', [
+      { label: '廃棄して +2 コイン', cls: 'btn-primary', on: () => dispatch({ type: 'MINING_VILLAGE_RESOLVE', trash: true }) },
+      { label: '廃棄しない', on: () => dispatch({ type: 'MINING_VILLAGE_RESOLVE', trash: false }) },
+    ]);
+    if (pd.type === 'nobles') return modalOptions('貴族', '次から1つを選びます。', [
+      { label: '+3 カード', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'cards' }) },
+      { label: '+2 アクション', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'actions' }) },
+    ]);
+    if (pd.type === 'torturer') return modalTorturer(p);
+
     return h('div');
   }
 
@@ -743,13 +794,86 @@
         remain === 0 ? '確定（捨てる）' : 'あと ' + remain + ' 枚 選ぶ'));
     return modalShell('民兵を受ける', '手札が3枚になるまで捨てます。' + (hasMoat ? '「堀」で無効化もできます。' : ''), chips, buttons);
   }
-  function modalSingleHand(p, title, desc, filter, onPick, skip) {
+  function modalSingleHand(p, title, desc, filter, onPick, skip, pickLabel) {
+    const lbl = pickLabel || '廃棄する';
     const elig = p.hand.map((id, idx) => ({ id, idx })).filter((x) => filter(x.id));
     const chips = elig.length
-      ? elig.map((x) => cardEl(x.id, { size: 'sm', extra: 'selectable', onClick: () => openPickZoom(x.id, '廃棄する', () => onPick(x.id)) }))
+      ? elig.map((x) => cardEl(x.id, { size: 'sm', extra: 'selectable', onClick: () => openPickZoom(x.id, lbl, () => onPick(x.id)) }))
       : [h('p', { class: 'muted' }, '対象のカードがありません')];
     const btn = skip ? h('button', { class: 'btn btn-block', onclick: skip.on }, skip.label) : null;
     return modalShell(title, desc, chips, btn);
+  }
+
+  /* ---------- 拡張用の選択モーダル ---------- */
+  // 選択肢ボタンを縦に並べる（執事・男爵・鉱山の村・貴族など）
+  function modalOptions(title, desc, buttons) {
+    const btns = buttons.map((b) =>
+      h('button', { class: 'btn btn-block ' + (b.cls || ''), style: 'margin-bottom:8px', onclick: b.on }, b.label));
+    return modalShell(title, desc, [], h('div', null, btns));
+  }
+  // 従者: 4つから異なる2つを選ぶ
+  const PAWN_OPTS = [
+    { v: 'card', label: '+1 カード' }, { v: 'action', label: '+1 アクション' },
+    { v: 'buy', label: '+1 購入' }, { v: 'coin', label: '+1 コイン' },
+  ];
+  function modalChooseTwo(p) {
+    const tiles = PAWN_OPTS.map((o) =>
+      h('button', { class: 'choose-tile' + (UI.selection.includes(o.v) ? ' on' : ''),
+        onclick: () => {
+          const i = UI.selection.indexOf(o.v);
+          if (i >= 0) UI.selection.splice(i, 1);
+          else if (UI.selection.length < 2) UI.selection.push(o.v);
+          render();
+        } }, o.label));
+    const n = UI.selection.length;
+    const footer = h('button', { class: 'btn btn-primary btn-block', disabled: n === 2 ? null : 'disabled',
+      onclick: () => dispatch({ type: 'PAWN_RESOLVE', choices: UI.selection.slice() }) },
+      n === 2 ? '決定' : '異なる2つを選ぶ（あと ' + (2 - n) + '）');
+    return modalShell('従者', '次から異なる2つを選びます。', tiles, footer);
+  }
+  // 手札からちょうど n 枚を選んで廃棄
+  function modalTrashHand(p, title, desc, n, onConfirm) {
+    const chips = p.hand.map((id, idx) =>
+      cardEl(id, { size: 'sm', extra: UI.selection.includes(idx) ? 'selected' : 'selectable',
+        onClick: () => {
+          const i = UI.selection.indexOf(idx);
+          if (i >= 0) UI.selection.splice(i, 1);
+          else if (UI.selection.length < n) UI.selection.push(idx);
+          render();
+        } }));
+    const remain = n - UI.selection.length;
+    const footer = h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
+      onclick: () => onConfirm(UI.selection.map((i) => p.hand[i])) },
+      remain === 0 ? '確定（廃棄）' : 'あと ' + remain + ' 枚 選ぶ');
+    return modalShell(title, desc, chips, footer);
+  }
+  // 願いの井戸: このゲームのカードから1種を宣言
+  function modalNameCard(state, title, desc, onPick) {
+    const order = DOM.SUPPLY_ORDER(state.kingdom);
+    const chips = order.map((id) =>
+      cardEl(id, { size: 'sm', extra: 'selectable', onClick: () => openPickZoom(id, '宣言する', () => onPick(id)) }));
+    return modalShell(title, desc, chips, null);
+  }
+  // 拷問人を受ける: 手札2枚を捨てる / 呪いを受け取る / 堀で無効化
+  function modalTorturer(p) {
+    const need = Math.min(2, p.hand.length);
+    const hasMoat = p.hand.includes('moat');
+    const chips = p.hand.map((id, idx) =>
+      cardEl(id, { size: 'sm', extra: UI.selection.includes(idx) ? 'selected' : 'selectable',
+        onClick: () => {
+          const i = UI.selection.indexOf(idx);
+          if (i >= 0) UI.selection.splice(i, 1);
+          else if (UI.selection.length < need) UI.selection.push(idx);
+          render();
+        } }));
+    const remain = need - UI.selection.length;
+    const footer = h('div', null,
+      hasMoat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'MOAT_REVEAL' }) }, '🛡 堀を公開して無効化') : null,
+      h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
+        onclick: () => dispatch({ type: 'TORTURER_RESOLVE', choice: 'discard', cards: UI.selection.map((i) => p.hand[i]) }) },
+        remain === 0 ? '手札を捨てる（確定）' : '捨てる ' + remain + ' 枚 を選ぶ'),
+      h('button', { class: 'btn btn-block', style: 'margin-top:8px', onclick: () => dispatch({ type: 'TORTURER_RESOLVE', choice: 'curse' }) }, '☠️ 呪いを手札に受け取る'));
+    return modalShell('拷問人を受ける', '手札を2枚捨てるか、呪い1枚を手札に受け取ります。' + (hasMoat ? '「堀」で無効化もできます。' : ''), chips, footer);
   }
   function modalGainSupply(state, title, desc, filter, onPick, skipOnEmpty) {
     const order = DOM.SUPPLY_ORDER(state.kingdom);
@@ -863,15 +987,19 @@
      ゲーム開始・部屋管理・CPU駆動
      ============================================================ */
   function startConfigured(configs, opts) {
+    opts = opts || {};
     configs = configs || UI.setup.seats.map((s) => ({ name: s.name, isCpu: s.type === 'cpu', level: s.level }));
     // 名前の空欄を補完
     configs = configs.map((c, i) => ({ name: (c.name && c.name.trim()) || ('プレイヤー' + (i + 1)), isCpu: !!c.isCpu, level: c.level || 'normal' }));
     // 手番をランダムにする場合はシャッフル（Fisher-Yates）
-    if (opts && opts.shuffle) {
+    if (opts.shuffle) {
       for (let i = configs.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = configs[i]; configs[i] = configs[j]; configs[j] = t; }
     }
+    // 使う王国カード（基本/陰謀/ランダム）。ランダムはこの場で10種を確定して以後固定。
+    const kingdom = opts.kingdom || (DOM.kingdomForSet ? DOM.kingdomForSet(UI.setup.kingdomSet) : DOM.KINGDOM);
     UI.lastConfigs = configs;
-    const st = E().createInitialState(configs);
+    UI.lastKingdom = kingdom;
+    const st = E().createInitialState(configs, kingdom);
     UI.mode = 'local'; UI.mySeat = null; UI.localViewer = firstHuman(st);
     UI.store = DOM.LocalStore(st);
     UI.store.subscribe(onStoreChange);
@@ -879,9 +1007,9 @@
     render();
   }
   function restartLocal() {
-    const st = E().createInitialState(UI.lastConfigs);
+    const st = E().createInitialState(UI.lastConfigs, UI.lastKingdom);
     UI.localViewer = firstHuman(st);
-    UI.store.dispatch({ type: 'NEW_GAME', players: UI.lastConfigs, kingdom: st.kingdom });
+    UI.store.dispatch({ type: 'NEW_GAME', players: UI.lastConfigs, kingdom: UI.lastKingdom });
   }
 
   /* ---------- オンライン（WebSocket / サーバ権威） ---------- */
@@ -1301,7 +1429,8 @@
       supply: Object.assign({}, s.supply),
       active: a,
       inPlay: (s.players[a].inPlay || []).slice(),
-      discardLens: s.players.map((p) => (p.discard ? p.discard.length : 0)),
+      // 各プレイヤーの総枚数（山+手+捨+場）。獲得すると＋1されるので「誰が取ったか」を正確に検出できる。
+      ownedLens: s.players.map((p) => (p.deck.length + p.hand.length + p.discard.length + p.inPlay.length)),
     };
   }
   function boardFxTick() {
@@ -1315,20 +1444,20 @@
     try { runBoardFx(prev, cur); } catch (e) { /* 演出失敗は無視 */ }
   }
   function runBoardFx(prev, cur) {
-    // 1) 購入/獲得: サプライが減った山 → 捨札が増えた人へカードが飛ぶ
+    // 1) 購入/獲得: サプライが減った山 → 総枚数が増えたプレイヤーへ「大きく見せてからデッキへ」演出
     const dec = []; let total = 0;
     for (const id in cur.supply) {
       const d = (prev.supply[id] || 0) - (cur.supply[id] || 0);
       if (d > 0) { dec.push(id); total += d; }
     }
     if (dec.length && total <= 3) {                  // 大量変化(初期配布/復元)は演出しない
-      let buyer = -1, best = 0;
-      for (let i = 0; i < cur.discardLens.length; i++) {
-        const g = cur.discardLens[i] - (prev.discardLens[i] || 0);
-        if (g > best) { best = g; buyer = i; }
+      let gainer = -1, best = 0;
+      for (let i = 0; i < cur.ownedLens.length; i++) {
+        const g = cur.ownedLens[i] - (prev.ownedLens[i] || 0);
+        if (g > best) { best = g; gainer = i; }
       }
-      if (buyer < 0) buyer = cur.active;
-      dec.forEach((id) => flyPurchase(id, buyer));
+      if (gainer < 0) gainer = cur.active;           // 廃棄＋獲得で総数不変のとき等は手番者へ
+      dec.forEach((id, i) => flyGainBig(id, gainer, i));
     }
     // 2) アクション使用: 同じ手番で場(inPlay)が増え、追加がアクションなら演出
     if (prev.active === cur.active && cur.inPlay.length > prev.inPlay.length) {
@@ -1339,24 +1468,47 @@
     }
   }
   function centerOf(el) { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
-  function flyPurchase(id, buyer) {
-    const src = document.querySelector('[data-pile="' + id + '"]');
-    const dst = document.querySelector('[data-seat="' + buyer + '"]') || document.querySelector('[data-self-pile]');
-    if (!src || !dst || !DOM.CARDS[id]) return;
-    const a = centerOf(src), b = centerOf(dst);
-    const fly = document.createElement('div');
-    fly.className = 'fly-card ' + typeClass(id);
-    const img = document.createElement('img'); img.src = 'asset/thumb/' + id + '.jpg'; img.alt = '';
-    img.onerror = function () { this.style.display = 'none'; };
-    const nm = document.createElement('div'); nm.className = 'fln'; nm.textContent = DOM.CARDS[id].name;
-    fly.appendChild(img); fly.appendChild(nm);
-    fly.style.left = (a.x - 32) + 'px'; fly.style.top = (a.y - 45) + 'px';
-    fxLayer().appendChild(fly);
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      fly.style.transform = 'translate(' + (b.x - a.x) + 'px,' + (b.y - a.y) + 'px) scale(.3) rotate(7deg)';
-      fly.style.opacity = '0.12';
-    }));
-    setTimeout(() => { try { fly.remove(); } catch (e) { /* noop */ } }, 720);
+
+  /* 獲得したカードを画面中央で大きく見せ、少し溜めてから、ゆっくりそのプレイヤーのデッキへ吸い込ませる。
+     何を取ったかが一目で分かる。新カードで絵が無い場合はカード名（文字カード）で表示する。 */
+  function flyGainBig(id, gainer, idx) {
+    if (!DOM.CARDS[id]) return;
+    const selfSeat = (UI.mode === 'online') ? UI.mySeat : UI.localViewer;
+    const dst = (gainer === selfSeat)
+      ? document.querySelector('[data-self-pile]')
+      : (document.querySelector('[data-seat="' + gainer + '"]') || document.querySelector('[data-self-pile]'));
+    const layer = fxLayer();
+    // 複数同時獲得は少しずらして重なりを避ける
+    const cx = (window.innerWidth || 360) / 2 + (idx || 0) * 18;
+    const cy = (window.innerHeight || 640) * 0.42;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'gain-fx';
+    wrap.style.left = cx + 'px'; wrap.style.top = cy + 'px';
+
+    const glow = document.createElement('div'); glow.className = 'gain-glow';
+    const card = document.createElement('div'); card.className = 'gain-card ' + typeClass(id);
+    const img = document.createElement('img'); img.className = 'gain-art'; img.src = 'asset/' + id + '.jpg'; img.alt = '';
+    img.onerror = function () { this.style.display = 'none'; card.classList.add('noart'); };
+    const cost = document.createElement('div'); cost.className = 'gain-cost'; cost.textContent = DOM.CARDS[id].cost;
+    const fallback = document.createElement('div'); fallback.className = 'gain-fallback'; fallback.textContent = DOM.CARDS[id].name;
+    const cap = document.createElement('div'); cap.className = 'gain-cap'; cap.textContent = DOM.CARDS[id].name;
+    card.appendChild(img); card.appendChild(cost); card.appendChild(fallback); card.appendChild(cap);
+    const note = document.createElement('div'); note.className = 'gain-note'; note.textContent = DOM.CARDS[id].name + ' を獲得！';
+    wrap.appendChild(glow); wrap.appendChild(card); wrap.appendChild(note);
+    layer.appendChild(wrap);
+
+    // 出現（ふわっと大きく）
+    requestAnimationFrame(() => requestAnimationFrame(() => wrap.classList.add('show')));
+    // 溜めたあと、ゆっくりデッキへ
+    setTimeout(() => {
+      let dx = 0, dy = (window.innerHeight || 640) * 0.5;
+      if (dst) { const r = dst.getBoundingClientRect(); dx = (r.left + r.width / 2) - cx; dy = (r.top + r.height / 2) - cy; }
+      wrap.classList.add('go');
+      wrap.style.transform = 'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px)) scale(0.16)';
+      wrap.style.opacity = '0.05';
+    }, 950);
+    setTimeout(() => { try { wrap.remove(); } catch (e) { /* noop */ } }, 2200);
   }
   function actionCastFx(id) {
     if (!DOM.CARDS[id]) return;

@@ -42,7 +42,13 @@ const ALLOWED = new Set([
   'END_ACTION_PHASE', 'END_TURN',
   'CELLAR_RESOLVE', 'MILITIA_RESOLVE', 'MOAT_REVEAL',
   'MINE_TRASH', 'MINE_GAIN', 'REMODEL_TRASH', 'REMODEL_GAIN', 'WORKSHOP_GAIN',
+  // 拡張: 陰謀
+  'COURTYARD_PUT', 'PAWN_RESOLVE', 'STEWARD_RESOLVE', 'STEWARD_TRASH',
+  'WISHING_RESOLVE', 'BARON_RESOLVE', 'IRONWORKS_GAIN',
+  'MINING_VILLAGE_RESOLVE', 'NOBLES_RESOLVE', 'TORTURER_RESOLVE',
 ]);
+// 使える王国カードのセット
+const KINGDOM_SETS = ['basic', 'intrigue', 'random'];
 
 const rooms = new Map();
 
@@ -117,6 +123,7 @@ function broadcastLobby(room) {
     cpuCount: room.cpuCount,
     maxCpu: Math.max(0, MAX_PLAYERS - room.members.length),
     cpuLevel: room.cpuLevel,
+    kingdomSet: room.kingdomSet || 'basic',
   };
   for (const m of room.members) send(m.ws, msg);
 }
@@ -149,7 +156,9 @@ function buildConfigs(room) {
 function startGame(room) {
   const configs = buildConfigs(room);
   if (configs.length < MIN_PLAYERS) return;
-  room.state = E.createInitialState(configs, null, { startActive: START_ACTIVE });
+  // 王国カード（基本/陰謀/ランダム）。'random' はサーバ権威で1度だけ確定し全員で共有する。
+  const kingdom = DOM.kingdomForSet ? DOM.kingdomForSet(room.kingdomSet || 'basic') : null;
+  room.state = E.createInitialState(configs, kingdom, { startActive: START_ACTIVE });
   room.started = true;
   for (const m of room.members) {
     send(m.ws, { t: 'started', you: m.seat, state: E.maskStateFor(room.state, m.seat) });
@@ -268,7 +277,7 @@ function handleConnection(ws) {
         try { code = genCode(); } catch { send(ws, { t: 'error', message: 'ルームを作成できませんでした' }); return; }
         room = {
           code, members: [], started: false, state: null,
-          cpuCount: 1, cpuLevel: 'normal', cpuTimer: null,
+          cpuCount: 1, cpuLevel: 'normal', kingdomSet: 'basic', cpuTimer: null,
           graceMs: GRACE_MS, startedGraceMs: STARTED_GRACE_MS, cpuStepMs: CPU_STEP_MS,
         };
         rooms.set(code, room);
@@ -342,6 +351,7 @@ function handleConnection(ws) {
       case 'setConfig': {
         if (!room || !me || !me.isHost || room.started) return;
         if (LEVELS.includes(msg.cpuLevel)) room.cpuLevel = msg.cpuLevel;
+        if (KINGDOM_SETS.includes(msg.kingdomSet)) room.kingdomSet = msg.kingdomSet;
         broadcastLobby(room);
         break;
       }

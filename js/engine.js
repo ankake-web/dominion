@@ -11,6 +11,13 @@
   const clone = (s) => JSON.parse(JSON.stringify(s));
   const C = () => DOM.CARDS;
 
+  // このターンのコスト軽減（「橋」など）を反映した実コスト
+  function cardCost(state, id) {
+    const base = (C()[id] && C()[id].cost) || 0;
+    const red = (state.turn && state.turn.costReduction) || 0;
+    return Math.max(0, base - red);
+  }
+
   /* ---------- 乱数・シャッフル ---------- */
   function shuffle(arr) {
     const a = arr.slice();
@@ -80,7 +87,7 @@
       players,
       supply: initSupply(players.length, kingdom),
       trash: [],
-      turn: { active: startActive, phase: 'action', actions: 1, buys: 1, coins: 0 },
+      turn: { active: startActive, phase: 'action', actions: 1, buys: 1, coins: 0, costReduction: 0, actionsPlayed: 0 },
       pending: null, // 選択待ち {type, player, ...}
       logSeq: 1, // ログの通し番号（効果音などが「新しい行」を確実に検知するため）
       log: [`ゲーム開始。${players[startActive].name} の番です。`],
@@ -145,6 +152,14 @@
       state.pending = null;
     }
   }
+  // アタック全般：キューの次の対象へ進む（pd.type を引き継ぐ）。拷問人など複数対象アタック共通。
+  function advanceAttack(state, pd) {
+    if (pd.queue && pd.queue.length) {
+      state.pending = { type: pd.type, player: pd.queue[0], source: pd.source, queue: pd.queue.slice(1) };
+    } else {
+      state.pending = null;
+    }
+  }
 
   /* ---------- アクションカードの効果 ---------- */
   function applyEffect(state, cardId, pi) {
@@ -203,9 +218,74 @@
         break;
       case 'workshop':
         // コスト4以下が獲得できる場合のみ選択待ち（無ければ何もしない）
-        if (anyGainable(state, (id) => C()[id].cost <= 4))
+        if (anyGainable(state, (id) => cardCost(state, id) <= 4))
           state.pending = { type: 'workshop', stage: 'gain', player: pi };
         break;
+
+      /* ===== 拡張: 陰謀 ===== */
+      case 'courtyard':
+        draw(state, pi, 3);
+        // 手札1枚を山札の上に置く（手札があるときのみ）
+        if (p.hand.length > 0) state.pending = { type: 'courtyard', player: pi };
+        break;
+      case 'pawn':
+        // 4つから異なる2つを選ぶ
+        state.pending = { type: 'pawn', player: pi };
+        break;
+      case 'shanty_town':
+        t.actions += 2;
+        // 手札を公開し、アクションが無ければ +2 カード（このカードは既に場にある）
+        if (!p.hand.some((c) => DOM.isType(c, 'action'))) draw(state, pi, 2);
+        break;
+      case 'steward':
+        state.pending = { type: 'steward', stage: 'choose', player: pi };
+        break;
+      case 'wishing_well':
+        draw(state, pi, 1);
+        t.actions += 1;
+        state.pending = { type: 'wishing', player: pi };
+        break;
+      case 'baron':
+        t.buys += 1;
+        if (p.hand.indexOf('estate') >= 0) {
+          state.pending = { type: 'baron', player: pi };
+        } else {
+          gain(state, pi, 'estate', 'discard');
+          log(state, `${p.name} は屋敷を獲得した。`);
+        }
+        break;
+      case 'bridge':
+        t.buys += 1;
+        t.coins += 1;
+        t.costReduction = (t.costReduction || 0) + 1;
+        break;
+      case 'conspirator':
+        t.coins += 2;
+        if ((t.actionsPlayed || 0) >= 3) { draw(state, pi, 1); t.actions += 1; }
+        break;
+      case 'ironworks':
+        if (anyGainable(state, (id) => cardCost(state, id) <= 4))
+          state.pending = { type: 'ironworks', player: pi };
+        break;
+      case 'mining_village':
+        draw(state, pi, 1);
+        t.actions += 2;
+        // 場のこのカードを廃棄して +2 コイン（任意）
+        state.pending = { type: 'mining_village', player: pi };
+        break;
+      case 'nobles':
+        // +3 カード か +2 アクション を選ぶ
+        state.pending = { type: 'nobles', player: pi };
+        break;
+      case 'torturer': {
+        draw(state, pi, 3);
+        // 他の全プレイヤーが対象（手番順）
+        const to = [];
+        for (let k = 1; k < state.players.length; k++) to.push((pi + k) % state.players.length);
+        if (to.length) state.pending = { type: 'torturer', player: to[0], source: pi, queue: to.slice(1) };
+        break;
+      }
+
       default:
         break;
     }
@@ -222,14 +302,19 @@
     return [].concat(p.deck, p.hand, p.discard, p.inPlay);
   }
   function vpOf(p) {
-    return allCards(p).reduce((sum, c) => sum + (C()[c].vp || 0), 0);
+    const cards = allCards(p);
+    let vp = cards.reduce((sum, c) => sum + (C()[c].vp || 0), 0);
+    // 公爵：所持する公領1枚につき1勝利点
+    const dukes = cards.filter((c) => c === 'duke').length;
+    if (dukes) vp += dukes * cards.filter((c) => c === 'duchy').length;
+    return vp;
   }
   function scoreGame(state) {
     const scores = state.players.map((p) => {
       // 勝敗画面用の内訳（例: {province:2, duchy:1, estate:3, curse:1}）。
       // マスク配信後はクライアントから再計算できないため、ここで確定して持たせる。
       const vpCards = {};
-      allCards(p).forEach((c) => { if (C()[c].vp) vpCards[c] = (vpCards[c] || 0) + 1; });
+      allCards(p).forEach((c) => { if (DOM.isType(c, 'victory') || DOM.isType(c, 'curse')) vpCards[c] = (vpCards[c] || 0) + 1; });
       return { name: p.name, vp: vpOf(p), turns: p.turns, vpCards };
     });
     // 勝者判定：勝利点が多い → 同点ならターン数が少ない
@@ -268,7 +353,7 @@
       return;
     }
     const next = (pi + 1) % state.players.length;
-    state.turn = { active: next, phase: 'action', actions: 1, buys: 1, coins: 0 };
+    state.turn = { active: next, phase: 'action', actions: 1, buys: 1, coins: 0, costReduction: 0, actionsPlayed: 0 };
     log(state, `${state.players[next].name} の番です。`);
   }
 
@@ -299,6 +384,7 @@
         removeOne(me.hand, card);
         me.inPlay.push(card);
         t.actions -= 1;
+        t.actionsPlayed = (t.actionsPlayed || 0) + 1; // 共謀者の判定用（このターンに使ったアクション数）
         log(state, `${me.name} は「${C()[card].name}」を使った。`);
         applyEffect(state, card, pi);
         return state;
@@ -335,7 +421,7 @@
         if (t.phase !== 'buy') return state;
         const card = action.card;
         if (!C()[card]) return state; // 未知のカードIDは状態不変で拒否（throwしない）
-        const cost = C()[card].cost;
+        const cost = cardCost(state, card); // 「橋」等のコスト軽減を反映
         if ((state.supply[card] || 0) <= 0) return state;
         if (t.buys <= 0) return state;
         if (cost > t.coins) return state;
@@ -402,11 +488,12 @@
       }
       case 'MOAT_REVEAL': {
         const pd = state.pending;
-        if (!pd || pd.type !== 'militia') return state;
+        if (!pd || (pd.type !== 'militia' && pd.type !== 'torturer')) return state;
         const p = state.players[pd.player];
         if (p.hand.indexOf('moat') < 0) return state;
         log(state, `${p.name} は「堀」を公開し、アタックを無効化した。`);
-        advanceMilitia(state, pd);
+        if (pd.type === 'militia') advanceMilitia(state, pd);
+        else advanceAttack(state, pd);
         return state;
       }
 
@@ -425,9 +512,9 @@
         removeOne(p.hand, card);
         state.trash.push(card);
         log(state, `${p.name} は「${C()[card].name}」を廃棄した。`);
-        const mMax = C()[card].cost + 3;
+        const mMax = cardCost(state, card) + 3;
         // 獲得できる財宝が無ければ選択待ちにせず終了（デッドロック回避）
-        state.pending = anyGainable(state, (id) => DOM.isType(id, 'treasure') && C()[id].cost <= mMax)
+        state.pending = anyGainable(state, (id) => DOM.isType(id, 'treasure') && cardCost(state, id) <= mMax)
           ? { type: 'mine', stage: 'gain', player: pd.player, maxCost: mMax }
           : null;
         return state;
@@ -436,7 +523,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'mine' || pd.stage !== 'gain') return state;
         const card = action.card;
-        const canGain = (id) => DOM.isType(id, 'treasure') && C()[id].cost <= pd.maxCost;
+        const canGain = (id) => DOM.isType(id, 'treasure') && cardCost(state, id) <= pd.maxCost;
         if (card == null) {
           // 獲得は強制（公式ルール）。獲得できる財宝が残っていない場合のみ辞退できる。
           if (anyGainable(state, canGain)) return state;
@@ -460,9 +547,9 @@
         removeOne(p.hand, card);
         state.trash.push(card);
         log(state, `${p.name} は「${C()[card].name}」を廃棄した。`);
-        const rMax = C()[card].cost + 2;
+        const rMax = cardCost(state, card) + 2;
         // 獲得できるカードが無ければ選択待ちにせず終了（デッドロック回避）
-        state.pending = anyGainable(state, (id) => C()[id].cost <= rMax)
+        state.pending = anyGainable(state, (id) => cardCost(state, id) <= rMax)
           ? { type: 'remodel', stage: 'gain', player: pd.player, maxCost: rMax }
           : null;
         return state;
@@ -471,7 +558,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'remodel' || pd.stage !== 'gain') return state;
         const card = action.card;
-        const canGain = (id) => !!C()[id] && C()[id].cost <= pd.maxCost;
+        const canGain = (id) => !!C()[id] && cardCost(state, id) <= pd.maxCost;
         if (card == null) {
           // 獲得は強制（公式ルール）。獲得できるカードが無い場合のみ辞退できる。
           if (anyGainable(state, canGain)) return state;
@@ -490,7 +577,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'workshop') return state;
         const card = action.card;
-        const canGain = (id) => !!C()[id] && C()[id].cost <= 4;
+        const canGain = (id) => !!C()[id] && cardCost(state, id) <= 4;
         if (card == null) {
           // 獲得は強制（公式ルール）。獲得できるカードが無い場合のみ辞退できる。
           if (anyGainable(state, canGain)) return state;
@@ -501,6 +588,172 @@
         gain(state, pd.player, card, 'discard');
         log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した。`);
         state.pending = null;
+        return state;
+      }
+
+      /* ===== 拡張: 陰謀 の選択解決 ===== */
+
+      /* ---- 中庭：手札1枚を山札の上へ ---- */
+      case 'COURTYARD_PUT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'courtyard') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0) return state;
+        removeOne(p.hand, card);
+        p.deck.unshift(card);
+        log(state, `${p.name} は手札1枚を山札の上に置いた。`);
+        state.pending = null;
+        return state;
+      }
+
+      /* ---- 従者：4つから異なる2つ ---- */
+      case 'PAWN_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'pawn') return state;
+        const valid = ['card', 'action', 'buy', 'coin'];
+        const ch = Array.isArray(action.choices)
+          ? action.choices.filter((c, i, a) => valid.includes(c) && a.indexOf(c) === i) : [];
+        if (ch.length !== 2) return state; // 異なる2つ必須
+        ch.forEach((c) => {
+          if (c === 'card') draw(state, pd.player, 1);
+          else if (c === 'action') t.actions += 1;
+          else if (c === 'buy') t.buys += 1;
+          else if (c === 'coin') t.coins += 1;
+        });
+        log(state, `${state.players[pd.player].name} は従者の効果を選んだ。`);
+        state.pending = null;
+        return state;
+      }
+
+      /* ---- 執事：選択 / 廃棄2 ---- */
+      case 'STEWARD_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'steward' || pd.stage !== 'choose') return state;
+        const p = state.players[pd.player];
+        if (action.choice === 'cards') { draw(state, pd.player, 2); log(state, `${p.name} は執事で2枚引いた。`); state.pending = null; }
+        else if (action.choice === 'coins') { t.coins += 2; log(state, `${p.name} は執事で +2 コイン。`); state.pending = null; }
+        else if (action.choice === 'trash') {
+          state.pending = p.hand.length > 0 ? { type: 'steward', stage: 'trash', player: pd.player } : null;
+        }
+        return state;
+      }
+      case 'STEWARD_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'steward' || pd.stage !== 'trash') return state;
+        const p = state.players[pd.player];
+        const want = Math.min(2, p.hand.length);
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length !== want) return state;
+        const handCopy = p.hand.slice();
+        for (const c of cards) if (!removeOne(handCopy, c)) return state;
+        cards.forEach((c) => { removeOne(p.hand, c); state.trash.push(c); });
+        log(state, `${p.name} は手札 ${cards.length}枚 を廃棄した。`);
+        state.pending = null;
+        return state;
+      }
+
+      /* ---- 願いの井戸：宣言して山札の上を公開 ---- */
+      case 'WISHING_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'wishing') return state;
+        const p = state.players[pd.player];
+        const named = action.card;
+        if (!C()[named]) return state;
+        if (p.deck.length === 0 && p.discard.length > 0) { p.deck = shuffle(p.discard); p.discard = []; }
+        const top = p.deck.length ? p.deck[0] : null;
+        if (top != null) {
+          log(state, `${p.name} は「${C()[named].name}」を宣言。山札の上は「${C()[top].name}」。`);
+          if (top === named) { p.hand.push(p.deck.shift()); log(state, '当たり！ 手札に加えた。'); }
+        } else {
+          log(state, `${p.name} は「${C()[named].name}」を宣言したが山札が空だった。`);
+        }
+        state.pending = null;
+        return state;
+      }
+
+      /* ---- 男爵：屋敷を捨てて+4 / 屋敷を獲得 ---- */
+      case 'BARON_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'baron') return state;
+        const p = state.players[pd.player];
+        if (action.discard && p.hand.indexOf('estate') >= 0) {
+          removeOne(p.hand, 'estate');
+          p.discard.push('estate');
+          t.coins += 4;
+          log(state, `${p.name} は屋敷を捨てて +4 コイン。`);
+        } else {
+          gain(state, pd.player, 'estate', 'discard');
+          log(state, `${p.name} は屋敷を獲得した。`);
+        }
+        state.pending = null;
+        return state;
+      }
+
+      /* ---- 鉄工所：コスト4以下を獲得＋種別ボーナス ---- */
+      case 'IRONWORKS_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ironworks') return state;
+        const card = action.card;
+        const canGain = (id) => !!C()[id] && cardCost(state, id) <= 4;
+        if (card == null) {
+          if (anyGainable(state, canGain)) return state; // 獲得は強制
+          state.pending = null; return state;
+        }
+        if (!canGain(card) || (state.supply[card] || 0) <= 0) return state;
+        gain(state, pd.player, card, 'discard');
+        log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した。`);
+        // 該当する種別すべてのボーナス（後宮=財宝+勝利点 等は両方）
+        if (DOM.isType(card, 'action')) t.actions += 1;
+        if (DOM.isType(card, 'treasure')) t.coins += 1;
+        if (DOM.isType(card, 'victory')) draw(state, pd.player, 1);
+        state.pending = null;
+        return state;
+      }
+
+      /* ---- 鉱山の村：場のこれを廃棄して+2コイン（任意）---- */
+      case 'MINING_VILLAGE_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'mining_village') return state;
+        const p = state.players[pd.player];
+        if (action.trash && removeOne(p.inPlay, 'mining_village')) {
+          state.trash.push('mining_village');
+          t.coins += 2;
+          log(state, `${p.name} は鉱山の村を廃棄して +2 コイン。`);
+        }
+        state.pending = null;
+        return state;
+      }
+
+      /* ---- 貴族：+3カード or +2アクション ---- */
+      case 'NOBLES_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'nobles') return state;
+        if (action.choice === 'actions') t.actions += 2;
+        else draw(state, pd.player, 3);
+        log(state, `${state.players[pd.player].name} は貴族の効果を選んだ。`);
+        state.pending = null;
+        return state;
+      }
+
+      /* ---- 拷問人（アタック）：手札2枚を捨てる or 呪いを手札に ---- */
+      case 'TORTURER_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'torturer') return state;
+        const p = state.players[pd.player];
+        if (action.choice === 'curse') {
+          if ((state.supply.curse || 0) > 0) { gain(state, pd.player, 'curse', 'hand'); log(state, `${p.name} は呪いを手札に受け取った。`); }
+          else log(state, `${p.name} は呪いを受けようとしたが、呪いの山が空だった。`);
+        } else {
+          const want = Math.min(2, p.hand.length);
+          const cards = Array.isArray(action.cards) ? action.cards : [];
+          if (cards.length !== want) return state;
+          const handCopy = p.hand.slice();
+          for (const c of cards) if (!removeOne(handCopy, c)) return state;
+          cards.forEach((c) => { removeOne(p.hand, c); p.discard.push(c); });
+          log(state, `${p.name} は手札 ${cards.length}枚 を捨てた。`);
+        }
+        advanceAttack(state, pd);
         return state;
       }
 
@@ -534,6 +787,7 @@
   DOM.engine = {
     createInitialState,
     reduce,
+    cardCost,
     vpOf,
     scoreGame,
     isGameOver,

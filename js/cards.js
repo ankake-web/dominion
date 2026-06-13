@@ -49,11 +49,68 @@
                  text: '+1 購入\n+2 コイン' },
     workshop:  { id: 'workshop',  name: '工房',       cost: 3, types: ['action'],
                  text: 'コスト4以下のカードを1枚獲得する。' },
+
+    /* ===== 拡張: 陰謀 (Intrigue) =====
+       絵(asset/<id>.jpg・asset/thumb/<id>.jpg)は未用意。置けば自動で表示される。
+       未配置の間は文字カード(フォールバック)で表示される。 */
+    courtyard:     { id: 'courtyard',     name: '中庭',       cost: 2, types: ['action'],
+                     text: '+3 カード\n手札のカード1枚を山札の上に置く。' },
+    pawn:          { id: 'pawn',          name: '従者',       cost: 2, types: ['action'],
+                     text: '次から異なる2つを選ぶ：\n+1 カード／+1 アクション／+1 購入／+1 コイン' },
+    shanty_town:   { id: 'shanty_town',   name: '寂れた村',   cost: 3, types: ['action'],
+                     text: '+2 アクション\n手札を公開し、アクションが無ければ +2 カード。' },
+    steward:       { id: 'steward',       name: '執事',       cost: 3, types: ['action'],
+                     text: '次から1つを選ぶ：\n+2 カード／+2 コイン／手札を2枚廃棄。' },
+    wishing_well:  { id: 'wishing_well',  name: '願いの井戸', cost: 3, types: ['action'],
+                     text: '+1 カード\n+1 アクション\nカードを1種宣言し、山札の一番上を公開。\n当たれば手札に加える。' },
+    baron:         { id: 'baron',         name: '男爵',       cost: 4, types: ['action'],
+                     text: '+1 購入\n屋敷1枚を捨てて +4 コイン。\n捨てないなら屋敷1枚を獲得する。' },
+    bridge:        { id: 'bridge',        name: '橋',         cost: 4, types: ['action'],
+                     text: '+1 購入\n+1 コイン\nこのターン、全てのカードのコストが1少なくなる。' },
+    conspirator:   { id: 'conspirator',   name: '共謀者',     cost: 4, types: ['action'],
+                     text: '+2 コイン\nこのターンにアクションを3回以上使っていれば、\n+1 カード +1 アクション。' },
+    ironworks:     { id: 'ironworks',     name: '鉄工所',     cost: 4, types: ['action'],
+                     text: 'コスト4以下のカードを1枚獲得する。\nそれがアクションなら +1 アクション、\n財宝なら +1 コイン、勝利点なら +1 カード。' },
+    mining_village:{ id: 'mining_village',name: '鉱山の村',   cost: 4, types: ['action'],
+                     text: '+1 カード\n+2 アクション\nこれを廃棄してもよい。\nそうしたら +2 コイン。' },
+    torturer:      { id: 'torturer',      name: '拷問人',     cost: 5, types: ['action', 'attack'],
+                     text: '+3 カード\n他のプレイヤーは各自、\n手札を2枚捨てるか、呪い1枚を手札に獲得する。' },
+    duke:          { id: 'duke',          name: '公爵',       cost: 5, types: ['victory'],
+                     text: '（勝利点）\n所持する公領1枚につき 1 勝利点。' },
+    nobles:        { id: 'nobles',        name: '貴族',       cost: 6, types: ['victory', 'action'], vp: 2,
+                     text: '（勝利点 2）\n次から1つを選ぶ：+3 カード／+2 アクション。' },
+    harem:         { id: 'harem',         name: '後宮',       cost: 6, types: ['treasure', 'victory'], coin: 2, vp: 2,
+                     text: 'コイン +2\n（勝利点 2）' },
   };
 
-  // 初回おすすめの王国カード10種
+  /* ---------- 王国カードのセット ---------- */
+  // 基本セット（初回おすすめの10種）
   DOM.KINGDOM = ['cellar', 'village', 'woodcutter', 'workshop', 'moat',
                  'militia', 'smithy', 'remodel', 'market', 'mine'];
+  // 陰謀（拡張）おすすめの10種
+  DOM.KINGDOM_INTRIGUE = ['courtyard', 'pawn', 'shanty_town', 'steward', 'baron',
+                          'bridge', 'conspirator', 'ironworks', 'mining_village', 'nobles'];
+  // 全王国カードのプール（ランダム/手動選択用）
+  DOM.KINGDOM_POOL = DOM.KINGDOM.concat(
+    ['courtyard', 'pawn', 'shanty_town', 'steward', 'wishing_well', 'baron',
+     'bridge', 'conspirator', 'ironworks', 'mining_village', 'torturer', 'duke', 'nobles', 'harem']);
+  // 画面で選べるセット
+  DOM.CARD_SETS = [
+    { id: 'basic',    name: '基本セット',   kingdom: DOM.KINGDOM },
+    { id: 'intrigue', name: '陰謀（拡張）', kingdom: DOM.KINGDOM_INTRIGUE },
+  ];
+  // プールから重複なく n 種を選ぶ（コスト順に並べて返す）
+  DOM.randomKingdom = function (n, pool) {
+    const src = (pool || DOM.KINGDOM_POOL).slice();
+    for (let i = src.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = src[i]; src[i] = src[j]; src[j] = t; }
+    return src.slice(0, n || 10).sort((a, b) => DOM.CARDS[a].cost - DOM.CARDS[b].cost || a.localeCompare(b));
+  };
+  // セットID → 王国カード配列（'random' は毎回ランダム10種）
+  DOM.kingdomForSet = function (setId) {
+    if (setId === 'intrigue') return DOM.KINGDOM_INTRIGUE.slice();
+    if (setId === 'random') return DOM.randomKingdom(10);
+    return DOM.KINGDOM.slice();
+  };
 
   DOM.TREASURES = ['copper', 'silver', 'gold'];
   DOM.VICTORY   = ['estate', 'duchy', 'province'];

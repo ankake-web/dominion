@@ -15,6 +15,11 @@
   function allCards(p) { return [].concat(p.deck, p.hand, p.discard, p.inPlay); }
   function owned(p, id) { return allCards(p).filter((c) => c === id).length; }
   function sup(state, id) { return state.supply[id] || 0; }
+  // 実コスト（「橋」等の軽減を反映）
+  function cost(state, id) {
+    if (DOM.engine && DOM.engine.cardCost) return DOM.engine.cardCost(state, id);
+    return Math.max(0, C()[id].cost - ((state.turn && state.turn.costReduction) || 0));
+  }
 
   /* 手札に残す価値（民兵で捨てる順を決める。低いほど先に捨てる） */
   function keepValue(id) {
@@ -27,16 +32,19 @@
     return 50;
   }
 
-  /* 獲得したいカードの優先順（高いほど良い） */
-  const GAIN_ORDER = ['province', 'gold', 'duchy', 'market', 'mine', 'silver',
-    'smithy', 'militia', 'remodel', 'village', 'woodcutter', 'workshop',
-    'moat', 'cellar', 'estate', 'copper', 'curse'];
+  /* 獲得したいカードの優先順（高いほど良い）。基本＋拡張(陰謀)の全王国カードを網羅。 */
+  const GAIN_ORDER = ['province', 'gold', 'nobles', 'harem', 'duchy',
+    'market', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'silver',
+    'mining_village', 'smithy', 'courtyard', 'militia', 'steward', 'baron',
+    'remodel', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop',
+    'pawn', 'moat', 'cellar', 'estate', 'duke', 'copper', 'curse'];
   function bestGain(state, maxCost, opts) {
     opts = opts || {};
     for (const id of GAIN_ORDER) {
       if (opts.treasureOnly && !isTreasure(id)) continue;
       if (opts.noVictory && (isType(id, 'victory') || isType(id, 'curse'))) continue;
-      if (C()[id].cost <= maxCost && sup(state, id) > 0) return id;
+      if (!C()[id]) continue;
+      if (cost(state, id) <= maxCost && sup(state, id) > 0) return id;
     }
     return null;
   }
@@ -47,18 +55,30 @@
     if (t.actions <= 0) return null;
     const has = (id) => p.hand.includes(id);
     const dead = p.hand.some((c) => isDead(c));
-    // +アクションが付くカード（連鎖できる）を最優先
+    // --- 非ターミナル（+アクションが付く＝連鎖できる）を最優先 ---
     if (has('village')) return 'village';
+    if (has('mining_village')) return 'mining_village';
     if (has('market')) return 'market';
+    if (has('wishing_well')) return 'wishing_well';
+    if (has('shanty_town')) return 'shanty_town';
+    if (has('nobles')) return 'nobles';            // 状況により +2アクションも選べる
     if (has('cellar') && dead) return 'cellar';
-    // 効果の大きいターミナル
+    // --- ターミナル（効果の大きい順）---
     if (has('smithy')) return 'smithy';
+    if (has('courtyard')) return 'courtyard';
+    if (has('torturer')) return 'torturer';
     if (has('militia')) return 'militia';
+    if (has('conspirator')) return 'conspirator';
+    if (has('bridge')) return 'bridge';
+    if (has('steward')) return 'steward';
+    if (has('baron')) return 'baron';
+    if (has('ironworks')) return 'ironworks';
     if (has('moat')) return 'moat'; // +2ドロー。リアクションは公開制のため温存する理由が無い
     if (has('mine') && p.hand.some((c) => isTreasure(c))) return 'mine';
     if (has('remodel')) return 'remodel';
     if (has('workshop')) return 'workshop';
     if (has('woodcutter')) return 'woodcutter';
+    if (has('pawn')) return 'pawn';
     return null;
   }
 
@@ -148,13 +168,15 @@
 
   function chooseBuy(state, p, level) {
     if (state.turn.buys <= 0) return null;
-    const coins = state.turn.coins;
+    const real = state.turn.coins;
+    // 「橋」等の軽減は“使える額が増える”のと等価なので、判断はその換算額で行う
+    const coins = real + ((state.turn.costReduction) || 0);
     let pick = null;
     if (level === 'hard') pick = chooseBuyStrong(state, p, coins);
     else if (level === 'easy') pick = chooseBuyWeak(state, p, coins);
     else pick = chooseBuyNormal(state, p, coins);
-    // 念のため：買えない手は返さない
-    if (pick && C()[pick].cost <= coins && sup(state, pick) > 0) return pick;
+    // 念のため：買えない手は返さない（実コストで判定）
+    if (pick && cost(state, pick) <= real && sup(state, pick) > 0) return pick;
     return null;
   }
 
@@ -162,6 +184,28 @@
   function pickDiscards(hand, need) {
     const sorted = hand.map((c, i) => ({ c, i, v: keepValue(c) })).sort((a, b) => a.v - b.v);
     return sorted.slice(0, need).map((x) => x.c);
+  }
+
+  /* 廃棄に回す価値（低いほど先に廃棄）。執事の廃棄2枚で属州・金貨を捨てないように。 */
+  function trashValue(id) {
+    if (isType(id, 'curse')) return 0;
+    if (id === 'estate') return 1;
+    if (id === 'copper') return 2;
+    if (id === 'duke') return 3;
+    if (isType(id, 'victory')) return 100; // 属州/公領/貴族/後宮などは廃棄しない
+    if (id === 'gold') return 95;
+    if (id === 'silver') return 80;
+    return 50;                              // アクション類
+  }
+  function pickTrash(hand, n) {
+    return hand.map((c) => ({ c, v: trashValue(c) })).sort((a, b) => a.v - b.v).slice(0, n).map((x) => x.c);
+  }
+  /* 願いの井戸で宣言するカード（山札の上にありそうなもの＝手元で最も多い種類） */
+  function mostLikelyTop(p) {
+    const pool = [].concat(p.deck, p.discard);
+    if (!pool.length) return 'copper';
+    const cnt = {}; pool.forEach((c) => { cnt[c] = (cnt[c] || 0) + 1; });
+    return Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0];
   }
 
   /* 改築で廃棄するカードを選ぶ。
@@ -203,6 +247,45 @@
         return { type: 'REMODEL_GAIN', card: bestGain(state, pd.maxCost) };
       case 'workshop':
         return { type: 'WORKSHOP_GAIN', card: bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) };
+
+      /* ===== 拡張: 陰謀 ===== */
+      case 'courtyard': {
+        // 山札の上に置く＝次に引く。手札で最も価値の低い（捨ててよい）カードを置いて手札を軽くする
+        const order = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b));
+        return { type: 'COURTYARD_PUT', card: order[0] };
+      }
+      case 'pawn':
+        // 「+1カード ＆ +1アクション」＝実質キャントリップで無難
+        return { type: 'PAWN_RESOLVE', choices: ['card', 'action'] };
+      case 'steward':
+        if (pd.stage === 'trash') {
+          return { type: 'STEWARD_TRASH', cards: pickTrash(p.hand, Math.min(2, p.hand.length)) };
+        }
+        // 廃棄したい不要札(呪い/屋敷)が2枚以上あれば廃棄、無ければ+2コイン
+        if (p.hand.filter((c) => isType(c, 'curse') || c === 'estate').length >= 2)
+          return { type: 'STEWARD_RESOLVE', choice: 'trash' };
+        return { type: 'STEWARD_RESOLVE', choice: 'coins' };
+      case 'wishing':
+        return { type: 'WISHING_RESOLVE', card: mostLikelyTop(p) };
+      case 'baron':
+        // 屋敷があれば捨てて+4コインが得（屋敷は手札で死蔵）
+        return { type: 'BARON_RESOLVE', discard: p.hand.includes('estate') };
+      case 'ironworks':
+        return { type: 'IRONWORKS_GAIN', card: bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) };
+      case 'mining_village':
+        // 基本は廃棄せず村として使い回す
+        return { type: 'MINING_VILLAGE_RESOLVE', trash: false };
+      case 'nobles': {
+        // 他にアクションが手札にあれば +2アクション、無ければ +3カード
+        const otherAction = p.hand.some((c) => isType(c, 'action'));
+        return { type: 'NOBLES_RESOLVE', choice: otherAction ? 'actions' : 'cards' };
+      }
+      case 'torturer': {
+        // 拷問人の対象側。堀があれば無効化、無ければ呪いより手札2枚捨てを選ぶ
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'TORTURER_RESOLVE', choice: 'discard', cards: pickDiscards(p.hand, Math.min(2, p.hand.length)) };
+      }
+
       default:
         return { type: 'END_TURN' };
     }
