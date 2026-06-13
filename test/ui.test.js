@@ -38,8 +38,9 @@ function go(v) { UI.view = v; UI.sheet = null; DOM.render(); timers.length = 0; 
 try {
   console.log('=== ホームメニュー ===');
   ok($('.home h1').textContent === 'Dominion', 'タイトル');
-  ok(byText('button', '対戦をはじめる'), '対戦をはじめるボタン');
-  ok(byText('button', '1台で2人プレイ（クイック）'), 'クイックボタン');
+  ok(byText('button', 'CPUと対戦'), 'CPU対戦ボタン');
+  ok(byText('button', 'オンラインで対戦'), 'オンライン対戦ボタン');
+  ok(!byText('button', '1台で2人プレイ（クイック）'), '1台プレイは廃止');
   ok(byText('button', '📖 遊び方'), '遊び方ボタン');
   ok(byText('button', '🃏 カード一覧'), 'カード一覧ボタン');
 
@@ -62,7 +63,7 @@ try {
   clickText('button', '← 戻る');
 
   console.log('=== 設定画面（人数・CPU） ===');
-  clickText('button', '対戦をはじめる');
+  clickText('button', 'CPUと対戦');
   ok($('.setup'), '設定画面');
   ok(byText('.seg-btn', '3人'), '人数セグメント');
   // デフォルトは 人間 vs CPU
@@ -123,7 +124,7 @@ try {
 
   console.log('=== 3人ゲーム（人間1 + CPU2） ===');
   go('home');
-  clickText('button', '対戦をはじめる');
+  clickText('button', 'CPUと対戦');
   clickText('.seg-btn', '3人');
   ok(UI.setup.seats.length === 3, '3人に拡張');
   clickText('button', 'この設定で開始');
@@ -165,23 +166,20 @@ try {
   ok(UI.store.state.pending === null, 'CPU2人が自動で対応完了');
   ok(UI.store.state.players[1].hand.length === 3 && UI.store.state.players[2].hand.length === 3, '両CPUが3枚に');
 
-  console.log('=== クイック2人（パスゲート維持） ===');
+  // 以降は2人ローカル戦を前提にするため、クリーンな2人ゲームに作り直す
   go('home');
-  clickText('button', '1台で2人プレイ（クイック）');
-  clickText('button', 'ゲーム開始');
-  ok(UI.store.state.players.length === 2 && !UI.store.state.players[1].isCpu, 'クイックは2人とも人間');
-  st = UI.store.state; st.turn = { active: 0, phase: 'buy', actions: 1, buys: 1, coins: 0 };
-  st.players[0].hand = []; setState(st);
-  clickText('.actions-bar button', 'ターンを終える');
-  ok($('.gate'), '人間→人間はパスゲート');
-  clickText('.gate .btn', 'タップして手札を見る');
-  ok(!$('.gate') && UI.store.state.turn.active === 1, 'ゲート解除で相手の番');
+  clickText('button', 'CPUと対戦');
+  clickText('.seg-btn', '2人');
+  clickText('button', 'この設定で開始');
+  ok(UI.store.state.players.length === 2, '2人ゲームに作り直し');
 
   console.log('=== アクション0枚なら自動で購入フェーズへ ===');
   st = UI.store.state;
-  st.turn = { active: 1, phase: 'action', actions: 1, buys: 1, coins: 0 };
-  st.players[1].hand = ['copper', 'copper', 'estate'];
-  UI.localViewer = 1;
+  st.turn = { active: 0, phase: 'action', actions: 1, buys: 1, coins: 0 };
+  st.pending = null;
+  st.players[0].isCpu = false;
+  st.players[0].hand = ['copper', 'copper', 'estate']; // アクション無し
+  UI.localViewer = 0;
   setState(st); // setState は render 後にタイマー配列を消すので、予約フラグを解除してから再render
   UI._autoSkipTimer = null;
   DOM.render(); // 自動スキップの予約が入る
@@ -201,6 +199,8 @@ try {
   st = UI.store.state;
   st.turn = { active: 1, phase: 'buy', actions: 0, buys: 1, coins: 0 };
   st.players[1].hand = ['copper', 'copper'];
+  st.players[1].isCpu = false; // 人間として操作（actions-barを出す）
+  UI.localViewer = 1; // 席1視点で「ターンを終える」が出る
   setState(st);
   clickText('.actions-bar button', 'ターンを終える');
   ok($('.confirm-modal') && doc.body.textContent.includes('財宝'), '財宝が手札に残っていると確認が出る');
@@ -252,9 +252,8 @@ try {
   UI.mode = 'local'; UI.netClient = null; UI.isHost = false;
 
   console.log('=== ゲーム中にTOPへ戻る ===');
-  go('home');
-  clickText('button', '1台で2人プレイ（クイック）');
-  clickText('button', 'ゲーム開始');
+  go('setup');
+  clickText('button', 'この設定で開始');
   ok($('.board') && $('.menu-btn'), '盤面にメニュー(ハンバーガー)ボタンがある');
   $('.menu-btn').click(); // メニューを開く
   clickContains('.top-menu .menu-item', 'TOPに戻る');

@@ -199,9 +199,8 @@
       h('p', { class: 'sub' }, 'ドミニオン  基本セット'),
       h('div', { class: 'flourish' }, h('span', null, '❖')),
       h('div', { class: 'menu' },
-        h('button', { class: 'btn btn-primary btn-block', onclick: () => go('setup') }, '対戦をはじめる'),
-        h('button', { class: 'btn btn-block', onclick: () => go('localSetup') }, '1台で2人プレイ（クイック）'),
-        h('button', { class: 'btn btn-block', onclick: () => go('onlineMenu') }, 'オンラインで対戦（2台）'),
+        h('button', { class: 'btn btn-primary btn-block', onclick: () => go('setup') }, 'CPUと対戦'),
+        h('button', { class: 'btn btn-block', onclick: () => go('onlineMenu') }, 'オンラインで対戦'),
         h('div', { class: 'menu-split' },
           h('button', { class: 'btn btn-ghost', onclick: () => go('rules') }, '📖 遊び方'),
           h('button', { class: 'btn btn-ghost', onclick: () => { UI._listReturn = 'home'; go('cardList'); } }, '🃏 カード一覧')
@@ -251,23 +250,24 @@
         render();
       }, 'count-seg');
 
-    const rows = seats.map((st, i) =>
-      h('div', { class: 'seat-row' },
+    const rows = seats.map((st, i) => {
+      // 席1=あなた(人間)固定、他の席はCPU。人間/CPUの選択は廃止（人対人はオンラインで）。
+      st.type = (i === 0) ? 'human' : 'cpu';
+      return h('div', { class: 'seat-row' },
         h('div', { class: 'seat-head' },
           h('span', { class: 'seat-no' }, (i + 1)),
-          h('input', { type: 'text', value: st.name, oninput: (e) => { st.name = e.target.value; } })
+          h('input', { type: 'text', value: st.name, oninput: (e) => { st.name = e.target.value; } }),
+          h('span', { class: 'seat-tag' }, i === 0 ? 'あなた' : 'CPU')
         ),
-        h('div', { class: 'seat-opts' },
-          segmented([{ value: 'human', label: '人間' }, { value: 'cpu', label: 'CPU' }], st.type, (v) => { st.type = v; render(); }),
-          st.type === 'cpu'
-            ? segmented([{ value: 'easy', label: '弱' }, { value: 'normal', label: '普通' }, { value: 'hard', label: '強' }], st.level, (v) => { st.level = v; render(); })
-            : null
+        i === 0 ? null : h('div', { class: 'seat-opts' },
+          segmented([{ value: 'easy', label: '弱' }, { value: 'normal', label: '普通' }, { value: 'hard', label: '強' }], st.level, (v) => { st.level = v; render(); })
         )
-      ));
+      );
+    });
 
     return h('div', { class: 'home setup' },
-      h('h2', null, '対戦をはじめる'),
-      h('p', { class: 'muted', style: 'font-size:13px' }, '人数と、各プレイヤーが人間かCPU（強さ）かを選びます。'),
+      h('h2', null, 'CPUと対戦'),
+      h('p', { class: 'muted', style: 'font-size:13px' }, '人数とCPUの強さを選びます。席1はあなた、ほかはCPUです。'),
       h('div', { class: 'panel' },
         h('div', { class: 'field' }, h('label', null, '人数'), countSeg),
         h('div', { class: 'seat-list' }, rows),
@@ -281,25 +281,6 @@
     );
   }
 
-  function viewLocalSetup() {
-    let n1 = defaultName('p1'), n2 = defaultName('p2', NAME_POOL, 'p1');
-    const i1 = h('input', { type: 'text', value: n1, oninput: (e) => (n1 = e.target.value) });
-    const i2 = h('input', { type: 'text', value: n2, oninput: (e) => (n2 = e.target.value) });
-    return h('div', { class: 'home' },
-      h('h2', null, '1台で2人プレイ'),
-      h('p', { class: 'muted', style: 'font-size:13px;max-width:320px' }, '端末を回しながら遊びます。相手の番になると手札を隠す画面をはさみます。'),
-      h('div', { class: 'panel' },
-        h('div', { class: 'field' }, h('label', null, 'プレイヤー1'), i1),
-        h('div', { class: 'field' }, h('label', null, 'プレイヤー2'), i2),
-        h('div', { class: 'field' }, h('label', null, '使う王国カード'),
-          kingdomSetPicker(UI.setup.kingdomSet, (v) => { UI.setup.kingdomSet = v; render(); })),
-        h('div', { class: 'field' }, h('label', null, '先攻'),
-          segmented([{ value: false, label: 'プレイヤー1' }, { value: true, label: 'ランダム' }], UI.setup.randomOrder, (v) => { UI.setup.randomOrder = v; render(); })),
-        h('button', { class: 'btn btn-primary btn-block', onclick: () => startConfigured([{ name: n1 || 'プレイヤー1', type: 'human' }, { name: n2 || 'プレイヤー2', type: 'human' }], { shuffle: UI.setup.randomOrder }) }, 'ゲーム開始')
-      ),
-      h('button', { class: 'btn btn-ghost', onclick: () => go('home') }, '戻る')
-    );
-  }
 
   /* ---------- オンライン ---------- */
   function viewOnlineMenu() {
@@ -472,6 +453,7 @@
     const group = (title, ids) => h('div', { class: 'list-group' },
       h('div', { class: 'section-h' }, title),
       h('div', { class: 'cardlist-grid' }, ids.map((id) => miniCard(id))));
+    const byCost = (ids) => ids.slice().sort((a, b) => DOM.CARDS[a].cost - DOM.CARDS[b].cost || a.localeCompare(b));
     return h('div', { class: 'page' },
       h('div', { class: 'page-top' },
         h('button', { class: 'btn btn-ghost btn-sm', onclick: () => go(back) }, '← 戻る'),
@@ -479,8 +461,8 @@
       h('p', { class: 'muted', style: 'font-size:12px;padding:0 4px' }, 'タップで拡大（コスト・効果つき）。'),
       group('財宝', DOM.TREASURES),
       group('勝利点・呪い', DOM.VICTORY.concat(['curse'])),
-      group('王国カード（基本セット）', DOM.KINGDOM),
-      group('王国カード（陰謀・拡張）', (DOM.KINGDOM_POOL || DOM.KINGDOM).slice(DOM.KINGDOM.length))
+      group('王国カード（基本セット）', byCost((DOM.POOLS && DOM.POOLS.basic) || DOM.KINGDOM)),
+      group('王国カード（陰謀・拡張）', byCost((DOM.POOLS && DOM.POOLS.intrigue) || []))
     );
   }
 
@@ -1475,7 +1457,6 @@
     switch (UI.view) {
       case 'home': root = viewHome(); break;
       case 'setup': root = viewSetup(); break;
-      case 'localSetup': root = viewLocalSetup(); break;
       case 'onlineMenu': root = viewOnlineMenu(); break;
       case 'createRoom': root = viewCreateRoom(); break;
       case 'joinRoom': root = viewJoinRoom(); break;

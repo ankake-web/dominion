@@ -571,6 +571,11 @@ input.code-input {
 .seg-btn.on { background: linear-gradient(180deg, var(--gold-bright), var(--gold)); color: #2a2010; }
 .count-seg { width: 100%; }
 .count-seg .seg-btn { flex: 1; }
+/* フィールド内・席内のセグメントは全幅・均等幅に揃える（バーごとに幅が違う/右に空白ができる問題の対策） */
+.field .seg, .seat-opts .seg { display: flex; width: 100%; }
+.field .seg-btn, .seat-opts .seg-btn { flex: 1 1 0; min-width: 0; }
+.seat-opts { width: 100%; }
+.seat-tag { margin-left: auto; font-size: 12px; color: var(--ink-dim); font-weight: 700; }
 
 .setup .panel { max-width: 420px; }
 .seat-list { display: flex; flex-direction: column; gap: 10px; }

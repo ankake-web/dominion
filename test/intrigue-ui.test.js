@@ -46,10 +46,10 @@ try {
   clickText('.seg-btn', '陰謀(拡張)');
   ok(UI.setup.kingdomSet === 'intrigue', '陰謀セットを選択');
 
-  console.log('=== クイック2人を陰謀セットで開始 ===');
-  go('localSetup');
+  console.log('=== CPU対戦を陰謀セットで開始 ===');
+  go('setup');
   clickText('.seg-btn', '陰謀(拡張)');
-  clickText('button', 'ゲーム開始');
+  clickText('button', 'この設定で開始');
   ok(UI.view === 'game' && UI.store && UI.store.state, 'ゲーム開始');
   const kingdom = UI.store.state.kingdom;
   ok(kingdom.includes('nobles') && kingdom.includes('bridge'), '陰謀の王国カードが場に: ' + kingdom.join(','));
