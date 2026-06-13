@@ -781,6 +781,10 @@
       { label: '🛡 堀を公開して無効化', cls: 'btn-primary', on: () => dispatch({ type: 'MOAT_REVEAL' }) },
       { label: 'そのまま受ける', on: () => dispatch({ type: 'SWINDLER_REACT' }) }]);
     if (pd.type === 'swindler' && pd.stage === 'gain') return modalGainSupply(state, '詐欺師 — 相手に与える', state.players[pd.victim].name + ' に コスト ' + pd.cost + ' のカードを与えます。', (id) => effCost(state, id) === pd.cost, (id) => dispatch({ type: 'SWINDLER_GAIN', card: id }));
+    if (pd.type === 'saboteur' && pd.stage === 'react') return modalOptions('破壊工作員を受ける', 'コスト3以上のカードが1枚廃棄されます。「堀」で無効化できます。', [
+      { label: '🛡 堀を公開して無効化', cls: 'btn-primary', on: () => dispatch({ type: 'MOAT_REVEAL' }) },
+      { label: 'そのまま受ける', on: () => dispatch({ type: 'SABOTEUR_REACT' }) }]);
+    if (pd.type === 'saboteur' && pd.stage === 'gain') return modalGainSupply(state, '破壊工作員 — 獲得（任意）', 'コスト ' + pd.maxCost + ' 以下のカードを1枚獲得できます（しなくてもよい）。', (id) => effCost(state, id) <= pd.maxCost, (id) => dispatch({ type: 'SABOTEUR_GAIN', card: id }), () => dispatch({ type: 'SABOTEUR_GAIN', card: null }), true);
 
     return h('div');
   }
@@ -921,7 +925,8 @@
       h('button', { class: 'btn btn-block', style: 'margin-top:8px', onclick: () => dispatch({ type: 'TORTURER_RESOLVE', choice: 'curse' }) }, '☠️ 呪いを手札に受け取る'));
     return modalShell('拷問人を受ける', '手札を2枚捨てるか、呪い1枚を手札に受け取ります。' + (hasMoat ? '「堀」で無効化もできます。' : ''), chips, footer);
   }
-  function modalGainSupply(state, title, desc, filter, onPick, skipOnEmpty) {
+  // skipOnEmpty: 関数を渡すと「獲得せずに進む」を出す。alwaysSkip=true で候補があっても常時表示（任意獲得）。
+  function modalGainSupply(state, title, desc, filter, onPick, skipOnEmpty, alwaysSkip) {
     const order = DOM.SUPPLY_ORDER(state.kingdom);
     const elig = order.filter((id) => filter(id) && (state.supply[id] || 0) > 0);
     const chips = elig.length
@@ -929,7 +934,8 @@
           cardEl(id, { size: 'sm', extra: 'selectable', onClick: () => openPickZoom(id, '獲得する', () => onPick(id)) }),
           h('div', { class: 'pick-remain' }, '残' + state.supply[id])))
       : [h('p', { class: 'muted' }, '獲得できるカードがありません')];
-    const footer = (!elig.length && skipOnEmpty) ? h('button', { class: 'btn btn-block', onclick: skipOnEmpty }, '獲得せずに進む') : null;
+    const footer = (skipOnEmpty && (!elig.length || alwaysSkip))
+      ? h('button', { class: 'btn btn-block', onclick: skipOnEmpty }, '獲得せずに進む') : null;
     return modalShell(title, desc, chips, footer);
   }
   function modalShell(title, desc, chips, footer) {

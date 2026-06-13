@@ -34,7 +34,7 @@
 
   /* 獲得したいカードの優先順（高いほど良い）。基本＋拡張(陰謀)の全王国カードを網羅。 */
   const GAIN_ORDER = ['province', 'gold', 'nobles', 'harem', 'duchy',
-    'market', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'upgrade', 'silver',
+    'market', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'upgrade', 'silver',
     'mining_village', 'smithy', 'courtyard', 'great_hall', 'tribute', 'militia', 'steward', 'trading_post', 'baron', 'scout',
     'remodel', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith',
     'pawn', 'moat', 'cellar', 'estate', 'duke', 'copper', 'curse'];
@@ -85,6 +85,7 @@
     if (has('courtyard')) return 'courtyard';
     if (has('torturer')) return 'torturer';
     if (has('swindler')) return 'swindler';
+    if (has('saboteur')) return 'saboteur';
     if (has('militia')) return 'militia';
     if (has('conspirator')) return 'conspirator';
     if (has('bridge')) return 'bridge';
@@ -328,6 +329,13 @@
         }
         // gain ステージ（攻撃側）。相手の利得が最小のカードを与える（候補ありなら必ず非null）
         return { type: 'SWINDLER_GAIN', card: pickSwindlerGift(state, pd.cost) };
+      case 'saboteur':
+        if (pd.stage === 'react') {
+          if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+          return { type: 'SABOTEUR_REACT' };
+        }
+        // gain ステージ（犠牲者・任意）。上限内で最善を拾う。無ければ獲得しない(null)
+        return { type: 'SABOTEUR_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
       case 'trading_post':
         // 不要札を優先して2枚（手札が1枚なら1枚）廃棄
         return { type: 'TRADING_POST_RESOLVE', cards: pickTrash(p.hand, Math.min(2, p.hand.length)) };

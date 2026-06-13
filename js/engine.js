@@ -200,6 +200,42 @@
     }
   }
 
+  /* ---------- 破壊工作員（複数対象。$3以上を1枚廃棄→犠牲者が任意で格下げ獲得）---------- */
+  function saboteurEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (state.players[victim].hand.includes('moat')) {
+      state.pending = { type: 'saboteur', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      saboteurReveal(state, source, victim, rest);
+    }
+  }
+  function saboteurReveal(state, source, victim, queue) {
+    const v = state.players[victim];
+    const setAside = [];
+    let trashed = null;
+    // $3以上が出るまで山札の上を公開（足りなければreshuffle、尽きたら終了）
+    while (true) {
+      if (v.deck.length === 0) {
+        if (v.discard.length === 0) break;
+        v.deck = shuffle(v.discard); v.discard = [];
+      }
+      const c = v.deck.shift();
+      if (cardCost(state, c) >= 3) { trashed = c; break; }
+      setAside.push(c);
+    }
+    setAside.forEach((c) => v.discard.push(c)); // $3未満の公開札は捨てる
+    if (trashed) {
+      state.trash.push(trashed);
+      log(state, `${v.name} は山札の上から「${C()[trashed].name}」を廃棄した。`);
+      const maxCost = Math.max(0, cardCost(state, trashed) - 2);
+      state.pending = { type: 'saboteur', stage: 'gain', player: victim, source, victim, maxCost, queue };
+    } else {
+      log(state, `${v.name} は $3 以上のカードが無く、廃棄しなかった。`);
+      saboteurEnterVictim(state, source, queue);
+    }
+  }
+
   /* ---------- アクションカードの効果 ---------- */
   function applyEffect(state, cardId, pi) {
     const t = state.turn;
@@ -372,6 +408,12 @@
         const vics = [];
         for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
         swindlerEnterVictim(state, pi, vics);
+        break;
+      }
+      case 'saboteur': {
+        const vics = [];
+        for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
+        saboteurEnterVictim(state, pi, vics);
         break;
       }
       case 'tribute': {
@@ -611,12 +653,13 @@
         // 堀で無効化できるのは「アタックを受ける側の反応ステップ」だけ。
         // 段階アタック(詐欺師など)の gain ステップ(攻撃側が操作)では撃てない。
         const reactable = (pd.type === 'militia') || (pd.type === 'torturer') ||
-          (pd.type === 'swindler' && pd.stage === 'react');
+          ((pd.type === 'swindler' || pd.type === 'saboteur') && pd.stage === 'react');
         if (!reactable) return state;
         log(state, `${p.name} は「堀」を公開し、アタックを無効化した。`);
         if (pd.type === 'militia') advanceMilitia(state, pd);
         else if (pd.type === 'torturer') advanceAttack(state, pd);
         else if (pd.type === 'swindler') swindlerEnterVictim(state, pd.source, pd.queue);
+        else if (pd.type === 'saboteur') saboteurEnterVictim(state, pd.source, pd.queue);
         return state;
       }
 
@@ -897,6 +940,29 @@
         gain(state, pd.victim, card, 'discard');
         log(state, `${state.players[pd.victim].name} は「${C()[card].name}」を獲得した（詐欺師）。`);
         swindlerEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+
+      /* ---- 破壊工作員：犠牲者の反応 / 任意で格下げ獲得 ---- */
+      case 'SABOTEUR_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'saboteur' || pd.stage !== 'react') return state;
+        saboteurReveal(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'SABOTEUR_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'saboteur' || pd.stage !== 'gain') return state;
+        const card = action.card;
+        if (card != null) {
+          // 獲得は任意。コスト上限を超える/在庫切れの指定は無視して再選択
+          if (!C()[card] || cardCost(state, card) > pd.maxCost || (state.supply[card] || 0) <= 0) return state;
+          gain(state, pd.victim, card, 'discard');
+          log(state, `${state.players[pd.victim].name} は「${C()[card].name}」を獲得した（破壊工作員）。`);
+        } else {
+          log(state, `${state.players[pd.victim].name} は獲得しなかった。`);
+        }
+        saboteurEnterVictim(state, pd.source, pd.queue);
         return state;
       }
 
