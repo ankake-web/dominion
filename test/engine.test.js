@@ -488,6 +488,46 @@ console.log('=== 庭園: デッキ10枚につき1勝利点 ===');
   ok(E.vpOf(two) === 4, '庭園2枚×20枚デッキ=各2点で4点: ' + E.vpOf(two));
 }
 
+console.log('=== 魔女: +2カード、他は呪いを獲得 ===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['witch'];
+s.players[0].deck = ['copper', 'copper', 'gold'];
+s.players[1].hand = ['estate', 'copper'];
+const curseBefore = s.supply.curse;
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'witch' });
+ok(s2.players[0].hand.length === 0 + 2, '魔女 +2カード');
+ok(count(s2.players[1].discard, 'curse') === 1 && s2.supply.curse === curseBefore - 1, '相手が呪いを獲得');
+ok(s2.pending === null, '解決完了');
+// 堀で無効化
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['witch'];
+s.players[0].deck = ['copper', 'copper'];
+s.players[1].hand = ['moat'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'witch' });
+ok(s2.pending && s2.pending.type === 'witch' && s2.pending.stage === 'react', '堀持ちは反応待ち');
+s2 = E.reduce(s2, { type: 'MOAT_REVEAL' });
+ok(count(s2.players[1].discard, 'curse') === 0 && s2.pending === null, '堀で呪いを無効化');
+
+console.log('=== 役人: 銀貨を山札の上に、他は勝利点を山札の上に ===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['bureaucrat'];
+s.players[0].deck = ['copper'];
+s.players[1].hand = ['estate', 'duchy', 'copper'];
+const silBefore = s.supply.silver;
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'bureaucrat' });
+ok(s2.players[0].deck[0] === 'silver' && s2.supply.silver === silBefore - 1, '銀貨を山札の上に獲得');
+ok(s2.pending && s2.pending.type === 'bureaucrat' && s2.pending.stage === 'put' && s2.pending.player === 1, '相手が勝利点を置く選択待ち');
+s2 = E.reduce(s2, { type: 'BUREAUCRAT_PUT', card: 'estate' });
+ok(s2.players[1].deck[0] === 'estate' && s2.players[1].hand.indexOf('estate') < 0, '勝利点(屋敷)が山札の上へ');
+ok(s2.pending === null, '解決完了');
+// 勝利点なしなら手札公開のみ（pending無し）
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['bureaucrat'];
+s.players[0].deck = ['copper'];
+s.players[1].hand = ['copper', 'silver'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'bureaucrat' });
+ok(s2.pending === null, '相手に勝利点が無ければ pending 無しで終了');
+
 console.log('\n========================================');
 console.log(`結果: ${pass} 件成功, ${fail} 件失敗`);
 console.log('========================================');

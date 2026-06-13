@@ -33,6 +33,8 @@
     { id: 'chancellor', name: '宰相', cost: 3, type: 'action', typeLabel: 'アクション', art: 'asset/chancellor.jpg', icon: '📜', effects: ['+2 コイン', '山札を捨て札にしてよい'] },
     { id: 'chapel', name: '礼拝堂', cost: 2, type: 'action', typeLabel: 'アクション', art: 'asset/chapel.jpg', icon: '⛪', effects: ['手札を最大4枚廃棄'] },
     { id: 'gardens', name: '庭園', cost: 4, type: 'victory', typeLabel: '勝利点', art: 'asset/gardens.jpg', icon: '🌷', effects: ['デッキ10枚につき1勝利点'] },
+    { id: 'witch', name: '魔女', cost: 5, type: 'attack', typeLabel: 'アクション', art: 'asset/witch.jpg', icon: '🧙', effects: ['+2 カード', '他は呪いを獲得'] },
+    { id: 'bureaucrat', name: '役人', cost: 4, type: 'attack', typeLabel: 'アクション', art: 'asset/bureaucrat.jpg', icon: '🧑‍💼', effects: ['銀貨を山札の上に獲得', '他は勝利点を山札の上に'] },
 
     // 拡張: 陰謀（Intrigue）。絵は未用意（asset/<id>.jpg を置けば自動表示）。
     { id: 'courtyard', name: '中庭', cost: 2, type: 'action', typeLabel: 'アクション', art: 'asset/courtyard.jpg', icon: '🏛️', effects: ['+3 カード', '手札1枚を山札の上に置く'] },

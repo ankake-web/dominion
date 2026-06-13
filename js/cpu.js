@@ -34,7 +34,7 @@
 
   /* 獲得したいカードの優先順（高いほど良い）。基本＋拡張(陰謀)の全王国カードを網羅。 */
   const GAIN_ORDER = ['province', 'gold', 'nobles', 'harem', 'duchy',
-    'laboratory', 'festival', 'market', 'minion', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'upgrade', 'silver',
+    'laboratory', 'festival', 'witch', 'market', 'minion', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'upgrade', 'bureaucrat', 'silver',
     'mining_village', 'smithy', 'courtyard', 'masquerade', 'great_hall', 'tribute', 'militia', 'steward', 'trading_post', 'baron', 'scout',
     'remodel', 'moneylender', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith', 'chancellor',
     'pawn', 'moat', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke', 'copper', 'curse'];
@@ -86,10 +86,12 @@
     // --- ターミナル（効果の大きい順）---
     if (has('smithy')) return 'smithy';
     if (has('courtyard')) return 'courtyard';
+    if (has('witch')) return 'witch';              // +2カード＋全員に呪い（強力）
     if (has('torturer')) return 'torturer';
     if (has('swindler')) return 'swindler';
     if (has('saboteur')) return 'saboteur';
     if (has('militia')) return 'militia';
+    if (has('bureaucrat')) return 'bureaucrat';
     if (has('conspirator')) return 'conspirator';
     if (has('masquerade')) return 'masquerade'; // +2カード＋廃棄＋呪い押し付け
     if (has('bridge')) return 'bridge';
@@ -374,6 +376,19 @@
         { // trash: 不要札があれば廃棄、無ければしない
           const junk = p.hand.find((c) => isType(c, 'curse') || c === 'estate' || c === 'copper');
           return { type: 'MASQUERADE_TRASH', card: junk || null };
+        }
+      case 'witch':
+        // 呪いを受ける側。堀があれば無効化、無ければそのまま（CPUは秘密の小部屋を公開しない）
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'WITCH_REACT' };
+      case 'bureaucrat':
+        if (pd.stage === 'react') {
+          if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+          return { type: 'BUREAUCRAT_REACT' };
+        }
+        { // put: 最も安い勝利点（屋敷優先）を山札の上に置く
+          const vics = p.hand.filter((c) => isType(c, 'victory')).sort((a, b) => C()[a].cost - C()[b].cost);
+          return { type: 'BUREAUCRAT_PUT', card: vics[0] };
         }
       case 'moneylender':
         // 銅貨があれば廃棄して+3（デッキ圧縮にもなり常に得）

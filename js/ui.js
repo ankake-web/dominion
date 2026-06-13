@@ -795,6 +795,9 @@
       { label: '山札を捨て札にする', cls: 'btn-primary', on: () => dispatch({ type: 'CHANCELLOR_RESOLVE', discardDeck: true }) },
       { label: 'そのまま', on: () => dispatch({ type: 'CHANCELLOR_RESOLVE', discardDeck: false }) }]);
     if (pd.type === 'chapel') return modalMultiHand(p, '礼拝堂 — 廃棄', '手札を最大4枚まで廃棄します（0枚でもよい）。', (n) => '確定（' + n + '枚廃棄）', true, (cards) => dispatch({ type: 'CHAPEL_RESOLVE', cards }), 4);
+    if (pd.type === 'witch' && pd.stage === 'react') return modalOptions('魔女を受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'WITCH_REACT' }));
+    if (pd.type === 'bureaucrat' && pd.stage === 'react') return modalOptions('役人を受ける', '手札の勝利点1枚を山札の上に置きます。', reactOptions(p, pd, { type: 'BUREAUCRAT_REACT' }));
+    if (pd.type === 'bureaucrat' && pd.stage === 'put') return modalSingleHand(p, '役人 — 山札の上に置く', '手札の勝利点カードを1枚選び、山札の上に置きます。', (id) => DOM.isType(id, 'victory'), (card) => dispatch({ type: 'BUREAUCRAT_PUT', card }), null, '山札の上に置く');
     if (pd.type === 'secret_chamber_putback') return modalSelectN(p, '秘密の小部屋 — 山札の上に戻す', '手札から2枚を選んで山札の上に戻します（最初のタップが一番上）。', Math.min(2, p.hand.length), '確定（戻す）', (cards) => dispatch({ type: 'SECRET_CHAMBER_PUTBACK', cards }));
 
     return h('div');

@@ -285,8 +285,49 @@
   function isAttackReactPending(pd) {
     if (!pd) return false;
     if (pd.type === 'militia' || pd.type === 'torturer') return true;
-    if ((pd.type === 'swindler' || pd.type === 'saboteur' || pd.type === 'minion_attack') && pd.stage === 'react') return true;
+    if ((pd.type === 'swindler' || pd.type === 'saboteur' || pd.type === 'minion_attack' ||
+         pd.type === 'witch' || pd.type === 'bureaucrat') && pd.stage === 'react') return true;
     return false;
+  }
+
+  /* ---------- 魔女（複数対象。各相手が呪いを獲得）---------- */
+  function witchEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'witch', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      witchCurse(state, source, victim, rest);
+    }
+  }
+  function witchCurse(state, source, victim, queue) {
+    if ((state.supply.curse || 0) > 0) {
+      gain(state, victim, 'curse', 'discard');
+      log(state, `${state.players[victim].name} は呪いを獲得した（魔女）。`);
+    }
+    witchEnterVictim(state, source, queue);
+  }
+
+  /* ---------- 役人（複数対象。各相手が勝利点1枚を山札の上へ）---------- */
+  function bureaucratEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'bureaucrat', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      bureaucratApply(state, source, victim, rest);
+    }
+  }
+  function bureaucratApply(state, source, victim, queue) {
+    const v = state.players[victim];
+    const hasVictory = v.hand.some((c) => DOM.isType(c, 'victory'));
+    if (hasVictory) {
+      // どの勝利点を山札の上に置くか犠牲者が選ぶ
+      state.pending = { type: 'bureaucrat', stage: 'put', player: victim, source, victim, queue };
+    } else {
+      log(state, `${v.name} は勝利点を持っておらず手札を公開した（役人）。`);
+      bureaucratEnterVictim(state, source, queue);
+    }
   }
 
   /* ---------- アクションカードの効果 ---------- */
@@ -513,6 +554,21 @@
         if (p.hand.length > 0) state.pending = { type: 'chapel', player: pi };
         break;
       // gardens は勝利点カード（プレイ不可）。得点は vpOf で計算。
+      case 'witch': {
+        draw(state, pi, 2);
+        const vics = [];
+        for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
+        witchEnterVictim(state, pi, vics);
+        break;
+      }
+      case 'bureaucrat': {
+        gain(state, pi, 'silver', 'deck'); // 銀貨を山札の上に獲得
+        log(state, `${p.name} は銀貨を山札の上に獲得した。`);
+        const vics = [];
+        for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
+        bureaucratEnterVictim(state, pi, vics);
+        break;
+      }
       case 'tribute': {
         // 左隣のプレイヤーが山札の上2枚を公開して捨てる
         const left = state.players[(pi + 1) % state.players.length];
@@ -754,7 +810,8 @@
         // 堀で無効化できるのは「アタックを受ける側の反応ステップ」だけ。
         // 段階アタック(詐欺師など)の gain ステップ(攻撃側が操作)では撃てない。
         const reactable = (pd.type === 'militia') || (pd.type === 'torturer') ||
-          ((pd.type === 'swindler' || pd.type === 'saboteur' || pd.type === 'minion_attack') && pd.stage === 'react');
+          ((pd.type === 'swindler' || pd.type === 'saboteur' || pd.type === 'minion_attack' ||
+            pd.type === 'witch' || pd.type === 'bureaucrat') && pd.stage === 'react');
         if (!reactable) return state;
         log(state, `${p.name} は「堀」を公開し、アタックを無効化した。`);
         if (pd.type === 'militia') advanceMilitia(state, pd);
@@ -762,6 +819,8 @@
         else if (pd.type === 'swindler') swindlerEnterVictim(state, pd.source, pd.queue);
         else if (pd.type === 'saboteur') saboteurEnterVictim(state, pd.source, pd.queue);
         else if (pd.type === 'minion_attack') minionAttackEnterVictim(state, pd.source, pd.queue);
+        else if (pd.type === 'witch') witchEnterVictim(state, pd.source, pd.queue);
+        else if (pd.type === 'bureaucrat') bureaucratEnterVictim(state, pd.source, pd.queue);
         return state;
       }
 
@@ -1046,6 +1105,33 @@
       }
 
       /* ---- 仮面舞踏会：各自が左隣へ1枚渡す→使用者は任意で1枚廃棄 ---- */
+      /* ---- 魔女：反応せず受ける（→呪い獲得）---- */
+      case 'WITCH_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'witch' || pd.stage !== 'react') return state;
+        witchCurse(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      /* ---- 役人：反応せず受ける / 勝利点を山札の上へ ---- */
+      case 'BUREAUCRAT_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'bureaucrat' || pd.stage !== 'react') return state;
+        bureaucratApply(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'BUREAUCRAT_PUT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'bureaucrat' || pd.stage !== 'put') return state;
+        const v = state.players[pd.victim];
+        const card = action.card;
+        if (v.hand.indexOf(card) < 0 || !DOM.isType(card, 'victory')) return state; // 勝利点のみ
+        removeOne(v.hand, card);
+        v.deck.unshift(card);
+        log(state, `${v.name} は「${C()[card].name}」を山札の上に置いた（役人）。`);
+        bureaucratEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+
       /* ---- 金貸し：銅貨を廃棄して +3 ---- */
       case 'MONEYLENDER_RESOLVE': {
         const pd = state.pending;

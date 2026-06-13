@@ -63,6 +63,10 @@
                  text: '手札を最大4枚まで廃棄する。' },
     gardens:   { id: 'gardens',    name: '庭園',       cost: 4, types: ['victory'],
                  text: '（勝利点）\nデッキ10枚につき 1 勝利点（端数切り捨て）。' },
+    witch:     { id: 'witch',      name: '魔女',       cost: 5, types: ['action', 'attack'],
+                 text: '+2 カード\n他のプレイヤーは各自、呪い1枚を獲得する。' },
+    bureaucrat:{ id: 'bureaucrat', name: '役人',       cost: 4, types: ['action', 'attack'],
+                 text: '銀貨1枚を獲得し、山札の上に置く。\n他のプレイヤーは各自、手札の勝利点1枚を\n山札の上に置く（無ければ手札を公開）。' },
 
     /* ===== 拡張: 陰謀 (Intrigue) =====
        絵(asset/<id>.jpg・asset/thumb/<id>.jpg)は未用意。置けば自動で表示される。
@@ -130,7 +134,7 @@
                           'bridge', 'conspirator', 'ironworks', 'mining_village', 'nobles'];
   // 拡張ごとの王国カードプール（ランダム抽選の母集団）。将来の拡張はここに足す。
   DOM.POOLS = {
-    basic:    DOM.KINGDOM.concat(['laboratory', 'festival', 'moneylender', 'chancellor', 'chapel', 'gardens']),
+    basic:    DOM.KINGDOM.concat(['laboratory', 'festival', 'moneylender', 'chancellor', 'chapel', 'gardens', 'witch', 'bureaucrat']),
     intrigue: ['courtyard', 'pawn', 'shanty_town', 'steward', 'wishing_well', 'baron',
                'bridge', 'conspirator', 'ironworks', 'mining_village', 'torturer', 'duke', 'nobles', 'harem',
                'great_hall', 'coppersmith', 'trading_post', 'upgrade', 'scout', 'tribute', 'swindler', 'saboteur', 'minion', 'masquerade', 'secret_chamber'],
