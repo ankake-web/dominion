@@ -731,7 +731,7 @@
 
     if (pd.type === 'cellar') return modalMultiHand(p, '地下貯蔵庫', '捨てるカードを選び、同じ枚数を引きます。（0枚でもOK）',
       (n) => '確定（' + n + '枚 捨てる）', true, (cards) => dispatch({ type: 'CELLAR_RESOLVE', cards }));
-    if (pd.type === 'militia') return modalMilitia(p, p.hand.length - 3, p.hand.includes('moat'));
+    if (pd.type === 'militia') return modalMilitia(p, p.hand.length - 3, p.hand.includes('moat'), p.hand.includes('secret_chamber') && !pd.reacted);
     if (pd.type === 'mine' && pd.stage === 'trash') return modalSingleHand(p, '鉱山 — 廃棄', '廃棄する財宝を選びます（しなくてもよい）。',
       (id) => DOM.CARDS[id].types.includes('treasure'),
       (id) => dispatch({ type: 'MINE_TRASH', card: id }), { label: '廃棄しない', on: () => dispatch({ type: 'MINE_TRASH', card: null }) });
@@ -772,29 +772,46 @@
       { label: '+3 カード', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'cards' }) },
       { label: '+2 アクション', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'actions' }) },
     ]);
-    if (pd.type === 'torturer') return modalTorturer(p);
+    if (pd.type === 'torturer') return modalTorturer(p, p.hand.includes('secret_chamber') && !pd.reacted);
     if (pd.type === 'trading_post') return modalTrashHand(p, '交易場 — 廃棄', '手札から2枚を選んで廃棄します（2枚廃棄できたら銀貨を手札に獲得）。', Math.min(2, p.hand.length), (cards) => dispatch({ type: 'TRADING_POST_RESOLVE', cards }));
     if (pd.type === 'upgrade' && pd.stage === 'trash') return modalSingleHand(p, '改良 — 廃棄', '手札から1枚を廃棄します（その後、ちょうど1コイン高いカードを獲得）。', () => true, (card) => dispatch({ type: 'UPGRADE_TRASH', card }));
     if (pd.type === 'upgrade' && pd.stage === 'gain') return modalGainSupply(state, '改良 — 獲得', '廃棄したカードよりちょうど1コイン高いカードを1枚獲得します。', (id) => effCost(state, id) === pd.exactCost, (id) => dispatch({ type: 'UPGRADE_GAIN', card: id }));
     if (pd.type === 'scout') return modalReorder('斥候 — 山札の上に戻す', '山札の上に戻す順番をタップで選びます（最初にタップ＝一番上）。', pd.cards, (order) => dispatch({ type: 'SCOUT_RESOLVE', order }));
-    if (pd.type === 'swindler' && pd.stage === 'react') return modalOptions('詐欺師を受ける', '山札の上1枚が廃棄され、相手が選んだ同コストのカードに置き換わります。「堀」で無効化できます。', [
-      { label: '🛡 堀を公開して無効化', cls: 'btn-primary', on: () => dispatch({ type: 'MOAT_REVEAL' }) },
-      { label: 'そのまま受ける', on: () => dispatch({ type: 'SWINDLER_REACT' }) }]);
+    if (pd.type === 'swindler' && pd.stage === 'react') return modalOptions('詐欺師を受ける', '山札の上1枚が廃棄され、相手が選んだ同コストのカードに置き換わります。', reactOptions(p, pd, { type: 'SWINDLER_REACT' }));
     if (pd.type === 'swindler' && pd.stage === 'gain') return modalGainSupply(state, '詐欺師 — 相手に与える', state.players[pd.victim].name + ' に コスト ' + pd.cost + ' のカードを与えます。', (id) => effCost(state, id) === pd.cost, (id) => dispatch({ type: 'SWINDLER_GAIN', card: id }));
-    if (pd.type === 'saboteur' && pd.stage === 'react') return modalOptions('破壊工作員を受ける', 'コスト3以上のカードが1枚廃棄されます。「堀」で無効化できます。', [
-      { label: '🛡 堀を公開して無効化', cls: 'btn-primary', on: () => dispatch({ type: 'MOAT_REVEAL' }) },
-      { label: 'そのまま受ける', on: () => dispatch({ type: 'SABOTEUR_REACT' }) }]);
+    if (pd.type === 'saboteur' && pd.stage === 'react') return modalOptions('破壊工作員を受ける', 'コスト3以上のカードが1枚廃棄されます。', reactOptions(p, pd, { type: 'SABOTEUR_REACT' }));
     if (pd.type === 'saboteur' && pd.stage === 'gain') return modalGainSupply(state, '破壊工作員 — 獲得（任意）', 'コスト ' + pd.maxCost + ' 以下のカードを1枚獲得できます（しなくてもよい）。', (id) => effCost(state, id) <= pd.maxCost, (id) => dispatch({ type: 'SABOTEUR_GAIN', card: id }), () => dispatch({ type: 'SABOTEUR_GAIN', card: null }), true);
     if (pd.type === 'minion' && pd.stage === 'choose') return modalOptions('手先', '次から1つを選びます。', [
       { label: '+2 コイン', cls: 'btn-primary', on: () => dispatch({ type: 'MINION_RESOLVE', choice: 'coins' }) },
       { label: '手札を捨てて4枚引く（相手も引き直し）', on: () => dispatch({ type: 'MINION_RESOLVE', choice: 'attack' }) }]);
-    if (pd.type === 'minion_attack' && pd.stage === 'react') return modalOptions('手先を受ける', '手札5枚以上なら捨てて4枚引き直します。「堀」で無効化できます。', [
-      { label: '🛡 堀を公開して無効化', cls: 'btn-primary', on: () => dispatch({ type: 'MOAT_REVEAL' }) },
-      { label: 'そのまま受ける', on: () => dispatch({ type: 'MINION_ATTACK_REACT' }) }]);
+    if (pd.type === 'minion_attack' && pd.stage === 'react') return modalOptions('手先を受ける', '手札5枚以上なら捨てて4枚引き直します。', reactOptions(p, pd, { type: 'MINION_ATTACK_REACT' }));
     if (pd.type === 'masquerade' && pd.stage === 'pass') return modalSingleHand(p, '仮面舞踏会 — 左隣へ渡す', '左隣のプレイヤーに渡すカードを1枚選びます。', () => true, (card) => dispatch({ type: 'MASQUERADE_PASS', card }), null, '渡す');
     if (pd.type === 'masquerade' && pd.stage === 'trash') return modalSingleHand(p, '仮面舞踏会 — 廃棄（任意）', '手札から1枚を廃棄できます（しなくてもよい）。', () => true, (card) => dispatch({ type: 'MASQUERADE_TRASH', card }), { label: '廃棄しない', on: () => dispatch({ type: 'MASQUERADE_TRASH', card: null }) }, '廃棄する');
+    if (pd.type === 'secret_chamber' && pd.stage === 'discard') return modalMultiHand(p, '秘密の小部屋', '捨てる枚数だけ +1 コイン（0枚でもよい）。', (n) => '確定（' + n + '枚捨て→+' + n + 'コイン）', true, (cards) => dispatch({ type: 'SECRET_CHAMBER_RESOLVE', cards }));
+    if (pd.type === 'secret_chamber_putback') return modalSelectN(p, '秘密の小部屋 — 山札の上に戻す', '手札から2枚を選んで山札の上に戻します（最初のタップが一番上）。', Math.min(2, p.hand.length), '確定（戻す）', (cards) => dispatch({ type: 'SECRET_CHAMBER_PUTBACK', cards }));
 
     return h('div');
+  }
+
+  // 被攻撃側の反応オプション（堀・秘密の小部屋・そのまま受ける）。proceed は通すときのアクション。
+  function reactOptions(p, pd, proceed) {
+    const opts = [];
+    if (p.hand.includes('moat')) opts.push({ label: '🛡 堀を公開して無効化', cls: 'btn-primary', on: () => dispatch({ type: 'MOAT_REVEAL' }) });
+    if (p.hand.includes('secret_chamber') && !pd.reacted) opts.push({ label: '🔮 秘密の小部屋を公開（+2引いて2枚戻す）', on: () => dispatch({ type: 'SECRET_CHAMBER_REVEAL' }) });
+    opts.push({ label: 'そのまま受ける', on: () => dispatch(proceed) });
+    return opts;
+  }
+  // 手札から n 枚をタップ順に選ぶ（秘密の小部屋の戻し）。最初のタップが一番上。
+  function modalSelectN(p, title, desc, n, confirmLabel, onConfirm) {
+    const chips = p.hand.map((id, idx) => {
+      const pos = UI.selection.indexOf(idx);
+      return cardEl(id, { size: 'sm', extra: pos >= 0 ? 'selected' : 'selectable', badge: pos >= 0 ? String(pos + 1) : null,
+        onClick: () => { const i = UI.selection.indexOf(idx); if (i >= 0) UI.selection.splice(i, 1); else if (UI.selection.length < n) UI.selection.push(idx); render(); } });
+    });
+    const remain = n - UI.selection.length;
+    const footer = h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
+      onclick: () => onConfirm(UI.selection.map((i) => p.hand[i])) }, remain === 0 ? confirmLabel : ('あと ' + remain + ' 枚'));
+    return modalShell(title, desc, chips, footer);
   }
 
   // 複数カードを「置く順」に並べ替える（斥候など）。最初にタップしたカードが一番上。
@@ -833,7 +850,7 @@
       h('button', { class: 'btn btn-primary btn-block', disabled: (!allowZero && n === 0) ? 'disabled' : null,
         onclick: () => onConfirm(UI.selection.map((i) => p.hand[i])) }, confirmLabel(n)));
   }
-  function modalMilitia(p, need, hasMoat) {
+  function modalMilitia(p, need, hasMoat, hasSecret) {
     const chips = p.hand.map((id, idx) =>
       cardEl(id, {
         size: 'sm',
@@ -847,6 +864,7 @@
     const remain = need - UI.selection.length;
     const buttons = h('div', null,
       hasMoat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'MOAT_REVEAL' }) }, '🛡 堀を公開して無効化') : null,
+      hasSecret ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'SECRET_CHAMBER_REVEAL' }) }, '🔮 秘密の小部屋を公開（+2引いて2枚戻す）') : null,
       h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
         onclick: () => dispatch({ type: 'MILITIA_RESOLVE', cards: UI.selection.map((i) => p.hand[i]) }) },
         remain === 0 ? '確定（捨てる）' : 'あと ' + remain + ' 枚 選ぶ'));
@@ -913,7 +931,7 @@
     return modalShell(title, desc, chips, null);
   }
   // 拷問人を受ける: 手札2枚を捨てる / 呪いを受け取る / 堀で無効化
-  function modalTorturer(p) {
+  function modalTorturer(p, hasSecret) {
     const need = Math.min(2, p.hand.length);
     const hasMoat = p.hand.includes('moat');
     const chips = p.hand.map((id, idx) =>
@@ -927,6 +945,7 @@
     const remain = need - UI.selection.length;
     const footer = h('div', null,
       hasMoat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'MOAT_REVEAL' }) }, '🛡 堀を公開して無効化') : null,
+      hasSecret ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'SECRET_CHAMBER_REVEAL' }) }, '🔮 秘密の小部屋を公開（+2引いて2枚戻す）') : null,
       h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
         onclick: () => dispatch({ type: 'TORTURER_RESOLVE', choice: 'discard', cards: UI.selection.map((i) => p.hand[i]) }) },
         remain === 0 ? '手札を捨てる（確定）' : '捨てる ' + remain + ' 枚 を選ぶ'),

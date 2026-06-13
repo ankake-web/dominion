@@ -37,7 +37,7 @@
     'market', 'minion', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'upgrade', 'silver',
     'mining_village', 'smithy', 'courtyard', 'masquerade', 'great_hall', 'tribute', 'militia', 'steward', 'trading_post', 'baron', 'scout',
     'remodel', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith',
-    'pawn', 'moat', 'cellar', 'estate', 'duke', 'copper', 'curse'];
+    'pawn', 'moat', 'secret_chamber', 'cellar', 'estate', 'duke', 'copper', 'curse'];
   function bestGain(state, maxCost, opts) {
     opts = opts || {};
     for (const id of GAIN_ORDER) {
@@ -106,6 +106,8 @@
     if (has('workshop')) return 'workshop';
     if (has('woodcutter')) return 'woodcutter';
     if (has('pawn')) return 'pawn';
+    // 秘密の小部屋: 手札に死に札(勝利点/呪い)があればコインに変える
+    if (has('secret_chamber') && p.hand.some((c) => isDead(c))) return 'secret_chamber';
     return null;
   }
 
@@ -359,6 +361,12 @@
           const junk = p.hand.find((c) => isType(c, 'curse') || c === 'estate' || c === 'copper');
           return { type: 'MASQUERADE_TRASH', card: junk || null };
         }
+      case 'secret_chamber':
+        // アクション: 死に札(勝利点/呪い)を捨ててコインに変える（手札では無駄なので得）
+        return { type: 'SECRET_CHAMBER_RESOLVE', cards: p.hand.filter((c) => isDead(c)) };
+      case 'secret_chamber_putback':
+        // リアクションで引いた後、不要札2枚を山札の上へ（CPUは通常ここへ来ないが防御的に）
+        return { type: 'SECRET_CHAMBER_PUTBACK', cards: pickTrash(p.hand, Math.min(2, p.hand.length)) };
       case 'trading_post':
         // 不要札を優先して2枚（手札が1枚なら1枚）廃棄
         return { type: 'TRADING_POST_RESOLVE', cards: pickTrash(p.hand, Math.min(2, p.hand.length)) };

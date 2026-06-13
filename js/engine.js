@@ -174,7 +174,7 @@
     if (!queue || !queue.length) { state.pending = null; return; }
     const victim = queue[0];
     const rest = queue.slice(1);
-    if (state.players[victim].hand.includes('moat')) {
+    if (hasReaction(state.players[victim])) {
       state.pending = { type: 'swindler', stage: 'react', player: victim, source, victim, queue: rest };
     } else {
       swindlerTrash(state, source, victim, rest);
@@ -204,7 +204,7 @@
   function saboteurEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
-    if (state.players[victim].hand.includes('moat')) {
+    if (hasReaction(state.players[victim])) {
       state.pending = { type: 'saboteur', stage: 'react', player: victim, source, victim, queue: rest };
     } else {
       saboteurReveal(state, source, victim, rest);
@@ -240,7 +240,7 @@
   function minionAttackEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
-    if (state.players[victim].hand.includes('moat')) {
+    if (hasReaction(state.players[victim])) {
       state.pending = { type: 'minion_attack', stage: 'react', player: victim, source, victim, queue: rest };
     } else {
       minionAttackApply(state, source, victim, rest);
@@ -275,6 +275,18 @@
     state.pending = state.players[source].hand.length > 0
       ? { type: 'masquerade', stage: 'trash', player: source, source }
       : null;
+  }
+
+  // リアクション札（堀／秘密の小部屋）を持つか。被攻撃側に反応の機会を与えるか判定に使う。
+  function hasReaction(player) {
+    return player.hand.includes('moat') || player.hand.includes('secret_chamber');
+  }
+  // 秘密の小部屋のリアクションを差し込める「被攻撃側の反応ステップ」か。
+  function isAttackReactPending(pd) {
+    if (!pd) return false;
+    if (pd.type === 'militia' || pd.type === 'torturer') return true;
+    if ((pd.type === 'swindler' || pd.type === 'saboteur' || pd.type === 'minion_attack') && pd.stage === 'react') return true;
+    return false;
   }
 
   /* ---------- アクションカードの効果 ---------- */
@@ -473,6 +485,10 @@
         }
         break;
       }
+      case 'secret_chamber':
+        // アクション: 手札を好きな枚数捨て、捨てた枚数だけ +1コイン（リアクションは別途 SECRET_CHAMBER_REVEAL）
+        if (p.hand.length > 0) state.pending = { type: 'secret_chamber', stage: 'discard', player: pi };
+        break;
       case 'tribute': {
         // 左隣のプレイヤーが山札の上2枚を公開して捨てる
         const left = state.players[(pi + 1) % state.players.length];
@@ -1002,6 +1018,50 @@
       }
 
       /* ---- 仮面舞踏会：各自が左隣へ1枚渡す→使用者は任意で1枚廃棄 ---- */
+      /* ---- 秘密の小部屋 ---- */
+      // アクション: 捨てた枚数だけ +1コイン
+      case 'SECRET_CHAMBER_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'secret_chamber' || pd.stage !== 'discard') return state;
+        const p = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        const handCopy = p.hand.slice();
+        for (const c of cards) if (!removeOne(handCopy, c)) return state; // 手札に無い指定は拒否
+        let n = 0;
+        cards.forEach((c) => { if (removeOne(p.hand, c)) { p.discard.push(c); n++; } });
+        t.coins += n;
+        log(state, `${p.name} は ${n}枚 捨てて +${n} コイン（秘密の小部屋）。`);
+        state.pending = null;
+        return state;
+      }
+      // リアクション: 他人のアタックに対し公開→+2カード→2枚を山札の上に戻す。アタックは無効化しない。
+      case 'SECRET_CHAMBER_REVEAL': {
+        const pd = state.pending;
+        if (!isAttackReactPending(pd) || pd.reacted) return state; // reacted ガード（無限公開を防ぐ）
+        const p = state.players[pd.player];
+        if (p.hand.indexOf('secret_chamber') < 0) return state;
+        draw(state, pd.player, 2);
+        log(state, `${p.name} は秘密の小部屋を公開して2枚引いた。`);
+        // 元のアタックpendingを reacted=true で保存し、戻し終えたら復帰
+        state.pending = { type: 'secret_chamber_putback', player: pd.player, saved: Object.assign({}, pd, { reacted: true }) };
+        return state;
+      }
+      case 'SECRET_CHAMBER_PUTBACK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'secret_chamber_putback') return state;
+        const p = state.players[pd.player];
+        const want = Math.min(2, p.hand.length);
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length !== want) return state;
+        const handCopy = p.hand.slice();
+        for (const c of cards) if (!removeOne(handCopy, c)) return state;
+        cards.forEach((c) => removeOne(p.hand, c));
+        for (let i = cards.length - 1; i >= 0; i--) p.deck.unshift(cards[i]); // 先頭が一番上
+        log(state, `${p.name} は手札2枚を山札の上に戻した。`);
+        state.pending = pd.saved; // 元のアタック解決へ復帰（reacted=true で再公開不可）
+        return state;
+      }
+
       case 'MASQUERADE_PASS': {
         const pd = state.pending;
         if (!pd || pd.type !== 'masquerade' || pd.stage !== 'pass') return state;
