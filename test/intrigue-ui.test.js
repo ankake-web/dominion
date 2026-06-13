@@ -36,7 +36,13 @@ try {
   console.log('=== 設定画面: 王国カードのセット選択 ===');
   go('setup');
   ok(byText('.seg-btn', '陰謀(拡張)'), 'セット切替に「陰謀(拡張)」がある');
-  ok(byText('.seg-btn', 'ランダム10種'), '「ランダム10種」がある');
+  ok(byText('.seg-btn', 'ランダム'), '「ランダム」がある');
+  // ランダムを選ぶと抽選元（基本＋陰謀／陰謀のみ／基本のみ）が出る
+  clickText('.seg-btn', 'ランダム');
+  ok(UI.setup.kingdomSet === 'random', 'ランダム=既定は基本＋陰謀');
+  ok(byText('.seg-btn', '陰謀のみ') && byText('.seg-btn', '基本のみ'), '抽選元の選択肢が出る');
+  clickText('.seg-btn', '陰謀のみ');
+  ok(UI.setup.kingdomSet === 'random-intrigue', '陰謀のみランダムを選択');
   clickText('.seg-btn', '陰謀(拡張)');
   ok(UI.setup.kingdomSet === 'intrigue', '陰謀セットを選択');
 

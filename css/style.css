@@ -773,7 +773,7 @@ input.code-input {
 
 /* ===== 拡大表示（タップで拡大） ===== */
 .zoom-wrap { display: flex; justify-content: center; align-items: center; margin-bottom: 12px; position: relative; }
-.zoom-img { max-width: min(82vw, 360px); max-height: 60vh; width: auto; height: auto; object-fit: contain; border-radius: 14px; box-shadow: var(--shadow); }
+.zoom-img { max-width: min(82vw, 360px); max-height: 44vh; width: auto; height: auto; object-fit: contain; border-radius: 14px; box-shadow: var(--shadow); }
 .zoom-wrap .zoom-fallback { display: none; }
 .zoom-wrap.noimg { min-height: 160px; width: 100%; border: 1px dashed var(--line); border-radius: 12px; }
 .zoom-wrap.noimg .zoom-fallback { display: block; font-size: 22px; font-weight: 800; }

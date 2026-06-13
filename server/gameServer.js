@@ -47,8 +47,8 @@ const ALLOWED = new Set([
   'WISHING_RESOLVE', 'BARON_RESOLVE', 'IRONWORKS_GAIN',
   'MINING_VILLAGE_RESOLVE', 'NOBLES_RESOLVE', 'TORTURER_RESOLVE',
 ]);
-// 使える王国カードのセット
-const KINGDOM_SETS = ['basic', 'intrigue', 'random'];
+// 使える王国カードのセット（クライアントと同じ定義を流用。セット追加時も自動で許可される）
+const KINGDOM_SETS = (DOM.CARD_SETS && DOM.CARD_SETS.map((s) => s.id)) || ['basic', 'intrigue', 'random'];
 
 const rooms = new Map();
 

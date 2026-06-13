@@ -28,7 +28,7 @@
   { "id": "bridge",         "name": "橋",         "cost": 4, "type": "action",   "typeLabel": "アクション",        "art": "asset/bridge.jpg",         "icon": "🌉", "effects": ["+1 購入", "+1 コイン", "全カードのコスト-1"] },
   { "id": "conspirator",    "name": "共謀者",     "cost": 4, "type": "action",   "typeLabel": "アクション",        "art": "asset/conspirator.jpg",    "icon": "🕵️", "effects": ["+2 コイン", "アクション3回以上で+1カード+1アクション"] },
   { "id": "ironworks",      "name": "鉄工所",     "cost": 4, "type": "action",   "typeLabel": "アクション",        "art": "asset/ironworks.jpg",      "icon": "🏭", "effects": ["コスト4以下を獲得", "種別ボーナス"] },
-  { "id": "mining_village", "name": "鉱山の村",   "cost": 4, "type": "action",   "typeLabel": "アクション",        "art": "asset/mining_village.jpg", "icon": "⛏️", "effects": ["+1 カード", "+2 アクション", "廃棄で+2コイン"] },
+  { "id": "mining_village", "name": "鉱山の村",   "cost": 4, "type": "action",   "typeLabel": "アクション",        "art": "asset/mining_village.jpg", "icon": "⛏️", "effects": ["+1 カード", "+2 アクション", "廃棄した場合+2コイン"] },
   { "id": "torturer",       "name": "拷問人",     "cost": 5, "type": "attack",   "typeLabel": "アクション",        "art": "asset/torturer.jpg",       "icon": "🗡️", "effects": ["+3 カード", "他は2枚捨てるか呪い獲得"] },
   { "id": "duke",           "name": "公爵",       "cost": 5, "type": "victory",  "typeLabel": "勝利点",            "art": "asset/duke.jpg",           "icon": "🤴", "effects": ["公領1枚につき1勝利点"] },
   { "id": "nobles",         "name": "貴族",       "cost": 6, "type": "action",   "typeLabel": "勝利点・アクション", "art": "asset/nobles.jpg",         "icon": "🎖️", "effects": ["勝利点 2", "+3カード または +2アクション"] },

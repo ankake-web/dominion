@@ -72,7 +72,7 @@
     ironworks:     { id: 'ironworks',     name: '鉄工所',     cost: 4, types: ['action'],
                      text: 'コスト4以下のカードを1枚獲得する。\nそれがアクションなら +1 アクション、\n財宝なら +1 コイン、勝利点なら +1 カード。' },
     mining_village:{ id: 'mining_village',name: '鉱山の村',   cost: 4, types: ['action'],
-                     text: '+1 カード\n+2 アクション\nこれを廃棄してもよい。\nそうしたら +2 コイン。' },
+                     text: '+1 カード\n+2 アクション\nこれを廃棄してもよい。\nその場合 +2 コイン。' },
     torturer:      { id: 'torturer',      name: '拷問人',     cost: 5, types: ['action', 'attack'],
                      text: '+3 カード\n他のプレイヤーは各自、\n手札を2枚捨てるか、呪い1枚を手札に獲得する。' },
     duke:          { id: 'duke',          name: '公爵',       cost: 5, types: ['victory'],
@@ -90,14 +90,24 @@
   // 陰謀（拡張）おすすめの10種
   DOM.KINGDOM_INTRIGUE = ['courtyard', 'pawn', 'shanty_town', 'steward', 'baron',
                           'bridge', 'conspirator', 'ironworks', 'mining_village', 'nobles'];
-  // 全王国カードのプール（ランダム/手動選択用）
-  DOM.KINGDOM_POOL = DOM.KINGDOM.concat(
-    ['courtyard', 'pawn', 'shanty_town', 'steward', 'wishing_well', 'baron',
-     'bridge', 'conspirator', 'ironworks', 'mining_village', 'torturer', 'duke', 'nobles', 'harem']);
-  // 画面で選べるセット
+  // 拡張ごとの王国カードプール（ランダム抽選の母集団）。将来の拡張はここに足す。
+  DOM.POOLS = {
+    basic:    DOM.KINGDOM.slice(),
+    intrigue: ['courtyard', 'pawn', 'shanty_town', 'steward', 'wishing_well', 'baron',
+               'bridge', 'conspirator', 'ironworks', 'mining_village', 'torturer', 'duke', 'nobles', 'harem'],
+  };
+  // 全王国カードのプール（後方互換: 'random' の既定母集団 = 基本＋陰謀）
+  DOM.KINGDOM_POOL = DOM.POOLS.basic.concat(DOM.POOLS.intrigue);
+  // 画面で選べるセット（id はサーバ検証・保存にも使う）。
+  //   kingdom 固定 … おすすめ10種をそのまま使う
+  //   randomFrom  … 指定した拡張プールを合わせた中から毎回10種を抽選
+  // 拡張を増やすときは POOLS に足し、ここに固定/ランダムのセットを追記するだけ。
   DOM.CARD_SETS = [
-    { id: 'basic',    name: '基本セット',   kingdom: DOM.KINGDOM },
-    { id: 'intrigue', name: '陰謀（拡張）', kingdom: DOM.KINGDOM_INTRIGUE },
+    { id: 'basic',           name: '基本セット',             kingdom: DOM.KINGDOM },
+    { id: 'intrigue',        name: '陰謀（拡張）',           kingdom: DOM.KINGDOM_INTRIGUE },
+    { id: 'random',          name: 'ランダム（基本＋陰謀）', randomFrom: ['basic', 'intrigue'] },
+    { id: 'random-intrigue', name: 'ランダム（陰謀のみ）',   randomFrom: ['intrigue'] },
+    { id: 'random-basic',    name: 'ランダム（基本のみ）',   randomFrom: ['basic'] },
   ];
   // プールから重複なく n 種を選ぶ（コスト順に並べて返す）
   DOM.randomKingdom = function (n, pool) {
@@ -105,10 +115,17 @@
     for (let i = src.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = src[i]; src[i] = src[j]; src[j] = t; }
     return src.slice(0, n || 10).sort((a, b) => DOM.CARDS[a].cost - DOM.CARDS[b].cost || a.localeCompare(b));
   };
-  // セットID → 王国カード配列（'random' は毎回ランダム10種）
+  // セットID → 王国カード配列（ランダム系は毎回その場で10種を確定）
   DOM.kingdomForSet = function (setId) {
-    if (setId === 'intrigue') return DOM.KINGDOM_INTRIGUE.slice();
+    const set = DOM.CARD_SETS.find((s) => s.id === setId);
+    if (set && set.randomFrom) {
+      const pool = set.randomFrom.reduce((a, ex) => a.concat(DOM.POOLS[ex] || []), []);
+      return DOM.randomKingdom(10, pool);
+    }
+    if (set && set.kingdom) return set.kingdom.slice();
+    // 後方互換 / 不明なIDのフォールバック
     if (setId === 'random') return DOM.randomKingdom(10);
+    if (setId === 'intrigue') return DOM.KINGDOM_INTRIGUE.slice();
     return DOM.KINGDOM.slice();
   };
 

@@ -217,6 +217,27 @@
         h('button', { class: 'seg-btn' + (o.value === current ? ' on' : ''), onclick: () => onPick(o.value) }, o.label)));
   }
 
+  // 王国カードのセット選択。基本/陰謀/ランダムを選び、ランダム時は抽選元（基本＋陰謀／陰謀のみ／基本のみ）も出す。
+  // current は CARD_SETS の id。onChange(newId) で確定（ローカルは setup に保存、オンラインはサーバへ送信）。
+  function kingdomSetPicker(current, onChange) {
+    current = current || 'basic';
+    const isRandom = current.indexOf('random') === 0;
+    const modeRow = segmented(
+      [{ value: 'basic', label: '基本' }, { value: 'intrigue', label: '陰謀(拡張)' }, { value: 'random', label: 'ランダム' }],
+      isRandom ? 'random' : current,
+      (v) => onChange(v)); // 'ランダム' を選ぶと既定の「基本＋陰謀ランダム」へ
+    if (!isRandom) return modeRow;
+    const scopeRow = segmented(
+      [{ value: 'random', label: '基本＋陰謀' }, { value: 'random-intrigue', label: '陰謀のみ' }, { value: 'random-basic', label: '基本のみ' }],
+      current, (v) => onChange(v));
+    return h('div', null,
+      modeRow,
+      h('div', { style: 'margin-top:8px' },
+        h('div', { style: 'font-size:12px;color:var(--ink-dim);margin-bottom:4px' }, '抽選元'),
+        scopeRow),
+      h('p', { class: 'muted', style: 'font-size:12px;margin:6px 0 0' }, '毎回ランダムに10種を選びます。'));
+  }
+
   /* ---------- 対戦設定（2〜4人・人間/CPU・強さ） ---------- */
   function viewSetup() {
     const seats = UI.setup.seats;
@@ -250,10 +271,7 @@
         h('div', { class: 'field' }, h('label', null, '人数'), countSeg),
         h('div', { class: 'seat-list' }, rows),
         h('div', { class: 'field' }, h('label', null, '使う王国カード'),
-          segmented([{ value: 'basic', label: '基本' }, { value: 'intrigue', label: '陰謀(拡張)' }, { value: 'random', label: 'ランダム10種' }], UI.setup.kingdomSet, (v) => { UI.setup.kingdomSet = v; render(); })),
-        UI.setup.kingdomSet === 'random'
-          ? h('p', { class: 'muted', style: 'font-size:12px;margin:-4px 0 0' }, '基本＋陰謀の全カードから毎回10種をランダムに選びます。')
-          : null,
+          kingdomSetPicker(UI.setup.kingdomSet, (v) => { UI.setup.kingdomSet = v; render(); })),
         h('div', { class: 'field' }, h('label', null, '手番の順番'),
           segmented([{ value: false, label: '上から順' }, { value: true, label: 'ランダム' }], UI.setup.randomOrder, (v) => { UI.setup.randomOrder = v; render(); })),
         h('button', { class: 'btn btn-primary btn-block', onclick: () => startConfigured(null, { shuffle: UI.setup.randomOrder }) }, 'この設定で開始')
@@ -273,7 +291,7 @@
         h('div', { class: 'field' }, h('label', null, 'プレイヤー1'), i1),
         h('div', { class: 'field' }, h('label', null, 'プレイヤー2'), i2),
         h('div', { class: 'field' }, h('label', null, '使う王国カード'),
-          segmented([{ value: 'basic', label: '基本' }, { value: 'intrigue', label: '陰謀(拡張)' }, { value: 'random', label: 'ランダム10種' }], UI.setup.kingdomSet, (v) => { UI.setup.kingdomSet = v; render(); })),
+          kingdomSetPicker(UI.setup.kingdomSet, (v) => { UI.setup.kingdomSet = v; render(); })),
         h('div', { class: 'field' }, h('label', null, '先攻'),
           segmented([{ value: false, label: 'プレイヤー1' }, { value: true, label: 'ランダム' }], UI.setup.randomOrder, (v) => { UI.setup.randomOrder = v; render(); })),
         h('button', { class: 'btn btn-primary btn-block', onclick: () => startConfigured([{ name: n1 || 'プレイヤー1', type: 'human' }, { name: n2 || 'プレイヤー2', type: 'human' }], { shuffle: UI.setup.randomOrder }) }, 'ゲーム開始')
@@ -348,8 +366,7 @@
           lb.cpuLevel, (v) => UI.netClient.send({ t: 'setConfig', cpuLevel: v }))),
       h('div', { class: 'field' },
         h('label', null, '使う王国カード'),
-        segmented([{ value: 'basic', label: '基本' }, { value: 'intrigue', label: '陰謀(拡張)' }, { value: 'random', label: 'ランダム10種' }],
-          lb.kingdomSet || 'basic', (v) => UI.netClient.send({ t: 'setConfig', kingdomSet: v }))),
+        kingdomSetPicker(lb.kingdomSet || 'basic', (v) => UI.netClient.send({ t: 'setConfig', kingdomSet: v }))),
       h('button', { class: 'btn btn-primary btn-block', disabled: lb.canStart ? null : 'disabled', onclick: () => UI.netClient.send({ t: 'start' }) },
         lb.canStart ? 'ゲーム開始' : '人間1人以上・合計2〜4人で開始')
     ) : h('p', { class: 'muted', style: 'text-align:center' }, 'ホストの開始を待っています…');
@@ -939,11 +956,17 @@
     const tie = r.winners.length > 1;
     const order = state.players.map((p, i) => ({ p, i, s: r.scores[i] })).sort((a, b) => b.s.vp - a.s.vp || a.s.turns - b.s.turns);
     // 点数の内訳（属州2・公領1…）。scoreGame が vpCards で確定済み（マスク配信でも出せる）
+    // 勝利点に絡むカードを全部、各カードの寄与点つきで並べる（貴族・後宮・公爵も含む。公爵=所持する公領の枚数）。
     const breakdown = (sc) => {
       const v = sc.vpCards || {};
-      const parts = ['province', 'duchy', 'estate', 'curse'].filter((id) => v[id])
-        .map((id) => DOM.CARDS[id].name + '×' + v[id]);
-      return parts.length ? parts.join('・') : null;
+      const duchies = v['duchy'] || 0;
+      const ptOf = (id) => id === 'duke' ? (v['duke'] || 0) * duchies : (DOM.CARDS[id].vp || 0) * v[id];
+      const ids = Object.keys(v).filter((id) => v[id] > 0);
+      // 寄与点の高い順。呪い（マイナス）は最後に。
+      ids.sort((a, b) => (a === 'curse') - (b === 'curse') || ptOf(b) - ptOf(a) || DOM.CARDS[b].cost - DOM.CARDS[a].cost);
+      return ids.length
+        ? ids.map((id) => { const pt = ptOf(id); return DOM.CARDS[id].name + '×' + v[id] + '（' + (pt > 0 ? '+' + pt : pt) + '点）'; })
+        : null;
     };
     return h('div', { class: 'result' },
       h('div', { class: 'trophy' }, tie ? '🤝' : '🏆'),
@@ -956,7 +979,7 @@
             h('div', null,
               h('div', { class: 'nm' }, row.p.name + (row.p.isCpu ? '（CPU・' + LEVEL_JP[row.p.cpuLevel] + '）' : '')),
               h('div', { class: 'tn' }, row.s.turns + ' ターン'),
-              bd ? h('div', { class: 'vbd' }, bd) : null),
+              bd ? h('div', { class: 'vbd' }, bd.map((t) => h('div', null, t))) : null),
             h('div', { class: 'vp' }, row.s.vp + ' 点'));
         })),
       h('div', { class: 'row center' },
