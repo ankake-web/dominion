@@ -54,6 +54,7 @@ const ALLOWED = new Set([
   'MONEYLENDER_RESOLVE', 'CHANCELLOR_RESOLVE', 'CHAPEL_RESOLVE',
   'WITCH_REACT', 'BUREAUCRAT_REACT', 'BUREAUCRAT_PUT', 'FEAST_GAIN',
   'LIBRARY_RESOLVE', 'SPY_REACT', 'SPY_DECIDE', 'THIEF_REACT', 'THIEF_PICK', 'THIEF_GAIN',
+  'THRONE_CHOOSE',
 ]);
 // 使える王国カードのセット（クライアントと同じ定義を流用。セット追加時も自動で許可される）
 const KINGDOM_SETS = (DOM.CARD_SETS && DOM.CARD_SETS.map((s) => s.id)) || ['basic', 'intrigue', 'random'];

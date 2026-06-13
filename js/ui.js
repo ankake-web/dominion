@@ -814,6 +814,7 @@
     if (pd.type === 'thief' && pd.stage === 'gain') return modalOptions('泥棒 — 「' + DOM.CARDS[pd.trashed].name + '」を獲得?', '廃棄した財宝を自分の捨て札に獲得できます。', [
       { label: '獲得する', cls: 'btn-primary', on: () => dispatch({ type: 'THIEF_GAIN', take: true }) },
       { label: '廃棄のまま', on: () => dispatch({ type: 'THIEF_GAIN', take: false }) }]);
+    if (pd.type === 'throne') return modalSingleHand(p, '玉座の間 — 2回使うアクションを選ぶ', '手札のアクションカードを1枚選ぶと、それを2回使います。', (id) => DOM.isType(id, 'action'), (card) => dispatch({ type: 'THRONE_CHOOSE', card }), null, '2回使う');
     if (pd.type === 'secret_chamber_putback') return modalSelectN(p, '秘密の小部屋 — 山札の上に戻す', '手札から2枚を選んで山札の上に戻します（最初のタップが一番上）。', Math.min(2, p.hand.length), '確定（戻す）', (cards) => dispatch({ type: 'SECRET_CHAMBER_PUTBACK', cards }));
 
     return h('div');

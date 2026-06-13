@@ -35,7 +35,7 @@
   /* 獲得したいカードの優先順（高いほど良い）。基本＋拡張(陰謀)の全王国カードを網羅。 */
   const GAIN_ORDER = ['province', 'gold', 'nobles', 'harem', 'duchy',
     'adventurer', 'laboratory', 'festival', 'witch', 'council_room', 'library', 'market', 'minion', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'spy', 'thief', 'upgrade', 'bureaucrat', 'feast', 'silver',
-    'mining_village', 'smithy', 'courtyard', 'masquerade', 'great_hall', 'tribute', 'militia', 'steward', 'trading_post', 'baron', 'scout',
+    'mining_village', 'smithy', 'courtyard', 'masquerade', 'throne_room', 'great_hall', 'tribute', 'militia', 'steward', 'trading_post', 'baron', 'scout',
     'remodel', 'moneylender', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith', 'chancellor',
     'pawn', 'moat', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke', 'copper', 'curse'];
   function bestGain(state, maxCost, opts) {
@@ -85,6 +85,8 @@
     if (has('nobles')) return 'nobles';            // 状況により +2アクションも選べる
     if (has('cellar') && dead) return 'cellar';
     // --- ターミナル（効果の大きい順）---
+    // 玉座の間: 2回使える別アクションが手札にあるときだけ（無駄打ち回避）
+    if (has('throne_room') && p.hand.some((c) => isType(c, 'action') && c !== 'throne_room')) return 'throne_room';
     if (has('council_room')) return 'council_room'; // +4カード+1購入
     if (has('library')) return 'library';           // 手札7枚まで
     if (has('adventurer')) return 'adventurer';     // 財宝2枚を手札へ
@@ -385,6 +387,12 @@
         }
       case 'feast':
         return { type: 'FEAST_GAIN', card: bestGain(state, 5, { noVictory: true }) || bestGain(state, 5) };
+      case 'throne': {
+        // 2回使う価値が高いアクション（玉座以外で最も高コスト）を選ぶ
+        const acts = p.hand.filter((c) => isType(c, 'action') && c !== 'throne_room').sort((a, b) => C()[b].cost - C()[a].cost);
+        const pick = acts[0] || p.hand.filter((c) => isType(c, 'action'))[0];
+        return { type: 'THRONE_CHOOSE', card: pick };
+      }
       case 'library':
         // 単純CPUは引いたアクションをそのまま手札に（脇に置かない）
         return { type: 'LIBRARY_RESOLVE', setAside: false };

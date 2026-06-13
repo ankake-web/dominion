@@ -678,6 +678,10 @@
         thiefEnterVictim(state, pi, vics);
         break;
       }
+      case 'throne_room':
+        // 手札にアクションがあれば、2回使うカードを選ぶ
+        if (p.hand.some((c) => DOM.isType(c, 'action'))) state.pending = { type: 'throne', player: pi };
+        break;
       case 'tribute': {
         // 左隣のプレイヤーが山札の上2枚を公開して捨てる
         const left = state.players[(pi + 1) % state.players.length];
@@ -763,6 +767,7 @@
 
   /* ---------- クリーンアップ＆次の番へ ---------- */
   function cleanupAndAdvance(state) {
+    state.replay = []; // 玉座の間の保留分が万一残っても次手番に持ち越さない
     const pi = state.turn.active;
     const p = state.players[pi];
     p.discard.push(...p.inPlay, ...p.hand);
@@ -787,6 +792,21 @@
      ============================================================ */
   function reduce(state, action) {
     state = clone(state);
+    state = applyAction(state, action);
+    return runReplays(state);
+  }
+  // 玉座の間の「2回目の適用」を、選択待ちが解消したタイミングで実行する。
+  function runReplays(state) {
+    let guard = 0;
+    while (!state.pending && state.replay && state.replay.length && !state.gameOver && guard++ < 30) {
+      const r = state.replay.shift();
+      state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
+      log(state, `${state.players[r.player].name} は玉座の間で「${C()[r.card].name}」をもう一度使った。`);
+      applyEffect(state, r.card, r.player);
+    }
+    return state;
+  }
+  function applyAction(state, action) {
     const t = state.turn;
     const pi = t.active;
     const me = state.players[pi];
@@ -1240,6 +1260,24 @@
         v.deck.unshift(card);
         log(state, `${v.name} は「${C()[card].name}」を山札の上に置いた（役人）。`);
         bureaucratEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+
+      /* ---- 玉座の間：選んだアクションを2回使う ---- */
+      case 'THRONE_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'throne') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0 || !DOM.isType(card, 'action')) return state;
+        removeOne(p.hand, card);
+        p.inPlay.push(card);
+        t.actionsPlayed = (t.actionsPlayed || 0) + 1;
+        state.pending = null;
+        log(state, `${p.name} は玉座の間で「${C()[card].name}」を使った（1回目）。`);
+        applyEffect(state, card, pd.player);     // 1回目
+        state.replay = state.replay || [];
+        state.replay.push({ player: pd.player, card }); // 2回目は pending 解消後に runReplays が適用
         return state;
       }
 

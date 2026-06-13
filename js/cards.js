@@ -79,6 +79,8 @@
                  text: '+1 カード\n+1 アクション\n全員が山札の上を公開。各自について、\nあなたが捨てるか戻すかを決める。' },
     thief:     { id: 'thief',      name: '泥棒',       cost: 4, types: ['action', 'attack'],
                  text: '他のプレイヤーは山札の上2枚を公開する。\nその中の財宝1枚をあなたが選んで廃棄し、\nそれを獲得してもよい。残りは捨てる。' },
+    throne_room:{ id: 'throne_room', name: '玉座の間', cost: 4, types: ['action'],
+                 text: '手札のアクションカードを1枚選び、\nそれを2回使う。' },
 
     /* ===== 拡張: 陰謀 (Intrigue) =====
        絵(asset/<id>.jpg・asset/thumb/<id>.jpg)は未用意。置けば自動で表示される。
@@ -146,7 +148,7 @@
                           'bridge', 'conspirator', 'ironworks', 'mining_village', 'nobles'];
   // 拡張ごとの王国カードプール（ランダム抽選の母集団）。将来の拡張はここに足す。
   DOM.POOLS = {
-    basic:    DOM.KINGDOM.concat(['laboratory', 'festival', 'moneylender', 'chancellor', 'chapel', 'gardens', 'witch', 'bureaucrat', 'council_room', 'feast', 'adventurer', 'library', 'spy', 'thief']),
+    basic:    DOM.KINGDOM.concat(['laboratory', 'festival', 'moneylender', 'chancellor', 'chapel', 'gardens', 'witch', 'bureaucrat', 'council_room', 'feast', 'adventurer', 'library', 'spy', 'thief', 'throne_room']),
     intrigue: ['courtyard', 'pawn', 'shanty_town', 'steward', 'wishing_well', 'baron',
                'bridge', 'conspirator', 'ironworks', 'mining_village', 'torturer', 'duke', 'nobles', 'harem',
                'great_hall', 'coppersmith', 'trading_post', 'upgrade', 'scout', 'tribute', 'swindler', 'saboteur', 'minion', 'masquerade', 'secret_chamber'],

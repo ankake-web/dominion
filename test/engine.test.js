@@ -614,6 +614,39 @@ s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'thief' });
 s2 = E.reduce(s2, { type: 'MOAT_REVEAL' });
 ok(s2.trash.length === 0 && s2.pending === null, '泥棒を堀で無効化');
 
+console.log('=== 玉座の間: アクションを2回使う ===');
+// 非対話カード（鍛冶屋=+3カード）を2回 → +6カード
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['throne_room', 'smithy'];
+s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'silver'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'throne_room' });
+ok(s2.pending && s2.pending.type === 'throne', '2回使うカードの選択待ち');
+s2 = E.reduce(s2, { type: 'THRONE_CHOOSE', card: 'smithy' });
+ok(s2.players[0].hand.length === 6 && s2.pending === null, '鍛冶屋を2回で+6カード: ' + s2.players[0].hand.length);
+ok(count(s2.players[0].inPlay, 'smithy') === 1, '鍛冶屋は場に1枚(2回使用)');
+
+// 玉座+市場（非ターミナル+α）を2回 → +2カード,+2アクション,+2購入,+2コイン
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['throne_room', 'market'];
+s.players[0].deck = ['copper', 'copper', 'silver'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'throne_room' });
+s2 = E.reduce(s2, { type: 'THRONE_CHOOSE', card: 'market' });
+ok(s2.turn.buys === 1 + 2 && s2.turn.coins === 2 && s2.turn.actions === 2, '市場2回: +2購入+2コイン+2アクション: buys=' + s2.turn.buys);
+
+// 玉座+民兵（対話カード）: 1回目のコインは即時、2回目は1回目の解決後に発火（リプレイ）
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['throne_room', 'militia'];
+s.players[0].deck = ['copper', 'copper'];
+s.players[1].hand = ['copper', 'copper', 'copper', 'copper', 'estate']; // 5枚
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'throne_room' });
+s2 = E.reduce(s2, { type: 'THRONE_CHOOSE', card: 'militia' });
+ok(s2.turn.coins === 2, '1回目の民兵で+2コイン（この時点では2回目は未発火）: ' + s2.turn.coins);
+ok(s2.pending && s2.pending.type === 'militia' && s2.pending.player === 1, '1回目の民兵で相手に選択待ち');
+s2 = E.reduce(s2, { type: 'MILITIA_RESOLVE', cards: ['copper', 'copper'] }); // 5→3、解決後に2回目発火
+ok(s2.turn.coins === 4, '2回目の民兵が発火して合計+4コイン: ' + s2.turn.coins);
+ok(s2.pending === null, '相手は既に3枚なので2回目は捨て直し無し→終了');
+ok(s2.players[1].hand.length === 3, '相手は3枚（1回目で捨て、2回目は対象外）: ' + s2.players[1].hand.length);
+
 console.log('\n========================================');
 console.log(`結果: ${pass} 件成功, ${fail} 件失敗`);
 console.log('========================================');
