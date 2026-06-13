@@ -34,5 +34,7 @@
   { "id": "nobles",         "name": "貴族",       "cost": 6, "type": "action",   "typeLabel": "勝利点・アクション", "art": "asset/nobles.jpg",         "icon": "🎖️", "effects": ["勝利点 2", "+3カード または +2アクション"] },
   { "id": "harem",          "name": "後宮",       "cost": 6, "type": "treasure", "typeLabel": "財宝・勝利点",      "art": "asset/harem.jpg",          "icon": "💎", "effects": ["コイン +2", "勝利点 2"] },
   { "id": "great_hall",     "name": "大広間",     "cost": 3, "type": "action",   "typeLabel": "勝利点・アクション", "art": "asset/great_hall.jpg",     "icon": "🏛️", "effects": ["+1 カード", "+1 アクション", "勝利点 1"] },
-  { "id": "coppersmith",    "name": "銅細工師",   "cost": 4, "type": "action",   "typeLabel": "アクション",        "art": "asset/coppersmith.jpg",    "icon": "🔨", "effects": ["このターン銅貨が+1コイン"] }
+  { "id": "coppersmith",    "name": "銅細工師",   "cost": 4, "type": "action",   "typeLabel": "アクション",        "art": "asset/coppersmith.jpg",    "icon": "🔨", "effects": ["このターン銅貨が+1コイン"] },
+  { "id": "trading_post",   "name": "交易場",     "cost": 5, "type": "action",   "typeLabel": "アクション",        "art": "asset/trading_post.jpg",   "icon": "⚖️", "effects": ["手札2枚を廃棄", "→ 銀貨を手札に獲得"] },
+  { "id": "upgrade",        "name": "改良",       "cost": 5, "type": "action",   "typeLabel": "アクション",        "art": "asset/upgrade.jpg",        "icon": "⬆️", "effects": ["+1 カード", "+1 アクション", "1枚廃棄→ちょうど+1コストを獲得"] }
 ]

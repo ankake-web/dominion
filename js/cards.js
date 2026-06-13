@@ -87,6 +87,10 @@
                      text: '+1 カード\n+1 アクション\n（勝利点 1）' },
     coppersmith:   { id: 'coppersmith',   name: '銅細工師',   cost: 4, types: ['action'],
                      text: 'このターン、銅貨は+1コイン多く出る。\n（銅貨1枚が2コインになる）' },
+    trading_post:  { id: 'trading_post',  name: '交易場',     cost: 5, types: ['action'],
+                     text: '手札を2枚廃棄する。\nそうしたら銀貨1枚を手札に獲得する。' },
+    upgrade:       { id: 'upgrade',       name: '改良',       cost: 5, types: ['action'],
+                     text: '+1 カード\n+1 アクション\n手札を1枚廃棄する。\nそれよりちょうど1コイン高いカードを1枚獲得する。' },
   };
 
   /* ---------- 王国カードのセット ---------- */
@@ -101,7 +105,7 @@
     basic:    DOM.KINGDOM.slice(),
     intrigue: ['courtyard', 'pawn', 'shanty_town', 'steward', 'wishing_well', 'baron',
                'bridge', 'conspirator', 'ironworks', 'mining_village', 'torturer', 'duke', 'nobles', 'harem',
-               'great_hall', 'coppersmith'],
+               'great_hall', 'coppersmith', 'trading_post', 'upgrade'],
   };
   // 全王国カードのプール（後方互換: 'random' の既定母集団 = 基本＋陰謀）
   DOM.KINGDOM_POOL = DOM.POOLS.basic.concat(DOM.POOLS.intrigue);

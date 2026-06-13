@@ -292,6 +292,58 @@ console.log('=== 銅細工師: このターン銅貨が+1コイン ===');
   ok((s.turn.copperBonus || 0) === 0, '次の手番では copperBonus が0に戻る: ' + s.turn.copperBonus);
 }
 
+console.log('=== 交易場: 手札2枚廃棄→銀貨を手札に ===');
+{
+  let s = setup(['trading_post', 'estate', 'copper', 'silver']);
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'trading_post' });
+  ok(s.pending && s.pending.type === 'trading_post', '交易場で廃棄選択待ち');
+  const trashBefore = s.trash.length;
+  s = reduce(s, { type: 'TRADING_POST_RESOLVE', cards: ['estate', 'copper'] });
+  ok(s.trash.length === trashBefore + 2, '2枚が廃棄置き場へ');
+  ok(count(s.players[0].hand, 'silver') === 2, '銀貨が手札に加わる(元1枚+獲得1枚): ' + count(s.players[0].hand, 'silver'));
+  ok(s.pending === null, '解決後は選択待ち解除');
+}
+{
+  // 手札1枚だけ → 1枚廃棄するが銀貨は得られない
+  let s = setup(['trading_post', 'copper']);
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'trading_post' });
+  const silSup = s.supply.silver;
+  s = reduce(s, { type: 'TRADING_POST_RESOLVE', cards: ['copper'] });
+  ok(count(s.players[0].hand, 'silver') === 0 && s.supply.silver === silSup, '1枚廃棄では銀貨を得ない');
+  ok(s.pending === null, '解決完了');
+}
+
+console.log('=== 改良: 廃棄→ちょうど+1コストを獲得 ===');
+{
+  let s = setup(['upgrade', 'estate']); // 屋敷(コスト2)を廃棄→コスト3を獲得
+  const h0 = s.players[0].hand.length;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'upgrade' });
+  ok(s.turn.actions === 1, '改良: +1アクション(消費1/付与1で据え置き): ' + s.turn.actions);
+  ok(s.players[0].hand.length === h0, '改良: +1カードで手札数据え置き(場へ1/ドロー1)');
+  ok(s.pending && s.pending.stage === 'trash', '廃棄ステージ');
+  s = reduce(s, { type: 'UPGRADE_TRASH', card: 'estate' });
+  ok(s.pending && s.pending.stage === 'gain' && s.pending.exactCost === 3, 'ちょうど3コスト獲得ステージ: ' + (s.pending && s.pending.exactCost));
+  s = reduce(s, { type: 'UPGRADE_GAIN', card: 'silver' });
+  ok(count(s.players[0].discard, 'silver') === 1, '銀貨(コスト3)を獲得: ' + count(s.players[0].discard, 'silver'));
+  ok(s.pending === null, '解決完了');
+}
+{
+  // 廃棄候補があっても、ちょうど+1コストのカードが供給に無ければ獲得なしで終了
+  let s = setup(['upgrade', 'province']); // 属州(8)を廃棄→コスト9は存在しない
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'upgrade' });
+  s = reduce(s, { type: 'UPGRADE_TRASH', card: 'province' });
+  ok(s.pending === null, 'コスト9が無いので獲得ステージに入らず終了');
+}
+{
+  // 改良の獲得は強制（候補があるのに card:null は無視＝state不変でループ防止の前提）
+  let s = setup(['upgrade', 'estate']);
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'upgrade' });
+  s = reduce(s, { type: 'UPGRADE_TRASH', card: 'estate' });
+  const snap = JSON.stringify(s);
+  const s2 = reduce(s, { type: 'UPGRADE_GAIN', card: null });
+  ok(JSON.stringify(s2) === snap, '候補ありで card:null は無効(state不変)');
+}
+
 console.log('\n========================================');
 console.log('拡張テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

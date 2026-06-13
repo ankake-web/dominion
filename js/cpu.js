@@ -34,9 +34,9 @@
 
   /* 獲得したいカードの優先順（高いほど良い）。基本＋拡張(陰謀)の全王国カードを網羅。 */
   const GAIN_ORDER = ['province', 'gold', 'nobles', 'harem', 'duchy',
-    'market', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'silver',
-    'mining_village', 'smithy', 'courtyard', 'militia', 'steward', 'baron',
-    'remodel', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop',
+    'market', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'upgrade', 'silver',
+    'mining_village', 'smithy', 'courtyard', 'great_hall', 'militia', 'steward', 'trading_post', 'baron',
+    'remodel', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith',
     'pawn', 'moat', 'cellar', 'estate', 'duke', 'copper', 'curse'];
   function bestGain(state, maxCost, opts) {
     opts = opts || {};
@@ -45,6 +45,21 @@
       if (opts.noVictory && (isType(id, 'victory') || isType(id, 'curse'))) continue;
       if (!C()[id]) continue;
       if (cost(state, id) <= maxCost && sup(state, id) > 0) return id;
+    }
+    return null;
+  }
+  // ちょうど exact コストの最善獲得（改良など）。GAIN_ORDER に無いカードも最後に拾い、
+  // 候補があるのに null を返して engine の「強制獲得」と噛み合いCPUが無限ループするのを防ぐ。
+  function bestGainExact(state, exact, opts) {
+    opts = opts || {};
+    for (const id of GAIN_ORDER) {
+      if (opts.noVictory && (isType(id, 'victory') || isType(id, 'curse'))) continue;
+      if (!C()[id]) continue;
+      if (cost(state, id) === exact && sup(state, id) > 0) return id;
+    }
+    for (const id of Object.keys(state.supply)) {
+      if (opts.noVictory && (isType(id, 'victory') || isType(id, 'curse'))) continue;
+      if (C()[id] && cost(state, id) === exact && sup(state, id) > 0) return id;
     }
     return null;
   }
@@ -75,6 +90,9 @@
     if (has('baron')) return 'baron';
     if (has('ironworks')) return 'ironworks';
     if (has('moat')) return 'moat'; // +2ドロー。リアクションは公開制のため温存する理由が無い
+    if (has('upgrade')) return 'upgrade';          // 廃棄→格上げ。手札が空でも+1カード+1アクションで損なし
+    // 交易場: 不要札(呪い/屋敷/銅貨/公爵)が2枚以上あるときだけ（良い札を捨てない）
+    if (has('trading_post') && p.hand.filter((c) => trashValue(c) < 10).length >= 2) return 'trading_post';
     // 銅細工師: 手札に銅貨が2枚以上あるときだけ価値がある（ターミナルなので無駄打ち回避）
     if (has('coppersmith') && p.hand.filter((c) => c === 'copper').length >= 2) return 'coppersmith';
     if (has('mine') && p.hand.some((c) => isTreasure(c))) return 'mine';
@@ -288,6 +306,13 @@
         if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
         return { type: 'TORTURER_RESOLVE', choice: 'discard', cards: pickDiscards(p.hand, Math.min(2, p.hand.length)) };
       }
+      case 'trading_post':
+        // 不要札を優先して2枚（手札が1枚なら1枚）廃棄
+        return { type: 'TRADING_POST_RESOLVE', cards: pickTrash(p.hand, Math.min(2, p.hand.length)) };
+      case 'upgrade':
+        if (pd.stage === 'trash') return { type: 'UPGRADE_TRASH', card: pickRemodelTrash(state, p) };
+        // ちょうど+1コストを獲得（勝利点を避けた最善→無ければ何でも。候補ありなら必ず非null）
+        return { type: 'UPGRADE_GAIN', card: bestGainExact(state, pd.exactCost, { noVictory: true }) || bestGainExact(state, pd.exactCost) };
 
       default:
         return { type: 'END_TURN' };

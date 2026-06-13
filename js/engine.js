@@ -301,6 +301,16 @@
         // このターン、銅貨は出すと +1 コイン（treasureCoins で加算）
         t.copperBonus = (t.copperBonus || 0) + 1;
         break;
+      case 'trading_post':
+        // 手札を2枚廃棄→銀貨を手札に。手札があるときだけ選択待ち
+        if (p.hand.length > 0) state.pending = { type: 'trading_post', player: pi };
+        break;
+      case 'upgrade':
+        draw(state, pi, 1);
+        t.actions += 1;
+        // 手札があれば1枚廃棄→ちょうど+1コストを獲得
+        if (p.hand.length > 0) state.pending = { type: 'upgrade', stage: 'trash', player: pi };
+        break;
 
       default:
         break;
@@ -770,6 +780,60 @@
           log(state, `${p.name} は手札 ${cards.length}枚 を捨てた。`);
         }
         advanceAttack(state, pd);
+        return state;
+      }
+
+      /* ---- 交易場：手札2枚廃棄→銀貨を手札に ---- */
+      case 'TRADING_POST_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'trading_post') return state;
+        const p = state.players[pd.player];
+        const want = Math.min(2, p.hand.length);
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length !== want) return state;
+        const handCopy = p.hand.slice();
+        for (const c of cards) if (!removeOne(handCopy, c)) return state;
+        cards.forEach((c) => { removeOne(p.hand, c); state.trash.push(c); });
+        log(state, `${p.name} は手札 ${cards.length}枚 を廃棄した。`);
+        // 2枚廃棄できたときだけ銀貨を手札に獲得（公式: trash 2 → gain Silver to hand）
+        if (cards.length === 2 && gain(state, pd.player, 'silver', 'hand')) {
+          log(state, `${p.name} は銀貨を手札に獲得した。`);
+        }
+        state.pending = null;
+        return state;
+      }
+
+      /* ---- 改良：1枚廃棄→ちょうど+1コストを獲得 ---- */
+      case 'UPGRADE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'upgrade' || pd.stage !== 'trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0) return state;
+        removeOne(p.hand, card);
+        state.trash.push(card);
+        log(state, `${p.name} は「${C()[card].name}」を廃棄した。`);
+        const exact = cardCost(state, card) + 1;
+        // ちょうど exact コストの獲得候補が無ければ獲得なしで終了（デッドロック回避）
+        state.pending = anyGainable(state, (id) => cardCost(state, id) === exact)
+          ? { type: 'upgrade', stage: 'gain', player: pd.player, exactCost: exact }
+          : null;
+        if (!state.pending) log(state, `ちょうど ${exact} コストのカードが無く、獲得できなかった。`);
+        return state;
+      }
+      case 'UPGRADE_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'upgrade' || pd.stage !== 'gain') return state;
+        const card = action.card;
+        const canGain = (id) => !!C()[id] && cardCost(state, id) === pd.exactCost;
+        if (card == null) {
+          if (anyGainable(state, canGain)) return state; // 候補があるなら獲得は強制
+          state.pending = null; return state;
+        }
+        if (!canGain(card) || (state.supply[card] || 0) <= 0) return state;
+        gain(state, pd.player, card, 'discard');
+        log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した。`);
+        state.pending = null;
         return state;
       }
 
