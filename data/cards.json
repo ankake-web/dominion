@@ -26,7 +26,7 @@
   { "id": "gardens",    "name": "庭園",       "cost": 4, "type": "victory",  "typeLabel": "勝利点",                 "art": "asset/gardens.jpg",    "icon": "🌷", "effects": ["デッキ10枚につき1勝利点"] },
   { "id": "witch",      "name": "魔女",       "cost": 5, "type": "attack",   "typeLabel": "アクション",             "art": "asset/witch.jpg",      "icon": "🧙", "effects": ["+2 カード", "他は呪いを獲得"] },
   { "id": "bureaucrat", "name": "役人",       "cost": 4, "type": "attack",   "typeLabel": "アクション",             "art": "asset/bureaucrat.jpg", "icon": "🧑‍💼", "effects": ["銀貨を山札の上に獲得", "他は勝利点を山札の上に"] },
-  { "id": "council_room","name": "議事堂",    "cost": 5, "type": "action",   "typeLabel": "アクション",             "art": "asset/council_room.jpg","icon": "🏛️", "effects": ["+4 カード", "+1 購入", "他は各1枚引く"] },
+  { "id": "council_room","name": "議会",    "cost": 5, "type": "action",   "typeLabel": "アクション",             "art": "asset/council_room.jpg","icon": "🏛️", "effects": ["+4 カード", "+1 購入", "他は各1枚引く"] },
   { "id": "feast",      "name": "祝宴",       "cost": 4, "type": "action",   "typeLabel": "アクション",             "art": "asset/feast.jpg",      "icon": "🍖", "effects": ["自身を廃棄", "コスト5以下を1枚獲得"] },
   { "id": "adventurer", "name": "冒険者",     "cost": 6, "type": "action",   "typeLabel": "アクション",             "art": "asset/adventurer.jpg", "icon": "🧭", "effects": ["財宝2枚を引くまで公開", "残りは捨てる"] },
   { "id": "library",    "name": "書庫",       "cost": 5, "type": "action",   "typeLabel": "アクション",             "art": "asset/library.jpg",    "icon": "📚", "effects": ["手札7枚まで引く", "アクションは脇に置ける"] },

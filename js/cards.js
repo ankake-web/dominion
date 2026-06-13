@@ -67,7 +67,7 @@
                  text: '+2 カード\n他のプレイヤーは各自、呪い1枚を獲得する。' },
     bureaucrat:{ id: 'bureaucrat', name: '役人',       cost: 4, types: ['action', 'attack'],
                  text: '銀貨1枚を獲得し、山札の上に置く。\n他のプレイヤーは各自、手札の勝利点1枚を\n山札の上に置く（無ければ手札を公開）。' },
-    council_room:{ id: 'council_room', name: '議事堂', cost: 5, types: ['action'],
+    council_room:{ id: 'council_room', name: '議会', cost: 5, types: ['action'],
                  text: '+4 カード\n+1 購入\n他のプレイヤーは各自、1枚引く。' },
     feast:     { id: 'feast',      name: '祝宴',       cost: 4, types: ['action'],
                  text: 'このカードを廃棄する。\nコスト5以下のカードを1枚獲得する。' },
