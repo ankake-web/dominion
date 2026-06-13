@@ -514,6 +514,55 @@ console.log('=== 破壊工作員: $3以上を廃棄→任意で格下げ獲得 =
   ok(s.pending === null && count(s.trash, 'gold') === 1 && count(s.trash, 'silver') === 1, '両者$3以上を廃棄して終了');
 }
 
+console.log('=== 手先: +1アクション、+2コイン か 全員引き直し ===');
+{
+  // +2コインを選ぶ
+  let s = setup(['minion', 'copper']);
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'minion' });
+  ok(s.turn.actions === 1, '手先: +1アクション(据え置き): ' + s.turn.actions);
+  ok(s.pending && s.pending.type === 'minion' && s.pending.stage === 'choose', '攻撃側の選択待ち');
+  const c0 = s.turn.coins;
+  s = reduce(s, { type: 'MINION_RESOLVE', choice: 'coins' });
+  ok(s.turn.coins === c0 + 2 && s.pending === null, '+2コインで終了');
+}
+{
+  // アタック: 自分は手札捨てて4引く、手札5枚以上の相手も引き直し
+  let s = E.createInitialState(['A', 'B'], DOM.KINGDOM_INTRIGUE, { startActive: 0 });
+  s.players[0].hand = ['minion', 'estate', 'estate'];
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'silver', 'gold'];
+  s.players[1].hand = ['copper', 'copper', 'copper', 'copper', 'estate']; // 5枚
+  s.players[1].deck = ['silver', 'silver', 'silver', 'silver', 'gold'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'minion' });
+  s = reduce(s, { type: 'MINION_RESOLVE', choice: 'attack' });
+  ok(s.players[0].hand.length === 4, '自分は手札を捨てて4枚引く: ' + s.players[0].hand.length);
+  ok(s.players[1].hand.length === 4, '手札5枚の相手も4枚に引き直し: ' + s.players[1].hand.length);
+  ok(s.pending === null, '解決完了');
+}
+{
+  // 手札4枚以下の相手は引き直さない
+  let s = E.createInitialState(['A', 'B'], DOM.KINGDOM_INTRIGUE, { startActive: 0 });
+  s.players[0].hand = ['minion'];
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper'];
+  s.players[1].hand = ['copper', 'copper', 'copper']; // 3枚
+  s.players[1].deck = ['silver', 'silver'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'minion' });
+  s = reduce(s, { type: 'MINION_RESOLVE', choice: 'attack' });
+  ok(s.players[1].hand.length === 3, '手札3枚の相手は引き直さない: ' + s.players[1].hand.length);
+}
+{
+  // 堀で無効化（相手は引き直さない）
+  let s = E.createInitialState(['A', 'B'], DOM.KINGDOM_INTRIGUE, { startActive: 0 });
+  s.players[0].hand = ['minion'];
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper'];
+  s.players[1].hand = ['moat', 'copper', 'copper', 'copper', 'copper']; // 5枚・堀
+  s.players[1].deck = ['silver', 'silver', 'silver', 'silver'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'minion' });
+  s = reduce(s, { type: 'MINION_RESOLVE', choice: 'attack' });
+  ok(s.pending && s.pending.type === 'minion_attack' && s.pending.player === 1, '相手の反応待ち');
+  s = reduce(s, { type: 'MOAT_REVEAL' });
+  ok(s.players[1].hand.length === 5 && s.pending === null, '堀で無効化、引き直さない');
+}
+
 console.log('\n========================================');
 console.log('拡張テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

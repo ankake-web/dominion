@@ -48,6 +48,7 @@ const ALLOWED = new Set([
   'MINING_VILLAGE_RESOLVE', 'NOBLES_RESOLVE', 'TORTURER_RESOLVE',
   'TRADING_POST_RESOLVE', 'UPGRADE_TRASH', 'UPGRADE_GAIN', 'SCOUT_RESOLVE',
   'SWINDLER_REACT', 'SWINDLER_GAIN', 'SABOTEUR_REACT', 'SABOTEUR_GAIN',
+  'MINION_RESOLVE', 'MINION_ATTACK_REACT',
 ]);
 // 使える王国カードのセット（クライアントと同じ定義を流用。セット追加時も自動で許可される）
 const KINGDOM_SETS = (DOM.CARD_SETS && DOM.CARD_SETS.map((s) => s.id)) || ['basic', 'intrigue', 'random'];

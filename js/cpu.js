@@ -34,7 +34,7 @@
 
   /* 獲得したいカードの優先順（高いほど良い）。基本＋拡張(陰謀)の全王国カードを網羅。 */
   const GAIN_ORDER = ['province', 'gold', 'nobles', 'harem', 'duchy',
-    'market', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'upgrade', 'silver',
+    'market', 'minion', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'upgrade', 'silver',
     'mining_village', 'smithy', 'courtyard', 'great_hall', 'tribute', 'militia', 'steward', 'trading_post', 'baron', 'scout',
     'remodel', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith',
     'pawn', 'moat', 'cellar', 'estate', 'duke', 'copper', 'curse'];
@@ -78,6 +78,7 @@
     if (has('shanty_town')) return 'shanty_town';
     if (has('great_hall')) return 'great_hall';    // +1カード+1アクションのキャントリップ（消費0）
     if (has('scout')) return 'scout';              // +1アクションのキャントリップ
+    if (has('minion')) return 'minion';            // +1アクション。選択で+2コイン/引き直し
     if (has('nobles')) return 'nobles';            // 状況により +2アクションも選べる
     if (has('cellar') && dead) return 'cellar';
     // --- ターミナル（効果の大きい順）---
@@ -336,6 +337,18 @@
         }
         // gain ステージ（犠牲者・任意）。上限内で最善を拾う。無ければ獲得しない(null)
         return { type: 'SABOTEUR_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
+      case 'minion':
+        // 攻撃側の選択。手札に他のアクションがあれば捨てたくない→+2コイン。
+        // 手札が弱い(財宝が乏しい)なら引き直し（相手も妨害）。
+        if (p.hand.some((c) => isType(c, 'action'))) return { type: 'MINION_RESOLVE', choice: 'coins' };
+        {
+          const handCoin = p.hand.reduce((sum, c) => sum + (isTreasure(c) ? (C()[c].coin || 0) : 0), 0);
+          return { type: 'MINION_RESOLVE', choice: handCoin >= 4 ? 'coins' : 'attack' };
+        }
+      case 'minion_attack':
+        // 犠牲者側。堀があれば無効化、無ければそのまま受ける
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'MINION_ATTACK_REACT' };
       case 'trading_post':
         // 不要札を優先して2枚（手札が1枚なら1枚）廃棄
         return { type: 'TRADING_POST_RESOLVE', cards: pickTrash(p.hand, Math.min(2, p.hand.length)) };

@@ -99,6 +99,8 @@
                      text: '+2 コイン\n他のプレイヤーは各自、山札の上1枚を廃棄し、\nあなたが選んだ同じコストのカードを獲得する。' },
     saboteur:      { id: 'saboteur',      name: '破壊工作員', cost: 5, types: ['action', 'attack'],
                      text: '他のプレイヤーは各自、コスト3以上のカードが出るまで\n山札の上を公開し、それを廃棄する。\nそれより2コイン以上安いカードを獲得してもよい。\n残りは捨てる。' },
+    minion:        { id: 'minion',        name: '手先',       cost: 5, types: ['action', 'attack'],
+                     text: '+1 アクション\n次のうち1つを選ぶ：\n・+2 コイン\n・手札を捨てて4枚引く。さらに手札5枚以上の\n　他のプレイヤーも手札を捨てて4枚引く。' },
   };
 
   /* ---------- 王国カードのセット ---------- */
@@ -113,7 +115,7 @@
     basic:    DOM.KINGDOM.slice(),
     intrigue: ['courtyard', 'pawn', 'shanty_town', 'steward', 'wishing_well', 'baron',
                'bridge', 'conspirator', 'ironworks', 'mining_village', 'torturer', 'duke', 'nobles', 'harem',
-               'great_hall', 'coppersmith', 'trading_post', 'upgrade', 'scout', 'tribute', 'swindler', 'saboteur'],
+               'great_hall', 'coppersmith', 'trading_post', 'upgrade', 'scout', 'tribute', 'swindler', 'saboteur', 'minion'],
   };
   // 全王国カードのプール（後方互換: 'random' の既定母集団 = 基本＋陰謀）
   DOM.KINGDOM_POOL = DOM.POOLS.basic.concat(DOM.POOLS.intrigue);

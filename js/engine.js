@@ -236,6 +236,26 @@
     }
   }
 
+  /* ---------- 手先（攻撃側の選択＋全相手に作用するアタック）---------- */
+  function minionAttackEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (state.players[victim].hand.includes('moat')) {
+      state.pending = { type: 'minion_attack', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      minionAttackApply(state, source, victim, rest);
+    }
+  }
+  function minionAttackApply(state, source, victim, queue) {
+    const v = state.players[victim];
+    if (v.hand.length >= 5) { // 解決時点で手札5枚以上の相手だけ捨てて4枚引く
+      v.discard.push(...v.hand); v.hand = [];
+      draw(state, victim, 4);
+      log(state, `${v.name} は手札を捨てて4枚引いた（手先）。`);
+    }
+    minionAttackEnterVictim(state, source, queue);
+  }
+
   /* ---------- アクションカードの効果 ---------- */
   function applyEffect(state, cardId, pi) {
     const t = state.turn;
@@ -416,6 +436,11 @@
         saboteurEnterVictim(state, pi, vics);
         break;
       }
+      case 'minion':
+        t.actions += 1;
+        // 攻撃側が「+2コイン」か「手札を捨てて+4＆相手も」を選ぶ
+        state.pending = { type: 'minion', stage: 'choose', player: pi };
+        break;
       case 'tribute': {
         // 左隣のプレイヤーが山札の上2枚を公開して捨てる
         const left = state.players[(pi + 1) % state.players.length];
@@ -653,13 +678,14 @@
         // 堀で無効化できるのは「アタックを受ける側の反応ステップ」だけ。
         // 段階アタック(詐欺師など)の gain ステップ(攻撃側が操作)では撃てない。
         const reactable = (pd.type === 'militia') || (pd.type === 'torturer') ||
-          ((pd.type === 'swindler' || pd.type === 'saboteur') && pd.stage === 'react');
+          ((pd.type === 'swindler' || pd.type === 'saboteur' || pd.type === 'minion_attack') && pd.stage === 'react');
         if (!reactable) return state;
         log(state, `${p.name} は「堀」を公開し、アタックを無効化した。`);
         if (pd.type === 'militia') advanceMilitia(state, pd);
         else if (pd.type === 'torturer') advanceAttack(state, pd);
         else if (pd.type === 'swindler') swindlerEnterVictim(state, pd.source, pd.queue);
         else if (pd.type === 'saboteur') saboteurEnterVictim(state, pd.source, pd.queue);
+        else if (pd.type === 'minion_attack') minionAttackEnterVictim(state, pd.source, pd.queue);
         return state;
       }
 
@@ -940,6 +966,35 @@
         gain(state, pd.victim, card, 'discard');
         log(state, `${state.players[pd.victim].name} は「${C()[card].name}」を獲得した（詐欺師）。`);
         swindlerEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+
+      /* ---- 手先：攻撃側の選択（+2コイン or 全員引き直し）---- */
+      case 'MINION_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'minion' || pd.stage !== 'choose') return state;
+        const p = state.players[pd.player];
+        if (action.choice === 'coins') {
+          t.coins += 2;
+          log(state, `${p.name} は手先で +2 コイン。`);
+          state.pending = null;
+        } else if (action.choice === 'attack') {
+          p.discard.push(...p.hand); p.hand = [];
+          draw(state, pd.player, 4);
+          log(state, `${p.name} は手札を捨てて4枚引いた（手先）。`);
+          // 手札5枚以上の他プレイヤーも引き直し（堀で無効化可）
+          const vics = [];
+          for (let k = 1; k < state.players.length; k++) vics.push((pd.player + k) % state.players.length);
+          minionAttackEnterVictim(state, pd.player, vics);
+        } else {
+          return state;
+        }
+        return state;
+      }
+      case 'MINION_ATTACK_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'minion_attack' || pd.stage !== 'react') return state;
+        minionAttackApply(state, pd.source, pd.victim, pd.queue);
         return state;
       }
 
