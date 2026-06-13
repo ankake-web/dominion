@@ -50,6 +50,12 @@
     workshop:  { id: 'workshop',  name: '工房',       cost: 3, types: ['action'],
                  text: 'コスト4以下のカードを1枚獲得する。' },
 
+    /* ===== 基本セット（追加分） ===== */
+    laboratory:{ id: 'laboratory',name: '研究所',     cost: 5, types: ['action'],
+                 text: '+2 カード\n+1 アクション' },
+    festival:  { id: 'festival',  name: '祝祭',       cost: 5, types: ['action'],
+                 text: '+2 アクション\n+1 購入\n+2 コイン' },
+
     /* ===== 拡張: 陰謀 (Intrigue) =====
        絵(asset/<id>.jpg・asset/thumb/<id>.jpg)は未用意。置けば自動で表示される。
        未配置の間は文字カード(フォールバック)で表示される。 */
@@ -116,7 +122,7 @@
                           'bridge', 'conspirator', 'ironworks', 'mining_village', 'nobles'];
   // 拡張ごとの王国カードプール（ランダム抽選の母集団）。将来の拡張はここに足す。
   DOM.POOLS = {
-    basic:    DOM.KINGDOM.slice(),
+    basic:    DOM.KINGDOM.concat(['laboratory', 'festival']),
     intrigue: ['courtyard', 'pawn', 'shanty_town', 'steward', 'wishing_well', 'baron',
                'bridge', 'conspirator', 'ironworks', 'mining_village', 'torturer', 'duke', 'nobles', 'harem',
                'great_hall', 'coppersmith', 'trading_post', 'upgrade', 'scout', 'tribute', 'swindler', 'saboteur', 'minion', 'masquerade', 'secret_chamber'],

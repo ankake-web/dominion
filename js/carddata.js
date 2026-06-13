@@ -27,6 +27,8 @@
     { id: 'village', name: '村', cost: 3, type: 'action', typeLabel: 'アクション', art: 'asset/village.jpg', icon: '🏘️', effects: ['+1 カード', '+2 アクション'] },
     { id: 'woodcutter', name: '木こり', cost: 3, type: 'action', typeLabel: 'アクション', art: 'asset/woodcutter.jpg', icon: '🪓', effects: ['+1 購入', '+2 コイン'] },
     { id: 'workshop', name: '工房', cost: 3, type: 'action', typeLabel: 'アクション', art: 'asset/workshop.jpg', icon: '🛠️', effects: ['コスト4以下を1枚獲得'] },
+    { id: 'laboratory', name: '研究所', cost: 5, type: 'action', typeLabel: 'アクション', art: 'asset/laboratory.jpg', icon: '⚗️', effects: ['+2 カード', '+1 アクション'] },
+    { id: 'festival', name: '祝祭', cost: 5, type: 'action', typeLabel: 'アクション', art: 'asset/festival.jpg', icon: '🎉', effects: ['+2 アクション', '+1 購入', '+2 コイン'] },
 
     // 拡張: 陰謀（Intrigue）。絵は未用意（asset/<id>.jpg を置けば自動表示）。
     { id: 'courtyard', name: '中庭', cost: 2, type: 'action', typeLabel: 'アクション', art: 'asset/courtyard.jpg', icon: '🏛️', effects: ['+3 カード', '手札1枚を山札の上に置く'] },

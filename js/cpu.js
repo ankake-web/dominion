@@ -34,7 +34,7 @@
 
   /* 獲得したいカードの優先順（高いほど良い）。基本＋拡張(陰謀)の全王国カードを網羅。 */
   const GAIN_ORDER = ['province', 'gold', 'nobles', 'harem', 'duchy',
-    'market', 'minion', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'upgrade', 'silver',
+    'laboratory', 'festival', 'market', 'minion', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'upgrade', 'silver',
     'mining_village', 'smithy', 'courtyard', 'masquerade', 'great_hall', 'tribute', 'militia', 'steward', 'trading_post', 'baron', 'scout',
     'remodel', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith',
     'pawn', 'moat', 'secret_chamber', 'cellar', 'estate', 'duke', 'copper', 'curse'];
@@ -73,6 +73,8 @@
     // --- 非ターミナル（+アクションが付く＝連鎖できる）を最優先 ---
     if (has('village')) return 'village';
     if (has('mining_village')) return 'mining_village';
+    if (has('festival')) return 'festival';        // +2アクション+1購入+2コイン
+    if (has('laboratory')) return 'laboratory';    // +2カード+1アクション
     if (has('market')) return 'market';
     if (has('wishing_well')) return 'wishing_well';
     if (has('shanty_town')) return 'shanty_town';

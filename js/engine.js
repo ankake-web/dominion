@@ -489,6 +489,17 @@
         // アクション: 手札を好きな枚数捨て、捨てた枚数だけ +1コイン（リアクションは別途 SECRET_CHAMBER_REVEAL）
         if (p.hand.length > 0) state.pending = { type: 'secret_chamber', stage: 'discard', player: pi };
         break;
+
+      /* ===== 基本セット（追加分） ===== */
+      case 'laboratory':
+        draw(state, pi, 2);
+        t.actions += 1;
+        break;
+      case 'festival':
+        t.actions += 2;
+        t.buys += 1;
+        t.coins += 2;
+        break;
       case 'tribute': {
         // 左隣のプレイヤーが山札の上2枚を公開して捨てる
         const left = state.players[(pi + 1) % state.players.length];

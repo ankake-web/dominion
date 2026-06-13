@@ -426,6 +426,22 @@ for (let turn = 0; turn < 4; turn++) {
 ok(s.turn.active === 0, '4人で一周して席0に戻る: ' + s.turn.active);
 ok(s.players.every((p) => p.turns === 1), '全員1ターンずつ');
 
+console.log('=== 研究所: +2カード +1アクション ===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['laboratory', 'copper'];
+s.players[0].deck = ['gold', 'silver', 'copper'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'laboratory' });
+ok(s2.players[0].hand.length === 1 + 2, '研究所で手札 1→+2: ' + s2.players[0].hand.length);
+ok(s2.turn.actions === 1, '研究所でアクション 1-1+1=1: ' + s2.turn.actions);
+
+console.log('=== 祝祭: +2アクション +1購入 +2コイン ===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['festival', 'copper'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'festival' });
+ok(s2.turn.actions === 2, '祝祭でアクション 1-1+2=2: ' + s2.turn.actions);
+ok(s2.turn.buys === 2, '祝祭で購入 1+1=2: ' + s2.turn.buys);
+ok(s2.turn.coins === 2, '祝祭でコイン +2: ' + s2.turn.coins);
+
 console.log('\n========================================');
 console.log(`結果: ${pass} 件成功, ${fail} 件失敗`);
 console.log('========================================');
