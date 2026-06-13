@@ -81,6 +81,12 @@
                      text: '（勝利点 2）\n次から1つを選ぶ：+3 カード／+2 アクション。' },
     harem:         { id: 'harem',         name: '後宮',       cost: 6, types: ['treasure', 'victory'], coin: 2, vp: 2,
                      text: 'コイン +2\n（勝利点 2）' },
+
+    /* ===== 拡張: 陰謀（追加分） ===== */
+    great_hall:    { id: 'great_hall',    name: '大広間',     cost: 3, types: ['action', 'victory'], vp: 1,
+                     text: '+1 カード\n+1 アクション\n（勝利点 1）' },
+    coppersmith:   { id: 'coppersmith',   name: '銅細工師',   cost: 4, types: ['action'],
+                     text: 'このターン、銅貨は+1コイン多く出る。\n（銅貨1枚が2コインになる）' },
   };
 
   /* ---------- 王国カードのセット ---------- */
@@ -94,7 +100,8 @@
   DOM.POOLS = {
     basic:    DOM.KINGDOM.slice(),
     intrigue: ['courtyard', 'pawn', 'shanty_town', 'steward', 'wishing_well', 'baron',
-               'bridge', 'conspirator', 'ironworks', 'mining_village', 'torturer', 'duke', 'nobles', 'harem'],
+               'bridge', 'conspirator', 'ironworks', 'mining_village', 'torturer', 'duke', 'nobles', 'harem',
+               'great_hall', 'coppersmith'],
   };
   // 全王国カードのプール（後方互換: 'random' の既定母集団 = 基本＋陰謀）
   DOM.KINGDOM_POOL = DOM.POOLS.basic.concat(DOM.POOLS.intrigue);

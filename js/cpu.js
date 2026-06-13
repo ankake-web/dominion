@@ -61,6 +61,7 @@
     if (has('market')) return 'market';
     if (has('wishing_well')) return 'wishing_well';
     if (has('shanty_town')) return 'shanty_town';
+    if (has('great_hall')) return 'great_hall';    // +1カード+1アクションのキャントリップ（消費0）
     if (has('nobles')) return 'nobles';            // 状況により +2アクションも選べる
     if (has('cellar') && dead) return 'cellar';
     // --- ターミナル（効果の大きい順）---
@@ -74,6 +75,8 @@
     if (has('baron')) return 'baron';
     if (has('ironworks')) return 'ironworks';
     if (has('moat')) return 'moat'; // +2ドロー。リアクションは公開制のため温存する理由が無い
+    // 銅細工師: 手札に銅貨が2枚以上あるときだけ価値がある（ターミナルなので無駄打ち回避）
+    if (has('coppersmith') && p.hand.filter((c) => c === 'copper').length >= 2) return 'coppersmith';
     if (has('mine') && p.hand.some((c) => isTreasure(c))) return 'mine';
     if (has('remodel')) return 'remodel';
     if (has('workshop')) return 'workshop';

@@ -17,6 +17,13 @@
     const red = (state.turn && state.turn.costReduction) || 0;
     return Math.max(0, base - red);
   }
+  // 財宝1枚を出したときのコイン。銅細工師の「このターン銅貨+1」(t.copperBonus)を銅貨にだけ加算。
+  // PLAY_TREASURE と PLAY_ALL_TREASURES の両方でこれを使い、計算を二重実装しない。
+  function treasureCoins(state, id) {
+    const base = (C()[id] && C()[id].coin) || 0;
+    if (id === 'copper') return base + ((state.turn && state.turn.copperBonus) || 0);
+    return base;
+  }
 
   /* ---------- 乱数・シャッフル ---------- */
   function shuffle(arr) {
@@ -87,7 +94,7 @@
       players,
       supply: initSupply(players.length, kingdom),
       trash: [],
-      turn: { active: startActive, phase: 'action', actions: 1, buys: 1, coins: 0, costReduction: 0, actionsPlayed: 0 },
+      turn: { active: startActive, phase: 'action', actions: 1, buys: 1, coins: 0, costReduction: 0, actionsPlayed: 0, copperBonus: 0 },
       pending: null, // 選択待ち {type, player, ...}
       logSeq: 1, // ログの通し番号（効果音などが「新しい行」を確実に検知するため）
       log: [`ゲーム開始。${players[startActive].name} の番です。`],
@@ -285,6 +292,15 @@
         if (to.length) state.pending = { type: 'torturer', player: to[0], source: pi, queue: to.slice(1) };
         break;
       }
+      case 'great_hall':
+        // +1カード +1アクション（勝利点1は vpOf が一律加算するので別処理不要）
+        draw(state, pi, 1);
+        t.actions += 1;
+        break;
+      case 'coppersmith':
+        // このターン、銅貨は出すと +1 コイン（treasureCoins で加算）
+        t.copperBonus = (t.copperBonus || 0) + 1;
+        break;
 
       default:
         break;
@@ -353,7 +369,7 @@
       return;
     }
     const next = (pi + 1) % state.players.length;
-    state.turn = { active: next, phase: 'action', actions: 1, buys: 1, coins: 0, costReduction: 0, actionsPlayed: 0 };
+    state.turn = { active: next, phase: 'action', actions: 1, buys: 1, coins: 0, costReduction: 0, actionsPlayed: 0, copperBonus: 0 };
     log(state, `${state.players[next].name} の番です。`);
   }
 
@@ -399,7 +415,7 @@
         if (me.hand.indexOf(card) < 0) return state;
         removeOne(me.hand, card);
         me.inPlay.push(card);
-        t.coins += C()[card].coin;
+        t.coins += treasureCoins(state, card);
         return state;
       }
       case 'PLAY_ALL_TREASURES': {
@@ -409,7 +425,7 @@
         treasures.forEach((card) => {
           removeOne(me.hand, card);
           me.inPlay.push(card);
-          t.coins += C()[card].coin;
+          t.coins += treasureCoins(state, card);
         });
         if (treasures.length) log(state, `${me.name} は財宝を全て出した。`);
         return state;
