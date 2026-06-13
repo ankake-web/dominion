@@ -671,6 +671,29 @@ console.log('=== 秘密の小部屋(リアクション): アタックに+2引き
   ok(s.pending && s.pending.stage === 'gain', 'そのまま受ける→廃棄・攻撃側の付与へ');
 }
 
+console.log('=== 男爵: 屋敷切れでも誤った獲得ログを出さない（監査修正）===');
+{
+  let s = setup(['baron', 'copper']); // 手札に屋敷なし
+  s.supply.estate = 0;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'baron' });
+  ok(!s.log.some((l) => l === 'A は屋敷を獲得した。'), '屋敷切れ時に誤った獲得ログを出さない');
+}
+
+console.log('=== 仮面舞踏会: パス中の他者の選択は配信時に伏せられる（監査修正）===');
+{
+  let s = E.createInitialState(['A', 'B', 'C'], DOM.KINGDOM_INTRIGUE, { startActive: 0 });
+  s.players[0].hand = ['masquerade', 'gold']; s.players[0].deck = ['copper', 'copper', 'silver'];
+  s.players[1].hand = ['estate']; s.players[2].hand = ['curse'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'masquerade' });
+  s = reduce(s, { type: 'MASQUERADE_PASS', card: 'gold' }); // 席0が選択 → picks={0:'gold'}
+  const for2 = E.maskStateFor(s, 2);
+  const for0 = E.maskStateFor(s, 0);
+  ok(for2.pending && for2.pending.picks && for2.pending.picks[0] === undefined, '席2には席0のパス内容が見えない');
+  ok(for0.pending && for0.pending.picks && for0.pending.picks[0] === 'gold', '席0には自分のパス内容が見える');
+  // 元stateは壊れていない（maskは複製に対して行う）
+  ok(s.pending.picks[0] === 'gold', '元stateのpicksは保持される（マスクは配信用複製のみ）');
+}
+
 console.log('\n========================================');
 console.log('拡張テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

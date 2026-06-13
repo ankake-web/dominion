@@ -647,6 +647,16 @@ ok(s2.turn.coins === 4, '2回目の民兵が発火して合計+4コイン: ' + s
 ok(s2.pending === null, '相手は既に3枚なので2回目は捨て直し無し→終了');
 ok(s2.players[1].hand.length === 3, '相手は3枚（1回目で捨て、2回目は対象外）: ' + s2.players[1].hand.length);
 
+console.log('=== 役人: 銀貨切れでも誤った獲得ログを出さない（監査修正）===');
+s = E.createInitialState(['A', 'B']);
+s.supply.silver = 0;
+s.players[0].hand = ['bureaucrat'];
+s.players[0].deck = ['copper'];
+s.players[1].hand = ['copper', 'silver']; // 勝利点なし
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'bureaucrat' });
+ok(s2.players[0].deck[0] === 'copper', '銀貨切れなら山札の上は変わらない');
+ok(!s2.log.some((l) => l.includes('銀貨を山札の上に獲得')), '銀貨切れ時に誤った獲得ログを出さない');
+
 console.log('\n========================================');
 console.log(`結果: ${pass} 件成功, ${fail} 件失敗`);
 console.log('========================================');

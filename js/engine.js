@@ -489,8 +489,8 @@
         if (p.hand.indexOf('estate') >= 0) {
           state.pending = { type: 'baron', player: pi };
         } else {
-          gain(state, pi, 'estate', 'discard');
-          log(state, `${p.name} は屋敷を獲得した。`);
+          if (gain(state, pi, 'estate', 'discard')) log(state, `${p.name} は屋敷を獲得した。`);
+          else log(state, `${p.name} は屋敷を獲得しようとしたが山が空だった。`);
         }
         break;
       case 'bridge':
@@ -632,8 +632,8 @@
         break;
       }
       case 'bureaucrat': {
-        gain(state, pi, 'silver', 'deck'); // 銀貨を山札の上に獲得
-        log(state, `${p.name} は銀貨を山札の上に獲得した。`);
+        // 銀貨を山札の上に獲得（山切れ時は獲得できないのでログもガード）
+        if (gain(state, pi, 'silver', 'deck')) log(state, `${p.name} は銀貨を山札の上に獲得した。`);
         const vics = [];
         for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
         bureaucratEnterVictim(state, pi, vics);
@@ -1141,8 +1141,8 @@
           t.coins += 4;
           log(state, `${p.name} は屋敷を捨てて +4 コイン。`);
         } else {
-          gain(state, pd.player, 'estate', 'discard');
-          log(state, `${p.name} は屋敷を獲得した。`);
+          if (gain(state, pd.player, 'estate', 'discard')) log(state, `${p.name} は屋敷を獲得した。`);
+          else log(state, `${p.name} は屋敷を獲得しようとしたが山が空だった。`);
         }
         state.pending = null;
         return state;
@@ -1622,6 +1622,13 @@
         // inPlay は場に表向きで出ているカードなのでそのまま
       });
     });
+    // 仮面舞踏会のパスは「同時・秘密」。逐次解決中の picks(他席が渡したカード)を
+    // 後手席に配信すると情報優位になるため、自分の選択分以外は伏せる。
+    if (s.pending && s.pending.type === 'masquerade' && s.pending.stage === 'pass' && s.pending.picks) {
+      const masked = {};
+      if (s.pending.picks[seat] != null) masked[seat] = s.pending.picks[seat];
+      s.pending = Object.assign({}, s.pending, { picks: masked });
+    }
     s.you = seat;
     return s;
   }

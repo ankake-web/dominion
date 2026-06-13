@@ -135,8 +135,16 @@
      「この1枚を買うとゲームが終わるか」「終わった場合に自分が勝つか」を判定する。
      これが無いと、負け確定でも最後の属州を買って自滅したり（不自然な介錯）、
      大差リード中に山切れで勝ち確で閉じられる手を逃したりする。 */
+  // engine.vpOf と同等（公爵=公領数、庭園=デッキ10枚毎に1点 の変動得点も加算）。
+  // これが無いと hard CPU の終局判定が庭園/公爵を 0 点と誤算し、勝ち/負けの読みを誤る。
   function vpOfPlayer(p) {
-    return allCards(p).reduce((sum, c) => sum + (C()[c].vp || 0), 0);
+    const cards = allCards(p);
+    let vp = cards.reduce((sum, c) => sum + (C()[c].vp || 0), 0);
+    const dukes = cards.filter((c) => c === 'duke').length;
+    if (dukes) vp += dukes * cards.filter((c) => c === 'duchy').length;
+    const gardens = cards.filter((c) => c === 'gardens').length;
+    if (gardens) vp += gardens * Math.floor(cards.length / 10);
+    return vp;
   }
   function buyEndsGame(state, id) {
     const after = (k) => (state.supply[k] || 0) - (k === id ? 1 : 0);
@@ -147,8 +155,11 @@
   }
   // seat が id を獲得して即終了した場合に勝てる（同点の共同勝利を含む）か
   function winsIfEnds(state, seat, id) {
-    const myVp = vpOfPlayer(state.players[seat]) + (C()[id].vp || 0);
-    const myTurns = state.players[seat].turns + 1; // 今のターンはクリーンアップで+1される
+    // 獲得する1枚を加えた仮デッキで再計算（庭園のデッキ増・公爵の動的得点も反映）
+    const me = state.players[seat];
+    const hypo = { deck: allCards(me).concat(id), hand: [], discard: [], inPlay: [] };
+    const myVp = vpOfPlayer(hypo);
+    const myTurns = me.turns + 1; // 今のターンはクリーンアップで+1される
     return state.players.every((p, i) => {
       if (i === seat) return true;
       const v = vpOfPlayer(p);
