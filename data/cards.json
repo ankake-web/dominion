@@ -29,6 +29,9 @@
   { "id": "council_room","name": "議事堂",    "cost": 5, "type": "action",   "typeLabel": "アクション",             "art": "asset/council_room.jpg","icon": "🏛️", "effects": ["+4 カード", "+1 購入", "他は各1枚引く"] },
   { "id": "feast",      "name": "祝宴",       "cost": 4, "type": "action",   "typeLabel": "アクション",             "art": "asset/feast.jpg",      "icon": "🍖", "effects": ["自身を廃棄", "コスト5以下を1枚獲得"] },
   { "id": "adventurer", "name": "冒険者",     "cost": 6, "type": "action",   "typeLabel": "アクション",             "art": "asset/adventurer.jpg", "icon": "🧭", "effects": ["財宝2枚を引くまで公開", "残りは捨てる"] },
+  { "id": "library",    "name": "書庫",       "cost": 5, "type": "action",   "typeLabel": "アクション",             "art": "asset/library.jpg",    "icon": "📚", "effects": ["手札7枚まで引く", "アクションは脇に置ける"] },
+  { "id": "spy",        "name": "密偵",       "cost": 4, "type": "attack",   "typeLabel": "アクション",             "art": "asset/spy.jpg",        "icon": "🔎", "effects": ["+1カード +1アクション", "全員の山札の上を捨/戻し選択"] },
+  { "id": "thief",      "name": "泥棒",       "cost": 4, "type": "attack",   "typeLabel": "アクション",             "art": "asset/thief.jpg",      "icon": "🦝", "effects": ["他は上2枚公開", "財宝1枚を廃棄→獲得してよい"] },
 
   { "id": "courtyard",      "name": "中庭",       "cost": 2, "type": "action",   "typeLabel": "アクション",        "art": "asset/courtyard.jpg",      "icon": "🏛️", "effects": ["+3 カード", "手札1枚を山札の上に置く"] },
   { "id": "pawn",           "name": "従者",       "cost": 2, "type": "action",   "typeLabel": "アクション",        "art": "asset/pawn.jpg",           "icon": "♟️", "effects": ["異なる2つを選ぶ", "+1カード/+1アクション/+1購入/+1コイン"] },

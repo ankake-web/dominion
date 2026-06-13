@@ -799,6 +799,21 @@
     if (pd.type === 'bureaucrat' && pd.stage === 'react') return modalOptions('役人を受ける', '手札の勝利点1枚を山札の上に置きます。', reactOptions(p, pd, { type: 'BUREAUCRAT_REACT' }));
     if (pd.type === 'bureaucrat' && pd.stage === 'put') return modalSingleHand(p, '役人 — 山札の上に置く', '手札の勝利点カードを1枚選び、山札の上に置きます。', (id) => DOM.isType(id, 'victory'), (card) => dispatch({ type: 'BUREAUCRAT_PUT', card }), null, '山札の上に置く');
     if (pd.type === 'feast') return modalGainSupply(state, '祝宴 — 獲得', 'コスト5以下のカードを1枚獲得します。', (id) => effCost(state, id) <= 5, (id) => dispatch({ type: 'FEAST_GAIN', card: id }), () => dispatch({ type: 'FEAST_GAIN', card: null }));
+    if (pd.type === 'library') return modalOptions('書庫 — 「' + DOM.CARDS[pd.card].name + '」を引いた', 'このアクションカードを手札に加えますか、脇に置きますか？（脇に置くと最後に捨て、引き直します）', [
+      { label: '手札に加える', cls: 'btn-primary', on: () => dispatch({ type: 'LIBRARY_RESOLVE', setAside: false }) },
+      { label: '脇に置く（捨てる）', on: () => dispatch({ type: 'LIBRARY_RESOLVE', setAside: true }) }]);
+    if (pd.type === 'spy' && pd.stage === 'react') return modalOptions('密偵を受ける', '山札の上が公開され、相手が捨てるか戻すか決めます。', reactOptions(p, pd, { type: 'SPY_REACT' }));
+    if (pd.type === 'spy' && pd.stage === 'decide') {
+      const who = pd.victim === pd.source ? '自分' : state.players[pd.victim].name;
+      return modalOptions('密偵 — ' + who + 'の山札の上: 「' + DOM.CARDS[pd.card].name + '」', who + 'の山札の上のカードをどうしますか？', [
+        { label: 'そのまま戻す', cls: 'btn-primary', on: () => dispatch({ type: 'SPY_DECIDE', discard: false }) },
+        { label: '捨てさせる', on: () => dispatch({ type: 'SPY_DECIDE', discard: true }) }]);
+    }
+    if (pd.type === 'thief' && pd.stage === 'react') return modalOptions('泥棒を受ける', '山札の上2枚が公開され、財宝1枚が奪われます。', reactOptions(p, pd, { type: 'THIEF_REACT' }));
+    if (pd.type === 'thief' && pd.stage === 'pick') return modalOptions('泥棒 — ' + state.players[pd.victim].name + 'の財宝を廃棄', '公開された財宝から1枚を選んで廃棄します。', pd.treasures.map((c) => ({ label: DOM.CARDS[c].name, on: () => dispatch({ type: 'THIEF_PICK', card: c }) })));
+    if (pd.type === 'thief' && pd.stage === 'gain') return modalOptions('泥棒 — 「' + DOM.CARDS[pd.trashed].name + '」を獲得?', '廃棄した財宝を自分の捨て札に獲得できます。', [
+      { label: '獲得する', cls: 'btn-primary', on: () => dispatch({ type: 'THIEF_GAIN', take: true }) },
+      { label: '廃棄のまま', on: () => dispatch({ type: 'THIEF_GAIN', take: false }) }]);
     if (pd.type === 'secret_chamber_putback') return modalSelectN(p, '秘密の小部屋 — 山札の上に戻す', '手札から2枚を選んで山札の上に戻します（最初のタップが一番上）。', Math.min(2, p.hand.length), '確定（戻す）', (cards) => dispatch({ type: 'SECRET_CHAMBER_PUTBACK', cards }));
 
     return h('div');

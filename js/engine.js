@@ -286,8 +286,78 @@
     if (!pd) return false;
     if (pd.type === 'militia' || pd.type === 'torturer') return true;
     if ((pd.type === 'swindler' || pd.type === 'saboteur' || pd.type === 'minion_attack' ||
-         pd.type === 'witch' || pd.type === 'bureaucrat') && pd.stage === 'react') return true;
+         pd.type === 'witch' || pd.type === 'bureaucrat' ||
+         pd.type === 'spy' || pd.type === 'thief') && pd.stage === 'react') return true;
     return false;
+  }
+
+  /* ---------- 書庫（手札が7枚になるまで引く。引いたアクションは脇に置ける）---------- */
+  function libraryStep(state, pi, aside) {
+    const p = state.players[pi];
+    while (p.hand.length < 7) {
+      if (p.deck.length === 0) {
+        if (p.discard.length === 0) break;
+        p.deck = shuffle(p.discard); p.discard = [];
+      }
+      if (p.deck.length === 0) break;
+      const c = p.deck.shift();
+      p.hand.push(c);
+      if (DOM.isType(c, 'action')) { // アクションは脇に置くか選ぶ
+        state.pending = { type: 'library', player: pi, aside, card: c };
+        return;
+      }
+    }
+    aside.forEach((x) => p.discard.push(x));
+    if (aside.length) log(state, `${p.name} は脇に置いた ${aside.length}枚 を捨てた（書庫）。`);
+    state.pending = null;
+  }
+
+  /* ---------- 密偵（全員の山札の上を公開、使用者が各自について捨てる/戻すを決める）---------- */
+  function spyEnterTarget(state, attacker, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    const target = queue[0], rest = queue.slice(1);
+    if (target !== attacker && hasReaction(state.players[target])) {
+      state.pending = { type: 'spy', stage: 'react', player: target, source: attacker, victim: target, queue: rest };
+    } else {
+      spyReveal(state, attacker, target, rest);
+    }
+  }
+  function spyReveal(state, attacker, target, queue) {
+    const tp = state.players[target];
+    if (tp.deck.length === 0 && tp.discard.length > 0) { tp.deck = shuffle(tp.discard); tp.discard = []; }
+    if (tp.deck.length === 0) { // 公開する札が無い
+      spyEnterTarget(state, attacker, queue);
+      return;
+    }
+    state.pending = { type: 'spy', stage: 'decide', player: attacker, source: attacker, victim: target, card: tp.deck[0], queue };
+  }
+
+  /* ---------- 泥棒（他の各自が上2枚公開、使用者が財宝1枚を廃棄→獲得してよい）---------- */
+  function thiefEnterVictim(state, attacker, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'thief', stage: 'react', player: victim, source: attacker, victim, queue: rest };
+    } else {
+      thiefReveal(state, attacker, victim, rest);
+    }
+  }
+  function thiefReveal(state, attacker, victim, queue) {
+    const v = state.players[victim];
+    const revealed = [];
+    for (let i = 0; i < 2; i++) {
+      if (v.deck.length === 0) { if (v.discard.length === 0) break; v.deck = shuffle(v.discard); v.discard = []; }
+      if (v.deck.length === 0) break;
+      revealed.push(v.deck.shift());
+    }
+    const treasures = revealed.filter((c) => DOM.isType(c, 'treasure'));
+    if (treasures.length) {
+      state.pending = { type: 'thief', stage: 'pick', player: attacker, source: attacker, victim, revealed, treasures, queue };
+    } else {
+      revealed.forEach((c) => v.discard.push(c)); // 財宝なし→全部捨てる
+      if (revealed.length) log(state, `${v.name} は公開した ${revealed.length}枚 を捨てた（泥棒）。`);
+      thiefEnterVictim(state, attacker, queue);
+    }
   }
 
   /* ---------- 魔女（複数対象。各相手が呪いを獲得）---------- */
@@ -591,6 +661,23 @@
         log(state, `${p.name} は冒険者で財宝 ${found}枚 を手札に加えた。`);
         break;
       }
+      case 'library':
+        libraryStep(state, pi, []);
+        break;
+      case 'spy': {
+        draw(state, pi, 1);
+        t.actions += 1;
+        const q = [pi];
+        for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        spyEnterTarget(state, pi, q);
+        break;
+      }
+      case 'thief': {
+        const vics = [];
+        for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
+        thiefEnterVictim(state, pi, vics);
+        break;
+      }
       case 'tribute': {
         // 左隣のプレイヤーが山札の上2枚を公開して捨てる
         const left = state.players[(pi + 1) % state.players.length];
@@ -833,7 +920,7 @@
         // 段階アタック(詐欺師など)の gain ステップ(攻撃側が操作)では撃てない。
         const reactable = (pd.type === 'militia') || (pd.type === 'torturer') ||
           ((pd.type === 'swindler' || pd.type === 'saboteur' || pd.type === 'minion_attack' ||
-            pd.type === 'witch' || pd.type === 'bureaucrat') && pd.stage === 'react');
+            pd.type === 'witch' || pd.type === 'bureaucrat' || pd.type === 'spy' || pd.type === 'thief') && pd.stage === 'react');
         if (!reactable) return state;
         log(state, `${p.name} は「堀」を公開し、アタックを無効化した。`);
         if (pd.type === 'militia') advanceMilitia(state, pd);
@@ -843,6 +930,8 @@
         else if (pd.type === 'minion_attack') minionAttackEnterVictim(state, pd.source, pd.queue);
         else if (pd.type === 'witch') witchEnterVictim(state, pd.source, pd.queue);
         else if (pd.type === 'bureaucrat') bureaucratEnterVictim(state, pd.source, pd.queue);
+        else if (pd.type === 'spy') spyEnterTarget(state, pd.source, pd.queue);
+        else if (pd.type === 'thief') thiefEnterVictim(state, pd.source, pd.queue);
         return state;
       }
 
@@ -1151,6 +1240,73 @@
         v.deck.unshift(card);
         log(state, `${v.name} は「${C()[card].name}」を山札の上に置いた（役人）。`);
         bureaucratEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+
+      /* ---- 書庫：引いたアクションを脇に置く/手札に ---- */
+      case 'LIBRARY_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'library') return state;
+        const p = state.players[pd.player];
+        const aside = pd.aside.slice();
+        if (action.setAside) {
+          if (removeOne(p.hand, pd.card)) { aside.push(pd.card); log(state, `${p.name} は「${C()[pd.card].name}」を脇に置いた（書庫）。`); }
+        }
+        libraryStep(state, pd.player, aside);
+        return state;
+      }
+
+      /* ---- 密偵：公開した山札の上を捨てる/戻す ---- */
+      case 'SPY_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'spy' || pd.stage !== 'react') return state;
+        spyReveal(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'SPY_DECIDE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'spy' || pd.stage !== 'decide') return state;
+        const tp = state.players[pd.victim];
+        if (action.discard && tp.deck.length > 0) {
+          const c = tp.deck.shift(); tp.discard.push(c);
+          log(state, `${tp.name} は山札の上の「${C()[c].name}」を捨てた（密偵）。`);
+        } else {
+          log(state, `${tp.name} は山札の上をそのままにした（密偵）。`);
+        }
+        spyEnterTarget(state, pd.source, pd.queue);
+        return state;
+      }
+
+      /* ---- 泥棒：財宝1枚を廃棄→獲得してよい ---- */
+      case 'THIEF_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'thief' || pd.stage !== 'react') return state;
+        thiefReveal(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'THIEF_PICK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'thief' || pd.stage !== 'pick') return state;
+        const v = state.players[pd.victim];
+        const card = action.card;
+        if (pd.treasures.indexOf(card) < 0) return state; // 公開された財宝のみ
+        // 選んだ財宝を廃棄、その他の公開札は犠牲者の捨て札へ
+        const rest = pd.revealed.slice();
+        const i = rest.indexOf(card); rest.splice(i, 1);
+        state.trash.push(card);
+        rest.forEach((c) => v.discard.push(c));
+        log(state, `${v.name} の「${C()[card].name}」を廃棄した（泥棒）。`);
+        state.pending = { type: 'thief', stage: 'gain', player: pd.source, source: pd.source, victim: pd.victim, trashed: card, queue: pd.queue };
+        return state;
+      }
+      case 'THIEF_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'thief' || pd.stage !== 'gain') return state;
+        if (action.take && removeOne(state.trash, pd.trashed)) {
+          state.players[pd.source].discard.push(pd.trashed);
+          log(state, `${state.players[pd.source].name} は廃棄された「${C()[pd.trashed].name}」を獲得した（泥棒）。`);
+        }
+        thiefEnterVictim(state, pd.source, pd.queue);
         return state;
       }
 

@@ -564,6 +564,56 @@ s.players[0].deck = ['estate', 'copper']; s.players[0].discard = [];
 s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'adventurer' });
 ok(count(s2.players[0].hand, 'copper') === 1, '財宝が尽きても安全に終了');
 
+console.log('=== 書庫: 手札7枚まで引く（アクションは脇に置ける）===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['library', 'copper']; // 開始1枚（library除く）
+s.players[0].deck = ['copper', 'silver', 'gold', 'estate', 'duchy', 'province', 'copper']; // 非アクションのみ
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'library' });
+ok(s2.players[0].hand.length === 7 && s2.pending === null, '非アクションのみなら一気に7枚: ' + s2.players[0].hand.length);
+// アクションを引いたら選択待ち→脇に置く
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['library'];
+s.players[0].deck = ['copper', 'village', 'copper', 'copper', 'copper', 'copper', 'copper', 'silver'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'library' });
+ok(s2.pending && s2.pending.type === 'library' && s2.pending.card === 'village', 'アクション(村)を引いて選択待ち');
+s2 = E.reduce(s2, { type: 'LIBRARY_RESOLVE', setAside: true });
+ok(s2.players[0].hand.length === 7 && s2.players[0].hand.indexOf('village') < 0, '村を脇に置き、引き直して7枚');
+ok(s2.players[0].discard.indexOf('village') >= 0, '脇に置いた村は捨て札へ');
+
+console.log('=== 密偵: 全員の山札の上を捨/戻し ===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['spy'];
+s.players[0].deck = ['gold', 'estate', 'copper']; // +1ドローでgold、その後上はestate
+s.players[1].deck = ['curse', 'silver'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'spy' });
+ok(s2.turn.actions === 1 && s2.players[0].hand.length === 1, '密偵 +1カード+1アクション');
+ok(s2.pending && s2.pending.type === 'spy' && s2.pending.stage === 'decide' && s2.pending.victim === 0, 'まず自分の山札の上を判断');
+s2 = E.reduce(s2, { type: 'SPY_DECIDE', discard: false }); // 自分のはそのまま
+ok(s2.pending && s2.pending.victim === 1 && s2.pending.card === 'curse', '次に相手(席1)の上=呪い');
+s2 = E.reduce(s2, { type: 'SPY_DECIDE', discard: true }); // 相手の呪いを捨てさせる…のは相手に得だが動作確認
+ok(s2.players[1].discard.indexOf('curse') >= 0 && s2.pending === null, '相手の山札の上を捨てさせ解決完了');
+
+console.log('=== 泥棒: 財宝を廃棄→獲得 ===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['thief'];
+s.players[1].deck = ['gold', 'estate', 'copper']; // 上2: gold(財), estate
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'thief' });
+ok(s2.pending && s2.pending.type === 'thief' && s2.pending.stage === 'pick', '財宝を選ぶ待ち');
+ok(s2.pending.treasures.indexOf('gold') >= 0, '公開された金貨が候補');
+s2 = E.reduce(s2, { type: 'THIEF_PICK', card: 'gold' });
+ok(count(s2.trash, 'gold') === 1 || s2.pending.trashed === 'gold', '金貨を廃棄');
+ok(s2.players[1].discard.indexOf('estate') >= 0, '残り(屋敷)は相手の捨て札へ');
+s2 = E.reduce(s2, { type: 'THIEF_GAIN', take: true });
+ok(count(s2.players[0].discard, 'gold') === 1 && s2.pending === null, '廃棄した金貨を獲得して解決完了');
+// 堀で無効化
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['thief'];
+s.players[1].hand = ['moat'];
+s.players[1].deck = ['gold', 'silver'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'thief' });
+s2 = E.reduce(s2, { type: 'MOAT_REVEAL' });
+ok(s2.trash.length === 0 && s2.pending === null, '泥棒を堀で無効化');
+
 console.log('\n========================================');
 console.log(`結果: ${pass} 件成功, ${fail} 件失敗`);
 console.log('========================================');

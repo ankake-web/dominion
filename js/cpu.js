@@ -34,7 +34,7 @@
 
   /* 獲得したいカードの優先順（高いほど良い）。基本＋拡張(陰謀)の全王国カードを網羅。 */
   const GAIN_ORDER = ['province', 'gold', 'nobles', 'harem', 'duchy',
-    'adventurer', 'laboratory', 'festival', 'witch', 'council_room', 'market', 'minion', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'upgrade', 'bureaucrat', 'feast', 'silver',
+    'adventurer', 'laboratory', 'festival', 'witch', 'council_room', 'library', 'market', 'minion', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'spy', 'thief', 'upgrade', 'bureaucrat', 'feast', 'silver',
     'mining_village', 'smithy', 'courtyard', 'masquerade', 'great_hall', 'tribute', 'militia', 'steward', 'trading_post', 'baron', 'scout',
     'remodel', 'moneylender', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith', 'chancellor',
     'pawn', 'moat', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke', 'copper', 'curse'];
@@ -80,13 +80,16 @@
     if (has('shanty_town')) return 'shanty_town';
     if (has('great_hall')) return 'great_hall';    // +1カード+1アクションのキャントリップ（消費0）
     if (has('scout')) return 'scout';              // +1アクションのキャントリップ
+    if (has('spy')) return 'spy';                  // +1カード+1アクション＋偵察
     if (has('minion')) return 'minion';            // +1アクション。選択で+2コイン/引き直し
     if (has('nobles')) return 'nobles';            // 状況により +2アクションも選べる
     if (has('cellar') && dead) return 'cellar';
     // --- ターミナル（効果の大きい順）---
     if (has('council_room')) return 'council_room'; // +4カード+1購入
+    if (has('library')) return 'library';           // 手札7枚まで
     if (has('adventurer')) return 'adventurer';     // 財宝2枚を手札へ
     if (has('smithy')) return 'smithy';
+    if (has('thief')) return 'thief';               // 相手の財宝を奪う
     if (has('courtyard')) return 'courtyard';
     if (has('witch')) return 'witch';              // +2カード＋全員に呪い（強力）
     if (has('torturer')) return 'torturer';
@@ -382,6 +385,24 @@
         }
       case 'feast':
         return { type: 'FEAST_GAIN', card: bestGain(state, 5, { noVictory: true }) || bestGain(state, 5) };
+      case 'library':
+        // 単純CPUは引いたアクションをそのまま手札に（脇に置かない）
+        return { type: 'LIBRARY_RESOLVE', setAside: false };
+      case 'spy':
+        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'SPY_REACT' }; }
+        { // 自分=不要札を捨てて良い札を残す / 相手=良い札を捨てさせ不要札を残す
+          const dead = isType(pd.card, 'victory') || isType(pd.card, 'curse');
+          const mine = pd.victim === pd.source;
+          return { type: 'SPY_DECIDE', discard: mine ? dead : !dead };
+        }
+      case 'thief':
+        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'THIEF_REACT' }; }
+        if (pd.stage === 'pick') {
+          const best = pd.treasures.slice().sort((a, b) => (C()[b].coin || 0) - (C()[a].coin || 0))[0];
+          return { type: 'THIEF_PICK', card: best };
+        }
+        // gain: 銀貨・金貨は獲得（銅貨はデッキを汚すので獲得しない）
+        return { type: 'THIEF_GAIN', take: (C()[pd.trashed].coin || 0) >= 2 };
       case 'witch':
         // 呪いを受ける側。堀があれば無効化、無ければそのまま（CPUは秘密の小部屋を公開しない）
         if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
