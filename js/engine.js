@@ -311,6 +311,57 @@
         // 手札があれば1枚廃棄→ちょうど+1コストを獲得
         if (p.hand.length > 0) state.pending = { type: 'upgrade', stage: 'trash', player: pi };
         break;
+      case 'scout': {
+        t.actions += 1;
+        // 山札の上4枚を公開（足りなければ捨て札をシャッフル）
+        const revealed = [];
+        for (let i = 0; i < 4; i++) {
+          if (p.deck.length === 0) {
+            if (p.discard.length === 0) break;
+            p.deck = shuffle(p.discard); p.discard = [];
+          }
+          revealed.push(p.deck.shift());
+        }
+        // 勝利点は手札へ、それ以外は山札の上へ戻す（順序は選択）
+        const vics = revealed.filter((c) => DOM.isType(c, 'victory'));
+        const rest = revealed.filter((c) => !DOM.isType(c, 'victory'));
+        vics.forEach((c) => p.hand.push(c));
+        if (vics.length) log(state, `${p.name} は斥候で勝利点 ${vics.length}枚 を手札に加えた。`);
+        if (rest.length > 1) {
+          state.pending = { type: 'scout', player: pi, cards: rest };
+        } else {
+          rest.forEach((c) => p.deck.unshift(c)); // 0/1枚は順序選択不要
+        }
+        break;
+      }
+      case 'tribute': {
+        // 左隣のプレイヤーが山札の上2枚を公開して捨てる
+        const left = state.players[(pi + 1) % state.players.length];
+        const revealed = [];
+        for (let i = 0; i < 2; i++) {
+          if (left.deck.length === 0) {
+            if (left.discard.length === 0) break;
+            left.deck = shuffle(left.discard); left.discard = [];
+          }
+          revealed.push(left.deck.shift());
+        }
+        revealed.forEach((c) => left.discard.push(c));
+        if (revealed.length) log(state, `${left.name} は山札の上 ${revealed.length}枚 を公開して捨てた。`);
+        // 異なる名前ごとにボーナス（同名2枚は1回ぶん。多重タイプは各該当を独立に付与）
+        const distinct = revealed.filter((c, i, a) => a.indexOf(c) === i);
+        let addCard = 0, addA = 0, addC = 0;
+        distinct.forEach((c) => {
+          if (DOM.isType(c, 'action')) { t.actions += 2; addA += 2; }
+          if (DOM.isType(c, 'treasure')) { t.coins += 2; addC += 2; }
+          if (DOM.isType(c, 'victory')) { draw(state, pi, 2); addCard += 2; }
+        });
+        const parts = [];
+        if (addCard) parts.push(`+${addCard}カード`);
+        if (addA) parts.push(`+${addA}アクション`);
+        if (addC) parts.push(`+${addC}コイン`);
+        if (parts.length) log(state, `${p.name} は貢物で ${parts.join(' ')} を得た。`);
+        break;
+      }
 
       default:
         break;
@@ -799,6 +850,22 @@
         if (cards.length === 2 && gain(state, pd.player, 'silver', 'hand')) {
           log(state, `${p.name} は銀貨を手札に獲得した。`);
         }
+        state.pending = null;
+        return state;
+      }
+
+      /* ---- 斥候：非勝利点カードを好きな順で山札の上へ戻す ---- */
+      case 'SCOUT_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'scout') return state;
+        const p = state.players[pd.player];
+        const order = Array.isArray(action.order) ? action.order : [];
+        // order は pd.cards の並べ替え（同じ多重集合）でなければ拒否
+        const a = pd.cards.slice().sort(), b = order.slice().sort();
+        if (a.length !== b.length || a.some((c, i) => c !== b[i])) return state;
+        // order[0] が一番上になるよう、後ろから unshift
+        for (let i = order.length - 1; i >= 0; i--) p.deck.unshift(order[i]);
+        log(state, `${p.name} は山札の上を並べ替えた。`);
         state.pending = null;
         return state;
       }

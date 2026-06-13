@@ -35,7 +35,7 @@
   /* 獲得したいカードの優先順（高いほど良い）。基本＋拡張(陰謀)の全王国カードを網羅。 */
   const GAIN_ORDER = ['province', 'gold', 'nobles', 'harem', 'duchy',
     'market', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'upgrade', 'silver',
-    'mining_village', 'smithy', 'courtyard', 'great_hall', 'militia', 'steward', 'trading_post', 'baron',
+    'mining_village', 'smithy', 'courtyard', 'great_hall', 'tribute', 'militia', 'steward', 'trading_post', 'baron', 'scout',
     'remodel', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith',
     'pawn', 'moat', 'cellar', 'estate', 'duke', 'copper', 'curse'];
   function bestGain(state, maxCost, opts) {
@@ -77,6 +77,7 @@
     if (has('wishing_well')) return 'wishing_well';
     if (has('shanty_town')) return 'shanty_town';
     if (has('great_hall')) return 'great_hall';    // +1カード+1アクションのキャントリップ（消費0）
+    if (has('scout')) return 'scout';              // +1アクションのキャントリップ
     if (has('nobles')) return 'nobles';            // 状況により +2アクションも選べる
     if (has('cellar') && dead) return 'cellar';
     // --- ターミナル（効果の大きい順）---
@@ -91,6 +92,7 @@
     if (has('ironworks')) return 'ironworks';
     if (has('moat')) return 'moat'; // +2ドロー。リアクションは公開制のため温存する理由が無い
     if (has('upgrade')) return 'upgrade';          // 廃棄→格上げ。手札が空でも+1カード+1アクションで損なし
+    if (has('tribute')) return 'tribute';          // 左隣の山札次第でボーナス（ターミナル）
     // 交易場: 不要札(呪い/屋敷/銅貨/公爵)が2枚以上あるときだけ（良い札を捨てない）
     if (has('trading_post') && p.hand.filter((c) => trashValue(c) < 10).length >= 2) return 'trading_post';
     // 銅細工師: 手札に銅貨が2枚以上あるときだけ価値がある（ターミナルなので無駄打ち回避）
@@ -306,6 +308,9 @@
         if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
         return { type: 'TORTURER_RESOLVE', choice: 'discard', cards: pickDiscards(p.hand, Math.min(2, p.hand.length)) };
       }
+      case 'scout':
+        // 順序は戦術的に重要でないため公開順のまま戻す
+        return { type: 'SCOUT_RESOLVE', order: pd.cards.slice() };
       case 'trading_post':
         // 不要札を優先して2枚（手札が1枚なら1枚）廃棄
         return { type: 'TRADING_POST_RESOLVE', cards: pickTrash(p.hand, Math.min(2, p.hand.length)) };

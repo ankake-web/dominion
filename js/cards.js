@@ -91,6 +91,10 @@
                      text: '手札を2枚廃棄する。\nそうしたら銀貨1枚を手札に獲得する。' },
     upgrade:       { id: 'upgrade',       name: '改良',       cost: 5, types: ['action'],
                      text: '+1 カード\n+1 アクション\n手札を1枚廃棄する。\nそれよりちょうど1コイン高いカードを1枚獲得する。' },
+    scout:         { id: 'scout',         name: '斥候',       cost: 4, types: ['action'],
+                     text: '+1 アクション\n山札の上4枚を公開する。\n勝利点は手札に加え、\n残りを好きな順で山札の上に戻す。' },
+    tribute:       { id: 'tribute',       name: '貢物',       cost: 5, types: ['action'],
+                     text: '左隣のプレイヤーは山札の上2枚を公開して捨てる。\n公開された異なる名前ごとに：\nアクション＝+2アクション／財宝＝+2コイン／勝利点＝+2カード。' },
   };
 
   /* ---------- 王国カードのセット ---------- */
@@ -105,7 +109,7 @@
     basic:    DOM.KINGDOM.slice(),
     intrigue: ['courtyard', 'pawn', 'shanty_town', 'steward', 'wishing_well', 'baron',
                'bridge', 'conspirator', 'ironworks', 'mining_village', 'torturer', 'duke', 'nobles', 'harem',
-               'great_hall', 'coppersmith', 'trading_post', 'upgrade'],
+               'great_hall', 'coppersmith', 'trading_post', 'upgrade', 'scout', 'tribute'],
   };
   // 全王国カードのプール（後方互換: 'random' の既定母集団 = 基本＋陰謀）
   DOM.KINGDOM_POOL = DOM.POOLS.basic.concat(DOM.POOLS.intrigue);

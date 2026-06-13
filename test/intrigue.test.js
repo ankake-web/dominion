@@ -344,6 +344,73 @@ console.log('=== 改良: 廃棄→ちょうど+1コストを獲得 ===');
   ok(JSON.stringify(s2) === snap, '候補ありで card:null は無効(state不変)');
 }
 
+console.log('=== 斥候: 上4枚公開→勝利点を手札・残りを並べ替えて山札上 ===');
+{
+  let s = setup(['scout']);
+  s.players[0].deck = ['estate', 'copper', 'duchy', 'silver', 'gold']; // 上4: estate,copper,duchy,silver
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'scout' });
+  ok(s.turn.actions === 1, '斥候: +1アクション(据え置き): ' + s.turn.actions);
+  ok(count(s.players[0].hand, 'estate') === 1 && count(s.players[0].hand, 'duchy') === 1, '勝利点2枚(屋敷/公領)が手札へ');
+  ok(s.pending && s.pending.type === 'scout' && s.pending.cards.length === 2, '非勝利点2枚(copper,silver)の並べ替え待ち');
+  s = reduce(s, { type: 'SCOUT_RESOLVE', order: ['silver', 'copper'] });
+  ok(s.players[0].deck[0] === 'silver' && s.players[0].deck[1] === 'copper', '指定順で山札の上に戻る: ' + s.players[0].deck.slice(0, 2).join(','));
+  ok(s.players[0].deck[2] === 'gold', '残りの山札はそのまま下に');
+  ok(s.pending === null, '解決完了');
+}
+{
+  // 非勝利点が1枚以下なら並べ替え不要・即終了
+  let s = setup(['scout']);
+  s.players[0].deck = ['estate', 'duchy', 'province', 'silver']; // 勝利点3+財宝1
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'scout' });
+  ok(s.pending === null, '非勝利点1枚なら選択待ちなし');
+  ok(s.players[0].deck[0] === 'silver', '残り1枚は山札の上へ');
+}
+{
+  // 山切れ時は捨て札をシャッフルして公開（クラッシュしない）
+  let s = setup(['scout']);
+  s.players[0].deck = ['estate'];
+  s.players[0].discard = ['copper', 'copper', 'silver'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'scout' });
+  ok(s.turn.actions === 1 && count(s.players[0].hand, 'estate') === 1, '山切れでもreshuffleして公開できる');
+}
+
+console.log('=== 貢物: 左隣の上2枚公開→異名ごとにボーナス ===');
+{
+  let s = setup(['tribute']);
+  s.players[1].deck = ['silver', 'village', 'estate']; // 上2: silver(財宝), village(アクション)
+  const a0 = s.turn.actions, c0 = s.turn.coins;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'tribute' });
+  ok(s.turn.coins === c0 + 2, '財宝1種で+2コイン: ' + s.turn.coins);
+  ok(s.turn.actions === a0 - 1 + 2, 'アクション1種で+2アクション(消費1含む): ' + s.turn.actions);
+  ok(count(s.players[1].discard, 'silver') === 1 && count(s.players[1].discard, 'village') === 1, '公開2枚は左隣の捨て札へ');
+}
+{
+  // 同名2枚は1回ぶんだけ
+  let s = setup(['tribute']);
+  s.players[1].deck = ['gold', 'gold'];
+  const c0 = s.turn.coins;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'tribute' });
+  ok(s.turn.coins === c0 + 2, '同名(金貨2枚)は+2コイン1回ぶんのみ: ' + s.turn.coins);
+}
+{
+  // 勝利点でも+2カード（多重タイプ：大広間=アクション+勝利点なら両方）
+  let s = setup(['tribute']);
+  s.players[1].deck = ['great_hall', 'duchy']; // great_hall=アクション+勝利点, duchy=勝利点
+  const h0 = s.players[0].hand.length, a0 = s.turn.actions;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'tribute' });
+  // great_hall: +2アクション & +2カード、duchy: +2カード → 合計 +2アクション, +4カード
+  ok(s.turn.actions === a0 - 1 + 2, '大広間のアクション分で+2アクション: ' + s.turn.actions);
+  ok(s.players[0].hand.length === (h0 - 1) + 4, '勝利点2種で+4カード(手札-1は貢物プレイ分): ' + s.players[0].hand.length);
+}
+{
+  // 左隣の山札が空でもクラッシュしない（公開0枚→ボーナスなし）
+  let s = setup(['tribute']);
+  s.players[1].deck = []; s.players[1].discard = [];
+  const c0 = s.turn.coins;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'tribute' });
+  ok(s.turn.coins === c0 && s.pending === null, '左隣デッキ空でも安全に終了');
+}
+
 console.log('\n========================================');
 console.log('拡張テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

@@ -47,6 +47,8 @@
     { id: 'coppersmith', name: '銅細工師', cost: 4, type: 'action', typeLabel: 'アクション', art: 'asset/coppersmith.jpg', icon: '🔨', effects: ['このターン銅貨が+1コイン'] },
     { id: 'trading_post', name: '交易場', cost: 5, type: 'action', typeLabel: 'アクション', art: 'asset/trading_post.jpg', icon: '⚖️', effects: ['手札2枚を廃棄', '→ 銀貨を手札に獲得'] },
     { id: 'upgrade', name: '改良', cost: 5, type: 'action', typeLabel: 'アクション', art: 'asset/upgrade.jpg', icon: '⬆️', effects: ['+1 カード', '+1 アクション', '1枚廃棄→ちょうど+1コストを獲得'] },
+    { id: 'scout', name: '斥候', cost: 4, type: 'action', typeLabel: 'アクション', art: 'asset/scout.jpg', icon: '🔭', effects: ['+1 アクション', '上4枚公開→勝利点を手札に', '残りは好きな順で山札の上'] },
+    { id: 'tribute', name: '貢物', cost: 5, type: 'action', typeLabel: 'アクション', art: 'asset/tribute.jpg', icon: '🎁', effects: ['左隣が上2枚公開→捨てる', '異なる名前ごとに種別ボーナス'] },
   ];
 
   function indexById(list) {

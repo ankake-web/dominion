@@ -133,7 +133,8 @@
       h('div', { class: 'ctype' }, typeLabel(id)),
       h('div', { class: 'ctext' }, c.text || ''),
       cardArt(id),
-      opts.count && opts.count > 1 ? h('div', { class: 'count-badge' }, '×' + opts.count) : null
+      opts.count && opts.count > 1 ? h('div', { class: 'count-badge' }, '×' + opts.count) : null,
+      opts.badge != null ? h('div', { class: 'count-badge order-badge' }, opts.badge) : null
     );
   }
   // サプライの山。opts: {onClick, buyable, gainable, size}
@@ -775,8 +776,29 @@
     if (pd.type === 'trading_post') return modalTrashHand(p, '交易場 — 廃棄', '手札から2枚を選んで廃棄します（2枚廃棄できたら銀貨を手札に獲得）。', Math.min(2, p.hand.length), (cards) => dispatch({ type: 'TRADING_POST_RESOLVE', cards }));
     if (pd.type === 'upgrade' && pd.stage === 'trash') return modalSingleHand(p, '改良 — 廃棄', '手札から1枚を廃棄します（その後、ちょうど1コイン高いカードを獲得）。', () => true, (card) => dispatch({ type: 'UPGRADE_TRASH', card }));
     if (pd.type === 'upgrade' && pd.stage === 'gain') return modalGainSupply(state, '改良 — 獲得', '廃棄したカードよりちょうど1コイン高いカードを1枚獲得します。', (id) => effCost(state, id) === pd.exactCost, (id) => dispatch({ type: 'UPGRADE_GAIN', card: id }));
+    if (pd.type === 'scout') return modalReorder('斥候 — 山札の上に戻す', '山札の上に戻す順番をタップで選びます（最初にタップ＝一番上）。', pd.cards, (order) => dispatch({ type: 'SCOUT_RESOLVE', order }));
 
     return h('div');
+  }
+
+  // 複数カードを「置く順」に並べ替える（斥候など）。最初にタップしたカードが一番上。
+  function modalReorder(title, desc, cards, onConfirm) {
+    const chips = cards.map((id, idx) => {
+      const pos = UI.selection.indexOf(idx);
+      return cardEl(id, { size: 'sm', extra: pos >= 0 ? 'selected' : 'selectable',
+        badge: pos >= 0 ? String(pos + 1) : null,
+        onClick: () => {
+          const i = UI.selection.indexOf(idx);
+          if (i >= 0) UI.selection.splice(i, 1);
+          else UI.selection.push(idx);
+          render();
+        } });
+    });
+    const remain = cards.length - UI.selection.length;
+    const footer = h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
+      onclick: () => onConfirm(UI.selection.map((i) => cards[i])) },
+      remain === 0 ? '確定（上から順に戻す）' : 'あと ' + remain + ' 枚 順番を選ぶ');
+    return modalShell(title, desc, chips, footer);
   }
 
   function modalMultiHand(p, title, desc, confirmLabel, allowZero, onConfirm) {
