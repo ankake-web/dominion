@@ -500,6 +500,19 @@
         t.buys += 1;
         t.coins += 2;
         break;
+      case 'moneylender':
+        // 手札に銅貨があれば「廃棄して+3」か否かを選ぶ
+        if (p.hand.includes('copper')) state.pending = { type: 'moneylender', player: pi };
+        break;
+      case 'chancellor':
+        t.coins += 2;
+        // 山札を捨て札にするか選ぶ（山札が空なら選択不要）
+        if (p.deck.length > 0) state.pending = { type: 'chancellor', player: pi };
+        break;
+      case 'chapel':
+        if (p.hand.length > 0) state.pending = { type: 'chapel', player: pi };
+        break;
+      // gardens は勝利点カード（プレイ不可）。得点は vpOf で計算。
       case 'tribute': {
         // 左隣のプレイヤーが山札の上2枚を公開して捨てる
         const left = state.players[(pi + 1) % state.players.length];
@@ -550,6 +563,9 @@
     // 公爵：所持する公領1枚につき1勝利点
     const dukes = cards.filter((c) => c === 'duke').length;
     if (dukes) vp += dukes * cards.filter((c) => c === 'duchy').length;
+    // 庭園：デッキ10枚につき1勝利点（端数切り捨て）
+    const gardens = cards.filter((c) => c === 'gardens').length;
+    if (gardens) vp += gardens * Math.floor(cards.length / 10);
     return vp;
   }
   function scoreGame(state) {
@@ -558,7 +574,8 @@
       // マスク配信後はクライアントから再計算できないため、ここで確定して持たせる。
       const vpCards = {};
       allCards(p).forEach((c) => { if (DOM.isType(c, 'victory') || DOM.isType(c, 'curse')) vpCards[c] = (vpCards[c] || 0) + 1; });
-      return { name: p.name, vp: vpOf(p), turns: p.turns, vpCards };
+      // deckSize は庭園の得点表示用（デッキ10枚につき1点）
+      return { name: p.name, vp: vpOf(p), turns: p.turns, vpCards, deckSize: allCards(p).length };
     });
     // 勝者判定：勝利点が多い → 同点ならターン数が少ない
     let best = null;
@@ -1029,6 +1046,46 @@
       }
 
       /* ---- 仮面舞踏会：各自が左隣へ1枚渡す→使用者は任意で1枚廃棄 ---- */
+      /* ---- 金貸し：銅貨を廃棄して +3 ---- */
+      case 'MONEYLENDER_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'moneylender') return state;
+        const p = state.players[pd.player];
+        if (action.trash && removeOne(p.hand, 'copper')) {
+          state.trash.push('copper');
+          t.coins += 3;
+          log(state, `${p.name} は銅貨を廃棄して +3 コイン（金貸し）。`);
+        }
+        state.pending = null;
+        return state;
+      }
+      /* ---- 宰相：山札を捨て札にしてもよい ---- */
+      case 'CHANCELLOR_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'chancellor') return state;
+        const p = state.players[pd.player];
+        if (action.discardDeck && p.deck.length > 0) {
+          p.discard.push(...p.deck); p.deck = [];
+          log(state, `${p.name} は山札をすべて捨て札にした（宰相）。`);
+        }
+        state.pending = null;
+        return state;
+      }
+      /* ---- 礼拝堂：手札を最大4枚廃棄 ---- */
+      case 'CHAPEL_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'chapel') return state;
+        const p = state.players[pd.player];
+        const cards = (Array.isArray(action.cards) ? action.cards : []).slice(0, 4);
+        const handCopy = p.hand.slice();
+        for (const c of cards) if (!removeOne(handCopy, c)) return state; // 手札に無い指定は拒否
+        let n = 0;
+        cards.forEach((c) => { if (removeOne(p.hand, c)) { state.trash.push(c); n++; } });
+        if (n) log(state, `${p.name} は手札 ${n}枚 を廃棄した（礼拝堂）。`);
+        state.pending = null;
+        return state;
+      }
+
       /* ---- 秘密の小部屋 ---- */
       // アクション: 捨てた枚数だけ +1コイン
       case 'SECRET_CHAMBER_RESOLVE': {

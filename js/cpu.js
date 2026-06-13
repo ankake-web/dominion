@@ -36,8 +36,8 @@
   const GAIN_ORDER = ['province', 'gold', 'nobles', 'harem', 'duchy',
     'laboratory', 'festival', 'market', 'minion', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'upgrade', 'silver',
     'mining_village', 'smithy', 'courtyard', 'masquerade', 'great_hall', 'tribute', 'militia', 'steward', 'trading_post', 'baron', 'scout',
-    'remodel', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith',
-    'pawn', 'moat', 'secret_chamber', 'cellar', 'estate', 'duke', 'copper', 'curse'];
+    'remodel', 'moneylender', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith', 'chancellor',
+    'pawn', 'moat', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke', 'copper', 'curse'];
   function bestGain(state, maxCost, opts) {
     opts = opts || {};
     for (const id of GAIN_ORDER) {
@@ -104,6 +104,9 @@
     // 銅細工師: 手札に銅貨が2枚以上あるときだけ価値がある（ターミナルなので無駄打ち回避）
     if (has('coppersmith') && p.hand.filter((c) => c === 'copper').length >= 2) return 'coppersmith';
     if (has('mine') && p.hand.some((c) => isTreasure(c))) return 'mine';
+    if (has('moneylender') && p.hand.includes('copper')) return 'moneylender'; // 銅貨→+3
+    if (has('chapel') && pickChapelTrash(p).length > 0) return 'chapel';       // 圧縮対象があるとき
+    if (has('chancellor')) return 'chancellor';                                // +2コイン
     if (has('remodel')) return 'remodel';
     if (has('workshop')) return 'workshop';
     if (has('woodcutter')) return 'woodcutter';
@@ -230,6 +233,15 @@
   }
   function pickTrash(hand, n) {
     return hand.map((c) => ({ c, v: trashValue(c) })).sort((a, b) => a.v - b.v).slice(0, n).map((x) => x.c);
+  }
+  // 礼拝堂で廃棄する札（最大4枚）: 呪い→屋敷→余剰銅貨（2枚は残す）。デッキ圧縮。
+  function pickChapelTrash(p) {
+    const out = [];
+    p.hand.forEach((c) => { if (c === 'curse' && out.length < 4) out.push(c); });
+    p.hand.forEach((c) => { if (c === 'estate' && out.length < 4) out.push(c); });
+    const coppers = p.hand.filter((c) => c === 'copper').length;
+    for (let i = 2; i < coppers && out.length < 4; i++) out.push('copper');
+    return out;
   }
   // 詐欺師で相手に与えるカード（相手の利得が最小＝呪い→弱い財宝/アクション。勝利点は点を与えるので避ける）。
   function pickSwindlerGift(state, cst) {
@@ -363,6 +375,15 @@
           const junk = p.hand.find((c) => isType(c, 'curse') || c === 'estate' || c === 'copper');
           return { type: 'MASQUERADE_TRASH', card: junk || null };
         }
+      case 'moneylender':
+        // 銅貨があれば廃棄して+3（デッキ圧縮にもなり常に得）
+        return { type: 'MONEYLENDER_RESOLVE', trash: p.hand.includes('copper') };
+      case 'chancellor':
+        // 山札の入れ替えは状況依存。単純CPUはそのまま（山札を捨てない）
+        return { type: 'CHANCELLOR_RESOLVE', discardDeck: false };
+      case 'chapel':
+        // 呪い・屋敷・余剰銅貨を廃棄してデッキ圧縮（最大4枚、銅貨は2枚まで残す）
+        return { type: 'CHAPEL_RESOLVE', cards: pickChapelTrash(p) };
       case 'secret_chamber':
         // アクション: 死に札(勝利点/呪い)を捨ててコインに変える（手札では無駄なので得）
         return { type: 'SECRET_CHAMBER_RESOLVE', cards: p.hand.filter((c) => isDead(c)) };

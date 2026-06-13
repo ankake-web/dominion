@@ -55,6 +55,14 @@
                  text: '+2 カード\n+1 アクション' },
     festival:  { id: 'festival',  name: '祝祭',       cost: 5, types: ['action'],
                  text: '+2 アクション\n+1 購入\n+2 コイン' },
+    moneylender:{ id: 'moneylender', name: '金貸し',  cost: 4, types: ['action'],
+                 text: '手札の銅貨1枚を廃棄してよい。\nそうしたら +3 コイン。' },
+    chancellor:{ id: 'chancellor', name: '宰相',     cost: 3, types: ['action'],
+                 text: '+2 コイン\n望むなら、自分の山札をすべて捨て札にしてよい。' },
+    chapel:    { id: 'chapel',     name: '礼拝堂',     cost: 2, types: ['action'],
+                 text: '手札を最大4枚まで廃棄する。' },
+    gardens:   { id: 'gardens',    name: '庭園',       cost: 4, types: ['victory'],
+                 text: '（勝利点）\nデッキ10枚につき 1 勝利点（端数切り捨て）。' },
 
     /* ===== 拡張: 陰謀 (Intrigue) =====
        絵(asset/<id>.jpg・asset/thumb/<id>.jpg)は未用意。置けば自動で表示される。
@@ -122,7 +130,7 @@
                           'bridge', 'conspirator', 'ironworks', 'mining_village', 'nobles'];
   // 拡張ごとの王国カードプール（ランダム抽選の母集団）。将来の拡張はここに足す。
   DOM.POOLS = {
-    basic:    DOM.KINGDOM.concat(['laboratory', 'festival']),
+    basic:    DOM.KINGDOM.concat(['laboratory', 'festival', 'moneylender', 'chancellor', 'chapel', 'gardens']),
     intrigue: ['courtyard', 'pawn', 'shanty_town', 'steward', 'wishing_well', 'baron',
                'bridge', 'conspirator', 'ironworks', 'mining_village', 'torturer', 'duke', 'nobles', 'harem',
                'great_hall', 'coppersmith', 'trading_post', 'upgrade', 'scout', 'tribute', 'swindler', 'saboteur', 'minion', 'masquerade', 'secret_chamber'],

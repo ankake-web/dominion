@@ -788,6 +788,13 @@
     if (pd.type === 'masquerade' && pd.stage === 'pass') return modalSingleHand(p, '仮面舞踏会 — 左隣へ渡す', '左隣のプレイヤーに渡すカードを1枚選びます。', () => true, (card) => dispatch({ type: 'MASQUERADE_PASS', card }), null, '渡す');
     if (pd.type === 'masquerade' && pd.stage === 'trash') return modalSingleHand(p, '仮面舞踏会 — 廃棄（任意）', '手札から1枚を廃棄できます（しなくてもよい）。', () => true, (card) => dispatch({ type: 'MASQUERADE_TRASH', card }), { label: '廃棄しない', on: () => dispatch({ type: 'MASQUERADE_TRASH', card: null }) }, '廃棄する');
     if (pd.type === 'secret_chamber' && pd.stage === 'discard') return modalMultiHand(p, '秘密の小部屋', '捨てる枚数だけ +1 コイン（0枚でもよい）。', (n) => '確定（' + n + '枚捨て→+' + n + 'コイン）', true, (cards) => dispatch({ type: 'SECRET_CHAMBER_RESOLVE', cards }));
+    if (pd.type === 'moneylender') return modalOptions('金貸し', '手札の銅貨1枚を廃棄すると +3 コインになります。', [
+      { label: '銅貨を廃棄して +3 コイン', cls: 'btn-primary', on: () => dispatch({ type: 'MONEYLENDER_RESOLVE', trash: true }) },
+      { label: '廃棄しない', on: () => dispatch({ type: 'MONEYLENDER_RESOLVE', trash: false }) }]);
+    if (pd.type === 'chancellor') return modalOptions('宰相', '自分の山札をすべて捨て札にできます（次に引くカードが新しくなります）。', [
+      { label: '山札を捨て札にする', cls: 'btn-primary', on: () => dispatch({ type: 'CHANCELLOR_RESOLVE', discardDeck: true }) },
+      { label: 'そのまま', on: () => dispatch({ type: 'CHANCELLOR_RESOLVE', discardDeck: false }) }]);
+    if (pd.type === 'chapel') return modalMultiHand(p, '礼拝堂 — 廃棄', '手札を最大4枚まで廃棄します（0枚でもよい）。', (n) => '確定（' + n + '枚廃棄）', true, (cards) => dispatch({ type: 'CHAPEL_RESOLVE', cards }), 4);
     if (pd.type === 'secret_chamber_putback') return modalSelectN(p, '秘密の小部屋 — 山札の上に戻す', '手札から2枚を選んで山札の上に戻します（最初のタップが一番上）。', Math.min(2, p.hand.length), '確定（戻す）', (cards) => dispatch({ type: 'SECRET_CHAMBER_PUTBACK', cards }));
 
     return h('div');
@@ -834,14 +841,14 @@
     return modalShell(title, desc, chips, footer);
   }
 
-  function modalMultiHand(p, title, desc, confirmLabel, allowZero, onConfirm) {
+  function modalMultiHand(p, title, desc, confirmLabel, allowZero, onConfirm, maxN) {
     const chips = p.hand.map((id, idx) =>
       cardEl(id, {
         size: 'sm',
         extra: UI.selection.includes(idx) ? 'selected' : 'selectable',
         onClick: () => {
           const i = UI.selection.indexOf(idx);
-          if (i >= 0) UI.selection.splice(i, 1); else UI.selection.push(idx);
+          if (i >= 0) UI.selection.splice(i, 1); else if (maxN == null || UI.selection.length < maxN) UI.selection.push(idx);
           render();
         },
       }));
@@ -1022,7 +1029,9 @@
     const breakdown = (sc) => {
       const v = sc.vpCards || {};
       const duchies = v['duchy'] || 0;
-      const ptOf = (id) => id === 'duke' ? (v['duke'] || 0) * duchies : (DOM.CARDS[id].vp || 0) * v[id];
+      const ptOf = (id) => id === 'duke' ? (v['duke'] || 0) * duchies
+        : id === 'gardens' ? (v['gardens'] || 0) * Math.floor((sc.deckSize || 0) / 10)
+        : (DOM.CARDS[id].vp || 0) * v[id];
       const ids = Object.keys(v).filter((id) => v[id] > 0);
       // 寄与点の高い順。呪い（マイナス）は最後に。
       ids.sort((a, b) => (a === 'curse') - (b === 'curse') || ptOf(b) - ptOf(a) || DOM.CARDS[b].cost - DOM.CARDS[a].cost);

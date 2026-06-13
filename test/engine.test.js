@@ -442,6 +442,52 @@ ok(s2.turn.actions === 2, '祝祭でアクション 1-1+2=2: ' + s2.turn.actions
 ok(s2.turn.buys === 2, '祝祭で購入 1+1=2: ' + s2.turn.buys);
 ok(s2.turn.coins === 2, '祝祭でコイン +2: ' + s2.turn.coins);
 
+console.log('=== 金貸し: 銅貨を廃棄して+3 ===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['moneylender', 'copper', 'estate'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'moneylender' });
+ok(s2.pending && s2.pending.type === 'moneylender', '金貸し: 選択待ち');
+s2 = E.reduce(s2, { type: 'MONEYLENDER_RESOLVE', trash: true });
+ok(s2.turn.coins === 3 && count(s2.trash, 'copper') === 1, '銅貨を廃棄して+3コイン');
+// 銅貨なしなら何も起きない
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['moneylender', 'estate'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'moneylender' });
+ok(s2.pending === null && s2.turn.coins === 0, '銅貨が無ければ選択待ちにならない');
+
+console.log('=== 宰相: +2コイン・山札を捨て札にできる ===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['chancellor'];
+s.players[0].deck = ['gold', 'silver', 'copper'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'chancellor' });
+ok(s2.turn.coins === 2, '宰相 +2コイン');
+s2 = E.reduce(s2, { type: 'CHANCELLOR_RESOLVE', discardDeck: true });
+ok(s2.players[0].deck.length === 0 && s2.players[0].discard.length === 3, '山札が捨て札へ');
+
+console.log('=== 礼拝堂: 最大4枚廃棄 ===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['chapel', 'estate', 'estate', 'curse', 'copper'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'chapel' });
+s2 = E.reduce(s2, { type: 'CHAPEL_RESOLVE', cards: ['estate', 'estate', 'curse'] });
+ok(count(s2.trash, 'estate') === 2 && count(s2.trash, 'curse') === 1, '3枚廃棄');
+ok(s2.players[0].hand.indexOf('copper') >= 0, '残した銅貨は手札に');
+// 5枚指定しても4枚まで
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['chapel', 'estate', 'estate', 'estate', 'estate', 'estate'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'chapel' });
+s2 = E.reduce(s2, { type: 'CHAPEL_RESOLVE', cards: ['estate', 'estate', 'estate', 'estate', 'estate'] });
+ok(count(s2.trash, 'estate') === 4, '5枚指定でも4枚まで廃棄: ' + count(s2.trash, 'estate'));
+
+console.log('=== 庭園: デッキ10枚につき1勝利点 ===');
+{
+  const mk = (n) => { const deck = ['gardens']; for (let i = 0; i < n - 1; i++) deck.push('copper'); return { deck, hand: [], discard: [], inPlay: [] }; };
+  ok(E.vpOf(mk(10)) === 1, '10枚で1点: ' + E.vpOf(mk(10)));
+  ok(E.vpOf(mk(25)) === 2, '25枚で2点(端数切捨て): ' + E.vpOf(mk(25)));
+  ok(E.vpOf(mk(9)) === 0, '9枚で0点');
+  const two = { deck: ['gardens', 'gardens'].concat(Array(18).fill('copper')), hand: [], discard: [], inPlay: [] };
+  ok(E.vpOf(two) === 4, '庭園2枚×20枚デッキ=各2点で4点: ' + E.vpOf(two));
+}
+
 console.log('\n========================================');
 console.log(`結果: ${pass} 件成功, ${fail} 件失敗`);
 console.log('========================================');
