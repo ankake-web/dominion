@@ -67,6 +67,12 @@
                  text: '+2 カード\n他のプレイヤーは各自、呪い1枚を獲得する。' },
     bureaucrat:{ id: 'bureaucrat', name: '役人',       cost: 4, types: ['action', 'attack'],
                  text: '銀貨1枚を獲得し、山札の上に置く。\n他のプレイヤーは各自、手札の勝利点1枚を\n山札の上に置く（無ければ手札を公開）。' },
+    council_room:{ id: 'council_room', name: '議事堂', cost: 5, types: ['action'],
+                 text: '+4 カード\n+1 購入\n他のプレイヤーは各自、1枚引く。' },
+    feast:     { id: 'feast',      name: '祝宴',       cost: 4, types: ['action'],
+                 text: 'このカードを廃棄する。\nコスト5以下のカードを1枚獲得する。' },
+    adventurer:{ id: 'adventurer', name: '冒険者',     cost: 6, types: ['action'],
+                 text: '財宝を2枚引くまで山札を公開する。\nその2枚を手札に加え、残りは捨てる。' },
 
     /* ===== 拡張: 陰謀 (Intrigue) =====
        絵(asset/<id>.jpg・asset/thumb/<id>.jpg)は未用意。置けば自動で表示される。
@@ -134,7 +140,7 @@
                           'bridge', 'conspirator', 'ironworks', 'mining_village', 'nobles'];
   // 拡張ごとの王国カードプール（ランダム抽選の母集団）。将来の拡張はここに足す。
   DOM.POOLS = {
-    basic:    DOM.KINGDOM.concat(['laboratory', 'festival', 'moneylender', 'chancellor', 'chapel', 'gardens', 'witch', 'bureaucrat']),
+    basic:    DOM.KINGDOM.concat(['laboratory', 'festival', 'moneylender', 'chancellor', 'chapel', 'gardens', 'witch', 'bureaucrat', 'council_room', 'feast', 'adventurer']),
     intrigue: ['courtyard', 'pawn', 'shanty_town', 'steward', 'wishing_well', 'baron',
                'bridge', 'conspirator', 'ironworks', 'mining_village', 'torturer', 'duke', 'nobles', 'harem',
                'great_hall', 'coppersmith', 'trading_post', 'upgrade', 'scout', 'tribute', 'swindler', 'saboteur', 'minion', 'masquerade', 'secret_chamber'],

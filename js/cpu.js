@@ -34,7 +34,7 @@
 
   /* 獲得したいカードの優先順（高いほど良い）。基本＋拡張(陰謀)の全王国カードを網羅。 */
   const GAIN_ORDER = ['province', 'gold', 'nobles', 'harem', 'duchy',
-    'laboratory', 'festival', 'witch', 'market', 'minion', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'upgrade', 'bureaucrat', 'silver',
+    'adventurer', 'laboratory', 'festival', 'witch', 'council_room', 'market', 'minion', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'upgrade', 'bureaucrat', 'feast', 'silver',
     'mining_village', 'smithy', 'courtyard', 'masquerade', 'great_hall', 'tribute', 'militia', 'steward', 'trading_post', 'baron', 'scout',
     'remodel', 'moneylender', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith', 'chancellor',
     'pawn', 'moat', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke', 'copper', 'curse'];
@@ -84,6 +84,8 @@
     if (has('nobles')) return 'nobles';            // 状況により +2アクションも選べる
     if (has('cellar') && dead) return 'cellar';
     // --- ターミナル（効果の大きい順）---
+    if (has('council_room')) return 'council_room'; // +4カード+1購入
+    if (has('adventurer')) return 'adventurer';     // 財宝2枚を手札へ
     if (has('smithy')) return 'smithy';
     if (has('courtyard')) return 'courtyard';
     if (has('witch')) return 'witch';              // +2カード＋全員に呪い（強力）
@@ -109,6 +111,7 @@
     if (has('moneylender') && p.hand.includes('copper')) return 'moneylender'; // 銅貨→+3
     if (has('chapel') && pickChapelTrash(p).length > 0) return 'chapel';       // 圧縮対象があるとき
     if (has('chancellor')) return 'chancellor';                                // +2コイン
+    if (has('feast')) return 'feast';                                          // 自身を廃棄→$5獲得
     if (has('remodel')) return 'remodel';
     if (has('workshop')) return 'workshop';
     if (has('woodcutter')) return 'woodcutter';
@@ -377,6 +380,8 @@
           const junk = p.hand.find((c) => isType(c, 'curse') || c === 'estate' || c === 'copper');
           return { type: 'MASQUERADE_TRASH', card: junk || null };
         }
+      case 'feast':
+        return { type: 'FEAST_GAIN', card: bestGain(state, 5, { noVictory: true }) || bestGain(state, 5) };
       case 'witch':
         // 呪いを受ける側。堀があれば無効化、無ければそのまま（CPUは秘密の小部屋を公開しない）
         if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };

@@ -528,6 +528,42 @@ s.players[1].hand = ['copper', 'silver'];
 s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'bureaucrat' });
 ok(s2.pending === null, '相手に勝利点が無ければ pending 無しで終了');
 
+console.log('=== 議事堂: +4カード+1購入、他は1枚引く ===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['council_room'];
+s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'gold'];
+s.players[1].deck = ['silver', 'silver'];
+const b1hand = s.players[1].hand.length;
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'council_room' });
+ok(s2.players[0].hand.length === 0 + 4, '議事堂 +4カード');
+ok(s2.turn.buys === 2, '議事堂 +1購入');
+ok(s2.players[1].hand.length === b1hand + 1, '相手は1枚引く');
+
+console.log('=== 祝宴: 自身を廃棄→コスト5以下を獲得 ===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['feast'];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'feast' });
+ok(count(s2.trash, 'feast') === 1 && s2.players[0].inPlay.indexOf('feast') < 0, '祝宴が廃棄された');
+ok(s2.pending && s2.pending.type === 'feast', 'コスト5以下の獲得待ち');
+s2 = E.reduce(s2, { type: 'FEAST_GAIN', card: 'duchy' }); // 公領=コスト5
+ok(count(s2.players[0].discard, 'duchy') === 1 && s2.pending === null, 'コスト5(公領)を獲得');
+
+console.log('=== 冒険者: 財宝2枚を引くまで公開 ===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['adventurer'];
+s.players[0].deck = ['estate', 'copper', 'duchy', 'silver', 'gold']; // 上から: estate,copper(財1),duchy,silver(財2)
+s.players[0].discard = [];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'adventurer' });
+ok(count(s2.players[0].hand, 'copper') === 1 && count(s2.players[0].hand, 'silver') === 1, '財宝2枚(銅貨・銀貨)を手札に');
+ok(count(s2.players[0].discard, 'estate') === 1 && count(s2.players[0].discard, 'duchy') === 1, '間の非財宝は捨て札へ');
+ok(s2.players[0].deck[0] === 'gold', '2枚見つけたら止まる(金貨は山札に残る)');
+// 財宝が1枚しかなくてもクラッシュしない
+s = E.createInitialState(['A', 'B']);
+s.players[0].hand = ['adventurer'];
+s.players[0].deck = ['estate', 'copper']; s.players[0].discard = [];
+s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'adventurer' });
+ok(count(s2.players[0].hand, 'copper') === 1, '財宝が尽きても安全に終了');
+
 console.log('\n========================================');
 console.log(`結果: ${pass} 件成功, ${fail} 件失敗`);
 console.log('========================================');

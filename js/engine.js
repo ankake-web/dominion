@@ -569,6 +569,28 @@
         bureaucratEnterVictim(state, pi, vics);
         break;
       }
+      case 'council_room':
+        draw(state, pi, 4);
+        t.buys += 1;
+        for (let k = 1; k < state.players.length; k++) draw(state, (pi + k) % state.players.length, 1);
+        break;
+      case 'feast':
+        // 自身を廃棄（場にあれば）→ コスト5以下を獲得
+        if (removeOne(p.inPlay, 'feast')) { state.trash.push('feast'); log(state, `${p.name} は祝宴を廃棄した。`); }
+        if (anyGainable(state, (id) => cardCost(state, id) <= 5)) state.pending = { type: 'feast', player: pi };
+        break;
+      case 'adventurer': {
+        let found = 0; const aside = [];
+        while (found < 2) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; p.deck = shuffle(p.discard); p.discard = []; }
+          if (p.deck.length === 0) break;
+          const c = p.deck.shift();
+          if (DOM.isType(c, 'treasure')) { p.hand.push(c); found++; } else aside.push(c);
+        }
+        aside.forEach((c) => p.discard.push(c));
+        log(state, `${p.name} は冒険者で財宝 ${found}枚 を手札に加えた。`);
+        break;
+      }
       case 'tribute': {
         // 左隣のプレイヤーが山札の上2枚を公開して捨てる
         const left = state.players[(pi + 1) % state.players.length];
@@ -1129,6 +1151,20 @@
         v.deck.unshift(card);
         log(state, `${v.name} は「${C()[card].name}」を山札の上に置いた（役人）。`);
         bureaucratEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+
+      /* ---- 祝宴：コスト5以下を獲得 ---- */
+      case 'FEAST_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'feast') return state;
+        const card = action.card;
+        const canGain = (id) => !!C()[id] && cardCost(state, id) <= 5;
+        if (card == null) { if (anyGainable(state, canGain)) return state; state.pending = null; return state; }
+        if (!canGain(card) || (state.supply[card] || 0) <= 0) return state;
+        gain(state, pd.player, card, 'discard');
+        log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した（祝宴）。`);
+        state.pending = null;
         return state;
       }
 

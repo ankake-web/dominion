@@ -798,6 +798,7 @@
     if (pd.type === 'witch' && pd.stage === 'react') return modalOptions('魔女を受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'WITCH_REACT' }));
     if (pd.type === 'bureaucrat' && pd.stage === 'react') return modalOptions('役人を受ける', '手札の勝利点1枚を山札の上に置きます。', reactOptions(p, pd, { type: 'BUREAUCRAT_REACT' }));
     if (pd.type === 'bureaucrat' && pd.stage === 'put') return modalSingleHand(p, '役人 — 山札の上に置く', '手札の勝利点カードを1枚選び、山札の上に置きます。', (id) => DOM.isType(id, 'victory'), (card) => dispatch({ type: 'BUREAUCRAT_PUT', card }), null, '山札の上に置く');
+    if (pd.type === 'feast') return modalGainSupply(state, '祝宴 — 獲得', 'コスト5以下のカードを1枚獲得します。', (id) => effCost(state, id) <= 5, (id) => dispatch({ type: 'FEAST_GAIN', card: id }), () => dispatch({ type: 'FEAST_GAIN', card: null }));
     if (pd.type === 'secret_chamber_putback') return modalSelectN(p, '秘密の小部屋 — 山札の上に戻す', '手札から2枚を選んで山札の上に戻します（最初のタップが一番上）。', Math.min(2, p.hand.length), '確定（戻す）', (cards) => dispatch({ type: 'SECRET_CHAMBER_PUTBACK', cards }));
 
     return h('div');
