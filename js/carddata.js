@@ -52,6 +52,7 @@
     { id: 'swindler', name: '詐欺師', cost: 5, type: 'attack', typeLabel: 'アクション', art: 'asset/swindler.jpg', icon: '🎭', effects: ['+2 コイン', '他は山札の上を廃棄', '→ あなたが選んだ同コストを獲得'] },
     { id: 'saboteur', name: '破壊工作員', cost: 5, type: 'attack', typeLabel: 'アクション', art: 'asset/saboteur.jpg', icon: '💣', effects: ['他はコスト3以上を廃棄', '→ 2安いカードを獲得してよい'] },
     { id: 'minion', name: '手先', cost: 5, type: 'attack', typeLabel: 'アクション', art: 'asset/minion.jpg', icon: '🕴️', effects: ['+1 アクション', '+2コイン か 全員引き直し を選ぶ'] },
+    { id: 'masquerade', name: '仮面舞踏会', cost: 3, type: 'action', typeLabel: 'アクション', art: 'asset/masquerade.jpg', icon: '🎭', effects: ['+2 カード', '全員が左隣へ1枚渡す', 'その後1枚廃棄してよい'] },
   ];
 
   function indexById(list) {

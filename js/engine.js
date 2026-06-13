@@ -256,6 +256,27 @@
     minionAttackEnterVictim(state, source, queue);
   }
 
+  /* ---------- 仮面舞踏会（全員が同時に手札1枚を左隣へ渡す）---------- */
+  // 手札のあるプレイヤーを手番順（使用者から）に並べる。空手札の人は渡せない。
+  function masqueradePassOrder(state, source) {
+    const n = state.players.length, order = [];
+    for (let k = 0; k < n; k++) { const idx = (source + k) % n; if (state.players[idx].hand.length > 0) order.push(idx); }
+    return order;
+  }
+  // 集めた選択を一斉に適用（先に全員から取り除き→左隣へ配る＝同時）。左隣は (idx+1)%n。
+  function masqueradeApplyPasses(state, order, picks) {
+    const n = state.players.length;
+    order.forEach((idx) => { removeOne(state.players[idx].hand, picks[idx]); });
+    order.forEach((idx) => { state.players[(idx + 1) % n].hand.push(picks[idx]); });
+    log(state, '仮面舞踏会：各プレイヤーが手札1枚を左隣へ渡した。');
+  }
+  function masqueradeAfterPass(state, source) {
+    // 使用者は手札を1枚廃棄してよい（任意）
+    state.pending = state.players[source].hand.length > 0
+      ? { type: 'masquerade', stage: 'trash', player: source, source }
+      : null;
+  }
+
   /* ---------- アクションカードの効果 ---------- */
   function applyEffect(state, cardId, pi) {
     const t = state.turn;
@@ -441,6 +462,17 @@
         // 攻撃側が「+2コイン」か「手札を捨てて+4＆相手も」を選ぶ
         state.pending = { type: 'minion', stage: 'choose', player: pi };
         break;
+      case 'masquerade': {
+        draw(state, pi, 2);
+        // 全員が同時に手札1枚を左隣へ渡す（手札のある人を順に集めてから一斉適用）
+        const order = masqueradePassOrder(state, pi);
+        if (order.length) {
+          state.pending = { type: 'masquerade', stage: 'pass', player: order[0], source: pi, order, pos: 0, picks: {} };
+        } else {
+          masqueradeAfterPass(state, pi);
+        }
+        break;
+      }
       case 'tribute': {
         // 左隣のプレイヤーが山札の上2枚を公開して捨てる
         const left = state.players[(pi + 1) % state.players.length];
@@ -966,6 +998,39 @@
         gain(state, pd.victim, card, 'discard');
         log(state, `${state.players[pd.victim].name} は「${C()[card].name}」を獲得した（詐欺師）。`);
         swindlerEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+
+      /* ---- 仮面舞踏会：各自が左隣へ1枚渡す→使用者は任意で1枚廃棄 ---- */
+      case 'MASQUERADE_PASS': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'masquerade' || pd.stage !== 'pass') return state;
+        const cur = pd.order[pd.pos];
+        const card = action.card;
+        if (state.players[cur].hand.indexOf(card) < 0) return state;
+        const picks = Object.assign({}, pd.picks); picks[cur] = card;
+        const nextPos = pd.pos + 1;
+        if (nextPos < pd.order.length) {
+          state.pending = { type: 'masquerade', stage: 'pass', player: pd.order[nextPos], source: pd.source, order: pd.order, pos: nextPos, picks };
+        } else {
+          masqueradeApplyPasses(state, pd.order, picks);
+          masqueradeAfterPass(state, pd.source);
+        }
+        return state;
+      }
+      case 'MASQUERADE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'masquerade' || pd.stage !== 'trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (card != null) {
+          if (p.hand.indexOf(card) < 0) return state;
+          removeOne(p.hand, card); state.trash.push(card);
+          log(state, `${p.name} は「${C()[card].name}」を廃棄した。`);
+        } else {
+          log(state, `${p.name} は廃棄しなかった。`);
+        }
+        state.pending = null;
         return state;
       }
 

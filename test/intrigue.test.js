@@ -563,6 +563,58 @@ console.log('=== 手先: +1アクション、+2コイン か 全員引き直し 
   ok(s.players[1].hand.length === 5 && s.pending === null, '堀で無効化、引き直さない');
 }
 
+console.log('=== 仮面舞踏会: +2カード→全員左隣へ1枚→任意で廃棄 ===');
+{
+  // 2人戦: 互いに1枚渡す（左隣=相手）
+  let s = E.createInitialState(['A', 'B'], DOM.KINGDOM_INTRIGUE, { startActive: 0 });
+  s.players[0].hand = ['masquerade', 'gold'];
+  s.players[0].deck = ['silver', 'silver', 'copper'];
+  s.players[1].hand = ['curse', 'estate'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'masquerade' });
+  ok(s.players[0].hand.length === 1 + 2, '使用者: +2カード(masqueradeは場へ): ' + s.players[0].hand.length);
+  ok(s.pending && s.pending.type === 'masquerade' && s.pending.stage === 'pass', 'パスの選択待ち');
+  ok(s.pending.player === 0, '使用者(席0)から渡す');
+  s = reduce(s, { type: 'MASQUERADE_PASS', card: 'gold' });   // 席0が金貨を渡す
+  ok(s.pending.player === 1, '次は席1');
+  s = reduce(s, { type: 'MASQUERADE_PASS', card: 'curse' });  // 席1が呪いを渡す
+  ok(s.pending && s.pending.stage === 'trash' && s.pending.player === 0, 'パス後、使用者の廃棄(任意)待ち');
+  ok(count(s.players[1].hand, 'gold') === 1, '席1は席0から金貨を受け取った');
+  ok(count(s.players[0].hand, 'curse') === 1, '席0は席1から呪いを受け取った');
+  s = reduce(s, { type: 'MASQUERADE_TRASH', card: 'curse' }); // 受け取った呪いを廃棄
+  ok(count(s.trash, 'curse') === 1 && count(s.players[0].hand, 'curse') === 0, '受け取った呪いを廃棄');
+  ok(s.pending === null, '解決完了');
+}
+{
+  // 廃棄しない選択
+  let s = E.createInitialState(['A', 'B'], DOM.KINGDOM_INTRIGUE, { startActive: 0 });
+  s.players[0].hand = ['masquerade', 'copper'];
+  s.players[0].deck = ['silver', 'silver'];
+  s.players[1].hand = ['estate'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'masquerade' });
+  s = reduce(s, { type: 'MASQUERADE_PASS', card: 'copper' });
+  s = reduce(s, { type: 'MASQUERADE_PASS', card: 'estate' });
+  const trashN = s.trash.length;
+  s = reduce(s, { type: 'MASQUERADE_TRASH', card: null });
+  ok(s.trash.length === trashN && s.pending === null, '廃棄しないで終了');
+}
+{
+  // 3人戦: 左隣(idx+1)へ循環して渡る
+  let s = E.createInitialState(['A', 'B', 'C'], DOM.KINGDOM_INTRIGUE, { startActive: 0 });
+  s.players[0].hand = ['masquerade', 'gold'];
+  s.players[0].deck = ['copper', 'copper', 'silver'];
+  s.players[1].hand = ['estate'];
+  s.players[2].hand = ['curse'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'masquerade' });
+  s = reduce(s, { type: 'MASQUERADE_PASS', card: 'gold' });   // 0→1
+  s = reduce(s, { type: 'MASQUERADE_PASS', card: 'estate' }); // 1→2
+  s = reduce(s, { type: 'MASQUERADE_PASS', card: 'curse' });  // 2→0
+  ok(count(s.players[1].hand, 'gold') === 1, '席1は席0の金貨を受領');
+  ok(count(s.players[2].hand, 'estate') === 1, '席2は席1の屋敷を受領');
+  ok(count(s.players[0].hand, 'curse') === 1, '席0は席2の呪いを受領(循環)');
+  s = reduce(s, { type: 'MASQUERADE_TRASH', card: null });
+  ok(s.pending === null, '3人戦も解決完了');
+}
+
 console.log('\n========================================');
 console.log('拡張テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

@@ -35,7 +35,7 @@
   /* 獲得したいカードの優先順（高いほど良い）。基本＋拡張(陰謀)の全王国カードを網羅。 */
   const GAIN_ORDER = ['province', 'gold', 'nobles', 'harem', 'duchy',
     'market', 'minion', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'upgrade', 'silver',
-    'mining_village', 'smithy', 'courtyard', 'great_hall', 'tribute', 'militia', 'steward', 'trading_post', 'baron', 'scout',
+    'mining_village', 'smithy', 'courtyard', 'masquerade', 'great_hall', 'tribute', 'militia', 'steward', 'trading_post', 'baron', 'scout',
     'remodel', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith',
     'pawn', 'moat', 'cellar', 'estate', 'duke', 'copper', 'curse'];
   function bestGain(state, maxCost, opts) {
@@ -89,6 +89,7 @@
     if (has('saboteur')) return 'saboteur';
     if (has('militia')) return 'militia';
     if (has('conspirator')) return 'conspirator';
+    if (has('masquerade')) return 'masquerade'; // +2カード＋廃棄＋呪い押し付け
     if (has('bridge')) return 'bridge';
     if (has('steward')) return 'steward';
     if (has('baron')) return 'baron';
@@ -349,6 +350,15 @@
         // 犠牲者側。堀があれば無効化、無ければそのまま受ける
         if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
         return { type: 'MINION_ATTACK_REACT' };
+      case 'masquerade':
+        if (pd.stage === 'pass') {
+          // 最も不要なカード（呪い/屋敷/銅貨）を左隣へ押し付ける
+          return { type: 'MASQUERADE_PASS', card: pickTrash(p.hand, 1)[0] };
+        }
+        { // trash: 不要札があれば廃棄、無ければしない
+          const junk = p.hand.find((c) => isType(c, 'curse') || c === 'estate' || c === 'copper');
+          return { type: 'MASQUERADE_TRASH', card: junk || null };
+        }
       case 'trading_post':
         // 不要札を優先して2枚（手札が1枚なら1枚）廃棄
         return { type: 'TRADING_POST_RESOLVE', cards: pickTrash(p.hand, Math.min(2, p.hand.length)) };
