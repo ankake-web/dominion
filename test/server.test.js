@@ -275,6 +275,29 @@ function mkClient(url) {
     ok(!!yBack, '復帰でCPUが再開し手番が人間に戻る');
     y2.close();
 
+    console.log('=== 永続化: スナップショット→サーバ再起動相当→resume で対戦復元 ===');
+    const { roomSnapshot, restoreRoom } = require('../server/gameServer');
+    const z1 = mkClient(URL); await z1.open();
+    z1.send({ t: 'create', name: 'Zico' }); // 1人間+1CPU
+    const z1j = await z1.waitFor((m) => m.t === 'joined');
+    z1.send({ t: 'start' });
+    await z1.waitFor((m) => m.t === 'started');
+    const snap = roomSnapshot(rooms.get(z1j.code)); // この時点の対戦状態を保存（=Redis相当）
+    ok(snap && snap.started && snap.state && snap.members.some((m) => m.token === z1j.token), 'スナップショットに状態とtokenが含まれる');
+    z1.close();
+    // サーバ再起動を模す: 全部屋を破棄してから、保存スナップショットだけで復元
+    __reset();
+    ok(!rooms.has(z1j.code), '再起動相当で一旦部屋が消える');
+    restoreRoom(snap);
+    ok(rooms.has(z1j.code), 'スナップショットから部屋が復元される');
+    // 復元後に元プレイヤーが resume → 対戦状態が戻る
+    const z2 = mkClient(URL); await z2.open();
+    z2.send({ t: 'resume', code: z1j.code, you: 0, token: z1j.token });
+    const zBack = await z2.waitFor((m) => m.t === 'started' && m.state, 3000);
+    ok(!!zBack, '復元した部屋へ resume で復帰できる（再起動後も対戦継続）');
+    ok(zBack && zBack.state.players.length === snap.state.players.length, '復元された対戦の人数が一致');
+    z2.close();
+
   } catch (e) {
     fail++; console.log('  ✗ 例外: ' + (e.stack || e.message));
   }

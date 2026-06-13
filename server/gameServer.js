@@ -21,6 +21,10 @@ const DOM = global.DOM;
 const E = DOM.engine;
 const CPU = DOM.cpu;
 
+// 永続化（任意）。UPSTASH_REDIS_REST_URL/TOKEN が設定されていれば対戦状態を保存し、
+// サーバ再起動後に復元する。未設定なら全て no-op（メモリのみ＝従来動作）。
+const store = require('./persist').createStore();
+
 const WS_PATH = '/ws';
 const MAX_PLAYERS = 4;
 const MIN_PLAYERS = 2;
@@ -135,6 +139,7 @@ function broadcastLobby(room) {
     kingdomSet: room.kingdomSet || 'basic',
   };
   for (const m of room.members) send(m.ws, msg);
+  persistRoom(room);
 }
 
 /* ---------- 配信（視点別マスク） ---------- */
@@ -144,6 +149,49 @@ function broadcastState(room) {
     if (!m.connected) continue;
     send(m.ws, { t: 'state', state: E.maskStateFor(room.state, m.seat) });
   }
+  persistRoom(room);
+}
+
+/* ---------- 永続化（再起動後の復元用） ---------- */
+// 永続化する部屋スナップショット。ws/タイマーなど直列化できないものは除外。
+function roomSnapshot(room) {
+  return {
+    code: room.code,
+    started: !!room.started,
+    state: room.state || null,
+    cpuCount: room.cpuCount,
+    cpuLevel: room.cpuLevel,
+    kingdomSet: room.kingdomSet || 'basic',
+    members: room.members.map((m) => ({ seat: m.seat, name: m.name, isHost: m.isHost, token: m.token })),
+  };
+}
+// 連続する状態変化を 1.2 秒に1回へ間引いて保存（Upstashのリクエスト数を抑える）。
+function persistRoom(room) {
+  if (!store.enabled || !room || room._destroyed) return;
+  if (room._persistTimer) return;
+  room._persistTimer = setTimeout(() => {
+    room._persistTimer = null;
+    if (!room._destroyed) store.save(room.code, roomSnapshot(room));
+  }, 1200);
+}
+// 起動時にスナップショットから部屋を復元。全員切断状態で作り、resume(token一致)で各人が戻る。
+function restoreRoom(snap) {
+  if (!snap || !snap.code || rooms.has(snap.code)) return;
+  if (snap.state && snap.state.gameOver) { store.del(snap.code); return; } // 終了済みは復元しない
+  const room = {
+    code: snap.code, members: [], started: !!snap.started, state: snap.state || null,
+    cpuCount: snap.cpuCount != null ? snap.cpuCount : 1, cpuLevel: snap.cpuLevel || 'normal',
+    kingdomSet: snap.kingdomSet || 'basic', cpuTimer: null,
+    graceMs: GRACE_MS, startedGraceMs: STARTED_GRACE_MS, cpuStepMs: CPU_STEP_MS,
+  };
+  room.members = (snap.members || []).map((m) => ({
+    ws: null, seat: m.seat, name: m.name, isHost: m.isHost, connected: false, token: m.token, graceTimer: null, expired: false,
+  }));
+  if (room.started && room.state) room.members.forEach((m) => setSeatDc(room, m.seat, true));
+  rooms.set(room.code, room);
+  // 復元直後は誰も接続していない。猶予の間に resume が来なければ掃除する。
+  room.members.forEach((m) => scheduleRelease(room, m));
+  return room;
 }
 
 /* ---------- 開始 ---------- */
@@ -172,6 +220,7 @@ function startGame(room) {
   for (const m of room.members) {
     send(m.ws, { t: 'started', you: m.seat, state: E.maskStateFor(room.state, m.seat) });
   }
+  persistRoom(room);
   scheduleCpuTick(room, room.cpuStepMs);
 }
 
@@ -247,6 +296,8 @@ function destroyRoom(room) {
   if (room._destroyed) return;          // 冪等化：二重破棄でも無害
   room._destroyed = true;
   if (room.cpuTimer) { clearTimeout(room.cpuTimer); room.cpuTimer = null; }
+  if (room._persistTimer) { clearTimeout(room._persistTimer); room._persistTimer = null; }
+  store.del(room.code); // 永続化済みなら削除（ゴミを残さない）
   for (const m of room.members) {
     if (m.graceTimer) { clearTimeout(m.graceTimer); m.graceTimer = null; }
     // 破棄時点でメンバーは切断済み(ws=null)が前提。万一残っていれば閉じるだけ（リスナーは
@@ -442,6 +493,13 @@ function isOriginAllowed(origin, allowlist) {
 /* ---------- HTTPサーバに WebSocket を相乗りさせる ---------- */
 function attachGameServer(httpServer, opts = {}) {
   installProcessGuards(); // プロセス全体の最後の砦（index.js 経由でもテスト経由でも有効に）
+  // 起動時: 永続化済みの対戦を復元（有効時のみ。失敗してもサーバ起動は妨げない）。
+  if (store.enabled && !opts.skipRestore) {
+    store.loadAll().then((snaps) => {
+      let n = 0; (snaps || []).forEach((s) => { try { if (restoreRoom(s)) n++; } catch (e) { /* skip */ } });
+      if (n) { try { console.log('[dominion] 永続化から ' + n + ' 部屋を復元'); } catch (e) { /* noop */ } }
+    }).catch(() => { /* noop */ });
+  }
   const allowedOrigins = opts.allowedOrigins;
   if (opts.graceMs != null) GRACE_MS = opts.graceMs;
   if (opts.startedGraceMs != null) STARTED_GRACE_MS = opts.startedGraceMs;
@@ -488,4 +546,4 @@ function attachGameServer(httpServer, opts = {}) {
   return wss;
 }
 
-module.exports = { attachGameServer, installProcessGuards, WS_PATH, isOriginAllowed, rooms, __reset: () => { for (const r of rooms.values()) destroyRoom(r); rooms.clear(); } };
+module.exports = { attachGameServer, installProcessGuards, WS_PATH, isOriginAllowed, rooms, roomSnapshot, restoreRoom, __reset: () => { for (const r of rooms.values()) destroyRoom(r); rooms.clear(); } };
