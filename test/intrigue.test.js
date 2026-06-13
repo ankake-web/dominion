@@ -411,6 +411,53 @@ console.log('=== 貢物: 左隣の上2枚公開→異名ごとにボーナス ==
   ok(s.turn.coins === c0 && s.pending === null, '左隣デッキ空でも安全に終了');
 }
 
+console.log('=== 詐欺師: 山札の上を廃棄→攻撃側が同コストを与える ===');
+{
+  let s = setup(['swindler']);
+  s.players[1].hand = ['copper', 'copper']; // 堀なし
+  s.players[1].deck = ['silver', 'estate', 'copper']; // 上=銀貨(コスト3)
+  const c0 = s.turn.coins;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'swindler' });
+  ok(s.turn.coins === c0 + 2, '詐欺師: +2コイン: ' + s.turn.coins);
+  ok(count(s.trash, 'silver') === 1, '犠牲者の山札の上(銀貨)が廃棄された');
+  ok(s.pending && s.pending.stage === 'gain' && s.pending.player === 0 && s.pending.cost === 3, '攻撃側がコスト3の付与を選ぶ待ち');
+  s = reduce(s, { type: 'SWINDLER_GAIN', card: 'silver' });
+  ok(count(s.players[1].discard, 'silver') === 1, '犠牲者がコスト3のカードを獲得');
+  ok(s.pending === null, '解決完了(2人戦)');
+}
+{
+  // 堀で無効化
+  let s = setup(['swindler']);
+  s.players[1].hand = ['moat', 'copper'];
+  s.players[1].deck = ['gold', 'estate'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'swindler' });
+  ok(s.pending && s.pending.stage === 'react' && s.pending.player === 1, '堀持ちは反応待ち');
+  s = reduce(s, { type: 'MOAT_REVEAL' });
+  ok(s.players[1].deck[0] === 'gold' && s.pending === null, '堀で無効化、山札の上は無傷');
+}
+{
+  // 犠牲者の山札が空 → 廃棄できず終了
+  let s = setup(['swindler']);
+  s.players[1].hand = ['copper'];
+  s.players[1].deck = []; s.players[1].discard = [];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'swindler' });
+  ok(s.pending === null, '犠牲者の山札空なら廃棄なしで終了');
+}
+{
+  // 3人戦: stage を保持して2人目へ進む（advanceAttack ではデッドロックする経路）
+  let s = E.createInitialState(['A', 'B', 'C'], DOM.KINGDOM_INTRIGUE, { startActive: 0 });
+  s.players[0].hand = ['swindler'];
+  s.players[1].hand = ['estate']; s.players[1].deck = ['copper', 'silver'];   // 上=copper(0)
+  s.players[2].hand = ['estate']; s.players[2].deck = ['estate', 'gold'];     // 上=estate(2)
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'swindler' });
+  ok(s.pending && s.pending.victim === 1 && s.pending.stage === 'gain' && s.pending.cost === 0, '1人目: copper(0)廃棄→コスト0付与待ち');
+  s = reduce(s, { type: 'SWINDLER_GAIN', card: 'copper' });
+  ok(s.pending && s.pending.victim === 2 && s.pending.stage === 'gain' && s.pending.cost === 2, '2人目へ stage 保持で進む(デッドロックなし)');
+  s = reduce(s, { type: 'SWINDLER_GAIN', card: 'estate' });
+  ok(s.pending === null, '全犠牲者解決で終了(3人戦)');
+  ok(count(s.trash, 'copper') === 1 && count(s.trash, 'estate') === 1, '両者の山札の上が廃棄された');
+}
+
 console.log('\n========================================');
 console.log('拡張テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

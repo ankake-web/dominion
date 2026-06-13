@@ -34,7 +34,7 @@
 
   /* 獲得したいカードの優先順（高いほど良い）。基本＋拡張(陰謀)の全王国カードを網羅。 */
   const GAIN_ORDER = ['province', 'gold', 'nobles', 'harem', 'duchy',
-    'market', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'upgrade', 'silver',
+    'market', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'upgrade', 'silver',
     'mining_village', 'smithy', 'courtyard', 'great_hall', 'tribute', 'militia', 'steward', 'trading_post', 'baron', 'scout',
     'remodel', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith',
     'pawn', 'moat', 'cellar', 'estate', 'duke', 'copper', 'curse'];
@@ -84,6 +84,7 @@
     if (has('smithy')) return 'smithy';
     if (has('courtyard')) return 'courtyard';
     if (has('torturer')) return 'torturer';
+    if (has('swindler')) return 'swindler';
     if (has('militia')) return 'militia';
     if (has('conspirator')) return 'conspirator';
     if (has('bridge')) return 'bridge';
@@ -223,6 +224,14 @@
   function pickTrash(hand, n) {
     return hand.map((c) => ({ c, v: trashValue(c) })).sort((a, b) => a.v - b.v).slice(0, n).map((x) => x.c);
   }
+  // 詐欺師で相手に与えるカード（相手の利得が最小＝呪い→弱い財宝/アクション。勝利点は点を与えるので避ける）。
+  function pickSwindlerGift(state, cst) {
+    const cands = Object.keys(state.supply).filter((id) => C()[id] && cost(state, id) === cst && sup(state, id) > 0);
+    if (!cands.length) return null;
+    const harm = (id) => isType(id, 'curse') ? -1 : (isType(id, 'victory') ? 100 : keepValue(id));
+    cands.sort((a, b) => harm(a) - harm(b));
+    return cands[0];
+  }
   /* 願いの井戸で宣言するカード（山札の上にありそうなもの＝手元で最も多い種類） */
   function mostLikelyTop(p) {
     const pool = [].concat(p.deck, p.discard);
@@ -311,6 +320,14 @@
       case 'scout':
         // 順序は戦術的に重要でないため公開順のまま戻す
         return { type: 'SCOUT_RESOLVE', order: pd.cards.slice() };
+      case 'swindler':
+        if (pd.stage === 'react') {
+          // 犠牲者側。react ステージは堀持ちのときだけ作られるので無効化する
+          if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+          return { type: 'SWINDLER_REACT' };
+        }
+        // gain ステージ（攻撃側）。相手の利得が最小のカードを与える（候補ありなら必ず非null）
+        return { type: 'SWINDLER_GAIN', card: pickSwindlerGift(state, pd.cost) };
       case 'trading_post':
         // 不要札を優先して2枚（手札が1枚なら1枚）廃棄
         return { type: 'TRADING_POST_RESOLVE', cards: pickTrash(p.hand, Math.min(2, p.hand.length)) };

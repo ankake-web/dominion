@@ -168,6 +168,38 @@
     }
   }
 
+  /* ---------- 詐欺師（複数対象＋攻撃側が獲得物を選ぶ段階アタック）---------- */
+  // 次の犠牲者へ。堀持ちなら反応(react)を待ち、いなければ即廃棄処理へ。queue 空で終了。
+  function swindlerEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    const victim = queue[0];
+    const rest = queue.slice(1);
+    if (state.players[victim].hand.includes('moat')) {
+      state.pending = { type: 'swindler', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      swindlerTrash(state, source, victim, rest);
+    }
+  }
+  // 犠牲者の山札の上1枚を廃棄→攻撃側が同コストの獲得物を選ぶ（候補が無ければ次へ）。
+  function swindlerTrash(state, source, victim, queue) {
+    const v = state.players[victim];
+    if (v.deck.length === 0 && v.discard.length > 0) { v.deck = shuffle(v.discard); v.discard = []; }
+    if (v.deck.length === 0) {
+      log(state, `${v.name} は山札が空で廃棄できなかった。`);
+      swindlerEnterVictim(state, source, queue);
+      return;
+    }
+    const trashed = v.deck.shift();
+    state.trash.push(trashed);
+    log(state, `${v.name} は山札の上の「${C()[trashed].name}」を廃棄した。`);
+    const cst = cardCost(state, trashed);
+    if (anyGainable(state, (id) => cardCost(state, id) === cst)) {
+      state.pending = { type: 'swindler', stage: 'gain', player: source, source, victim, cost: cst, queue };
+    } else {
+      swindlerEnterVictim(state, source, queue); // 同コストの獲得候補が無ければ獲得なしで次へ
+    }
+  }
+
   /* ---------- アクションカードの効果 ---------- */
   function applyEffect(state, cardId, pi) {
     const t = state.turn;
@@ -332,6 +364,14 @@
         } else {
           rest.forEach((c) => p.deck.unshift(c)); // 0/1枚は順序選択不要
         }
+        break;
+      }
+      case 'swindler': {
+        t.coins += 2;
+        // 他の全プレイヤーが対象（手番順）。段階アタック（react→gain）を犠牲者ごとに処理
+        const vics = [];
+        for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
+        swindlerEnterVictim(state, pi, vics);
         break;
       }
       case 'tribute': {
@@ -565,12 +605,18 @@
       }
       case 'MOAT_REVEAL': {
         const pd = state.pending;
-        if (!pd || (pd.type !== 'militia' && pd.type !== 'torturer')) return state;
+        if (!pd) return state;
         const p = state.players[pd.player];
         if (p.hand.indexOf('moat') < 0) return state;
+        // 堀で無効化できるのは「アタックを受ける側の反応ステップ」だけ。
+        // 段階アタック(詐欺師など)の gain ステップ(攻撃側が操作)では撃てない。
+        const reactable = (pd.type === 'militia') || (pd.type === 'torturer') ||
+          (pd.type === 'swindler' && pd.stage === 'react');
+        if (!reactable) return state;
         log(state, `${p.name} は「堀」を公開し、アタックを無効化した。`);
         if (pd.type === 'militia') advanceMilitia(state, pd);
-        else advanceAttack(state, pd);
+        else if (pd.type === 'torturer') advanceAttack(state, pd);
+        else if (pd.type === 'swindler') swindlerEnterVictim(state, pd.source, pd.queue);
         return state;
       }
 
@@ -831,6 +877,26 @@
           log(state, `${p.name} は手札 ${cards.length}枚 を捨てた。`);
         }
         advanceAttack(state, pd);
+        return state;
+      }
+
+      /* ---- 詐欺師：犠牲者の反応 / 攻撃側が獲得物を選ぶ ---- */
+      case 'SWINDLER_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'swindler' || pd.stage !== 'react') return state;
+        // 反応者が堀を出さずに通す（堀を出す場合は MOAT_REVEAL 経由）
+        swindlerTrash(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'SWINDLER_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'swindler' || pd.stage !== 'gain') return state;
+        const card = action.card;
+        const canGain = (id) => !!C()[id] && cardCost(state, id) === pd.cost;
+        if (card == null || !canGain(card) || (state.supply[card] || 0) <= 0) return state; // 候補ありなら必ず選ぶ
+        gain(state, pd.victim, card, 'discard');
+        log(state, `${state.players[pd.victim].name} は「${C()[card].name}」を獲得した（詐欺師）。`);
+        swindlerEnterVictim(state, pd.source, pd.queue);
         return state;
       }
 
