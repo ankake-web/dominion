@@ -237,35 +237,44 @@
         h('button', { class: 'seg-btn' + (o.value === current ? ' on' : ''), onclick: () => onPick(o.value) }, o.label)));
   }
 
-  // 王国カードのセット選択。おすすめセット（固定10種）＋ランダムをプルダウンで選ぶ。
+  // 王国カードのセット選択。上段に4分類のセグメント（王国基本／陰謀／おすすめ／ランダム）、
+  // 「おすすめ」を選んだときだけテーマ別タイル、「ランダム」のときだけ抽選元チップを出す。
   // current は CARD_SETS の id。onChange(newId) で確定（ローカルは setup に保存、オンラインはサーバへ送信）。
-  // 選んだセットの中身（固定セットは収録カード名／ランダムは説明）を下に出して分かりやすくする。
   function kingdomSetPicker(current, onChange) {
     current = current || 'basic';
-    const sets = (DOM.CARD_SETS || []).slice();
-    // group ごとに optgroup へまとめる（出現順を保持）
-    const groups = [];
-    sets.forEach((s) => {
-      const key = s.group || 'その他';
-      let g = groups.find((x) => x.label === key);
-      if (!g) { g = { label: key, items: [] }; groups.push(g); }
-      g.items.push(s);
-    });
-    const sel = h('select', { class: 'set-select', onchange: (e) => onChange(e.target.value) },
-      groups.map((g) => h('optgroup', { label: g.label },
-        g.items.map((s) => h('option', { value: s.id }, s.name)))));
-    sel.value = current; // 選択中を反映（option の selected 属性に頼らず確実に）
-    const set = sets.find((s) => s.id === current);
-    let note;
-    if (set && set.randomFrom) {
-      note = h('p', { class: 'muted set-note' }, '毎回ランダムに10種を選びます。');
-    } else if (set && set.kingdom) {
-      note = h('p', { class: 'muted set-note' },
-        '収録：' + set.kingdom.map((id) => (DOM.CARDS[id] ? DOM.CARDS[id].name : id)).join('・'));
-    } else {
-      note = null;
+    const sets = DOM.CARD_SETS || [];
+    const byId = (id) => sets.find((s) => s.id === id);
+    const cur = byId(current) || byId('basic');
+    const recommend = sets.filter((s) => s.kind === 'recommend');
+    const randoms = sets.filter((s) => s.kind === 'random');
+    // 現在のトップ分類
+    let top = 'basic';
+    if (cur.id === 'intrigue') top = 'intrigue';
+    else if (cur.kind === 'recommend') top = 'recommend';
+    else if (cur.kind === 'random') top = 'random';
+    // 分類を切り替えたときに飛ぶ既定ID
+    const defaults = { basic: 'basic', intrigue: 'intrigue', recommend: (recommend[0] || {}).id, random: 'random' };
+    const topSeg = segmented(
+      [{ value: 'basic', label: '王国基本' }, { value: 'intrigue', label: '陰謀' },
+       { value: 'recommend', label: 'おすすめ' }, { value: 'random', label: 'ランダム' }],
+      top, (v) => { if (v !== top) onChange(defaults[v]); }, 'set-top-seg');
+
+    let sub = null;
+    if (top === 'recommend') {
+      sub = h('div', { class: 'set-tiles' }, recommend.map((s) =>
+        h('button', { class: 'set-tile' + (s.id === current ? ' on' : ''), onclick: () => onChange(s.id) },
+          h('div', { class: 'set-tile-name' }, s.name),
+          h('div', { class: 'set-tile-desc' }, s.desc || ''))));
+    } else if (top === 'random') {
+      sub = h('div', { class: 'set-sub' },
+        segmented(randoms.map((s) => ({ value: s.id, label: s.name.replace('から', '') })), current, (v) => onChange(v)),
+        h('p', { class: 'muted set-note' }, '毎回ランダムに10種を選びます。'));
     }
-    return h('div', { class: 'set-picker' }, sel, note);
+    // 固定セットは収録カード名をプレビュー
+    const preview = cur.kingdom
+      ? h('p', { class: 'muted set-note' }, '収録：' + cur.kingdom.map((id) => (DOM.CARDS[id] ? DOM.CARDS[id].name : id)).join('・'))
+      : null;
+    return h('div', { class: 'set-picker' }, topSeg, sub, preview);
   }
 
   /* ---------- 対戦設定（2〜4人・人間/CPU・強さ） ---------- */

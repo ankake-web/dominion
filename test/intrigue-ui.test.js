@@ -33,30 +33,43 @@ function go(v) { UI.view = v; UI.sheet = null; DOM.render(); timers.length = 0; 
 function setState(s) { UI.store.state = s; DOM.render(); timers.length = 0; }
 
 try {
-  // セット選択プルダウンの option を選んで change を発火
-  function selectSet(id) {
-    const sel = $('.set-select');
-    if (!sel) throw new Error('.set-select が無い');
-    sel.value = id; sel.dispatchEvent(new win.Event('change'));
+  // おすすめタイルを名前でクリック
+  function clickTile(name) {
+    const t = $all('.set-tile').find((e) => e.textContent.includes(name));
+    if (!t) throw new Error('タイルが無い: ' + name);
+    t.click();
   }
-  console.log('=== 設定画面: 王国カードのセット選択（プルダウン）===');
+  console.log('=== 設定画面: 王国カードのセット選択（分類セグメント＋タイル）===');
   go('setup');
-  ok($('.set-select'), 'セット選択プルダウンがある');
-  ok(byText('.set-select option', 'ビッグマネー（お金重視）'), 'おすすめ「ビッグマネー」が選べる');
-  ok(byText('.set-select option', '勝利点レース'), '陰謀おすすめ「勝利点レース」がある');
-  ok(byText('.set-select option', '基本＋陰謀から'), 'ランダム（基本＋陰謀）がある');
-  selectSet('random-intrigue');
-  ok(UI.setup.kingdomSet === 'random-intrigue', '陰謀のみランダムを選択');
-  selectSet('big-money');
-  ok(UI.setup.kingdomSet === 'big-money', 'ビッグマネーを選択');
-  selectSet('intrigue');
-  ok(UI.setup.kingdomSet === 'intrigue', '陰謀セットを選択');
-  // 固定セットは収録カード名が下に出る
-  ok($('.set-note') && $('.set-note').textContent.includes('貴族'), '選択セットの収録カードが表示される');
+  // 上段の4分類セグメント
+  ok(byText('.set-top-seg .seg-btn', '王国基本'), '分類に「王国基本」');
+  ok(byText('.set-top-seg .seg-btn', '陰謀'), '分類に「陰謀」');
+  ok(byText('.set-top-seg .seg-btn', 'おすすめ'), '分類に「おすすめ」');
+  ok(byText('.set-top-seg .seg-btn', 'ランダム'), '分類に「ランダム」');
+  // 既定は王国基本。タイルやランダムチップはまだ出ない
+  ok(UI.setup.kingdomSet === 'basic', '既定は王国基本セット');
+  ok(!$('.set-tile'), 'おすすめ未選択ではタイルなし');
+  // 「おすすめ」を選ぶと既定のテーマ(先頭=ビッグマネー)になりタイルが並ぶ
+  clickText('.set-top-seg .seg-btn', 'おすすめ');
+  ok(UI.setup.kingdomSet === 'big-money', 'おすすめ選択で先頭テーマ(ビッグマネー)に');
+  ok($all('.set-tile').length === 6, 'おすすめタイルが6枚');
+  ok(byText('.set-tile-name', '勝利点レース（陰謀）'), 'テーマ「勝利点レース」タイルがある');
+  clickTile('策謀コンボ');
+  ok(UI.setup.kingdomSet === 'secret-schemes', 'タイルで策謀コンボを選択');
+  ok($('.set-note') && $('.set-note').textContent.includes('拷問人'), '選択テーマの収録カードが出る');
+  // 「ランダム」を選ぶと抽選元チップが出る
+  clickText('.set-top-seg .seg-btn', 'ランダム');
+  ok(UI.setup.kingdomSet === 'random', 'ランダム=既定は基本＋陰謀');
+  ok(byText('.set-sub .seg-btn', '陰謀のみ'), '抽選元「陰謀のみ」チップがある');
+  clickText('.set-sub .seg-btn', '陰謀のみ');
+  ok(UI.setup.kingdomSet === 'random-intrigue', '抽選元を陰謀のみに');
+  // 「陰謀」を選ぶと陰謀基本セット
+  clickText('.set-top-seg .seg-btn', '陰謀');
+  ok(UI.setup.kingdomSet === 'intrigue', '陰謀基本セットを選択');
 
   console.log('=== CPU対戦を陰謀セットで開始 ===');
   go('setup');
-  selectSet('intrigue');
+  clickText('.set-top-seg .seg-btn', '陰謀');
   clickText('button', 'この設定で開始');
   ok(UI.view === 'game' && UI.store && UI.store.state, 'ゲーム開始');
   const kingdom = UI.store.state.kingdom;

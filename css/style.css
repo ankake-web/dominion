@@ -154,27 +154,22 @@ input.code-input {
   font-size: 30px;
   font-weight: 700;
 }
-/* 王国カードのセット選択プルダウン */
-.set-picker { width: 100%; }
-.set-select {
-  width: 100%;
-  min-height: 48px;
-  padding: 10px 40px 10px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background-color: #15131f;
-  color: var(--ink);
-  font-family: inherit;
-  font-size: 16px;
-  -webkit-appearance: none; -moz-appearance: none; appearance: none;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%23d8b46a' d='M0 0h12L6 8z'/></svg>");
-  background-repeat: no-repeat;
-  background-position: right 14px center;
+/* 王国カードのセット選択（分類セグメント＋おすすめタイル） */
+.set-picker { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.set-top-seg .seg-btn { font-size: 13px; padding: 9px 4px; }
+.set-sub { display: flex; flex-direction: column; gap: 6px; }
+.set-tiles { display: flex; flex-direction: column; gap: 6px; }
+.set-tile {
+  text-align: left; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--line); background: #15131f; color: var(--ink);
+  cursor: pointer; font-family: inherit; transition: border-color .12s, background .12s;
 }
-.set-select:focus { outline: none; border-color: var(--gold); }
-.set-select optgroup { color: var(--ink-dim); background: #15131f; }
-.set-select option { color: var(--ink); background: #15131f; }
-.set-note { font-size: 12px; color: var(--ink-dim); margin: 6px 2px 0; line-height: 1.5; }
+.set-tile:active { transform: scale(0.995); }
+.set-tile.on { border-color: var(--gold); background: linear-gradient(180deg, rgba(216,180,106,0.18), rgba(216,180,106,0.05)); }
+.set-tile-name { font-size: 14px; font-weight: 700; }
+.set-tile.on .set-tile-name { color: var(--gold-bright); }
+.set-tile-desc { font-size: 11px; color: var(--ink-dim); margin-top: 2px; line-height: 1.4; }
+.set-note { font-size: 12px; color: var(--ink-dim); margin: 2px 2px 0; line-height: 1.5; }
 
 .code-display {
   font-family: 'Cinzel', serif;
