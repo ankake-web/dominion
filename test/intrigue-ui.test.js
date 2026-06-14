@@ -143,6 +143,20 @@ try {
   $('.reveal-modal .sheet-close').click();
   ok(!$('.reveal-modal'), '✕で公開ポップアップが閉じる');
 
+  console.log('=== カード説明: 同じ表示要求では作り直さない（スクロール保持の土台）===');
+  go('setup');
+  UI.sheet = { cardId: 'village' }; DOM.render();
+  const host1 = doc.getElementById('sheet-host');
+  const node1 = host1 && host1.querySelector('.sheet');
+  ok(node1, 'カード説明が専用ホストに表示される');
+  ok(node1 && !node1.textContent.includes('とじる'), '下部「とじる」は廃止（✕のみ）');
+  ok(node1 && node1.querySelector('.sheet-close'), '右上✕がある');
+  DOM.render(); // 背景の再描画（UI.sheet は同じ参照）
+  const node2 = doc.getElementById('sheet-host').querySelector('.sheet');
+  ok(node1 === node2, '同じ表示要求では sheet を作り直さない＝スクロール位置が保たれる');
+  UI.sheet = null; DOM.render();
+  ok(!doc.getElementById('sheet-host'), '閉じるとホストが撤去される');
+
   console.log('=== カード一覧に拡張カードが載る ===');
   go('cardList');
   ok(doc.body.textContent.includes('陰謀・拡張'), 'カード一覧に拡張グループ');

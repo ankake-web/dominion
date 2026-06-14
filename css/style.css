@@ -278,6 +278,8 @@ input.code-input {
   font-size: 18px; line-height: 36px; text-align: center; cursor: pointer;
 }
 .sheet-close:active { transform: scale(0.94); }
+/* カード説明の常駐ホスト。優先モーダル(確認/獲得拡大=z40)より下に重ねる */
+#sheet-host .scrim { z-index: 38; }
 
 /* ---------- 相手バー ---------- */
 .opp-bar {

@@ -200,6 +200,18 @@
   function dispatch(action) { UI.sheet = null; UI.store.dispatch(action); }
   function closeSheet() { UI.sheet = null; render(); }
   function showSheet(cardId, primary) { UI.sheet = { cardId, primary }; sfx('tap'); render(); }
+  // カード説明(sheet)は #sheet-host に常駐させ、同じ表示要求の間は作り直さない。
+  // これで他人の行動などで盤面が再描画されても、スクロール位置とカード画像が保たれる
+  // （毎回作り直すと画像の読込前に scrollTop が0付近へクランプされ、位置が飛んでいた）。
+  function syncSheet() {
+    let host = document.getElementById('sheet-host');
+    if (!UI.sheet) { if (host) host.remove(); return; }
+    if (!host) { host = document.createElement('div'); host.id = 'sheet-host'; document.body.appendChild(host); }
+    if (host._sheetRef === UI.sheet) return; // 同じ表示要求＝作り直さない（スクロール保持）
+    host.innerHTML = '';
+    host.appendChild(viewSheet());
+    host._sheetRef = UI.sheet;
+  }
   function sfx(n) { if (DOM.audio) DOM.audio.sfx(n); }
   function toggleBgm() { if (DOM.audio) { DOM.audio.toggleBgm(); render(); } }
   function toggleSe() { if (DOM.audio) { DOM.audio.toggleSe(); render(); } }
@@ -1083,8 +1095,7 @@
             h('div', null, h('h3', { class: 'zoom-name' }, c.name), h('div', { class: 'zoom-type' }, typeLabel(id)))),
           h('div', { class: 'zoom-text' }, c.text || ''),
           remain != null ? h('div', { class: 'zoom-remain' }, 'サプライ残り ' + remain + ' 枚') : null),
-        p ? h('button', { class: 'btn ' + (p.cls || '') + ' btn-block', onclick: p.on }, p.label) : null,
-        h('button', { class: 'btn btn-ghost btn-block', style: 'margin-top:8px', onclick: closeSheet }, 'とじる')));
+        p ? h('button', { class: 'btn ' + (p.cls || '') + ' btn-block', onclick: p.on }, p.label) : null));
   }
 
   /* ---------- 勝敗画面 ---------- */
@@ -1518,10 +1529,6 @@
      ============================================================ */
   function render() {
     const app = document.getElementById('app');
-    // カード説明（sheet）が開いている間は、他人の行動などで再描画されてもスクロール位置を保つ。
-    // （全再構築で scrollTop が0に戻り「閉じる」まで毎回スクロールし直す不便を防ぐ）
-    const prevSheet = app.querySelector('.sheet:not(.reveal-modal)');
-    const keepSheetScroll = prevSheet ? prevSheet.scrollTop : null;
     app.innerHTML = '';
     if (UI.view !== 'game') UI.menuOpen = false; // 対戦外ではメニューを閉じておく
     let root;
@@ -1544,11 +1551,7 @@
     const logEl = app.querySelector('.log');
     if (logEl) logEl.scrollTop = logEl.scrollHeight;
     if (UI.revealView != null) { const rm = viewRevealModal(); if (rm) app.appendChild(rm); }
-    if (UI.sheet) {
-      const sh = viewSheet();
-      app.appendChild(sh);
-      if (keepSheetScroll != null) sh.scrollTop = keepSheetScroll; // 開いていた位置を復元
-    }
+    syncSheet(); // カード説明は専用ホスト常駐（再描画でスクロール位置・画像を保つ）
     if (UI.logModal) app.appendChild(viewLogModal());
     if (UI.pickZoom) app.appendChild(viewPickZoom()); // 廃棄/獲得カードの拡大確認（最前面）
     if (UI.confirm) app.appendChild(viewConfirm());

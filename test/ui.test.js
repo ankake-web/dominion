@@ -59,7 +59,8 @@ try {
   ok($('.zoom-img'), '拡大画像');
   ok($('.zoom-name').textContent === '村', '拡大: カード名');
   ok($('.zoom-text').textContent.includes('アクション'), '拡大: 効果テキスト');
-  clickText('.sheet .btn', 'とじる');
+  clickText('.sheet-close', '✕'); // 右上の常時表示✕で閉じる（下部「とじる」は廃止）
+  ok(!$('.sheet'), '✕でカード説明が閉じる');
   clickText('button', '← 戻る');
 
   console.log('=== 設定画面（人数・CPU） ===');
