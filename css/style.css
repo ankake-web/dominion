@@ -233,30 +233,51 @@ input.code-input {
 }
 .last-move .muted { color: var(--ink-dim); font-weight: 500; }
 
-/* ---------- 公開（reveal）ストリップ ---------- */
-.reveal-strip {
-  margin: 3px 2px 2px; padding: 4px 8px 6px;
-  background: rgba(120, 170, 255, 0.10);
-  border: 1px solid rgba(140, 180, 255, 0.40);
-  border-radius: 12px;
+/* ---------- 公開（reveal）：席ごとのバッジ＋一覧ポップアップ ---------- */
+/* プレイヤー表示に付く小バッジ（表向きカードのミニ画像＋枚数）。タップで一覧。 */
+.reveal-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  margin-top: 3px; padding: 2px 5px;
+  background: rgba(120, 170, 255, 0.14);
+  border: 1px solid rgba(140, 180, 255, 0.45);
+  border-radius: 8px;
 }
-.reveal-strip.flash { animation: revealFlash 0.9s ease-out; }
-.reveal-head { font-size: 12px; font-weight: 700; color: #9fc2ff; margin-bottom: 4px; }
-.reveal-cards { display: flex; flex-wrap: wrap; gap: 6px; }
-.reveal-card { width: 46px; text-align: center; cursor: pointer; }
+.reveal-badge.flash { animation: revealFlash 1s ease-out; }
+.reveal-eye { font-size: 11px; }
+.reveal-badge-img {
+  width: 20px; height: 30px; object-fit: cover; border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.3); display: block;
+}
+.reveal-badge-n { font-size: 11px; font-weight: 700; color: #9fc2ff; }
+.opp-chip.has-reveal { cursor: pointer; border-color: rgba(140, 180, 255, 0.6); }
+.self-reveal-wrap { cursor: pointer; margin-left: 6px; vertical-align: middle; }
+@keyframes revealFlash {
+  0%   { box-shadow: 0 0 0 2px rgba(140, 180, 255, 0.85); transform: scale(1.08); }
+  100% { box-shadow: none; transform: none; }
+}
+/* 公開カード一覧ポップアップ（reveal-modal）と各カード表示 */
+.reveal-modal .reveal-head { font-size: 14px; font-weight: 700; color: #9fc2ff; margin: 4px 2px 10px; }
+.reveal-cards { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.reveal-card { width: 70px; text-align: center; }
 .reveal-img {
-  width: 46px; height: 69px; object-fit: cover; border-radius: 6px;
+  width: 70px; height: 105px; object-fit: cover; border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.25); display: block;
 }
 .reveal-card.art-failed .reveal-img { display: none; }
 .reveal-name {
-  font-size: 9px; line-height: 1.1; margin-top: 2px; color: var(--ink);
+  font-size: 11px; line-height: 1.2; margin-top: 3px; color: var(--ink);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-@keyframes revealFlash {
-  0%   { background: rgba(140, 180, 255, 0.55); box-shadow: 0 0 0 2px rgba(140, 180, 255, 0.7); transform: scale(1.015); }
-  100% { background: rgba(120, 170, 255, 0.10); box-shadow: none; transform: none; }
+/* sheet（拡大表示）右上の常時見える閉じる✕ */
+.sheet-close {
+  position: sticky; top: 0; z-index: 3;
+  display: block; margin: -6px -4px 0 auto;
+  width: 38px; height: 38px; padding: 0;
+  border-radius: 50%; border: 1px solid var(--line);
+  background: rgba(20, 19, 31, 0.9); color: var(--ink);
+  font-size: 18px; line-height: 36px; text-align: center; cursor: pointer;
 }
+.sheet-close:active { transform: scale(0.94); }
 
 /* ---------- 相手バー ---------- */
 .opp-bar {

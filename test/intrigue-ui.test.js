@@ -122,7 +122,7 @@ try {
   ok(fx, '獲得演出のカード要素(.gain-fx)が生成される');
   ok(fx && fx.querySelector('.gain-note') && fx.querySelector('.gain-note').textContent.includes('獲得'), '「○○ を獲得！」表示');
 
-  console.log('=== 公開ストリップ: 役人で公開したカードが画像付きで盤面に出る ===');
+  console.log('=== 公開: 相手チップにバッジ→タップで公開カード一覧 ===');
   UI.mode = 'local'; UI.localViewer = 0; UI.mySeat = null;
   let rv = E.createInitialState(['P1', 'P2'], DOM.KINGDOM, { startActive: 0 });
   rv.players[0].hand = ['bureaucrat'];
@@ -130,9 +130,18 @@ try {
   rv = E.reduce(rv, { type: 'PLAY_ACTION', card: 'bureaucrat' });
   rv = E.reduce(rv, { type: 'BUREAUCRAT_PUT', card: 'estate' });
   setState(rv);
-  ok($('.reveal-strip'), '公開ストリップが表示される');
-  ok($('.reveal-strip .reveal-img'), '公開カードの画像要素がある');
-  ok($('.reveal-strip').textContent.includes('屋敷'), '公開カード名（屋敷）が出る');
+  // 相手(席1)のチップに公開バッジが付き、タップ可能になる
+  const chip = $('.opp-chip.has-reveal');
+  ok(chip, '公開した相手チップに has-reveal が付く');
+  ok($('.opp-chip .reveal-badge .reveal-badge-img'), 'チップに公開カードのミニ画像バッジ');
+  // タップで公開カード一覧ポップアップ
+  chip.click();
+  ok($('.reveal-modal'), 'チップをタップで公開一覧ポップアップ');
+  ok($('.reveal-modal').textContent.includes('屋敷'), 'ポップアップに公開カード名（屋敷）');
+  ok($('.reveal-modal .sheet-close'), 'ポップアップに常時見える✕がある');
+  // ✕で閉じる
+  $('.reveal-modal .sheet-close').click();
+  ok(!$('.reveal-modal'), '✕で公開ポップアップが閉じる');
 
   console.log('=== カード一覧に拡張カードが載る ===');
   go('cardList');

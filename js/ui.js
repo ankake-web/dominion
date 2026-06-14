@@ -115,21 +115,42 @@
   // 公開（reveal）ストリップ: 役人・密偵・泥棒・貢物・願いの井戸・斥候などで「表向きにされたカード」を
   // 実際の画像で大きく見せる。自分の盤面に変化が出ない公開（相手の山札の上に置く等）は、これが無いと
   // 「何も起きていない」ように見えるため。直近の公開だけを board-head（常時表示の上部）に出す。
-  function viewRevealStrip(state) {
-    const r = state && state.reveal;
+  // 席ごとの公開バッジ：その席に公開があれば、表向きカードのミニ画像＋枚数を返す。
+  // 直近に公開された席だけ点滅させて気づけるようにする（無関係な再描画では光らせない）。
+  function revealBadge(state, seat) {
+    const r = state && state.reveals && state.reveals[seat];
     if (!r || !r.cards || !r.cards.length) return null;
-    const isNew = r.seq !== UI.lastRevealSeq; // seq が新しい時だけ光らせる（無関係な再描画で点滅させない）
-    UI.lastRevealSeq = r.seq;
-    const cards = r.cards.map((id) => {
-      const def = DOM.CARDS[id] || { name: id };
-      return h('div', { class: 'reveal-card', onclick: () => showSheet(id) },
-        h('img', { class: 'reveal-img', src: 'asset/thumb/' + id + '.jpg', alt: def.name, decoding: 'async',
-          onerror: function () { this.style.display = 'none'; if (this.parentElement) this.parentElement.classList.add('art-failed'); } }),
-        h('div', { class: 'reveal-name' }, def.name));
-    });
-    return h('div', { class: 'reveal-strip' + (isNew ? ' flash' : '') },
-      h('div', { class: 'reveal-head' }, '👁 ' + r.by + '：' + (r.note || '公開')),
-      h('div', { class: 'reveal-cards' }, cards));
+    const isNew = state.revealLatest === seat && state.revealSeq !== UI.lastRevealSeq;
+    if (isNew) UI.lastRevealSeq = state.revealSeq;
+    const id = r.cards[0];
+    const def = DOM.CARDS[id] || { name: id };
+    return h('div', { class: 'reveal-badge' + (isNew ? ' flash' : '') },
+      h('span', { class: 'reveal-eye' }, '👁'),
+      h('img', { class: 'reveal-badge-img', src: 'asset/thumb/' + id + '.jpg', alt: def.name,
+        onerror: function () { this.style.display = 'none'; } }),
+      r.cards.length > 1 ? h('span', { class: 'reveal-badge-n' }, '×' + r.cards.length) : null);
+  }
+  function openReveal(seat) { UI.revealView = seat; sfx('tap'); render(); }
+  // 公開カードの一覧ポップアップ（その席が公開した全カードを画像で）
+  function viewRevealModal() {
+    const state = UI.store && UI.store.state;
+    const seat = UI.revealView;
+    const r = state && state.reveals && state.reveals[seat];
+    const p = state && state.players && state.players[seat];
+    if (!r || !p) { UI.revealView = null; return null; }
+    const close = () => { UI.revealView = null; render(); };
+    return h('div', { class: 'scrim', onclick: (e) => { if (e.target.classList.contains('scrim')) close(); } },
+      h('div', { class: 'sheet reveal-modal' },
+        h('button', { class: 'sheet-close', onclick: close }, '✕'),
+        h('div', { class: 'reveal-head' }, '👁 ' + p.name + '：' + (r.note || '公開')),
+        h('div', { class: 'reveal-cards' }, r.cards.map((id) => {
+          const def = DOM.CARDS[id] || { name: id };
+          return h('div', { class: 'reveal-card' },
+            h('img', { class: 'reveal-img', src: 'asset/thumb/' + id + '.jpg', alt: def.name,
+              onerror: function () { this.style.display = 'none'; if (this.parentElement) this.parentElement.classList.add('art-failed'); } }),
+            h('div', { class: 'reveal-name' }, def.name));
+        })),
+        h('button', { class: 'btn btn-ghost btn-block', style: 'margin-top:10px', onclick: close }, 'とじる')));
   }
   function cardArt(id) {
     // 盤面（手札・サプライ）は軽量サムネを使う。拡大表示だけフル画像。
@@ -175,7 +196,7 @@
   }
 
   /* ---------- 共通操作 ---------- */
-  function go(view) { UI.view = view; UI.sheet = null; UI.logModal = false; render(); }
+  function go(view) { UI.view = view; UI.sheet = null; UI.logModal = false; UI.revealView = null; render(); }
   function dispatch(action) { UI.sheet = null; UI.store.dispatch(action); }
   function closeSheet() { UI.sheet = null; render(); }
   function showSheet(cardId, primary) { UI.sheet = { cardId, primary }; sfx('tap'); render(); }
@@ -574,9 +595,12 @@
       others.map((i) => {
         const p = state.players[i];
         const isAct = i === t.active;
-        return h('div', { class: 'opp-chip' + (isAct ? ' on' : '') + (p.dc ? ' dc' : ''), 'data-seat': i },
+        const hasReveal = state.reveals && state.reveals[i];
+        return h('div', { class: 'opp-chip' + (isAct ? ' on' : '') + (p.dc ? ' dc' : '') + (hasReveal ? ' has-reveal' : ''),
+            'data-seat': i, onclick: hasReveal ? () => openReveal(i) : null },
           h('div', { class: 'opp-name' }, (isAct ? '▶ ' : '') + p.name + (p.dc ? ' 🔌' : (p.isCpu ? ' 🤖' : ''))),
-          h('div', { class: 'opp-mini' }, p.dc ? '再接続中…' : ('山' + p.deck.length + ' 手' + p.hand.length + ' 捨' + p.discard.length)));
+          h('div', { class: 'opp-mini' }, p.dc ? '再接続中…' : ('山' + p.deck.length + ' 手' + p.hand.length + ' 捨' + p.discard.length)),
+          revealBadge(state, i));
       }));
 
     // 相手切断中バナー（dc席があれば「再接続中…」、無ければCPU進行中）
@@ -636,7 +660,7 @@
 
     return h('div', { class: 'board' },
       // スクロールしても常に見えるヘッダー（手番・残量・相手・直近の行動）
-      h('div', { class: 'board-head' }, top, othersStrip, moveBar, viewRevealStrip(state)),
+      h('div', { class: 'board-head' }, top, othersStrip, moveBar),
       UI.mode === 'online' ? h('div', { class: 'muted', style: 'font-size:11px;text-align:center;margin:-2px 0 4px' }, '部屋 ' + UI.roomCode + '　/　あなた: ' + me.name) : null,
       banner,
       h('div', { class: 'section-h' }, 'サプライ（場の山札）'),
@@ -645,7 +669,10 @@
       playArea,
       h('div', { class: 'zone-h' }, h('span', { class: 't' }, me.name + ' の手札'),
         h('span', { class: 'c', 'data-self-pile': '1' },
-          '山' + me.deck.length + '・捨' + me.discard.length + '・手' + me.hand.length + '｜' + E().vpOf(me) + '点')),
+          '山' + me.deck.length + '・捨' + me.discard.length + '・手' + me.hand.length + '｜' + E().vpOf(me) + '点'),
+        (state.reveals && state.reveals[viewer])
+          ? h('span', { class: 'self-reveal-wrap', onclick: () => openReveal(viewer) }, revealBadge(state, viewer))
+          : null),
       h('div', { class: 'hand-zone' }, handBlocks),
       logBox,
       viewActionBar(state, viewer, actor, interactive)
@@ -1045,6 +1072,7 @@
     const remain = state && state.supply && state.supply[id] != null ? state.supply[id] : null;
     return h('div', { class: 'scrim', onclick: (e) => { if (e.target.classList.contains('scrim')) closeSheet(); } },
       h('div', { class: 'sheet' },
+        h('button', { class: 'sheet-close', onclick: closeSheet }, '✕'),
         h('div', { class: 'grip' }),
         h('div', { class: 'zoom-wrap ' + typeClass(id) },
           h('img', { class: 'zoom-img', src: 'asset/' + id + '.jpg', alt: c.name, onerror: function () { this.style.display = 'none'; if (this.parentElement) this.parentElement.classList.add('noimg'); } }),
@@ -1490,6 +1518,10 @@
      ============================================================ */
   function render() {
     const app = document.getElementById('app');
+    // カード説明（sheet）が開いている間は、他人の行動などで再描画されてもスクロール位置を保つ。
+    // （全再構築で scrollTop が0に戻り「閉じる」まで毎回スクロールし直す不便を防ぐ）
+    const prevSheet = app.querySelector('.sheet:not(.reveal-modal)');
+    const keepSheetScroll = prevSheet ? prevSheet.scrollTop : null;
     app.innerHTML = '';
     if (UI.view !== 'game') UI.menuOpen = false; // 対戦外ではメニューを閉じておく
     let root;
@@ -1511,7 +1543,12 @@
     // ログ欄は常に最新行が見える位置へ（全再構築で scrollTop が0に戻るため毎回合わせる）
     const logEl = app.querySelector('.log');
     if (logEl) logEl.scrollTop = logEl.scrollHeight;
-    if (UI.sheet) app.appendChild(viewSheet());
+    if (UI.revealView != null) { const rm = viewRevealModal(); if (rm) app.appendChild(rm); }
+    if (UI.sheet) {
+      const sh = viewSheet();
+      app.appendChild(sh);
+      if (keepSheetScroll != null) sh.scrollTop = keepSheetScroll; // 開いていた位置を復元
+    }
     if (UI.logModal) app.appendChild(viewLogModal());
     if (UI.pickZoom) app.appendChild(viewPickZoom()); // 廃棄/獲得カードの拡大確認（最前面）
     if (UI.confirm) app.appendChild(viewConfirm());

@@ -657,27 +657,37 @@ s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'bureaucrat' });
 ok(s2.players[0].deck[0] === 'copper', '銀貨切れなら山札の上は変わらない');
 ok(!s2.log.some((l) => l.includes('銀貨を山札の上に獲得')), '銀貨切れ時に誤った獲得ログを出さない');
 
-console.log('=== 公開(reveal)チャネル: 役人が表向きカードを全員に見せる ===');
-// 役人: 相手が勝利点を山札の上に置く → reveal にそのカードが入り、相手視点でもマスクされず見える
+console.log('=== 公開(reveal)チャネル: 席ごとに保持し全員に見せる ===');
+// 役人: 相手(席1)が勝利点を山札の上に置く → reveals[1] にそのカードが入り、相手視点でもマスクされず見える
 s = E.createInitialState(['A', 'B']);
 s.players[0].hand = ['bureaucrat'];
 s.players[1].hand = ['estate', 'copper', 'copper'];
 s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'bureaucrat' });
 s2 = E.reduce(s2, { type: 'BUREAUCRAT_PUT', card: 'estate' });
-ok(s2.reveal && s2.reveal.cards[0] === 'estate', '役人: 公開した勝利点が reveal に入る');
+ok(s2.reveals && s2.reveals[1] && s2.reveals[1].cards[0] === 'estate', '役人: 公開した勝利点が reveals[席1] に入る');
+ok(s2.revealLatest === 1, 'revealLatest が公開した席を指す');
 const maskedFoe = E.maskStateFor(s2, 0); // 公開した本人(席1)以外＝席0視点
-ok(maskedFoe.reveal && maskedFoe.reveal.cards[0] === 'estate', '役人: 公開は相手視点でもマスクされない（公開情報）');
+ok(maskedFoe.reveals && maskedFoe.reveals[1] && maskedFoe.reveals[1].cards[0] === 'estate', '役人: 公開は相手視点でもマスクされない（公開情報）');
 ok(maskedFoe.players[1].hand.every((c) => c === 'back'), '役人: 一方で相手の手札自体は伏せたまま');
+// 複数の相手が公開 → 各席に残る（最後の1人で上書きされない）: 3人で密偵
+let sp = E.createInitialState(['A', 'B', 'C'], ['spy', 'village', 'market', 'smithy', 'militia', 'moat', 'cellar', 'mine', 'remodel', 'workshop'], { startActive: 0 });
+sp.players[0].hand = ['spy']; sp.players[0].deck = ['gold', 'copper'];
+sp.players[1].deck = ['silver', 'copper']; sp.players[2].deck = ['estate', 'copper'];
+sp = E.reduce(sp, { type: 'PLAY_ACTION', card: 'spy' });
+// 各席の公開を順に解決（自分→相手2人）。decideは「そのまま」を選ぶ。
+let guard = 0;
+while (sp.pending && sp.pending.type === 'spy' && guard++ < 10) sp = E.reduce(sp, { type: 'SPY_DECIDE', discard: false });
+ok(sp.reveals && sp.reveals[1] && sp.reveals[2], '密偵: 席1と席2の公開が両方残る（最後の人で上書きされない）');
 // 役人: 勝利点を持たない → 手札全体を公開
 s = E.createInitialState(['A', 'B']);
 s.players[0].hand = ['bureaucrat'];
 s.players[1].hand = ['copper', 'silver', 'smithy'];
 s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'bureaucrat' });
-ok(s2.reveal && s2.reveal.cards.length === 3, '役人: 勝利点なしなら手札全体を公開');
-// 手番を跨ぐと reveal は消える
+ok(s2.reveals && s2.reveals[1] && s2.reveals[1].cards.length === 3, '役人: 勝利点なしなら手札全体を公開');
+// 手番を跨ぐと reveals は消える
 s2.turn.phase = 'buy';
 s2 = E.reduce(s2, { type: 'END_TURN' });
-ok(s2.reveal == null, 'reveal は手番を跨ぐとクリアされる');
+ok(!s2.reveals || Object.keys(s2.reveals).length === 0, 'reveals は手番を跨ぐとクリアされる');
 
 console.log('\n========================================');
 console.log(`結果: ${pass} 件成功, ${fail} 件失敗`);
