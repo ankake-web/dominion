@@ -33,22 +33,30 @@ function go(v) { UI.view = v; UI.sheet = null; DOM.render(); timers.length = 0; 
 function setState(s) { UI.store.state = s; DOM.render(); timers.length = 0; }
 
 try {
-  console.log('=== 設定画面: 王国カードのセット選択 ===');
+  // セット選択プルダウンの option を選んで change を発火
+  function selectSet(id) {
+    const sel = $('.set-select');
+    if (!sel) throw new Error('.set-select が無い');
+    sel.value = id; sel.dispatchEvent(new win.Event('change'));
+  }
+  console.log('=== 設定画面: 王国カードのセット選択（プルダウン）===');
   go('setup');
-  ok(byText('.seg-btn', '陰謀(拡張)'), 'セット切替に「陰謀(拡張)」がある');
-  ok(byText('.seg-btn', 'ランダム'), '「ランダム」がある');
-  // ランダムを選ぶと抽選元（基本＋陰謀／陰謀のみ／基本のみ）が出る
-  clickText('.seg-btn', 'ランダム');
-  ok(UI.setup.kingdomSet === 'random', 'ランダム=既定は基本＋陰謀');
-  ok(byText('.seg-btn', '陰謀のみ') && byText('.seg-btn', '基本のみ'), '抽選元の選択肢が出る');
-  clickText('.seg-btn', '陰謀のみ');
+  ok($('.set-select'), 'セット選択プルダウンがある');
+  ok(byText('.set-select option', 'ビッグマネー（お金重視）'), 'おすすめ「ビッグマネー」が選べる');
+  ok(byText('.set-select option', '勝利点レース'), '陰謀おすすめ「勝利点レース」がある');
+  ok(byText('.set-select option', '基本＋陰謀から'), 'ランダム（基本＋陰謀）がある');
+  selectSet('random-intrigue');
   ok(UI.setup.kingdomSet === 'random-intrigue', '陰謀のみランダムを選択');
-  clickText('.seg-btn', '陰謀(拡張)');
+  selectSet('big-money');
+  ok(UI.setup.kingdomSet === 'big-money', 'ビッグマネーを選択');
+  selectSet('intrigue');
   ok(UI.setup.kingdomSet === 'intrigue', '陰謀セットを選択');
+  // 固定セットは収録カード名が下に出る
+  ok($('.set-note') && $('.set-note').textContent.includes('貴族'), '選択セットの収録カードが表示される');
 
   console.log('=== CPU対戦を陰謀セットで開始 ===');
   go('setup');
-  clickText('.seg-btn', '陰謀(拡張)');
+  selectSet('intrigue');
   clickText('button', 'この設定で開始');
   ok(UI.view === 'game' && UI.store && UI.store.state, 'ゲーム開始');
   const kingdom = UI.store.state.kingdom;

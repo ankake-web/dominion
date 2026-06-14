@@ -237,25 +237,35 @@
         h('button', { class: 'seg-btn' + (o.value === current ? ' on' : ''), onclick: () => onPick(o.value) }, o.label)));
   }
 
-  // 王国カードのセット選択。基本/陰謀/ランダムを選び、ランダム時は抽選元（基本＋陰謀／陰謀のみ／基本のみ）も出す。
+  // 王国カードのセット選択。おすすめセット（固定10種）＋ランダムをプルダウンで選ぶ。
   // current は CARD_SETS の id。onChange(newId) で確定（ローカルは setup に保存、オンラインはサーバへ送信）。
+  // 選んだセットの中身（固定セットは収録カード名／ランダムは説明）を下に出して分かりやすくする。
   function kingdomSetPicker(current, onChange) {
     current = current || 'basic';
-    const isRandom = current.indexOf('random') === 0;
-    const modeRow = segmented(
-      [{ value: 'basic', label: '基本' }, { value: 'intrigue', label: '陰謀(拡張)' }, { value: 'random', label: 'ランダム' }],
-      isRandom ? 'random' : current,
-      (v) => onChange(v)); // 'ランダム' を選ぶと既定の「基本＋陰謀ランダム」へ
-    if (!isRandom) return modeRow;
-    const scopeRow = segmented(
-      [{ value: 'random', label: '基本＋陰謀' }, { value: 'random-intrigue', label: '陰謀のみ' }, { value: 'random-basic', label: '基本のみ' }],
-      current, (v) => onChange(v));
-    return h('div', null,
-      modeRow,
-      h('div', { style: 'margin-top:8px' },
-        h('div', { style: 'font-size:12px;color:var(--ink-dim);margin-bottom:4px' }, '抽選元'),
-        scopeRow),
-      h('p', { class: 'muted', style: 'font-size:12px;margin:6px 0 0' }, '毎回ランダムに10種を選びます。'));
+    const sets = (DOM.CARD_SETS || []).slice();
+    // group ごとに optgroup へまとめる（出現順を保持）
+    const groups = [];
+    sets.forEach((s) => {
+      const key = s.group || 'その他';
+      let g = groups.find((x) => x.label === key);
+      if (!g) { g = { label: key, items: [] }; groups.push(g); }
+      g.items.push(s);
+    });
+    const sel = h('select', { class: 'set-select', onchange: (e) => onChange(e.target.value) },
+      groups.map((g) => h('optgroup', { label: g.label },
+        g.items.map((s) => h('option', { value: s.id }, s.name)))));
+    sel.value = current; // 選択中を反映（option の selected 属性に頼らず確実に）
+    const set = sets.find((s) => s.id === current);
+    let note;
+    if (set && set.randomFrom) {
+      note = h('p', { class: 'muted set-note' }, '毎回ランダムに10種を選びます。');
+    } else if (set && set.kingdom) {
+      note = h('p', { class: 'muted set-note' },
+        '収録：' + set.kingdom.map((id) => (DOM.CARDS[id] ? DOM.CARDS[id].name : id)).join('・'));
+    } else {
+      note = null;
+    }
+    return h('div', { class: 'set-picker' }, sel, note);
   }
 
   /* ---------- 対戦設定（2〜4人・人間/CPU・強さ） ---------- */

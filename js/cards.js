@@ -159,12 +159,29 @@
   //   kingdom 固定 … おすすめ10種をそのまま使う
   //   randomFrom  … 指定した拡張プールを合わせた中から毎回10種を抽選
   // 拡張を増やすときは POOLS に足し、ここに固定/ランダムのセットを追記するだけ。
+  //   group … UIのプルダウンで optgroup の見出しに使う分類。
   DOM.CARD_SETS = [
-    { id: 'basic',           name: '基本セット',             kingdom: DOM.KINGDOM },
-    { id: 'intrigue',        name: '陰謀（拡張）',           kingdom: DOM.KINGDOM_INTRIGUE },
-    { id: 'random',          name: 'ランダム（基本＋陰謀）', randomFrom: ['basic', 'intrigue'] },
-    { id: 'random-intrigue', name: 'ランダム（陰謀のみ）',   randomFrom: ['intrigue'] },
-    { id: 'random-basic',    name: 'ランダム（基本のみ）',   randomFrom: ['basic'] },
+    // ---- おすすめ：基本セット（公式の推奨セット）----
+    { id: 'basic',           group: 'おすすめ・基本',     name: '初めての10種（基本）', kingdom: DOM.KINGDOM },
+    { id: 'big-money',       group: 'おすすめ・基本',     name: 'ビッグマネー（お金重視）',
+      kingdom: ['chapel', 'moneylender', 'feast', 'throne_room', 'bureaucrat', 'chancellor', 'market', 'mine', 'laboratory', 'adventurer'] },
+    { id: 'interaction',     group: 'おすすめ・基本',     name: '対戦・妨害',
+      kingdom: ['moat', 'village', 'bureaucrat', 'chancellor', 'militia', 'spy', 'thief', 'council_room', 'festival', 'library'] },
+    { id: 'size-distortion', group: 'おすすめ・基本',     name: 'デッキ膨張',
+      kingdom: ['cellar', 'chapel', 'woodcutter', 'workshop', 'gardens', 'village', 'feast', 'thief', 'laboratory', 'witch'] },
+    // ---- おすすめ：陰謀 ----
+    { id: 'intrigue',        group: 'おすすめ・陰謀',     name: '初めての10種（陰謀）', kingdom: DOM.KINGDOM_INTRIGUE },
+    { id: 'victory-dance',   group: 'おすすめ・陰謀',     name: '勝利点レース',
+      kingdom: ['great_hall', 'pawn', 'masquerade', 'scout', 'ironworks', 'bridge', 'duke', 'harem', 'nobles', 'upgrade'] },
+    { id: 'secret-schemes',  group: 'おすすめ・陰謀',     name: '策謀コンボ',
+      kingdom: ['courtyard', 'pawn', 'shanty_town', 'steward', 'wishing_well', 'baron', 'conspirator', 'mining_village', 'swindler', 'torturer'] },
+    // ---- おすすめ：基本＋陰謀ミックス ----
+    { id: 'starter-mix',     group: 'おすすめ・ミックス', name: '入門ミックス',
+      kingdom: ['moat', 'pawn', 'courtyard', 'village', 'steward', 'militia', 'smithy', 'baron', 'bridge', 'market'] },
+    // ---- ランダム（毎回その場で10種を抽選）----
+    { id: 'random',          group: 'ランダム',           name: '基本＋陰謀から', randomFrom: ['basic', 'intrigue'] },
+    { id: 'random-intrigue', group: 'ランダム',           name: '陰謀のみから',   randomFrom: ['intrigue'] },
+    { id: 'random-basic',    group: 'ランダム',           name: '基本のみから',   randomFrom: ['basic'] },
   ];
   // プールから重複なく n 種を選ぶ（コスト順に並べて返す）
   DOM.randomKingdom = function (n, pool) {

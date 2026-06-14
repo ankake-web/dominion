@@ -154,6 +154,28 @@ input.code-input {
   font-size: 30px;
   font-weight: 700;
 }
+/* 王国カードのセット選択プルダウン */
+.set-picker { width: 100%; }
+.set-select {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 40px 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background-color: #15131f;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 16px;
+  -webkit-appearance: none; -moz-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%23d8b46a' d='M0 0h12L6 8z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+}
+.set-select:focus { outline: none; border-color: var(--gold); }
+.set-select optgroup { color: var(--ink-dim); background: #15131f; }
+.set-select option { color: var(--ink); background: #15131f; }
+.set-note { font-size: 12px; color: var(--ink-dim); margin: 6px 2px 0; line-height: 1.5; }
+
 .code-display {
   font-family: 'Cinzel', serif;
   font-size: 42px;
