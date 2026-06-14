@@ -1560,6 +1560,9 @@
     if (UI.toast) app.appendChild(h('div', { class: 'toast' }, UI.toast));
     const histEl = app.querySelector('.log-history');
     if (histEl) histEl.scrollTop = histEl.scrollHeight;
+    // モーダル表示中は背面（盤面）のスクロールをロックする
+    const modalOpen = !!(UI.sheet || UI.revealView != null || UI.logModal || UI.pickZoom || UI.confirm);
+    document.documentElement.classList.toggle('modal-open', modalOpen);
     maybeRunCpu();
     maybeAutoSkipAction();
     turnNoticeTick();

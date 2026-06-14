@@ -151,11 +151,13 @@ try {
   ok(node1, 'カード説明が専用ホストに表示される');
   ok(node1 && !node1.textContent.includes('とじる'), '下部「とじる」は廃止（✕のみ）');
   ok(node1 && node1.querySelector('.sheet-close'), '右上✕がある');
+  ok(doc.documentElement.classList.contains('modal-open'), '表示中は背面スクロールをロック(modal-open)');
   DOM.render(); // 背景の再描画（UI.sheet は同じ参照）
   const node2 = doc.getElementById('sheet-host').querySelector('.sheet');
   ok(node1 === node2, '同じ表示要求では sheet を作り直さない＝スクロール位置が保たれる');
   UI.sheet = null; DOM.render();
   ok(!doc.getElementById('sheet-host'), '閉じるとホストが撤去される');
+  ok(!doc.documentElement.classList.contains('modal-open'), '閉じると背面ロック解除');
 
   console.log('=== カード一覧に拡張カードが載る ===');
   go('cardList');
