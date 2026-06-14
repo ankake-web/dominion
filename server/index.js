@@ -11,7 +11,7 @@
 //                      オリジン（例 https://<user>.github.io）を設定する。未設定=全許可。
 
 const http = require('node:http');
-const { attachGameServer, installProcessGuards } = require('./gameServer');
+const { attachGameServer, installProcessGuards, status } = require('./gameServer');
 
 // プロセスごと落とさない最後の砦。Render で落ちると in-memory の全対戦が消えて復帰不能になるため、
 // 未処理例外/Rejection はログに残して稼働を継続する（uncaughtException/unhandledRejection を捕捉）。
@@ -28,6 +28,12 @@ const httpServer = http.createServer((req, res) => {
   if (req.method === 'GET' && (req.url === '/' || req.url === '/health')) {
     res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
     res.end('ok');
+    return;
+  }
+  // 診断: 永続化が有効か（env設定の効き確認用）と部屋数
+  if (req.method === 'GET' && req.url === '/status') {
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(status()));
     return;
   }
   res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });

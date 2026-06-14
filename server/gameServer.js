@@ -546,4 +546,7 @@ function attachGameServer(httpServer, opts = {}) {
   return wss;
 }
 
-module.exports = { attachGameServer, installProcessGuards, WS_PATH, isOriginAllowed, rooms, roomSnapshot, restoreRoom, __reset: () => { for (const r of rooms.values()) destroyRoom(r); rooms.clear(); } };
+// 診断用: 永続化が有効か・部屋数を返す（/status で公開）
+function status() { return { persist: !!store.enabled, rooms: rooms.size }; }
+
+module.exports = { attachGameServer, installProcessGuards, WS_PATH, isOriginAllowed, rooms, roomSnapshot, restoreRoom, status, __reset: () => { for (const r of rooms.values()) destroyRoom(r); rooms.clear(); } };
