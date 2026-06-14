@@ -111,6 +111,26 @@
     }
     return null;
   }
+
+  // 公開（reveal）ストリップ: 役人・密偵・泥棒・貢物・願いの井戸・斥候などで「表向きにされたカード」を
+  // 実際の画像で大きく見せる。自分の盤面に変化が出ない公開（相手の山札の上に置く等）は、これが無いと
+  // 「何も起きていない」ように見えるため。直近の公開だけを board-head（常時表示の上部）に出す。
+  function viewRevealStrip(state) {
+    const r = state && state.reveal;
+    if (!r || !r.cards || !r.cards.length) return null;
+    const isNew = r.seq !== UI.lastRevealSeq; // seq が新しい時だけ光らせる（無関係な再描画で点滅させない）
+    UI.lastRevealSeq = r.seq;
+    const cards = r.cards.map((id) => {
+      const def = DOM.CARDS[id] || { name: id };
+      return h('div', { class: 'reveal-card', onclick: () => showSheet(id) },
+        h('img', { class: 'reveal-img', src: 'asset/thumb/' + id + '.jpg', alt: def.name, decoding: 'async',
+          onerror: function () { this.style.display = 'none'; if (this.parentElement) this.parentElement.classList.add('art-failed'); } }),
+        h('div', { class: 'reveal-name' }, def.name));
+    });
+    return h('div', { class: 'reveal-strip' + (isNew ? ' flash' : '') },
+      h('div', { class: 'reveal-head' }, '👁 ' + r.by + '：' + (r.note || '公開')),
+      h('div', { class: 'reveal-cards' }, cards));
+  }
   function cardArt(id) {
     // 盤面（手札・サプライ）は軽量サムネを使う。拡大表示だけフル画像。
     // eager + async decode で「スマホでカードが表示されない」を防ぐ（サムネは軽いので一括読込でOK）。
@@ -597,7 +617,7 @@
 
     return h('div', { class: 'board' },
       // スクロールしても常に見えるヘッダー（手番・残量・相手・直近の行動）
-      h('div', { class: 'board-head' }, top, othersStrip, moveBar),
+      h('div', { class: 'board-head' }, top, othersStrip, moveBar, viewRevealStrip(state)),
       UI.mode === 'online' ? h('div', { class: 'muted', style: 'font-size:11px;text-align:center;margin:-2px 0 4px' }, '部屋 ' + UI.roomCode + '　/　あなた: ' + me.name) : null,
       banner,
       h('div', { class: 'section-h' }, 'サプライ（場の山札）'),

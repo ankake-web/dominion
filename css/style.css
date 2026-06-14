@@ -216,6 +216,31 @@ input.code-input {
 }
 .last-move .muted { color: var(--ink-dim); font-weight: 500; }
 
+/* ---------- 公開（reveal）ストリップ ---------- */
+.reveal-strip {
+  margin: 3px 2px 2px; padding: 4px 8px 6px;
+  background: rgba(120, 170, 255, 0.10);
+  border: 1px solid rgba(140, 180, 255, 0.40);
+  border-radius: 12px;
+}
+.reveal-strip.flash { animation: revealFlash 0.9s ease-out; }
+.reveal-head { font-size: 12px; font-weight: 700; color: #9fc2ff; margin-bottom: 4px; }
+.reveal-cards { display: flex; flex-wrap: wrap; gap: 6px; }
+.reveal-card { width: 46px; text-align: center; cursor: pointer; }
+.reveal-img {
+  width: 46px; height: 69px; object-fit: cover; border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.25); display: block;
+}
+.reveal-card.art-failed .reveal-img { display: none; }
+.reveal-name {
+  font-size: 9px; line-height: 1.1; margin-top: 2px; color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+@keyframes revealFlash {
+  0%   { background: rgba(140, 180, 255, 0.55); box-shadow: 0 0 0 2px rgba(140, 180, 255, 0.7); transform: scale(1.015); }
+  100% { background: rgba(120, 170, 255, 0.10); box-shadow: none; transform: none; }
+}
+
 /* ---------- 相手バー ---------- */
 .opp-bar {
   display: flex;

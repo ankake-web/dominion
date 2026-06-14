@@ -110,6 +110,19 @@
     if (state.log.length > 200) state.log = state.log.slice(-200);
   }
 
+  /* ---------- 公開（reveal）チャネル ----------
+     「カードを表向きにした」出来事を全員に見せるための公開情報。ログとは別に
+     “直近の公開だけ” を保持し、UI が実際のカード画像で大きく示す。役人などは
+     自分の盤面に見える変化が無いため、これが無いと「何も起きていない」ように見える。
+     by=公開した人の名前 / cards=公開カードid配列 / note=どの効果による公開か。
+     公開は公式どおり全員に見える情報なので maskStateFor でも伏せない（clone がそのまま運ぶ）。*/
+  function reveal(state, by, cards, note) {
+    const list = (cards || []).filter(Boolean).slice(0, 8);
+    if (!list.length) return;
+    state.revealSeq = (state.revealSeq || 0) + 1;
+    state.reveal = { by: by, cards: list.slice(), note: note || '', seq: state.revealSeq };
+  }
+
   /* ---------- カード操作 ---------- */
   function removeOne(arr, cardId) {
     const i = arr.indexOf(cardId);
@@ -329,6 +342,7 @@
       spyEnterTarget(state, attacker, queue);
       return;
     }
+    reveal(state, tp.name, [tp.deck[0]], '密偵で山札の上を公開');
     state.pending = { type: 'spy', stage: 'decide', player: attacker, source: attacker, victim: target, card: tp.deck[0], queue };
   }
 
@@ -350,6 +364,7 @@
       if (v.deck.length === 0) break;
       revealed.push(v.deck.shift());
     }
+    if (revealed.length) reveal(state, v.name, revealed, '泥棒で山札の上を公開');
     const treasures = revealed.filter((c) => DOM.isType(c, 'treasure'));
     if (treasures.length) {
       state.pending = { type: 'thief', stage: 'pick', player: attacker, source: attacker, victim, revealed, treasures, queue };
@@ -396,6 +411,7 @@
       state.pending = { type: 'bureaucrat', stage: 'put', player: victim, source, victim, queue };
     } else {
       log(state, `${v.name} は勝利点を持っておらず手札を公開した（役人）。`);
+      reveal(state, v.name, v.hand, '役人：勝利点なしの手札を公開');
       bureaucratEnterVictim(state, source, queue);
     }
   }
@@ -554,6 +570,7 @@
           }
           revealed.push(p.deck.shift());
         }
+        if (revealed.length) reveal(state, p.name, revealed, '斥候で山札の上を公開');
         // 勝利点は手札へ、それ以外は山札の上へ戻す（順序は選択）
         const vics = revealed.filter((c) => DOM.isType(c, 'victory'));
         const rest = revealed.filter((c) => !DOM.isType(c, 'victory'));
@@ -693,6 +710,7 @@
           }
           revealed.push(left.deck.shift());
         }
+        if (revealed.length) reveal(state, left.name, revealed, '貢物で山札の上を公開');
         revealed.forEach((c) => left.discard.push(c));
         if (revealed.length) log(state, `${left.name} は山札の上 ${revealed.length}枚 を公開して捨てた。`);
         // 異なる名前ごとにボーナス（同名2枚は1回ぶん。多重タイプは各該当を独立に付与）
@@ -768,6 +786,7 @@
   /* ---------- クリーンアップ＆次の番へ ---------- */
   function cleanupAndAdvance(state) {
     state.replay = []; // 玉座の間の保留分が万一残っても次手番に持ち越さない
+    state.reveal = null; // 公開表示は手番をまたいで持ち越さない（次の手番で消える）
     const pi = state.turn.active;
     const p = state.players[pi];
     p.discard.push(...p.inPlay, ...p.hand);
@@ -1121,6 +1140,7 @@
         if (p.deck.length === 0 && p.discard.length > 0) { p.deck = shuffle(p.discard); p.discard = []; }
         const top = p.deck.length ? p.deck[0] : null;
         if (top != null) {
+          reveal(state, p.name, [top], '願いの井戸で山札の上を公開');
           log(state, `${p.name} は「${C()[named].name}」を宣言。山札の上は「${C()[top].name}」。`);
           if (top === named) { p.hand.push(p.deck.shift()); log(state, '当たり！ 手札に加えた。'); }
         } else {
@@ -1258,6 +1278,7 @@
         if (v.hand.indexOf(card) < 0 || !DOM.isType(card, 'victory')) return state; // 勝利点のみ
         removeOne(v.hand, card);
         v.deck.unshift(card);
+        reveal(state, v.name, [card], '役人で公開し山札の上へ');
         log(state, `${v.name} は「${C()[card].name}」を山札の上に置いた（役人）。`);
         bureaucratEnterVictim(state, pd.source, pd.queue);
         return state;

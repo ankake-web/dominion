@@ -101,6 +101,18 @@ try {
   ok(fx, '獲得演出のカード要素(.gain-fx)が生成される');
   ok(fx && fx.querySelector('.gain-note') && fx.querySelector('.gain-note').textContent.includes('獲得'), '「○○ を獲得！」表示');
 
+  console.log('=== 公開ストリップ: 役人で公開したカードが画像付きで盤面に出る ===');
+  UI.mode = 'local'; UI.localViewer = 0; UI.mySeat = null;
+  let rv = E.createInitialState(['P1', 'P2'], DOM.KINGDOM, { startActive: 0 });
+  rv.players[0].hand = ['bureaucrat'];
+  rv.players[1].hand = ['estate', 'copper', 'copper'];
+  rv = E.reduce(rv, { type: 'PLAY_ACTION', card: 'bureaucrat' });
+  rv = E.reduce(rv, { type: 'BUREAUCRAT_PUT', card: 'estate' });
+  setState(rv);
+  ok($('.reveal-strip'), '公開ストリップが表示される');
+  ok($('.reveal-strip .reveal-img'), '公開カードの画像要素がある');
+  ok($('.reveal-strip').textContent.includes('屋敷'), '公開カード名（屋敷）が出る');
+
   console.log('=== カード一覧に拡張カードが載る ===');
   go('cardList');
   ok(doc.body.textContent.includes('陰謀・拡張'), 'カード一覧に拡張グループ');
