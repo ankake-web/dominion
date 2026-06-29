@@ -1,6 +1,7 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-06-29 / branch `main` / **全変更は未コミット**（本番は無傷）。
+最終更新: 2026-06-30 / branch `main` / **コミット&デプロイ済み**（commit `b2de937` を `origin/main` に push＝GitHub Pages 公開 https://ankake-web.github.io/dominion/ ・Render再デプロイ）。
+これまでの蓄積分（第二版・陰謀・単一ソース化・整合性/UIテスト等）＋カード完成画像方式を一括で本番反映した。
 新セッションは **まず `npm test` を実行して 1205件グリーンを確認**してから着手すること。
 広い文脈（第二版化・単一ソース化・整合性テスト・オンライン再接続など過去分）は `docs/handover.md` を参照。
 
@@ -79,7 +80,8 @@
   - **8スキンの色**（`base` / `ramp{sh,mid,hi}`）：copper・silver・gold は専用メタル（金貨は金ランプ維持）、victory/curse/action/attack/reaction は CSS正本 `--frame`(`#1c5e31/#482670/#234d86/#7e2422/#15605b`)系のメタルランプ。財宝の汎用(harem/hoard)は金スキン。スキン判定＝`id==copper/silver/gold ? その金属 : type==treasure ? gold : type`。
   - **文字座標（master 1024×1536・build4実測）**：コスト`bold 140px Georgia`を(126,116)中央・白＋濃縁取り／名前`Shippori Mincho 800`を(600,124)中央・**幅700pxで84→30pxへ自動縮小**＋字間0.12em／種別「日本語 / English」を(520,250)・600pxで36→16px縮小／効果＝羊皮紙`{x62,y1140,w903,h333}`に左寄せ・46→16pxで全行が収まるよう自動縮小＋日本語1文字単位で折返し＋縦中央、濃色`#34250c`。Shippori MinchoはGoogle Fontsから読込（fontsOk=true）。
   - **ビルダー保全**：生成スクリプトは scratchpad `build-cards.js` に退避（直下の `_buildall.tmp.js` は規約通り削除）。テキスト/色を変えたいときはこれを編集して再実行すれば全77枚を再生成できる。**再実行は scratchpadからだと puppeteer解決に失敗するので、直下に `_buildall.tmp.js` としてコピーして `node _buildall.tmp.js`→削除**。
-  - **見栄え調整（ユーザーFB反映・2026-06-30）**：(1) コスト数字を **Georgia→Cinzel** に変更（Georgiaは2が小・6/8が上に飛ぶ「オールドスタイル数字」が原因。Cinzelは均一なライニング数字）＋`actualBoundingBox`で実インクをコイン中心(126,126)に縦中央そろえ・150px。(2) **名前を拡大**（開始84→96px・幅上限700→720・最小30→34）。(3) **効果を拡大**（開始46→58px・行高1.42→1.34）。(4) **地のまだら模様を強調**（緑→地のfbmを 細目`x/26`±0.24＋広いムラ`x/120,y/96`±0.14 の二層に・粒子±5）。全77枚を再出力（モンタージュ目視OK）。**未コミット**。
+  - **見栄え調整（ユーザーFB反映・2026-06-30）**：(1) コスト数字を **Georgia→Cinzel** に変更（Georgiaは2が小・6/8が上に飛ぶ「オールドスタイル数字」が原因。Cinzelは均一なライニング数字）＋`actualBoundingBox`で実インクをコイン中心(126,126)に縦中央そろえ・150px。(2) **名前を拡大**（開始84→96px・幅上限700→720・最小30→34）。(3) **効果を拡大**（開始46→58px・行高1.42→1.34）。(4) **地のまだら模様を強調**（緑→地のfbmを 細目`x/26`＋広いムラ`x/120,y/96` の二層に。最終は係数 fine`0.40`/broad`0.24`・粒子±6 まで濃く＝ユーザー「もっと濃く」反映）。
+  - **配信用WebP化＋本番デプロイ（2026-06-30）**：出力を `asset/cards/<id>.png`(3MB×77=233MBで重すぎ)→ **768×1152のWebP `asset/cards/<id>.webp`（平均147KB・計11MB）** に変更。cards.htmlも `.webp` 参照に。`.gitignore` で重い原本（`images/`・`asset/art/`・`asset/cards/*.png`）を除外し webp のみ追跡。`deploy.yml` に `asset/cards/*.webp` のコピーを追加＆削除済み `data/cards.json` のコピー行を除去、`sw.js` を v12 へ。**commit `b2de937` を push 済み**→ Pages デプロイ成功、`cards.html`・各webp が HTTP200 で配信中。**ビルダー（scratchpad `build-cards.js`）はWebP出力版に更新済み**。
   - **cards.html プレビューに組み込み済み（ユーザー選択「cards.htmlプレビューのみ」）**：[cards.html](cards.html) を**完成画像 `asset/cards/<id>.png` 直表示**に変更（`makeCard()`＝`<img class="dcard-full">`、`onerror`で従来 `DOM.cardView` 合成にフォールバック）。旧 `demoart` チェックを廃し**「旧・コード合成方式で表示（比較用）」トグル**を追加。`.dcard-full`は`drop-shadow`で角透過に追従。puppeteer file:// 検証で全154ノード（77×2グリッド）loaded=154/broken=0/fallback=0。`npm test` **1205緑/0失敗**を維持。cardview.js/ui.js（盤面）は**未変更**。
   - **盤面 `js/ui.js` への反映は今回スコープ外**（ユーザー判断で「プレビューのみ」）。**全て未コミット**。
 
