@@ -126,7 +126,7 @@
     const def = DOM.CARDS[id] || { name: id };
     return h('div', { class: 'reveal-badge' + (isNew ? ' flash' : '') },
       h('span', { class: 'reveal-eye' }, '👁'),
-      h('img', { class: 'reveal-badge-img', src: 'asset/thumb/' + id + '.jpg', alt: def.name,
+      h('img', { class: 'reveal-badge-img', src: 'asset/cards/' + id + '.webp', alt: def.name,
         onerror: function () { this.style.display = 'none'; } }),
       r.cards.length > 1 ? h('span', { class: 'reveal-badge-n' }, '×' + r.cards.length) : null);
   }
@@ -146,7 +146,7 @@
         h('div', { class: 'reveal-cards' }, r.cards.map((id) => {
           const def = DOM.CARDS[id] || { name: id };
           return h('div', { class: 'reveal-card' },
-            h('img', { class: 'reveal-img', src: 'asset/thumb/' + id + '.jpg', alt: def.name,
+            h('img', { class: 'reveal-img', src: 'asset/cards/' + id + '.webp', alt: def.name,
               onerror: function () { this.style.display = 'none'; if (this.parentElement) this.parentElement.classList.add('art-failed'); } }),
             h('div', { class: 'reveal-name' }, def.name));
         })),
@@ -156,7 +156,7 @@
     // 盤面（手札・サプライ）は軽量サムネを使う。拡大表示だけフル画像。
     // eager + async decode で「スマホでカードが表示されない」を防ぐ（サムネは軽いので一括読込でOK）。
     return h('img', {
-      class: 'card-art', src: 'asset/thumb/' + id + '.jpg', alt: DOM.CARDS[id].name, decoding: 'async',
+      class: 'card-art', src: 'asset/cards/' + id + '.webp', alt: DOM.CARDS[id].name, decoding: 'async',
       onerror: function () { this.style.display = 'none'; if (this.parentElement) this.parentElement.classList.add('art-failed'); },
     });
   }
@@ -1205,7 +1205,7 @@
     return h('div', { class: 'scrim pickzoom-scrim', onclick: (e) => { if (e.target.classList.contains('scrim')) { UI.pickZoom = null; render(); } } },
       h('div', { class: 'pickzoom' },
         h('div', { class: 'zoom-wrap ' + typeClass(pz.id) },
-          h('img', { class: 'zoom-img', src: 'asset/' + pz.id + '.jpg', alt: c.name, onerror: function () { this.style.display = 'none'; if (this.parentElement) this.parentElement.classList.add('noimg'); } }),
+          h('img', { class: 'zoom-img', src: 'asset/cards/' + pz.id + '.webp', alt: c.name, onerror: function () { this.style.display = 'none'; if (this.parentElement) this.parentElement.classList.add('noimg'); } }),
           h('div', { class: 'zoom-fallback' }, c.name)),
         h('div', { class: 'pickzoom-actions' },
           h('button', { class: 'btn btn-primary btn-block', onclick: () => { const f = pz.onConfirm; UI.pickZoom = null; if (f) f(); } }, (pz.label || 'これにする') + 'を確定'),
@@ -1224,7 +1224,7 @@
         h('button', { class: 'sheet-close', onclick: closeSheet }, '✕'),
         h('div', { class: 'grip' }),
         h('div', { class: 'zoom-wrap ' + typeClass(id) },
-          h('img', { class: 'zoom-img', src: 'asset/' + id + '.jpg', alt: c.name, onerror: function () { this.style.display = 'none'; if (this.parentElement) this.parentElement.classList.add('noimg'); } }),
+          h('img', { class: 'zoom-img', src: 'asset/cards/' + id + '.webp', alt: c.name, onerror: function () { this.style.display = 'none'; if (this.parentElement) this.parentElement.classList.add('noimg'); } }),
           h('div', { class: 'zoom-fallback' }, c.name)),
         h('div', { class: 'zoom-info' },
           h('div', { class: 'zoom-head' },
@@ -1628,14 +1628,14 @@
   }
 
   /* ---------- フル画像の先読み ----------
-     拡大表示(asset/<id>.jpg 約300KB)はタップ時に初取得だとモバイル回線で待たされる。
+     盤面・拡大表示は完成カード asset/cards/<id>.webp（平均約147KB）。タップ時の初取得待ちを避け、
      対戦に入ったら手すきの時間に全カードを裏で読み込んでおく（SWがあればキャッシュにも残る）。 */
   function preloadFullArt() {
     if (UI._artPreloaded || !DOM.CARDS) return;
     UI._artPreloaded = true;
     const kick = () => {
       try {
-        Object.keys(DOM.CARDS).forEach((id) => { const im = new Image(); im.src = 'asset/' + id + '.jpg'; });
+        Object.keys(DOM.CARDS).forEach((id) => { const im = new Image(); im.src = 'asset/cards/' + id + '.webp'; });
       } catch (e) { /* noop */ }
     };
     if (typeof requestIdleCallback === 'function') requestIdleCallback(kick, { timeout: 4000 });
@@ -1802,7 +1802,7 @@
 
     const glow = document.createElement('div'); glow.className = 'gain-glow';
     const card = document.createElement('div'); card.className = 'gain-card ' + typeClass(id);
-    const img = document.createElement('img'); img.className = 'gain-art'; img.src = 'asset/' + id + '.jpg'; img.alt = '';
+    const img = document.createElement('img'); img.className = 'gain-art'; img.src = 'asset/cards/' + id + '.webp'; img.alt = '';
     img.onerror = function () { this.style.display = 'none'; card.classList.add('noart'); };
     const cost = document.createElement('div'); cost.className = 'gain-cost'; cost.textContent = DOM.CARDS[id].cost;
     const fallback = document.createElement('div'); fallback.className = 'gain-fallback'; fallback.textContent = DOM.CARDS[id].name;

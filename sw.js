@@ -7,7 +7,7 @@
    - クロスオリジン（Google Fonts / WebSocket）は触らない。
    バージョンを上げると activate で旧キャッシュを全部捨てる。
    ============================================================ */
-const VERSION = 'v12';
+const VERSION = 'v13';
 const CACHE = 'dominion-' + VERSION;
 
 // オフラインに最低限必要なファイル（盤面サムネ含む・約1MB）
@@ -33,7 +33,7 @@ const CARD_IDS = ['copper', 'silver', 'gold', 'estate', 'duchy', 'province', 'cu
   // 拡張: 陰謀
   'courtyard', 'pawn', 'shanty_town', 'steward', 'wishing_well', 'baron', 'bridge',
   'conspirator', 'ironworks', 'mining_village', 'torturer', 'duke', 'nobles', 'harem'];
-const THUMBS = CARD_IDS.map((id) => './asset/thumb/' + id + '.jpg');
+const THUMBS = CARD_IDS.map((id) => './asset/cards/' + id + '.webp');
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
