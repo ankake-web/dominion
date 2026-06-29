@@ -127,7 +127,7 @@
                      text: '+1 アクション\n山札の上4枚を公開する。\n勝利点は手札に加え、\n残りを好きな順で山札の上に戻す。' },
     tribute:       { id: 'tribute',       name: '貢物',       cost: 5, types: ['action'],
                      text: '左隣のプレイヤーは山札の上2枚を公開して捨てる。\n公開された異なる名前ごとに：\nアクション＝+2アクション／財宝＝+2コイン／勝利点＝+2カード。' },
-    swindler:      { id: 'swindler',      name: '詐欺師',     cost: 5, types: ['action', 'attack'],
+    swindler:      { id: 'swindler',      name: '詐欺師',     cost: 3, types: ['action', 'attack'],
                      text: '+2 コイン\n他のプレイヤーは各自、山札の上1枚を廃棄する。\n廃棄したカードと同じコストのカードを、\nあなたが選んで与える。' },
     saboteur:      { id: 'saboteur',      name: '破壊工作員', cost: 5, types: ['action', 'attack'],
                      text: '他のプレイヤーは各自、コスト3以上のカードが出るまで\n山札の上を公開し、それを廃棄する。\nそれより2コイン以上安いカードを獲得してもよい。\n残りは捨てる。' },
@@ -137,23 +137,93 @@
                      text: '+2 カード\n各プレイヤーは同時に手札を1枚、左隣に渡す。\nその後、あなたは手札を1枚廃棄してもよい。' },
     secret_chamber:{ id: 'secret_chamber',name: '秘密の小部屋', cost: 2, types: ['action', 'reaction'],
                      text: '手札を好きな枚数捨て、捨てた1枚につき +1 コイン。\n（リアクション）他人がアタックを使ったとき公開してよい。\nその場合 +2 カードし、手札2枚を山札の上に戻す。' },
+
+    /* ===== 基本セット 第二版で追加された7種 ===== */
+    harbinger:  { id: 'harbinger',  name: '前駆者',     cost: 3, types: ['action'],
+                  text: '+1 カード\n+1 アクション\n捨て札を見て、その中から1枚を山札の上に置いてもよい。' },
+    merchant:   { id: 'merchant',   name: '商人',       cost: 3, types: ['action'],
+                  text: '+1 カード\n+1 アクション\nこのターンに最初に銀貨を出したとき、+1 コイン。' },
+    vassal:     { id: 'vassal',     name: '家臣',       cost: 3, types: ['action'],
+                  text: '+2 コイン\n山札の一番上を捨てる。それがアクションカードなら、使ってもよい。' },
+    poacher:    { id: 'poacher',    name: '密猟者',     cost: 4, types: ['action'],
+                  text: '+1 カード\n+1 アクション\n+1 コイン\n空になっているサプライの山1つにつき、手札を1枚捨てる。' },
+    bandit:     { id: 'bandit',     name: '山賊',       cost: 5, types: ['action', 'attack'],
+                  text: '金貨1枚を獲得する。\n他のプレイヤーは各自、山札の上2枚を公開し、\n銅貨以外の財宝1枚を廃棄し、残りを捨てる。' },
+    sentry:     { id: 'sentry',     name: '衛兵',       cost: 5, types: ['action'],
+                  text: '+1 カード\n+1 アクション\n山札の上2枚を見る。好きな枚数を廃棄／捨て札にし、\n残りを好きな順で山札の上に戻す。' },
+    artisan:    { id: 'artisan',    name: '職人',       cost: 6, types: ['action'],
+                  text: 'コスト5以下のカード1枚を手札に獲得する。\n手札のカード1枚を山札の上に置く。' },
+
+    /* ===== 陰謀 第二版で追加された7種 ===== */
+    courtier:     { id: 'courtier',     name: '廷臣',       cost: 5, types: ['action'],
+                    text: '手札のカード1枚を公開する。\nそのカードの持つ種類の数だけ、次から選ぶ（異なるもの）：\n+1 アクション／+1 購入／+3 コイン／金貨1枚を獲得。' },
+    diplomat:     { id: 'diplomat',     name: '外交官',     cost: 4, types: ['action', 'reaction'],
+                    text: '+2 カード\n引いた後、手札が5枚以下なら +2 アクション。\n（リアクション）他人がアタックを使ったとき、手札5枚以上で\nこれを公開→2枚引き、その後手札3枚を捨てる。' },
+    lurker:       { id: 'lurker',       name: '待ち伏せ',   cost: 2, types: ['action'],
+                    text: '+1 アクション\n次から1つを選ぶ：\n・サプライのアクションカード1枚を廃棄する\n・廃棄置き場のアクションカード1枚を獲得する' },
+    mill:         { id: 'mill',         name: '風車',       cost: 4, types: ['action', 'victory'], vp: 1,
+                    text: '+1 カード\n+1 アクション\n手札を2枚捨ててもよい。捨てたら +2 コイン。\n（勝利点 1）' },
+    patrol:       { id: 'patrol',       name: 'パトロール', cost: 5, types: ['action'],
+                    text: '+3 カード\n山札の上4枚を公開する。勝利点と呪いを手札に加え、\n残りを好きな順で山札の上に戻す。' },
+    replace:      { id: 'replace',      name: '身代わり',   cost: 5, types: ['action', 'attack'],
+                    text: '手札1枚を廃棄する。それより最大$2高いカード1枚を獲得する。\nそれがアクション／財宝なら山札の上に置く。\n勝利点なら他のプレイヤーは各自、呪い1枚を獲得する。' },
+    secret_passage:{ id: 'secret_passage', name: '隠し通路', cost: 4, types: ['action'],
+                    text: '+2 カード\n+1 アクション\n手札のカード1枚を、山札の好きな位置に入れる。' },
+
+    /* ===== プロモカード ===== */
+    walled_village:{ id: 'walled_village', name: '城壁のある村', cost: 4, types: ['action'],
+                    text: '+1 カード\n+2 アクション\nクリーンアップ開始時、場に出ているアクションが\nこれを含め2枚以下なら、これを山札の上に置いてよい。' },
+    envoy:        { id: 'envoy',        name: '使者',       cost: 4, types: ['action'],
+                    text: '山札の上5枚を公開する。左隣のプレイヤーが1枚を選び、\nそれを捨てる。残りを手札に加える。' },
+    governor:     { id: 'governor',     name: '総督',       cost: 5, types: ['action'],
+                    text: '+1 アクション\n次から1つを選ぶ（自分はカッコ内の強い方）：\n・全員 +1（+3）カード\n・全員 銀貨（金貨）を獲得\n・全員 任意で手札1枚を廃棄し、ちょうど$1（$2）高いカードを獲得' },
+    dismantle:    { id: 'dismantle',    name: '取り壊し',   cost: 4, types: ['action'],
+                    text: '手札1枚を廃棄する。そのコストが$1以上なら、\nそれより安いカード1枚と金貨1枚を獲得する。' },
+    black_market: { id: 'black_market', name: '闇市場',     cost: 3, types: ['action'],
+                    text: '+2 コイン\n闇市場デッキの上3枚を公開する。\n手札から財宝を好きなだけ出してよい。\n公開した1枚を購入してもよい。残りは闇市場デッキの底へ。' },
+    hoard:        { id: 'hoard',        name: '隠し財産',   cost: 5, types: ['treasure'], coin: 2,
+                    text: 'コイン +2\nこのターン、勝利点カードを購入したとき、金貨1枚を獲得する。' },
   };
 
-  /* ---------- 王国カードのセット ---------- */
-  // 基本セット（初回おすすめの10種）
-  DOM.KINGDOM = ['cellar', 'village', 'woodcutter', 'workshop', 'moat',
-                 'militia', 'smithy', 'remodel', 'market', 'mine'];
-  // 陰謀（拡張）おすすめの10種
-  DOM.KINGDOM_INTRIGUE = ['courtyard', 'pawn', 'shanty_town', 'steward', 'baron',
-                          'bridge', 'conspirator', 'ironworks', 'mining_village', 'nobles'];
+  /* ---------- 王国カードのセット ----------
+     第二版をデフォルトに。第二版で廃止された初版カードは実装を残し「初版」セットで遊べる。 */
+  // 基本（第二版）「はじめてのゲーム」推奨10種＝デフォルト。商人(新カード)入り。
+  DOM.KINGDOM = ['cellar', 'market', 'merchant', 'militia', 'mine',
+                 'moat', 'remodel', 'smithy', 'village', 'workshop'];
+  // 陰謀（第二版）推奨10種。新カード（待ち伏せ・風車・隠し通路）入り。
+  DOM.KINGDOM_INTRIGUE = ['courtyard', 'pawn', 'lurker', 'shanty_town', 'steward',
+                          'conspirator', 'mill', 'secret_passage', 'swindler', 'nobles'];
+  // 初版（第二版で廃止されたカードを含む懐かしのセット）
+  DOM.KINGDOM_1E = ['cellar', 'chancellor', 'woodcutter', 'feast', 'militia',
+                    'spy', 'thief', 'council_room', 'adventurer', 'market'];
+  DOM.KINGDOM_INTRIGUE_1E = ['courtyard', 'great_hall', 'pawn', 'steward', 'scout',
+                             'baron', 'conspirator', 'coppersmith', 'tribute', 'nobles'];
+
+  // 第二版で「廃止された」初版カード（初版プールに足して懐かしの抽選母集団を作る）
+  const BASE_REMOVED_1E = ['woodcutter', 'chancellor', 'feast', 'adventurer', 'spy', 'thief'];
+  const INTRIGUE_REMOVED_1E = ['great_hall', 'coppersmith', 'scout', 'tribute', 'saboteur', 'secret_chamber'];
+  // 第二版で「追加された」新カード
+  const BASE_NEW_2E = ['harbinger', 'merchant', 'vassal', 'poacher', 'bandit', 'sentry', 'artisan'];
+  const INTRIGUE_NEW_2E = ['courtier', 'diplomat', 'lurker', 'mill', 'patrol', 'replace', 'secret_passage'];
+
   // 拡張ごとの王国カードプール（ランダム抽選の母集団）。将来の拡張はここに足す。
   DOM.POOLS = {
-    basic:    DOM.KINGDOM.concat(['laboratory', 'festival', 'moneylender', 'chancellor', 'chapel', 'gardens', 'witch', 'bureaucrat', 'council_room', 'feast', 'adventurer', 'library', 'spy', 'thief', 'throne_room']),
-    intrigue: ['courtyard', 'pawn', 'shanty_town', 'steward', 'wishing_well', 'baron',
-               'bridge', 'conspirator', 'ironworks', 'mining_village', 'torturer', 'duke', 'nobles', 'harem',
-               'great_hall', 'coppersmith', 'trading_post', 'upgrade', 'scout', 'tribute', 'swindler', 'saboteur', 'minion', 'masquerade', 'secret_chamber'],
+    // 基本 第二版（26種）= 初版から廃止6種を除き、新7種を足したもの
+    basic: ['cellar', 'village', 'workshop', 'moat', 'militia', 'smithy', 'remodel', 'market', 'mine',
+            'laboratory', 'festival', 'moneylender', 'chapel', 'gardens', 'witch', 'bureaucrat',
+            'council_room', 'library', 'throne_room'].concat(BASE_NEW_2E),
+    // 陰謀 第二版（26種）
+    intrigue: ['courtyard', 'pawn', 'shanty_town', 'steward', 'wishing_well', 'baron', 'bridge',
+               'conspirator', 'ironworks', 'mining_village', 'torturer', 'duke', 'nobles', 'harem',
+               'trading_post', 'upgrade', 'swindler', 'minion', 'masquerade'].concat(INTRIGUE_NEW_2E),
+    // プロモ（6種）
+    promo: ['walled_village', 'envoy', 'governor', 'dismantle', 'black_market', 'hoard'],
   };
-  // 全王国カードのプール（後方互換: 'random' の既定母集団 = 基本＋陰謀）
+  // 初版プール＝第二版プールから新カードを除き、廃止された初版カードを戻したもの
+  DOM.POOLS.basic1e = DOM.POOLS.basic.filter((id) => !BASE_NEW_2E.includes(id)).concat(BASE_REMOVED_1E);
+  DOM.POOLS.intrigue1e = DOM.POOLS.intrigue.filter((id) => !INTRIGUE_NEW_2E.includes(id)).concat(INTRIGUE_REMOVED_1E);
+
+  // 全王国カードのプール（後方互換: 'random' の既定母集団 = 基本＋陰謀 第二版）
   DOM.KINGDOM_POOL = DOM.POOLS.basic.concat(DOM.POOLS.intrigue);
   // 画面で選べるセット（id はサーバ検証・保存にも使う）。
   //   kingdom 固定 … おすすめ10種をそのまま使う
@@ -162,26 +232,36 @@
   //   kind … UIの分類。standard=王国基本/陰謀基本、recommend=おすすめ（テーマ別）、random=ランダム。
   //   desc … おすすめタイルに出す一行説明。
   DOM.CARD_SETS = [
-    // ---- 標準（王国基本・陰謀基本）----
-    { id: 'basic',           kind: 'standard', name: '王国基本セット', kingdom: DOM.KINGDOM },
-    { id: 'intrigue',        kind: 'standard', name: '陰謀基本セット', kingdom: DOM.KINGDOM_INTRIGUE },
-    // ---- おすすめ（テーマ別・固定10種。公式の推奨セット由来）----
+    // ---- 標準（第二版の王国基本・陰謀基本）----
+    { id: 'basic',           kind: 'standard', name: '王国基本セット（第二版）', kingdom: DOM.KINGDOM },
+    { id: 'intrigue',        kind: 'standard', name: '陰謀セット（第二版）', kingdom: DOM.KINGDOM_INTRIGUE },
+    // ---- おすすめ（テーマ別・固定10種）----
     { id: 'big-money',       kind: 'recommend', name: 'ビッグマネー', desc: 'お金を伸ばして属州を狙う王道',
-      kingdom: ['chapel', 'moneylender', 'feast', 'throne_room', 'bureaucrat', 'chancellor', 'market', 'mine', 'laboratory', 'adventurer'] },
+      kingdom: ['chapel', 'moneylender', 'harbinger', 'throne_room', 'bureaucrat', 'poacher', 'market', 'mine', 'laboratory', 'sentry'] },
     { id: 'interaction',     kind: 'recommend', name: '対戦・妨害', desc: 'アタックと妨害が多い対戦的セット',
-      kingdom: ['moat', 'village', 'bureaucrat', 'chancellor', 'militia', 'spy', 'thief', 'council_room', 'festival', 'library'] },
+      kingdom: ['moat', 'village', 'bureaucrat', 'vassal', 'militia', 'bandit', 'witch', 'council_room', 'festival', 'library'] },
     { id: 'size-distortion', kind: 'recommend', name: 'デッキ膨張', desc: '庭園・魔女などデッキ枚数が絡む',
-      kingdom: ['cellar', 'chapel', 'woodcutter', 'workshop', 'gardens', 'village', 'feast', 'thief', 'laboratory', 'witch'] },
+      kingdom: ['cellar', 'chapel', 'harbinger', 'workshop', 'gardens', 'village', 'merchant', 'artisan', 'laboratory', 'witch'] },
     { id: 'victory-dance',   kind: 'recommend', name: '勝利点レース（陰謀）', desc: '勝利点の取り合いが激しい',
-      kingdom: ['great_hall', 'pawn', 'masquerade', 'scout', 'ironworks', 'bridge', 'duke', 'harem', 'nobles', 'upgrade'] },
+      kingdom: ['mill', 'pawn', 'masquerade', 'patrol', 'ironworks', 'bridge', 'duke', 'harem', 'nobles', 'upgrade'] },
     { id: 'secret-schemes',  kind: 'recommend', name: '策謀コンボ（陰謀）', desc: 'アクション連鎖・コンボ重視',
       kingdom: ['courtyard', 'pawn', 'shanty_town', 'steward', 'wishing_well', 'baron', 'conspirator', 'mining_village', 'swindler', 'torturer'] },
     { id: 'starter-mix',     kind: 'recommend', name: '入門ミックス', desc: '基本＋陰謀をやさしく混ぜた入門',
       kingdom: ['moat', 'pawn', 'courtyard', 'village', 'steward', 'militia', 'smithy', 'baron', 'bridge', 'market'] },
+    // ---- 初版（第二版で廃止された懐かしのカード入り）----
+    { id: 'classic-basic',    kind: 'recommend', name: '初版・王国基本', desc: '宰相・木こり・祝宴・密偵・泥棒・冒険者＝廃止カード入り',
+      kingdom: DOM.KINGDOM_1E },
+    { id: 'classic-intrigue', kind: 'recommend', name: '初版・陰謀', desc: '大広間・斥候・銅細工師・貢物＝廃止カード入り',
+      kingdom: DOM.KINGDOM_INTRIGUE_1E },
+    // ---- プロモ ----
+    { id: 'promo-pack',       kind: 'recommend', name: 'プロモ全部入り', desc: 'プロモ6種＋基本4種',
+      kingdom: ['cellar', 'walled_village', 'envoy', 'dismantle', 'militia', 'hoard', 'governor', 'market', 'black_market', 'witch'] },
     // ---- ランダム（毎回その場で10種を抽選）----
     { id: 'random',          kind: 'random', name: '基本＋陰謀から', randomFrom: ['basic', 'intrigue'] },
     { id: 'random-intrigue', kind: 'random', name: '陰謀のみから',   randomFrom: ['intrigue'] },
     { id: 'random-basic',    kind: 'random', name: '基本のみから',   randomFrom: ['basic'] },
+    { id: 'random-promo',    kind: 'random', name: 'プロモ込みから',  randomFrom: ['basic', 'intrigue', 'promo'] },
+    { id: 'random-1e',       kind: 'random', name: '初版から',        randomFrom: ['basic1e', 'intrigue1e'] },
   ];
   // プールから重複なく n 種を選ぶ（コスト順に並べて返す）
   DOM.randomKingdom = function (n, pool) {

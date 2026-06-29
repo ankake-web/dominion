@@ -1,100 +1,173 @@
 /* ============================================================
-   js/carddata.js — カードデータ（UIとゲームロジックを分離するデータ層）
+   js/carddata.js — 表示用カードデータ（カードプレビュー cards.html 用）
    ------------------------------------------------------------
-   正本は data/cards.json。http配信時はそちらを優先読込し、
-   file:// 等で fetch できない場合は下の埋め込みデータにフォールバックする。
-   （data/cards.json と内容を同期させること）
+   ★単一ソース★ ルール定義 js/cards.js の DOM.CARDS が正本。
+   ここは「表示専用の情報（アイコン・効果の短い箇条書き）」だけを持ち、
+   名前・コスト・種別ラベル・枠色・画像パスは DOM.CARDS から自動導出する。
+   → 名前/コスト等が二か所でズレる事故（例: 詐欺師のコスト）が原理的に起きない。
+   ※ cards.js を先に読み込むこと（cards.html はそうしている）。
+   ※ 新カードは js/cards.js に書けば、ここに何も足さなくても種別アイコン＋text から
+     自動表示される。下の DISPLAY にアイコン/効果を足すのは“見栄えの任意上乗せ”。
    ============================================================ */
 (function () {
-  const DOM = (window.DOM = window.DOM || {});
+  const root = (typeof window !== 'undefined') ? window
+    : (typeof global !== 'undefined') ? global : globalThis;
+  const DOM = (root.DOM = root.DOM || {});
 
-  // data/cards.json と同じ内容（フォールバック用の埋め込み）
-  const EMBEDDED = [
-    { id: 'copper', name: '銅貨', cost: 0, type: 'treasure', typeLabel: '財宝', art: 'asset/copper.jpg', icon: '🥉', effects: ['+1 コイン'] },
-    { id: 'silver', name: '銀貨', cost: 3, type: 'treasure', typeLabel: '財宝', art: 'asset/silver.jpg', icon: '🥈', effects: ['+2 コイン'] },
-    { id: 'gold', name: '金貨', cost: 6, type: 'treasure', typeLabel: '財宝', art: 'asset/gold.jpg', icon: '🥇', effects: ['+3 コイン'] },
-    { id: 'estate', name: '屋敷', cost: 2, type: 'victory', typeLabel: '勝利点', art: 'asset/estate.jpg', icon: '🏡', effects: ['勝利点 1'] },
-    { id: 'duchy', name: '公領', cost: 5, type: 'victory', typeLabel: '勝利点', art: 'asset/duchy.jpg', icon: '🏰', effects: ['勝利点 3'] },
-    { id: 'province', name: '属州', cost: 8, type: 'victory', typeLabel: '勝利点', art: 'asset/province.jpg', icon: '👑', effects: ['勝利点 6'] },
-    { id: 'curse', name: '呪い', cost: 0, type: 'curse', typeLabel: '呪い', art: 'asset/curse.jpg', icon: '☠️', effects: ['勝利点 −1'] },
-    { id: 'cellar', name: '地下貯蔵庫', cost: 2, type: 'action', typeLabel: 'アクション', art: 'asset/cellar.jpg', icon: '🛢️', effects: ['+1 アクション', '手札を捨て、同じ数引く'] },
-    { id: 'market', name: '市場', cost: 5, type: 'action', typeLabel: 'アクション', art: 'asset/market.jpg', icon: '🛒', effects: ['+1 カード', '+1 アクション', '+1 購入', '+1 コイン'] },
-    { id: 'militia', name: '民兵', cost: 4, type: 'attack', typeLabel: 'アクション', art: 'asset/militia.jpg', icon: '⚔️', effects: ['+2 コイン', '他は手札3枚まで捨てる'] },
-    { id: 'mine', name: '鉱山', cost: 5, type: 'action', typeLabel: 'アクション', art: 'asset/mine.jpg', icon: '⛏️', effects: ['財宝1枚を廃棄してよい', '廃棄した財宝のコスト+3以下を獲得'] },
-    { id: 'moat', name: '堀', cost: 2, type: 'reaction', typeLabel: 'アクション', art: 'asset/moat.jpg', icon: '🛡️', effects: ['+2 カード', 'アタックを無効化できる'] },
-    { id: 'remodel', name: '改築', cost: 4, type: 'action', typeLabel: 'アクション', art: 'asset/remodel.jpg', icon: '🏗️', effects: ['手札1枚を廃棄', '廃棄したカードのコスト+2以下を獲得'] },
-    { id: 'smithy', name: '鍛冶屋', cost: 4, type: 'action', typeLabel: 'アクション', art: 'asset/smithy.jpg', icon: '⚒️', effects: ['+3 カード'] },
-    { id: 'village', name: '村', cost: 3, type: 'action', typeLabel: 'アクション', art: 'asset/village.jpg', icon: '🏘️', effects: ['+1 カード', '+2 アクション'] },
-    { id: 'woodcutter', name: '木こり', cost: 3, type: 'action', typeLabel: 'アクション', art: 'asset/woodcutter.jpg', icon: '🪓', effects: ['+1 購入', '+2 コイン'] },
-    { id: 'workshop', name: '工房', cost: 3, type: 'action', typeLabel: 'アクション', art: 'asset/workshop.jpg', icon: '🛠️', effects: ['コスト4以下を1枚獲得'] },
-    { id: 'laboratory', name: '研究所', cost: 5, type: 'action', typeLabel: 'アクション', art: 'asset/laboratory.jpg', icon: '⚗️', effects: ['+2 カード', '+1 アクション'] },
-    { id: 'festival', name: '祝祭', cost: 5, type: 'action', typeLabel: 'アクション', art: 'asset/festival.jpg', icon: '🎉', effects: ['+2 アクション', '+1 購入', '+2 コイン'] },
-    { id: 'moneylender', name: '金貸し', cost: 4, type: 'action', typeLabel: 'アクション', art: 'asset/moneylender.jpg', icon: '💰', effects: ['銅貨1枚を廃棄してよい', '→ +3 コイン'] },
-    { id: 'chancellor', name: '宰相', cost: 3, type: 'action', typeLabel: 'アクション', art: 'asset/chancellor.jpg', icon: '📜', effects: ['+2 コイン', '山札を捨て札にしてもよい'] },
-    { id: 'chapel', name: '礼拝堂', cost: 2, type: 'action', typeLabel: 'アクション', art: 'asset/chapel.jpg', icon: '⛪', effects: ['手札を最大4枚廃棄'] },
-    { id: 'gardens', name: '庭園', cost: 4, type: 'victory', typeLabel: '勝利点', art: 'asset/gardens.jpg', icon: '🌷', effects: ['デッキ10枚につき1勝利点'] },
-    { id: 'witch', name: '魔女', cost: 5, type: 'attack', typeLabel: 'アクション', art: 'asset/witch.jpg', icon: '🧙', effects: ['+2 カード', '他は呪いを獲得'] },
-    { id: 'bureaucrat', name: '役人', cost: 4, type: 'attack', typeLabel: 'アクション', art: 'asset/bureaucrat.jpg', icon: '🧑‍💼', effects: ['銀貨を山札の上に獲得', '他は勝利点を山札の上に'] },
-    { id: 'council_room', name: '議会', cost: 5, type: 'action', typeLabel: 'アクション', art: 'asset/council_room.jpg', icon: '🏛️', effects: ['+4 カード', '+1 購入', '他は各1枚引く'] },
-    { id: 'feast', name: '祝宴', cost: 4, type: 'action', typeLabel: 'アクション', art: 'asset/feast.jpg', icon: '🍖', effects: ['自身を廃棄', 'コスト5以下を1枚獲得'] },
-    { id: 'adventurer', name: '冒険者', cost: 6, type: 'action', typeLabel: 'アクション', art: 'asset/adventurer.jpg', icon: '🧭', effects: ['財宝が2枚出るまで公開', '残りは捨てる'] },
-    { id: 'library', name: '書庫', cost: 5, type: 'action', typeLabel: 'アクション', art: 'asset/library.jpg', icon: '📚', effects: ['手札7枚まで引く', 'アクションは脇に置ける'] },
-    { id: 'spy', name: '密偵', cost: 4, type: 'attack', typeLabel: 'アクション', art: 'asset/spy.jpg', icon: '🔎', effects: ['+1カード +1アクション', '全員の山札の上を捨/戻し選択'] },
-    { id: 'thief', name: '泥棒', cost: 4, type: 'attack', typeLabel: 'アクション', art: 'asset/thief.jpg', icon: '🦝', effects: ['他は上2枚公開', '財宝1枚を廃棄→獲得してよい'] },
-    { id: 'throne_room', name: '玉座の間', cost: 4, type: 'action', typeLabel: 'アクション', art: 'asset/throne_room.jpg', icon: '👑', effects: ['アクション1枚を2回使う'] },
+  // 表示専用データ（アイコン＋効果の短い箇条書き）。ルール情報は一切持たない。
+  const DISPLAY = {
+    "copper": { icon: "🥉", effects: ["+1 コイン"] },
+    "silver": { icon: "🥈", effects: ["+2 コイン"] },
+    "gold": { icon: "🥇", effects: ["+3 コイン"] },
+    "estate": { icon: "🏡", effects: ["勝利点 1"] },
+    "duchy": { icon: "🏰", effects: ["勝利点 3"] },
+    "province": { icon: "👑", effects: ["勝利点 6"] },
+    "curse": { icon: "☠️", effects: ["勝利点 −1"] },
+    "cellar": { icon: "🛢️", effects: ["+1 アクション", "手札を捨て、同じ数引く"] },
+    "market": { icon: "🛒", effects: ["+1 カード", "+1 アクション", "+1 購入", "+1 コイン"] },
+    "militia": { icon: "⚔️", effects: ["+2 コイン", "他は手札3枚まで捨てる"] },
+    "mine": { icon: "⛏️", effects: ["財宝1枚を廃棄してよい", "廃棄した財宝のコスト+3以下を獲得"] },
+    "moat": { icon: "🛡️", effects: ["+2 カード", "アタックを無効化できる"] },
+    "remodel": { icon: "🏗️", effects: ["手札1枚を廃棄", "廃棄したカードのコスト+2以下を獲得"] },
+    "smithy": { icon: "⚒️", effects: ["+3 カード"] },
+    "village": { icon: "🏘️", effects: ["+1 カード", "+2 アクション"] },
+    "woodcutter": { icon: "🪓", effects: ["+1 購入", "+2 コイン"] },
+    "workshop": { icon: "🛠️", effects: ["コスト4以下を1枚獲得"] },
+    "laboratory": { icon: "⚗️", effects: ["+2 カード", "+1 アクション"] },
+    "festival": { icon: "🎉", effects: ["+2 アクション", "+1 購入", "+2 コイン"] },
+    "moneylender": { icon: "💰", effects: ["銅貨1枚を廃棄してよい", "→ +3 コイン"] },
+    "chancellor": { icon: "📜", effects: ["+2 コイン", "山札を捨て札にしてもよい"] },
+    "chapel": { icon: "⛪", effects: ["手札を最大4枚廃棄"] },
+    "gardens": { icon: "🌷", effects: ["デッキ10枚につき1勝利点"] },
+    "witch": { icon: "🧙", effects: ["+2 カード", "他は呪いを獲得"] },
+    "bureaucrat": { icon: "🧑‍💼", effects: ["銀貨を山札の上に獲得", "他は勝利点を山札の上に"] },
+    "council_room": { icon: "🏛️", effects: ["+4 カード", "+1 購入", "他は各1枚引く"] },
+    "feast": { icon: "🍖", effects: ["自身を廃棄", "コスト5以下を1枚獲得"] },
+    "adventurer": { icon: "🧭", effects: ["財宝が2枚出るまで公開", "残りは捨てる"] },
+    "library": { icon: "📚", effects: ["手札7枚まで引く", "アクションは脇に置ける"] },
+    "spy": { icon: "🔎", effects: ["+1カード +1アクション", "全員の山札の上を捨/戻し選択"] },
+    "thief": { icon: "🦝", effects: ["他は上2枚公開", "財宝1枚を廃棄→獲得してよい"] },
+    "throne_room": { icon: "👑", effects: ["アクション1枚を2回使う"] },
+    "courtyard": { icon: "🏛️", effects: ["+3 カード", "手札1枚を山札の上に置く"] },
+    "pawn": { icon: "♟️", effects: ["異なる2つを選ぶ", "+1カード/+1アクション/+1購入/+1コイン"] },
+    "shanty_town": { icon: "🏚️", effects: ["+2 アクション", "アクションが無ければ+2カード"] },
+    "steward": { icon: "🤵", effects: ["+2カード / +2コイン / 2枚廃棄"] },
+    "wishing_well": { icon: "⛲", effects: ["+1 カード", "+1 アクション", "宣言が当たれば手札に"] },
+    "baron": { icon: "🎩", effects: ["+1 購入", "屋敷を捨てれば+4コイン", "捨てなければ屋敷を獲得"] },
+    "bridge": { icon: "🌉", effects: ["+1 購入", "+1 コイン", "全カードのコスト-1"] },
+    "conspirator": { icon: "🕵️", effects: ["+2 コイン", "アクション3回以上で+1カード+1アクション"] },
+    "ironworks": { icon: "🏭", effects: ["コスト4以下を獲得", "種別ボーナス"] },
+    "mining_village": { icon: "⛏️", effects: ["+1 カード", "+2 アクション", "廃棄した場合+2コイン"] },
+    "torturer": { icon: "🗡️", effects: ["+3 カード", "他は2枚捨てるか呪い獲得"] },
+    "duke": { icon: "🤴", effects: ["公領1枚につき1勝利点"] },
+    "nobles": { icon: "🎖️", effects: ["勝利点 2", "+3カード または +2アクション"] },
+    "harem": { icon: "💎", effects: ["コイン +2", "勝利点 2"] },
+    "great_hall": { icon: "🏛️", effects: ["+1 カード", "+1 アクション", "勝利点 1"] },
+    "coppersmith": { icon: "🔨", effects: ["このターン 銅貨の価値が+1コイン"] },
+    "trading_post": { icon: "⚖️", effects: ["手札2枚を廃棄", "→ 銀貨を手札に獲得"] },
+    "upgrade": { icon: "⬆️", effects: ["+1 カード", "+1 アクション", "1枚廃棄→ちょうど+1コストを獲得"] },
+    "scout": { icon: "🔭", effects: ["+1 アクション", "上4枚公開→勝利点を手札に", "残りは好きな順で山札の上"] },
+    "tribute": { icon: "🎁", effects: ["左隣が上2枚公開→捨てる", "異なる名前ごとに種別ボーナス"] },
+    "swindler": { icon: "🎭", effects: ["+2 コイン", "他は山札の上を廃棄", "→ 廃棄と同コストをあなたが選んで与える"] },
+    "saboteur": { icon: "💣", effects: ["他はコスト3以上を廃棄", "→ 2安いカードを獲得してよい"] },
+    "minion": { icon: "🕴️", effects: ["+1 アクション", "+2コイン か 全員引き直し を選ぶ"] },
+    "masquerade": { icon: "🎭", effects: ["+2 カード", "全員が左隣へ1枚渡す", "その後1枚廃棄してよい"] },
+    "secret_chamber": { icon: "🔮", effects: ["捨てた1枚につき +1コイン", "(リアクション)アタック時に+2引き2枚戻す"] },
+    "harbinger": { icon: "📯", effects: ["+1 カード", "+1 アクション", "捨て札1枚を山札の上に置いてよい"] },
+    "merchant": { icon: "💱", effects: ["+1 カード", "+1 アクション", "最初の銀貨で +1 コイン"] },
+    "vassal": { icon: "🧎", effects: ["+2 コイン", "山札の上を捨て、アクションなら使ってよい"] },
+    "poacher": { icon: "🏹", effects: ["+1 カード", "+1 アクション", "+1 コイン", "空の山1つにつき手札1枚捨てる"] },
+    "bandit": { icon: "🥷", effects: ["金貨を獲得", "他は上2枚公開→銅貨以外の財宝1枚を廃棄"] },
+    "sentry": { icon: "💂", effects: ["+1 カード", "+1 アクション", "上2枚を廃棄/捨て/戻す"] },
+    "artisan": { icon: "🎨", effects: ["コスト5以下を手札に獲得", "手札1枚を山札の上に置く"] },
+    "courtier": { icon: "🥂", effects: ["手札1枚を公開", "種類数だけ：+1アクション/+1購入/+3コイン/金貨"] },
+    "diplomat": { icon: "🤝", effects: ["+2 カード", "手札5枚以下なら +2 アクション", "(リアクション)アタック時に+2引き3枚捨てる"] },
+    "lurker": { icon: "🕳️", effects: ["+1 アクション", "サプライのアクションを廃棄", "or 廃棄置場からアクションを獲得"] },
+    "mill": { icon: "🌾", effects: ["+1 カード", "+1 アクション", "手札2枚を捨てれば +2コイン", "勝利点 1"] },
+    "patrol": { icon: "🔦", effects: ["+3 カード", "上4枚公開→勝利点と呪いを手札に", "残りは好きな順で山札の上"] },
+    "replace": { icon: "🔄", effects: ["手札1枚を廃棄→$2高いまでを獲得", "アクション/財宝は山札の上", "勝利点なら他全員が呪い獲得"] },
+    "secret_passage": { icon: "🚪", effects: ["+2 カード", "+1 アクション", "手札1枚を山札の好きな位置に入れる"] },
+    "walled_village": { icon: "🧱", effects: ["+1 カード", "+2 アクション", "場のアクションが2枚以下なら山札の上に戻せる"] },
+    "envoy": { icon: "✉️", effects: ["上5枚公開→左隣が1枚捨てさせる", "残りを手札に"] },
+    "governor": { icon: "👨‍⚖️", effects: ["+1 アクション", "全員に効果（自分は強い方）", "+3カード/金貨/改築 を選ぶ"] },
+    "dismantle": { icon: "🪚", effects: ["手札1枚を廃棄", "それより安いカードと金貨を獲得"] },
+    "black_market": { icon: "🏴", effects: ["+2 コイン", "闇市場デッキ上3枚から1枚を購入してよい"] },
+    "hoard": { icon: "🤑", effects: ["コイン +2", "勝利点を購入したとき金貨を獲得"] },
+  };
 
-    // 拡張: 陰謀（Intrigue）。絵は未用意（asset/<id>.jpg を置けば自動表示）。
-    { id: 'courtyard', name: '中庭', cost: 2, type: 'action', typeLabel: 'アクション', art: 'asset/courtyard.jpg', icon: '🏛️', effects: ['+3 カード', '手札1枚を山札の上に置く'] },
-    { id: 'pawn', name: '従者', cost: 2, type: 'action', typeLabel: 'アクション', art: 'asset/pawn.jpg', icon: '♟️', effects: ['異なる2つを選ぶ', '+1カード/+1アクション/+1購入/+1コイン'] },
-    { id: 'shanty_town', name: '寂れた村', cost: 3, type: 'action', typeLabel: 'アクション', art: 'asset/shanty_town.jpg', icon: '🏚️', effects: ['+2 アクション', 'アクションが無ければ+2カード'] },
-    { id: 'steward', name: '執事', cost: 3, type: 'action', typeLabel: 'アクション', art: 'asset/steward.jpg', icon: '🤵', effects: ['+2カード / +2コイン / 2枚廃棄'] },
-    { id: 'wishing_well', name: '願いの井戸', cost: 3, type: 'action', typeLabel: 'アクション', art: 'asset/wishing_well.jpg', icon: '⛲', effects: ['+1 カード', '+1 アクション', '宣言が当たれば手札に'] },
-    { id: 'baron', name: '男爵', cost: 4, type: 'action', typeLabel: 'アクション', art: 'asset/baron.jpg', icon: '🎩', effects: ['+1 購入', '屋敷を捨てれば+4コイン', '捨てなければ屋敷を獲得'] },
-    { id: 'bridge', name: '橋', cost: 4, type: 'action', typeLabel: 'アクション', art: 'asset/bridge.jpg', icon: '🌉', effects: ['+1 購入', '+1 コイン', '全カードのコスト-1'] },
-    { id: 'conspirator', name: '共謀者', cost: 4, type: 'action', typeLabel: 'アクション', art: 'asset/conspirator.jpg', icon: '🕵️', effects: ['+2 コイン', 'アクション3回以上で+1カード+1アクション'] },
-    { id: 'ironworks', name: '鉄工所', cost: 4, type: 'action', typeLabel: 'アクション', art: 'asset/ironworks.jpg', icon: '🏭', effects: ['コスト4以下を獲得', '種別ボーナス'] },
-    { id: 'mining_village', name: '鉱山の村', cost: 4, type: 'action', typeLabel: 'アクション', art: 'asset/mining_village.jpg', icon: '⛏️', effects: ['+1 カード', '+2 アクション', '廃棄した場合+2コイン'] },
-    { id: 'torturer', name: '拷問人', cost: 5, type: 'attack', typeLabel: 'アクション', art: 'asset/torturer.jpg', icon: '🗡️', effects: ['+3 カード', '他は2枚捨てるか呪い獲得'] },
-    { id: 'duke', name: '公爵', cost: 5, type: 'victory', typeLabel: '勝利点', art: 'asset/duke.jpg', icon: '🤴', effects: ['公領1枚につき1勝利点'] },
-    { id: 'nobles', name: '貴族', cost: 6, type: 'action', typeLabel: '勝利点・アクション', art: 'asset/nobles.jpg', icon: '🎖️', effects: ['勝利点 2', '+3カード または +2アクション'] },
-    { id: 'harem', name: '後宮', cost: 6, type: 'treasure', typeLabel: '財宝・勝利点', art: 'asset/harem.jpg', icon: '💎', effects: ['コイン +2', '勝利点 2'] },
-    { id: 'great_hall', name: '大広間', cost: 3, type: 'action', typeLabel: '勝利点・アクション', art: 'asset/great_hall.jpg', icon: '🏛️', effects: ['+1 カード', '+1 アクション', '勝利点 1'] },
-    { id: 'coppersmith', name: '銅細工師', cost: 4, type: 'action', typeLabel: 'アクション', art: 'asset/coppersmith.jpg', icon: '🔨', effects: ['このターン 銅貨の価値が+1コイン'] },
-    { id: 'trading_post', name: '交易場', cost: 5, type: 'action', typeLabel: 'アクション', art: 'asset/trading_post.jpg', icon: '⚖️', effects: ['手札2枚を廃棄', '→ 銀貨を手札に獲得'] },
-    { id: 'upgrade', name: '改良', cost: 5, type: 'action', typeLabel: 'アクション', art: 'asset/upgrade.jpg', icon: '⬆️', effects: ['+1 カード', '+1 アクション', '1枚廃棄→ちょうど+1コストを獲得'] },
-    { id: 'scout', name: '斥候', cost: 4, type: 'action', typeLabel: 'アクション', art: 'asset/scout.jpg', icon: '🔭', effects: ['+1 アクション', '上4枚公開→勝利点を手札に', '残りは好きな順で山札の上'] },
-    { id: 'tribute', name: '貢物', cost: 5, type: 'action', typeLabel: 'アクション', art: 'asset/tribute.jpg', icon: '🎁', effects: ['左隣が上2枚公開→捨てる', '異なる名前ごとに種別ボーナス'] },
-    { id: 'swindler', name: '詐欺師', cost: 5, type: 'attack', typeLabel: 'アクション', art: 'asset/swindler.jpg', icon: '🎭', effects: ['+2 コイン', '他は山札の上を廃棄', '→ 廃棄と同コストをあなたが選んで与える'] },
-    { id: 'saboteur', name: '破壊工作員', cost: 5, type: 'attack', typeLabel: 'アクション', art: 'asset/saboteur.jpg', icon: '💣', effects: ['他はコスト3以上を廃棄', '→ 2安いカードを獲得してよい'] },
-    { id: 'minion', name: '手先', cost: 5, type: 'attack', typeLabel: 'アクション', art: 'asset/minion.jpg', icon: '🕴️', effects: ['+1 アクション', '+2コイン か 全員引き直し を選ぶ'] },
-    { id: 'masquerade', name: '仮面舞踏会', cost: 3, type: 'action', typeLabel: 'アクション', art: 'asset/masquerade.jpg', icon: '🎭', effects: ['+2 カード', '全員が左隣へ1枚渡す', 'その後1枚廃棄してよい'] },
-    { id: 'secret_chamber', name: '秘密の小部屋', cost: 2, type: 'reaction', typeLabel: 'アクション・リアクション', art: 'asset/secret_chamber.jpg', icon: '🔮', effects: ['捨てた1枚につき +1コイン', '(リアクション)アタック時に+2引き2枚戻す'] },
-  ];
+  // 表示枠の色キー（attack/reaction を優先。勝利点・アクション等の複合も1つに決める）
+  function frameType(types) {
+    if (types.includes('attack')) return 'attack';
+    if (types.includes('reaction')) return 'reaction';
+    if (types.includes('treasure')) return 'treasure';
+    if (types.includes('action')) return 'action';
+    if (types.includes('victory')) return 'victory';
+    if (types.includes('curse')) return 'curse';
+    return 'action';
+  }
+  // 種別ラベル（日本語）
+  function typeLabel(types) {
+    const has = (t) => types.includes(t);
+    if (has('treasure') && has('victory')) return '財宝・勝利点';
+    if (has('victory') && has('action')) return '勝利点・アクション';
+    if (has('reaction')) return 'アクション・リアクション';
+    if (has('attack')) return 'アクション・アタック';
+    if (has('treasure')) return '財宝';
+    if (has('victory')) return '勝利点';
+    if (has('curse')) return '呪い';
+    return 'アクション';
+  }
+  // 種別ラベル（英語。プレートに日英併記する＝基準カードと同じ体裁）
+  function typeLabelEn(types) {
+    const has = (t) => types.includes(t);
+    if (has('treasure') && has('victory')) return 'Treasure - Victory';
+    if (has('victory') && has('action')) return 'Victory - Action';
+    if (has('reaction')) return 'Action - Reaction';
+    if (has('attack')) return 'Action - Attack';
+    if (has('treasure')) return 'Treasure';
+    if (has('victory')) return 'Victory';
+    if (has('curse')) return 'Curse';
+    return 'Action';
+  }
+  // DISPLAY にアイコンが無い新カード用の既定アイコン（種別で代替）
+  const TYPE_ICON = { treasure: '🪙', victory: '🏅', curse: '☠️', reaction: '🛡️', attack: '⚔️', action: '🃏' };
 
-  function indexById(list) {
-    const map = {};
-    list.forEach((c) => { map[c.id] = c; });
-    return map;
+  // 正本 DOM.CARDS から表示用1件を組み立てる
+  function buildDisplay(id) {
+    const c = (DOM.CARDS || {})[id];
+    if (!c) return null;
+    const ex = DISPLAY[id] || {};
+    const frame = frameType(c.types);
+    return {
+      id: id,
+      name: c.name,
+      cost: c.cost,
+      type: frame,
+      types: c.types.slice(),
+      typeLabel: typeLabel(c.types),
+      typeLabelEn: typeLabelEn(c.types),
+      // 合成カード（cardview.js）が中央にはめ込む“絵だけ”の正方形画像。
+      // ユーザーが生成AIで作って asset/art/<id>.png に置く。未配置なら絵文字＋名前に段階フォールバック。
+      artSquare: 'asset/art/' + id + '.png',
+      // 旧・完成画像（枠/文字まで焼き込み済み）。拡大表示など別系統が参照。
+      art: 'asset/' + id + '.jpg',
+      icon: ex.icon || TYPE_ICON[frame] || '🃏',
+      effects: ex.effects || (c.text ? String(c.text).split('\n') : []),
+    };
   }
 
-  DOM.CARD_DATA_LIST = EMBEDDED;
-  DOM.CARD_DATA = indexById(EMBEDDED);
+  function rebuild() {
+    const ids = DOM.CARDS ? Object.keys(DOM.CARDS) : [];
+    const list = ids.map(buildDisplay).filter(Boolean);
+    DOM.CARD_DATA_LIST = list;
+    const map = {}; list.forEach((d) => { map[d.id] = d; });
+    DOM.CARD_DATA = map;
+    return DOM.CARD_DATA;
+  }
 
-  // http配信時は data/cards.json を読み直して反映（編集が効くように）。
-  DOM.loadCards = function () {
-    const httpLike = typeof location !== 'undefined' && /^https?:$/.test(location.protocol);
-    if (httpLike && typeof fetch === 'function') {
-      return fetch('data/cards.json')
-        .then((r) => (r.ok ? r.json() : Promise.reject(new Error('cards.json 取得失敗'))))
-        .then((list) => {
-          if (Array.isArray(list) && list.length) {
-            DOM.CARD_DATA_LIST = list;
-            DOM.CARD_DATA = indexById(list);
-          }
-          return DOM.CARD_DATA;
-        })
-        .catch(() => DOM.CARD_DATA);
-    }
-    return Promise.resolve(DOM.CARD_DATA);
-  };
+  rebuild();
+
+  // 後方互換 API。以前は data/cards.json を fetch していたが、いまは DOM.CARDS が正本なので
+  // 取得は不要（導出済みデータをそのまま返す）。cards.html はこれを呼ぶ。
+  DOM.loadCards = function () { return Promise.resolve(rebuild()); };
 })();

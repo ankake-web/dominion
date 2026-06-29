@@ -52,7 +52,7 @@ try {
   // 「おすすめ」を選ぶと既定のテーマ(先頭=ビッグマネー)になりタイルが並ぶ
   clickText('.set-top-seg .seg-btn', 'おすすめ');
   ok(UI.setup.kingdomSet === 'big-money', 'おすすめ選択で先頭テーマ(ビッグマネー)に');
-  ok($all('.set-tile').length === 6, 'おすすめタイルが6枚');
+  ok($all('.set-tile').length === 9, 'おすすめタイルが9枚（おすすめ6＋初版2＋プロモ1）');
   ok(byText('.set-tile-name', '勝利点レース（陰謀）'), 'テーマ「勝利点レース」タイルがある');
   clickTile('策謀コンボ');
   ok(UI.setup.kingdomSet === 'secret-schemes', 'タイルで策謀コンボを選択');
@@ -73,7 +73,7 @@ try {
   clickText('button', 'この設定で開始');
   ok(UI.view === 'game' && UI.store && UI.store.state, 'ゲーム開始');
   const kingdom = UI.store.state.kingdom;
-  ok(kingdom.includes('nobles') && kingdom.includes('bridge'), '陰謀の王国カードが場に: ' + kingdom.join(','));
+  ok(kingdom.includes('nobles') && kingdom.includes('lurker'), '陰謀の王国カードが場に: ' + kingdom.join(','));
 
   console.log('=== 執事モーダル: 選択肢が出て解決できる ===');
   let s = E.createInitialState(['P1', 'P2'], DOM.KINGDOM_INTRIGUE, { startActive: 0 });
@@ -161,7 +161,7 @@ try {
 
   console.log('=== カード一覧に拡張カードが載る ===');
   go('cardList');
-  ok(doc.body.textContent.includes('陰謀・拡張'), 'カード一覧に拡張グループ');
+  ok(doc.body.textContent.includes('陰謀・第二版') && doc.body.textContent.includes('プロモ'), 'カード一覧に陰謀(第二版)＋プロモのグループ');
   ok($all('.cardlist-grid .card').length >= 30, '基本＋拡張で30枚以上: ' + $all('.cardlist-grid .card').length);
 
   ok(!runtimeError, '実行時エラーが出ていない: ' + (runtimeError && (runtimeError.stack || runtimeError)));

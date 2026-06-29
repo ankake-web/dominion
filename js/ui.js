@@ -533,8 +533,12 @@
       h('p', { class: 'muted', style: 'font-size:12px;padding:0 4px' }, 'タップで拡大（コスト・効果つき）。'),
       group('財宝', DOM.TREASURES),
       group('勝利点・呪い', DOM.VICTORY.concat(['curse'])),
-      group('王国カード（基本セット）', byCost((DOM.POOLS && DOM.POOLS.basic) || DOM.KINGDOM)),
-      group('王国カード（陰謀・拡張）', byCost((DOM.POOLS && DOM.POOLS.intrigue) || []))
+      group('王国カード（基本・第二版）', byCost((DOM.POOLS && DOM.POOLS.basic) || DOM.KINGDOM)),
+      group('王国カード（陰謀・第二版）', byCost((DOM.POOLS && DOM.POOLS.intrigue) || [])),
+      (DOM.POOLS && DOM.POOLS.promo) ? group('プロモカード', byCost(DOM.POOLS.promo)) : null,
+      (DOM.POOLS && DOM.POOLS.basic1e) ? group('初版のみ（第二版で廃止）', byCost(
+        DOM.POOLS.basic1e.filter((id) => DOM.POOLS.basic.indexOf(id) < 0)
+          .concat(DOM.POOLS.intrigue1e.filter((id) => DOM.POOLS.intrigue.indexOf(id) < 0)))) : null
     );
   }
 
@@ -786,12 +790,12 @@
   /* ---------- 選択モーダル ---------- */
   function viewPendingModal(state, pd) {
     const key = pd.type + (pd.stage || '');
-    if (UI._selKey !== key) { UI.selection = []; UI._selKey = key; }
+    if (UI._selKey !== key) { UI.selection = []; UI.sentryChoice = null; UI._selKey = key; }
     const p = state.players[pd.player];
 
     if (pd.type === 'cellar') return modalMultiHand(p, '地下貯蔵庫', '捨てるカードを選び、同じ枚数を引きます。（0枚でもOK）',
       (n) => '確定（' + n + '枚 捨てる）', true, (cards) => dispatch({ type: 'CELLAR_RESOLVE', cards }));
-    if (pd.type === 'militia') return modalMilitia(p, p.hand.length - 3, p.hand.includes('moat'), p.hand.includes('secret_chamber') && !pd.reacted);
+    if (pd.type === 'militia') return modalMilitia(p, p.hand.length - 3, p.hand.includes('moat'), p.hand.includes('secret_chamber') && !pd.reacted, canDiplomatReact(p, pd));
     if (pd.type === 'mine' && pd.stage === 'trash') return modalSingleHand(p, '鉱山 — 廃棄', '廃棄する財宝を選びます（しなくてもよい）。',
       (id) => DOM.CARDS[id].types.includes('treasure'),
       (id) => dispatch({ type: 'MINE_TRASH', card: id }), { label: '廃棄しない', on: () => dispatch({ type: 'MINE_TRASH', card: null }) });
@@ -832,7 +836,7 @@
       { label: '+3 カード', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'cards' }) },
       { label: '+2 アクション', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'actions' }) },
     ]);
-    if (pd.type === 'torturer') return modalTorturer(p, p.hand.includes('secret_chamber') && !pd.reacted);
+    if (pd.type === 'torturer') return modalTorturer(p, p.hand.includes('secret_chamber') && !pd.reacted, canDiplomatReact(p, pd));
     if (pd.type === 'trading_post') return modalTrashHand(p, '交易場 — 廃棄', '手札から2枚を選んで廃棄します（2枚廃棄できたら銀貨を手札に獲得）。', Math.min(2, p.hand.length), (cards) => dispatch({ type: 'TRADING_POST_RESOLVE', cards }));
     if (pd.type === 'upgrade' && pd.stage === 'trash') return modalSingleHand(p, '改良 — 廃棄', '手札から1枚を廃棄します（その後、ちょうど1コイン高いカードを獲得）。', () => true, (card) => dispatch({ type: 'UPGRADE_TRASH', card }));
     if (pd.type === 'upgrade' && pd.stage === 'gain') return modalGainSupply(state, '改良 — 獲得', '廃棄したカードよりちょうど1コイン高いカードを1枚獲得します。', (id) => effCost(state, id) === pd.exactCost, (id) => dispatch({ type: 'UPGRADE_GAIN', card: id }));
@@ -877,14 +881,63 @@
     if (pd.type === 'throne') return modalSingleHand(p, '玉座の間 — 2回使うアクションを選ぶ', '手札のアクションカードを1枚選ぶと、それを2回使います。', (id) => DOM.isType(id, 'action'), (card) => dispatch({ type: 'THRONE_CHOOSE', card }), null, '2回使う');
     if (pd.type === 'secret_chamber_putback') return modalSelectN(p, '秘密の小部屋 — 山札の上に戻す', '手札から2枚を選んで山札の上に戻します（最初のタップが一番上）。', Math.min(2, p.hand.length), '確定（戻す）', (cards) => dispatch({ type: 'SECRET_CHAMBER_PUTBACK', cards }));
 
+    /* ===== 基本セット 第二版 ===== */
+    if (pd.type === 'harbinger') return modalPickList(state, '前駆者 — 山札の上に置く', '捨て札から1枚を選んで山札の上に置けます（次のターンに引きます）。', p.discard, '山札の上に置く', (id) => dispatch({ type: 'HARBINGER_PUT', card: id }), { label: '置かない', on: () => dispatch({ type: 'HARBINGER_PUT', card: null }) });
+    if (pd.type === 'vassal') return modalOptions('家臣 — 捨てたアクション', '捨てた「' + DOM.CARDS[pd.card].name + '」を使えます。', [
+      { label: '使う', cls: 'btn-primary', on: () => dispatch({ type: 'VASSAL_PLAY', play: true }) },
+      { label: '使わない', on: () => dispatch({ type: 'VASSAL_PLAY', play: false }) }]);
+    if (pd.type === 'poacher') return modalSelectN(p, '密猟者 — 捨てる', '空のサプライの数（' + pd.need + '）だけ手札を捨てます。', pd.need, '確定（捨てる）', (cards) => dispatch({ type: 'POACHER_DISCARD', cards }));
+    if (pd.type === 'bandit' && pd.stage === 'react') return modalOptions('山賊を受ける', '山札の上2枚から、銅貨でない財宝1枚が廃棄されます。', reactOptions(p, pd, { type: 'BANDIT_REACT' }));
+    if (pd.type === 'bandit' && pd.stage === 'pick') return modalOptions('山賊 — 廃棄する財宝を選ぶ', '公開された財宝から、廃棄する1枚を選びます。', pd.cands.map((c) => ({ label: DOM.CARDS[c].name, on: () => dispatch({ type: 'BANDIT_PICK', card: c }) })));
+    if (pd.type === 'sentry') return modalSentry(p, pd.cards, (res) => dispatch(Object.assign({ type: 'SENTRY_RESOLVE' }, res)));
+    if (pd.type === 'artisan' && pd.stage === 'gain') return modalGainSupply(state, '職人 — 獲得', 'コスト5以下のカードを手札に獲得します。', (id) => effCost(state, id) <= 5, (id) => dispatch({ type: 'ARTISAN_GAIN', card: id }));
+    if (pd.type === 'artisan' && pd.stage === 'put') return modalSingleHand(p, '職人 — 山札の上に置く', '手札から1枚を選び、山札の上に置きます。', () => true, (card) => dispatch({ type: 'ARTISAN_PUT', card }), null, '山札の上に置く');
+
+    /* ===== 陰謀 第二版 ===== */
+    if (pd.type === 'courtier' && pd.stage === 'reveal') return modalSingleHand(p, '廷臣 — 公開', '公開するカードを1枚選びます（持つ種類の数だけ効果を選べます）。', () => true, (card) => dispatch({ type: 'COURTIER_REVEAL', card }), null, '公開する');
+    if (pd.type === 'courtier' && pd.stage === 'choose') return modalChooseN('廷臣 — 効果を選ぶ', '「' + DOM.CARDS[pd.card].name + '」の種類数 = ' + pd.n + ' 個を選びます。', COURTIER_OPTS, pd.n, (choices) => dispatch({ type: 'COURTIER_CHOOSE', choices }));
+    if (pd.type === 'lurker' && pd.stage === 'choose') return modalOptions('待ち伏せ', '次から1つを選びます。', [
+      { label: 'サプライのアクションを廃棄', on: () => dispatch({ type: 'LURKER_CHOOSE', choice: 'trash' }) },
+      { label: '廃棄置き場からアクションを獲得', on: () => dispatch({ type: 'LURKER_CHOOSE', choice: 'gain' }) }]);
+    if (pd.type === 'lurker' && pd.stage === 'trash') return modalGainSupply(state, '待ち伏せ — 廃棄', 'サプライのアクションカード1枚を廃棄します。', (id) => DOM.CARDS[id].types.includes('action'), (id) => dispatch({ type: 'LURKER_TRASH', card: id }), null, false, '廃棄する');
+    if (pd.type === 'lurker' && pd.stage === 'gain') return modalPickList(state, '待ち伏せ — 獲得', '廃棄置き場からアクションカード1枚を獲得します。', state.trash.filter((id) => DOM.CARDS[id].types.includes('action')), '獲得する', (id) => dispatch({ type: 'LURKER_GAIN', card: id }));
+    if (pd.type === 'mill') return modalMill(p, (cards) => dispatch({ type: 'MILL_RESOLVE', cards }));
+    if (pd.type === 'patrol') return modalReorder('パトロール — 山札の上に戻す', '山札の上に戻す順番をタップで選びます（最初が一番上）。', pd.cards, (order) => dispatch({ type: 'PATROL_RESOLVE', order }));
+    if (pd.type === 'replace' && pd.stage === 'react') return modalOptions('身代わりを受ける', '相手が勝利点を獲得した場合、呪いを受けます。', reactOptions(p, pd, { type: 'REPLACE_REACT' }));
+    if (pd.type === 'replace' && pd.stage === 'trash') return modalSingleHand(p, '身代わり — 廃棄', '廃棄するカードを1枚選びます（その後、最大$2高いカードを獲得）。', () => true, (card) => dispatch({ type: 'REPLACE_TRASH', card }));
+    if (pd.type === 'replace' && pd.stage === 'gain') return modalGainSupply(state, '身代わり — 獲得', '廃棄したカードより最大$2高いカードを1枚獲得します。', (id) => effCost(state, id) <= pd.maxCost, (id) => dispatch({ type: 'REPLACE_GAIN', card: id }));
+    if (pd.type === 'secret_passage' && pd.stage === 'pick') return modalSingleHand(p, '隠し通路 — カードを選ぶ', '山札に入れるカードを1枚選びます。', () => true, (card) => dispatch({ type: 'SECRET_PASSAGE_PICK', card }), null, '選ぶ');
+    if (pd.type === 'secret_passage' && pd.stage === 'place') return modalOptions('隠し通路 — 入れる位置', '「' + DOM.CARDS[pd.card].name + '」を山札のどこに入れますか？', [
+      { label: '一番上（次に引く）', cls: 'btn-primary', on: () => dispatch({ type: 'SECRET_PASSAGE_PLACE', pos: 0 }) },
+      { label: '真ん中', on: () => dispatch({ type: 'SECRET_PASSAGE_PLACE', pos: Math.floor(p.deck.length / 2) }) },
+      { label: '一番下', on: () => dispatch({ type: 'SECRET_PASSAGE_PLACE', pos: p.deck.length }) }]);
+    if (pd.type === 'diplomat_discard') return modalSelectN(p, '外交官 — 手札を捨てる', '手札を3枚捨てます。', Math.min(3, p.hand.length), '確定（捨てる）', (cards) => dispatch({ type: 'DIPLOMAT_DISCARD', cards }));
+
+    /* ===== プロモ ===== */
+    if (pd.type === 'envoy') return modalPickList(state, '使者 — 捨てさせる', state.players[pd.source].name + ' が公開した5枚から、捨てさせる1枚を選びます。', pd.revealed, '捨てさせる', (id) => dispatch({ type: 'ENVOY_PICK', card: id }));
+    if (pd.type === 'governor' && pd.stage === 'choose') return modalOptions('総督', '全員に効果（自分はカッコ内の強い方）。1つ選びます。', [
+      { label: 'カードを引く（自分 +3 / 他 +1）', on: () => dispatch({ type: 'GOVERNOR_CHOOSE', choice: 'cards' }) },
+      { label: '財宝を獲得（自分=金貨 / 他=銀貨）', on: () => dispatch({ type: 'GOVERNOR_CHOOSE', choice: 'silver' }) },
+      { label: '改築（自分=ちょうど$2高い / 他=$1高い）', on: () => dispatch({ type: 'GOVERNOR_CHOOSE', choice: 'remodel' }) }]);
+    if (pd.type === 'governor_remodel' && pd.stage === 'trash') return modalSingleHand(p, '総督 — 廃棄（任意）', '廃棄してちょうど $' + pd.delta + ' 高いカードを獲得できます（しなくてもよい）。', () => true, (card) => dispatch({ type: 'GOVERNOR_REMODEL_TRASH', card }), { label: '廃棄しない', on: () => dispatch({ type: 'GOVERNOR_REMODEL_TRASH', card: null }) });
+    if (pd.type === 'governor_remodel' && pd.stage === 'gain') return modalGainSupply(state, '総督 — 獲得', 'ちょうどコスト ' + pd.exact + ' のカードを獲得します。', (id) => effCost(state, id) === pd.exact, (id) => dispatch({ type: 'GOVERNOR_REMODEL_GAIN', card: id }));
+    if (pd.type === 'dismantle' && pd.stage === 'trash') return modalSingleHand(p, '取り壊し — 廃棄', '廃棄するカードを1枚選びます（$1以上なら 安いカード＋金貨を獲得）。', () => true, (card) => dispatch({ type: 'DISMANTLE_TRASH', card }));
+    if (pd.type === 'dismantle' && pd.stage === 'gain') return modalGainSupply(state, '取り壊し — 獲得', '廃棄したカードより安いカードを1枚獲得します。', (id) => effCost(state, id) <= pd.maxCost, (id) => dispatch({ type: 'DISMANTLE_GAIN', card: id }));
+    if (pd.type === 'black_market') return modalBlackMarket(state, pd, p);
+
     return h('div');
   }
 
   // 被攻撃側の反応オプション（堀・秘密の小部屋・そのまま受ける）。proceed は通すときのアクション。
+  // 外交官のリアクションが可能か（手札5枚以上で公開→2引き3捨て。1アタックにつき1回）
+  function canDiplomatReact(p, pd) {
+    return p.hand.includes('diplomat') && p.hand.length >= 5 && !pd.diplomatReacted;
+  }
   function reactOptions(p, pd, proceed) {
     const opts = [];
     if (p.hand.includes('moat')) opts.push({ label: '🛡 堀を公開して無効化', cls: 'btn-primary', on: () => dispatch({ type: 'MOAT_REVEAL' }) });
     if (p.hand.includes('secret_chamber') && !pd.reacted) opts.push({ label: '🔮 秘密の小部屋を公開（+2引いて2枚戻す）', on: () => dispatch({ type: 'SECRET_CHAMBER_REVEAL' }) });
+    if (canDiplomatReact(p, pd)) opts.push({ label: '🤝 外交官を公開（+2引いて3枚捨てる）', on: () => dispatch({ type: 'DIPLOMAT_REVEAL' }) });
     opts.push({ label: 'そのまま受ける', on: () => dispatch(proceed) });
     return opts;
   }
@@ -937,7 +990,7 @@
       h('button', { class: 'btn btn-primary btn-block', disabled: (!allowZero && n === 0) ? 'disabled' : null,
         onclick: () => onConfirm(UI.selection.map((i) => p.hand[i])) }, confirmLabel(n)));
   }
-  function modalMilitia(p, need, hasMoat, hasSecret) {
+  function modalMilitia(p, need, hasMoat, hasSecret, hasDiplomat) {
     const chips = p.hand.map((id, idx) =>
       cardEl(id, {
         size: 'sm',
@@ -952,6 +1005,7 @@
     const buttons = h('div', null,
       hasMoat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'MOAT_REVEAL' }) }, '🛡 堀を公開して無効化') : null,
       hasSecret ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'SECRET_CHAMBER_REVEAL' }) }, '🔮 秘密の小部屋を公開（+2引いて2枚戻す）') : null,
+      hasDiplomat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'DIPLOMAT_REVEAL' }) }, '🤝 外交官を公開（+2引いて3枚捨てる）') : null,
       h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
         onclick: () => dispatch({ type: 'MILITIA_RESOLVE', cards: UI.selection.map((i) => p.hand[i]) }) },
         remain === 0 ? '確定（捨てる）' : 'あと ' + remain + ' 枚 選ぶ'));
@@ -994,6 +1048,88 @@
       n === 2 ? '決定' : '異なる2つを選ぶ（あと ' + (2 - n) + '）');
     return modalShell('従者', '次から異なる2つを選びます。', tiles, footer);
   }
+
+  // 指定したカードid配列から1枚を選ぶ（任意でスキップ）。前駆者の捨て札・使者・待ち伏せ獲得など。
+  function modalPickList(state, title, desc, cards, pickLabel, onPick, skip) {
+    const chips = cards.length
+      ? cards.map((id) => cardEl(id, { size: 'sm', extra: 'selectable', onClick: () => openPickZoom(id, pickLabel, () => onPick(id)) }))
+      : [h('p', { class: 'muted' }, '対象のカードがありません')];
+    const footer = skip ? h('button', { class: 'btn btn-block', onclick: skip.on }, skip.label) : null;
+    return modalShell(title, desc, chips, footer);
+  }
+
+  // 4択から異なる n 個を選ぶ（廷臣）。
+  const COURTIER_OPTS = [
+    { v: 'action', label: '+1 アクション' }, { v: 'buy', label: '+1 購入' },
+    { v: 'coin', label: '+3 コイン' }, { v: 'gold', label: '金貨を獲得' },
+  ];
+  function modalChooseN(title, desc, options, n, onConfirm) {
+    const tiles = options.map((o) =>
+      h('button', { class: 'choose-tile' + (UI.selection.includes(o.v) ? ' on' : ''),
+        onclick: () => {
+          const i = UI.selection.indexOf(o.v);
+          if (i >= 0) UI.selection.splice(i, 1);
+          else if (UI.selection.length < n) UI.selection.push(o.v);
+          render();
+        } }, o.label));
+    const k = UI.selection.length;
+    const footer = h('button', { class: 'btn btn-primary btn-block', disabled: k === n ? null : 'disabled',
+      onclick: () => onConfirm(UI.selection.slice()) }, k === n ? '決定' : ('異なる ' + n + ' つを選ぶ（あと ' + (n - k) + '）'));
+    return modalShell(title, desc, tiles, footer);
+  }
+
+  // 風車: 手札2枚を捨てて+2コイン、または捨てない。
+  function modalMill(p, onConfirm) {
+    const chips = p.hand.map((id, idx) =>
+      cardEl(id, { size: 'sm', extra: UI.selection.includes(idx) ? 'selected' : 'selectable',
+        onClick: () => {
+          const i = UI.selection.indexOf(idx);
+          if (i >= 0) UI.selection.splice(i, 1); else if (UI.selection.length < 2) UI.selection.push(idx);
+          render();
+        } }));
+    const k = UI.selection.length;
+    const footer = h('div', null,
+      h('button', { class: 'btn btn-primary btn-block', disabled: k === 2 ? null : 'disabled', style: 'margin-bottom:8px',
+        onclick: () => onConfirm(UI.selection.map((i) => p.hand[i])) }, k === 2 ? '2枚捨てて +2 コイン' : ('捨てる2枚を選ぶ（あと ' + (2 - k) + '）')),
+      h('button', { class: 'btn btn-block', onclick: () => onConfirm([]) }, '捨てない'));
+    return modalShell('風車', '手札を2枚捨てると +2 コイン（しなくてもよい）。', chips, footer);
+  }
+
+  // 衛兵: 山札の上2枚を「山札の上／捨て札／廃棄」に振り分ける（タップで切替）。
+  function modalSentry(p, cards, onConfirm) {
+    if (!Array.isArray(UI.sentryChoice) || UI.sentryChoice.length !== cards.length) UI.sentryChoice = cards.map(() => 'top');
+    const labelOf = (s) => (s === 'top' ? '山札の上' : (s === 'discard' ? '捨て札' : '廃棄'));
+    const nextOf = (s) => (s === 'top' ? 'discard' : (s === 'discard' ? 'trash' : 'top'));
+    const chips = cards.map((id, idx) =>
+      h('div', { style: 'display:inline-block;text-align:center;margin:4px' },
+        cardEl(id, { size: 'sm', extra: 'selectable', onClick: () => { UI.sentryChoice[idx] = nextOf(UI.sentryChoice[idx]); render(); } }),
+        h('div', { class: 'muted', style: 'font-size:12px;margin-top:2px' }, '→ ' + labelOf(UI.sentryChoice[idx]))));
+    const footer = h('button', { class: 'btn btn-primary btn-block',
+      onclick: () => {
+        const res = { trash: [], discard: [], top: [] };
+        cards.forEach((id, idx) => { res[UI.sentryChoice[idx]].push(id); });
+        UI.sentryChoice = null;
+        onConfirm(res);
+      } }, '確定');
+    return modalShell('衛兵 — 山札の上2枚', '各カードをタップして「山札の上／捨て札／廃棄」を切り替えます。', chips, footer);
+  }
+
+  // 闇市場: 財宝を出す→公開3枚のうち1枚を購入 or 買わない。
+  function modalBlackMarket(state, pd, p) {
+    const hasTreasure = p.hand.some((c) => DOM.CARDS[c].types.includes('treasure'));
+    const coins = state.turn.coins;
+    const chips = pd.revealed.length ? pd.revealed.map((id) => {
+      const cst = effCost(state, id);
+      const can = cst <= coins;
+      return h('div', { class: 'pick-supply' },
+        cardEl(id, { size: 'sm', extra: can ? 'selectable' : 'disabled', onClick: can ? () => openPickZoom(id, '購入する（$' + cst + '）', () => dispatch({ type: 'BLACK_MARKET_BUY', card: id })) : null }),
+        h('div', { class: 'pick-remain' }, '$' + cst));
+    }) : [h('p', { class: 'muted' }, '公開カードがありません')];
+    const footer = h('div', null,
+      hasTreasure ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'BLACK_MARKET_PLAY_TREASURES' }) }, '💰 手札の財宝を全て出す') : null,
+      h('button', { class: 'btn btn-block', onclick: () => dispatch({ type: 'BLACK_MARKET_SKIP' }) }, '買わずに進む'));
+    return modalShell('闇市場（所持 ' + coins + ' コイン）', '財宝を出してから、公開3枚のうち1枚を購入できます（任意・1枚まで）。', chips, footer);
+  }
   // 手札からちょうど n 枚を選んで廃棄
   function modalTrashHand(p, title, desc, n, onConfirm) {
     const chips = p.hand.map((id, idx) =>
@@ -1018,7 +1154,7 @@
     return modalShell(title, desc, chips, null);
   }
   // 拷問人を受ける: 手札2枚を捨てる / 呪いを受け取る / 堀で無効化
-  function modalTorturer(p, hasSecret) {
+  function modalTorturer(p, hasSecret, hasDiplomat) {
     const need = Math.min(2, p.hand.length);
     const hasMoat = p.hand.includes('moat');
     const chips = p.hand.map((id, idx) =>
@@ -1033,6 +1169,7 @@
     const footer = h('div', null,
       hasMoat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'MOAT_REVEAL' }) }, '🛡 堀を公開して無効化') : null,
       hasSecret ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'SECRET_CHAMBER_REVEAL' }) }, '🔮 秘密の小部屋を公開（+2引いて2枚戻す）') : null,
+      hasDiplomat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'DIPLOMAT_REVEAL' }) }, '🤝 外交官を公開（+2引いて3枚捨てる）') : null,
       h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
         onclick: () => dispatch({ type: 'TORTURER_RESOLVE', choice: 'discard', cards: UI.selection.map((i) => p.hand[i]) }) },
         remain === 0 ? '手札を捨てる（確定）' : '捨てる ' + remain + ' 枚 を選ぶ'),
@@ -1040,14 +1177,14 @@
     return modalShell('拷問人を受ける', '手札を2枚捨てるか、呪い1枚を手札に受け取ります。' + (hasMoat ? '「堀」で無効化もできます。' : ''), chips, footer);
   }
   // skipOnEmpty: 関数を渡すと「獲得せずに進む」を出す。alwaysSkip=true で候補があっても常時表示（任意獲得）。
-  function modalGainSupply(state, title, desc, filter, onPick, skipOnEmpty, alwaysSkip) {
+  function modalGainSupply(state, title, desc, filter, onPick, skipOnEmpty, alwaysSkip, pickLabel) {
     const order = DOM.SUPPLY_ORDER(state.kingdom);
     const elig = order.filter((id) => filter(id) && (state.supply[id] || 0) > 0);
     const chips = elig.length
       ? elig.map((id) => h('div', { class: 'pick-supply' },
-          cardEl(id, { size: 'sm', extra: 'selectable', onClick: () => openPickZoom(id, '獲得する', () => onPick(id)) }),
+          cardEl(id, { size: 'sm', extra: 'selectable', onClick: () => openPickZoom(id, pickLabel || '獲得する', () => onPick(id)) }),
           h('div', { class: 'pick-remain' }, '残' + state.supply[id])))
-      : [h('p', { class: 'muted' }, '獲得できるカードがありません')];
+      : [h('p', { class: 'muted' }, (pickLabel || '獲得') + 'できるカードがありません')];
     const footer = (skipOnEmpty && (!elig.length || alwaysSkip))
       ? h('button', { class: 'btn btn-block', onclick: skipOnEmpty }, '獲得せずに進む') : null;
     return modalShell(title, desc, chips, footer);

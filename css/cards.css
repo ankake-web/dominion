@@ -1,28 +1,258 @@
 /* ============================================================
-   css/cards.css — カードプレビュー（完成画像をそのまま表示）
-   カードは asset/<id>.jpg（枠・コスト・名前・効果まで焼き込み済み）の1枚画像。
+   css/cards.css — 合成カード（枠SVGフォーマット＋はめ込み / プレミアム枠）
+   ------------------------------------------------------------
+   z0: .dcard-art    … 中央の窓にはめ込む“絵だけ”（枠SVGの下）
+   z1: .dcard-frame  … 枠SVG（艶やかな金枠・四隅金具・彫り込みコスト章・種別プレート・羊皮紙）
+   z2: 文字オーバーレイ（名前・種別ラベル・効果）※コスト数字はSVG内で彫り込み描画
+   位置は枠SVGの viewBox(1000×1515) と同じ％で重ねる。寸法は cqw（カード幅基準）。
+
+   merge元: C=温かい蜂蜜色の金＋深い宝石色の背景／ヴィネット、B=金/コスト章の鏡面質感、
+            D=同心円コスト章のセリフ数字・名前プレート・単一の中央種別プレート・羊皮紙。
    ============================================================ */
 
 .dcard {
   position: relative;
   width: 100%;
-  aspect-ratio: 1060 / 1484;     /* 完成カード画像の比率 */
-  border-radius: 4.5cqw;
-  overflow: hidden;
-  background: #1a1626;
-  box-shadow: 0 1.4cqw 3.5cqw rgba(0, 0, 0, 0.4);
+  aspect-ratio: 1000 / 1515;        /* 枠SVGと同じ縦長比 */
   container-type: inline-size;
   user-select: none;
+  /* 共通色 */
+  --gold-text: #fff4d2;
+  --parch-ink: #2c2110;
+  /* 既定（アクション=深い紺）。各 .frame-* が上書き */
+  --frame: #1f3f70;
+  --frame-d: #142a4e;
+  --frame-dd: #08142c;
+  --ink: #fdf3d8;
 }
-.dcard-full {
-  position: absolute; inset: 0; width: 100%; height: 100%;
-  object-fit: cover; display: block; z-index: 1;
+
+/* ---------- 枠色（種別：C の深く調和した宝石色） ---------- */
+/* --frame   : 種別プレート/宝玉のやや明るい宝石色
+   --frame-d : 盤面（背景）の宝石色
+   --frame-dd: 名前/種別プレートの座面（最も深い宝石色） */
+.frame-action   { --frame: #234d86; --frame-d: #112a52; --frame-dd: #0a1838; --ink: #eaf2ff; }
+.frame-attack   { --frame: #7e2422; --frame-d: #4c1212; --frame-dd: #2a0a0a; --ink: #ffe9e1; }
+.frame-reaction { --frame: #15605b; --frame-d: #0c3a37; --frame-dd: #06211f; --ink: #e6fff9; }
+.frame-treasure { --frame: #7c5a14; --frame-d: #483205; --frame-dd: #281b04; --ink: #fff2cf; }
+.frame-victory  { --frame: #1c5e31; --frame-d: #103a20; --frame-dd: #07210f; --ink: #e9ffe6; }
+.frame-curse    { --frame: #482670; --frame-d: #2c1546; --frame-dd: #170a28; --ink: #f3e8ff; }
+
+/* ---------- 枠画像（読めたら表示し SVG枠を隠す） ---------- */
+/* 種別ごとの“絵だけの金枠”PNG（中央の窓は透明・文字/数字は無し）を asset/frames/<type>.png に置く。
+   SVG枠と同じ viewBox 比(1000:1515) と同じ配置(型紙)で作るので、文字オーバーレイの位置は共通。 */
+.dcard-frameimg {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+  display: none;                 /* 読み込めるまで非表示（壊れアイコンを出さない） */
 }
-.dcard-ph {
-  position: absolute; inset: 0; z-index: 0;
-  display: flex; align-items: center; justify-content: center; text-align: center;
-  background: radial-gradient(120% 90% at 50% 30%, #3a3350, #1a1626);
-  color: #d8cfae; font-weight: 800; font-size: 9cqw; padding: 6cqw;
-  font-family: 'Cinzel', 'Shippori Mincho', serif;
+.dcard.has-frameimg .dcard-frameimg { display: block; }
+.dcard.has-frameimg .dcard-frame   { display: none; }   /* 画像枠があるとき SVG枠は隠す */
+
+/* ---------- 枠SVG ---------- */
+.dcard-frame {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
 }
-.dcard.noimg .dcard-ph { z-index: 2; }
+.dcard-frame svg { display: block; width: 100%; height: 100%; }
+.dcard .df-body   { fill: var(--frame-d); }
+.dcard .df-plate  { fill: var(--frame-dd); }   /* 名前プレートの座面 */
+.dcard .df-plaque { fill: var(--frame-dd); }   /* 種別プレートの座面 */
+.dcard .df-gem    { fill: var(--frame); }
+
+/* ---------- z0：中央の窓（はめ込む絵 / フォールバック） ---------- */
+.dcard-art {
+  position: absolute;
+  z-index: 0;
+  left: 12%;
+  top: 24.55%;
+  width: 76%;
+  height: 50.17%;                    /* 760/1515：正方形になる比 */
+  border-radius: 1.2cqw;
+  overflow: hidden;
+  background: radial-gradient(120% 100% at 50% 22%, var(--frame), var(--frame-dd));
+}
+.dcard-art-fallback {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2cqw;
+  text-align: center;
+  padding: 6cqw;
+}
+.dcard-art-icon {
+  font-size: 30cqw;
+  line-height: 1;
+  filter: drop-shadow(0 1.2cqw 1.6cqw rgba(0, 0, 0, 0.5));
+}
+.dcard-art-name {
+  color: #f6e6b2;
+  font-family: 'Shippori Mincho', serif;
+  font-weight: 700;
+  font-size: 5.6cqw;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0.4cqw 1cqw rgba(0, 0, 0, 0.65);
+}
+.dcard-art-img {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ---------- z2：コスト数字（コイン面に彫り込み。SVG枠でも画像枠でも同位置） ---------- */
+.dcard-cost {
+  position: absolute;
+  z-index: 2;
+  /* コイン中心 (150,150)/(1000,1515) ＝ 15% / 9.9% を中心に置く */
+  left: 5%;
+  top: 3.3%;
+  width: 20%;
+  height: 13.2%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.dcard-cost span {
+  font-family: 'Cinzel', 'Georgia', serif;
+  font-weight: 800;
+  font-size: 11cqw;
+  line-height: 1;
+  color: #2b1d06;
+  /* 彫り込み：上に淡い光、下にやや濃い影 */
+  text-shadow:
+    0 0.16cqw 0 rgba(255, 247, 220, 0.7),
+    0 -0.12cqw 0.2cqw rgba(0, 0, 0, 0.35);
+}
+
+/* ---------- z2：名前（右上の金縁プレート内） ---------- */
+.dcard-title {
+  position: absolute;
+  z-index: 2;
+  left: 28%;
+  width: 64%;
+  top: 2.9%;
+  height: 13.2%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.dcard-title span {
+  text-align: center;
+  color: var(--ink);
+  font-family: 'Shippori Mincho', 'Cinzel', serif;
+  font-weight: 800;
+  font-size: 12cqw;
+  line-height: 1.04;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  text-shadow:
+    0 0.5cqw 0.2cqw rgba(0, 0, 0, 0.7),
+    0 -0.1cqw 0 rgba(255, 255, 255, 0.18),
+    0 0 1.6cqw rgba(0, 0, 0, 0.5);
+}
+/* 長い名前（5文字以上）はプレート内に収まるよう自動縮小 */
+.dcard-title span:not(:empty) { font-size: clamp(0px, 12cqw, 12cqw); }
+
+/* ---------- z2：種別プレート文字（中央1枚・自動縮小で無溢れ） ---------- */
+.dcard-plaque {
+  position: absolute;
+  z-index: 2;
+  left: 24.4%;
+  width: 51.2%;                      /* 枠SVGのプレート内幅(244〜756) と一致 */
+  top: 21.26%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.dcard-plaque span {
+  color: var(--ink);
+  font-family: 'Shippori Mincho', serif;
+  font-weight: 700;
+  white-space: nowrap;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-shadow: 0 0.3cqw 0.6cqw rgba(0, 0, 0, 0.6);
+}
+/* 単一種別（日英併記）：「アクション / Action」が幅51.2%に収まるサイズ */
+.dcard-plaque > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.18em;
+  font-size: 4cqw;
+}
+.dcard-plaque .jp { font-family: 'Shippori Mincho', serif; font-weight: 700; }
+.dcard-plaque .en { font-family: 'Cinzel', serif; font-weight: 600; }
+.dcard-plaque .sep { opacity: 0.7; }
+/* 複合種別（日本語のみ・最大12文字「アクション・リアクション」）：枠内に確実に収めるサイズ */
+.dcard-plaque > span.compound {
+  display: inline-block;
+  gap: 0;
+  font-size: 4.1cqw;
+  letter-spacing: 0;
+}
+
+/* ---------- z2：効果テキスト（羊皮紙パネル内） ---------- */
+.dcard-panel {
+  position: absolute;
+  z-index: 2;
+  left: 9.6%;
+  width: 80.8%;
+  top: 77.3%;
+  height: 17.6%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+}
+.dcard-effects {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.7cqw;
+}
+.dcard-effects li {
+  position: relative;
+  padding-left: 4.6cqw;
+  color: var(--parch-ink);
+  font-family: 'Shippori Mincho', serif;
+  font-size: 4.9cqw;
+  line-height: 1.18;
+  font-weight: 700;
+  white-space: nowrap;
+}
+/* 効果が多い/長いカード（4行や長文）は自動で1段階小さく＝はみ出し防止 */
+.dcard-effects:has(li:nth-child(3)) li { font-size: 4.3cqw; }
+.dcard-effects:has(li:nth-child(4)) li { font-size: 4.0cqw; }
+.dcard-effects li::before {
+  content: "";
+  position: absolute;
+  left: 0.8cqw;
+  top: 0.52em;
+  width: 2cqw;
+  height: 2cqw;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff3cf, #a9772f);
+  box-shadow: 0 0.2cqw 0.4cqw rgba(0, 0, 0, 0.4);
+}
+.dcard-effects:empty { display: none; }

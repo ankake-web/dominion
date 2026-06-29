@@ -30,24 +30,28 @@
     .grid { display: flex; flex-wrap: wrap; gap: 18px; justify-content: center; align-items: flex-start; }
     .cell { width: var(--cw); }
     .small-grid .cell { width: 96px; }
+    /* 完成画像（asset/cards/<id>.png）をそのまま表示。角は画像側で透明なので drop-shadow を使う。 */
+    .dcard-full { width: 100%; height: auto; display: block; filter: drop-shadow(0 6px 14px rgba(0,0,0,.5)); }
   </style>
 </head>
 <body>
   <header>
     <h1>ドミニオン カード一覧</h1>
-    <p class="sub">各カードは完成画像 asset/&lt;id&gt;.jpg（枠・コスト・名前・効果まで描き込み済み）の1枚画像です。</p>
+    <p class="sub">完成画像方式：金属枠＋絵＋文字を合成済みのカード画像 asset/cards/&lt;id&gt;.webp をそのまま表示します。<br />画像が無いカードは従来の「コード合成（SVG枠＋asset/art＋文字）」に自動フォールバックします。</p>
     <div class="controls">
       <label>カードの大きさ <input id="size" type="range" min="120" max="320" value="200" /></label>
       <span id="sizeval">200px</span>
+      <label><input id="composite" type="checkbox" /> 旧・コード合成方式で表示（比較用）</label>
     </div>
   </header>
 
-  <div class="section-title">全17種（同一レイアウト）</div>
+  <div class="section-title">全77種（同一レイアウト）</div>
   <div id="grid" class="grid"></div>
 
   <div class="section-title">小さく表示（名前・コスト・種別が読めるか）</div>
   <div id="smallgrid" class="grid small-grid"></div>
 
+  <script src="js/cards.js"></script>
   <script src="js/carddata.js"></script>
   <script src="js/cardview.js"></script>
   <script>
@@ -55,17 +59,29 @@
       const DOM = window.DOM;
       const grid = document.getElementById('grid');
       const small = document.getElementById('smallgrid');
-      function build(list) {
+      const composite = document.getElementById('composite');
+      let cards = [];
+      // 1枚ぶんのノードを作る。既定は完成画像 asset/cards/<id>.png をそのまま表示。
+      // 読み込み失敗時、または「旧・コード合成方式」ON のときは DOM.cardView の合成にフォールバック。
+      function makeCard(c) {
+        if (composite.checked) return DOM.cardView(c, {});
+        const img = document.createElement('img');
+        img.className = 'dcard-full';
+        img.alt = c.name || ''; img.loading = 'lazy'; img.decoding = 'async';
+        img.addEventListener('error', () => { img.replaceWith(DOM.cardView(c, {})); });
+        img.src = 'asset/cards/' + c.id + '.webp';
+        return img;
+      }
+      function build() {
         grid.innerHTML = ''; small.innerHTML = '';
-        list.forEach((c) => {
+        cards.forEach((c) => {
           const cell = document.createElement('div'); cell.className = 'cell';
-          cell.appendChild(DOM.cardView(c));
+          cell.appendChild(makeCard(c));
           grid.appendChild(cell);
           const s = document.createElement('div'); s.className = 'cell';
-          s.appendChild(DOM.cardView(c));
+          s.appendChild(makeCard(c));
           small.appendChild(s);
         });
-        requestAnimationFrame(() => DOM.fitAllCards(document));
       }
       const size = document.getElementById('size');
       const sizeval = document.getElementById('sizeval');
@@ -73,7 +89,8 @@
         document.documentElement.style.setProperty('--cw', size.value + 'px');
         sizeval.textContent = size.value + 'px';
       });
-      DOM.loadCards().then((map) => build(DOM.CARD_DATA_LIST || Object.values(map)));
+      composite.addEventListener('change', build);
+      DOM.loadCards().then((map) => { cards = DOM.CARD_DATA_LIST || Object.values(map); build(); });
     })();
   </script>
 </body>

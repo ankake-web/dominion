@@ -5,3 +5,7 @@ node_modules/
 pictier/
 asset/*.png
 asset/260313_assets/
+# カード画像の重い原本はコミットしない（配信は asset/cards/*.webp のみ）
+images/
+asset/art/
+asset/cards/*.png

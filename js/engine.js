@@ -24,6 +24,19 @@
     if (id === 'copper') return base + ((state.turn && state.turn.copperBonus) || 0);
     return base;
   }
+  // 財宝1枚を手札から場に出してコインを加算。「商人」の“このターン最初の銀貨で+1コイン（商人の数だけ）”もここで処理。
+  // PLAY_TREASURE / PLAY_ALL_TREASURES / 闇市場 で共通利用。
+  function playTreasureCard(state, pIndex, card) {
+    const p = state.players[pIndex];
+    const t = state.turn;
+    removeOne(p.hand, card);
+    p.inPlay.push(card);
+    t.coins += treasureCoins(state, card);
+    if (card === 'silver' && !t.silverPlayed) {
+      if (t.merchants) { t.coins += t.merchants; log(state, `${p.name} は商人の効果で +${t.merchants} コイン。`); }
+      t.silverPlayed = true;
+    }
+  }
 
   /* ---------- 乱数・シャッフル ---------- */
   function shuffle(arr) {
@@ -35,7 +48,10 @@
     return a;
   }
 
-  /* ---------- サプライ初期化 ---------- */
+  /* ---------- サプライ初期化 ----------
+     勝利点の山は人数で枚数が変わる（2人=8, 3-4人=12）。屋敷/公領/属州だけでなく
+     王国の勝利点カード（庭園・公爵・貴族・大広間・後宮・製粉所 等、勝利点タイプを持つもの）
+     も同じ枚数にする。それ以外の王国カードは常に10枚。 */
   function initSupply(numPlayers, kingdom) {
     const v = numPlayers <= 2 ? 8 : 12; // 勝利点の山（2人=8, 3-4人=12）
     const supply = {
@@ -47,7 +63,7 @@
       province: v,
       curse: 10 * (numPlayers - 1),
     };
-    kingdom.forEach((k) => (supply[k] = 10));
+    kingdom.forEach((k) => (supply[k] = DOM.isType(k, 'victory') ? v : 10));
     return supply;
   }
 
@@ -88,13 +104,25 @@
     else if (Number.isInteger(opts.startActive) && opts.startActive >= 0 && opts.startActive < players.length)
       startActive = opts.startActive;
 
+    const supply = initSupply(players.length, kingdom);
+
+    // 闇市場(Black Market)デッキ：使用中のサプライに無い王国カードを1枚ずつ集めてシャッフル。
+    // 闇市場が王国に含まれるときだけ用意する。
+    let blackMarket = null;
+    if (kingdom.indexOf('black_market') >= 0) {
+      const universe = Array.from(new Set([].concat.apply([], Object.values(DOM.POOLS || {}))));
+      const inSupply = (id) => Object.prototype.hasOwnProperty.call(supply, id);
+      blackMarket = shuffle(universe.filter((id) => DOM.CARDS[id] && id !== 'black_market' && !inSupply(id)));
+    }
+
     return {
       version: 0,
       kingdom,
       players,
-      supply: initSupply(players.length, kingdom),
+      supply,
       trash: [],
-      turn: { active: startActive, phase: 'action', actions: 1, buys: 1, coins: 0, costReduction: 0, actionsPlayed: 0, copperBonus: 0 },
+      blackMarket, // 闇市場デッキ（無ければ null）
+      turn: { active: startActive, phase: 'action', actions: 1, buys: 1, coins: 0, costReduction: 0, actionsPlayed: 0, copperBonus: 0, merchants: 0, silverPlayed: false },
       pending: null, // 選択待ち {type, player, ...}
       logSeq: 1, // ログの通し番号（効果音などが「新しい行」を確実に検知するため）
       log: [`ゲーム開始。${players[startActive].name} の番です。`],
@@ -166,6 +194,56 @@
     return Object.keys(state.supply).some(
       (id) => (state.supply[id] || 0) > 0 && predicate(id)
     );
+  }
+
+  // 隠し財産(Hoard): 場にある間、勝利点カードを購入したら枚数ぶん金貨を獲得（通常購入・闇市場購入で共通）
+  function applyHoardOnBuy(state, pi, card) {
+    if (!DOM.isType(card, 'victory')) return;
+    const hoards = state.players[pi].inPlay.filter((c) => c === 'hoard').length;
+    for (let i = 0; i < hoards; i++) {
+      if (gain(state, pi, 'gold', 'discard')) log(state, `${state.players[pi].name} は隠し財産で金貨を獲得した。`);
+    }
+  }
+
+  /* ---------- 選択リゾルバの共通部品（カードを足すほど効く再利用パーツ）----------
+     手札からN枚を捨てる/廃棄する、強制つきでサプライから獲得する、の3定型を1か所に。
+     検証（指定枚数・全て手札にある・在庫・コスト/種別条件・強制獲得時のデッドロック回避）を
+     共通化し、各カードの *_RESOLVE は数行で書けるようにする。 */
+  // 手札からちょうど want 枚を捨て札へ。検証OKなら実行して true、不正なら false（呼び出し側は state を据え置く）。
+  function discardFromHand(state, pIndex, cards, want, note) {
+    const p = state.players[pIndex];
+    cards = Array.isArray(cards) ? cards : [];
+    if (cards.length !== want) return false;
+    const copy = p.hand.slice();
+    for (const c of cards) if (!removeOne(copy, c)) return false; // 手札に無い指定は拒否
+    cards.forEach((c) => { removeOne(p.hand, c); p.discard.push(c); });
+    if (cards.length && note) log(state, `${p.name} は ${cards.length}枚 ${note}`);
+    return true;
+  }
+  // 手札からちょうど want 枚を廃棄（trash）へ。検証つき。
+  function trashFromHand(state, pIndex, cards, want, note) {
+    const p = state.players[pIndex];
+    cards = Array.isArray(cards) ? cards : [];
+    if (cards.length !== want) return false;
+    const copy = p.hand.slice();
+    for (const c of cards) if (!removeOne(copy, c)) return false;
+    cards.forEach((c) => { removeOne(p.hand, c); state.trash.push(c); });
+    if (cards.length && note) log(state, `${p.name} は ${cards.length}枚 ${note}`);
+    return true;
+  }
+  // 「強制獲得つき」獲得解決。card が条件(canGain)を満たせば dest へ獲得し pending=null。
+  //   card==null: 候補があるうちは獲得必須（pending据え置き）／候補ゼロなら辞退OK(pending=null)。
+  //   不正な card: pending据え置き（再選択）。呼び出し側は本関数の後に return state するだけ。
+  function finishGain(state, pd, card, canGain, dest, note) {
+    if (card == null) {
+      if (anyGainable(state, canGain)) return false; // 候補あり→獲得必須
+      state.pending = null; return true;             // 候補なし→辞退
+    }
+    if (!canGain(card) || (state.supply[card] || 0) <= 0) return false;
+    gain(state, pd.player, card, dest);
+    if (note) log(state, `${state.players[pd.player].name} は「${C()[card].name}」を${note}`);
+    state.pending = null;
+    return true;
   }
 
   // 民兵：次の対象プレイヤーへ進む（いなければ選択待ち解除）
@@ -296,16 +374,36 @@
 
   // リアクション札（堀／秘密の小部屋）を持つか。被攻撃側に反応の機会を与えるか判定に使う。
   function hasReaction(player) {
-    return player.hand.includes('moat') || player.hand.includes('secret_chamber');
+    return player.hand.includes('moat') || player.hand.includes('secret_chamber') ||
+      (player.hand.includes('diplomat') && player.hand.length >= 5);
   }
   // 秘密の小部屋のリアクションを差し込める「被攻撃側の反応ステップ」か。
+  /* ---------- アタック登録表（唯一の正本）----------
+     新しいアタックを足すときは、ここに1行 ＋ 対応する EnterVictim と *_REACT リゾルバを書くだけ。
+     堀(MOAT_REVEAL)・秘密の小部屋・外交官の反応窓口の判定と「無効化されたら次の被害者へ」は
+     すべてこの表を引いて行う＝ MOAT_REVEAL に分岐を書き足し忘れて堀が効かない事故を防ぐ。
+       embedded … 被攻撃者の解決ステップ自体が反応窓口（民兵・拷問人。'react'ステージを持たない）。
+       onMoat  … 堀で無効化されたとき、その被害者を飛ばして次へ進める関数。
+     test/integrity.test.js が「'react'ステージを作るアタックは全てここに登録済み」を自動検証する。 */
+  const ATTACKS = {
+    militia:       { embedded: true, onMoat: (s, pd) => advanceMilitia(s, pd) },
+    torturer:      { embedded: true, onMoat: (s, pd) => advanceAttack(s, pd) },
+    witch:         { onMoat: (s, pd) => witchEnterVictim(s, pd.source, pd.queue) },
+    bureaucrat:    { onMoat: (s, pd) => bureaucratEnterVictim(s, pd.source, pd.queue) },
+    spy:           { onMoat: (s, pd) => spyEnterTarget(s, pd.source, pd.queue) },
+    thief:         { onMoat: (s, pd) => thiefEnterVictim(s, pd.source, pd.queue) },
+    swindler:      { onMoat: (s, pd) => swindlerEnterVictim(s, pd.source, pd.queue) },
+    saboteur:      { onMoat: (s, pd) => saboteurEnterVictim(s, pd.source, pd.queue) },
+    minion_attack: { onMoat: (s, pd) => minionAttackEnterVictim(s, pd.source, pd.queue) },
+    bandit:        { onMoat: (s, pd) => banditEnterVictim(s, pd.source, pd.queue) },
+    replace:       { onMoat: (s, pd) => replaceEnterVictim(s, pd.source, pd.queue) },
+  };
+  // 被攻撃側の反応（堀／秘密の小部屋／外交官）を差し込める局面か。
   function isAttackReactPending(pd) {
     if (!pd) return false;
-    if (pd.type === 'militia' || pd.type === 'torturer') return true;
-    if ((pd.type === 'swindler' || pd.type === 'saboteur' || pd.type === 'minion_attack' ||
-         pd.type === 'witch' || pd.type === 'bureaucrat' ||
-         pd.type === 'spy' || pd.type === 'thief') && pd.stage === 'react') return true;
-    return false;
+    const a = ATTACKS[pd.type];
+    if (!a) return false;
+    return !!a.embedded || pd.stage === 'react';
   }
 
   /* ---------- 書庫（手札が7枚になるまで引く。引いたアクションは脇に置ける）---------- */
@@ -418,6 +516,75 @@
       reveal(state, victim, v.hand, '役人：勝利点なしの手札を公開');
       bureaucratEnterVictim(state, source, queue);
     }
+  }
+
+  /* ---------- 山賊（複数対象。各相手が上2枚公開→銅貨以外の財宝1枚を廃棄）---------- */
+  function banditEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'bandit', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      banditReveal(state, source, victim, rest);
+    }
+  }
+  function banditReveal(state, source, victim, queue) {
+    const v = state.players[victim];
+    const revealed = [];
+    for (let i = 0; i < 2; i++) {
+      if (v.deck.length === 0) { if (v.discard.length === 0) break; v.deck = shuffle(v.discard); v.discard = []; }
+      if (v.deck.length === 0) break;
+      revealed.push(v.deck.shift());
+    }
+    if (revealed.length) reveal(state, victim, revealed, '山賊で山札の上を公開');
+    const cands = revealed.filter((c) => DOM.isType(c, 'treasure') && c !== 'copper');
+    if (cands.length >= 2 && cands[0] !== cands[1]) {
+      // 異なる財宝が2枚 → 犠牲者がどちらを廃棄するか選ぶ
+      state.pending = { type: 'bandit', stage: 'pick', player: victim, source, victim, revealed, cands, queue };
+    } else if (cands.length >= 1) {
+      const trashed = cands[0];
+      removeOne(revealed, trashed);
+      state.trash.push(trashed);
+      log(state, `${v.name} は「${C()[trashed].name}」を廃棄した（山賊）。`);
+      revealed.forEach((c) => v.discard.push(c));
+      banditEnterVictim(state, source, queue);
+    } else {
+      revealed.forEach((c) => v.discard.push(c));
+      if (revealed.length) log(state, `${v.name} は廃棄できる財宝がなく、公開札を捨てた（山賊）。`);
+      banditEnterVictim(state, source, queue);
+    }
+  }
+
+  /* ---------- 身代わり（勝利点を獲得したとき他全員が呪いを獲得＝アタック）---------- */
+  function replaceEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'replace', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      replaceCurse(state, source, victim, rest);
+    }
+  }
+  function replaceCurse(state, source, victim, queue) {
+    if ((state.supply.curse || 0) > 0) {
+      gain(state, victim, 'curse', 'discard');
+      log(state, `${state.players[victim].name} は呪いを獲得した（身代わり）。`);
+    }
+    replaceEnterVictim(state, source, queue);
+  }
+
+  /* ---------- 総督（改築モード）：全員が順に「任意で廃棄→ちょうど+$Nを獲得」---------- */
+  // queue 要素は { p: 席, delta: 自分=2/他=1 }。手札の無い人は飛ばす。
+  function governorEnterRemodel(state, queue) {
+    while (queue && queue.length) {
+      const cur = queue[0], rest = queue.slice(1);
+      if (state.players[cur.p].hand.length > 0) {
+        state.pending = { type: 'governor_remodel', stage: 'trash', player: cur.p, delta: cur.delta, queue: rest };
+        return;
+      }
+      queue = rest;
+    }
+    state.pending = null;
   }
 
   /* ---------- アクションカードの効果 ---------- */
@@ -733,6 +900,147 @@
         break;
       }
 
+      /* ===== 基本セット 第二版で追加された7種 ===== */
+      case 'harbinger':
+        draw(state, pi, 1);
+        t.actions += 1;
+        // 捨て札があれば、その中から1枚を山札の上に置いてよい
+        if (p.discard.length > 0) state.pending = { type: 'harbinger', player: pi };
+        break;
+      case 'merchant':
+        draw(state, pi, 1);
+        t.actions += 1;
+        t.merchants = (t.merchants || 0) + 1; // このターン最初の銀貨で +1（商人の数だけ）
+        break;
+      case 'vassal': {
+        t.coins += 2;
+        if (p.deck.length === 0 && p.discard.length > 0) { p.deck = shuffle(p.discard); p.discard = []; }
+        if (p.deck.length > 0) {
+          const top = p.deck.shift();
+          p.discard.push(top); // 一旦捨てる（公式どおり：捨ててから使うなら捨て札から場へ）
+          reveal(state, pi, [top], '家臣で山札の上を公開');
+          log(state, `${p.name} は山札の上の「${C()[top].name}」を捨てた（家臣）。`);
+          if (DOM.isType(top, 'action')) state.pending = { type: 'vassal', player: pi, card: top };
+        }
+        break;
+      }
+      case 'poacher': {
+        draw(state, pi, 1);
+        t.actions += 1;
+        t.coins += 1;
+        const need = Math.min(emptyPileCount(state), p.hand.length); // 空のサプライ1つにつき手札1枚捨て
+        if (need > 0) state.pending = { type: 'poacher', player: pi, need };
+        break;
+      }
+      case 'bandit': {
+        if (gain(state, pi, 'gold', 'discard')) log(state, `${p.name} は金貨を獲得した（山賊）。`);
+        const vics = [];
+        for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
+        banditEnterVictim(state, pi, vics);
+        break;
+      }
+      case 'sentry': {
+        draw(state, pi, 1);
+        t.actions += 1;
+        const look = []; // 山札の上2枚を「見る」（他者には公開しない）
+        for (let i = 0; i < 2; i++) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; p.deck = shuffle(p.discard); p.discard = []; }
+          if (p.deck.length === 0) break;
+          look.push(p.deck.shift());
+        }
+        if (look.length > 0) state.pending = { type: 'sentry', player: pi, cards: look };
+        break;
+      }
+      case 'artisan':
+        // コスト5以下を手札に獲得（銅貨があるので常に可能）→ その後、手札1枚を山札の上へ
+        state.pending = { type: 'artisan', stage: 'gain', player: pi };
+        break;
+
+      /* ===== 陰謀 第二版で追加された7種 ===== */
+      case 'courtier':
+        // 手札1枚を公開→その種類数だけ効果を選ぶ
+        if (p.hand.length > 0) state.pending = { type: 'courtier', stage: 'reveal', player: pi };
+        break;
+      case 'diplomat':
+        draw(state, pi, 2);
+        if (p.hand.length <= 5) t.actions += 2; // 引いた後の手札が5枚以下なら +2 アクション
+        break;
+      case 'lurker':
+        t.actions += 1;
+        state.pending = { type: 'lurker', stage: 'choose', player: pi };
+        break;
+      case 'mill':
+        draw(state, pi, 1);
+        t.actions += 1;
+        // 手札を2枚捨てれば +2 コイン（任意）。2枚なければ選択不要
+        if (p.hand.length >= 2) state.pending = { type: 'mill', player: pi };
+        break;
+      case 'patrol': {
+        draw(state, pi, 3);
+        const revealed = [];
+        for (let i = 0; i < 4; i++) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; p.deck = shuffle(p.discard); p.discard = []; }
+          if (p.deck.length === 0) break;
+          revealed.push(p.deck.shift());
+        }
+        if (revealed.length) reveal(state, pi, revealed, 'パトロールで山札の上を公開');
+        const toHand = revealed.filter((c) => DOM.isType(c, 'victory') || DOM.isType(c, 'curse'));
+        const rest = revealed.filter((c) => !(DOM.isType(c, 'victory') || DOM.isType(c, 'curse')));
+        toHand.forEach((c) => p.hand.push(c));
+        if (toHand.length) log(state, `${p.name} はパトロールで ${toHand.length}枚（勝利点/呪い）を手札に加えた。`);
+        if (rest.length > 1) state.pending = { type: 'patrol', player: pi, cards: rest };
+        else rest.forEach((c) => p.deck.unshift(c));
+        break;
+      }
+      case 'replace':
+        // 手札1枚を廃棄（必須）→ +$2まで獲得
+        if (p.hand.length > 0) state.pending = { type: 'replace', stage: 'trash', player: pi };
+        break;
+      case 'secret_passage':
+        draw(state, pi, 2);
+        t.actions += 1;
+        if (p.hand.length > 0) state.pending = { type: 'secret_passage', stage: 'pick', player: pi };
+        break;
+
+      /* ===== プロモカード ===== */
+      case 'walled_village':
+        draw(state, pi, 1);
+        t.actions += 2;
+        break; // 山札の上に戻す処理はクリーンアップ時
+      case 'envoy': {
+        const revealed = [];
+        for (let i = 0; i < 5; i++) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; p.deck = shuffle(p.discard); p.discard = []; }
+          if (p.deck.length === 0) break;
+          revealed.push(p.deck.shift());
+        }
+        if (revealed.length) {
+          reveal(state, pi, revealed, '使者で山札の上を公開');
+          const left = (pi + 1) % state.players.length;
+          if (left === pi) { revealed.forEach((c) => p.hand.push(c)); } // 1人用フォールバック
+          else state.pending = { type: 'envoy', player: left, source: pi, revealed };
+        }
+        break;
+      }
+      case 'governor':
+        t.actions += 1;
+        state.pending = { type: 'governor', stage: 'choose', player: pi };
+        break;
+      case 'dismantle':
+        if (p.hand.length > 0) state.pending = { type: 'dismantle', stage: 'trash', player: pi };
+        break;
+      case 'black_market': {
+        t.coins += 2;
+        const bm = state.blackMarket || [];
+        const revealed = bm.splice(0, 3); // 上3枚（買わなかったぶんは後で底へ）
+        state.blackMarket = bm;
+        if (revealed.length) {
+          reveal(state, pi, revealed, '闇市場デッキの上を公開');
+          state.pending = { type: 'black_market', stage: 'play', player: pi, revealed };
+        }
+        break;
+      }
+
       default:
         break;
     }
@@ -793,6 +1101,16 @@
     state.reveals = {}; state.revealLatest = null; // 公開表示は手番をまたいで持ち越さない
     const pi = state.turn.active;
     const p = state.players[pi];
+    // 城壁のある村: クリーンアップ開始時、場のアクションが（自身を含め）2枚以下なら山札の上に戻せる。
+    // 村を山札に戻すのはほぼ常に得なので自動で戻す。
+    if (p.inPlay.includes('walled_village')) {
+      const actionsInPlay = p.inPlay.filter((c) => DOM.isType(c, 'action')).length;
+      if (actionsInPlay <= 2) {
+        let n = 0;
+        while (removeOne(p.inPlay, 'walled_village')) { p.deck.unshift('walled_village'); n++; }
+        if (n) log(state, `${p.name} は城壁のある村 ${n}枚 を山札の上に戻した。`);
+      }
+    }
     p.discard.push(...p.inPlay, ...p.hand);
     p.inPlay = [];
     p.hand = [];
@@ -806,7 +1124,7 @@
       return;
     }
     const next = (pi + 1) % state.players.length;
-    state.turn = { active: next, phase: 'action', actions: 1, buys: 1, coins: 0, costReduction: 0, actionsPlayed: 0, copperBonus: 0 };
+    state.turn = { active: next, phase: 'action', actions: 1, buys: 1, coins: 0, costReduction: 0, actionsPlayed: 0, copperBonus: 0, merchants: 0, silverPlayed: false };
     log(state, `${state.players[next].name} の番です。`);
   }
 
@@ -865,20 +1183,16 @@
         const card = action.card;
         if (!DOM.isType(card, 'treasure')) return state;
         if (me.hand.indexOf(card) < 0) return state;
-        removeOne(me.hand, card);
-        me.inPlay.push(card);
-        t.coins += treasureCoins(state, card);
+        playTreasureCard(state, pi, card);
         return state;
       }
       case 'PLAY_ALL_TREASURES': {
         if (state.pending) return state;
         if (t.phase !== 'buy') return state;
-        const treasures = me.hand.filter((c) => DOM.isType(c, 'treasure'));
-        treasures.forEach((card) => {
-          removeOne(me.hand, card);
-          me.inPlay.push(card);
-          t.coins += treasureCoins(state, card);
-        });
+        // 商人の「最初の銀貨」を確実に最初に出すため、銀貨を先に出す
+        const treasures = me.hand.filter((c) => DOM.isType(c, 'treasure'))
+          .sort((a, b) => (a === 'silver' ? -1 : 0) - (b === 'silver' ? -1 : 0));
+        treasures.forEach((card) => playTreasureCard(state, pi, card));
         if (treasures.length) log(state, `${me.name} は財宝を全て出した。`);
         return state;
       }
@@ -897,6 +1211,7 @@
         t.buys -= 1;
         gain(state, pi, card, 'discard');
         log(state, `${me.name} は「${C()[card].name}」を購入した。`);
+        applyHoardOnBuy(state, pi, card); // 隠し財産
         return state;
       }
 
@@ -961,20 +1276,9 @@
         if (p.hand.indexOf('moat') < 0) return state;
         // 堀で無効化できるのは「アタックを受ける側の反応ステップ」だけ。
         // 段階アタック(詐欺師など)の gain ステップ(攻撃側が操作)では撃てない。
-        const reactable = (pd.type === 'militia') || (pd.type === 'torturer') ||
-          ((pd.type === 'swindler' || pd.type === 'saboteur' || pd.type === 'minion_attack' ||
-            pd.type === 'witch' || pd.type === 'bureaucrat' || pd.type === 'spy' || pd.type === 'thief') && pd.stage === 'react');
-        if (!reactable) return state;
+        if (!isAttackReactPending(pd)) return state;
         log(state, `${p.name} は「堀」を公開し、アタックを無効化した。`);
-        if (pd.type === 'militia') advanceMilitia(state, pd);
-        else if (pd.type === 'torturer') advanceAttack(state, pd);
-        else if (pd.type === 'swindler') swindlerEnterVictim(state, pd.source, pd.queue);
-        else if (pd.type === 'saboteur') saboteurEnterVictim(state, pd.source, pd.queue);
-        else if (pd.type === 'minion_attack') minionAttackEnterVictim(state, pd.source, pd.queue);
-        else if (pd.type === 'witch') witchEnterVictim(state, pd.source, pd.queue);
-        else if (pd.type === 'bureaucrat') bureaucratEnterVictim(state, pd.source, pd.queue);
-        else if (pd.type === 'spy') spyEnterTarget(state, pd.source, pd.queue);
-        else if (pd.type === 'thief') thiefEnterVictim(state, pd.source, pd.queue);
+        ATTACKS[pd.type].onMoat(state, pd); // 登録表を引いて「この被害者を飛ばして次へ」
         return state;
       }
 
@@ -1003,18 +1307,7 @@
       case 'MINE_GAIN': {
         const pd = state.pending;
         if (!pd || pd.type !== 'mine' || pd.stage !== 'gain') return state;
-        const card = action.card;
-        const canGain = (id) => DOM.isType(id, 'treasure') && cardCost(state, id) <= pd.maxCost;
-        if (card == null) {
-          // 獲得は強制（公式ルール）。獲得できる財宝が残っていない場合のみ辞退できる。
-          if (anyGainable(state, canGain)) return state;
-          state.pending = null; return state;
-        }
-        if (!canGain(card)) return state;
-        if ((state.supply[card] || 0) <= 0) return state;
-        gain(state, pd.player, card, 'hand');
-        log(state, `${state.players[pd.player].name} は「${C()[card].name}」を手札に獲得した。`);
-        state.pending = null;
+        finishGain(state, pd, action.card, (id) => DOM.isType(id, 'treasure') && cardCost(state, id) <= pd.maxCost, 'hand', '手札に獲得した。');
         return state;
       }
 
@@ -1038,18 +1331,7 @@
       case 'REMODEL_GAIN': {
         const pd = state.pending;
         if (!pd || pd.type !== 'remodel' || pd.stage !== 'gain') return state;
-        const card = action.card;
-        const canGain = (id) => !!C()[id] && cardCost(state, id) <= pd.maxCost;
-        if (card == null) {
-          // 獲得は強制（公式ルール）。獲得できるカードが無い場合のみ辞退できる。
-          if (anyGainable(state, canGain)) return state;
-          state.pending = null; return state;
-        }
-        if (!canGain(card)) return state;
-        if ((state.supply[card] || 0) <= 0) return state;
-        gain(state, pd.player, card, 'discard');
-        log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した。`);
-        state.pending = null;
+        finishGain(state, pd, action.card, (id) => !!C()[id] && cardCost(state, id) <= pd.maxCost, 'discard', '獲得した。');
         return state;
       }
 
@@ -1057,18 +1339,7 @@
       case 'WORKSHOP_GAIN': {
         const pd = state.pending;
         if (!pd || pd.type !== 'workshop') return state;
-        const card = action.card;
-        const canGain = (id) => !!C()[id] && cardCost(state, id) <= 4;
-        if (card == null) {
-          // 獲得は強制（公式ルール）。獲得できるカードが無い場合のみ辞退できる。
-          if (anyGainable(state, canGain)) return state;
-          state.pending = null; return state;
-        }
-        if (!canGain(card)) return state;
-        if ((state.supply[card] || 0) <= 0) return state;
-        gain(state, pd.player, card, 'discard');
-        log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した。`);
-        state.pending = null;
+        finishGain(state, pd, action.card, (id) => !!C()[id] && cardCost(state, id) <= 4, 'discard', '獲得した。');
         return state;
       }
 
@@ -1122,14 +1393,8 @@
       case 'STEWARD_TRASH': {
         const pd = state.pending;
         if (!pd || pd.type !== 'steward' || pd.stage !== 'trash') return state;
-        const p = state.players[pd.player];
-        const want = Math.min(2, p.hand.length);
-        const cards = Array.isArray(action.cards) ? action.cards : [];
-        if (cards.length !== want) return state;
-        const handCopy = p.hand.slice();
-        for (const c of cards) if (!removeOne(handCopy, c)) return state;
-        cards.forEach((c) => { removeOne(p.hand, c); state.trash.push(c); });
-        log(state, `${p.name} は手札 ${cards.length}枚 を廃棄した。`);
+        const want = Math.min(2, state.players[pd.player].hand.length);
+        if (!trashFromHand(state, pd.player, action.cards, want, '廃棄した。')) return state;
         state.pending = null;
         return state;
       }
@@ -1377,13 +1642,7 @@
       case 'FEAST_GAIN': {
         const pd = state.pending;
         if (!pd || pd.type !== 'feast') return state;
-        const card = action.card;
-        const canGain = (id) => !!C()[id] && cardCost(state, id) <= 5;
-        if (card == null) { if (anyGainable(state, canGain)) return state; state.pending = null; return state; }
-        if (!canGain(card) || (state.supply[card] || 0) <= 0) return state;
-        gain(state, pd.player, card, 'discard');
-        log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した（祝宴）。`);
-        state.pending = null;
+        finishGain(state, pd, action.card, (id) => !!C()[id] && cardCost(state, id) <= 5, 'discard', '獲得した（祝宴）。');
         return state;
       }
 
@@ -1561,14 +1820,9 @@
         if (!pd || pd.type !== 'trading_post') return state;
         const p = state.players[pd.player];
         const want = Math.min(2, p.hand.length);
-        const cards = Array.isArray(action.cards) ? action.cards : [];
-        if (cards.length !== want) return state;
-        const handCopy = p.hand.slice();
-        for (const c of cards) if (!removeOne(handCopy, c)) return state;
-        cards.forEach((c) => { removeOne(p.hand, c); state.trash.push(c); });
-        log(state, `${p.name} は手札 ${cards.length}枚 を廃棄した。`);
+        if (!trashFromHand(state, pd.player, action.cards, want, '廃棄した。')) return state;
         // 2枚廃棄できたときだけ銀貨を手札に獲得（公式: trash 2 → gain Silver to hand）
-        if (cards.length === 2 && gain(state, pd.player, 'silver', 'hand')) {
+        if (want === 2 && gain(state, pd.player, 'silver', 'hand')) {
           log(state, `${p.name} は銀貨を手札に獲得した。`);
         }
         state.pending = null;
@@ -1612,15 +1866,428 @@
       case 'UPGRADE_GAIN': {
         const pd = state.pending;
         if (!pd || pd.type !== 'upgrade' || pd.stage !== 'gain') return state;
+        finishGain(state, pd, action.card, (id) => !!C()[id] && cardCost(state, id) === pd.exactCost, 'discard', '獲得した。');
+        return state;
+      }
+
+      /* ===== 基本セット 第二版 の選択解決 ===== */
+      /* ---- 前駆者：捨て札1枚を山札の上へ（任意）---- */
+      case 'HARBINGER_PUT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'harbinger') return state;
+        const p = state.players[pd.player];
         const card = action.card;
-        const canGain = (id) => !!C()[id] && cardCost(state, id) === pd.exactCost;
-        if (card == null) {
-          if (anyGainable(state, canGain)) return state; // 候補があるなら獲得は強制
-          state.pending = null; return state;
+        if (card != null && removeOne(p.discard, card)) {
+          p.deck.unshift(card);
+          log(state, `${p.name} は捨て札の「${C()[card].name}」を山札の上に置いた（前駆者）。`);
         }
+        state.pending = null;
+        return state;
+      }
+      /* ---- 家臣：捨てたアクションを使う/使わない ---- */
+      case 'VASSAL_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'vassal') return state;
+        const p = state.players[pd.player];
+        state.pending = null;
+        if (action.play && removeOne(p.discard, pd.card)) {
+          p.inPlay.push(pd.card);
+          t.actionsPlayed = (t.actionsPlayed || 0) + 1;
+          log(state, `${p.name} は家臣で「${C()[pd.card].name}」を使った。`);
+          applyEffect(state, pd.card, pd.player); // 別の選択待ちが立つこともある
+        }
+        return state;
+      }
+      /* ---- 密猟者：空の山1つにつき手札1枚を捨てる ---- */
+      case 'POACHER_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'poacher') return state;
+        if (!discardFromHand(state, pd.player, action.cards, pd.need, '捨てた（密猟者）。')) return state;
+        state.pending = null;
+        return state;
+      }
+      /* ---- 山賊：犠牲者の反応 / 廃棄する財宝を選ぶ ---- */
+      case 'BANDIT_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'bandit' || pd.stage !== 'react') return state;
+        banditReveal(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'BANDIT_PICK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'bandit' || pd.stage !== 'pick') return state;
+        const v = state.players[pd.victim];
+        const card = action.card;
+        if (pd.cands.indexOf(card) < 0) return state;
+        const rest = pd.revealed.slice();
+        rest.splice(rest.indexOf(card), 1);
+        state.trash.push(card);
+        rest.forEach((c) => v.discard.push(c));
+        log(state, `${v.name} は「${C()[card].name}」を廃棄した（山賊）。`);
+        banditEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+      /* ---- 衛兵：上2枚を 廃棄/捨て/山札の上 に振り分ける ---- */
+      case 'SENTRY_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'sentry') return state;
+        const p = state.players[pd.player];
+        const tr = Array.isArray(action.trash) ? action.trash : [];
+        const di = Array.isArray(action.discard) ? action.discard : [];
+        const top = Array.isArray(action.top) ? action.top : [];
+        const all = tr.concat(di, top).slice().sort();
+        const want = pd.cards.slice().sort();
+        if (all.length !== want.length || all.some((c, i) => c !== want[i])) return state; // 同じ多重集合のみ
+        tr.forEach((c) => state.trash.push(c));
+        di.forEach((c) => p.discard.push(c));
+        for (let i = top.length - 1; i >= 0; i--) p.deck.unshift(top[i]); // top[0] が一番上
+        if (tr.length) log(state, `${p.name} は ${tr.length}枚 廃棄した（衛兵）。`);
+        if (di.length) log(state, `${p.name} は ${di.length}枚 捨てた（衛兵）。`);
+        state.pending = null;
+        return state;
+      }
+      /* ---- 職人：コスト5以下を手札に獲得→手札1枚を山札の上へ ---- */
+      case 'ARTISAN_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'artisan' || pd.stage !== 'gain') return state;
+        const card = action.card;
+        const canGain = (id) => !!C()[id] && cardCost(state, id) <= 5;
+        if (card == null || !canGain(card) || (state.supply[card] || 0) <= 0) return state; // 獲得は強制
+        gain(state, pd.player, card, 'hand');
+        log(state, `${state.players[pd.player].name} は「${C()[card].name}」を手札に獲得した（職人）。`);
+        state.pending = { type: 'artisan', stage: 'put', player: pd.player };
+        return state;
+      }
+      case 'ARTISAN_PUT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'artisan' || pd.stage !== 'put') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0) return state;
+        removeOne(p.hand, card);
+        p.deck.unshift(card);
+        log(state, `${p.name} は手札1枚を山札の上に置いた（職人）。`);
+        state.pending = null;
+        return state;
+      }
+
+      /* ===== 陰謀 第二版 の選択解決 ===== */
+      /* ---- 廷臣：手札1枚を公開→種類数だけ効果を選ぶ ---- */
+      case 'COURTIER_REVEAL': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'courtier' || pd.stage !== 'reveal') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0) return state;
+        reveal(state, pd.player, [card], '廷臣で手札を公開');
+        const nTypes = (C()[card].types || []).length;
+        const n = Math.min(nTypes, 4);
+        log(state, `${p.name} は「${C()[card].name}」を公開した（種類 ${nTypes}）。`);
+        state.pending = { type: 'courtier', stage: 'choose', player: pd.player, n, card };
+        return state;
+      }
+      case 'COURTIER_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'courtier' || pd.stage !== 'choose') return state;
+        const valid = ['action', 'buy', 'coin', 'gold'];
+        const ch = Array.isArray(action.choices)
+          ? action.choices.filter((c, i, a) => valid.includes(c) && a.indexOf(c) === i) : [];
+        if (ch.length !== pd.n) return state; // 異なる n 個を選ぶ
+        ch.forEach((c) => {
+          if (c === 'action') t.actions += 1;
+          else if (c === 'buy') t.buys += 1;
+          else if (c === 'coin') t.coins += 3;
+          else if (c === 'gold') { if (gain(state, pd.player, 'gold', 'discard')) log(state, `${state.players[pd.player].name} は金貨を獲得した（廷臣）。`); }
+        });
+        log(state, `${state.players[pd.player].name} は廷臣の効果を選んだ。`);
+        state.pending = null;
+        return state;
+      }
+
+      /* ---- 外交官（リアクション）：アタック時に公開→2枚引き3枚捨てる ---- */
+      case 'DIPLOMAT_REVEAL': {
+        const pd = state.pending;
+        if (!isAttackReactPending(pd) || pd.diplomatReacted) return state;
+        const p = state.players[pd.player];
+        if (!p.hand.includes('diplomat') || p.hand.length < 5) return state;
+        draw(state, pd.player, 2);
+        log(state, `${p.name} は外交官を公開して2枚引いた。`);
+        // 元のアタック反応ステップを diplomatReacted=true で退避し、3枚捨ててから復帰
+        state.pending = { type: 'diplomat_discard', player: pd.player, saved: Object.assign({}, pd, { diplomatReacted: true }) };
+        return state;
+      }
+      case 'DIPLOMAT_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'diplomat_discard') return state;
+        const want = Math.min(3, state.players[pd.player].hand.length);
+        if (!discardFromHand(state, pd.player, action.cards, want, '捨てた（外交官）。')) return state;
+        state.pending = pd.saved; // 元のアタック反応ステップへ戻る
+        return state;
+      }
+
+      /* ---- 待ち伏せ：サプライのアクションを廃棄 / 廃棄置場からアクションを獲得 ---- */
+      case 'LURKER_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'lurker' || pd.stage !== 'choose') return state;
+        if (action.choice === 'trash') {
+          const canTrash = (id) => DOM.isType(id, 'action') && (state.supply[id] || 0) > 0;
+          state.pending = Object.keys(state.supply).some(canTrash)
+            ? { type: 'lurker', stage: 'trash', player: pd.player } : null;
+        } else if (action.choice === 'gain') {
+          state.pending = state.trash.some((id) => DOM.isType(id, 'action'))
+            ? { type: 'lurker', stage: 'gain', player: pd.player } : null;
+        } else return state;
+        return state;
+      }
+      case 'LURKER_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'lurker' || pd.stage !== 'trash') return state;
+        const card = action.card;
+        if (!C()[card] || !DOM.isType(card, 'action') || (state.supply[card] || 0) <= 0) return state;
+        state.supply[card] -= 1;
+        state.trash.push(card);
+        log(state, `${state.players[pd.player].name} はサプライの「${C()[card].name}」を廃棄した（待ち伏せ）。`);
+        state.pending = null;
+        return state;
+      }
+      case 'LURKER_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'lurker' || pd.stage !== 'gain') return state;
+        const card = action.card;
+        if (!DOM.isType(card, 'action') || !removeOne(state.trash, card)) return state;
+        state.players[pd.player].discard.push(card);
+        log(state, `${state.players[pd.player].name} は廃棄置き場の「${C()[card].name}」を獲得した（待ち伏せ）。`);
+        state.pending = null;
+        return state;
+      }
+
+      /* ---- 風車：手札2枚を捨てて +2 コイン（任意）---- */
+      case 'MILL_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'mill') return state;
+        const p = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length === 0) { state.pending = null; return state; } // 捨てない
+        if (cards.length !== 2) return state;
+        const handCopy = p.hand.slice();
+        for (const c of cards) if (!removeOne(handCopy, c)) return state;
+        cards.forEach((c) => { removeOne(p.hand, c); p.discard.push(c); });
+        t.coins += 2;
+        log(state, `${p.name} は手札2枚を捨てて +2 コイン（風車）。`);
+        state.pending = null;
+        return state;
+      }
+
+      /* ---- パトロール：非（勝利点/呪い）カードを好きな順で山札の上へ ---- */
+      case 'PATROL_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'patrol') return state;
+        const p = state.players[pd.player];
+        const order = Array.isArray(action.order) ? action.order : [];
+        const a = pd.cards.slice().sort(), b = order.slice().sort();
+        if (a.length !== b.length || a.some((c, i) => c !== b[i])) return state;
+        for (let i = order.length - 1; i >= 0; i--) p.deck.unshift(order[i]);
+        log(state, `${p.name} は山札の上を並べ替えた（パトロール）。`);
+        state.pending = null;
+        return state;
+      }
+
+      /* ---- 身代わり：廃棄→+$2まで獲得（ア/財は山札上、勝利点は他全員に呪い）---- */
+      case 'REPLACE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'replace' || pd.stage !== 'trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0) return state;
+        removeOne(p.hand, card);
+        state.trash.push(card);
+        log(state, `${p.name} は「${C()[card].name}」を廃棄した（身代わり）。`);
+        const maxCost = cardCost(state, card) + 2;
+        state.pending = anyGainable(state, (id) => cardCost(state, id) <= maxCost)
+          ? { type: 'replace', stage: 'gain', player: pd.player, source: pd.player, maxCost }
+          : null;
+        return state;
+      }
+      case 'REPLACE_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'replace' || pd.stage !== 'gain') return state;
+        const card = action.card;
+        const canGain = (id) => !!C()[id] && cardCost(state, id) <= pd.maxCost;
+        if (card == null || !canGain(card) || (state.supply[card] || 0) <= 0) return state; // 獲得は強制
+        const toDeck = DOM.isType(card, 'action') || DOM.isType(card, 'treasure');
+        gain(state, pd.player, card, toDeck ? 'deck' : 'discard');
+        log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した（身代わり）。`);
+        if (DOM.isType(card, 'victory')) {
+          const vics = [];
+          for (let k = 1; k < state.players.length; k++) vics.push((pd.player + k) % state.players.length);
+          replaceEnterVictim(state, pd.player, vics); // 勝利点獲得時は他全員が呪い（アタック）
+        } else {
+          state.pending = null;
+        }
+        return state;
+      }
+      case 'REPLACE_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'replace' || pd.stage !== 'react') return state;
+        replaceCurse(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+
+      /* ---- 隠し通路：手札1枚を山札の好きな位置へ ---- */
+      case 'SECRET_PASSAGE_PICK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'secret_passage' || pd.stage !== 'pick') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0) return state;
+        state.pending = { type: 'secret_passage', stage: 'place', player: pd.player, card };
+        return state;
+      }
+      case 'SECRET_PASSAGE_PLACE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'secret_passage' || pd.stage !== 'place') return state;
+        const p = state.players[pd.player];
+        if (p.hand.indexOf(pd.card) < 0) return state;
+        let pos = Number.isInteger(action.pos) ? action.pos : 0;
+        pos = Math.max(0, Math.min(pos, p.deck.length)); // 0=一番上, deck.length=一番下
+        removeOne(p.hand, pd.card);
+        p.deck.splice(pos, 0, pd.card);
+        log(state, `${p.name} は手札1枚を山札に入れた（隠し通路）。`);
+        state.pending = null;
+        return state;
+      }
+
+      /* ===== プロモカード の選択解決 ===== */
+      /* ---- 使者：左隣が公開5枚から1枚を選び、使用者がそれを捨てる ---- */
+      case 'ENVOY_PICK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'envoy') return state;
+        const card = action.card;
+        if (pd.revealed.indexOf(card) < 0) return state;
+        const src = state.players[pd.source];
+        const rest = pd.revealed.slice();
+        rest.splice(rest.indexOf(card), 1);
+        src.discard.push(card);
+        rest.forEach((c) => src.hand.push(c));
+        log(state, `${state.players[pd.player].name} は使者で ${src.name} の「${C()[card].name}」を捨てさせた。`);
+        state.pending = null;
+        return state;
+      }
+
+      /* ---- 総督：モード選択（自分は強い方、他は弱い方）---- */
+      case 'GOVERNOR_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'governor' || pd.stage !== 'choose') return state;
+        const src = pd.player;
+        const others = [];
+        for (let k = 1; k < state.players.length; k++) others.push((src + k) % state.players.length);
+        if (action.choice === 'cards') {
+          draw(state, src, 3);
+          others.forEach((o) => draw(state, o, 1));
+          log(state, `${state.players[src].name} は総督で +3カード（他は各 +1カード）。`);
+          state.pending = null;
+        } else if (action.choice === 'silver') {
+          if (gain(state, src, 'gold', 'discard')) log(state, `${state.players[src].name} は総督で金貨を獲得（他は銀貨）。`);
+          others.forEach((o) => gain(state, o, 'silver', 'discard'));
+          state.pending = null;
+        } else if (action.choice === 'remodel') {
+          const queue = [{ p: src, delta: 2 }].concat(others.map((o) => ({ p: o, delta: 1 })));
+          governorEnterRemodel(state, queue);
+        } else return state;
+        return state;
+      }
+      case 'GOVERNOR_REMODEL_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'governor_remodel' || pd.stage !== 'trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (card == null) { governorEnterRemodel(state, pd.queue); return state; } // 廃棄しない
+        if (p.hand.indexOf(card) < 0) return state;
+        removeOne(p.hand, card);
+        state.trash.push(card);
+        log(state, `${p.name} は「${C()[card].name}」を廃棄した（総督）。`);
+        const exact = cardCost(state, card) + pd.delta;
+        if (anyGainable(state, (id) => cardCost(state, id) === exact)) {
+          state.pending = { type: 'governor_remodel', stage: 'gain', player: pd.player, exact, queue: pd.queue };
+        } else {
+          log(state, `ちょうど ${exact} コストのカードが無く、獲得できなかった（総督）。`);
+          governorEnterRemodel(state, pd.queue);
+        }
+        return state;
+      }
+      case 'GOVERNOR_REMODEL_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'governor_remodel' || pd.stage !== 'gain') return state;
+        const card = action.card;
+        const canGain = (id) => !!C()[id] && cardCost(state, id) === pd.exact;
+        if (card == null) { if (anyGainable(state, canGain)) return state; governorEnterRemodel(state, pd.queue); return state; }
         if (!canGain(card) || (state.supply[card] || 0) <= 0) return state;
         gain(state, pd.player, card, 'discard');
-        log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した。`);
+        log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した（総督）。`);
+        governorEnterRemodel(state, pd.queue);
+        return state;
+      }
+
+      /* ---- 取り壊し：廃棄→（$1以上なら）安いカード＋金貨を獲得 ---- */
+      case 'DISMANTLE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'dismantle' || pd.stage !== 'trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0) return state;
+        removeOne(p.hand, card);
+        state.trash.push(card);
+        log(state, `${p.name} は「${C()[card].name}」を廃棄した（取り壊し）。`);
+        const c = cardCost(state, card);
+        if (c >= 1) {
+          if (gain(state, pd.player, 'gold', 'discard')) log(state, `${p.name} は金貨を獲得した（取り壊し）。`);
+          const maxCost = c - 1; // それより安い（cost < 廃棄カード）
+          state.pending = anyGainable(state, (id) => cardCost(state, id) <= maxCost)
+            ? { type: 'dismantle', stage: 'gain', player: pd.player, maxCost } : null;
+        } else {
+          state.pending = null;
+        }
+        return state;
+      }
+      case 'DISMANTLE_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'dismantle' || pd.stage !== 'gain') return state;
+        finishGain(state, pd, action.card, (id) => !!C()[id] && cardCost(state, id) <= pd.maxCost, 'discard', '獲得した（取り壊し）。');
+        return state;
+      }
+
+      /* ---- 闇市場：財宝を出してよい→公開3枚の1枚を購入してよい ---- */
+      case 'BLACK_MARKET_PLAY_TREASURES': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'black_market' || pd.stage !== 'play') return state;
+        const p = state.players[pd.player];
+        const treasures = p.hand.filter((c) => DOM.isType(c, 'treasure'))
+          .sort((a, b) => (a === 'silver' ? -1 : 0) - (b === 'silver' ? -1 : 0));
+        treasures.forEach((card) => playTreasureCard(state, pd.player, card));
+        if (treasures.length) log(state, `${p.name} は闇市場で財宝を出した。`);
+        return state; // 同じ pending のまま（購入ステップへ）
+      }
+      case 'BLACK_MARKET_BUY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'black_market' || pd.stage !== 'play') return state;
+        const card = action.card;
+        if (pd.revealed.indexOf(card) < 0) return state;
+        const cost = cardCost(state, card);
+        if (cost > t.coins) return state; // 払えない
+        t.coins -= cost; // 闇市場の購入は購入回数を消費しない
+        state.players[pd.player].discard.push(card); // サプライ外のカードを獲得（捨て札へ）
+        log(state, `${state.players[pd.player].name} は闇市場で「${C()[card].name}」を購入した。`);
+        applyHoardOnBuy(state, pd.player, card);
+        const rest = pd.revealed.filter((c) => c !== card);
+        state.blackMarket = (state.blackMarket || []).concat(rest); // 残りは底へ
+        state.pending = null;
+        return state;
+      }
+      case 'BLACK_MARKET_SKIP': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'black_market' || pd.stage !== 'play') return state;
+        state.blackMarket = (state.blackMarket || []).concat(pd.revealed); // 全部底へ
+        log(state, `${state.players[pd.player].name} は闇市場で何も買わなかった。`);
         state.pending = null;
         return state;
       }
@@ -1647,6 +2314,8 @@
         // inPlay は場に表向きで出ているカードなのでそのまま
       });
     });
+    // 闇市場デッキは伏せ札。中身は誰にも見えないよう枚数だけ残す（公開された3枚は pending.revealed 側に出る）。
+    if (Array.isArray(s.blackMarket)) s.blackMarket = new Array(s.blackMarket.length).fill('back');
     // 仮面舞踏会のパスは「同時・秘密」。逐次解決中の picks(他席が渡したカード)を
     // 後手席に配信すると情報優位になるため、自分の選択分以外は伏せる。
     if (s.pending && s.pending.type === 'masquerade' && s.pending.stage === 'pass' && s.pending.picks) {
@@ -1654,9 +2323,46 @@
       if (s.pending.picks[seat] != null) masked[seat] = s.pending.picks[seat];
       s.pending = Object.assign({}, s.pending, { picks: masked });
     }
+    // 衛兵で「見た」山札の上2枚は本人だけの秘密情報。相手席への配信では中身を伏せる（枚数は残す）。
+    if (s.pending && s.pending.type === 'sentry' && Array.isArray(s.pending.cards) && seat !== s.pending.player) {
+      s.pending = Object.assign({}, s.pending, { cards: new Array(s.pending.cards.length).fill('back') });
+    }
     s.you = seat;
     return s;
   }
+
+  /* ---------- プレイヤーが送れるアクション種別（唯一の正本）----------
+     reduce() が処理する action.type のうち、対戦中にプレイヤー/CPUが送るもの（NEW_GAME を除く）。
+     サーバ(server/gameServer.js)はこれを唯一の許可リストとして使う＝二重管理しない。
+     新しい選択ステップ（*_RESOLVE 等）を reduce に足したら、ここにも必ず追加すること。
+     test/integrity.test.js が「reduce の switch case と完全一致」を自動検証するので、
+     追加漏れ・綴り違いはテストで即わかる（オンラインだけ壊れる事故を防ぐ）。 */
+  const PLAYER_ACTIONS = new Set([
+    'PLAY_ACTION', 'PLAY_TREASURE', 'PLAY_ALL_TREASURES', 'BUY', 'END_ACTION_PHASE', 'END_TURN',
+    'CELLAR_RESOLVE', 'MILITIA_RESOLVE', 'MOAT_REVEAL',
+    'MINE_TRASH', 'MINE_GAIN', 'REMODEL_TRASH', 'REMODEL_GAIN', 'WORKSHOP_GAIN',
+    'COURTYARD_PUT', 'PAWN_RESOLVE', 'STEWARD_RESOLVE', 'STEWARD_TRASH',
+    'WISHING_RESOLVE', 'BARON_RESOLVE', 'IRONWORKS_GAIN',
+    'MINING_VILLAGE_RESOLVE', 'NOBLES_RESOLVE', 'TORTURER_RESOLVE',
+    'TRADING_POST_RESOLVE', 'UPGRADE_TRASH', 'UPGRADE_GAIN', 'SCOUT_RESOLVE',
+    'SWINDLER_REACT', 'SWINDLER_GAIN', 'SABOTEUR_REACT', 'SABOTEUR_GAIN',
+    'MINION_RESOLVE', 'MINION_ATTACK_REACT', 'MASQUERADE_PASS', 'MASQUERADE_TRASH',
+    'SECRET_CHAMBER_RESOLVE', 'SECRET_CHAMBER_REVEAL', 'SECRET_CHAMBER_PUTBACK',
+    'MONEYLENDER_RESOLVE', 'CHANCELLOR_RESOLVE', 'CHAPEL_RESOLVE',
+    'WITCH_REACT', 'BUREAUCRAT_REACT', 'BUREAUCRAT_PUT', 'FEAST_GAIN',
+    'LIBRARY_RESOLVE', 'SPY_REACT', 'SPY_DECIDE', 'THIEF_REACT', 'THIEF_PICK', 'THIEF_GAIN',
+    'THRONE_CHOOSE',
+    // 基本 第二版
+    'HARBINGER_PUT', 'VASSAL_PLAY', 'POACHER_DISCARD', 'BANDIT_REACT', 'BANDIT_PICK',
+    'SENTRY_RESOLVE', 'ARTISAN_GAIN', 'ARTISAN_PUT',
+    // 陰謀 第二版
+    'COURTIER_REVEAL', 'COURTIER_CHOOSE', 'DIPLOMAT_REVEAL', 'DIPLOMAT_DISCARD',
+    'LURKER_CHOOSE', 'LURKER_TRASH', 'LURKER_GAIN', 'MILL_RESOLVE', 'PATROL_RESOLVE',
+    'REPLACE_TRASH', 'REPLACE_GAIN', 'REPLACE_REACT', 'SECRET_PASSAGE_PICK', 'SECRET_PASSAGE_PLACE',
+    // プロモ
+    'ENVOY_PICK', 'GOVERNOR_CHOOSE', 'GOVERNOR_REMODEL_TRASH', 'GOVERNOR_REMODEL_GAIN',
+    'DISMANTLE_TRASH', 'DISMANTLE_GAIN', 'BLACK_MARKET_PLAY_TREASURES', 'BLACK_MARKET_BUY', 'BLACK_MARKET_SKIP',
+  ]);
 
   /* ---------- 公開API ---------- */
   DOM.engine = {
@@ -1668,6 +2374,7 @@
     isGameOver,
     emptyPileCount,
     maskStateFor,
+    PLAYER_ACTIONS,
     // 「誰が今操作すべきか」: 選択待ちならその人、なければ手番のプレイヤー
     actor: (state) => (state.pending ? state.pending.player : state.turn.active),
   };

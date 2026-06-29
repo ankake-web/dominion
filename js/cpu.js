@@ -33,11 +33,11 @@
   }
 
   /* 獲得したいカードの優先順（高いほど良い）。基本＋拡張(陰謀)の全王国カードを網羅。 */
-  const GAIN_ORDER = ['province', 'gold', 'nobles', 'harem', 'duchy',
-    'adventurer', 'laboratory', 'festival', 'witch', 'council_room', 'library', 'market', 'minion', 'mine', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'spy', 'thief', 'upgrade', 'bureaucrat', 'feast', 'silver',
-    'mining_village', 'smithy', 'courtyard', 'masquerade', 'throne_room', 'great_hall', 'tribute', 'militia', 'steward', 'trading_post', 'baron', 'scout',
-    'remodel', 'moneylender', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith', 'chancellor',
-    'pawn', 'moat', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke', 'copper', 'curse'];
+  const GAIN_ORDER = ['province', 'gold', 'artisan', 'nobles', 'harem', 'duchy',
+    'adventurer', 'laboratory', 'festival', 'witch', 'bandit', 'governor', 'council_room', 'patrol', 'library', 'market', 'minion', 'mine', 'sentry', 'courtier', 'replace', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'spy', 'thief', 'upgrade', 'bureaucrat', 'feast', 'silver',
+    'poacher', 'mining_village', 'smithy', 'mill', 'walled_village', 'dismantle', 'envoy', 'secret_passage', 'diplomat', 'courtyard', 'masquerade', 'throne_room', 'great_hall', 'tribute', 'militia', 'steward', 'trading_post', 'baron', 'scout',
+    'remodel', 'moneylender', 'merchant', 'harbinger', 'vassal', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith', 'chancellor', 'black_market', 'hoard',
+    'pawn', 'lurker', 'moat', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke', 'copper', 'curse'];
   function bestGain(state, maxCost, opts) {
     opts = opts || {};
     for (const id of GAIN_ORDER) {
@@ -83,6 +83,16 @@
     if (has('spy')) return 'spy';                  // +1カード+1アクション＋偵察
     if (has('minion')) return 'minion';            // +1アクション。選択で+2コイン/引き直し
     if (has('nobles')) return 'nobles';            // 状況により +2アクションも選べる
+    // 第二版/プロモの非ターミナル（+アクションが付く＝連鎖できる）
+    if (has('walled_village')) return 'walled_village'; // +1カード+2アクション（村）
+    if (has('merchant')) return 'merchant';        // +1カード+1アクション（最初の銀貨で+1）
+    if (has('harbinger')) return 'harbinger';      // +1カード+1アクション
+    if (has('poacher')) return 'poacher';          // +1カード+1アクション+1コイン
+    if (has('sentry')) return 'sentry';            // +1カード+1アクション（山札整理）
+    if (has('mill')) return 'mill';                // +1カード+1アクション（任意で+2コイン）
+    if (has('secret_passage')) return 'secret_passage'; // +2カード+1アクション
+    if (has('lurker')) return 'lurker';            // +1アクション
+    if (has('governor')) return 'governor';        // +1アクション（全員効果）
     if (has('cellar') && dead) return 'cellar';
     // --- ターミナル（効果の大きい順）---
     // 玉座の間: 2回使える別アクションが手札にあるときだけ（無駄打ち回避）
@@ -94,6 +104,12 @@
     if (has('thief')) return 'thief';               // 相手の財宝を奪う
     if (has('courtyard')) return 'courtyard';
     if (has('witch')) return 'witch';              // +2カード＋全員に呪い（強力）
+    if (has('bandit')) return 'bandit';            // 金貨獲得＋相手の財宝を廃棄
+    if (has('diplomat')) return 'diplomat';        // +2カード（手札次第で+2アクション）
+    if (has('patrol')) return 'patrol';            // +3カード＋勝利点回収
+    if (has('artisan')) return 'artisan';          // コスト5を手札に獲得
+    if (has('courtier')) return 'courtier';        // 公開カードの種類数だけ効果
+    if (has('replace')) return 'replace';          // 廃棄→格上げ（勝利点なら呪い配布）
     if (has('torturer')) return 'torturer';
     if (has('swindler')) return 'swindler';
     if (has('saboteur')) return 'saboteur';
@@ -117,7 +133,11 @@
     if (has('chapel') && pickChapelTrash(p).length > 0) return 'chapel';       // 圧縮対象があるとき
     if (has('chancellor')) return 'chancellor';                                // +2コイン
     if (has('feast')) return 'feast';                                          // 自身を廃棄→$5獲得
+    if (has('envoy')) return 'envoy';              // 上5枚を公開して大量ドロー
+    if (has('dismantle')) return 'dismantle';      // 廃棄→安いカード＋金貨
     if (has('remodel')) return 'remodel';
+    if (has('vassal')) return 'vassal';            // +2コイン（山札の上がアクションなら使う）
+    if (has('black_market')) return 'black_market'; // +2コイン＋闇市場
     if (has('workshop')) return 'workshop';
     if (has('woodcutter')) return 'woodcutter';
     if (has('pawn')) return 'pawn';
@@ -457,6 +477,110 @@
         if (pd.stage === 'trash') return { type: 'UPGRADE_TRASH', card: pickRemodelTrash(state, p) };
         // ちょうど+1コストを獲得（勝利点を避けた最善→無ければ何でも。候補ありなら必ず非null）
         return { type: 'UPGRADE_GAIN', card: bestGainExact(state, pd.exactCost, { noVictory: true }) || bestGainExact(state, pd.exactCost) };
+
+      /* ===== 基本セット 第二版 ===== */
+      case 'harbinger': {
+        // 捨て札から最も価値の高いカードを山札の上へ（死に札なら置かない）
+        if (!p.discard.length) return { type: 'HARBINGER_PUT', card: null };
+        const best = p.discard.slice().sort((a, b) => keepValue(b) - keepValue(a))[0];
+        return { type: 'HARBINGER_PUT', card: isDead(best) ? null : best };
+      }
+      case 'vassal':
+        return { type: 'VASSAL_PLAY', play: true }; // 無料で使えるアクションは常に使う
+      case 'poacher':
+        return { type: 'POACHER_DISCARD', cards: pickDiscards(p.hand, pd.need) };
+      case 'bandit':
+        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'BANDIT_REACT' }; }
+        { // pick: 安い財宝を廃棄して高い財宝を残す
+          const c = pd.cands.slice().sort((a, b) => (C()[a].coin || 0) - (C()[b].coin || 0))[0];
+          return { type: 'BANDIT_PICK', card: c };
+        }
+      case 'sentry': {
+        // 呪い・屋敷は廃棄、それ以外は山札の上に戻す（銅貨は安全のため残す）
+        const tr = [], di = [], top = [];
+        pd.cards.forEach((c) => { if (c === 'curse' || c === 'estate') tr.push(c); else top.push(c); });
+        return { type: 'SENTRY_RESOLVE', trash: tr, discard: di, top };
+      }
+      case 'artisan':
+        if (pd.stage === 'gain') return { type: 'ARTISAN_GAIN', card: bestGain(state, 5, { noVictory: true }) || bestGain(state, 5) };
+        { // put: 強いアクションを山札の上に（次に引く）。無ければ最も不要な札
+          const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => C()[b].cost - C()[a].cost);
+          const card = acts[0] || p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0];
+          return { type: 'ARTISAN_PUT', card };
+        }
+
+      /* ===== 陰謀 第二版 ===== */
+      case 'courtier':
+        if (pd.stage === 'reveal') {
+          const card = p.hand.slice().sort((a, b) => (C()[b].types || []).length - (C()[a].types || []).length)[0];
+          return { type: 'COURTIER_REVEAL', card }; // 種類が多いカードを公開（選択肢が増える）
+        }
+        { const pri = ['coin', 'gold', 'action', 'buy']; return { type: 'COURTIER_CHOOSE', choices: pri.slice(0, pd.n) }; }
+      case 'lurker':
+        if (pd.stage === 'choose') {
+          const good = state.trash.find((id) => isType(id, 'action') && cost(state, id) >= 4);
+          return { type: 'LURKER_CHOOSE', choice: good ? 'gain' : 'trash' };
+        }
+        if (pd.stage === 'trash') {
+          const acts = Object.keys(state.supply).filter((id) => isType(id, 'action') && sup(state, id) > 0).sort((a, b) => C()[a].cost - C()[b].cost);
+          return { type: 'LURKER_TRASH', card: acts[0] };
+        }
+        { const acts = state.trash.filter((id) => isType(id, 'action')).sort((a, b) => C()[b].cost - C()[a].cost); return { type: 'LURKER_GAIN', card: acts[0] }; }
+      case 'mill': {
+        const junk = p.hand.filter((c) => isType(c, 'curse') || c === 'estate' || c === 'copper');
+        return { type: 'MILL_RESOLVE', cards: junk.length >= 2 ? junk.slice(0, 2) : [] };
+      }
+      case 'patrol':
+        return { type: 'PATROL_RESOLVE', order: pd.cards.slice() };
+      case 'replace':
+        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'REPLACE_REACT' }; }
+        if (pd.stage === 'trash') return { type: 'REPLACE_TRASH', card: pickRemodelTrash(state, p) };
+        return { type: 'REPLACE_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
+      case 'secret_passage':
+        if (pd.stage === 'pick') {
+          const junk = p.hand.find((c) => isType(c, 'curse') || c === 'estate');
+          const card = junk || p.hand.slice().sort((a, b) => keepValue(b) - keepValue(a))[0];
+          return { type: 'SECRET_PASSAGE_PICK', card };
+        }
+        { const c = pd.card; const j = isType(c, 'curse') || c === 'estate'; return { type: 'SECRET_PASSAGE_PLACE', pos: j ? p.deck.length : 0 }; }
+      case 'diplomat_discard':
+        return { type: 'DIPLOMAT_DISCARD', cards: pickDiscards(p.hand, Math.min(3, p.hand.length)) };
+
+      /* ===== プロモ ===== */
+      case 'envoy': {
+        // 左隣として、使用者に最も価値の高いカードを捨てさせる
+        const best = pd.revealed.slice().sort((a, b) => keepValue(b) - keepValue(a))[0];
+        return { type: 'ENVOY_PICK', card: best };
+      }
+      case 'governor':
+        return { type: 'GOVERNOR_CHOOSE', choice: 'silver' }; // 自分は金貨が得られる銀貨モード
+      case 'governor_remodel':
+        if (pd.stage === 'trash') {
+          const tryT = (c) => p.hand.includes(c) && bestGainExact(state, cost(state, c) + pd.delta, { noVictory: true });
+          let card = null;
+          if (tryT('estate')) card = 'estate';
+          else if (pd.delta >= 2 && tryT('copper')) card = 'copper';
+          else { const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => C()[a].cost - C()[b].cost); if (acts.length && bestGainExact(state, cost(state, acts[0]) + pd.delta, { noVictory: true })) card = acts[0]; }
+          return { type: 'GOVERNOR_REMODEL_TRASH', card };
+        }
+        return { type: 'GOVERNOR_REMODEL_GAIN', card: bestGainExact(state, pd.exact, { noVictory: true }) || bestGainExact(state, pd.exact) };
+      case 'dismantle':
+        if (pd.stage === 'trash') {
+          let card;
+          if (p.hand.includes('estate')) card = 'estate';
+          else { const acts = p.hand.filter((c) => isType(c, 'action') && cost(state, c) >= 1).sort((a, b) => C()[a].cost - C()[b].cost); card = acts[0] || p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0]; }
+          return { type: 'DISMANTLE_TRASH', card };
+        }
+        return { type: 'DISMANTLE_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
+      case 'black_market': {
+        if (p.hand.some((c) => isTreasure(c))) return { type: 'BLACK_MARKET_PLAY_TREASURES' };
+        const coins = state.turn.coins;
+        const aff = pd.revealed.filter((id) => cost(state, id) <= coins && !isType(id, 'curse'));
+        const premium = GAIN_ORDER.slice(0, GAIN_ORDER.indexOf('silver'));
+        let pick = null;
+        for (const id of premium) { if (aff.includes(id)) { pick = id; break; } }
+        return pick ? { type: 'BLACK_MARKET_BUY', card: pick } : { type: 'BLACK_MARKET_SKIP' };
+      }
 
       default:
         return { type: 'END_TURN' };
