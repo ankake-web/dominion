@@ -65,6 +65,19 @@
   };
   DOM.UI = UI;
 
+  /* ---------- 初心者モード（☰メニューでON/OFF・端末ごとに記憶。既定ON） ---------- */
+  const BEGINNER_KEY = 'dominion-beginner';
+  function loadBeginner() {
+    try { const v = localStorage.getItem(BEGINNER_KEY); return v == null ? true : v === '1'; }
+    catch (e) { return true; }
+  }
+  UI.beginner = loadBeginner();
+  function setBeginner(v) {
+    UI.beginner = !!v;
+    try { localStorage.setItem(BEGINNER_KEY, v ? '1' : '0'); } catch (e) { /* noop */ }
+    render();
+  }
+
   /* ---------- DOM ヘルパ ---------- */
   function h(tag, props, ...kids) {
     const e = document.createElement(tag);
@@ -186,11 +199,13 @@
     const ec = effCost(state, id);
     const cls = 'pile has-art ' + (opts.size === 'sm' ? 'sm ' : '') + typeClass(id) +
       (n <= 0 ? ' empty' : '') + (opts.buyable ? ' buyable' : '') + (opts.gainable ? ' gainable' : '') +
+      (opts.recommended ? ' recommended' : '') +
       (ec < c.cost ? ' discounted' : '');
     return h('div', { class: cls, onclick: opts.onClick, 'data-pile': id },
       h('div', { class: 'pcost' }, ec),
       h('div', { class: 'pname' }, c.name),
       cardArt(id),
+      opts.recommended ? h('div', { class: 'rec-badge' }, 'おすすめ') : null,
       h('div', { class: 'pile-count' + (n <= 2 ? ' lo' : n <= 5 ? ' mid' : '') }, '残' + n)
     );
   }
@@ -572,10 +587,93 @@
 
   function phaseLabel(ph) { return ph === 'action' ? 'アクション フェーズ' : '購入 フェーズ'; }
 
+  /* ---------- 初心者モードの支援（案内・おすすめ買い物・カードのやさしい説明） ---------- */
+  // 今のコインで買える中から、序盤に強い財宝＆勝ち筋を提案（盤面で黄色枠ハイライト）。
+  function recommendedBuys(state) {
+    const t = state.turn;
+    if (t.phase !== 'buy' || t.buys <= 0) return [];
+    const can = (id) => (state.supply[id] || 0) > 0 && effCost(state, id) <= t.coins;
+    const recs = [];
+    if (can('province')) recs.push('province');
+    if (can('gold')) recs.push('gold');
+    else if (can('silver')) recs.push('silver');
+    return recs;
+  }
+  // 画面下の操作と連動した「今やること」の一文。null なら出さない。
+  function coachHint(state, viewer, interactive) {
+    if (!interactive || state.pending) return null;
+    const t = state.turn;
+    const me = state.players[viewer];
+    if (t.phase === 'action') {
+      const playable = t.actions > 0 && me.hand.some((c) => DOM.CARDS[c].types.includes('action'));
+      return playable
+        ? '🔰 アクションフェーズ：光っているアクションカードをタップして使えます（残り ' + t.actions + '）。終わったら「購入フェーズへ ▶」。'
+        : '🔰 使えるアクションはありません。「購入フェーズへ ▶」で買い物に進みましょう。';
+    }
+    const hasTreasure = me.hand.some((c) => DOM.CARDS[c].types.includes('treasure'));
+    if (hasTreasure) return '🔰 購入フェーズ：まず「財宝を全部出す」でコインを出しましょう。';
+    if (t.buys > 0) {
+      const recs = recommendedBuys(state);
+      return recs.length
+        ? '🔰 コイン' + t.coins + '・購入' + t.buys + '回。おすすめ＝' + recs.map((id) => DOM.CARDS[id].name).join('・') + '（黄色の枠）。買ったら「ターンを終える」。'
+        : '🔰 コイン' + t.coins + '・購入' + t.buys + '回。買えるものを選ぶか「ターンを終える」。';
+    }
+    return '🔰 「ターンを終える」を押して相手の番にしましょう。';
+  }
+  // カードごとのやさしい一言。未登録は種別から自動で補う（全カード何かしら出る）。
+  const TIPS = {
+    copper: '基本の財宝。購入フェーズに出すと +1コイン。',
+    silver: '序盤に増やしたい財宝。+2コイン。',
+    gold: '強い財宝。+3コイン。買えるなら優先したい。',
+    estate: '勝利点1。手札では使えないが、終了時に点になる。',
+    duchy: '勝利点3。中盤以降に集めたい。',
+    province: '勝利点6。これを買い集めると勝ちに近づく。',
+    curse: '−1点の邪魔カード。基本は持ちたくない。',
+    cellar: '+1アクション。いらない手札を捨てて同じ枚数引き直せる＝事故を減らせる。',
+    chapel: 'いらないカードを最大4枚廃棄。デッキを薄くして強い札を引きやすくする。',
+    village: '+1カード +2アクション。続けて他のアクションを使うための土台。',
+    market: '+1カード +1アクション +1購入 +1コインの万能札。迷ったら強い。',
+    smithy: '+3カード。手札を一気に厚くしたいときに。',
+    woodcutter: '+1購入 +2コイン。1ターンに2枚買いたいとき。',
+    laboratory: '+2カード +1アクション。手札が減らず引ける優秀札。',
+    festival: '+2アクション +1購入 +2コイン。場を回しつつ買い物も。',
+    moneylender: '銅貨1枚を廃棄して +3コイン。序盤の銅貨整理に。',
+    militia: 'アタック。+2コインし、相手は手札を3枚まで捨てる。',
+    witch: 'アタック。+2カードし、相手に呪い（−1点）を配る強力札。',
+    moat: '+2カード。相手のアタックを受けたとき手札から見せると防げる。',
+    mine: '財宝を1枚廃棄して、より高い財宝に持ち替えられる（銅貨→銀貨など）。',
+    remodel: '手札1枚を廃棄して、+2コストまでのカードを獲得。札の入れ替えに。',
+    workshop: 'コスト4以下を1枚ただで獲得。序盤の戦力補充に。',
+    throne_room: 'アクション1枚を2回使える。強いアクションと組むと爆発的。',
+    council_room: '+4カード +1購入。引きが一気に増える（相手も1枚引く）。',
+    library: '手札が7枚になるまで引く。手札が少ないときに。',
+    gardens: 'デッキ10枚ごとに1点。カードを多く買う作戦向け。',
+    chancellor: '+2コイン。山札を一気に捨て札にして引き直しを早められる。',
+    adventurer: '財宝が2枚出るまで山札をめくって手札に。コインを確保。',
+    feast: 'このカードを廃棄して、コスト5以下を1枚獲得。',
+    bureaucrat: 'アタック。銀貨を山札の上に得て、相手は勝利点を山札の上に戻す。',
+    nobles: '勝利点2。使うと +3カード か +2アクションを選べる。',
+    harem: '+2コインの財宝で、勝利点2も兼ねるお得カード。',
+    great_hall: '+1カード +1アクションで、勝利点1も付く。',
+  };
+  function beginnerTip(id) {
+    if (TIPS[id]) return TIPS[id];
+    const ty = DOM.CARDS[id].types;
+    if (ty.includes('attack')) return 'アタックカード。アクションフェーズに使うと相手を妨害できる。';
+    if (ty.includes('reaction')) return 'リアクション。相手のアタック時に手札から見せて身を守れることがある。';
+    if (ty.includes('treasure')) return '財宝カード。購入フェーズに出すとコインになる。';
+    if (ty.includes('action')) return 'アクションカード。アクションフェーズに使う（+アクションがあれば続けて使える）。';
+    if (ty.includes('victory')) return '勝利点カード。手札では使えないが、終了時に点数になる。';
+    if (ty.includes('curse')) return '−1点。できれば避けたい。';
+    return '';
+  }
+
   // ハンバーガーメニュー（ホーム・BGM・効果音をまとめる）
   function viewTopMenu() {
     const items = [
       h('button', { class: 'menu-item', onclick: () => { UI.menuOpen = false; confirmLeaveGame(); } }, '🏠　TOPに戻る'),
+      h('button', { class: 'menu-item' + (UI.beginner ? ' on' : ''), onclick: () => { UI.menuOpen = false; setBeginner(!UI.beginner); } },
+        '🔰　初心者モード：' + (UI.beginner ? 'オン' : 'オフ')),
     ];
     if (DOM.audio) {
       items.push(h('button', { class: 'menu-item', onclick: () => { DOM.audio.toggleBgm(); render(); } }, (DOM.audio.isBgm() ? '🎵' : '🔇') + '　BGM：' + (DOM.audio.isBgm() ? 'オン' : 'オフ')));
@@ -630,11 +728,13 @@
     // サプライ（種類ごと）
     const buyableId = (id) => interactive && t.phase === 'buy' && !state.pending &&
       (state.supply[id] || 0) > 0 && t.buys > 0 && effCost(state, id) <= t.coins;
+    // 初心者モード：おすすめ購入の山を黄色枠でハイライト（購入フェーズ・自分の操作中のみ）。
+    const recSet = (UI.beginner && interactive && t.phase === 'buy' && !state.pending) ? new Set(recommendedBuys(state)) : new Set();
     const supSection = (title, ids, size) =>
       h('div', { class: 'supply-section' },
         h('div', { class: 'sup-title' }, title),
         h('div', { class: 'supply-grid ' + size },
-          ids.map((id) => pileEl(id, state, { size: size === 'small' ? 'sm' : 'lg', buyable: buyableId(id), onClick: () => onPileTap(state, id, interactive) }))));
+          ids.map((id) => pileEl(id, state, { size: size === 'small' ? 'sm' : 'lg', buyable: buyableId(id), recommended: recSet.has(id), onClick: () => onPileTap(state, id, interactive) }))));
 
     const supply = h('div', null,
       // 財宝・勝利点は基本カード。デスクトップでは横並びにして縦スペースを節約。
@@ -674,9 +774,12 @@
     const moveLine = lastMove(state.log);
     const moveBar = h('div', { class: 'last-move' }, moveLine ? h('span', null, '🃏 ' + moveLine) : h('span', { class: 'muted' }, 'まだ動きはありません'));
 
+    // 初心者モード：今やることの案内（ヘッダー内に常時表示）
+    const coach = UI.beginner ? coachHint(state, viewer, interactive) : null;
     return h('div', { class: 'board' },
       // スクロールしても常に見えるヘッダー（手番・残量・相手・直近の行動）
-      h('div', { class: 'board-head' }, top, othersStrip, moveBar),
+      h('div', { class: 'board-head' }, top, othersStrip, moveBar,
+        coach ? h('div', { class: 'coach-bar' }, coach) : null),
       UI.mode === 'online' ? h('div', { class: 'muted', style: 'font-size:11px;text-align:center;margin:-2px 0 4px' }, '部屋 ' + UI.roomCode + '　/　あなた: ' + me.name) : null,
       banner,
       h('div', { class: 'section-h' }, 'サプライ（場の山札）'),
@@ -1231,6 +1334,7 @@
             h('span', { class: 'zoom-cost' }, c.cost),
             h('div', null, h('h3', { class: 'zoom-name' }, c.name), h('div', { class: 'zoom-type' }, typeLabel(id)))),
           h('div', { class: 'zoom-text' }, c.text || ''),
+          UI.beginner ? h('div', { class: 'beginner-tip' }, '🔰 ' + beginnerTip(id)) : null,
           remain != null ? h('div', { class: 'zoom-remain' }, 'サプライ残り ' + remain + ' 枚') : null),
         p ? h('button', { class: 'btn ' + (p.cls || '') + ' btn-block', onclick: p.on }, p.label) : null));
   }

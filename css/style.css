@@ -1051,3 +1051,46 @@ html.modal-open, html.modal-open body { overflow: hidden; }
   background: linear-gradient(180deg, #8fe0a0, #4fae6a); color: #0e2a18;
   box-shadow: 0 0 10px rgba(120, 230, 150, 0.6);
 }
+
+/* ============================================================
+   初心者モード（☰メニューでON/OFF）
+   ============================================================ */
+/* メニューのトグル表示 */
+.top-menu .menu-item.on { color: var(--gold-bright); }
+/* ヘッダー内の「今やること」案内バー */
+.coach-bar {
+  margin: 5px 0 1px;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #f2f8ff;
+  background: linear-gradient(180deg, rgba(70,130,190,.30), rgba(40,80,130,.22));
+  border: 1px solid rgba(150,200,255,.45);
+  border-radius: 8px;
+}
+/* おすすめ購入の山（黄色枠＋上部リボン） */
+.pile.recommended {
+  outline: 3px solid var(--gold-bright);
+  outline-offset: 1px;
+  box-shadow: 0 0 12px rgba(240,210,138,.85), var(--shadow);
+}
+.pile .rec-badge {
+  position: absolute; top: 0; left: 0; right: 0;
+  z-index: 3;
+  padding: 2px 0;
+  font-size: 10px; font-weight: 800; letter-spacing: .06em;
+  text-align: center;
+  color: #2a2010;
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  border-bottom: 1px solid rgba(0,0,0,.25);
+}
+/* カード詳細シートのやさしい説明 */
+.beginner-tip {
+  margin-top: 8px;
+  padding: 8px 11px;
+  font-size: 13px; line-height: 1.5;
+  color: #173a26;
+  background: linear-gradient(180deg, #eafbe8, #d6f2cf);
+  border: 1px solid #9fce93;
+  border-radius: 8px;
+}
