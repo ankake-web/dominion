@@ -257,6 +257,9 @@
   // 陰謀（第二版）推奨10種。新カード（待ち伏せ・風車・隠し通路）入り。
   DOM.KINGDOM_INTRIGUE = ['courtyard', 'pawn', 'lurker', 'shanty_town', 'steward',
                           'conspirator', 'mill', 'secret_passage', 'swindler', 'nobles'];
+  // 海辺（第二版）推奨10種。持続・マット・追加ターン・アタックをひと通り味わえる構成。
+  DOM.KINGDOM_SEASIDE = ['haven', 'lighthouse', 'native_village', 'fishing_village', 'warehouse',
+                         'merchant_ship', 'wharf', 'treasury', 'sea_witch', 'island'];
   // 初版（第二版で廃止されたカードを含む懐かしのセット）
   DOM.KINGDOM_1E = ['cellar', 'chancellor', 'woodcutter', 'feast', 'militia',
                     'spy', 'thief', 'council_room', 'adventurer', 'market'];
@@ -282,9 +285,7 @@
                'trading_post', 'upgrade', 'swindler', 'minion', 'masquerade'].concat(INTRIGUE_NEW_2E),
     // プロモ（6種）
     promo: ['walled_village', 'envoy', 'governor', 'dismantle', 'black_market', 'hoard'],
-    // 海辺 第二版（27種）= カード画像用カタログ。★どの CARD_SET / randomFrom からも参照しない
-    //   「孤立プール」。整合性テスト（全カードはいずれかのプールに属する）を満たすためだけに置く。
-    //   ゲーム本体は CARD_SETS / KINGDOM 系しか引かないので、ここに入れても抽選母集団に流入しない。
+    // 海辺 第二版（27種）= 抽選母集団。「海辺セット」(固定10種)と「海辺から」(ランダム)が参照する。
     seaside: ['native_village', 'haven', 'lighthouse', 'warehouse', 'smugglers', 'lookout',
               'fishing_village', 'sea_chart', 'monkey', 'astrolabe', 'treasure_map', 'salvager',
               'cutpurse', 'caravan', 'island', 'sailor', 'tide_pools', 'bazaar', 'treasury',
@@ -306,6 +307,7 @@
     // ---- 標準（第二版の王国基本・陰謀基本）----
     { id: 'basic',           kind: 'standard', name: '王国基本セット（第二版）', kingdom: DOM.KINGDOM },
     { id: 'intrigue',        kind: 'standard', name: '陰謀セット（第二版）', kingdom: DOM.KINGDOM_INTRIGUE },
+    { id: 'seaside',         kind: 'standard', name: '海辺セット（第二版）', kingdom: DOM.KINGDOM_SEASIDE },
     // ---- おすすめ（テーマ別・固定10種）----
     { id: 'big-money',       kind: 'recommend', name: 'ビッグマネー', desc: 'お金を伸ばして属州を狙う王道',
       kingdom: ['chapel', 'moneylender', 'harbinger', 'throne_room', 'bureaucrat', 'poacher', 'market', 'mine', 'laboratory', 'sentry'] },
@@ -329,6 +331,7 @@
       kingdom: ['cellar', 'walled_village', 'envoy', 'dismantle', 'militia', 'hoard', 'governor', 'market', 'black_market', 'witch'] },
     // ---- ランダム（毎回その場で10種を抽選）----
     { id: 'random',          kind: 'random', name: '基本＋陰謀から', randomFrom: ['basic', 'intrigue'] },
+    { id: 'random-seaside',  kind: 'random', name: '海辺から',       randomFrom: ['seaside'] },
     { id: 'random-intrigue', kind: 'random', name: '陰謀のみから',   randomFrom: ['intrigue'] },
     { id: 'random-basic',    kind: 'random', name: '基本のみから',   randomFrom: ['basic'] },
     { id: 'random-promo',    kind: 'random', name: 'プロモ込みから',  randomFrom: ['basic', 'intrigue', 'promo'] },

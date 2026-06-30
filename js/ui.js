@@ -743,10 +743,21 @@
         supSection('勝利点', DOM.VICTORY.concat(['curse']), 'small')),
       supSection('王国カード（アクション）', state.kingdom, 'big'));
 
-    // 場（プレイ済み）
-    const playArea = active.inPlay.length
-      ? h('div', { class: 'play-area' }, active.inPlay.map((id) => h('div', { class: 'chip-card ' + typeClass(id) + coinClass(id) }, DOM.CARDS[id].name)))
+    // 場（プレイ済み）＋持続カード（⏳付き・場に残る）
+    const inPlayChips = active.inPlay.map((id) => h('div', { class: 'chip-card ' + typeClass(id) + coinClass(id) }, DOM.CARDS[id].name));
+    const durChips = (active.durationCards || []).map((id) => h('div', { class: 'chip-card duration', title: '持続中（次の手番に効果）' }, '⏳ ' + DOM.CARDS[id].name));
+    const allPlayChips = inPlayChips.concat(durChips);
+    const playArea = allPlayChips.length
+      ? h('div', { class: 'play-area' }, allPlayChips)
       : h('div', { class: 'play-area' }, h('div', { class: 'empty-note' }, 'まだ場にカードはありません'));
+    // 海辺：島マット（公開・VPに数える）／原住民の村マット（自分のみ枚数表示）
+    const matRows = [];
+    if ((me.islandMat || []).length) matRows.push(h('div', { class: 'mat-row' },
+      h('span', { class: 'mat-label' }, '🏝 島マット: '),
+      me.islandMat.map((id) => h('span', { class: 'chip-card ' + typeClass(id) }, DOM.CARDS[id].name))));
+    if ((me.nativeVillageMat || []).length) matRows.push(h('div', { class: 'mat-row' },
+      h('span', { class: 'mat-label' }, '🛖 原住民の村マット: ' + me.nativeVillageMat.length + '枚')));
+    const matsBlock = matRows.length ? h('div', { class: 'mats' }, matRows) : null;
 
     // 手札（種類でグループ化・重ね表示）
     const hg = handGroups(me.hand, state.kingdom);
@@ -786,6 +797,7 @@
       supply,
       h('div', { class: 'zone-h' }, h('span', { class: 't' }, '場')),
       playArea,
+      matsBlock,
       h('div', { class: 'zone-h' }, h('span', { class: 't' }, me.name + ' の手札'),
         h('span', { class: 'c', 'data-self-pile': '1' },
           '山' + me.deck.length + '・捨' + me.discard.length + '・手' + me.hand.length + '｜' + E().vpOf(me) + '点'),
@@ -1027,6 +1039,28 @@
     if (pd.type === 'dismantle' && pd.stage === 'trash') return modalSingleHand(p, '取り壊し — 廃棄', '廃棄するカードを1枚選びます（$1以上なら 安いカード＋金貨を獲得）。', () => true, (card) => dispatch({ type: 'DISMANTLE_TRASH', card }));
     if (pd.type === 'dismantle' && pd.stage === 'gain') return modalGainSupply(state, '取り壊し — 獲得', '廃棄したカードより安いカードを1枚獲得します。', (id) => effCost(state, id) <= pd.maxCost, (id) => dispatch({ type: 'DISMANTLE_GAIN', card: id }));
     if (pd.type === 'black_market') return modalBlackMarket(state, pd, p);
+
+    /* ===== 拡張: 海辺（Seaside 第二版）===== */
+    if (pd.type === 'warehouse') return modalSelectN(p, '倉庫 — 捨てる', '手札を3枚選んで捨てます。', Math.min(3, p.hand.length), '確定（捨てる）', (cards) => dispatch({ type: 'WAREHOUSE_DISCARD', cards }));
+    if (pd.type === 'haven') return modalSingleHand(p, '停泊所 — 脇に置く', '手札1枚を脇に置きます（次の手番の開始時に手札へ戻ります）。', () => true, (card) => dispatch({ type: 'HAVEN_SETASIDE', card }), null, '脇に置く');
+    if (pd.type === 'tactician') return modalOptions('策士', '手札を全て捨てると、次の手番に +5カード +1購入 +1アクション。', [
+      { label: '手札を全て捨てる', cls: 'btn-primary', on: () => dispatch({ type: 'TACTICIAN_RESOLVE', discard: true }) },
+      { label: '捨てない（持続しない）', on: () => dispatch({ type: 'TACTICIAN_RESOLVE', discard: false }) }]);
+    if (pd.type === 'salvager') return modalSingleHand(p, '引揚水夫 — 廃棄', '廃棄するカードを1枚選びます（そのコストぶん +コイン）。', () => true, (card) => dispatch({ type: 'SALVAGER_TRASH', card }), null, '廃棄する');
+    if (pd.type === 'lookout' && pd.stage === 'trash') return modalOptions('見張り — 廃棄', '見た上3枚から廃棄する1枚を選びます。', pd.cards.map((c) => ({ label: DOM.CARDS[c].name, on: () => dispatch({ type: 'LOOKOUT_TRASH', card: c }) })));
+    if (pd.type === 'lookout' && pd.stage === 'discard') return modalOptions('見張り — 捨てる', '残りから捨てる1枚を選びます（最後の1枚は山札の上に戻ります）。', pd.cards.map((c) => ({ label: DOM.CARDS[c].name, on: () => dispatch({ type: 'LOOKOUT_DISCARD', card: c }) })));
+    if (pd.type === 'island') return modalSingleHand(p, '島 — 島マットへ', '手札1枚を島マットに置きます（ゲーム終了まで取り出さず、勝利点に数えます）。', () => true, (card) => dispatch({ type: 'ISLAND_PICK', card }), null, '島マットへ');
+    if (pd.type === 'native_village') return modalOptions('原住民の村', 'どちらかを選びます。', [
+      { label: '山札の上1枚をマットに置く', cls: 'btn-primary', on: () => dispatch({ type: 'NATIVE_VILLAGE_RESOLVE', mode: 'set' }) },
+      { label: 'マットの全カードを手札に加える（' + (p.nativeVillageMat || []).length + '枚）', on: () => dispatch({ type: 'NATIVE_VILLAGE_RESOLVE', mode: 'take' }) }]);
+    if (pd.type === 'tide_pools_discard') return modalSelectN(p, '潮だまり — 手札を捨てる', '手札を2枚選んで捨てます。', Math.min(2, p.hand.length), '確定（捨てる）', (cards) => dispatch({ type: 'TIDE_POOLS_DISCARD', cards }));
+    if (pd.type === 'cutpurse' && pd.stage === 'react') return modalOptions('巾着切りを受ける', '銅貨1枚を捨てます（無ければ手札を公開）。', reactOptions(p, pd, { type: 'CUTPURSE_REACT' }));
+    if (pd.type === 'sea_witch' && pd.stage === 'react') return modalOptions('海の魔女を受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'SEA_WITCH_REACT' }));
+    if (pd.type === 'sea_witch_discard') return modalSelectN(p, '海の魔女 — 手札を捨てる', '手札を2枚選んで捨てます。', Math.min(2, p.hand.length), '確定（捨てる）', (cards) => dispatch({ type: 'SEA_WITCH_DISCARD', cards }));
+    if (pd.type === 'smugglers') return modalOptions('密輸人 — 獲得', '右隣が直前の手番に獲得したカード（6コスト以下）を1枚獲得します。', pd.candidates.map((c) => ({ label: DOM.CARDS[c].name + ' を獲得', on: () => dispatch({ type: 'SMUGGLERS_GAIN', card: c }) })));
+    if (pd.type === 'blockade' && pd.stage === 'gain') return modalGainSupply(state, '封鎖 — 獲得して脇に置く', 'コスト4以下を1枚獲得して脇に置きます（次の手番に手札へ。場にある間、他人が同名を獲得すると呪い）。', (id) => effCost(state, id) <= 4, (id) => dispatch({ type: 'BLOCKADE_GAIN', card: id }));
+    if (pd.type === 'sailor_trash') return modalSingleHand(p, '船乗り — 廃棄（任意）', '手札1枚を廃棄できます（しなくてもよい）。', () => true, (card) => dispatch({ type: 'SAILOR_TRASH', card }), { label: '廃棄しない', on: () => dispatch({ type: 'SAILOR_TRASH', card: null }) }, '廃棄する');
+    if (pd.type === 'pirate_gain') return modalGainSupply(state, '海賊 — 財宝を獲得', 'コスト6以下の財宝1枚を手札に獲得します。', (id) => DOM.isType(id, 'treasure') && effCost(state, id) <= 6, (id) => dispatch({ type: 'PIRATE_GAIN', card: id }), () => dispatch({ type: 'PIRATE_GAIN', card: null }));
 
     return h('div');
   }

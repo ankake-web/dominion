@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "ドミニオン基本セット スマホ対戦Webアプリ（CPU・2〜4人・オンライン）",
   "scripts": {
-    "test": "node test/integrity.test.js && node test/engine.test.js && node test/intrigue.test.js && node test/edition2.test.js && node test/cpu.test.js && node test/ui.test.js && node test/intrigue-ui.test.js && node test/edition2-ui.test.js && node test/server.test.js && node test/online.test.js && node test/stress.test.js",
+    "test": "node test/integrity.test.js && node test/engine.test.js && node test/intrigue.test.js && node test/edition2.test.js && node test/seaside.test.js && node test/cpu.test.js && node test/ui.test.js && node test/intrigue-ui.test.js && node test/edition2-ui.test.js && node test/seaside-ui.test.js && node test/server.test.js && node test/online.test.js && node test/stress.test.js",
     "verify:visual": "node test/verify-visual.js",
     "start": "node server/index.js",
     "serve": "python3 -m http.server 8000",

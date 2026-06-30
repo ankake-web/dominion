@@ -36,6 +36,19 @@
       if (t.merchants) { t.coins += t.merchants; log(state, `${p.name} は商人の効果で +${t.merchants} コイン。`); }
       t.silverPlayed = true;
     }
+    // 海辺：アストロラーベ（財宝・持続）＝このターン +1コイン +1購入、次の手番開始時も同じ。
+    if (card === 'astrolabe') {
+      t.coins += 1; t.buys += 1;
+      armDuration(state, pIndex, 'astrolabe');
+      log(state, `${p.name} はアストロラーベを使った（+1コイン +1購入。次の手番にも）。`);
+    }
+    // 海辺：海賊（財宝・持続）＝次の手番に6コスト以下の財宝1枚を手札に獲得。
+    if (card === 'pirate') {
+      armDuration(state, pIndex, 'pirate');
+      log(state, `${p.name} は海賊を使った（次の手番に財宝を手札に獲得）。`);
+    }
+    // 海辺：私掠船マーク中なら、このターン最初の銀貨/金貨は出した後に廃棄される（コインは入る）。
+    corsairOnPlayTreasure(state, pIndex, card);
   }
 
   /* ---------- 乱数・シャッフル ---------- */
@@ -67,6 +80,17 @@
     return supply;
   }
 
+  // 1ターン分の turn オブジェクトを作る（createInitialState と cleanupAndAdvance で共用＝フィールドのズレ防止）。
+  // 海辺用に gainedThisTurn（このターン獲得したid列・密輸人/宝物庫用）/ outpostUsed / isExtraTurn / startQueue を追加。
+  function freshTurn(active, isExtraTurn) {
+    return {
+      active, phase: 'action', actions: 1, buys: 1, coins: 0, costReduction: 0,
+      actionsPlayed: 0, copperBonus: 0, merchants: 0, silverPlayed: false,
+      gainedThisTurn: [], outpostUsed: false, isExtraTurn: !!isExtraTurn, startQueue: null,
+      corsairTrashed: false, // 私掠船：このターンに最初の銀/金を廃棄済みか（被害者ごと）
+    };
+  }
+
   /* ---------- 初期状態 ----------
      playerConfigs: 文字列(名前)または {name, isCpu, level} の配列（2〜4人）
      opts.startActive: 開始プレイヤー。整数(席番号) または 'random'。
@@ -95,6 +119,13 @@
         discard: [],
         inPlay: [],
         turns: 0,
+        // 海辺（持続/マット）用の状態。すべてJSONセーフ＝スナップショット/再接続でそのまま保存復元される。
+        durationCards: [], // 場に残る持続カード（クリーンアップで捨てずに持ち越す。inPlay と同じく公開情報）
+        delayedEffects: [], // 次の自分の手番開始時に解決する予約効果 {card, type, ...data}
+        setAside: [],      // 伏せて脇に置く私的カード（停泊所/封鎖の獲得物など。相手には伏せる）
+        islandMat: [],     // 島マット（ゲームから外れるが所有者のVPに数える。公開）
+        nativeVillageMat: [], // 原住民の村マット（手札に回収できる。秘密）
+        lastTurnGains: [], // 直前の自分の手番に獲得したカードid（密輸人が右隣のこれを参照）
       };
     });
 
@@ -122,7 +153,7 @@
       supply,
       trash: [],
       blackMarket, // 闇市場デッキ（無ければ null）
-      turn: { active: startActive, phase: 'action', actions: 1, buys: 1, coins: 0, costReduction: 0, actionsPlayed: 0, copperBonus: 0, merchants: 0, silverPlayed: false },
+      turn: freshTurn(startActive),
       pending: null, // 選択待ち {type, player, ...}
       logSeq: 1, // ログの通し番号（効果音などが「新しい行」を確実に検知するため）
       log: [`ゲーム開始。${players[startActive].name} の番です。`],
@@ -186,6 +217,11 @@
     if (dest === 'hand') p.hand.push(cardId);
     else if (dest === 'deck') p.deck.unshift(cardId);
     else p.discard.push(cardId);
+    // 海辺：手番プレイヤーの獲得を記録（密輸人・宝物庫の「このターン勝利点を獲得したか」用）
+    if (state.turn && pIndex === state.turn.active) {
+      (state.turn.gainedThisTurn || (state.turn.gainedThisTurn = [])).push(cardId);
+    }
+    triggerOnGain(state, pIndex, cardId); // サル/封鎖/海賊の「獲得時」フック（§手6で実装）
     return true;
   }
 
@@ -267,6 +303,8 @@
   // 次の犠牲者へ。堀持ちなら反応(react)を待ち、いなければ即廃棄処理へ。queue 空で終了。
   function swindlerEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    if (!queue.length) { state.pending = null; return; }
     const victim = queue[0];
     const rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -298,6 +336,8 @@
   /* ---------- 破壊工作員（複数対象。$3以上を1枚廃棄→犠牲者が任意で格下げ獲得）---------- */
   function saboteurEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
       state.pending = { type: 'saboteur', stage: 'react', player: victim, source, victim, queue: rest };
@@ -334,6 +374,8 @@
   /* ---------- 手先（攻撃側の選択＋全相手に作用するアタック）---------- */
   function minionAttackEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
       state.pending = { type: 'minion_attack', stage: 'react', player: victim, source, victim, queue: rest };
@@ -397,6 +439,8 @@
     minion_attack: { onMoat: (s, pd) => minionAttackEnterVictim(s, pd.source, pd.queue) },
     bandit:        { onMoat: (s, pd) => banditEnterVictim(s, pd.source, pd.queue) },
     replace:       { onMoat: (s, pd) => replaceEnterVictim(s, pd.source, pd.queue) },
+    cutpurse:      { onMoat: (s, pd) => cutpurseEnterVictim(s, pd.source, pd.queue) },
+    sea_witch:     { onMoat: (s, pd) => seaWitchEnterVictim(s, pd.source, pd.queue) },
   };
   // 被攻撃側の反応（堀／秘密の小部屋／外交官）を差し込める局面か。
   function isAttackReactPending(pd) {
@@ -430,6 +474,8 @@
   /* ---------- 密偵（全員の山札の上を公開、使用者が各自について捨てる/戻すを決める）---------- */
   function spyEnterTarget(state, attacker, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => v === attacker || !attackImmune(state, v)); // 灯台：免疫の相手は対象外（自分は対象）
+    if (!queue.length) { state.pending = null; return; }
     const target = queue[0], rest = queue.slice(1);
     if (target !== attacker && hasReaction(state.players[target])) {
       state.pending = { type: 'spy', stage: 'react', player: target, source: attacker, victim: target, queue: rest };
@@ -451,6 +497,8 @@
   /* ---------- 泥棒（他の各自が上2枚公開、使用者が財宝1枚を廃棄→獲得してよい）---------- */
   function thiefEnterVictim(state, attacker, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
       state.pending = { type: 'thief', stage: 'react', player: victim, source: attacker, victim, queue: rest };
@@ -480,6 +528,8 @@
   /* ---------- 魔女（複数対象。各相手が呪いを獲得）---------- */
   function witchEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
       state.pending = { type: 'witch', stage: 'react', player: victim, source, victim, queue: rest };
@@ -498,6 +548,8 @@
   /* ---------- 役人（複数対象。各相手が勝利点1枚を山札の上へ）---------- */
   function bureaucratEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
       state.pending = { type: 'bureaucrat', stage: 'react', player: victim, source, victim, queue: rest };
@@ -521,6 +573,8 @@
   /* ---------- 山賊（複数対象。各相手が上2枚公開→銅貨以外の財宝1枚を廃棄）---------- */
   function banditEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
       state.pending = { type: 'bandit', stage: 'react', player: victim, source, victim, queue: rest };
@@ -558,6 +612,8 @@
   /* ---------- 身代わり（勝利点を獲得したとき他全員が呪いを獲得＝アタック）---------- */
   function replaceEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
       state.pending = { type: 'replace', stage: 'react', player: victim, source, victim, queue: rest };
@@ -571,6 +627,42 @@
       log(state, `${state.players[victim].name} は呪いを獲得した（身代わり）。`);
     }
     replaceEnterVictim(state, source, queue);
+  }
+
+  /* ---------- 海辺：巾着切り（各相手が銅貨1枚を捨てる／無ければ手札公開）---------- */
+  function cutpurseEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'cutpurse', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      cutpurseApply(state, source, victim, rest);
+    }
+  }
+  function cutpurseApply(state, source, victim, queue) {
+    const v = state.players[victim];
+    if (v.hand.includes('copper')) { removeOne(v.hand, 'copper'); v.discard.push('copper'); log(state, `${v.name} は銅貨1枚を捨てた（巾着切り）。`); }
+    else { reveal(state, victim, v.hand, '巾着切り：銅貨なしの手札を公開'); log(state, `${v.name} は銅貨がなく手札を公開した（巾着切り）。`); }
+    cutpurseEnterVictim(state, source, queue);
+  }
+
+  /* ---------- 海辺：海の魔女（各相手が呪いを獲得＝魔女と同型）---------- */
+  function seaWitchEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'sea_witch', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      seaWitchCurse(state, source, victim, rest);
+    }
+  }
+  function seaWitchCurse(state, source, victim, queue) {
+    if ((state.supply.curse || 0) > 0) { gain(state, victim, 'curse', 'discard'); log(state, `${state.players[victim].name} は呪いを獲得した（海の魔女）。`); }
+    seaWitchEnterVictim(state, source, queue);
   }
 
   /* ---------- 総督（改築モード）：全員が順に「任意で廃棄→ちょうど+$Nを獲得」---------- */
@@ -609,7 +701,7 @@
         const others = [];
         for (let k = 1; k < state.players.length; k++) {
           const idx = (pi + k) % state.players.length;
-          if (state.players[idx].hand.length > 3) others.push(idx);
+          if (state.players[idx].hand.length > 3 && !attackImmune(state, idx)) others.push(idx);
         }
         if (others.length) {
           state.pending = { type: 'militia', player: others[0], source: pi, queue: others.slice(1) };
@@ -705,9 +797,9 @@
         break;
       case 'torturer': {
         draw(state, pi, 3);
-        // 他の全プレイヤーが対象（手番順）
+        // 他の全プレイヤーが対象（手番順・灯台免疫は除外）
         const to = [];
-        for (let k = 1; k < state.players.length; k++) to.push((pi + k) % state.players.length);
+        for (let k = 1; k < state.players.length; k++) { const idx = (pi + k) % state.players.length; if (!attackImmune(state, idx)) to.push(idx); }
         if (to.length) state.pending = { type: 'torturer', player: to[0], source: pi, queue: to.slice(1) };
         break;
       }
@@ -1041,6 +1133,160 @@
         break;
       }
 
+      /* ===== 拡張: 海辺（Seaside 第二版）===== */
+      // --- バニラ系（即時のみ・非対話）---
+      case 'bazaar':
+        draw(state, pi, 1); t.actions += 2; t.coins += 1;
+        break;
+      // --- バニラ持続（即時＋次手番予約）---
+      case 'fishing_village':
+        t.actions += 2; t.coins += 1;
+        armDuration(state, pi, 'fishing_village');
+        break;
+      case 'caravan':
+        draw(state, pi, 1); t.actions += 1;
+        armDuration(state, pi, 'caravan');
+        break;
+      case 'merchant_ship':
+        t.coins += 2;
+        armDuration(state, pi, 'merchant_ship');
+        break;
+      case 'wharf':
+        draw(state, pi, 2); t.buys += 1;
+        armDuration(state, pi, 'wharf');
+        break;
+      case 'lighthouse':
+        t.actions += 1; t.coins += 1;
+        armDuration(state, pi, 'lighthouse'); // 次手番 +1コイン。場/持続にある間アタック無効（attackImmune）
+        break;
+      case 'tide_pools':
+        draw(state, pi, 3); t.actions += 1;
+        armDuration(state, pi, 'tide_pools'); // 次手番開始時に手札2枚を捨てる（対話）
+        break;
+
+      // --- 対話系（手札の選択を伴う）---
+      case 'warehouse':
+        draw(state, pi, 3); t.actions += 1;
+        if (p.hand.length > 0) state.pending = { type: 'warehouse', player: pi };
+        break;
+      case 'haven':
+        draw(state, pi, 1); t.actions += 1;
+        if (p.hand.length > 0) state.pending = { type: 'haven', player: pi };
+        else armDuration(state, pi, 'haven'); // 手札が空でも持続として残る（脇置きなし）
+        break;
+      case 'tactician':
+        if (p.hand.length > 0) state.pending = { type: 'tactician', player: pi };
+        // 手札が空なら何もしない＝持続化しない（捨て札へ）
+        break;
+      case 'salvager':
+        t.buys += 1;
+        if (p.hand.length > 0) state.pending = { type: 'salvager', stage: 'trash', player: pi };
+        break;
+      case 'lookout': {
+        t.actions += 1;
+        // 山札の上3枚を見る（足りなければある分）
+        const look = [];
+        for (let i = 0; i < 3; i++) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; p.deck = shuffle(p.discard); p.discard = []; }
+          if (p.deck.length === 0) break;
+          look.push(p.deck.shift());
+        }
+        if (look.length) state.pending = { type: 'lookout', stage: 'trash', player: pi, cards: look };
+        break;
+      }
+      case 'treasure_map': {
+        // これ（場のtreasure_map 1枚）と手札のtreasure_map をもう1枚廃棄できれば金貨4枚を山札の上へ。
+        removeOne(p.inPlay, 'treasure_map'); state.trash.push('treasure_map');
+        let trashedTwo = false;
+        if (removeOne(p.hand, 'treasure_map')) { state.trash.push('treasure_map'); trashedTwo = true; }
+        log(state, `${p.name} は宝の地図を廃棄した${trashedTwo ? '（2枚）' : ''}。`);
+        if (trashedTwo) {
+          let g = 0; for (let i = 0; i < 4; i++) { if (gain(state, pi, 'gold', 'deck')) g++; }
+          if (g) log(state, `${p.name} は金貨${g}枚を山札の上に獲得した（宝の地図）。`);
+        }
+        break;
+      }
+      case 'sea_chart': {
+        draw(state, pi, 1); t.actions += 1;
+        // 山札の上を公開。同名カードが場（inPlay/durationCards）にあれば手札に。
+        if (p.deck.length === 0 && p.discard.length > 0) { p.deck = shuffle(p.discard); p.discard = []; }
+        if (p.deck.length > 0) {
+          const top = p.deck[0];
+          reveal(state, pi, [top], '海図で山札の上を公開');
+          if (p.inPlay.includes(top) || (p.durationCards || []).includes(top)) {
+            p.deck.shift(); p.hand.push(top);
+            log(state, `${p.name} は同名が場にあったため「${C()[top].name}」を手札に加えた（海図）。`);
+          }
+        }
+        break;
+      }
+      case 'island':
+        // 島自身を島マットへ（場のこのカードを取り除く）＋手札1枚を島マットへ
+        removeOne(p.inPlay, 'island'); p.islandMat.push('island');
+        if (p.hand.length > 0) state.pending = { type: 'island', player: pi };
+        else log(state, `${p.name} は島を島マットに置いた。`);
+        break;
+      case 'native_village':
+        t.actions += 2;
+        state.pending = { type: 'native_village', player: pi };
+        break;
+
+      // --- アタック・追加ターン・フック系 ---
+      case 'cutpurse': {
+        t.coins += 2;
+        const q = [];
+        for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        cutpurseEnterVictim(state, pi, q);
+        break;
+      }
+      case 'sea_witch': {
+        draw(state, pi, 2);
+        armDuration(state, pi, 'sea_witch'); // 次手番 +2カード→手札2枚捨て
+        const q = [];
+        for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        seaWitchEnterVictim(state, pi, q);
+        break;
+      }
+      case 'monkey':
+        p.monkeyActive = true; // 次の自分の手番まで、右隣の獲得ごとに +1カード
+        armDuration(state, pi, 'monkey'); // 次手番 +1カード（＆窓を閉じる）
+        break;
+      case 'smugglers': {
+        const n = state.players.length;
+        const right = (pi - 1 + n) % n;
+        const gains = Array.from(new Set(state.players[right].lastTurnGains || []))
+          .filter((id) => C()[id] && cardCost(state, id) <= 6 && (state.supply[id] || 0) > 0);
+        if (gains.length) state.pending = { type: 'smugglers', player: pi, candidates: gains };
+        else log(state, `${p.name} は密輸できるカードがなかった。`);
+        break;
+      }
+      case 'treasury':
+        draw(state, pi, 1); t.actions += 1; t.coins += 1;
+        // クリーンアップ時、勝利点を獲得していなければ山札の上に戻す（cleanupAndAdvance で自動処理）
+        break;
+      case 'outpost':
+        // このターン1度だけ・追加ターン中でなければ、手札3枚の追加ターン。
+        if (!t.outpostUsed && !t.isExtraTurn) {
+          t.outpostUsed = true; p.outpostExtra = true;
+          armDuration(state, pi, 'outpost'); // 追加ターン中、場に残すための予約（効果は無し）
+          log(state, `${p.name} は前哨地で追加ターンを得る（次の手札は3枚）。`);
+        }
+        break;
+      case 'sailor':
+        t.actions += 1;
+        armDuration(state, pi, 'sailor'); // 次手番 +2コイン＋任意で手札1枚廃棄
+        break;
+      case 'blockade':
+        // 4コスト以下を獲得して脇に置く（次手番に手札へ）。場にある間、他人の同名獲得で呪い。
+        if (anyGainable(state, (id) => cardCost(state, id) <= 4))
+          state.pending = { type: 'blockade', stage: 'gain', player: pi };
+        else armDuration(state, pi, 'blockade', { gained: null });
+        break;
+      case 'corsair':
+        t.coins += 2;
+        armDuration(state, pi, 'corsair'); // 次手番 +1カード。窓の間、相手の最初の銀/金を廃棄
+        break;
+
       default:
         break;
     }
@@ -1054,7 +1300,9 @@
     return state.supply.province <= 0 || emptyPileCount(state) >= 3;
   }
   function allCards(p) {
-    return [].concat(p.deck, p.hand, p.discard, p.inPlay);
+    // 海辺：持続カード・脇置き・島/原住民マットも所有カード＝VP（島の2点・庭園の枚数等）に数える。
+    return [].concat(p.deck, p.hand, p.discard, p.inPlay,
+      p.durationCards || [], p.setAside || [], p.islandMat || [], p.nativeVillageMat || []);
   }
   function vpOf(p) {
     const cards = allCards(p);
@@ -1095,6 +1343,109 @@
     return { scores, winners, reason: state.supply.province <= 0 ? '属州の山が尽きた' : '3つの山が尽きた' };
   }
 
+  /* ============================================================
+     海辺：持続（Duration）機構
+     - armDuration: カードを使ったとき「次の自分の手番開始時に解決する予約」を積む。
+     - DURATION_RESOLVERS[type]: 次手番開始時の効果。非対話はその場で適用、対話は
+       state.turn.startQueue に pending 仕様を push（cleanup 後に順番に pending 化）。
+     - resolveDurationStartEffects: 手番開始時に予約を全消化し、対話分を startQueue→pending に。
+     - 物理カードは cleanupAndAdvance の仕分けで durationCards に持ち越し、予約を出し切ったら捨て札へ。
+     ============================================================ */
+  function armDuration(state, pi, cardId, extra) {
+    const p = state.players[pi];
+    if (!p.delayedEffects) p.delayedEffects = [];
+    p.delayedEffects.push(Object.assign({ card: cardId, type: cardId }, extra || {}));
+  }
+  // 次手番開始時に1つ進める：startQueue があれば先頭を pending に、無ければ pending=null。
+  function popStartQueue(state) {
+    const q = state.turn && state.turn.startQueue;
+    if (q && q.length) { state.pending = q.shift(); }
+    else { if (state.turn) state.turn.startQueue = null; state.pending = null; }
+  }
+  function resolveDurationStartEffects(state, pi) {
+    const p = state.players[pi];
+    const entries = (p.delayedEffects || []);
+    p.delayedEffects = [];
+    state.turn.startQueue = [];
+    for (const e of entries) {
+      const r = DURATION_RESOLVERS[e.type];
+      if (r) r(state, pi, e); // 非対話はここで適用、対話は state.turn.startQueue に積む
+    }
+    popStartQueue(state); // 最初の対話 pending をセット（無ければ null）
+  }
+  // 各持続カードの「次の手番開始時」効果（カードidをキーに登録）。対話分は §手5/手6 で startQueue に積む。
+  const DURATION_RESOLVERS = {
+    fishing_village: (s, pi) => { s.turn.actions += 1; s.turn.coins += 1; log(s, `${s.players[pi].name} は漁村の持続効果（+1アクション +1コイン）。`); },
+    caravan: (s, pi) => { draw(s, pi, 1); log(s, `${s.players[pi].name} は隊商の持続効果（+1カード）。`); },
+    merchant_ship: (s, pi) => { s.turn.coins += 2; log(s, `${s.players[pi].name} は商船の持続効果（+2コイン）。`); },
+    wharf: (s, pi) => { draw(s, pi, 2); s.turn.buys += 1; log(s, `${s.players[pi].name} は船着場の持続効果（+2カード +1購入）。`); },
+    astrolabe: (s, pi) => { s.turn.coins += 1; s.turn.buys += 1; log(s, `${s.players[pi].name} はアストロラーベの持続効果（+1コイン +1購入）。`); },
+    lighthouse: (s, pi) => { s.turn.coins += 1; log(s, `${s.players[pi].name} は灯台の持続効果（+1コイン）。`); },
+    haven: (s, pi, e) => { // 脇に置いたカードを手札へ戻す
+      const p = s.players[pi];
+      if (e.stashed && removeOne(p.setAside, e.stashed)) { p.hand.push(e.stashed); log(s, `${p.name} は停泊所で脇に置いたカードを手札に戻した。`); }
+    },
+    tactician: (s, pi) => { draw(s, pi, 5); s.turn.buys += 1; s.turn.actions += 1; log(s, `${s.players[pi].name} は策士の持続効果（+5カード +1購入 +1アクション）。`); },
+    tide_pools: (s, pi) => { // 次手番開始時に手札2枚を捨てる（対話＝startQueueへ）
+      if (s.players[pi].hand.length > 0) (s.turn.startQueue = s.turn.startQueue || []).push({ type: 'tide_pools_discard', player: pi });
+    },
+    sea_witch: (s, pi) => { // 次手番 +2カード→その後手札2枚を捨てる
+      draw(s, pi, 2); log(s, `${s.players[pi].name} は海の魔女の持続効果（+2カード）。`);
+      if (s.players[pi].hand.length > 0) (s.turn.startQueue = s.turn.startQueue || []).push({ type: 'sea_witch_discard', player: pi });
+    },
+    monkey: (s, pi) => { draw(s, pi, 1); s.players[pi].monkeyActive = false; log(s, `${s.players[pi].name} はサルの持続効果（+1カード）。`); },
+    outpost: () => { /* 追加ターン中、場に残すためだけの予約（効果なし） */ },
+    sailor: (s, pi) => { // 次手番 +2コイン＋任意で手札1枚廃棄
+      s.turn.coins += 2; log(s, `${s.players[pi].name} は船乗りの持続効果（+2コイン）。`);
+      if (s.players[pi].hand.length > 0) (s.turn.startQueue = s.turn.startQueue || []).push({ type: 'sailor_trash', player: pi });
+    },
+    blockade: (s, pi, e) => { // 脇に置いたカードを手札へ戻す（呪いの窓も閉じる）
+      const p = s.players[pi];
+      if (e.gained && removeOne(p.setAside, e.gained)) { p.hand.push(e.gained); log(s, `${p.name} は封鎖で脇に置いた「${C()[e.gained].name}」を手札に加えた。`); }
+    },
+    corsair: (s, pi) => { draw(s, pi, 1); log(s, `${s.players[pi].name} は私掠船の持続効果（+1カード）。`); },
+    pirate: (s, pi) => { // 次手番に6コスト以下の財宝1枚を手札に獲得
+      (s.turn.startQueue = s.turn.startQueue || []).push({ type: 'pirate_gain', player: pi });
+    },
+  };
+
+  // 「獲得時」フック（サル＝右隣の獲得で+1カード／封鎖＝同名獲得で呪い）。gain から常に呼ばれる。
+  function triggerOnGain(state, pIndex, cardId) {
+    state._gainDepth = (state._gainDepth || 0) + 1;
+    if (state._gainDepth > 6) { state._gainDepth--; return; } // 連鎖の暴走防止
+    const n = state.players.length;
+    for (let o = 0; o < n; o++) {
+      const op = state.players[o];
+      // サル：右隣（手番が自分の1つ前）の獲得ごとに +1カード
+      if (op.monkeyActive && o !== pIndex && pIndex === (o - 1 + n) % n) {
+        draw(state, o, 1); log(state, `${op.name} はサルの効果で +1カード（右隣の獲得）。`);
+      }
+      // 封鎖：他人が「自分の手番で」封鎖された同名カードを獲得したら呪いを獲得
+      if (o !== pIndex && state.turn && pIndex === state.turn.active) {
+        const bl = (op.delayedEffects || []).find((e) => e.type === 'blockade' && e.gained === cardId);
+        if (bl && (state.supply.curse || 0) > 0) { gain(state, pIndex, 'curse', 'discard'); log(state, `${state.players[pIndex].name} は封鎖により呪いを獲得した。`); }
+      }
+    }
+    state._gainDepth--;
+  }
+  // 「財宝を出したとき」フック（私掠船＝相手のターン最初の銀/金を廃棄。コインは入る）。
+  function corsairOnPlayTreasure(state, pIndex, card) {
+    if (card !== 'silver' && card !== 'gold') return;
+    const t = state.turn;
+    if (!t || t.corsairTrashed || pIndex !== t.active) return; // このターン最初の銀/金のみ・出した本人の手番中
+    const someoneElse = state.players.some((p, i) => i !== pIndex && (p.delayedEffects || []).some((e) => e.type === 'corsair'));
+    if (!someoneElse) return;
+    if (removeOne(state.players[pIndex].inPlay, card)) {
+      state.trash.push(card); t.corsairTrashed = true;
+      log(state, `${state.players[pIndex].name} は私掠船により「${C()[card].name}」を廃棄した。`);
+    }
+  }
+  // アタック無効化（灯台が場/持続にある被害者はアタックを受けない）。§手6で各アタックに配線。
+  function attackImmune(state, victim) {
+    const v = state.players[victim];
+    return v.inPlay.includes('lighthouse') || (v.durationCards || []).includes('lighthouse');
+  }
+
   /* ---------- クリーンアップ＆次の番へ ---------- */
   function cleanupAndAdvance(state) {
     state.replay = []; // 玉座の間の保留分が万一残っても次手番に持ち越さない
@@ -1111,10 +1462,37 @@
         if (n) log(state, `${p.name} は城壁のある村 ${n}枚 を山札の上に戻した。`);
       }
     }
-    p.discard.push(...p.inPlay, ...p.hand);
+    // 宝物庫：このターンに勝利点カードを獲得していなければ、場の宝物庫を山札の上に戻せる（常に得なので自動）。
+    if (p.inPlay.includes('treasury') && !(state.turn.gainedThisTurn || []).some((id) => DOM.isType(id, 'victory'))) {
+      let n = 0;
+      while (removeOne(p.inPlay, 'treasury')) { p.deck.unshift('treasury'); n++; }
+      if (n) log(state, `${p.name} は宝物庫 ${n}枚 を山札の上に戻した。`);
+    }
+    // 密輸人用：このターンに獲得したカードを「直前の手番の獲得」として保存（右隣がこれを参照）。
+    p.lastTurnGains = (state.turn.gainedThisTurn || []).slice();
+
+    // --- 海辺：持続カードの仕分け（捨てずに持ち越す）---
+    // 予約（delayedEffects）が残っている枚数ぶんだけ durationCards に保持。出し切った持続は捨て札へ。
+    const cnt = {}; (p.delayedEffects || []).forEach((e) => { cnt[e.card] = (cnt[e.card] || 0) + 1; });
+    const used = {}; const newDur = [];
+    for (const c of (p.durationCards || [])) {
+      if ((used[c] || 0) < (cnt[c] || 0)) { newDur.push(c); used[c] = (used[c] || 0) + 1; }
+      else p.discard.push(c); // 効果を出し切った持続 → 捨て札へ
+    }
+    const restInPlay = [];
+    for (const c of p.inPlay) {
+      if (DOM.isType(c, 'duration') && (used[c] || 0) < (cnt[c] || 0)) { newDur.push(c); used[c] = (used[c] || 0) + 1; }
+      else restInPlay.push(c);
+    }
+    p.discard.push(...restInPlay, ...p.hand);
+    p.durationCards = newDur;
     p.inPlay = [];
     p.hand = [];
-    draw(state, pi, 5);
+
+    // 前哨地：このプレイヤーの追加ターンか（手札3枚で同一プレイヤー続行）。
+    const extra = !!p.outpostExtra;
+    p.outpostExtra = false;
+    draw(state, pi, extra ? 3 : 5);
     p.turns += 1;
 
     if (isGameOver(state)) {
@@ -1123,9 +1501,11 @@
       log(state, `ゲーム終了：${state.result.reason}。`);
       return;
     }
-    const next = (pi + 1) % state.players.length;
-    state.turn = { active: next, phase: 'action', actions: 1, buys: 1, coins: 0, costReduction: 0, actionsPlayed: 0, copperBonus: 0, merchants: 0, silverPlayed: false };
-    log(state, `${state.players[next].name} の番です。`);
+    const next = extra ? pi : (pi + 1) % state.players.length;
+    state.turn = freshTurn(next, extra);
+    log(state, extra ? `${state.players[next].name} の追加ターンです（前哨地）。` : `${state.players[next].name} の番です。`);
+    // 海辺：次の手番開始時の予約効果を解決（非対話は即適用、対話は startQueue→pending）。
+    resolveDurationStartEffects(state, next);
   }
 
   /* ============================================================
@@ -2292,6 +2672,190 @@
         return state;
       }
 
+      /* ===== 拡張: 海辺（Seaside 第二版）の選択解決 ===== */
+      case 'WAREHOUSE_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'warehouse') return state;
+        const p = state.players[pd.player];
+        const want = Math.min(3, p.hand.length);
+        if (!discardFromHand(state, pd.player, action.cards, want, '捨てた（倉庫）。')) return state;
+        state.pending = null;
+        return state;
+      }
+      case 'HAVEN_SETASIDE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'haven') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0) return state;
+        removeOne(p.hand, card); p.setAside.push(card);
+        armDuration(state, pd.player, 'haven', { stashed: card });
+        log(state, `${p.name} は手札1枚を脇に置いた（停泊所）。`);
+        state.pending = null;
+        return state;
+      }
+      case 'TACTICIAN_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'tactician') return state;
+        const p = state.players[pd.player];
+        if (action.discard && p.hand.length > 0) {
+          const n = p.hand.length;
+          p.discard.push(...p.hand); p.hand = [];
+          armDuration(state, pd.player, 'tactician');
+          log(state, `${p.name} は手札${n}枚を全て捨てた（策士。次の手番に +5カード等）。`);
+        } else {
+          log(state, `${p.name} は策士で手札を捨てなかった（持続しない）。`);
+        }
+        state.pending = null;
+        return state;
+      }
+      case 'SALVAGER_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'salvager' || pd.stage !== 'trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (card == null) { state.pending = null; return state; } // 廃棄しない（手札があるが任意ではないが安全に）
+        if (p.hand.indexOf(card) < 0) return state;
+        const gainCoins = cardCost(state, card);
+        removeOne(p.hand, card); state.trash.push(card);
+        t.coins += gainCoins;
+        log(state, `${p.name} は「${C()[card].name}」を廃棄し +${gainCoins}コイン（引揚水夫）。`);
+        state.pending = null;
+        return state;
+      }
+      case 'LOOKOUT_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'lookout' || pd.stage !== 'trash') return state;
+        const card = action.card;
+        if (pd.cards.indexOf(card) < 0) return state;
+        const rest = pd.cards.slice(); removeOne(rest, card);
+        state.trash.push(card);
+        log(state, `${state.players[pd.player].name} は「${C()[card].name}」を廃棄した（見張り）。`);
+        if (rest.length === 0) { state.pending = null; return state; }
+        state.pending = { type: 'lookout', stage: 'discard', player: pd.player, cards: rest };
+        return state;
+      }
+      case 'LOOKOUT_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'lookout' || pd.stage !== 'discard') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (pd.cards.indexOf(card) < 0) return state;
+        const rest = pd.cards.slice(); removeOne(rest, card);
+        p.discard.push(card);
+        log(state, `${p.name} は「${C()[card].name}」を捨てた（見張り）。`);
+        // 残りは山札の上へ（順序維持）
+        for (let i = rest.length - 1; i >= 0; i--) p.deck.unshift(rest[i]);
+        state.pending = null;
+        return state;
+      }
+      case 'ISLAND_PICK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'island') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0) return state;
+        removeOne(p.hand, card); p.islandMat.push(card);
+        log(state, `${p.name} は「${C()[card].name}」を島マットに置いた。`);
+        state.pending = null;
+        return state;
+      }
+      case 'NATIVE_VILLAGE_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'native_village') return state;
+        const p = state.players[pd.player];
+        if (action.mode === 'take') {
+          if (p.nativeVillageMat.length) { p.hand.push(...p.nativeVillageMat); log(state, `${p.name} は原住民の村マットの ${p.nativeVillageMat.length}枚 を手札に加えた。`); p.nativeVillageMat = []; }
+        } else { // 'set'：山札の上1枚を見ずにマットへ
+          if (p.deck.length === 0 && p.discard.length > 0) { p.deck = shuffle(p.discard); p.discard = []; }
+          if (p.deck.length > 0) { p.nativeVillageMat.push(p.deck.shift()); log(state, `${p.name} は山札の上1枚を原住民の村マットに置いた。`); }
+        }
+        state.pending = null;
+        return state;
+      }
+      case 'TIDE_POOLS_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'tide_pools_discard') return state;
+        const p = state.players[pd.player];
+        const want = Math.min(2, p.hand.length);
+        if (!discardFromHand(state, pd.player, action.cards, want, '捨てた（潮だまり）。')) return state;
+        popStartQueue(state); // 開始時キューの次へ（無ければ通常の手番へ）
+        return state;
+      }
+      case 'CUTPURSE_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'cutpurse' || pd.stage !== 'react') return state;
+        cutpurseApply(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'SEA_WITCH_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'sea_witch' || pd.stage !== 'react') return state;
+        seaWitchCurse(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'SEA_WITCH_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'sea_witch_discard') return state;
+        const p = state.players[pd.player];
+        const want = Math.min(2, p.hand.length);
+        if (!discardFromHand(state, pd.player, action.cards, want, '捨てた（海の魔女）。')) return state;
+        popStartQueue(state);
+        return state;
+      }
+      case 'SMUGGLERS_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'smugglers') return state;
+        const card = action.card;
+        if ((pd.candidates || []).indexOf(card) < 0) return state;
+        if ((state.supply[card] || 0) <= 0) { state.pending = null; return state; }
+        gain(state, pd.player, card, 'discard');
+        log(state, `${state.players[pd.player].name} は密輸人で「${C()[card].name}」を獲得した。`);
+        state.pending = null;
+        return state;
+      }
+      case 'BLOCKADE_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'blockade' || pd.stage !== 'gain') return state;
+        const card = action.card;
+        const canGain = (id) => !!C()[id] && cardCost(state, id) <= 4;
+        if (card == null || !canGain(card) || (state.supply[card] || 0) <= 0) return state;
+        state.supply[card] -= 1;
+        state.players[pd.player].setAside.push(card); // 脇に置く（捨て札ではない）
+        if (state.turn) (state.turn.gainedThisTurn || (state.turn.gainedThisTurn = [])).push(card);
+        armDuration(state, pd.player, 'blockade', { gained: card });
+        log(state, `${state.players[pd.player].name} は封鎖で「${C()[card].name}」を獲得し脇に置いた。`);
+        state.pending = null;
+        return state;
+      }
+      case 'SAILOR_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'sailor_trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (card != null && p.hand.indexOf(card) >= 0) {
+          removeOne(p.hand, card); state.trash.push(card);
+          log(state, `${p.name} は「${C()[card].name}」を廃棄した（船乗り）。`);
+        }
+        popStartQueue(state);
+        return state;
+      }
+      case 'PIRATE_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'pirate_gain') return state;
+        const card = action.card;
+        const canGain = (id) => DOM.isType(id, 'treasure') && cardCost(state, id) <= 6;
+        if (card == null) { // 候補が無ければスキップ可
+          if (anyGainable(state, canGain)) return state;
+          popStartQueue(state); return state;
+        }
+        if (!canGain(card) || (state.supply[card] || 0) <= 0) return state;
+        gain(state, pd.player, card, 'hand');
+        log(state, `${state.players[pd.player].name} は海賊で「${C()[card].name}」を手札に獲得した。`);
+        popStartQueue(state);
+        return state;
+      }
+
       default:
         return state;
     }
@@ -2307,11 +2871,21 @@
     const s = clone(state);
     s.players = s.players.map((p, i) => {
       if (i === seat) return p; // 自分は全部見える
+      // 海辺：脇置き(setAside)・原住民の村マットは秘密＝枚数だけ。島マット・持続カードは公開（公式どおり）。
+      // delayedEffects（次手番の予約）は種別は見せるが、隠し札id（停泊所の脇置き・封鎖の獲得物）は伏せる。
+      const maskedDelayed = (p.delayedEffects || []).map((e) => {
+        const c = Object.assign({}, e);
+        delete c.stashed; delete c.setAsideCard; delete c.gained; delete c.pirateTarget;
+        return c;
+      });
       return Object.assign({}, p, {
         deck: new Array(p.deck.length).fill('back'),
         hand: new Array(p.hand.length).fill('back'),
         discard: new Array(p.discard.length).fill('back'),
-        // inPlay は場に表向きで出ているカードなのでそのまま
+        setAside: new Array((p.setAside || []).length).fill('back'),
+        nativeVillageMat: new Array((p.nativeVillageMat || []).length).fill('back'),
+        delayedEffects: maskedDelayed,
+        // inPlay / durationCards / islandMat は場に表向き＝そのまま
       });
     });
     // 闇市場デッキは伏せ札。中身は誰にも見えないよう枚数だけ残す（公開された3枚は pending.revealed 側に出る）。
@@ -2323,8 +2897,8 @@
       if (s.pending.picks[seat] != null) masked[seat] = s.pending.picks[seat];
       s.pending = Object.assign({}, s.pending, { picks: masked });
     }
-    // 衛兵で「見た」山札の上2枚は本人だけの秘密情報。相手席への配信では中身を伏せる（枚数は残す）。
-    if (s.pending && s.pending.type === 'sentry' && Array.isArray(s.pending.cards) && seat !== s.pending.player) {
+    // 衛兵・見張りで「見た」山札の上の数枚は本人だけの秘密情報。相手席への配信では中身を伏せる（枚数は残す）。
+    if (s.pending && (s.pending.type === 'sentry' || s.pending.type === 'lookout') && Array.isArray(s.pending.cards) && seat !== s.pending.player) {
       s.pending = Object.assign({}, s.pending, { cards: new Array(s.pending.cards.length).fill('back') });
     }
     s.you = seat;
@@ -2362,6 +2936,11 @@
     // プロモ
     'ENVOY_PICK', 'GOVERNOR_CHOOSE', 'GOVERNOR_REMODEL_TRASH', 'GOVERNOR_REMODEL_GAIN',
     'DISMANTLE_TRASH', 'DISMANTLE_GAIN', 'BLACK_MARKET_PLAY_TREASURES', 'BLACK_MARKET_BUY', 'BLACK_MARKET_SKIP',
+    // 海辺（第二版）
+    'WAREHOUSE_DISCARD', 'HAVEN_SETASIDE', 'TACTICIAN_RESOLVE', 'SALVAGER_TRASH',
+    'LOOKOUT_TRASH', 'LOOKOUT_DISCARD', 'ISLAND_PICK', 'NATIVE_VILLAGE_RESOLVE', 'TIDE_POOLS_DISCARD',
+    'CUTPURSE_REACT', 'SEA_WITCH_REACT', 'SEA_WITCH_DISCARD', 'SMUGGLERS_GAIN', 'BLOCKADE_GAIN',
+    'SAILOR_TRASH', 'PIRATE_GAIN',
   ]);
 
   /* ---------- 公開API ---------- */

@@ -12,7 +12,7 @@
   const isTreasure = (id) => isType(id, 'treasure');
   const isDead = (id) => isType(id, 'victory') || isType(id, 'curse'); // 手札では死蔵
 
-  function allCards(p) { return [].concat(p.deck, p.hand, p.discard, p.inPlay); }
+  function allCards(p) { return [].concat(p.deck, p.hand, p.discard, p.inPlay, p.durationCards || [], p.setAside || [], p.islandMat || [], p.nativeVillageMat || []); }
   function owned(p, id) { return allCards(p).filter((c) => c === id).length; }
   function sup(state, id) { return state.supply[id] || 0; }
   // 実コスト（「橋」等の軽減を反映）
@@ -37,12 +37,11 @@
     'adventurer', 'laboratory', 'festival', 'witch', 'bandit', 'governor', 'council_room', 'patrol', 'library', 'market', 'minion', 'mine', 'sentry', 'courtier', 'replace', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'spy', 'thief', 'upgrade', 'bureaucrat', 'feast', 'silver',
     'poacher', 'mining_village', 'smithy', 'mill', 'walled_village', 'dismantle', 'envoy', 'secret_passage', 'diplomat', 'courtyard', 'masquerade', 'throne_room', 'great_hall', 'tribute', 'militia', 'steward', 'trading_post', 'baron', 'scout',
     'remodel', 'moneylender', 'merchant', 'harbinger', 'vassal', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith', 'chancellor', 'black_market', 'hoard',
-    'pawn', 'lurker', 'moat', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke', 'copper', 'curse',
-    // 海辺27種＝カード画像用カタログ。どのプレイ可能セットにも入らず実サプライに出ないため、
-    // ここでの並び順はCPU挙動に影響しない（整合性テストの「GAIN_ORDER=全カード」を満たすため）。
-    'native_village', 'haven', 'lighthouse', 'warehouse', 'smugglers', 'lookout', 'fishing_village', 'sea_chart',
-    'monkey', 'astrolabe', 'treasure_map', 'salvager', 'cutpurse', 'caravan', 'island', 'sailor', 'tide_pools',
-    'bazaar', 'treasury', 'outpost', 'tactician', 'merchant_ship', 'wharf', 'blockade', 'corsair', 'sea_witch', 'pirate'];
+    // 海辺（第二版）＝強さ/コストの目安順。CPUの購入優先度（サプライにある時だけ効く）。
+    'wharf', 'sea_witch', 'bazaar', 'corsair', 'blockade', 'treasury', 'island', 'merchant_ship', 'fishing_village',
+    'tactician', 'caravan', 'monkey', 'warehouse', 'salvager', 'cutpurse', 'sailor', 'outpost', 'lighthouse',
+    'tide_pools', 'lookout', 'sea_chart', 'smugglers', 'native_village', 'haven', 'astrolabe', 'pirate', 'treasure_map',
+    'pawn', 'lurker', 'moat', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke', 'copper', 'curse'];
   function bestGain(state, maxCost, opts) {
     opts = opts || {};
     for (const id of GAIN_ORDER) {
@@ -99,7 +98,31 @@
     if (has('lurker')) return 'lurker';            // +1アクション
     if (has('governor')) return 'governor';        // +1アクション（全員効果）
     if (has('cellar') && dead) return 'cellar';
+    // 海辺：非ターミナル（+アクション付き）
+    if (has('fishing_village')) return 'fishing_village'; // +2アクション+1コイン（持続）
+    if (has('bazaar')) return 'bazaar';                   // +1カード+2アクション+1コイン
+    if (has('native_village')) return 'native_village';   // +2アクション
+    if (has('caravan')) return 'caravan';                 // +1カード+1アクション（持続）
+    if (has('lighthouse')) return 'lighthouse';           // +1アクション+1コイン（持続・免疫）
+    if (has('sea_chart')) return 'sea_chart';             // +1カード+1アクション
+    if (has('warehouse')) return 'warehouse';             // +3カード+1アクション→3枚捨て
+    if (has('tide_pools')) return 'tide_pools';           // +3カード+1アクション（次手番2捨て）
+    if (has('haven')) return 'haven';                     // +1カード+1アクション（脇置き）
     // --- ターミナル（効果の大きい順）---
+    if (has('wharf')) return 'wharf';                     // 2ターン +2カード+1購入
+    if (has('sea_witch')) return 'sea_witch';             // +2カード＋全員に呪い
+    if (has('merchant_ship')) return 'merchant_ship';     // 2ターン +2コイン
+    if (has('corsair')) return 'corsair';                 // +2コイン＋相手の銀/金を廃棄
+    if (has('blockade')) return 'blockade';               // 獲得＋呪い配布
+    if (has('cutpurse')) return 'cutpurse';               // +2コイン＋相手の銅貨捨て
+    if (has('lookout')) return 'lookout';                 // 山札整理
+    if (has('monkey')) return 'monkey';                   // 相手獲得ごとに+カード
+    if (has('island')) return 'island';                   // 勝利点退避
+    if (has('outpost') && !t.isExtraTurn) return 'outpost'; // 追加ターン（連鎖不可）
+    if (has('smugglers')) return 'smugglers';             // 右隣の獲得を真似る
+    if (has('salvager') && p.hand.length > 1) return 'salvager'; // 廃棄→コイン
+    if (has('treasure_map') && p.hand.filter((c) => c === 'treasure_map').length >= 2) return 'treasure_map'; // 2枚揃いで金貨4枚
+    if (has('tactician')) { const hc = p.hand.reduce((s, c) => s + (isTreasure(c) ? (C()[c].coin || 0) : 0), 0); if (hc <= 3 && p.hand.length > 1) return 'tactician'; }
     // 玉座の間: 2回使える別アクションが手札にあるときだけ（無駄打ち回避）
     if (has('throne_room') && p.hand.some((c) => isType(c, 'action') && c !== 'throne_room')) return 'throne_room';
     if (has('council_room')) return 'council_room'; // +4カード+1購入
@@ -586,6 +609,65 @@
         for (const id of premium) { if (aff.includes(id)) { pick = id; break; } }
         return pick ? { type: 'BLACK_MARKET_BUY', card: pick } : { type: 'BLACK_MARKET_SKIP' };
       }
+
+      /* ===== 拡張: 海辺（Seaside 第二版）===== */
+      case 'warehouse':
+        return { type: 'WAREHOUSE_DISCARD', cards: pickDiscards(p.hand, Math.min(3, p.hand.length)) };
+      case 'haven': {
+        // 戻ってくるので損が無い＝最も価値の低い札を脇に置いて手札を軽くする
+        const c = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0];
+        return { type: 'HAVEN_SETASIDE', card: c };
+      }
+      case 'tactician': {
+        const hc = p.hand.reduce((s, c) => s + (isTreasure(c) ? (C()[c].coin || 0) : 0), 0);
+        return { type: 'TACTICIAN_RESOLVE', discard: p.hand.length > 0 && hc <= 3 };
+      }
+      case 'salvager': {
+        // 不要札を廃棄（estate=+2コイン等）。trashValue が低い順、同値ならコスト高い順（コイン多い）。
+        const order = p.hand.slice().sort((a, b) => (trashValue(a) - trashValue(b)) || (C()[b].cost - C()[a].cost));
+        return { type: 'SALVAGER_TRASH', card: order[0] };
+      }
+      case 'lookout':
+        if (pd.stage === 'trash') {
+          const worst = pd.cards.slice().sort((a, b) => trashValue(a) - trashValue(b))[0];
+          return { type: 'LOOKOUT_TRASH', card: worst };
+        }
+        { const worst = pd.cards.slice().sort((a, b) => keepValue(a) - keepValue(b))[0];
+          return { type: 'LOOKOUT_DISCARD', card: worst }; }
+      case 'island': {
+        // 勝利点を島マットへ退避（VPは保持しつつデッキ圧縮）。無ければ最も不要な札。
+        const vic = p.hand.filter((c) => isType(c, 'victory')).sort((a, b) => (C()[b].vp || 0) - (C()[a].vp || 0))[0];
+        const c = vic || p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0];
+        return { type: 'ISLAND_PICK', card: c };
+      }
+      case 'native_village':
+        return { type: 'NATIVE_VILLAGE_RESOLVE', mode: (p.nativeVillageMat && p.nativeVillageMat.length >= 2) ? 'take' : 'set' };
+      case 'tide_pools_discard':
+        return { type: 'TIDE_POOLS_DISCARD', cards: pickDiscards(p.hand, Math.min(2, p.hand.length)) };
+      case 'cutpurse':
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'CUTPURSE_REACT' };
+      case 'sea_witch':
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'SEA_WITCH_REACT' };
+      case 'sea_witch_discard':
+        return { type: 'SEA_WITCH_DISCARD', cards: pickDiscards(p.hand, Math.min(2, p.hand.length)) };
+      case 'smugglers': {
+        // 右隣の獲得の中で最も価値の高いものを真似る（GAIN_ORDER優先）
+        let pick = pd.candidates[0];
+        for (const id of GAIN_ORDER) { if (pd.candidates.includes(id)) { pick = id; break; } }
+        return { type: 'SMUGGLERS_GAIN', card: pick };
+      }
+      case 'blockade':
+        // 4コスト以下で最善（脇に置いて次手番手札へ＝銀貨など）。
+        return { type: 'BLOCKADE_GAIN', card: bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) };
+      case 'sailor_trash': {
+        // 不要札があれば廃棄、無ければしない
+        const junk = p.hand.find((c) => isType(c, 'curse') || c === 'estate' || c === 'copper');
+        return { type: 'SAILOR_TRASH', card: junk || null };
+      }
+      case 'pirate_gain':
+        return { type: 'PIRATE_GAIN', card: bestGain(state, 6, { treasureOnly: true }) };
 
       default:
         return { type: 'END_TURN' };
