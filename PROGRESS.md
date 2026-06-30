@@ -1,9 +1,27 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-06-30 / branch `main` / **コミット&デプロイ済み**（commit `b2de937` を `origin/main` に push＝GitHub Pages 公開 https://ankake-web.github.io/dominion/ ・Render再デプロイ）。
-これまでの蓄積分（第二版・陰謀・単一ソース化・整合性/UIテスト等）＋カード完成画像方式を一括で本番反映した。
-新セッションは **まず `npm test` を実行して 1205件グリーンを確認**してから着手すること。
+最終更新: 2026-06-30 / branch `main`。**直近セッションの「海辺27種カード画像化」はローカル完了・未コミット**（過去の蓄積分は commit `b2de937`〜`e807069` で本番反映済み・GitHub Pages https://ankake-web.github.io/dominion/ ・Render）。
+これまでの蓄積分（第二版・陰謀・単一ソース化・整合性/UIテスト等）＋カード完成画像方式を一括で本番反映済み。
+新セッションは **まず `npm test` を実行してグリーンを確認**してから着手すること（**現在 1344件**＝海辺追加で1205→1344に増加）。
 広い文脈（第二版化・単一ソース化・整合性テスト・オンライン再接続など過去分）は `docs/handover.md` を参照。
+
+---
+
+## 0. 直近セッションの成果（2026-06-30）＝海辺（Seaside 第二版）27種を**カード画像化**（★未コミット）
+- **目的**：既存77枚と同じ合成方式で海辺27種の完成形 `asset/cards/<id>.webp` を作る**だけ**。海辺の実ゲームロジック（持続機構・島/原住民マット・呪いサプライ等）は**やらない**（別タスク）。
+- **やったこと（すべてローカル・未コミット）**：
+  1. **絵を配置**：`images/`（チャッピー3バッチ＝19_17台10枚/19_21台10枚/19_24台7枚）を**1枚ずつ目視確認**し（コンタクトシートで主題照合）、確信度高で `asset/art/<id>.png` に27枚配置。対応は全枚プロンプト並び順どおり（灯台・サル・島・アストロラーベ・潮だまり・海の魔女など特徴的主題が一致）。
+  2. **DOM.CARDS に27種追加**（`js/cards.js`）：ユーザー提供のWiki準拠テキストをそのまま採用（宝物庫＝「勝利点を“購入”していなければ」等）。idは native_village/haven/lighthouse/warehouse/smugglers/lookout/fishing_village/sea_chart/monkey/astrolabe/treasure_map/salvager/cutpurse/caravan/island/sailor/tide_pools/bazaar/treasury/outpost/tactician/merchant_ship/wharf/blockade/corsair/sea_witch/pirate。
+  3. **★整合性テスト対策（重要）**：DOM.CARDS に足すと整合性テストが「全カードは GAIN_ORDER 網羅＋いずれかのプール所属」を要求して赤くなる。そこで **(a) `DOM.POOLS.seaside`＝どの CARD_SET / randomFrom からも参照しない「孤立プール」** を追加（抽選母集団に流入しない＝ゲーム挙動不変）、**(b) `cpu.js` の GAIN_ORDER に27件追加**（孤立ゆえ実サプライに出ず並び順はCPU挙動に無影響）。→ ゲームは一切変わらずテスト緑。
+  4. **持続＝オレンジ枠（本家準拠・ユーザー選択）**：`carddata.js` の `frameType` に `duration` を**最優先**で追加（→16枚がオレンジ）。`typeLabel`/`typeLabelEn` に持続の複合（例「アクション・持続・アタック」「財宝・持続・リアクション」）を追加。`TYPE_ICON.duration='⏳'`。`build-cards.js` の `SKIN` に橙スキン `duration:{base:[176,88,18], ramp{sh[96,44,6]/mid[206,116,28]/hi[250,196,120]}}` を追加（skinOf は `c.type` を返すので自動で 'duration' を引く）。
+  5. **build-cards.js を堅牢化**：master 金枠（`…20_21_29.png`）が `images/assets/` サブフォルダに移動していたため**再帰探索 `findMaster()`** に変更。モンタージュ出力先を旧セッション固有パス→`os.tmpdir()/dominion-cards-montage` に修正（mkdir付き）。
+  6. **ビルド**：`node tools/build-cards.js` で**104枚合成**（fontsOk=true・duration recolor済み）。海辺27枚を原寸目視＝オレンジ枠・三重ラベルも帯に収まり良好。
+  7. **検証**：`npm test`＝**1344件すべて緑/0失敗**（整合性 411→546・第二版＋プロモ 153→157＝堀の全アタック無効化ループが新アタック4種を巡回。未実装アタックは applyEffect の `default:break` で no-op→被害者不変で通過）。cards.html を puppeteer file:// で開き **broken=0・海辺27/27ロード成功**（総数208＝104×2は比較用の旧合成グリッド）。
+  8. **差分をクリーン化**：ビルダーは全104枚を再生成するため既存77枚も grain だけ変わって「変更扱い」になる。見た目同一なので **`git checkout HEAD -- asset/cards/` で既存77枚を戻し、差分は新規27枚のみ** にした。
+- **変更ファイル**：`js/cards.js` `js/cpu.js` `js/carddata.js` `tools/build-cards.js`（M）＋ `asset/cards/<海辺id>.webp` 27枚（新規・gitignore対象外で追跡される）。`images/`・`asset/art/` はローカルのみ（.gitignore）。
+- **デプロイ（人間判断）**：`asset/cards/*.webp` は deploy.yml が glob でコピー済み＝**deploy.yml 変更不要**。海辺はオフライン precache 対象外（プレイ不能＝盤面に出ない）なので **sw.js も変更不要・VERSION 据え置きで正しい**。コミット→push で Pages 反映。
+- **注意/次タスク候補**：海辺を**実際に遊べる**ようにするには別途エンジン実装（持続カードの「次のターン効果」機構・島/原住民マット・封鎖や海賊のリアクション・呪いサプライ等）＋ POOLS.seaside を CARD_SET に載せる、が必要。今回は未着手。
+  - 保留：先に切り出した**「金トリム見栄え改善」**（基準カードは色地でも金トリム＋暗いコイン中央。色地5種を金トリム化＋コイン暗メダル化する案）は未着手のまま。やるなら別途。
 
 ---
 

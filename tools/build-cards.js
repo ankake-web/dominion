@@ -12,11 +12,23 @@ require(path.join(ROOT, 'js/cards.js'));
 require(path.join(ROOT, 'js/carddata.js'));
 const LIST = global.DOM.CARD_DATA_LIST;
 
-const masterFile = fs.readdirSync('images').find(f => f.includes('20_21_29') && f.endsWith('.png'));
-if (!masterFile) throw new Error('master frame not found');
+// master 金枠（緑＋マゼンタ窓の元1枚）を images/ 以下から再帰的に探す。
+// 置き場所が images/ 直下でも images/assets/ でも拾えるようにする（ローカル限定・.gitignore）。
+function findMaster(dir) {
+  for (const f of fs.readdirSync(dir)) {
+    const fp = path.join(dir, f);
+    const st = fs.statSync(fp);
+    if (st.isDirectory()) { const r = findMaster(fp); if (r) return r; }
+    else if (f.includes('20_21_29') && f.endsWith('.png')) return fp;
+  }
+  return null;
+}
+const masterPath = findMaster('images');
+if (!masterPath) throw new Error('master frame not found (images/ 以下に …20_21_29.png が必要)');
 const du = p => 'data:image/png;base64,' + fs.readFileSync(p).toString('base64');
 const duW = p => 'data:image/webp;base64,' + fs.readFileSync(p).toString('base64');
-const MASTER = du(path.join('images', masterFile));
+const MASTER = du(masterPath);
+console.log('master frame: ' + masterPath);
 
 function skinOf(c) {
   if (c.id === 'copper') return 'copper';
@@ -34,6 +46,8 @@ const SKIN = {
   action:  { base: [35, 77, 134],  ramp: { sh: [14, 30, 60],  mid: [48, 100, 170], hi: [170, 202, 245] } },
   attack:  { base: [126, 40, 36],  ramp: { sh: [50, 12, 12],  mid: [150, 48, 44],  hi: [235, 150, 138] } },
   reaction:{ base: [21, 96, 91],   ramp: { sh: [8, 40, 38],   mid: [30, 120, 112], hi: [150, 225, 215] } },
+  // 海辺の持続カード＝本家ドミニオン同様オレンジ。地はビビッドな橙、レールは暖かいアンバー金属。
+  duration:{ base: [176, 88, 18],  ramp: { sh: [96, 44, 6],   mid: [206, 116, 28], hi: [250, 196, 120] } },
 };
 
 (async () => {
@@ -239,8 +253,10 @@ const SKIN = {
   }
   console.log('ALL composited: ' + done);
 
-  // ---- 3) レビュー用モンタージュ ----
-  const OUT = 'C:/Users/b1242/AppData/Local/Temp/claude/c--Users-b1242-claude-game-dominion/a38271ae-dc26-484c-bc54-86f51435c42c/scratchpad';
+  // ---- 3) レビュー用モンタージュ ----（セッション非依存の一時フォルダへ。無ければ作る）
+  const OUT = path.join(require('os').tmpdir(), 'dominion-cards-montage');
+  fs.mkdirSync(OUT, { recursive: true });
+  console.log('montage dir: ' + OUT);
   const CW = 300, CH = 450;
   const thumbs = [];
   for (const c of LIST) {

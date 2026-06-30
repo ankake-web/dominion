@@ -183,6 +183,70 @@
                     text: '+2 コイン\n闇市場デッキの上3枚を公開する。\n手札から財宝を好きなだけ出してよい。\n公開した1枚を購入してもよい。残りは闇市場デッキの底へ。' },
     hoard:        { id: 'hoard',        name: '隠し財産',   cost: 5, types: ['treasure'], coin: 2,
                     text: 'コイン +2\nこのターン、勝利点カードを購入したとき、金貨1枚を獲得する。' },
+
+    /* ===== 拡張: 海辺（Seaside 第二版）27種 =====
+       いまは「完成形カード画像(asset/cards/<id>.webp)を作る」ためのカタログ追加のみ。
+       実ゲームロジック（持続機構・島/原住民マット等）は未実装で、どのプレイ可能セット
+       （DOM.CARD_SETS / DOM.KINGDOM 系）にも入れていない（後述の孤立プール seaside に隔離）。
+       => ゲーム挙動は不変。表示(cards.html)とカード画像合成(build-cards.js)だけが参照する。 */
+    // --- コスト2 ---
+    native_village: { id: 'native_village', name: '原住民の村', cost: 2, types: ['action'],
+                      text: '+2 アクション\nデッキの一番上を原住民マットに置く\nまたは原住民マットの全カードを手札に' },
+    haven:        { id: 'haven',        name: '停泊所',     cost: 2, types: ['action', 'duration'],
+                    text: '+1 カード\n+1 アクション\n手札1枚を脇に置き、次のターン開始時に手札へ' },
+    lighthouse:   { id: 'lighthouse',   name: '灯台',       cost: 2, types: ['action', 'duration'],
+                    text: '+1 アクション\n+1 コイン\n次のターン +1 コイン\n場にある間、他人のアタックを受けない' },
+    // --- コスト3 ---
+    warehouse:    { id: 'warehouse',    name: '倉庫',       cost: 3, types: ['action'],
+                    text: '+3 カード\n+1 アクション\n手札を3枚捨てる' },
+    smugglers:    { id: 'smugglers',    name: '密輸人',     cost: 3, types: ['action'],
+                    text: '直前の手番で右隣が獲得した\n6コスト以下のカード1枚を獲得' },
+    lookout:      { id: 'lookout',      name: '見張り',     cost: 3, types: ['action'],
+                    text: '+1 アクション\n山札の上3枚を見て\n1枚廃棄・1枚捨て・1枚を戻す' },
+    fishing_village:{ id: 'fishing_village', name: '漁村',  cost: 3, types: ['action', 'duration'],
+                    text: '+2 アクション\n+1 コイン\n次のターン +1 アクション +1 コイン' },
+    sea_chart:    { id: 'sea_chart',    name: '海図',       cost: 3, types: ['action'],
+                    text: '+1 カード\n+1 アクション\n山札の上を公開し、同名が場にあれば手札に' },
+    monkey:       { id: 'monkey',       name: 'サル',       cost: 3, types: ['action', 'duration'],
+                    text: '次の自分の手番まで、右隣の獲得ごとに +1 カード\n次のターン +1 カード' },
+    astrolabe:    { id: 'astrolabe',    name: 'アストロラーベ', cost: 3, types: ['treasure', 'duration'],
+                    text: 'このターンと次のターン\n+1 コイン\n+1 購入' },
+    // --- コスト4 ---
+    treasure_map: { id: 'treasure_map', name: '宝の地図',   cost: 4, types: ['action'],
+                    text: 'これと手札の宝の地図をもう1枚廃棄できれば\n金貨4枚を獲得し山札の上に置く' },
+    salvager:     { id: 'salvager',     name: '引揚水夫',   cost: 4, types: ['action'],
+                    text: '+1 購入\n手札1枚を廃棄\n+（廃棄したカードのコスト）コイン' },
+    cutpurse:     { id: 'cutpurse',     name: '巾着切り',   cost: 4, types: ['action', 'attack'],
+                    text: '+2 コイン\n他は銅貨1枚を捨てる' },
+    caravan:      { id: 'caravan',      name: '隊商',       cost: 4, types: ['action', 'duration'],
+                    text: '+1 カード\n+1 アクション\n次のターン +1 カード' },
+    island:       { id: 'island',       name: '島',         cost: 4, types: ['action', 'victory'], vp: 2,
+                    text: 'これと手札1枚を島マットに置く\n（勝利点 2）' },
+    sailor:       { id: 'sailor',       name: '船乗り',     cost: 4, types: ['action', 'duration'],
+                    text: '+1 アクション\nこのターン1度、獲得した持続カードを使える\n次のターン +2 コイン、手札1枚を廃棄してよい' },
+    tide_pools:   { id: 'tide_pools',   name: '潮だまり',   cost: 4, types: ['action', 'duration'],
+                    text: '+3 カード\n+1 アクション\n次のターン開始時、手札を2枚捨てる' },
+    // --- コスト5 ---
+    bazaar:       { id: 'bazaar',       name: 'バザー',     cost: 5, types: ['action'],
+                    text: '+1 カード\n+2 アクション\n+1 コイン' },
+    treasury:     { id: 'treasury',     name: '宝物庫',     cost: 5, types: ['action'],
+                    text: '+1 カード\n+1 アクション\n+1 コイン\n勝利点カードを購入していなければ山札の上に戻せる' },
+    outpost:      { id: 'outpost',      name: '前哨地',     cost: 5, types: ['action', 'duration'],
+                    text: 'このターン1度だけ、手札3枚の追加ターンを得る' },
+    tactician:    { id: 'tactician',    name: '策士',       cost: 5, types: ['action', 'duration'],
+                    text: '手札を全て捨てる\n1枚でも捨てたら次のターン\n+5 カード +1 購入 +1 アクション' },
+    merchant_ship:{ id: 'merchant_ship', name: '商船',      cost: 5, types: ['action', 'duration'],
+                    text: 'このターンと次のターン\n+2 コイン' },
+    wharf:        { id: 'wharf',        name: '船着場',     cost: 5, types: ['action', 'duration'],
+                    text: 'このターンと次のターン\n+2 カード +1 購入' },
+    blockade:     { id: 'blockade',     name: '封鎖',       cost: 5, types: ['action', 'duration', 'attack'],
+                    text: '4コスト以下を獲得して脇に置き、次のターン手札へ\n場にある間、他人が同名を獲得するたび呪いを獲得させる' },
+    corsair:      { id: 'corsair',      name: '私掠船',     cost: 5, types: ['action', 'duration', 'attack'],
+                    text: '+2 コイン\n次のターン +1 カード\n他は各ターン最初の銀貨か金貨を廃棄' },
+    sea_witch:    { id: 'sea_witch',    name: '海の魔女',   cost: 5, types: ['action', 'duration', 'attack'],
+                    text: '+2 カード\n他は呪いを獲得\n次のターン +2 カード後、手札を2枚捨てる' },
+    pirate:       { id: 'pirate',       name: '海賊',       cost: 5, types: ['treasure', 'duration', 'reaction'],
+                    text: '次のターン、6コスト以下の財宝1枚を手札に獲得\n（リアクション）誰かが財宝を獲得時、手札から使える' },
   };
 
   /* ---------- 王国カードのセット ----------
@@ -218,6 +282,13 @@
                'trading_post', 'upgrade', 'swindler', 'minion', 'masquerade'].concat(INTRIGUE_NEW_2E),
     // プロモ（6種）
     promo: ['walled_village', 'envoy', 'governor', 'dismantle', 'black_market', 'hoard'],
+    // 海辺 第二版（27種）= カード画像用カタログ。★どの CARD_SET / randomFrom からも参照しない
+    //   「孤立プール」。整合性テスト（全カードはいずれかのプールに属する）を満たすためだけに置く。
+    //   ゲーム本体は CARD_SETS / KINGDOM 系しか引かないので、ここに入れても抽選母集団に流入しない。
+    seaside: ['native_village', 'haven', 'lighthouse', 'warehouse', 'smugglers', 'lookout',
+              'fishing_village', 'sea_chart', 'monkey', 'astrolabe', 'treasure_map', 'salvager',
+              'cutpurse', 'caravan', 'island', 'sailor', 'tide_pools', 'bazaar', 'treasury',
+              'outpost', 'tactician', 'merchant_ship', 'wharf', 'blockade', 'corsair', 'sea_witch', 'pirate'],
   };
   // 初版プール＝第二版プールから新カードを除き、廃止された初版カードを戻したもの
   DOM.POOLS.basic1e = DOM.POOLS.basic.filter((id) => !BASE_NEW_2E.includes(id)).concat(BASE_REMOVED_1E);

@@ -37,7 +37,12 @@
     'adventurer', 'laboratory', 'festival', 'witch', 'bandit', 'governor', 'council_room', 'patrol', 'library', 'market', 'minion', 'mine', 'sentry', 'courtier', 'replace', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'spy', 'thief', 'upgrade', 'bureaucrat', 'feast', 'silver',
     'poacher', 'mining_village', 'smithy', 'mill', 'walled_village', 'dismantle', 'envoy', 'secret_passage', 'diplomat', 'courtyard', 'masquerade', 'throne_room', 'great_hall', 'tribute', 'militia', 'steward', 'trading_post', 'baron', 'scout',
     'remodel', 'moneylender', 'merchant', 'harbinger', 'vassal', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith', 'chancellor', 'black_market', 'hoard',
-    'pawn', 'lurker', 'moat', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke', 'copper', 'curse'];
+    'pawn', 'lurker', 'moat', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke', 'copper', 'curse',
+    // 海辺27種＝カード画像用カタログ。どのプレイ可能セットにも入らず実サプライに出ないため、
+    // ここでの並び順はCPU挙動に影響しない（整合性テストの「GAIN_ORDER=全カード」を満たすため）。
+    'native_village', 'haven', 'lighthouse', 'warehouse', 'smugglers', 'lookout', 'fishing_village', 'sea_chart',
+    'monkey', 'astrolabe', 'treasure_map', 'salvager', 'cutpurse', 'caravan', 'island', 'sailor', 'tide_pools',
+    'bazaar', 'treasury', 'outpost', 'tactician', 'merchant_ship', 'wharf', 'blockade', 'corsair', 'sea_witch', 'pirate'];
   function bestGain(state, maxCost, opts) {
     opts = opts || {};
     for (const id of GAIN_ORDER) {

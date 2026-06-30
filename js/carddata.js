@@ -95,8 +95,10 @@
     "hoard": { icon: "🤑", effects: ["コイン +2", "勝利点を購入したとき金貨を獲得"] },
   };
 
-  // 表示枠の色キー（attack/reaction を優先。勝利点・アクション等の複合も1つに決める）
+  // 表示枠の色キー（持続を最優先＝本家ドミニオン同様オレンジ。次いで attack/reaction を優先。
+  // 勝利点・アクション等の複合も1つに決める）
   function frameType(types) {
+    if (types.includes('duration')) return 'duration'; // 海辺：持続はオレンジ（最優先）
     if (types.includes('attack')) return 'attack';
     if (types.includes('reaction')) return 'reaction';
     if (types.includes('treasure')) return 'treasure';
@@ -108,6 +110,13 @@
   // 種別ラベル（日本語）
   function typeLabel(types) {
     const has = (t) => types.includes(t);
+    // 海辺：持続の複合（本家の表記順に合わせる）
+    if (has('duration')) {
+      if (has('treasure') && has('reaction')) return '財宝・持続・リアクション'; // 海賊
+      if (has('attack')) return 'アクション・持続・アタック';                    // 封鎖/私掠船/海の魔女
+      if (has('treasure')) return '財宝・持続';                                  // アストロラーベ
+      return 'アクション・持続';
+    }
     if (has('treasure') && has('victory')) return '財宝・勝利点';
     if (has('victory') && has('action')) return '勝利点・アクション';
     if (has('reaction')) return 'アクション・リアクション';
@@ -120,6 +129,12 @@
   // 種別ラベル（英語。プレートに日英併記する＝基準カードと同じ体裁）
   function typeLabelEn(types) {
     const has = (t) => types.includes(t);
+    if (has('duration')) {
+      if (has('treasure') && has('reaction')) return 'Treasure - Duration - Reaction'; // Pirate
+      if (has('attack')) return 'Action - Duration - Attack';                          // Blockade/Corsair/Sea Witch
+      if (has('treasure')) return 'Treasure - Duration';                               // Astrolabe
+      return 'Action - Duration';
+    }
     if (has('treasure') && has('victory')) return 'Treasure - Victory';
     if (has('victory') && has('action')) return 'Victory - Action';
     if (has('reaction')) return 'Action - Reaction';
@@ -130,7 +145,7 @@
     return 'Action';
   }
   // DISPLAY にアイコンが無い新カード用の既定アイコン（種別で代替）
-  const TYPE_ICON = { treasure: '🪙', victory: '🏅', curse: '☠️', reaction: '🛡️', attack: '⚔️', action: '🃏' };
+  const TYPE_ICON = { treasure: '🪙', victory: '🏅', curse: '☠️', reaction: '🛡️', attack: '⚔️', duration: '⏳', action: '🃏' };
 
   // 正本 DOM.CARDS から表示用1件を組み立てる
   function buildDisplay(id) {
