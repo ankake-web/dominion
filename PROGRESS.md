@@ -1,8 +1,21 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-06-30 / branch `main` / **すべてコミット＆本番デプロイ済み・作業ツリーはクリーン**（最新コミット `18fb4d6`、`origin/main` と同期）。
+最終更新: 2026-07-01 / branch `main`。**繁栄（Prosperity 第二版）27種を実プレイ可能に実装＝デプロイ予定**。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
-**新セッションは まず `npm test` を実行し 1520件オールグリーンを確認**してから着手すること（合計 = 整合性613＋194＋拡張165＋第二版159＋海辺85＋CPU50＋UI75＋拡張UI43＋第二版UI24＋海辺UI22＋サーバ45＋オンライン29＋耐久16）。
+**新セッションは まず `npm test` を実行し 約1737件オールグリーンを確認**してから着手すること。
+
+### 繁栄（Prosperity 第二版）27種を実プレイ可能に（2026-07-01）
+- **25王国＋プラチナ貨＋植民地**を実装。新セット「**繁栄セット**」(`DOM.KINGDOM_PROSPERITY` 固定10種)＋「**繁栄から**」(ランダム)。`POOLS.prosperity`(25種)。
+- **新基盤**：(1)**VPトークン** `player.vpTokens`（司教・記念碑・収集・投資。`vpOf` で加算・`maskStateFor` は素通し=公開）。(2)**プラチナ貨/植民地**＝`initSupply` が王国に繁栄カードがあるとき自動供給（platinum 12 / colony v）。盤面の財宝/勝利点列に条件表示。(3)**コスト軽減** `cardCost`（石切場＝場にある間アクション$2安／行商人＝購入時 場のアクション数×$2安）。(4)**動的財宝** 銀行＝`playTreasureCard` で場の財宝枚数ぶん。(5)**`canBuyCard`**（高級市場＝場に銅貨で不可。engine/CPU/UI 共用で空振り防止）。
+- **獲得時フック**（`triggerOnGain`）：隠し財産＝勝利点獲得→金貨（**購入時→獲得時に faithful 化**。`applyHoardOnBuy` は no-op 化）／収集＝アクション獲得→+VP／物見やぐら・ティアラ＝獲得物の廃棄/山札上（`_gainDepth===1 && !pending` の安全ガード＝自分の手番の主獲得時のみ）。
+- **アタック**：群衆／会計士／ペテン師を `ATTACKS` 登録（堀で無効化可）。**王の宮廷**＝`replay` に2回積んで3回プレイ（runReplays 上限 30→200）。**会計士の手番開始時プレイ**も実装（`clerk_start` を `resolveDurationStartEffects` で startQueue へ）。
+- 24+1 の新 reducer（`BISHOP_*`/`VAULT_*`/`MINT_REVEAL`/`EXPAND_*`/`FORGE_*`/`KINGS_COURT_CHOOSE`/`WAR_CHEST_*`/`WATCHTOWER`/`TIARA_*`/`ANVIL_*`/`INVESTMENT*`/`CRYSTAL_BALL`/`CLERK_*` 等）＋ `PLAYER_ACTIONS`＋CPU `decidePending` 全分岐＋`chooseAction`/`chooseBuy`(植民地/プラチナ優先)＋UI `viewPendingModal` 全モーダル。
+- **敵対的レビュー（サブエージェント）で発見→修正**：①司教を空手札で使うとデッドロック→`hand>0` ガード。②ティアラの2回目コインが相手の堀で取りこぼし→pending 無関係に常時加算。③会計士の手番開始プレイ未実装→実装。④runReplays 上限30→200。
+- **検証**：`test/prosperity.test.js`(56)・`test/prosperity-ui.test.js`(29) 追加。CPU対CPU **157戦(2-4人)0デッドロック**、実ブラウザで盤面描画＋webp読込(broken 0)、27枚モンタージュ目視OK。**全テスト約1737件緑**。
+- **カード画像**：`asset/cards/<id>.webp` 26枚新規＋hoard更新（繁栄調の新絵＋テキストを「獲得時」に修正）。`carddata.js` の hoard DISPLAY も修正。差分は新規26＋hoardのみ（既存はgrainのみ→`git checkout`で戻し）。
+- **★錬金術セットを一時無効化**：作業ツリーに未コミットの「錬金術を選択可にする」変更があったが、**錬金術の王国カードに applyEffect ロジックが無く（選ぶと無効札）**、broken なので `cards.js` の CARD_SET 2エントリ(`alchemy`/`random-alchemy`)をコメントアウト。potion経済の基盤コードは温存（休眠）。錬金術を実装完了したら2行を復活させる。画像/カード一覧は従来どおり（孤立プール）。
+- **デプロイ**：`sw.js` v15→**v16**（クライアント更新）。繁栄webpは deploy.yml の glob でコピー、実行時プリキャッシュ（precache不要）。
+
 過去の広い文脈（第二版化・単一ソース化・整合性テスト・オンライン再接続・枠画像方式の経緯など）は `docs/handover.md` を参照。
 
 ---

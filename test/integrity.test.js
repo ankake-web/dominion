@@ -93,7 +93,8 @@ console.log('=== POOLS / CARD_SETS の id が実在・固定セットは10種 ==
     s.randomFrom.forEach((p) => ok(!!DOM.POOLS[p], 'random ' + s.id + ' の母集団 ' + p + ' が存在')));
   // 各カードは少なくとも1つのプールに含まれる（一覧/抽選から漏れない）
   const inPool = new Set([].concat.apply([], Object.values(DOM.POOLS)));
-  const base = ['copper', 'silver', 'gold', 'estate', 'duchy', 'province', 'curse'];
+  // potion/プラチナ貨/植民地は王国カードではなく共通サプライ（呪い同様）＝プール所属を要求しない。
+  const base = ['copper', 'silver', 'gold', 'estate', 'duchy', 'province', 'curse', 'potion', 'platinum', 'colony'];
   Object.keys(DOM.CARDS).filter((id) => !base.includes(id)).forEach((id) =>
     ok(inPool.has(id), '王国カード ' + id + ' がどこかのプールに含まれる'));
 }

@@ -33,7 +33,7 @@
   }
 
   /* 獲得したいカードの優先順（高いほど良い）。基本＋拡張(陰謀)の全王国カードを網羅。 */
-  const GAIN_ORDER = ['province', 'gold', 'artisan', 'nobles', 'harem', 'duchy',
+  const GAIN_ORDER = ['colony', 'platinum', 'province', 'gold', 'artisan', 'nobles', 'harem', 'duchy',
     'adventurer', 'laboratory', 'festival', 'witch', 'bandit', 'governor', 'council_room', 'patrol', 'library', 'market', 'minion', 'mine', 'sentry', 'courtier', 'replace', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'spy', 'thief', 'upgrade', 'bureaucrat', 'feast', 'silver',
     'poacher', 'mining_village', 'smithy', 'mill', 'walled_village', 'dismantle', 'envoy', 'secret_passage', 'diplomat', 'courtyard', 'masquerade', 'throne_room', 'great_hall', 'tribute', 'militia', 'steward', 'trading_post', 'baron', 'scout',
     'remodel', 'moneylender', 'merchant', 'harbinger', 'vassal', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith', 'chancellor', 'black_market', 'hoard',
@@ -45,6 +45,10 @@
     //（整合性テストの「GAIN_ORDER=全カード」を満たすためだけ）。
     'potion', 'transmute', 'vineyard', 'herbalist', 'apothecary', 'scrying_pool', 'university',
     'alchemist', 'familiar', 'philosophers_stone', 'golem', 'apprentice', 'possession',
+    // 繁栄（第二版）王国カード25種＝強さ/コストの目安順。供給があるときだけ効く。
+    'kings_court', 'grand_market', 'bank', 'expand', 'forge', 'peddler', 'city', 'vault', 'rabble',
+    'magnate', 'mint', 'collection', 'crystal_ball', 'charlatan', 'war_chest', 'bishop',
+    'monument', 'workers_village', 'watchtower', 'tiara', 'quarry', 'investment', 'anvil', 'clerk',
     'pawn', 'lurker', 'moat', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke', 'copper', 'curse'];
   function bestGain(state, maxCost, opts) {
     opts = opts || {};
@@ -173,6 +177,24 @@
     if (has('workshop')) return 'workshop';
     if (has('woodcutter')) return 'woodcutter';
     if (has('pawn')) return 'pawn';
+    // 繁栄：非ターミナル（+アクション付き）を先に
+    if (has('workers_village')) return 'workers_village'; // +1カード+2アクション+1購入
+    if (has('city')) return 'city';                       // +1カード+2アクション（空山でさらに）
+    if (has('grand_market')) return 'grand_market';       // +1カード+1アクション+1購入+2コイン
+    if (has('peddler')) return 'peddler';                 // +1カード+1アクション+1コイン
+    // 繁栄：ターミナル
+    if (has('kings_court') && p.hand.some((c) => isType(c, 'action') && c !== 'kings_court')) return 'kings_court';
+    if (has('rabble')) return 'rabble';                   // +3カード＋アタック
+    if (has('vault')) return 'vault';                     // +2カード→捨ててコイン
+    if (has('magnate') && p.hand.filter((c) => isTreasure(c)).length >= 2) return 'magnate';
+    if (has('clerk')) return 'clerk';                     // +2コイン＋アタック
+    if (has('monument')) return 'monument';               // +2コイン+1VP
+    if (has('bishop')) return 'bishop';                   // +1コイン+1VP＋圧縮
+    if (has('expand') && p.hand.length > 1) return 'expand';
+    if (has('forge') && p.hand.filter((c) => trashValue(c) < 10).length >= 1) return 'forge';
+    if (has('mint') && p.hand.some((c) => isTreasure(c))) return 'mint';
+    if (has('war_chest')) return 'war_chest';
+    if (has('watchtower') && p.hand.length < 6) return 'watchtower';
     // 秘密の小部屋: 手札に死に札(勝利点/呪い)があればコインに変える
     if (has('secret_chamber') && p.hand.some((c) => isDead(c))) return 'secret_chamber';
     return null;
@@ -196,6 +218,7 @@
     if (dukes) vp += dukes * cards.filter((c) => c === 'duchy').length;
     const gardens = cards.filter((c) => c === 'gardens').length;
     if (gardens) vp += gardens * Math.floor(cards.length / 10);
+    vp += p.vpTokens || 0; // 繁栄：VPトークン
     return vp;
   }
   function buyEndsGame(state, id) {
@@ -209,7 +232,7 @@
   function winsIfEnds(state, seat, id) {
     // 獲得する1枚を加えた仮デッキで再計算（庭園のデッキ増・公爵の動的得点も反映）
     const me = state.players[seat];
-    const hypo = { deck: allCards(me).concat(id), hand: [], discard: [], inPlay: [] };
+    const hypo = { deck: allCards(me).concat(id), hand: [], discard: [], inPlay: [], vpTokens: me.vpTokens || 0 };
     const myVp = vpOfPlayer(hypo);
     const myTurns = me.turns + 1; // 今のターンはクリーンアップで+1される
     return state.players.every((p, i) => {
@@ -235,7 +258,9 @@
 
     const province = sup(state, 'province');
     let pick = null;
-    if (coins >= 8 && province > 0) pick = 'province';
+    if (coins >= 11 && sup(state, 'colony') > 0) pick = 'colony';          // 繁栄：植民地（10VP）
+    else if (coins >= 9 && sup(state, 'platinum') > 0) pick = 'platinum';  // 繁栄：プラチナ貨（money engine）
+    else if (coins >= 8 && province > 0) pick = 'province';
     else if (province <= 4 && coins >= 5 && sup(state, 'duchy') > 0) pick = 'duchy';
     else if (province <= 2 && coins >= 2 && sup(state, 'estate') > 0) pick = 'estate';
     else if (coins >= 6 && sup(state, 'gold') > 0) pick = 'gold';
@@ -251,6 +276,8 @@
 
   function chooseBuyNormal(state, p, coins) {
     const province = sup(state, 'province');
+    if (coins >= 11 && sup(state, 'colony') > 0) return 'colony';         // 繁栄：植民地（10VP）
+    if (coins >= 9 && sup(state, 'platinum') > 0) return 'platinum';      // 繁栄：プラチナ貨
     if (coins >= 8 && province > 0) return 'province';
     if (coins >= 6 && sup(state, 'gold') > 0) return 'gold';
     if (province <= 3 && coins >= 5 && sup(state, 'duchy') > 0) return 'duchy';
@@ -282,8 +309,9 @@
     if (level === 'hard') pick = chooseBuyStrong(state, p, coins);
     else if (level === 'easy') pick = chooseBuyWeak(state, p, coins);
     else pick = chooseBuyNormal(state, p, coins);
-    // 念のため：買えない手は返さない（実コストで判定）
-    if (pick && cost(state, pick) <= real && sup(state, pick) > 0) return pick;
+    // 念のため：買えない手は返さない（実コストで判定。繁栄：高級市場は場に銅貨があると不可）
+    const canBuy = !DOM.engine.canBuyCard || DOM.engine.canBuyCard(state, state.turn.active, pick);
+    if (pick && cost(state, pick) <= real && sup(state, pick) > 0 && canBuy) return pick;
     return null;
   }
 
@@ -675,6 +703,73 @@
         return { type: 'SAILOR_PLAY_GAIN', play: true };
       case 'pirate_gain':
         return { type: 'PIRATE_GAIN', card: bestGain(state, 6, { treasureOnly: true }) };
+
+      /* ===== 繁栄（Prosperity）===== */
+      case 'charlatan':
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'CHARLATAN_REACT' };
+      case 'rabble':
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'RABBLE_REACT' };
+      case 'clerk':
+        if (pd.stage === 'react') {
+          if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+          return { type: 'CLERK_REACT' };
+        }
+        { const c = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0]; return { type: 'CLERK_TOPDECK', card: c }; }
+      case 'clerk_start':
+        // 手番開始時の会計士は無料の +2コイン＋アタック＝常に使う。
+        return { type: 'CLERK_START', play: true };
+      case 'bishop':
+        if (pd.stage === 'trash') {
+          const c = p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0];
+          return { type: 'BISHOP_TRASH', card: c };
+        }
+        { const junk = p.hand.find((c) => isType(c, 'curse') || c === 'estate'); return { type: 'BISHOP_OTHER', card: junk || null }; }
+      case 'vault':
+        if (pd.stage === 'discard') return { type: 'VAULT_DISCARD', cards: p.hand.filter((c) => isDead(c)) };
+        { const dead = p.hand.filter((c) => isDead(c)); return { type: 'VAULT_OTHER', cards: dead.length >= 2 ? dead.slice(0, 2) : [] }; }
+      case 'mint': {
+        const tre = p.hand.filter((c) => isTreasure(c)).sort((a, b) => (C()[b].coin || 0) - (C()[a].coin || 0))[0];
+        return { type: 'MINT_REVEAL', card: (tre && (C()[tre].coin || 0) >= 2) ? tre : null };
+      }
+      case 'expand':
+        if (pd.stage === 'trash') { const c = p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0]; return { type: 'EXPAND_TRASH', card: c }; }
+        return { type: 'EXPAND_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
+      case 'forge':
+        if (pd.stage === 'trash') return { type: 'FORGE_TRASH', cards: p.hand.filter((c) => c === 'estate') };
+        return { type: 'FORGE_GAIN', card: bestGainExact(state, pd.exact, { noVictory: true }) || bestGainExact(state, pd.exact) };
+      case 'kings_court': {
+        const acts = p.hand.filter((c) => isType(c, 'action'));
+        const nonKc = acts.filter((c) => c !== 'kings_court').sort((a, b) => C()[b].cost - C()[a].cost);
+        const card = nonKc[0] || acts.slice().sort((a, b) => C()[b].cost - C()[a].cost)[0];
+        return { type: 'KINGS_COURT_CHOOSE', card };
+      }
+      case 'war_chest':
+        if (pd.stage === 'name') return { type: 'WAR_CHEST_NAME', card: bestGain(state, 5, { noVictory: true }) || bestGain(state, 5) || 'curse' };
+        { const named = (state.turn.warChestNamed) || []; let g = null; for (const id of GAIN_ORDER) { if (cost(state, id) <= 5 && sup(state, id) > 0 && named.indexOf(id) < 0) { g = id; break; } } return { type: 'WAR_CHEST_GAIN', card: g }; }
+      case 'watchtower':
+        return { type: 'WATCHTOWER', choice: (pd.card === 'curse' ? 'trash' : 'keep') };
+      case 'tiara_topdeck':
+        return { type: 'TIARA_TOPDECK', topdeck: false };
+      case 'tiara_play': {
+        const tre = p.hand.filter((c) => isTreasure(c)).sort((a, b) => (C()[b].coin || 0) - (C()[a].coin || 0))[0];
+        return { type: 'TIARA_PLAY', card: tre || null };
+      }
+      case 'anvil':
+        if (pd.stage === 'discard') return { type: 'ANVIL_DISCARD', card: p.hand.includes('copper') ? 'copper' : null };
+        return { type: 'ANVIL_GAIN', card: bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) };
+      case 'investment':
+        if (pd.stage === 'trash') { const c = p.hand.filter((x) => isTreasure(x)).sort((a, b) => (C()[a].coin || 0) - (C()[b].coin || 0))[0]; return { type: 'INVESTMENT_TRASH', card: c }; }
+        return { type: 'INVESTMENT', choice: 'coin' };
+      case 'crystal_ball': {
+        const c = pd.card;
+        let choice = 'keep';
+        if (isType(c, 'curse')) choice = 'trash';
+        else if (isType(c, 'victory')) choice = 'discard';
+        else if (isType(c, 'action') || isType(c, 'treasure')) choice = 'play';
+        return { type: 'CRYSTAL_BALL', choice };
+      }
 
       default:
         return { type: 'END_TURN' };

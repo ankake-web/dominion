@@ -27,6 +27,11 @@
                  text: '勝利点 6' },
     curse:     { id: 'curse',     name: '呪い',       cost: 0, types: ['curse'],               vp: -1,
                  text: '勝利点 −1' },
+    // 繁栄：基本サプライに加わる高額財宝・高額勝利点（繁栄が場にあるときだけ供給される）
+    platinum:  { id: 'platinum',  name: 'プラチナ貨', cost: 9, types: ['treasure'],            coin: 5,
+                 text: 'コイン +5' },
+    colony:    { id: 'colony',    name: '植民地',     cost: 11, types: ['victory'],            vp: 10,
+                 text: '勝利点 10' },
 
     // 王国カード（初回おすすめセット）
     cellar:    { id: 'cellar',    name: '地下貯蔵庫', cost: 2, types: ['action'],
@@ -181,8 +186,8 @@
                     text: '手札1枚を廃棄する。そのコストが$1以上なら、\nそれより安いカード1枚と金貨1枚を獲得する。' },
     black_market: { id: 'black_market', name: '闇市場',     cost: 3, types: ['action'],
                     text: '+2 コイン\n闇市場デッキの上3枚を公開する。\n手札から財宝を好きなだけ出してよい。\n公開した1枚を購入してもよい。残りは闇市場デッキの底へ。' },
-    hoard:        { id: 'hoard',        name: '隠し財産',   cost: 5, types: ['treasure'], coin: 2,
-                    text: 'コイン +2\nこのターン、勝利点カードを購入したとき、金貨1枚を獲得する。' },
+    hoard:        { id: 'hoard',        name: '隠し財産',   cost: 6, types: ['treasure'], coin: 2,
+                    text: 'コイン +2\nこれが場にある間、勝利点カードを獲得したとき、金貨1枚を獲得する。' },
 
     /* ===== 拡張: 海辺（Seaside 第二版）27種 =====
        いまは「完成形カード画像(asset/cards/<id>.webp)を作る」ためのカタログ追加のみ。
@@ -278,6 +283,56 @@
                     text: '+1 アクション\n手札1枚を廃棄する。\nそのコスト$1につき +1 カード（ポーション費用ありなら +2 カード）。' },
     possession:   { id: 'possession',   name: '支配',         cost: 6, potion: 2, types: ['action'],
                     text: '左隣はこのターンの後に追加ターンを行い、その間あなたが全ての決定を行う。\n獲得・廃棄したカードはあなたが受け取る。' },
+
+    // ===== 繁栄（Prosperity 第二版）王国カード 25種 =====
+    anvil:        { id: 'anvil',        name: '金床',         cost: 3, types: ['treasure'], coin: 1,
+                    text: 'コイン +1\n財宝1枚を捨ててよい。捨てたなら、コスト4以下のカード1枚を獲得する。' },
+    watchtower:   { id: 'watchtower',   name: '物見やぐら',   cost: 3, types: ['action', 'reaction'],
+                    text: '手札が6枚になるまで引く。\n（リアクション）カードを獲得したとき、これを手札から公開してよい。公開したら、そのカードを廃棄するか山札の上に置く。' },
+    bishop:       { id: 'bishop',       name: '司教',         cost: 4, types: ['action'],
+                    text: '+1 コイン、+1 勝利点\n手札1枚を廃棄する。そのコスト$2につき +1 勝利点（端数切捨て）。\n他のプレイヤーは各自、手札1枚を廃棄してよい。' },
+    clerk:        { id: 'clerk',        name: '会計士',       cost: 4, types: ['action', 'attack', 'reaction'],
+                    text: '+2 コイン\n手札が5枚以上の他のプレイヤーは各自、手札1枚を山札の上に置く。\n自分の手番開始時、これを手札から使ってよい。' },
+    investment:   { id: 'investment',   name: '投資',         cost: 4, types: ['treasure'],
+                    text: 'これを廃棄する。次のうち1つ：\n「+1 コイン」／「手札の財宝1枚を廃棄し、場の財宝の種類1つにつき +1 勝利点」。' },
+    monument:     { id: 'monument',     name: '記念碑',       cost: 4, types: ['action'],
+                    text: '+2 コイン、+1 勝利点' },
+    quarry:       { id: 'quarry',       name: '石切場',       cost: 4, types: ['treasure'], coin: 1,
+                    text: 'コイン +1\nこれが場にある間、アクションカードのコストは $2 少なくなる（$0未満にはならない）。' },
+    tiara:        { id: 'tiara',        name: 'ティアラ',     cost: 4, types: ['treasure'],
+                    text: '+1 購入\nこのターン、カードを獲得したとき山札の上に置いてよい。\n手札の財宝1枚を2回使ってよい。' },
+    workers_village: { id: 'workers_village', name: '労働者の村', cost: 4, types: ['action'],
+                    text: '+1 カード、+2 アクション、+1 購入' },
+    charlatan:    { id: 'charlatan',    name: 'ペテン師',     cost: 5, types: ['treasure', 'attack'], coin: 3,
+                    text: 'コイン +3\n他のプレイヤーは各自、銅貨1枚を獲得する。' },
+    city:         { id: 'city',         name: '都市',         cost: 5, types: ['action'],
+                    text: '+1 カード、+2 アクション\n空のサプライ山が1つあれば +1 カード。2つ以上なら さらに +1 購入・+1 コイン。' },
+    collection:   { id: 'collection',   name: '収集',         cost: 5, types: ['treasure'], coin: 2,
+                    text: 'コイン +2、+1 購入\nこのターン、アクションカードを獲得するたびに +1 勝利点。' },
+    crystal_ball: { id: 'crystal_ball', name: '水晶玉',       cost: 5, types: ['treasure'], coin: 1,
+                    text: 'コイン +1\n山札の一番上を見る。廃棄／捨て札にする／（アクションか財宝なら）使う のいずれかをしてよい。' },
+    magnate:      { id: 'magnate',      name: '富豪',         cost: 5, types: ['action'],
+                    text: '手札を公開する。その中の財宝1枚につき +1 カード。' },
+    mint:         { id: 'mint',         name: '造幣所',       cost: 5, types: ['action'],
+                    text: '手札の財宝1枚を公開してよい。公開したなら、そのコピーを獲得する。\n（購入時）これを購入したとき、場の財宝をすべて廃棄する。' },
+    rabble:       { id: 'rabble',       name: '群衆',         cost: 5, types: ['action', 'attack'],
+                    text: '+3 カード\n他のプレイヤーは各自、山札の上3枚を公開し、アクションと財宝を捨て、残りを好きな順で山札の上に戻す。' },
+    vault:        { id: 'vault',        name: '金庫室',       cost: 5, types: ['action'],
+                    text: '+2 カード\n手札を好きな枚数捨て、1枚につき +1 コイン。\n他のプレイヤーは各自、手札2枚を捨ててよい。捨てたなら1枚引く。' },
+    war_chest:    { id: 'war_chest',    name: '軍用金',       cost: 5, types: ['action'],
+                    text: '左隣がカード名を1つ指定する。\nコスト$5以下で、このターンに軍用金で指定されていないカード1枚を獲得する。' },
+    grand_market: { id: 'grand_market', name: '高級市場',     cost: 6, types: ['action'],
+                    text: '+1 カード、+1 アクション、+1 購入、+2 コイン\n場に銅貨があるとき、これは購入できない。' },
+    bank:         { id: 'bank',         name: '銀行',         cost: 7, types: ['treasure'],
+                    text: 'これを使うとき、場の財宝1枚につき +1 コイン（これ自身も数える）。' },
+    expand:       { id: 'expand',       name: '拡張',         cost: 7, types: ['action'],
+                    text: '手札1枚を廃棄する。そのコストより $3 多いコストまでのカード1枚を獲得する。' },
+    forge:        { id: 'forge',        name: '溶鉱炉',       cost: 7, types: ['action'],
+                    text: '手札を好きな枚数廃棄する。廃棄したコストの合計とちょうど等しいコストのカード1枚を獲得する。' },
+    kings_court:  { id: 'kings_court',  name: '王の宮廷',     cost: 7, types: ['action'],
+                    text: '手札のアクションカード1枚を3回使ってよい。' },
+    peddler:      { id: 'peddler',      name: '行商人',       cost: 8, types: ['action'],
+                    text: '+1 カード、+1 アクション、+1 コイン\n（購入フェイズ中）場のアクションカード1枚につき、これのコストは $2 少なくなる（$0未満にはならない）。' },
   };
 
   /* ---------- 王国カードのセット ----------
@@ -291,6 +346,12 @@
   // 海辺（第二版）推奨10種。持続・マット・追加ターン・アタックをひと通り味わえる構成。
   DOM.KINGDOM_SEASIDE = ['haven', 'lighthouse', 'native_village', 'fishing_village', 'warehouse',
                          'merchant_ship', 'wharf', 'treasury', 'sea_witch', 'island'];
+  // 繁栄（第二版）推奨10種。VPトークン・植民地/プラチナ貨・王の宮廷・アタック・スケール札を味わえる構成。
+  DOM.KINGDOM_PROSPERITY = ['watchtower', 'monument', 'workers_village', 'bishop', 'city',
+                            'rabble', 'vault', 'grand_market', 'kings_court', 'peddler'];
+  // 錬金術（第二版）推奨10種。ポーション経済・変動VP(ブドウ園)・アタック(使い魔)・支配を味わえる構成。
+  DOM.KINGDOM_ALCHEMY = ['vineyard', 'herbalist', 'apothecary', 'university', 'alchemist',
+                         'familiar', 'philosophers_stone', 'golem', 'apprentice', 'possession'];
   // 初版（第二版で廃止されたカードを含む懐かしのセット）
   DOM.KINGDOM_1E = ['cellar', 'chancellor', 'woodcutter', 'feast', 'militia',
                     'spy', 'thief', 'council_room', 'adventurer', 'market'];
@@ -321,10 +382,18 @@
               'fishing_village', 'sea_chart', 'monkey', 'astrolabe', 'treasure_map', 'salvager',
               'cutpurse', 'caravan', 'island', 'sailor', 'tide_pools', 'bazaar', 'treasury',
               'outpost', 'tactician', 'merchant_ship', 'wharf', 'blockade', 'corsair', 'sea_witch', 'pirate'],
-    // 錬金術 第二版（13種）= カード画像用カタログ。★どの CARD_SET / randomFrom からも参照しない孤立プール。
-    //   実ゲームロジック未実装のため、抽選母集団に流入させない（整合性テストの「全カードはプール所属」を満たすためだけ）。
-    alchemy: ['potion', 'transmute', 'vineyard', 'herbalist', 'apothecary', 'scrying_pool', 'university',
+    // 錬金術 第二版（王国カード12種）= 抽選母集団。「錬金術セット」(固定10種)と「錬金術から」(ランダム)が参照する。
+    //   ポーション(potion)は王国カードではなく共通サプライ＝ここには入れない（potion 費用カードが場にあると
+    //   initSupply が自動でポーション山を足す）。整合性テストは potion を呪い同様の共通カードとして扱う。
+    alchemy: ['transmute', 'vineyard', 'herbalist', 'apothecary', 'scrying_pool', 'university',
               'alchemist', 'familiar', 'philosophers_stone', 'golem', 'apprentice', 'possession'],
+    // 繁栄 第二版（王国カード25種）= 抽選母集団。「繁栄セット」(固定10種)と「繁栄から」(ランダム)が参照する。
+    //   プラチナ貨/植民地は王国カードではなく共通サプライ＝ここには入れない（繁栄の王国カードが場にあると
+    //   initSupply が自動で platinum/colony 山を足す）。hoard は元々プロモにもあるが本来は繁栄のカード。
+    prosperity: ['anvil', 'watchtower', 'bishop', 'clerk', 'investment', 'monument', 'quarry', 'tiara',
+                 'workers_village', 'charlatan', 'city', 'collection', 'crystal_ball', 'magnate', 'mint',
+                 'rabble', 'vault', 'war_chest', 'grand_market', 'hoard', 'bank', 'expand', 'forge',
+                 'kings_court', 'peddler'],
   };
   // 初版プール＝第二版プールから新カードを除き、廃止された初版カードを戻したもの
   DOM.POOLS.basic1e = DOM.POOLS.basic.filter((id) => !BASE_NEW_2E.includes(id)).concat(BASE_REMOVED_1E);
@@ -343,6 +412,9 @@
     { id: 'basic',           kind: 'standard', name: '王国基本セット（第二版）', kingdom: DOM.KINGDOM },
     { id: 'intrigue',        kind: 'standard', name: '陰謀セット（第二版）', kingdom: DOM.KINGDOM_INTRIGUE },
     { id: 'seaside',         kind: 'standard', name: '海辺セット（第二版）', kingdom: DOM.KINGDOM_SEASIDE },
+    // ★錬金術セットは一時無効化：カードの実ゲームロジックが未実装で、選ぶと無効札になるため。実装完了後に下の2行を有効化する。
+    // { id: 'alchemy',         kind: 'standard', name: '錬金術セット（第二版）', kingdom: DOM.KINGDOM_ALCHEMY },
+    { id: 'prosperity',      kind: 'standard', name: '繁栄セット（第二版）', kingdom: DOM.KINGDOM_PROSPERITY },
     // ---- おすすめ（テーマ別・固定10種）----
     { id: 'big-money',       kind: 'recommend', name: 'ビッグマネー', desc: 'お金を伸ばして属州を狙う王道',
       kingdom: ['chapel', 'moneylender', 'harbinger', 'throne_room', 'bureaucrat', 'poacher', 'market', 'mine', 'laboratory', 'sentry'] },
@@ -367,6 +439,8 @@
     // ---- ランダム（毎回その場で10種を抽選）----
     { id: 'random',          kind: 'random', name: '基本＋陰謀から', randomFrom: ['basic', 'intrigue'] },
     { id: 'random-seaside',  kind: 'random', name: '海辺から',       randomFrom: ['seaside'] },
+    // { id: 'random-alchemy',  kind: 'random', name: '錬金術から',     randomFrom: ['alchemy'] }, // 錬金術ロジック未実装のため一時無効
+    { id: 'random-prosperity', kind: 'random', name: '繁栄から',     randomFrom: ['prosperity'] },
     { id: 'random-intrigue', kind: 'random', name: '陰謀のみから',   randomFrom: ['intrigue'] },
     { id: 'random-basic',    kind: 'random', name: '基本のみから',   randomFrom: ['basic'] },
     { id: 'random-promo',    kind: 'random', name: 'プロモ込みから',  randomFrom: ['basic', 'intrigue', 'promo'] },
@@ -395,9 +469,10 @@
   DOM.TREASURES = ['copper', 'silver', 'gold'];
   DOM.VICTORY   = ['estate', 'duchy', 'province'];
 
-  // サプライ（場の山札）の表示順
+  // サプライ（場の山札）の表示順。プラチナ貨/植民地は繁栄が場にあるときだけ supply に存在し、
+  // 各表示・獲得処理は supply[id] の有無でフィルタするので、ここでは常に並べておいてよい。
   DOM.SUPPLY_ORDER = function (kingdom) {
-    return ['copper', 'silver', 'gold', 'estate', 'duchy', 'province', 'curse'].concat(kingdom);
+    return ['copper', 'silver', 'gold', 'platinum', 'estate', 'duchy', 'province', 'colony', 'curse'].concat(kingdom);
   };
 
   // 補助

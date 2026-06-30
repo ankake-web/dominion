@@ -13,10 +13,24 @@
 
   // このターンのコスト軽減（「橋」など）を反映した実コスト
   function cardCost(state, id) {
-    const base = (C()[id] && C()[id].cost) || 0;
-    const red = (state.turn && state.turn.costReduction) || 0;
+    let base = (C()[id] && C()[id].cost) || 0;
+    const t = state.turn;
+    const active = t ? state.players[t.active] : null;
+    // 繁栄：石切場が場にある間、アクションカードは1枚につき$2安い（$0未満にはならない）。
+    if (active && DOM.isType(id, 'action')) {
+      const quarries = (active.inPlay || []).filter((x) => x === 'quarry').length;
+      if (quarries) base -= 2 * quarries;
+    }
+    // 繁栄：行商人は購入フェイズ中、場のアクションカード1枚につき$2安い。
+    if (id === 'peddler' && active && t.phase === 'buy') {
+      const actionsInPlay = (active.inPlay || []).filter((x) => DOM.isType(x, 'action')).length;
+      if (actionsInPlay) base -= 2 * actionsInPlay;
+    }
+    const red = (t && t.costReduction) || 0;
     return Math.max(0, base - red);
   }
+  // 錬金術：ポーション費用（「橋」等のコイン軽減では下がらない＝公式どおり固定）。
+  function potionCost(id) { return (C()[id] && C()[id].potion) || 0; }
   // 財宝1枚を出したときのコイン。銅細工師の「このターン銅貨+1」(t.copperBonus)を銅貨にだけ加算。
   // PLAY_TREASURE と PLAY_ALL_TREASURES の両方でこれを使い、計算を二重実装しない。
   function treasureCoins(state, id) {
@@ -32,6 +46,15 @@
     removeOne(p.hand, card);
     p.inPlay.push(card);
     t.coins += treasureCoins(state, card);
+    // 錬金術：ポーション（特殊財宝）＝コインではなく「ポーション」を1つ得る（ポーション費用の支払いに使う）。
+    if (card === 'potion') { t.potions = (t.potions || 0) + 1; }
+    // 錬金術：賢者の石＝出したとき山札+捨て札の合計5枚につき +1コイン（端数切捨て）。
+    if (card === 'philosophers_stone') {
+      const n = p.deck.length + p.discard.length;
+      const add = Math.floor(n / 5);
+      t.coins += add;
+      log(state, `${p.name} は賢者の石を使った（山札+捨て札 ${n}枚 → +${add}コイン）。`);
+    }
     if (card === 'silver' && !t.silverPlayed) {
       if (t.merchants) { t.coins += t.merchants; log(state, `${p.name} は商人の効果で +${t.merchants} コイン。`); }
       t.silverPlayed = true;
@@ -46,6 +69,39 @@
     if (card === 'pirate') {
       armDuration(state, pIndex, 'pirate');
       log(state, `${p.name} は海賊を使った（次の手番に財宝を手札に獲得）。`);
+    }
+    // ===== 繁栄：財宝カードの「使ったとき」効果 =====
+    // 銀行：場の財宝1枚につき +1コイン（これ自身も数える。inPlay には既に積んである）。
+    if (card === 'bank') {
+      const cnt = p.inPlay.filter((c) => DOM.isType(c, 'treasure')).length;
+      t.coins += cnt; log(state, `${p.name} は銀行を使った（場の財宝${cnt}枚 → +${cnt}コイン）。`);
+    }
+    // 収集：+1購入（コイン2は coin:2 で加算済み）。アクション獲得時の+VPは triggerOnGain が処理。
+    if (card === 'collection') t.buys += 1;
+    // ペテン師：他のプレイヤーは各自 銅貨1枚を獲得（アタック）。コイン3は coin:3 で加算済み。
+    if (card === 'charlatan') {
+      const q = [];
+      for (let k = 1; k < state.players.length; k++) q.push((pIndex + k) % state.players.length);
+      charlatanEnterVictim(state, pIndex, q);
+    }
+    // 金床：財宝1枚を捨ててコスト4以下を獲得してよい（コイン1は coin:1）。
+    if (card === 'anvil' && p.hand.some((c) => DOM.isType(c, 'treasure'))) {
+      state.pending = { type: 'anvil', stage: 'discard', player: pIndex };
+    }
+    // 投資：これを廃棄。+1コイン か 「財宝1枚を廃棄して場の財宝の種類ぶん +VP」を選ぶ。
+    if (card === 'investment') {
+      removeOne(p.inPlay, 'investment'); state.trash.push('investment');
+      state.pending = { type: 'investment', player: pIndex };
+    }
+    // 水晶玉：山札の上1枚を見て 廃棄／捨て札／（アクションか財宝なら）使う（コイン1は coin:1）。
+    if (card === 'crystal_ball') {
+      if (p.deck.length === 0 && p.discard.length > 0) { p.deck = shuffle(p.discard); p.discard = []; }
+      if (p.deck.length > 0) state.pending = { type: 'crystal_ball', player: pIndex, card: p.deck[0] };
+    }
+    // ティアラ：+1購入。手札の財宝1枚を2回使ってよい（獲得時の山札上置きは triggerOnGain が処理）。
+    if (card === 'tiara') {
+      t.buys += 1;
+      if (p.hand.some((c) => DOM.isType(c, 'treasure'))) state.pending = { type: 'tiara_play', player: pIndex };
     }
     // 海辺：私掠船マーク中なら、このターン最初の銀貨/金貨は出した後に廃棄される（コインは入る）。
     corsairOnPlayTreasure(state, pIndex, card);
@@ -77,6 +133,13 @@
       curse: 10 * (numPlayers - 1),
     };
     kingdom.forEach((k) => (supply[k] = DOM.isType(k, 'victory') ? v : 10));
+    // 錬金術：王国にポーション費用カードがあれば、ポーション山（公式は16枚）を共通サプライに加える。
+    if (kingdom.some((k) => C()[k] && C()[k].potion)) supply.potion = 16;
+    // 繁栄：王国に繁栄の王国カードがあれば、プラチナ貨（12枚）と植民地（勝利点と同枚数）を共通サプライに加える。
+    if (kingdom.some((k) => (DOM.POOLS.prosperity || []).indexOf(k) >= 0)) {
+      supply.platinum = 12;
+      supply.colony = v;
+    }
     return supply;
   }
 
@@ -84,7 +147,7 @@
   // 海辺用に gainedThisTurn（このターン獲得したid列・密輸人/宝物庫用）/ outpostUsed / isExtraTurn / startQueue を追加。
   function freshTurn(active, isExtraTurn) {
     return {
-      active, phase: 'action', actions: 1, buys: 1, coins: 0, costReduction: 0,
+      active, phase: 'action', actions: 1, buys: 1, coins: 0, potions: 0, costReduction: 0,
       actionsPlayed: 0, copperBonus: 0, merchants: 0, silverPlayed: false,
       gainedThisTurn: [], outpostUsed: false, isExtraTurn: !!isExtraTurn, startQueue: null,
       corsairTrashed: false, // 私掠船：このターンに最初の銀/金を廃棄済みか（被害者ごと）
@@ -126,6 +189,7 @@
         islandMat: [],     // 島マット（ゲームから外れるが所有者のVPに数える。公開）
         nativeVillageMat: [], // 原住民の村マット（手札に回収できる。秘密）
         lastTurnGains: [], // 直前の自分の手番に獲得したカードid（密輸人が右隣のこれを参照）
+        vpTokens: 0,       // 繁栄：勝利点トークンの累計（司教・記念碑・収集・投資。公開・終了時に加算）
       };
     });
 
@@ -225,21 +289,35 @@
     return true;
   }
 
+  // 「自分のカード」を廃棄置き場へ送る共通入口。錬金術・支配：支配中は被支配者（手番の
+  // active）が廃棄した自分のカードを脇に避け、ターン終了時に被支配者の捨て札へ戻す
+  // （支配では相手の良いカードを永久に廃棄できない＝公式どおり）。それ以外は通常どおり廃棄。
+  // ※アタックで「他人」のカードを廃棄する処理（詐欺師/破壊工作員/山賊）はこれを通さない。
+  function trashOwn(state, ownerIdx, card) {
+    const t = state.turn;
+    if (t && t.possessedBy != null && ownerIdx === t.active) {
+      (t.possessionTrash = t.possessionTrash || []).push(card);
+    } else {
+      state.trash.push(card);
+    }
+  }
+
   // 条件に合う獲得可能なカードがサプライに1枚でもあるか
   function anyGainable(state, predicate) {
     return Object.keys(state.supply).some(
       (id) => (state.supply[id] || 0) > 0 && predicate(id)
     );
   }
-
-  // 隠し財産(Hoard): 場にある間、勝利点カードを購入したら枚数ぶん金貨を獲得（通常購入・闇市場購入で共通）
-  function applyHoardOnBuy(state, pi, card) {
-    if (!DOM.isType(card, 'victory')) return;
-    const hoards = state.players[pi].inPlay.filter((c) => c === 'hoard').length;
-    for (let i = 0; i < hoards; i++) {
-      if (gain(state, pi, 'gold', 'discard')) log(state, `${state.players[pi].name} は隠し財産で金貨を獲得した。`);
-    }
+  // 繁栄：コスト/購入数/サプライ以外の「購入できない」追加制限。
+  //   高級市場(grand_market)＝場に銅貨があるとき購入不可。CPU/UI もこれを参照して空振りを防ぐ。
+  function canBuyCard(state, pi, id) {
+    if (id === 'grand_market' && state.players[pi].inPlay.includes('copper')) return false;
+    return true;
   }
+
+  // 隠し財産(Hoard): いまは「獲得時」フック(triggerOnGain)で金貨を獲得する（購入に限らず faithful）。
+  // 互換のため関数は残すが何もしない（BUY/闇市場の呼び出し側は変更不要）。
+  function applyHoardOnBuy() { /* no-op: hoard は triggerOnGain で処理 */ }
 
   /* ---------- 選択リゾルバの共通部品（カードを足すほど効く再利用パーツ）----------
      手札からN枚を捨てる/廃棄する、強制つきでサプライから獲得する、の3定型を1か所に。
@@ -441,6 +519,9 @@
     replace:       { onMoat: (s, pd) => replaceEnterVictim(s, pd.source, pd.queue) },
     cutpurse:      { onMoat: (s, pd) => cutpurseEnterVictim(s, pd.source, pd.queue) },
     sea_witch:     { onMoat: (s, pd) => seaWitchEnterVictim(s, pd.source, pd.queue) },
+    charlatan:     { onMoat: (s, pd) => charlatanEnterVictim(s, pd.source, pd.queue) },
+    rabble:        { onMoat: (s, pd) => rabbleEnterVictim(s, pd.source, pd.queue) },
+    clerk:         { onMoat: (s, pd) => clerkEnterVictim(s, pd.source, pd.queue) },
   };
   // 被攻撃側の反応（堀／秘密の小部屋／外交官）を差し込める局面か。
   function isAttackReactPending(pd) {
@@ -663,6 +744,93 @@
   function seaWitchCurse(state, source, victim, queue) {
     if ((state.supply.curse || 0) > 0) { gain(state, victim, 'curse', 'discard'); log(state, `${state.players[victim].name} は呪いを獲得した（海の魔女）。`); }
     seaWitchEnterVictim(state, source, queue);
+  }
+
+  /* ---------- 繁栄：ペテン師（各相手が銅貨1枚を獲得）---------- */
+  function charlatanEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'charlatan', stage: 'react', player: victim, source, victim, queue: rest };
+    } else { charlatanApply(state, source, victim, rest); }
+  }
+  function charlatanApply(state, source, victim, queue) {
+    if ((state.supply.copper || 0) > 0) { gain(state, victim, 'copper', 'discard'); log(state, `${state.players[victim].name} は銅貨1枚を獲得した（ペテン師）。`); }
+    charlatanEnterVictim(state, source, queue);
+  }
+
+  /* ---------- 繁栄：群衆（各相手が山札の上3枚を公開→アクション/財宝を捨て、残りを上に戻す）---------- */
+  function rabbleEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'rabble', stage: 'react', player: victim, source, victim, queue: rest };
+    } else { rabbleApply(state, source, victim, rest); }
+  }
+  function rabbleApply(state, source, victim, queue) {
+    const v = state.players[victim];
+    const look = [];
+    for (let i = 0; i < 3; i++) {
+      if (v.deck.length === 0) { if (v.discard.length === 0) break; v.deck = shuffle(v.discard); v.discard = []; }
+      if (v.deck.length === 0) break;
+      look.push(v.deck.shift());
+    }
+    reveal(state, victim, look, '群衆：山札の上3枚を公開');
+    const keep = [];
+    look.forEach((c) => {
+      if (DOM.isType(c, 'action') || DOM.isType(c, 'treasure')) v.discard.push(c);
+      else keep.push(c);
+    });
+    for (let i = keep.length - 1; i >= 0; i--) v.deck.unshift(keep[i]); // 残りを公開順のまま山札の上へ
+    if (look.length) log(state, `${v.name} は群衆で ${look.length}枚を公開し、アクション/財宝を捨てた。`);
+    rabbleEnterVictim(state, source, queue);
+  }
+
+  /* ---------- 繁栄：会計士（手札5枚以上の各相手が、手札1枚を山札の上に置く）---------- */
+  function clerkEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'clerk', stage: 'react', player: victim, source, victim, queue: rest };
+    } else { clerkProceed(state, source, victim, rest); }
+  }
+  // 反応（堀等）を経た後／反応が無いとき：手札5枚以上なら本人が1枚選んで山札の上へ、未満なら飛ばす。
+  function clerkProceed(state, source, victim, queue) {
+    if (state.players[victim].hand.length >= 5) {
+      state.pending = { type: 'clerk', stage: 'topdeck', player: victim, source, victim, queue };
+    } else { clerkEnterVictim(state, source, queue); }
+  }
+
+  // 繁栄：司教「他プレイヤーは各自 任意で手札1枚を廃棄」を順に処理（手札が無い人は飛ばす）。
+  function bishopOthersEnter(state, queue) {
+    while (queue && queue.length) {
+      const v = queue[0]; queue = queue.slice(1);
+      if (state.players[v].hand.length > 0) { state.pending = { type: 'bishop', stage: 'other', player: v, queue }; return; }
+    }
+    state.pending = null;
+  }
+  // 繁栄：金庫室「他プレイヤーは各自 任意で手札2枚を捨てて1枚引く」を順に処理（手札2枚未満は飛ばす）。
+  function vaultOthersEnter(state, queue) {
+    while (queue && queue.length) {
+      const v = queue[0]; queue = queue.slice(1);
+      if (state.players[v].hand.length >= 2) { state.pending = { type: 'vault', stage: 'other', player: v, queue }; return; }
+    }
+    state.pending = null;
+  }
+  // 繁栄：ティアラ「財宝1枚を2回使う」の2回目＝コイン分を再適用（移動はしない。複雑財宝の追加効果は割愛）。
+  function treasureReplayCoins(state, pi, card) {
+    const p = state.players[pi];
+    const t = state.turn;
+    if (card === 'bank') { const cnt = p.inPlay.filter((c) => DOM.isType(c, 'treasure')).length; t.coins += cnt; return cnt; }
+    const add = treasureCoins(state, card);
+    t.coins += add;
+    return add;
   }
 
   /* ---------- 総督（改築モード）：全員が順に「任意で廃棄→ちょうど+$Nを獲得」---------- */
@@ -1288,6 +1456,83 @@
         armDuration(state, pi, 'corsair'); // 次手番 +1カード。窓の間、相手の最初の銀/金を廃棄
         break;
 
+      // ===== 繁栄（Prosperity 第二版）アクションカード =====
+      case 'monument':
+        t.coins += 2; p.vpTokens = (p.vpTokens || 0) + 1;
+        log(state, `${p.name} は記念碑で +1勝利点。`);
+        break;
+      case 'workers_village':
+        draw(state, pi, 1); t.actions += 2; t.buys += 1;
+        break;
+      case 'magnate': {
+        reveal(state, pi, p.hand, '富豪：手札を公開');
+        const tre = p.hand.filter((c) => DOM.isType(c, 'treasure')).length;
+        if (tre) draw(state, pi, tre);
+        log(state, `${p.name} は富豪で手札を公開（財宝${tre}枚）→ +${tre}カード。`);
+        break;
+      }
+      case 'city': {
+        draw(state, pi, 1); t.actions += 2;
+        const empties = emptyPileCount(state);
+        if (empties >= 1) draw(state, pi, 1);
+        if (empties >= 2) { t.buys += 1; t.coins += 1; }
+        break;
+      }
+      case 'grand_market':
+        draw(state, pi, 1); t.actions += 1; t.buys += 1; t.coins += 2;
+        break;
+      case 'peddler':
+        draw(state, pi, 1); t.actions += 1; t.coins += 1;
+        break;
+      case 'watchtower':
+        // 手札が6枚になるまで引く（空なら止める）
+        { let g = 0; while (p.hand.length < 6 && g++ < 30) { const b = p.hand.length; draw(state, pi, 1); if (p.hand.length === b) break; } }
+        break;
+      case 'bishop':
+        t.coins += 1; p.vpTokens = (p.vpTokens || 0) + 1;
+        log(state, `${p.name} は司教で +1勝利点。`);
+        // 手札1枚を廃棄（コスト$2につき+VP）。その後 他プレイヤーが任意で手札1枚廃棄。
+        // 手札が空なら廃棄は飛ばして「他プレイヤーの廃棄」へ（空手札でデッドロックさせない）。
+        if (p.hand.length > 0) { state.pending = { type: 'bishop', stage: 'trash', player: pi }; }
+        else { const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length); bishopOthersEnter(state, q); }
+        break;
+      case 'vault':
+        draw(state, pi, 2);
+        state.pending = { type: 'vault', stage: 'discard', player: pi }; // 好きな枚数捨てて+コイン
+        break;
+      case 'mint':
+        if (p.hand.some((c) => DOM.isType(c, 'treasure'))) state.pending = { type: 'mint', player: pi };
+        break;
+      case 'expand':
+        if (p.hand.length > 0) state.pending = { type: 'expand', stage: 'trash', player: pi };
+        break;
+      case 'forge':
+        state.pending = { type: 'forge', stage: 'trash', player: pi }; // 任意枚数廃棄→合計コストちょうどを獲得
+        break;
+      case 'kings_court':
+        if (p.hand.some((c) => DOM.isType(c, 'action'))) state.pending = { type: 'kings_court', player: pi };
+        break;
+      case 'rabble': {
+        draw(state, pi, 3);
+        const q = [];
+        for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        rabbleEnterVictim(state, pi, q);
+        break;
+      }
+      case 'clerk': {
+        t.coins += 2;
+        const q = [];
+        for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        clerkEnterVictim(state, pi, q);
+        break;
+      }
+      case 'war_chest': {
+        // 左隣がカード名を1つ指定 → コスト$5以下で「このターン軍用金で指定されていない」カードを1枚獲得
+        const left = (pi + 1) % state.players.length;
+        state.pending = { type: 'war_chest', stage: 'name', player: left, source: pi };
+        break;
+      }
+
       default:
         break;
     }
@@ -1314,6 +1559,11 @@
     // 庭園：デッキ10枚につき1勝利点（端数切り捨て）
     const gardens = cards.filter((c) => c === 'gardens').length;
     if (gardens) vp += gardens * Math.floor(cards.length / 10);
+    // 錬金術：ブドウ園＝所持アクションカード3枚につき1勝利点（端数切り捨て）
+    const vineyards = cards.filter((c) => c === 'vineyard').length;
+    if (vineyards) vp += vineyards * Math.floor(cards.filter((c) => DOM.isType(c, 'action')).length / 3);
+    // 繁栄：VPトークン（司教・記念碑・収集・投資で貯めた勝利点）を加算
+    vp += p.vpTokens || 0;
     return vp;
   }
   function scoreGame(state) {
@@ -1372,6 +1622,9 @@
       const r = DURATION_RESOLVERS[e.type];
       if (r) r(state, pi, e); // 非対話はここで適用、対話は state.turn.startQueue に積む
     }
+    // 繁栄：会計士＝手番開始時、手札の会計士を（アクションを消費せず）使ってよい。startQueue の最後に積む。
+    const clerks = p.hand.filter((c) => c === 'clerk').length;
+    for (let i = 0; i < clerks; i++) state.turn.startQueue.push({ type: 'clerk_start', player: pi });
     popStartQueue(state); // 最初の対話 pending をセット（無ければ null）
   }
   // 各持続カードの「次の手番開始時」効果（カードidをキーに登録）。対話分は §手5/手6 で startQueue に積む。
@@ -1426,6 +1679,25 @@
         const bl = (op.delayedEffects || []).find((e) => e.type === 'blockade' && e.gained === cardId);
         if (bl && (state.supply.curse || 0) > 0) { gain(state, pIndex, 'curse', 'discard'); log(state, `${state.players[pIndex].name} は封鎖により呪いを獲得した。`); }
       }
+    }
+    // 繁栄：自分の手番に勝利点カードを獲得 → 場の隠し財産1枚につき金貨1枚（hoard）。
+    if (state.turn && pIndex === state.turn.active && DOM.isType(cardId, 'victory')) {
+      const hoards = state.players[pIndex].inPlay.filter((c) => c === 'hoard').length;
+      for (let i = 0; i < hoards; i++) {
+        if (gain(state, pIndex, 'gold', 'discard')) log(state, `${state.players[pIndex].name} は隠し財産で金貨を獲得した。`);
+      }
+    }
+    // 繁栄：自分の手番にアクションカードを獲得 → 場の収集1枚につき +1勝利点（collection）。
+    if (state.turn && pIndex === state.turn.active && DOM.isType(cardId, 'action')) {
+      const cols = state.players[pIndex].inPlay.filter((c) => c === 'collection').length;
+      if (cols) { state.players[pIndex].vpTokens = (state.players[pIndex].vpTokens || 0) + cols; log(state, `${state.players[pIndex].name} は収集で +${cols} 勝利点。`); }
+    }
+    // 繁栄：物見やぐら（手札から公開→獲得物を廃棄か山札上へ）／ティアラ（獲得物を山札上へ）。
+    // 安全側＝自分の手番・トップレベル獲得・他の対話が無いときだけ確認（船乗りと同方針）。
+    if (state.turn && pIndex === state.turn.active && state._gainDepth === 1 && !state.pending) {
+      const me = state.players[pIndex];
+      if (me.hand.includes('watchtower')) state.pending = { type: 'watchtower', player: pIndex, card: cardId, dest: dest || 'discard' };
+      else if (me.inPlay.includes('tiara')) state.pending = { type: 'tiara_topdeck', player: pIndex, card: cardId, dest: dest || 'discard' };
     }
     // 船乗り：自分の手番に持続カードを獲得したら、このターン1度だけ即プレイしてよい（確認ダイアログ）。
     // 別の対話(pending)の最中に起きた獲得では出さない（安全側＝主に「購入」時に発動）。
@@ -1527,7 +1799,7 @@
   // 玉座の間の「2回目の適用」を、選択待ちが解消したタイミングで実行する。
   function runReplays(state) {
     let guard = 0;
-    while (!state.pending && state.replay && state.replay.length && !state.gameOver && guard++ < 30) {
+    while (!state.pending && state.replay && state.replay.length && !state.gameOver && guard++ < 200) {
       const r = state.replay.shift();
       state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
       log(state, `${state.players[r.player].name} は玉座の間で「${C()[r.card].name}」をもう一度使った。`);
@@ -1580,8 +1852,9 @@
         // 商人の「最初の銀貨」を確実に最初に出すため、銀貨を先に出す
         const treasures = me.hand.filter((c) => DOM.isType(c, 'treasure'))
           .sort((a, b) => (a === 'silver' ? -1 : 0) - (b === 'silver' ? -1 : 0));
-        treasures.forEach((card) => playTreasureCard(state, pi, card));
-        if (treasures.length) log(state, `${me.name} は財宝を全て出した。`);
+        // 繁栄：金床/投資/水晶玉/ティアラ/ペテン師(堀)は使ったとき選択が出る。pending が立ったら残りは止める。
+        for (const card of treasures) { playTreasureCard(state, pi, card); if (state.pending) break; }
+        if (treasures.length) log(state, `${me.name} は財宝を出した。`);
         return state;
       }
 
@@ -1592,14 +1865,23 @@
         const card = action.card;
         if (!C()[card]) return state; // 未知のカードIDは状態不変で拒否（throwしない）
         const cost = cardCost(state, card); // 「橋」等のコスト軽減を反映
+        const pot = potionCost(card);       // 錬金術：ポーション費用（あれば）
         if ((state.supply[card] || 0) <= 0) return state;
         if (t.buys <= 0) return state;
         if (cost > t.coins) return state;
+        if (pot > (t.potions || 0)) return state; // ポーションが足りなければ買えない
+        if (!canBuyCard(state, pi, card)) return state; // 繁栄：高級市場は場に銅貨があると買えない
         t.coins -= cost;
+        t.potions = (t.potions || 0) - pot;
         t.buys -= 1;
         gain(state, pi, card, 'discard');
         log(state, `${me.name} は「${C()[card].name}」を購入した。`);
-        applyHoardOnBuy(state, pi, card); // 隠し財産
+        // 繁栄：造幣所を購入したとき、場の財宝をすべて廃棄する。
+        if (card === 'mint') {
+          const inPlayT = me.inPlay.filter((c) => DOM.isType(c, 'treasure'));
+          inPlayT.forEach((c) => { removeOne(me.inPlay, c); state.trash.push(c); });
+          if (inPlayT.length) log(state, `${me.name} は造幣所の購入で場の財宝 ${inPlayT.length}枚 を廃棄した。`);
+        }
         return state;
       }
 
@@ -2880,6 +3162,317 @@
         return state;
       }
 
+      /* ===== 繁栄（Prosperity）の選択解決 ===== */
+      case 'CHARLATAN_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'charlatan' || pd.stage !== 'react') return state;
+        charlatanApply(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'RABBLE_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'rabble' || pd.stage !== 'react') return state;
+        rabbleApply(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'CLERK_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'clerk' || pd.stage !== 'react') return state;
+        clerkProceed(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'CLERK_TOPDECK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'clerk' || pd.stage !== 'topdeck') return state;
+        const v = state.players[pd.victim];
+        const card = action.card;
+        if (v.hand.indexOf(card) < 0) return state;
+        removeOne(v.hand, card); v.deck.unshift(card);
+        log(state, `${v.name} は手札1枚を山札の上に置いた（会計士）。`);
+        clerkEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+      case 'CLERK_START': {
+        // 繁栄：会計士の手番開始時リアクション＝手札から（アクション消費せず）使う/使わない。
+        const pd = state.pending;
+        if (!pd || pd.type !== 'clerk_start') return state;
+        const p = state.players[pd.player];
+        if (action.play && p.hand.includes('clerk')) {
+          removeOne(p.hand, 'clerk'); p.inPlay.push('clerk');
+          t.actionsPlayed = (t.actionsPlayed || 0) + 1;
+          log(state, `${p.name} は手番開始時に会計士を使った。`);
+          applyEffect(state, 'clerk', pd.player); // +2コイン＋アタック
+          // アタックの pending が立たなかった（相手不在/全員5枚未満）ときだけ開始キューを進める。
+          // 立った場合は解決後に pending=null となり、そのまま手番（アクションフェイズ）へ進む。
+          if (!state.pending) popStartQueue(state);
+        } else {
+          popStartQueue(state);
+        }
+        return state;
+      }
+      case 'BISHOP_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'bishop' || pd.stage !== 'trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0) return state;
+        removeOne(p.hand, card); state.trash.push(card);
+        const add = Math.floor(cardCost(state, card) / 2);
+        if (add) p.vpTokens = (p.vpTokens || 0) + add;
+        log(state, `${p.name} は「${C()[card].name}」を廃棄し +${add}勝利点（司教）。`);
+        const others = [];
+        for (let k = 1; k < state.players.length; k++) others.push((pd.player + k) % state.players.length);
+        bishopOthersEnter(state, others);
+        return state;
+      }
+      case 'BISHOP_OTHER': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'bishop' || pd.stage !== 'other') return state;
+        const v = state.players[pd.player];
+        const card = action.card; // null = 廃棄しない
+        if (card != null) {
+          if (v.hand.indexOf(card) < 0) return state;
+          removeOne(v.hand, card); state.trash.push(card);
+          log(state, `${v.name} は「${C()[card].name}」を廃棄した（司教）。`);
+        }
+        bishopOthersEnter(state, pd.queue);
+        return state;
+      }
+      case 'VAULT_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'vault' || pd.stage !== 'discard') return state;
+        const p = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        const copy = p.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        cards.forEach((c) => { removeOne(p.hand, c); p.discard.push(c); });
+        t.coins += cards.length;
+        if (cards.length) log(state, `${p.name} は金庫室で ${cards.length}枚捨てて +${cards.length}コイン。`);
+        const others = [];
+        for (let k = 1; k < state.players.length; k++) others.push((pd.player + k) % state.players.length);
+        vaultOthersEnter(state, others);
+        return state;
+      }
+      case 'VAULT_OTHER': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'vault' || pd.stage !== 'other') return state;
+        const v = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length === 2) {
+          const copy = v.hand.slice();
+          let okk = true;
+          for (const c of cards) if (!removeOne(copy, c)) okk = false;
+          if (okk) {
+            cards.forEach((c) => { removeOne(v.hand, c); v.discard.push(c); });
+            draw(state, pd.player, 1);
+            log(state, `${v.name} は金庫室で2枚捨てて1枚引いた。`);
+          }
+        }
+        vaultOthersEnter(state, pd.queue);
+        return state;
+      }
+      case 'MINT_REVEAL': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'mint') return state;
+        const p = state.players[pd.player];
+        const card = action.card; // null = 公開しない
+        if (card != null && p.hand.indexOf(card) >= 0 && DOM.isType(card, 'treasure')) {
+          reveal(state, pd.player, [card], '造幣所：財宝を公開');
+          if ((state.supply[card] || 0) > 0) { gain(state, pd.player, card, 'discard'); log(state, `${p.name} は造幣所で「${C()[card].name}」を獲得した。`); }
+        }
+        state.pending = null;
+        return state;
+      }
+      case 'EXPAND_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'expand' || pd.stage !== 'trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0) return state;
+        removeOne(p.hand, card); state.trash.push(card);
+        const maxCost = cardCost(state, card) + 3;
+        log(state, `${p.name} は「${C()[card].name}」を廃棄した（拡張）。`);
+        if (anyGainable(state, (id) => cardCost(state, id) <= maxCost)) state.pending = { type: 'expand', stage: 'gain', player: pd.player, maxCost };
+        else state.pending = null;
+        return state;
+      }
+      case 'EXPAND_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'expand' || pd.stage !== 'gain') return state;
+        const card = action.card;
+        if (!C()[card] || cardCost(state, card) > pd.maxCost || (state.supply[card] || 0) <= 0) return state;
+        gain(state, pd.player, card, 'discard');
+        log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した（拡張）。`);
+        state.pending = null;
+        return state;
+      }
+      case 'FORGE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'forge' || pd.stage !== 'trash') return state;
+        const p = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        const copy = p.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        let total = 0;
+        cards.forEach((c) => { total += cardCost(state, c); });
+        cards.forEach((c) => { removeOne(p.hand, c); state.trash.push(c); });
+        log(state, `${p.name} は溶鉱炉で ${cards.length}枚を廃棄（合計$${total}）。`);
+        if (anyGainable(state, (id) => cardCost(state, id) === total)) state.pending = { type: 'forge', stage: 'gain', player: pd.player, exact: total };
+        else { log(state, `${p.name} はちょうど$${total}のカードが無く、何も獲得しなかった（溶鉱炉）。`); state.pending = null; }
+        return state;
+      }
+      case 'FORGE_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'forge' || pd.stage !== 'gain') return state;
+        const card = action.card;
+        if (!C()[card] || cardCost(state, card) !== pd.exact || (state.supply[card] || 0) <= 0) return state;
+        gain(state, pd.player, card, 'discard');
+        log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した（溶鉱炉）。`);
+        state.pending = null;
+        return state;
+      }
+      case 'KINGS_COURT_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'kings_court') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0 || !DOM.isType(card, 'action')) return state;
+        removeOne(p.hand, card); p.inPlay.push(card);
+        t.actionsPlayed = (t.actionsPlayed || 0) + 1;
+        state.pending = null;
+        log(state, `${p.name} は王の宮廷で「${C()[card].name}」を使った（1回目）。`);
+        applyEffect(state, card, pd.player); // 1回目
+        state.replay = state.replay || [];
+        state.replay.push({ player: pd.player, card }); // 2回目
+        state.replay.push({ player: pd.player, card }); // 3回目（runReplays が pending 解消ごとに消化）
+        return state;
+      }
+      case 'WAR_CHEST_NAME': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'war_chest' || pd.stage !== 'name') return state;
+        const card = action.card;
+        if (!C()[card]) return state;
+        t.warChestNamed = t.warChestNamed || [];
+        t.warChestNamed.push(card);
+        log(state, `${state.players[pd.player].name} は軍用金で「${C()[card].name}」を指定した。`);
+        const named = t.warChestNamed;
+        if (anyGainable(state, (id) => cardCost(state, id) <= 5 && named.indexOf(id) < 0)) state.pending = { type: 'war_chest', stage: 'gain', player: pd.source, source: pd.source };
+        else state.pending = null;
+        return state;
+      }
+      case 'WAR_CHEST_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'war_chest' || pd.stage !== 'gain') return state;
+        const card = action.card;
+        const named = t.warChestNamed || [];
+        if (!C()[card] || cardCost(state, card) > 5 || named.indexOf(card) >= 0 || (state.supply[card] || 0) <= 0) return state;
+        gain(state, pd.player, card, 'discard');
+        log(state, `${state.players[pd.player].name} は軍用金で「${C()[card].name}」を獲得した。`);
+        state.pending = null;
+        return state;
+      }
+      case 'WATCHTOWER': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'watchtower') return state;
+        const p = state.players[pd.player];
+        const choice = action.choice; // 'trash' | 'topdeck' | 'keep'
+        const zone = pd.dest === 'deck' ? p.deck : (pd.dest === 'hand' ? p.hand : p.discard);
+        if (choice === 'trash') { if (removeOne(zone, pd.card)) { state.trash.push(pd.card); log(state, `${p.name} は物見やぐらで「${C()[pd.card].name}」を廃棄した。`); } }
+        else if (choice === 'topdeck') { if (removeOne(zone, pd.card)) { p.deck.unshift(pd.card); log(state, `${p.name} は物見やぐらで「${C()[pd.card].name}」を山札の上に置いた。`); } }
+        state.pending = null;
+        return state;
+      }
+      case 'TIARA_TOPDECK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'tiara_topdeck') return state;
+        const p = state.players[pd.player];
+        if (action.topdeck) {
+          const zone = pd.dest === 'deck' ? p.deck : (pd.dest === 'hand' ? p.hand : p.discard);
+          if (removeOne(zone, pd.card)) { p.deck.unshift(pd.card); log(state, `${p.name} はティアラで「${C()[pd.card].name}」を山札の上に置いた。`); }
+        }
+        state.pending = null;
+        return state;
+      }
+      case 'TIARA_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'tiara_play') return state;
+        const p = state.players[pd.player];
+        const card = action.card; // null = しない
+        state.pending = null;
+        if (card != null && p.hand.indexOf(card) >= 0 && DOM.isType(card, 'treasure')) {
+          playTreasureCard(state, pd.player, card); // 1回目（移動＋効果。ペテン師+堀などで pending が立つことがある）
+          // 2回目のコインは反応待ちに関係なく確定で入る（pending の有無で取りこぼさない）。
+          const add = treasureReplayCoins(state, pd.player, card);
+          log(state, `${p.name} はティアラで「${C()[card].name}」をもう一度使った（+${add}コイン）。`);
+        }
+        return state;
+      }
+      case 'ANVIL_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'anvil' || pd.stage !== 'discard') return state;
+        const p = state.players[pd.player];
+        const card = action.card; // null = しない
+        if (card == null) { state.pending = null; return state; }
+        if (p.hand.indexOf(card) < 0 || !DOM.isType(card, 'treasure')) return state;
+        removeOne(p.hand, card); p.discard.push(card);
+        log(state, `${p.name} は金床で「${C()[card].name}」を捨てた。`);
+        if (anyGainable(state, (id) => cardCost(state, id) <= 4)) state.pending = { type: 'anvil', stage: 'gain', player: pd.player };
+        else state.pending = null;
+        return state;
+      }
+      case 'ANVIL_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'anvil' || pd.stage !== 'gain') return state;
+        const card = action.card;
+        if (!C()[card] || cardCost(state, card) > 4 || (state.supply[card] || 0) <= 0) return state;
+        gain(state, pd.player, card, 'discard');
+        log(state, `${state.players[pd.player].name} は金床で「${C()[card].name}」を獲得した。`);
+        state.pending = null;
+        return state;
+      }
+      case 'INVESTMENT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'investment' || pd.stage) return state;
+        const p = state.players[pd.player];
+        if (action.choice === 'vp' && p.hand.some((c) => DOM.isType(c, 'treasure'))) {
+          state.pending = { type: 'investment', stage: 'trash', player: pd.player };
+        } else {
+          t.coins += 1; log(state, `${p.name} は投資で +1コイン。`);
+          state.pending = null;
+        }
+        return state;
+      }
+      case 'INVESTMENT_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'investment' || pd.stage !== 'trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0 || !DOM.isType(card, 'treasure')) return state;
+        removeOne(p.hand, card); state.trash.push(card);
+        const add = new Set(p.inPlay.filter((c) => DOM.isType(c, 'treasure'))).size;
+        if (add) p.vpTokens = (p.vpTokens || 0) + add;
+        log(state, `${p.name} は投資で「${C()[card].name}」を廃棄し +${add}勝利点（場の財宝${add}種）。`);
+        state.pending = null;
+        return state;
+      }
+      case 'CRYSTAL_BALL': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'crystal_ball') return state;
+        const p = state.players[pd.player];
+        const top = p.deck[0];
+        const choice = action.choice; // 'trash' | 'discard' | 'play' | 'keep'
+        if (top !== pd.card) { state.pending = null; return state; } // 山札が変わっていたら何もしない
+        state.pending = null;
+        if (choice === 'trash') { p.deck.shift(); state.trash.push(top); log(state, `${p.name} は水晶玉で「${C()[top].name}」を廃棄した。`); }
+        else if (choice === 'discard') { p.deck.shift(); p.discard.push(top); log(state, `${p.name} は水晶玉で「${C()[top].name}」を捨てた。`); }
+        else if (choice === 'play' && (DOM.isType(top, 'action') || DOM.isType(top, 'treasure'))) {
+          p.deck.shift(); p.inPlay.push(top);
+          if (DOM.isType(top, 'treasure')) { t.coins += treasureCoins(state, top); log(state, `${p.name} は水晶玉で「${C()[top].name}」を使った（+${treasureCoins(state, top)}コイン）。`); }
+          else { t.actionsPlayed = (t.actionsPlayed || 0) + 1; log(state, `${p.name} は水晶玉で「${C()[top].name}」を使った。`); applyEffect(state, top, pd.player); }
+        }
+        return state;
+      }
+
       default:
         return state;
     }
@@ -2965,6 +3558,12 @@
     'LOOKOUT_TRASH', 'LOOKOUT_DISCARD', 'ISLAND_PICK', 'NATIVE_VILLAGE_RESOLVE', 'TIDE_POOLS_DISCARD',
     'CUTPURSE_REACT', 'SEA_WITCH_REACT', 'SEA_WITCH_DISCARD', 'SMUGGLERS_GAIN', 'BLOCKADE_GAIN',
     'SAILOR_TRASH', 'SAILOR_PLAY_GAIN', 'PIRATE_GAIN',
+    // 繁栄（第二版）
+    'CHARLATAN_REACT', 'RABBLE_REACT', 'CLERK_REACT', 'CLERK_TOPDECK', 'CLERK_START',
+    'BISHOP_TRASH', 'BISHOP_OTHER', 'VAULT_DISCARD', 'VAULT_OTHER', 'MINT_REVEAL',
+    'EXPAND_TRASH', 'EXPAND_GAIN', 'FORGE_TRASH', 'FORGE_GAIN', 'KINGS_COURT_CHOOSE',
+    'WAR_CHEST_NAME', 'WAR_CHEST_GAIN', 'WATCHTOWER', 'TIARA_TOPDECK', 'TIARA_PLAY',
+    'ANVIL_DISCARD', 'ANVIL_GAIN', 'INVESTMENT', 'INVESTMENT_TRASH', 'CRYSTAL_BALL',
   ]);
 
   /* ---------- 公開API ---------- */
@@ -2976,6 +3575,7 @@
     scoreGame,
     isGameOver,
     emptyPileCount,
+    canBuyCard,
     maskStateFor,
     PLAYER_ACTIONS,
     // 「誰が今操作すべきか」: 選択待ちならその人、なければ手番のプレイヤー

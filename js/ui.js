@@ -588,6 +588,7 @@
       group('王国カード（陰謀・第二版）', byCost((DOM.POOLS && DOM.POOLS.intrigue) || [])),
       (DOM.POOLS && DOM.POOLS.seaside) ? group('王国カード（海辺・第二版）', byCost(DOM.POOLS.seaside)) : null,
       (DOM.POOLS && DOM.POOLS.alchemy) ? group('王国カード（錬金術・第二版）', byCost(DOM.POOLS.alchemy)) : null,
+      (DOM.POOLS && DOM.POOLS.prosperity) ? group('王国カード（繁栄・第二版）', byCost(DOM.POOLS.prosperity)) : null,
       (DOM.POOLS && DOM.POOLS.promo) ? group('プロモカード', byCost(DOM.POOLS.promo)) : null,
       (DOM.POOLS && DOM.POOLS.basic1e) ? group('初版のみ（第二版で廃止）', byCost(
         DOM.POOLS.basic1e.filter((id) => DOM.POOLS.basic.indexOf(id) < 0)
@@ -751,7 +752,7 @@
         return h('div', { class: 'opp-chip' + (isAct ? ' on' : '') + (p.dc ? ' dc' : '') + (hasReveal ? ' has-reveal' : ''),
             'data-seat': i, onclick: hasReveal ? () => openReveal(i) : null },
           h('div', { class: 'opp-name' }, (isAct ? '▶ ' : '') + p.name + (p.dc ? ' 🔌' : (p.isCpu ? ' 🤖' : ''))),
-          h('div', { class: 'opp-mini' }, p.dc ? '再接続中…' : ('山' + p.deck.length + ' 手' + p.hand.length + ' 捨' + p.discard.length)),
+          h('div', { class: 'opp-mini' }, p.dc ? '再接続中…' : ('山' + p.deck.length + ' 手' + p.hand.length + ' 捨' + p.discard.length + (p.vpTokens ? ' ⭐' + p.vpTokens : ''))),
           revealBadge(state, i));
       }));
 
@@ -765,7 +766,8 @@
 
     // サプライ（種類ごと）
     const buyableId = (id) => interactive && t.phase === 'buy' && !state.pending &&
-      (state.supply[id] || 0) > 0 && t.buys > 0 && effCost(state, id) <= t.coins;
+      (state.supply[id] || 0) > 0 && t.buys > 0 && effCost(state, id) <= t.coins &&
+      (!E() || !E().canBuyCard || E().canBuyCard(state, t.active, id)); // 繁栄：高級市場は場に銅貨があると不可
     // 初心者モード：おすすめ購入の山を黄色枠でハイライト（購入フェーズ・自分の操作中のみ）。
     const recSet = (UI.beginner && interactive && t.phase === 'buy' && !state.pending) ? new Set(recommendedBuys(state)) : new Set();
     const supSection = (title, ids, size) =>
@@ -776,11 +778,14 @@
 
     // 王国カードはコストの安い順に並べる（同コストはid順で安定）。
     const kingdomByCost = state.kingdom.slice().sort((a, b) => DOM.CARDS[a].cost - DOM.CARDS[b].cost || a.localeCompare(b));
+    // 繁栄：プラチナ貨/植民地が供給されていれば 財宝/勝利点 の列に加える。
+    const treasureRow = state.supply.platinum != null ? DOM.TREASURES.concat(['platinum']) : DOM.TREASURES;
+    const victoryRow = (state.supply.colony != null ? DOM.VICTORY.concat(['colony']) : DOM.VICTORY).concat(['curse']);
     const supply = h('div', null,
       // 財宝・勝利点は基本カード。デスクトップでは横並びにして縦スペースを節約。
       h('div', { class: 'supply-basics' },
-        supSection('財宝', DOM.TREASURES, 'small'),
-        supSection('勝利点', DOM.VICTORY.concat(['curse']), 'small')),
+        supSection('財宝', treasureRow, 'small'),
+        supSection('勝利点', victoryRow, 'small')),
       supSection('王国カード（アクション）', kingdomByCost, 'big'));
 
     // 場（プレイ済み）＋持続カード（⏳付き・場に残る）
@@ -797,6 +802,9 @@
       me.islandMat.map((id) => h('span', { class: 'chip-card ' + typeClass(id) }, DOM.CARDS[id].name))));
     if ((me.nativeVillageMat || []).length) matRows.push(h('div', { class: 'mat-row' },
       h('span', { class: 'mat-label' }, '🛖 原住民の村マット: ' + me.nativeVillageMat.length + '枚')));
+    // 繁栄：勝利点トークン（司教・記念碑・収集・投資。終了時に得点へ加算）
+    if (me.vpTokens) matRows.push(h('div', { class: 'mat-row' },
+      h('span', { class: 'mat-label' }, '⭐ 勝利点トークン: ' + me.vpTokens + ' 点')));
     const matsBlock = matRows.length ? h('div', { class: 'mats' }, matRows) : null;
 
     // 手札（種類でグループ化・重ね表示）
@@ -1105,6 +1113,53 @@
       { label: '使わない', on: () => dispatch({ type: 'SAILOR_PLAY_GAIN', play: false }) },
     ]);
     if (pd.type === 'pirate_gain') return modalGainSupply(state, '海賊 — 財宝を獲得', 'コスト6以下の財宝1枚を手札に獲得します。', (id) => DOM.isType(id, 'treasure') && effCost(state, id) <= 6, (id) => dispatch({ type: 'PIRATE_GAIN', card: id }), () => dispatch({ type: 'PIRATE_GAIN', card: null }));
+
+    /* ===== 繁栄（Prosperity）===== */
+    if (pd.type === 'charlatan' && pd.stage === 'react') return modalOptions('ペテン師を受ける', '銅貨1枚を獲得します。', reactOptions(p, pd, { type: 'CHARLATAN_REACT' }));
+    if (pd.type === 'rabble' && pd.stage === 'react') return modalOptions('群衆を受ける', '山札の上3枚を公開し、アクションと財宝を捨てます。', reactOptions(p, pd, { type: 'RABBLE_REACT' }));
+    if (pd.type === 'clerk' && pd.stage === 'react') return modalOptions('会計士を受ける', '手札1枚を山札の上に置きます。', reactOptions(p, pd, { type: 'CLERK_REACT' }));
+    if (pd.type === 'clerk' && pd.stage === 'topdeck') return modalSingleHand(p, '会計士 — 山札の上に置く', '手札1枚を選んで山札の上に置きます。', () => true, (card) => dispatch({ type: 'CLERK_TOPDECK', card }), null, '山札の上へ');
+    if (pd.type === 'clerk_start') return modalOptions('会計士 — 手番開始時', '手札の会計士を使いますか？（アクションを消費せず +2コイン＆アタック）', [
+      { label: '使う', cls: 'btn-primary', on: () => dispatch({ type: 'CLERK_START', play: true }) },
+      { label: '使わない', on: () => dispatch({ type: 'CLERK_START', play: false }) },
+    ]);
+    if (pd.type === 'bishop' && pd.stage === 'trash') return modalSingleHand(p, '司教 — 廃棄', '手札1枚を廃棄します（コスト$2につき +1勝利点）。', () => true, (card) => dispatch({ type: 'BISHOP_TRASH', card }), null, '廃棄する');
+    if (pd.type === 'bishop' && pd.stage === 'other') return modalSingleHand(p, '司教 — 廃棄（任意）', '手札1枚を廃棄できます（しなくてもよい）。', () => true, (card) => dispatch({ type: 'BISHOP_OTHER', card }), { label: '廃棄しない', on: () => dispatch({ type: 'BISHOP_OTHER', card: null }) }, '廃棄する');
+    if (pd.type === 'vault' && pd.stage === 'discard') return modalMultiHand(p, '金庫室 — 捨てる', '好きな枚数を捨て、1枚につき +1コイン。', (n) => '確定（' + n + '枚捨てる）', true, (cards) => dispatch({ type: 'VAULT_DISCARD', cards }));
+    if (pd.type === 'vault' && pd.stage === 'other') return modalMultiHand(p, '金庫室 — 2枚捨てて1枚引く？', '手札2枚を捨てると1枚引けます（任意）。', (n) => (n === 2 ? '2枚捨てて1枚引く' : '捨てない'), true, (cards) => dispatch({ type: 'VAULT_OTHER', cards }), 2);
+    if (pd.type === 'mint') return modalSingleHand(p, '造幣所 — 財宝を公開', '手札の財宝1枚を公開し、そのコピーを獲得します（任意）。', (id) => DOM.isType(id, 'treasure'), (card) => dispatch({ type: 'MINT_REVEAL', card }), { label: '公開しない', on: () => dispatch({ type: 'MINT_REVEAL', card: null }) }, '公開して獲得');
+    if (pd.type === 'expand' && pd.stage === 'trash') return modalSingleHand(p, '拡張 — 廃棄', '廃棄するカードを1枚選びます（その後 +$3 までを獲得）。', () => true, (card) => dispatch({ type: 'EXPAND_TRASH', card }), null, '廃棄する');
+    if (pd.type === 'expand' && pd.stage === 'gain') return modalGainSupply(state, '拡張 — 獲得', 'コスト ' + pd.maxCost + ' 以下のカードを1枚獲得します。', (id) => effCost(state, id) <= pd.maxCost, (id) => dispatch({ type: 'EXPAND_GAIN', card: id }));
+    if (pd.type === 'forge' && pd.stage === 'trash') return modalMultiHand(p, '溶鉱炉 — 廃棄', '好きな枚数を廃棄します（合計コストちょうどのカードを獲得）。', (n) => '確定（' + n + '枚廃棄）', true, (cards) => dispatch({ type: 'FORGE_TRASH', cards }));
+    if (pd.type === 'forge' && pd.stage === 'gain') return modalGainSupply(state, '溶鉱炉 — 獲得', 'ちょうどコスト $' + pd.exact + ' のカードを1枚獲得します。', (id) => effCost(state, id) === pd.exact, (id) => dispatch({ type: 'FORGE_GAIN', card: id }));
+    if (pd.type === 'kings_court') return modalSingleHand(p, '王の宮廷 — 3回使う', '3回使うアクションカードを選びます。', (id) => DOM.isType(id, 'action'), (card) => dispatch({ type: 'KINGS_COURT_CHOOSE', card }), null, '3回使う');
+    if (pd.type === 'war_chest' && pd.stage === 'name') return modalGainSupply(state, '軍用金 — カードを指定', state.players[pd.source].name + ' が獲得できないカードを1つ指定します。', () => true, (id) => dispatch({ type: 'WAR_CHEST_NAME', card: id }));
+    if (pd.type === 'war_chest' && pd.stage === 'gain') return modalGainSupply(state, '軍用金 — 獲得', 'コスト$5以下で、指定されていないカードを1枚獲得します。', (id) => effCost(state, id) <= 5 && (state.turn.warChestNamed || []).indexOf(id) < 0, (id) => dispatch({ type: 'WAR_CHEST_GAIN', card: id }));
+    if (pd.type === 'watchtower') return modalOptions('物見やぐら', '獲得した「' + DOM.CARDS[pd.card].name + '」をどうしますか？', [
+      { label: 'そのまま受け取る', cls: 'btn-primary', on: () => dispatch({ type: 'WATCHTOWER', choice: 'keep' }) },
+      { label: '山札の上に置く', on: () => dispatch({ type: 'WATCHTOWER', choice: 'topdeck' }) },
+      { label: '廃棄する', on: () => dispatch({ type: 'WATCHTOWER', choice: 'trash' }) },
+    ]);
+    if (pd.type === 'tiara_topdeck') return modalOptions('ティアラ', '獲得した「' + DOM.CARDS[pd.card].name + '」を山札の上に置きますか？', [
+      { label: '山札の上に置く', cls: 'btn-primary', on: () => dispatch({ type: 'TIARA_TOPDECK', topdeck: true }) },
+      { label: '置かない', on: () => dispatch({ type: 'TIARA_TOPDECK', topdeck: false }) },
+    ]);
+    if (pd.type === 'tiara_play') return modalSingleHand(p, 'ティアラ — 財宝を2回使う', '2回使う財宝を1枚選びます（任意）。', (id) => DOM.isType(id, 'treasure'), (card) => dispatch({ type: 'TIARA_PLAY', card }), { label: '使わない', on: () => dispatch({ type: 'TIARA_PLAY', card: null }) }, '2回使う');
+    if (pd.type === 'anvil' && pd.stage === 'discard') return modalSingleHand(p, '金床 — 財宝を捨てる', '財宝1枚を捨てると、コスト4以下を獲得できます（任意）。', (id) => DOM.isType(id, 'treasure'), (card) => dispatch({ type: 'ANVIL_DISCARD', card }), { label: '捨てない', on: () => dispatch({ type: 'ANVIL_DISCARD', card: null }) }, '捨てる');
+    if (pd.type === 'anvil' && pd.stage === 'gain') return modalGainSupply(state, '金床 — 獲得', 'コスト4以下のカードを1枚獲得します。', (id) => effCost(state, id) <= 4, (id) => dispatch({ type: 'ANVIL_GAIN', card: id }));
+    if (pd.type === 'investment' && !pd.stage) return modalOptions('投資', '次のどちらかを選びます。', [
+      { label: '+1 コイン', cls: 'btn-primary', on: () => dispatch({ type: 'INVESTMENT', choice: 'coin' }) },
+      { label: '財宝1枚を廃棄して、場の財宝の種類ぶん +勝利点', on: () => dispatch({ type: 'INVESTMENT', choice: 'vp' }) },
+    ]);
+    if (pd.type === 'investment' && pd.stage === 'trash') return modalSingleHand(p, '投資 — 財宝を廃棄', '廃棄する財宝を1枚選びます（場の財宝の種類ぶん +勝利点）。', (id) => DOM.isType(id, 'treasure'), (card) => dispatch({ type: 'INVESTMENT_TRASH', card }), null, '廃棄する');
+    if (pd.type === 'crystal_ball') {
+      const c = pd.card; const opts = [];
+      if (DOM.isType(c, 'action') || DOM.isType(c, 'treasure')) opts.push({ label: '使う', cls: 'btn-primary', on: () => dispatch({ type: 'CRYSTAL_BALL', choice: 'play' }) });
+      opts.push({ label: '捨て札にする', on: () => dispatch({ type: 'CRYSTAL_BALL', choice: 'discard' }) });
+      opts.push({ label: '廃棄する', on: () => dispatch({ type: 'CRYSTAL_BALL', choice: 'trash' }) });
+      opts.push({ label: 'そのまま（山札の上に残す）', on: () => dispatch({ type: 'CRYSTAL_BALL', choice: 'keep' }) });
+      return modalOptions('水晶玉 — 山札の上「' + DOM.CARDS[c].name + '」', 'どうしますか？', opts);
+    }
 
     return h('div');
   }
