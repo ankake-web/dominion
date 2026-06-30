@@ -189,14 +189,46 @@ const SKIN = {
       ctx.beginPath(); ctx.arc(coinCx, coinCy, cR - 1, 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
     }
-    // コスト：均一ライニング数字(Cinzel)を実インク基準でコイン中心に縦中央そろえ（2/6/8の高さズレを解消）
-    ctx.font = '700 150px ' + FF_NUM; ctx.letterSpacing = '0px';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    const cs = String(card.cost);
-    const cm = ctx.measureText(cs);
-    const asc = cm.actualBoundingBoxAscent || 105, desc = cm.actualBoundingBoxDescent || 0;
-    const baseY = coinCy + (asc - desc)/2 - 2;
-    outlined(cs, coinCx, baseY, '#fbf7ee', 6, 'rgba(0,0,0,0.55)');
+    // コスト：コイン数字（cost>0 のみ）。錬金術のポーション費用は紫のフラスコ記号で示す。
+    const potionCost = card.potion || 0;
+    // 紫のフラスコ（ポーション）を (cx,cy) に高さ目安 s で描く
+    function drawPotion(cx, cy, s) {
+      ctx.save(); ctx.translate(cx, cy); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      const w = s;
+      ctx.beginPath();
+      ctx.moveTo(-0.22*w, -1.0*w); ctx.lineTo(-0.22*w, -0.4*w);
+      ctx.lineTo(-0.82*w, 0.62*w); ctx.lineTo(0.82*w, 0.62*w);
+      ctx.lineTo(0.22*w, -0.4*w); ctx.lineTo(0.22*w, -1.0*w); ctx.closePath();
+      ctx.fillStyle = 'rgba(234,230,248,0.96)'; ctx.fill();
+      ctx.save(); ctx.clip();
+      ctx.fillStyle = '#7a35b0'; ctx.fillRect(-0.9*w, 0.04*w, 1.8*w, 0.7*w);
+      ctx.fillStyle = 'rgba(198,142,236,0.95)';
+      ctx.beginPath(); ctx.arc(-0.12*w, 0.32*w, 0.09*w, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(0.22*w, 0.46*w, 0.06*w, 0, 7); ctx.fill();
+      ctx.restore();
+      ctx.strokeStyle = '#241038'; ctx.lineWidth = Math.max(2.5, 0.12*w); ctx.stroke();
+      ctx.fillStyle = '#9a6a38'; ctx.fillRect(-0.27*w, -1.2*w, 0.54*w, 0.26*w);
+      ctx.lineWidth = Math.max(2, 0.09*w); ctx.strokeRect(-0.27*w, -1.2*w, 0.54*w, 0.26*w);
+      ctx.restore();
+    }
+    function drawCostNumber(cs) {
+      ctx.font = '700 150px ' + FF_NUM; ctx.letterSpacing = '0px';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      const cm = ctx.measureText(cs);
+      const asc = cm.actualBoundingBoxAscent || 105, desc = cm.actualBoundingBoxDescent || 0;
+      outlined(cs, coinCx, coinCy + (asc - desc) / 2 - 2, '#fbf7ee', 6, 'rgba(0,0,0,0.55)');
+    }
+    if (card.cost > 0) {
+      drawCostNumber(String(card.cost));
+      if (potionCost > 0) { // コインの下にポーション記号（複数なら ×N）
+        drawPotion(112, 240, 26);
+        if (potionCost > 1) { ctx.font = '700 40px ' + FF_NUM; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; outlined('×' + potionCost, 140, 240, '#f0e6ff', 4, 'rgba(40,16,56,0.9)'); }
+      }
+    } else if (potionCost > 0) { // ポーションのみ（ブドウ園・変成）：コイン中央にフラスコ（数字なし）
+      drawPotion(coinCx, coinCy + 8, 48);
+    } else {
+      drawCostNumber('0');
+    }
 
     // 名前（大きめ・幅に収まるよう自動縮小）
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -269,6 +301,7 @@ const SKIN = {
     const artURI = fs.existsSync(artPath) ? du(artPath) : null;
     const png = await page.evaluate(eval('(' + compositeFn + ')'), frameCache[skinOf(c)], artURI, {
       id: c.id, name: c.name, cost: c.cost, typeLabel: c.typeLabel, typeLabelEn: c.typeLabelEn, effects: c.effects,
+      potion: (DOM.CARDS[c.id] && DOM.CARDS[c.id].potion) || 0,
     }, W, H, FF_JP, FF_NUM, SKIN[skinOf(c)].base);
     fs.writeFileSync(path.join(OUTDIR, c.id + '.webp'), Buffer.from(png.split(',')[1], 'base64'));
     done++;

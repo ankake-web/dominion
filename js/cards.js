@@ -247,6 +247,37 @@
                     text: '+2 カード\n他は呪いを獲得\n次のターン +2 カード後、手札を2枚捨てる' },
     pirate:       { id: 'pirate',       name: '海賊',       cost: 5, types: ['treasure', 'duration', 'reaction'],
                     text: '次のターン、6コスト以下の財宝1枚を手札に獲得\n（リアクション）誰かが財宝を獲得時、手札から使える' },
+
+    /* ===== 拡張: 錬金術（Alchemy 第二版）13種 =====
+       いまは「完成形カード画像」用のカタログ追加のみ（実ゲームロジックは別途・未実装）。
+       どのプレイ可能セットにも入れていない（孤立プール alchemy に隔離）＝ゲーム挙動は不変。
+       potion = ポーション費用（コスト円の下に紫のポーション記号で表示）。cost はコイン費用。 */
+    potion:       { id: 'potion',       name: 'ポーション',   cost: 4, types: ['treasure'],
+                    text: 'ポーション +1\n（ポーション費用の支払いに使う）' },
+    transmute:    { id: 'transmute',    name: '変成',         cost: 0, potion: 1, types: ['action'],
+                    text: '手札1枚を廃棄する。\nアクション→公領／財宝→変成／勝利点→金貨 を獲得。' },
+    vineyard:     { id: 'vineyard',     name: 'ブドウ園',     cost: 0, potion: 1, types: ['victory'],
+                    text: '（勝利点）\n所持するアクションカード3枚につき 1 勝利点（端数切捨て）。' },
+    herbalist:    { id: 'herbalist',    name: '薬草商',       cost: 2, types: ['action'],
+                    text: '+1 購入\n+1 コイン\nこのターンの片付けで、場の財宝1枚を山札の上に置いてよい。' },
+    apothecary:   { id: 'apothecary',   name: '薬剤師',       cost: 2, potion: 1, types: ['action'],
+                    text: '+1 カード\n+1 アクション\n山札の上4枚を公開し、銅貨とポーションを手札に。残りを好きな順で山札の上に戻す。' },
+    scrying_pool: { id: 'scrying_pool', name: '念視の泉',     cost: 2, potion: 1, types: ['action', 'attack'],
+                    text: '+1 アクション\n全員の山札の上を公開し、捨てるか戻すかをあなたが選ぶ。\n自分はアクション以外が出るまで公開し、全て手札に加える。' },
+    university:   { id: 'university',   name: '大学',         cost: 2, potion: 1, types: ['action'],
+                    text: '+2 アクション\nコスト5以下のアクションカード1枚を獲得してもよい。' },
+    alchemist:    { id: 'alchemist',    name: '錬金術師',     cost: 3, potion: 1, types: ['action'],
+                    text: '+2 カード\n+1 アクション\n片付け開始時、場にポーションがあればこれを山札の上に置いてよい。' },
+    familiar:     { id: 'familiar',     name: '使い魔',       cost: 3, potion: 1, types: ['action', 'attack'],
+                    text: '+1 カード\n+1 アクション\n他のプレイヤーは各自、呪い1枚を獲得する。' },
+    philosophers_stone: { id: 'philosophers_stone', name: '賢者の石', cost: 3, potion: 1, types: ['treasure'],
+                    text: 'これを使うとき、山札と捨て札の合計を数える。\n5枚につき +1 コイン（端数切捨て）。' },
+    golem:        { id: 'golem',        name: 'ゴーレム',     cost: 4, potion: 1, types: ['action'],
+                    text: 'ゴーレム以外のアクションが2枚出るまで山札を公開する。\n残りを捨て、その2枚を好きな順で使う。' },
+    apprentice:   { id: 'apprentice',   name: '徒弟',         cost: 5, types: ['action'],
+                    text: '+1 アクション\n手札1枚を廃棄する。\nそのコスト$1につき +1 カード（ポーション費用ありなら +2 カード）。' },
+    possession:   { id: 'possession',   name: '支配',         cost: 6, potion: 2, types: ['action'],
+                    text: '左隣はこのターンの後に追加ターンを行い、その間あなたが全ての決定を行う。\n獲得・廃棄したカードはあなたが受け取る。' },
   };
 
   /* ---------- 王国カードのセット ----------
@@ -290,6 +321,10 @@
               'fishing_village', 'sea_chart', 'monkey', 'astrolabe', 'treasure_map', 'salvager',
               'cutpurse', 'caravan', 'island', 'sailor', 'tide_pools', 'bazaar', 'treasury',
               'outpost', 'tactician', 'merchant_ship', 'wharf', 'blockade', 'corsair', 'sea_witch', 'pirate'],
+    // 錬金術 第二版（13種）= カード画像用カタログ。★どの CARD_SET / randomFrom からも参照しない孤立プール。
+    //   実ゲームロジック未実装のため、抽選母集団に流入させない（整合性テストの「全カードはプール所属」を満たすためだけ）。
+    alchemy: ['potion', 'transmute', 'vineyard', 'herbalist', 'apothecary', 'scrying_pool', 'university',
+              'alchemist', 'familiar', 'philosophers_stone', 'golem', 'apprentice', 'possession'],
   };
   // 初版プール＝第二版プールから新カードを除き、廃止された初版カードを戻したもの
   DOM.POOLS.basic1e = DOM.POOLS.basic.filter((id) => !BASE_NEW_2E.includes(id)).concat(BASE_REMOVED_1E);

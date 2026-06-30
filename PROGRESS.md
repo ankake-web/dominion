@@ -5,26 +5,35 @@
 新セッションは **まず `npm test` を実行してグリーンを確認**してから着手すること（**現在 1436件**＝海辺ゲームロジック＋テストで1344→1436に増加）。
 広い文脈（第二版化・単一ソース化・整合性テスト・オンライン再接続など過去分）は `docs/handover.md` を参照。
 
+### 錬金術（Alchemy 第二版）13種を**カード画像化**（2026-06-30・★ローカル完了／未コミット・未デプロイ）
+- 海辺と同じ完成画像パイプラインで錬金術13種（ポーション/変成/ブドウ園/薬草商/薬剤師/念視の泉/大学/錬金術師/使い魔/賢者の石/ゴーレム/徒弟/支配）の `asset/cards/<id>.webp` を生成。**画像のみ**（実ゲームロジックは別途・未実装＝孤立プール `alchemy` でゲーム不変）。
+- 絵13枚（images/ の 20_58台7枚＋22_2x台6枚）をコンタクトシートで識別し `asset/art/<id>.png` に配置。`js/cards.js` に13種をカタログ追加（`potion` フィールド＝ポーション費用）＋ `POOLS.alchemy`（孤立）。`js/cpu.js` GAIN_ORDER に13件。
+- **ポーション費用の表示**（ユーザー選択）：`tools/build-cards.js` に紫のフラスコ記号 `drawPotion()` を追加。コスト円に `cost>0` なら数字、`cost===0` のポーションのみ（ブドウ園・変成）はフラスコのみ、コイン＋ポーションは数字＋下に小フラスコ、支配は「6＋×2」。`potion` を合成関数に渡すよう改修。
+- `npm test` グリーン維持（整合性613）。全117枚を再生成し原寸＋montageで目視OK。既存104枚はgrainのみ変化のため `git checkout HEAD -- asset/cards/` で戻し、**差分は新規13枚の webp のみ**。
+- **★コミット/デプロイ保留の理由**：作業ツリーに**ユーザーの未コミット作業（UI要望5件＋船乗り即プレイ実装）**が `engine.js/ui.js/css/server/seaside テスト/cpu.js` に混在。`cpu.js` は私のalchemy GAIN_ORDERと held-back の `sailor_play_gain` が同居するため、**alchemyだけの分離コミット不可**。ユーザーが「ゲーム中につきデプロイ保留」中なので、**ゲーム終了後に held-back＋alchemy をまとめてコミット→push（同時デプロイ）**するのが安全（client/server同時・sw.js VERSION更新も）。
+- △要確認（合成前の判断）：変成=金の変成光／薬草商=女性が薬草調合／薬剤師=天秤の男。montage目視では妥当だが、入替えがあれば `asset/art` を差し替えて再ビルド。
+
 ### 海辺（Seaside 第二版）実ゲームロジック実装（2026-06-30・デプロイ済み）
 - **27種すべてプレイ可能**に。新セット「**海辺セット（第二版）**」(`DOM.KINGDOM_SEASIDE` 固定10種)＋「**海辺から**」(ランダム `randomFrom:['seaside']`)を追加。`POOLS.seaside` は孤立プールから「参照される抽選母集団」に格上げ。
 - **持続(Duration)機構**（`js/engine.js` のbackbone）：プレイヤーに `durationCards`(場に残る・公開) / `delayedEffects`(次手番開始時に解決する予約) / `setAside`(私的) / `islandMat`(公開・VP) / `nativeVillageMat`(秘密) を追加。`cleanupAndAdvance` で「予約が残る持続だけ捨てずに持ち越し→出し切ったら捨て札」に仕分け。`resolveDurationStartEffects` が手番開始時に予約を消化（非対話は即時、対話は `turn.startQueue`→`pending` 経由で `popStartQueue` 連結）。`DURATION_RESOLVERS[type]` に各カードの次手番効果を登録。`armDuration()` で予約を積む。
 - **マット**：島＝自身＋手札1枚を `islandMat`(VP維持・デッキから外れる)、原住民の村＝山札の上を `nativeVillageMat` に貯める/手札に回収。`allCards()`（engine/cpu 双方）と `maskStateFor` を拡張（島マット公開・脇置き/原住民マットは伏せ・delayedEffectsの隠し札idも伏せ）。
 - **追加ターン**：前哨地＝`cleanupAndAdvance` を条件分岐（`p.outpostExtra`なら同一プレイヤー続行・手札3枚・`isExtraTurn`で連鎖防止）。
 - **アタック/フック/リアクション**：巾着切り・海の魔女を `ATTACKS` 表に登録（堀/秘密の小部屋/外交官で無効化可）。**灯台免疫**を全アタックの被害者選定に配線（`attackImmune`）。`gain()` に `triggerOnGain`（サル＝右隣の獲得で+カード／封鎖＝同名獲得で呪い）、`playTreasureCard()` に `corsairOnPlayTreasure`（私掠船＝相手の最初の銀/金を廃棄）を追加（再帰暴走ガード付き）。海賊・アストロラーベは財宝なので `playTreasureCard` で持続化。宝物庫はクリーンアップで「勝利点未獲得なら山札の上に戻す」を自動処理。密輸人は `lastTurnGains` を参照。
-- **簡略化（faithful但し一部簡素）**：船乗りの「獲得した持続を即プレイ」、封鎖の「呪い窓に堀で免疫」、海賊の「財宝獲得時リアクションで手札から出す」は省略（基本効果は実装）。これらは on-gain中の対話pendingが絡み複雑なため、安全側に倒した。
+- **簡略化（faithful但し一部簡素）**：~~船乗りの「獲得した持続を即プレイ」~~（→**2026-06-30に実装済み・後述**）、封鎖の「呪い窓に堀で免疫」、海賊の「財宝獲得時リアクションで手札から出す」は省略（基本効果は実装）。これらは on-gain中の対話pendingが絡み複雑なため、安全側に倒した。
+  - **★船乗りの即プレイを実装（2026-06-30・ローカル/未デプロイ）**：ユーザー報告「船乗りの効果が発動していない」を受け、カード2行目「このターン1度、獲得した持続カードを使える」を実装。`engine.js`＝船乗りプレイ時に `t.sailorPlays++`、`gain()`→`triggerOnGain(…, dest)` で**自分の手番に持続カードを獲得し pending が無いとき**だけ `pending:{type:'sailor_play_gain',card,dest}` を立てて1回分消費。新 reducer `SAILOR_PLAY_GAIN`（`play:true`で discard等から `inPlay` へ移して `applyEffect`→持続予約→cleanupで durationCards へ）。`PLAYER_ACTIONS` に `SAILOR_PLAY_GAIN` 追加。`cpu.js`＝`sailor_play_gain` は常に `play:true`。`ui.js`＝確認モーダル（使う/使わない）。**安全側の制限**：別の対話pending中に起きた獲得（工房等で持続を獲得）では出さない＝主に「購入」時に発動。テスト＝`seaside.test.js` に発動/辞退/非持続/1度きり/次手番持続発火、`seaside-ui.test.js` にモーダル描画を追加。**全テスト緑**。
 - **CPU**：`chooseAction`/`decidePending` に全海辺カードの分岐を追加（新pending全てに応答＝デッドロック無し）。`GAIN_ORDER` を27種とも強さ順に並べ替え（孤立カタログ末尾→適正優先度）。CPU対CPUの海辺王国フル対戦が無限ループ無しで終局することをテスト。
 - **UI**：`viewPendingModal` に全海辺pendingの分岐、盤面に⏳付き持続カードと島/原住民マットの表示、`css` に `.chip-card.duration`/`.mats`。
 - **テスト**：`test/seaside.test.js`(69件・各カード挙動＋CPU対CPU)・`test/seaside-ui.test.js`(21件・全モーダル＋盤面描画) を追加し `npm test` に組込。**合計1436件グリーン**。puppeteer実ブラウザで海辺ソロ盤面を描画しカード画像・マット・持続表示を目視確認（scratchpad `seaside_board.png`）。
 - **注意**：`sw.js` は変更不要（盤面ロード時に全104枚を実行時プリロード→SWがfetchキャッシュ。海辺webpは既にデプロイ済み）。`deploy.yml` も変更不要。
 
-### ★未対応の要望メモ（2026-06-30・実装は後日／ユーザー指示で着手）
-> ユーザーが「まだ実装不要・メモ書き。後で改めてプロンプトする」として残した3件。次に依頼が来たらここから着手。
-1. **アクションカードの並び順をコスト順にする**。サプライ盤面のアクションカードを**コスト順**に並べる。
-   - 確認したい点（実装時）：昇順（安い→高い）か降順か／対象はサプライ表示のアクション列だけか（財宝・勝利点列は据え置き想定）／同コスト内の二次キー（名前順？現状順？）。
-2. **オンライン対戦：ゲストの待機画面をホストと同じUIにする**。さらに**その待機画面で初心者モードのON/OFFを選べる**ようにする（現状ホスト側待機画面とゲスト側で見た目/操作が異なる）。
-   - 確認したい点（実装時）：初心者モードはゲスト自身の表示設定（ローカル）か、ホストと共有する対戦設定か。
-3. **獲得アニメーションのカード上の数字を消す**。カード入手時のアニメーションでカード画像の上に数字が重なって表示され「かっこ悪い」ので非表示にする。
-   - 場所の当たり：盤面の獲得アニメ（`js/ui.js` の獲得アニメ周り）。実装時に該当オーバーレイを特定して除去。
+### ★要望対応 5件（2026-06-30・実装済み／★未コミット・未デプロイ）
+> ユーザーが「現在ゲーム中なのでデプロイ中止」と明言。**ローカル実装のみ・push していない**。ゲーム終了後にコミット→デプロイ可。`npm test` **1436件グリーン維持**＋一時jsdomスクリプトで実描画16項目を確認後に削除。変更ファイル＝`js/ui.js` `css/style.css` `server/gameServer.js`。
+1. **アクションカードをコスト順に**（`js/ui.js` 盤面サプライ）：王国カード列を `kingdomByCost = state.kingdom.slice().sort((a,b)=> cost差 || id順)` で**昇順**表示（同コストはid順で安定）。財宝/勝利点列は据え置き。表示順のみ＝ゲームロジック・通信に影響なし。
+2. **獲得アニメのカード上の数字を削除**（`js/ui.js` `flyGainBig` ＋ `css/style.css`）：`gain-cost`（コインのコスト数字オーバーレイ）を要素ごと撤去＋CSSの `.gain-cost` ルールも削除。カード画像自体にコストは描かれているので冗長だった。名前キャプション(`gain-cap`)は維持。
+3. **オンライン：ゲスト待機ロビーをホストと同項目に＋初心者モード切替**（`js/ui.js` `viewLobby` ＋ `css`）：ゲストには CPU人数/CPU強さ/王国セット/手番の順番を**読み取り専用**（`.lobby-readonly .readonly-val`）で表示し「ホストの開始を待っています…（変更はホストのみ）」を併記。**初心者モードのON/OFFトグル**（`.field`＋segmented・`setBeginner`）をホスト・ゲスト両方のロビーに追加（各自端末ローカル設定＝`localStorage['dominion-beginner']`）。
+4. **名前が部屋を作り直してもリセットされない**（`js/ui.js`）：`localStorage['dominion-myname']` に記憶。`defaultName()` が記憶名を最優先で返し、create/join 画面の入力 `oninput` と `createRoom`/`joinRoom` 確定時に `saveMyName()` で保存。
+5. **オンラインで手番順（上から順/ランダム）を選べる**（`server/gameServer.js` ＋ `js/ui.js`）：部屋に `randomOrder`（既定 true＝従来どおりランダム開始）を追加。`setConfig` で受理、`broadcastLobby`/`roomSnapshot`/`restoreRoom` に載せ全員へ配信。`startGame` の開始席＝**テスト注入(START_ACTIVE が整数)を最優先**、本番は `randomOrder ? 'random' : 0`（上から順＝席0=ホスト先手）。ホストのロビーに「手番の順番」segmented を追加。
+   - **デプロイ注意**：client(Pages) と server(Render) を**同時にデプロイ**しないと手番順トグルが空振り（古いサーバは randomOrder を無視）。`sw.js` のVERSION更新も忘れず（client側UI変更あり）。
 
 ### 金トリム見栄え改善（2026-06-30・デプロイ済み）
 - 基準カード(`asset/<id>.jpg`)同等の高級感へ。`tools/build-cards.js` を変更：**色地5種＋持続（victory/curse/action/attack/reaction/duration）のレール（縁取り・四隅・コイン環・帯枠）を「金（GOLD_RAMP）」に統一**（地色は種別色のまま・少し深めに調整）。**財宝の銅/銀/金だけは専用メタル維持**（金貨は金）。さらに**コイン中央を暗い地色のメダル（放射グラデ＋内ふち影）にして数字を白**（基準カードのメダル感）。

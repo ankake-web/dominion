@@ -73,6 +73,7 @@ try {
   { let s = pend({ type: 'smugglers', player: 0, candidates: ['silver', 'gold'] }); show(s); ok($('.modal') && byText('button', '獲得') && !runtimeError, '密輸人モーダル'); }
   { let s = pend({ type: 'blockade', stage: 'gain', player: 0 }); show(s); ok($('.modal') && !runtimeError, '封鎖獲得モーダル'); }
   { let s = pend({ type: 'sailor_trash', player: 0 }); s.players[0].hand = ['copper', 'estate']; show(s); ok($('.modal') && byText('button', '廃棄しない') && !runtimeError, '船乗り廃棄モーダル'); }
+  { let s = pend({ type: 'sailor_play_gain', player: 0, card: 'caravan', dest: 'discard' }); show(s); ok($('.modal') && byText('button', '使う') && byText('button', '使わない') && !runtimeError, '船乗り即プレイ確認モーダル'); }
   { let s = pend({ type: 'pirate_gain', player: 0 }); show(s); ok($('.modal') && !runtimeError, '海賊獲得モーダル'); }
 
   console.log('=== 島モーダル：選択チップが描画される ===');

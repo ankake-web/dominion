@@ -221,7 +221,7 @@
     if (state.turn && pIndex === state.turn.active) {
       (state.turn.gainedThisTurn || (state.turn.gainedThisTurn = [])).push(cardId);
     }
-    triggerOnGain(state, pIndex, cardId); // サル/封鎖/海賊の「獲得時」フック（§手6で実装）
+    triggerOnGain(state, pIndex, cardId, dest); // サル/封鎖/船乗りの「獲得時」フック（§手6で実装）
     return true;
   }
 
@@ -1274,6 +1274,7 @@
         break;
       case 'sailor':
         t.actions += 1;
+        t.sailorPlays = (t.sailorPlays || 0) + 1; // このターン1度、獲得した持続カードを即プレイできる（船乗り1枚につき1回）
         armDuration(state, pi, 'sailor'); // 次手番 +2コイン＋任意で手札1枚廃棄
         break;
       case 'blockade':
@@ -1410,7 +1411,7 @@
   };
 
   // 「獲得時」フック（サル＝右隣の獲得で+1カード／封鎖＝同名獲得で呪い）。gain から常に呼ばれる。
-  function triggerOnGain(state, pIndex, cardId) {
+  function triggerOnGain(state, pIndex, cardId, dest) {
     state._gainDepth = (state._gainDepth || 0) + 1;
     if (state._gainDepth > 6) { state._gainDepth--; return; } // 連鎖の暴走防止
     const n = state.players.length;
@@ -1425,6 +1426,13 @@
         const bl = (op.delayedEffects || []).find((e) => e.type === 'blockade' && e.gained === cardId);
         if (bl && (state.supply.curse || 0) > 0) { gain(state, pIndex, 'curse', 'discard'); log(state, `${state.players[pIndex].name} は封鎖により呪いを獲得した。`); }
       }
+    }
+    // 船乗り：自分の手番に持続カードを獲得したら、このターン1度だけ即プレイしてよい（確認ダイアログ）。
+    // 別の対話(pending)の最中に起きた獲得では出さない（安全側＝主に「購入」時に発動）。
+    if (state.turn && pIndex === state.turn.active && (state.turn.sailorPlays || 0) > 0 &&
+        DOM.isType(cardId, 'duration') && !state.pending) {
+      state.turn.sailorPlays -= 1;
+      state.pending = { type: 'sailor_play_gain', player: pIndex, card: cardId, dest: dest || 'discard' };
     }
     state._gainDepth--;
   }
@@ -2840,6 +2848,22 @@
         popStartQueue(state);
         return state;
       }
+      case 'SAILOR_PLAY_GAIN': {
+        // 船乗り：獲得した持続カードを即プレイする/しない。
+        const pd = state.pending;
+        if (!pd || pd.type !== 'sailor_play_gain') return state;
+        const p = state.players[pd.player];
+        state.pending = null; // 先に解除（プレイで新たな pending が立つ場合に上書きされないように）
+        if (action.play) {
+          const zone = pd.dest === 'deck' ? p.deck : (pd.dest === 'hand' ? p.hand : p.discard);
+          if (removeOne(zone, pd.card)) {
+            p.inPlay.push(pd.card); // 場へ。持続効果は applyEffect→armDuration で予約され、cleanup で durationCards へ移る
+            log(state, `${p.name} は船乗りで獲得した「${C()[pd.card].name}」を使った。`);
+            applyEffect(state, pd.card, pd.player);
+          }
+        }
+        return state;
+      }
       case 'PIRATE_GAIN': {
         const pd = state.pending;
         if (!pd || pd.type !== 'pirate_gain') return state;
@@ -2940,7 +2964,7 @@
     'WAREHOUSE_DISCARD', 'HAVEN_SETASIDE', 'TACTICIAN_RESOLVE', 'SALVAGER_TRASH',
     'LOOKOUT_TRASH', 'LOOKOUT_DISCARD', 'ISLAND_PICK', 'NATIVE_VILLAGE_RESOLVE', 'TIDE_POOLS_DISCARD',
     'CUTPURSE_REACT', 'SEA_WITCH_REACT', 'SEA_WITCH_DISCARD', 'SMUGGLERS_GAIN', 'BLOCKADE_GAIN',
-    'SAILOR_TRASH', 'PIRATE_GAIN',
+    'SAILOR_TRASH', 'SAILOR_PLAY_GAIN', 'PIRATE_GAIN',
   ]);
 
   /* ---------- 公開API ---------- */

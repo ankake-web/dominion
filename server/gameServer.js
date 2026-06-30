@@ -121,6 +121,7 @@ function broadcastLobby(room) {
     maxCpu: Math.max(0, MAX_PLAYERS - room.members.length),
     cpuLevel: room.cpuLevel,
     kingdomSet: room.kingdomSet || 'basic',
+    randomOrder: room.randomOrder !== false,
   };
   for (const m of room.members) send(m.ws, msg);
   persistRoom(room);
@@ -146,6 +147,7 @@ function roomSnapshot(room) {
     cpuCount: room.cpuCount,
     cpuLevel: room.cpuLevel,
     kingdomSet: room.kingdomSet || 'basic',
+    randomOrder: room.randomOrder !== false,
     members: room.members.map((m) => ({ seat: m.seat, name: m.name, isHost: m.isHost, token: m.token })),
   };
 }
@@ -165,7 +167,7 @@ function restoreRoom(snap) {
   const room = {
     code: snap.code, members: [], started: !!snap.started, state: snap.state || null,
     cpuCount: snap.cpuCount != null ? snap.cpuCount : 1, cpuLevel: snap.cpuLevel || 'normal',
-    kingdomSet: snap.kingdomSet || 'basic', cpuTimer: null,
+    kingdomSet: snap.kingdomSet || 'basic', randomOrder: snap.randomOrder !== false, cpuTimer: null,
     graceMs: GRACE_MS, startedGraceMs: STARTED_GRACE_MS, cpuStepMs: CPU_STEP_MS,
   };
   room.members = (snap.members || []).map((m) => ({
@@ -199,7 +201,12 @@ function startGame(room) {
   if (configs.length < MIN_PLAYERS) return;
   // 王国カード（基本/陰謀/ランダム）。'random' はサーバ権威で1度だけ確定し全員で共有する。
   const kingdom = DOM.kingdomForSet ? DOM.kingdomForSet(room.kingdomSet || 'basic') : null;
-  room.state = E.createInitialState(configs, kingdom, { startActive: START_ACTIVE });
+  // 手番順: テストは START_ACTIVE に整数(0)を注入して決定論化するので最優先。
+  // 本番はホストのトグル（randomOrder）に従う：ランダム＝開始席をランダム化／上から順＝席0(ホスト)固定。
+  const startActive = Number.isInteger(START_ACTIVE)
+    ? START_ACTIVE
+    : (room.randomOrder !== false ? 'random' : 0);
+  room.state = E.createInitialState(configs, kingdom, { startActive });
   room.started = true;
   for (const m of room.members) {
     send(m.ws, { t: 'started', you: m.seat, state: E.maskStateFor(room.state, m.seat) });
@@ -321,7 +328,7 @@ function handleConnection(ws) {
         try { code = genCode(); } catch { send(ws, { t: 'error', message: 'ルームを作成できませんでした' }); return; }
         room = {
           code, members: [], started: false, state: null,
-          cpuCount: 1, cpuLevel: 'normal', kingdomSet: 'basic', cpuTimer: null,
+          cpuCount: 1, cpuLevel: 'normal', kingdomSet: 'basic', randomOrder: true, cpuTimer: null,
           graceMs: GRACE_MS, startedGraceMs: STARTED_GRACE_MS, cpuStepMs: CPU_STEP_MS,
         };
         rooms.set(code, room);
@@ -396,6 +403,7 @@ function handleConnection(ws) {
         if (!room || !me || !me.isHost || room.started) return;
         if (LEVELS.includes(msg.cpuLevel)) room.cpuLevel = msg.cpuLevel;
         if (KINGDOM_SETS.includes(msg.kingdomSet)) room.kingdomSet = msg.kingdomSet;
+        if (typeof msg.randomOrder === 'boolean') room.randomOrder = msg.randomOrder;
         broadcastLobby(room);
         break;
       }

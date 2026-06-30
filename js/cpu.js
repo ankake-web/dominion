@@ -41,6 +41,10 @@
     'wharf', 'sea_witch', 'bazaar', 'corsair', 'blockade', 'treasury', 'island', 'merchant_ship', 'fishing_village',
     'tactician', 'caravan', 'monkey', 'warehouse', 'salvager', 'cutpurse', 'sailor', 'outpost', 'lighthouse',
     'tide_pools', 'lookout', 'sea_chart', 'smugglers', 'native_village', 'haven', 'astrolabe', 'pirate', 'treasure_map',
+    // 錬金術13種＝カード画像用カタログ。孤立プールで実サプライに出ないため並び順はCPU挙動に無影響
+    //（整合性テストの「GAIN_ORDER=全カード」を満たすためだけ）。
+    'potion', 'transmute', 'vineyard', 'herbalist', 'apothecary', 'scrying_pool', 'university',
+    'alchemist', 'familiar', 'philosophers_stone', 'golem', 'apprentice', 'possession',
     'pawn', 'lurker', 'moat', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke', 'copper', 'curse'];
   function bestGain(state, maxCost, opts) {
     opts = opts || {};
@@ -666,6 +670,9 @@
         const junk = p.hand.find((c) => isType(c, 'curse') || c === 'estate' || c === 'copper');
         return { type: 'SAILOR_TRASH', card: junk || null };
       }
+      case 'sailor_play_gain':
+        // 獲得した持続カードはほぼ常に即プレイが得（無料のテンポ）。常に使う。
+        return { type: 'SAILOR_PLAY_GAIN', play: true };
       case 'pirate_gain':
         return { type: 'PIRATE_GAIN', card: bestGain(state, 6, { treasureOnly: true }) };
 

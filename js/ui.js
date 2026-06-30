@@ -21,7 +21,13 @@
     return list[Math.floor(Math.random() * list.length)];
   }
   // キーごとに一度だけランダム名を決めて記憶（再描画でブレない）。excludeKeyの名前は避ける。
+  // 一度入力した自分の名前は端末に記憶し、部屋を作り直しても保持する。
+  const MYNAME_KEY = 'dominion-myname';
+  function loadMyName() { try { return (localStorage.getItem(MYNAME_KEY) || '').trim(); } catch (e) { return ''; } }
+  function saveMyName(v) { v = (v || '').trim(); try { if (v) localStorage.setItem(MYNAME_KEY, v); } catch (e) { /* noop */ } }
   function defaultName(key, pool, excludeKey) {
+    const saved = loadMyName();
+    if (saved) return saved; // 記憶済みの名前を優先（リセットされない）
     UI._names = UI._names || {};
     if (!UI._names[key]) {
       const ex = excludeKey && UI._names[excludeKey] ? [UI._names[excludeKey]] : [];
@@ -383,7 +389,7 @@
   }
   function viewCreateRoom() {
     let name = defaultName('host');
-    const inp = h('input', { type: 'text', value: name, oninput: (e) => (name = e.target.value) });
+    const inp = h('input', { type: 'text', value: name, oninput: (e) => { name = e.target.value; saveMyName(name); } });
     return h('div', { class: 'home' },
       h('h2', null, '部屋を作る'),
       h('div', { class: 'panel' },
@@ -398,7 +404,7 @@
     let code = UI.prefillCode || '';
     const ci = h('input', { type: 'text', class: 'code-input', maxlength: '4', inputmode: 'numeric', pattern: '[0-9]*', value: code,
       oninput: (e) => { code = e.target.value.replace(/\D/g, '').slice(0, 4); e.target.value = code; } });
-    const ni = h('input', { type: 'text', value: name, oninput: (e) => (name = e.target.value) });
+    const ni = h('input', { type: 'text', value: name, oninput: (e) => { name = e.target.value; saveMyName(name); } });
     return h('div', { class: 'home' },
       h('h2', null, '部屋に参加'),
       h('div', { class: 'panel' },
@@ -421,31 +427,61 @@
           h('span', { class: 'lobby-tag' },
             p.isCpu ? 'CPU・' + LEVEL_JP[p.level || 'normal'] : (p.isHost ? 'ホスト' : '') + (p.connected ? '' : ' 🔌')))));
 
-    const hostControls = (lb && UI.isHost) ? h('div', { class: 'lobby-host' },
-      h('div', { class: 'field' },
-        h('label', null, 'CPUの人数（空席を埋める）'),
-        h('div', { class: 'row center' },
-          h('button', { class: 'btn btn-sm', onclick: () => setCpuCount(lb.cpuCount - 1) }, '−'),
-          h('div', { class: 'cpu-count' }, lb.cpuCount),
-          h('button', { class: 'btn btn-sm', onclick: () => setCpuCount(lb.cpuCount + 1) }, '＋'),
-          h('span', { class: 'muted', style: 'font-size:11px' }, '（最大' + lb.maxCpu + '）'))),
-      h('div', { class: 'field' },
-        h('label', null, 'CPUの強さ'),
-        segmented([{ value: 'easy', label: '弱' }, { value: 'normal', label: '普通' }, { value: 'hard', label: '強' }],
-          lb.cpuLevel, (v) => UI.netClient.send({ t: 'setConfig', cpuLevel: v }))),
-      h('div', { class: 'field' },
-        h('label', null, '使う王国カード'),
-        kingdomSetPicker(lb.kingdomSet || 'basic', (v) => UI.netClient.send({ t: 'setConfig', kingdomSet: v }))),
-      h('button', { class: 'btn btn-primary btn-block', disabled: lb.canStart ? null : 'disabled', onclick: () => UI.netClient.send({ t: 'start' }) },
-        lb.canStart ? 'ゲーム開始' : '人間1人以上・合計2〜4人で開始')
-    ) : h('p', { class: 'muted', style: 'text-align:center' }, 'ホストの開始を待っています…');
+    // 王国セット名・手番順の表示用（ゲストの読み取り専用表示に使う）
+    const setName = (() => {
+      const id = (lb && lb.kingdomSet) || 'basic';
+      const s = (DOM.CARD_SETS || []).find((x) => x.id === id);
+      return s ? s.name : id;
+    })();
+    const orderLabel = (lb && lb.randomOrder === false) ? '上から順' : 'ランダム';
+
+    let controls;
+    if (lb && UI.isHost) {
+      controls = h('div', { class: 'lobby-host' },
+        h('div', { class: 'field' },
+          h('label', null, 'CPUの人数（空席を埋める）'),
+          h('div', { class: 'row center' },
+            h('button', { class: 'btn btn-sm', onclick: () => setCpuCount(lb.cpuCount - 1) }, '−'),
+            h('div', { class: 'cpu-count' }, lb.cpuCount),
+            h('button', { class: 'btn btn-sm', onclick: () => setCpuCount(lb.cpuCount + 1) }, '＋'),
+            h('span', { class: 'muted', style: 'font-size:11px' }, '（最大' + lb.maxCpu + '）'))),
+        h('div', { class: 'field' },
+          h('label', null, 'CPUの強さ'),
+          segmented([{ value: 'easy', label: '弱' }, { value: 'normal', label: '普通' }, { value: 'hard', label: '強' }],
+            lb.cpuLevel, (v) => UI.netClient.send({ t: 'setConfig', cpuLevel: v }))),
+        h('div', { class: 'field' },
+          h('label', null, '使う王国カード'),
+          kingdomSetPicker(lb.kingdomSet || 'basic', (v) => UI.netClient.send({ t: 'setConfig', kingdomSet: v }))),
+        h('div', { class: 'field' },
+          h('label', null, '手番の順番'),
+          segmented([{ value: false, label: '上から順' }, { value: true, label: 'ランダム' }],
+            lb.randomOrder !== false, (v) => UI.netClient.send({ t: 'setConfig', randomOrder: v }))),
+        h('button', { class: 'btn btn-primary btn-block', disabled: lb.canStart ? null : 'disabled', onclick: () => UI.netClient.send({ t: 'start' }) },
+          lb.canStart ? 'ゲーム開始' : '人間1人以上・合計2〜4人で開始'));
+    } else if (lb) {
+      // ゲスト：ホストと同じ項目を読み取り専用で表示（設定変更はホストのみ）
+      controls = h('div', { class: 'lobby-host lobby-readonly' },
+        h('div', { class: 'field' }, h('label', null, 'CPUの人数'), h('div', { class: 'readonly-val' }, String(lb.cpuCount))),
+        h('div', { class: 'field' }, h('label', null, 'CPUの強さ'), h('div', { class: 'readonly-val' }, LEVEL_JP[lb.cpuLevel || 'normal'])),
+        h('div', { class: 'field' }, h('label', null, '使う王国カード'), h('div', { class: 'readonly-val' }, setName)),
+        h('div', { class: 'field' }, h('label', null, '手番の順番'), h('div', { class: 'readonly-val' }, orderLabel)),
+        h('p', { class: 'muted', style: 'text-align:center;margin-top:2px' }, 'ホストの開始を待っています…（設定の変更はホストのみ）'));
+    } else {
+      controls = h('p', { class: 'muted', style: 'text-align:center' }, 'ホストの開始を待っています…');
+    }
+
+    // 初心者モードは各自の端末ごとの表示設定。ホスト・ゲストともこのロビーで切替できる。
+    const beginnerField = h('div', { class: 'field' },
+      h('label', null, '🔰 初心者モード（あなたの画面だけ）'),
+      segmented([{ value: true, label: 'オン' }, { value: false, label: 'オフ' }],
+        UI.beginner, (v) => { setBeginner(v); render(); }));
 
     return h('div', { class: 'home lobby' },
       h('h2', null, '待機ロビー'),
       h('p', { class: 'muted', style: 'font-size:13px' }, 'コードまたは参加リンクを相手に送ってください'),
       h('div', { class: 'code-display' }, UI.roomCode || '----'),
       h('button', { class: 'btn btn-block', onclick: () => copy(link) }, '参加用リンクをコピー'),
-      h('div', { class: 'panel', style: 'gap:14px' }, list, hostControls),
+      h('div', { class: 'panel', style: 'gap:14px' }, list, controls, beginnerField),
       h('button', { class: 'btn btn-ghost', onclick: () => leaveOnline() }, '退出')
     );
   }
@@ -736,12 +772,14 @@
         h('div', { class: 'supply-grid ' + size },
           ids.map((id) => pileEl(id, state, { size: size === 'small' ? 'sm' : 'lg', buyable: buyableId(id), recommended: recSet.has(id), onClick: () => onPileTap(state, id, interactive) }))));
 
+    // 王国カードはコストの安い順に並べる（同コストはid順で安定）。
+    const kingdomByCost = state.kingdom.slice().sort((a, b) => DOM.CARDS[a].cost - DOM.CARDS[b].cost || a.localeCompare(b));
     const supply = h('div', null,
       // 財宝・勝利点は基本カード。デスクトップでは横並びにして縦スペースを節約。
       h('div', { class: 'supply-basics' },
         supSection('財宝', DOM.TREASURES, 'small'),
         supSection('勝利点', DOM.VICTORY.concat(['curse']), 'small')),
-      supSection('王国カード（アクション）', state.kingdom, 'big'));
+      supSection('王国カード（アクション）', kingdomByCost, 'big'));
 
     // 場（プレイ済み）＋持続カード（⏳付き・場に残る）
     const inPlayChips = active.inPlay.map((id) => h('div', { class: 'chip-card ' + typeClass(id) + coinClass(id) }, DOM.CARDS[id].name));
@@ -1060,6 +1098,10 @@
     if (pd.type === 'smugglers') return modalOptions('密輸人 — 獲得', '右隣が直前の手番に獲得したカード（6コスト以下）を1枚獲得します。', pd.candidates.map((c) => ({ label: DOM.CARDS[c].name + ' を獲得', on: () => dispatch({ type: 'SMUGGLERS_GAIN', card: c }) })));
     if (pd.type === 'blockade' && pd.stage === 'gain') return modalGainSupply(state, '封鎖 — 獲得して脇に置く', 'コスト4以下を1枚獲得して脇に置きます（次の手番に手札へ。場にある間、他人が同名を獲得すると呪い）。', (id) => effCost(state, id) <= 4, (id) => dispatch({ type: 'BLOCKADE_GAIN', card: id }));
     if (pd.type === 'sailor_trash') return modalSingleHand(p, '船乗り — 廃棄（任意）', '手札1枚を廃棄できます（しなくてもよい）。', () => true, (card) => dispatch({ type: 'SAILOR_TRASH', card }), { label: '廃棄しない', on: () => dispatch({ type: 'SAILOR_TRASH', card: null }) }, '廃棄する');
+    if (pd.type === 'sailor_play_gain') return modalOptions('船乗り — 獲得した持続カードを使う？', '「' + DOM.CARDS[pd.card].name + '」を今すぐ使えます（次の手番に持続効果）。', [
+      { label: '「' + DOM.CARDS[pd.card].name + '」を使う', cls: 'btn-primary', on: () => dispatch({ type: 'SAILOR_PLAY_GAIN', play: true }) },
+      { label: '使わない', on: () => dispatch({ type: 'SAILOR_PLAY_GAIN', play: false }) },
+    ]);
     if (pd.type === 'pirate_gain') return modalGainSupply(state, '海賊 — 財宝を獲得', 'コスト6以下の財宝1枚を手札に獲得します。', (id) => DOM.isType(id, 'treasure') && effCost(state, id) <= 6, (id) => dispatch({ type: 'PIRATE_GAIN', card: id }), () => dispatch({ type: 'PIRATE_GAIN', card: null }));
 
     return h('div');
@@ -1507,11 +1549,12 @@
     resetOnline();
     go('home');
   }
-  function createRoom(name) { startOnline('create', name || defaultName('host')); }
+  function createRoom(name) { name = name || defaultName('host'); saveMyName(name); startOnline('create', name); }
   function joinRoom(code, name) {
     code = (code || '').trim();
     if (!/^[0-9]{4}$/.test(code)) { toast('コードは数字4桁です'); return; }
-    startOnline('join', name || defaultName('guest'), code);
+    name = name || defaultName('guest'); saveMyName(name);
+    startOnline('join', name, code);
   }
 
   // サーバ → クライアント メッセージ処理
@@ -1942,10 +1985,9 @@
     const card = document.createElement('div'); card.className = 'gain-card ' + typeClass(id);
     const img = document.createElement('img'); img.className = 'gain-art'; img.src = 'asset/cards/' + id + '.webp'; img.alt = '';
     img.onerror = function () { this.style.display = 'none'; card.classList.add('noart'); };
-    const cost = document.createElement('div'); cost.className = 'gain-cost'; cost.textContent = DOM.CARDS[id].cost;
     const fallback = document.createElement('div'); fallback.className = 'gain-fallback'; fallback.textContent = DOM.CARDS[id].name;
     const cap = document.createElement('div'); cap.className = 'gain-cap'; cap.textContent = DOM.CARDS[id].name;
-    card.appendChild(img); card.appendChild(cost); card.appendChild(fallback); card.appendChild(cap);
+    card.appendChild(img); card.appendChild(fallback); card.appendChild(cap);
     const note = document.createElement('div'); note.className = 'gain-note'; note.textContent = DOM.CARDS[id].name + ' を獲得！';
     wrap.appendChild(glow); wrap.appendChild(card); wrap.appendChild(note);
     layer.appendChild(wrap);

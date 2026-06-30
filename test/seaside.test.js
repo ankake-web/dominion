@@ -337,6 +337,52 @@ console.log('=== 船乗り: +1アクション / 次手番 +2コイン ===');
   ok(s.turn.active === 0 && s.turn.coins === 2, `船乗り次手番: +2コイン (実 ${s.turn.coins})`);
 }
 
+console.log('=== 船乗り: 獲得した持続カードを即プレイできる（このターン1度）===');
+{
+  let s = mk(SEA_K, ['A', 'B'], 0);
+  s.players[0].hand = ['sailor'];
+  s.players[0].deck = ['copper', 'copper', 'copper', 'silver', 'silver', 'gold', 'estate', 'estate'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'sailor' });
+  ok((s.turn.sailorPlays | 0) === 1, '船乗り: 即プレイ権を1得る');
+  s = reduce(s, { type: 'END_ACTION_PHASE' });
+  s.turn.coins = 10; s.turn.buys = 2; // 隊商($4)＋船着場($5)を買えるように
+  const handBefore = s.players[0].hand.length;
+  s = reduce(s, { type: 'BUY', card: 'caravan' });
+  ok(s.pending && s.pending.type === 'sailor_play_gain' && s.pending.card === 'caravan', '隊商を買うと「使う?」が出る');
+  s = reduce(s, { type: 'SAILOR_PLAY_GAIN', play: true });
+  ok(!s.pending, '解決後は pending なし');
+  ok(s.players[0].inPlay.includes('caravan'), '隊商が即プレイで場に出る');
+  ok(count(s.players[0].discard, 'caravan') === 0, '隊商は捨て札に残らない');
+  ok(s.players[0].hand.length === handBefore + 1, '隊商の +1カードが入る');
+  ok((s.turn.sailorPlays | 0) === 0, '即プレイ権は使い切る（このターン1度）');
+  s = reduce(s, { type: 'BUY', card: 'wharf' });
+  ok(!s.pending, '2枚目の持続を買っても確認は出ない（1度きり）');
+  s = endTurn(s); s = endTurn(s); // 席0→席1→席0（即プレイした隊商と船乗りの持続が発火）
+  ok(s.turn.active === 0 && s.turn.coins === 2, `次手番: 船乗りの +2コイン (実 ${s.turn.coins})`);
+  ok(s.players[0].durationCards.includes('caravan'), '即プレイした隊商が持続として持ち越す');
+}
+
+console.log('=== 船乗り: 即プレイを断れる / 持続でないカードでは出ない ===');
+{
+  let s = mk(SEA_K, ['A', 'B'], 0);
+  s.players[0].hand = ['sailor'];
+  s.players[0].deck = ['copper', 'copper', 'copper', 'silver', 'silver', 'gold', 'estate', 'estate'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'sailor' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' });
+  s.turn.coins = 10; s.turn.buys = 2;
+  // 持続でない銀貨を買っても確認は出ない
+  s = reduce(s, { type: 'BUY', card: 'silver' });
+  ok(!s.pending, '財宝（非持続）では確認が出ない');
+  ok((s.turn.sailorPlays | 0) === 1, '非持続では即プレイ権を消費しない');
+  // 持続を買って「使わない」を選ぶ
+  s = reduce(s, { type: 'BUY', card: 'caravan' });
+  ok(s.pending && s.pending.type === 'sailor_play_gain', '持続では確認が出る');
+  s = reduce(s, { type: 'SAILOR_PLAY_GAIN', play: false });
+  ok(!s.pending, '「使わない」で解決');
+  ok(count(s.players[0].discard, 'caravan') === 1, '使わない場合は捨て札に残る');
+  ok(!s.players[0].inPlay.includes('caravan'), '使わない場合は場に出ない');
+}
+
 console.log('=== CPU対CPU: 海辺の王国で最後まで止まらず終局する ===');
 {
   const K = ['lighthouse', 'fishing_village', 'wharf', 'merchant_ship', 'sea_witch', 'corsair', 'blockade', 'island', 'native_village', 'tactician'];
