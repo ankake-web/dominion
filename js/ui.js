@@ -586,6 +586,8 @@
       group('勝利点・呪い', DOM.VICTORY.concat(['curse'])),
       group('王国カード（基本・第二版）', byCost((DOM.POOLS && DOM.POOLS.basic) || DOM.KINGDOM)),
       group('王国カード（陰謀・第二版）', byCost((DOM.POOLS && DOM.POOLS.intrigue) || [])),
+      (DOM.POOLS && DOM.POOLS.seaside) ? group('王国カード（海辺・第二版）', byCost(DOM.POOLS.seaside)) : null,
+      (DOM.POOLS && DOM.POOLS.alchemy) ? group('王国カード（錬金術・第二版）', byCost(DOM.POOLS.alchemy)) : null,
       (DOM.POOLS && DOM.POOLS.promo) ? group('プロモカード', byCost(DOM.POOLS.promo)) : null,
       (DOM.POOLS && DOM.POOLS.basic1e) ? group('初版のみ（第二版で廃止）', byCost(
         DOM.POOLS.basic1e.filter((id) => DOM.POOLS.basic.indexOf(id) < 0)
@@ -1847,6 +1849,11 @@
      ============================================================ */
   function render() {
     const app = document.getElementById('app');
+    // カード拡大など（モーダル開閉）でページ先頭に飛ばないよう、開く直前のスクロール位置を覚えておく。
+    const scroller = document.scrollingElement || document.documentElement;
+    const prevScroll = (scroller && scroller.scrollTop) || 0;
+    const wasModalOpen = document.documentElement.classList.contains('modal-open');
+    const sameView = (UI._lastView === UI.view);
     app.innerHTML = '';
     if (UI.view !== 'game') UI.menuOpen = false; // 対戦外ではメニューを閉じておく
     let root;
@@ -1881,6 +1888,10 @@
     // モーダル表示中は背面（盤面）のスクロールをロックする
     const modalOpen = !!(UI.sheet || UI.revealView != null || UI.logModal || UI.pickZoom || UI.confirm);
     document.documentElement.classList.toggle('modal-open', modalOpen);
+    // モーダルを開いた瞬間の位置を記録し、閉じたら（同じ画面なら）その位置へ戻す＝先頭に飛ばない。
+    if (modalOpen && !wasModalOpen) UI._pageScrollY = prevScroll;
+    else if (!modalOpen && wasModalOpen && sameView && scroller) scroller.scrollTop = UI._pageScrollY || 0;
+    UI._lastView = UI.view;
     maybeRunCpu();
     maybeAutoSkipAction();
     turnNoticeTick();
