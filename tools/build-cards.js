@@ -37,17 +37,22 @@ function skinOf(c) {
   if (c.type === 'treasure') return 'gold';
   return c.type;
 }
+// 金トリム（基準カード準拠）：色地カードは地色だけ種別色にして、縁取り・四隅・コイン環・帯枠の
+// 金レールは「金」のまま残す（＝基準 asset/<id>.jpg と同じ高級感）。財宝の銅/銀/金だけは専用メタル。
+const GOLD_RAMP = { sh: [120, 82, 18], mid: [212, 165, 55], hi: [255, 238, 170] };
 const SKIN = {
+  // 財宝3種＝レールも専用メタル（基準どおり金を使わない／金貨だけ金）
   copper:  { base: [120, 72, 42],  ramp: { sh: [58, 30, 16],  mid: [152, 86, 46],  hi: [240, 188, 142] } },
   silver:  { base: [106, 112, 122],ramp: { sh: [60, 63, 70],  mid: [150, 154, 160],hi: [240, 242, 246] } },
-  gold:    { base: [150, 112, 30], ramp: { sh: [120, 82, 18], mid: [212, 165, 55], hi: [255, 238, 170] } },
-  victory: { base: [28, 94, 49],   ramp: { sh: [12, 44, 24],  mid: [34, 110, 58],  hi: [150, 212, 150] } },
-  curse:   { base: [72, 38, 112],  ramp: { sh: [30, 16, 50],  mid: [96, 52, 150],  hi: [200, 170, 240] } },
-  action:  { base: [35, 77, 134],  ramp: { sh: [14, 30, 60],  mid: [48, 100, 170], hi: [170, 202, 245] } },
-  attack:  { base: [126, 40, 36],  ramp: { sh: [50, 12, 12],  mid: [150, 48, 44],  hi: [235, 150, 138] } },
-  reaction:{ base: [21, 96, 91],   ramp: { sh: [8, 40, 38],   mid: [30, 120, 112], hi: [150, 225, 215] } },
-  // 海辺の持続カード＝本家ドミニオン同様オレンジ。地はビビッドな橙、レールは暖かいアンバー金属。
-  duration:{ base: [176, 88, 18],  ramp: { sh: [96, 44, 6],   mid: [206, 116, 28], hi: [250, 196, 120] } },
+  gold:    { base: [150, 112, 30], ramp: GOLD_RAMP },
+  // 色地5種＝地色は種別色のまま、トリム（ramp）は金で統一（基準カードの体裁）
+  victory: { base: [24, 84, 44],   ramp: GOLD_RAMP },
+  curse:   { base: [64, 34, 104],  ramp: GOLD_RAMP },
+  action:  { base: [30, 64, 116],  ramp: GOLD_RAMP },
+  attack:  { base: [118, 36, 32],  ramp: GOLD_RAMP },
+  reaction:{ base: [18, 88, 84],   ramp: GOLD_RAMP },
+  // 海辺の持続＝本家同様オレンジ地＋金トリム
+  duration:{ base: [176, 84, 20],  ramp: GOLD_RAMP },
 };
 
 (async () => {
@@ -139,7 +144,7 @@ const SKIN = {
   }
 
   // ---- 2) 各カードを合成 ----
-  const compositeFn = `async (frameURI, artURI, card, W, H, FF_JP, FF_NUM) => {
+  const compositeFn = `async (frameURI, artURI, card, W, H, FF_JP, FF_NUM, discBase) => {
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
     const ctx = cv.getContext('2d');
     const load = uri => new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = uri; });
@@ -168,15 +173,30 @@ const SKIN = {
       ctx.fillStyle = fill; ctx.fillText(txt, x, y);
     }
 
+    // コイン中央を暗いメダルにする（基準カード準拠：暗い地色の円→金環は残る→白い数字が映える）
+    const coinCx = 126, coinCy = 126;
+    {
+      const cR = 67; // 金環の内側に収める半径
+      const dk = (i, f) => Math.max(0, Math.min(255, Math.round((discBase[i] || 0) * f)));
+      const g = ctx.createRadialGradient(coinCx, coinCy - 18, 6, coinCx, coinCy, cR);
+      g.addColorStop(0, 'rgb(' + dk(0, 0.55) + ',' + dk(1, 0.55) + ',' + dk(2, 0.55) + ')');
+      g.addColorStop(1, 'rgb(' + dk(0, 0.30) + ',' + dk(1, 0.30) + ',' + dk(2, 0.30) + ')');
+      ctx.save();
+      ctx.beginPath(); ctx.arc(coinCx, coinCy, cR, 0, Math.PI * 2); ctx.closePath(); ctx.clip();
+      ctx.fillStyle = g; ctx.fillRect(coinCx - cR, coinCy - cR, cR * 2, cR * 2);
+      // 内側のふち影で立体感（メダルが沈んで見える）
+      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+      ctx.beginPath(); ctx.arc(coinCx, coinCy, cR - 1, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
     // コスト：均一ライニング数字(Cinzel)を実インク基準でコイン中心に縦中央そろえ（2/6/8の高さズレを解消）
     ctx.font = '700 150px ' + FF_NUM; ctx.letterSpacing = '0px';
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
     const cs = String(card.cost);
     const cm = ctx.measureText(cs);
     const asc = cm.actualBoundingBoxAscent || 105, desc = cm.actualBoundingBoxDescent || 0;
-    const coinCx = 126, coinCy = 126;
     const baseY = coinCy + (asc - desc)/2 - 2;
-    outlined(cs, coinCx, baseY, '#f5f0e2', 8, 'rgba(34,22,10,0.92)');
+    outlined(cs, coinCx, baseY, '#fbf7ee', 6, 'rgba(0,0,0,0.55)');
 
     // 名前（大きめ・幅に収まるよう自動縮小）
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -238,7 +258,10 @@ const SKIN = {
 
   const FF_JP = fontsOk ? '"Shippori Mincho",serif' : '"Yu Mincho","游明朝",serif';
   const FF_NUM = '"Cinzel","Georgia","Times New Roman",serif';
-  if (!fs.existsSync('asset/cards')) fs.mkdirSync('asset/cards', { recursive: true });
+  // 出力先。既定は本番 asset/cards。CARDS_OUT を指定するとそこへ書く（デプロイ前のプレビュー用）。
+  const OUTDIR = process.env.CARDS_OUT || 'asset/cards';
+  if (!fs.existsSync(OUTDIR)) fs.mkdirSync(OUTDIR, { recursive: true });
+  console.log('output dir: ' + OUTDIR);
 
   let done = 0;
   for (const c of LIST) {
@@ -246,8 +269,8 @@ const SKIN = {
     const artURI = fs.existsSync(artPath) ? du(artPath) : null;
     const png = await page.evaluate(eval('(' + compositeFn + ')'), frameCache[skinOf(c)], artURI, {
       id: c.id, name: c.name, cost: c.cost, typeLabel: c.typeLabel, typeLabelEn: c.typeLabelEn, effects: c.effects,
-    }, W, H, FF_JP, FF_NUM);
-    fs.writeFileSync(path.join('asset/cards', c.id + '.webp'), Buffer.from(png.split(',')[1], 'base64'));
+    }, W, H, FF_JP, FF_NUM, SKIN[skinOf(c)].base);
+    fs.writeFileSync(path.join(OUTDIR, c.id + '.webp'), Buffer.from(png.split(',')[1], 'base64'));
     done++;
     if (done % 20 === 0) console.log('composited ' + done + '/' + LIST.length);
   }
@@ -268,7 +291,7 @@ const SKIN = {
       const iw = im.naturalWidth*s, ih = im.naturalHeight*s;
       ctx.drawImage(im, (CW-iw)/2, (CH-ih)/2, iw, ih);
       return cv.toDataURL('image/jpeg', 0.8);
-    }, duW(path.join('asset/cards', c.id + '.webp')), CW, CH);
+    }, duW(path.join(OUTDIR, c.id + '.webp')), CW, CH);
     thumbs.push({ id: c.id, t });
   }
   const COLS = 8, PAD = 6;
