@@ -533,6 +533,8 @@
     replace:       { onMoat: (s, pd) => replaceEnterVictim(s, pd.source, pd.queue) },
     cutpurse:      { onMoat: (s, pd) => cutpurseEnterVictim(s, pd.source, pd.queue) },
     sea_witch:     { onMoat: (s, pd) => seaWitchEnterVictim(s, pd.source, pd.queue) },
+    // 封鎖：プレイ時のアタック。堀を公開した相手はこの封鎖の呪い窓から免疫（immune 登録）＝以後同名を獲得しても呪いを受けない。
+    blockade:      { onMoat: (s, pd) => { markBlockadeImmune(s, pd.source, pd.gained, pd.victim); blockadeEnterVictim(s, pd.source, pd.queue, pd.gained); } },
     familiar:      { onMoat: (s, pd) => familiarEnterVictim(s, pd.source, pd.queue) },
     scrying_pool:  { onMoat: (s, pd) => scryingEnterTarget(s, pd.source, pd.queue) },
     charlatan:     { onMoat: (s, pd) => charlatanEnterVictim(s, pd.source, pd.queue) },
@@ -831,6 +833,29 @@
   function seaWitchCurse(state, source, victim, queue) {
     if ((state.supply.curse || 0) > 0) { gain(state, victim, 'curse', 'discard'); log(state, `${state.players[victim].name} は呪いを獲得した（海の魔女）。`); }
     seaWitchEnterVictim(state, source, queue);
+  }
+
+  /* ---------- 海辺：封鎖のアタック（プレイ時に相手へ「堀で免疫」窓を出す）----------
+     封鎖はアタックカード。プレイ時に各相手へ反応窓を与え、堀を公開した相手は
+     この封鎖の呪い窓（他人が同名を獲得→呪い）から免疫になる（source の封鎖予約の immune に登録）。
+     灯台で免疫の相手は反応不要で即免疫。反応札を持たない相手はそのまま（免疫なし）。*/
+  function markBlockadeImmune(state, source, gained, victim) {
+    const e = (state.players[source].delayedEffects || [])
+      .find((x) => x.type === 'blockade' && x.gained === gained);
+    if (e) { e.immune = e.immune || []; if (!e.immune.includes(victim)) e.immune.push(victim); }
+  }
+  function blockadeEnterVictim(state, source, queue, gained) {
+    queue = (queue || []).slice();
+    while (queue.length) {
+      const victim = queue[0];
+      if (attackImmune(state, victim)) { markBlockadeImmune(state, source, gained, victim); queue.shift(); continue; }
+      if (hasReaction(state.players[victim])) {
+        state.pending = { type: 'blockade', stage: 'react', player: victim, source, victim, gained, queue: queue.slice(1) };
+        return;
+      }
+      queue.shift(); // 反応札なし＝そのまま（免疫は付かない）
+    }
+    state.pending = null;
   }
 
   /* ---------- 繁栄：ペテン師（各相手が銅貨1枚を獲得）---------- */
@@ -1536,7 +1561,7 @@
         // 4コスト以下を獲得して脇に置く（次手番に手札へ）。場にある間、他人の同名獲得で呪い。
         if (anyGainable(state, (id) => cardCost(state, id) <= 4))
           state.pending = { type: 'blockade', stage: 'gain', player: pi };
-        else armDuration(state, pi, 'blockade', { gained: null });
+        else armDuration(state, pi, 'blockade', { gained: null, immune: [] });
         break;
       case 'corsair':
         t.coins += 2;
@@ -1848,7 +1873,8 @@
       // 封鎖：他人が「自分の手番で」封鎖された同名カードを獲得したら呪いを獲得
       if (o !== pIndex && state.turn && pIndex === state.turn.active) {
         const bl = (op.delayedEffects || []).find((e) => e.type === 'blockade' && e.gained === cardId);
-        if (bl && (state.supply.curse || 0) > 0) { gain(state, pIndex, 'curse', 'discard'); log(state, `${state.players[pIndex].name} は封鎖により呪いを獲得した。`); }
+        // 堀/灯台で免疫の相手（immune 登録済み）は呪いを受けない。
+        if (bl && !((bl.immune || []).includes(pIndex)) && (state.supply.curse || 0) > 0) { gain(state, pIndex, 'curse', 'discard'); log(state, `${state.players[pIndex].name} は封鎖により呪いを獲得した。`); }
       }
     }
     // 繁栄：自分の手番に勝利点カードを獲得 → 場の隠し財産1枚につき金貨1枚（hoard）。
@@ -1877,6 +1903,10 @@
       state.turn.sailorPlays -= 1;
       state.pending = { type: 'sailor_play_gain', player: pIndex, card: cardId, dest: dest || 'discard' };
     }
+    // 海辺：財宝を獲得したとき、手札に海賊を持つプレイヤーは反応して使ってよい（安全側＝トップレベル獲得・他の対話が無いとき）。
+    if (DOM.isType(cardId, 'treasure') && state._gainDepth === 1 && !state.pending) {
+      pirateReactWindow(state, pIndex);
+    }
     state._gainDepth--;
   }
   // 「財宝を出したとき」フック（私掠船＝相手のターン最初の銀/金を廃棄。コインは入る）。
@@ -1890,6 +1920,26 @@
       state.trash.push(card); t.corsairTrashed = true;
       log(state, `${state.players[pIndex].name} は私掠船により「${C()[card].name}」を廃棄した。`);
     }
+  }
+  // 海辺：海賊のリアクション（誰かが財宝を獲得したとき、手札の海賊を使ってよい）。
+  // 手番順（獲得者を含む）に、手札に海賊を持つプレイヤーへ「使う/使わない」窓を出す。
+  // 使うと海賊を場に出して持続予約（次の手番に6コスト以下の財宝を手札へ）。相手の手番中でも予約は本人の次手番開始で発火する。
+  function pirateReactWindow(state, gainerIndex) {
+    const n = state.players.length;
+    const start = (state.turn && state.turn.active != null) ? state.turn.active : gainerIndex;
+    const queue = [];
+    for (let k = 0; k < n; k++) {
+      const seat = (start + k) % n;
+      if (state.players[seat].hand.includes('pirate')) queue.push(seat);
+    }
+    if (queue.length) pirateReactEnter(state, queue);
+  }
+  function pirateReactEnter(state, queue) {
+    queue = (queue || []).slice();
+    while (queue.length && !state.players[queue[0]].hand.includes('pirate')) queue.shift();
+    if (!queue.length) { state.pending = null; return; }
+    const seat = queue[0];
+    state.pending = { type: 'pirate_react', player: seat, queue: queue.slice(1) };
   }
   // アタック無効化（灯台が場/持続にある被害者はアタックを受けない）。§手6で各アタックに配線。
   function attackImmune(state, victim) {
@@ -3336,9 +3386,32 @@
         state.supply[card] -= 1;
         state.players[pd.player].setAside.push(card); // 脇に置く（捨て札ではない）
         if (state.turn) (state.turn.gainedThisTurn || (state.turn.gainedThisTurn = [])).push(card);
-        armDuration(state, pd.player, 'blockade', { gained: card });
+        armDuration(state, pd.player, 'blockade', { gained: card, immune: [] });
         log(state, `${state.players[pd.player].name} は封鎖で「${C()[card].name}」を獲得し脇に置いた。`);
-        state.pending = null;
+        // アタック：各相手に「堀で免疫」窓を出す（堀公開者はこの封鎖の呪いから免疫）。
+        const bq = [];
+        for (let k = 1; k < state.players.length; k++) bq.push((pd.player + k) % state.players.length);
+        blockadeEnterVictim(state, pd.player, bq, card);
+        return state;
+      }
+      case 'BLOCKADE_REACT': {
+        // 封鎖のアタックを堀を出さずに受ける（免疫は付かず、次の被害者へ進む）。
+        const pd = state.pending;
+        if (!pd || pd.type !== 'blockade' || pd.stage !== 'react') return state;
+        blockadeEnterVictim(state, pd.source, pd.queue, pd.gained);
+        return state;
+      }
+      case 'PIRATE_REACT': {
+        // 海賊のリアクション：手札の海賊を使う/使わない。使うと場に出して持続予約。
+        const pd = state.pending;
+        if (!pd || pd.type !== 'pirate_react') return state;
+        const p = state.players[pd.player];
+        if (action.play && removeOne(p.hand, 'pirate')) {
+          p.inPlay.push('pirate');
+          armDuration(state, pd.player, 'pirate');
+          log(state, `${p.name} は海賊をリアクションで使った（次の手番に財宝を手札に獲得）。`);
+        }
+        pirateReactEnter(state, pd.queue);
         return state;
       }
       case 'SAILOR_TRASH': {
@@ -3875,8 +3948,8 @@
     // 海辺（第二版）
     'WAREHOUSE_DISCARD', 'HAVEN_SETASIDE', 'TACTICIAN_RESOLVE', 'SALVAGER_TRASH',
     'LOOKOUT_TRASH', 'LOOKOUT_DISCARD', 'ISLAND_PICK', 'NATIVE_VILLAGE_RESOLVE', 'TIDE_POOLS_DISCARD',
-    'CUTPURSE_REACT', 'SEA_WITCH_REACT', 'SEA_WITCH_DISCARD', 'SMUGGLERS_GAIN', 'BLOCKADE_GAIN',
-    'SAILOR_TRASH', 'SAILOR_PLAY_GAIN', 'PIRATE_GAIN',
+    'CUTPURSE_REACT', 'SEA_WITCH_REACT', 'SEA_WITCH_DISCARD', 'SMUGGLERS_GAIN', 'BLOCKADE_GAIN', 'BLOCKADE_REACT',
+    'SAILOR_TRASH', 'SAILOR_PLAY_GAIN', 'PIRATE_GAIN', 'PIRATE_REACT',
     // 錬金術（第二版）
     'TRANSMUTE_TRASH', 'APOTHECARY_RESOLVE', 'SCRYING_REACT', 'SCRYING_DECIDE',
     'UNIVERSITY_GAIN', 'FAMILIAR_REACT', 'GOLEM_ORDER', 'APPRENTICE_TRASH',

@@ -257,6 +257,40 @@
     });
   }
 
+  /* 混成王国でビッグマネーに偏らないための「エンジン部品」買い。
+     カードのテキストから「+Nアクション」を読み、非ターミナル(村・研究所型)は積み増し、
+     ターミナルは村数に見合う範囲だけ買う（ターミナル衝突＝手札で腐るのを防ぐ）。
+     GAIN_ORDER の強さ順で最良の1枚を返す。買うべき王国カードが無ければ null。 */
+  function plusActions(id) {
+    const t = (C()[id] && C()[id].text) || '';
+    const m = t.match(/\+\s*(\d+)\s*アクション/);
+    return m ? parseInt(m[1], 10) : 0;
+  }
+  function isNonTerminalAction(id) { return isType(id, 'action') && plusActions(id) >= 1; }
+  function bestEngineBuy(state, p, coins) {
+    const potions = (state.turn && state.turn.potions) || 0;
+    const acts = allCards(p).filter((c) => isType(c, 'action'));
+    const villages = acts.filter((c) => isNonTerminalAction(c)).length; // +アクションを供給する札
+    const terminals = acts.length - villages;                          // アクションを消費する札
+    for (const id of GAIN_ORDER) {
+      if (!C()[id]) continue;
+      if (!(state.kingdom || []).includes(id)) continue;         // 王国カードのみ（基本の財宝/勝利点は別ロジック）
+      if (id === 'possession') continue;                          // CPUは支配を使いこなせないので買わない
+      if (isType(id, 'victory') || isType(id, 'curse')) continue; // 勝利点は緑化ロジックで扱う
+      if (sup(state, id) <= 0) continue;
+      if (cost(state, id) > coins) continue;
+      if ((C()[id].potion || 0) > potions) continue;              // ポーション費用を満たすものだけ
+      const have = owned(p, id);
+      if (isType(id, 'action')) {
+        if (isNonTerminalAction(id)) { if (have < 4) return id; }  // 村/研究所型は積んでよい
+        else if (have < 2 && terminals < villages + 1) return id;  // ターミナルは村数+1まで（衝突回避）
+      } else if (isType(id, 'treasure')) {
+        if (have < 2) return id;                                   // 銀行/隠し財産/賢者の石 等
+      }
+    }
+    return null;
+  }
+
   function chooseBuyStrong(state, p, coins) {
     const seat = state.turn.active;
     // 1) 勝って終われる購入があれば最優先（得点→コストの高い順）
@@ -277,8 +311,12 @@
     else if (province <= 4 && coins >= 5 && sup(state, 'duchy') > 0) pick = 'duchy';
     else if (province <= 2 && coins >= 2 && sup(state, 'estate') > 0) pick = 'estate';
     else if (coins >= 6 && sup(state, 'gold') > 0) pick = 'gold';
-    else if (coins >= 4 && sup(state, 'smithy') > 0 && owned(p, 'smithy') < 1) pick = 'smithy';
-    else if (coins >= 3 && sup(state, 'silver') > 0) pick = 'silver';
+    else {
+      // 緑化フェーズに入る前は、強い王国カード（エンジン部品）を買って盤面を厚くする。
+      const eng = (province > 4) ? bestEngineBuy(state, p, coins) : null;
+      if (eng) pick = eng;
+      else if (coins >= 3 && sup(state, 'silver') > 0) pick = 'silver';
+    }
 
     // 2) 負けて終わる購入は避ける（ゲームを閉じない次善手か、何も買わない）
     if (pick && buyEndsGame(state, pick) && !winsIfEnds(state, seat, pick)) {
@@ -293,9 +331,10 @@
     if (coins >= 9 && sup(state, 'platinum') > 0) return 'platinum';      // 繁栄：プラチナ貨
     if (coins >= 8 && province > 0) return 'province';
     if (coins >= 6 && sup(state, 'gold') > 0) return 'gold';
+    // 中盤：緑化前は強い王国カード（エンジン部品）を買ってビッグマネー偏重を避ける。
+    const eng = (province > 3) ? bestEngineBuy(state, p, coins) : null;
+    if (eng) return eng;
     if (province <= 3 && coins >= 5 && sup(state, 'duchy') > 0) return 'duchy';
-    if (coins >= 5 && sup(state, 'market') > 0 && owned(p, 'market') < 1) return 'market';
-    if (coins >= 4 && sup(state, 'smithy') > 0 && owned(p, 'smithy') < 1) return 'smithy';
     if (coins >= 3 && sup(state, 'silver') > 0) return 'silver';
     return null;
   }
@@ -727,6 +766,11 @@
         return { type: 'SMUGGLERS_GAIN', card: pick };
       }
       case 'blockade':
+        if (pd.stage === 'react') {
+          // 犠牲者側。堀があれば公開して免疫、無ければそのまま受ける。
+          if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+          return { type: 'BLOCKADE_REACT' };
+        }
         // 4コスト以下で最善（脇に置いて次手番手札へ＝銀貨など）。
         return { type: 'BLOCKADE_GAIN', card: bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) };
       case 'sailor_trash': {
@@ -739,6 +783,9 @@
         return { type: 'SAILOR_PLAY_GAIN', play: true };
       case 'pirate_gain':
         return { type: 'PIRATE_GAIN', card: bestGain(state, 6, { treasureOnly: true }) };
+      case 'pirate_react':
+        // 財宝獲得のたびに海賊を使えば次の手番に財宝を手札へ＝実質タダのテンポ。常に使う。
+        return { type: 'PIRATE_REACT', play: true };
 
       /* ===== 拡張: 錬金術（Alchemy 第二版）===== */
       case 'transmute': {

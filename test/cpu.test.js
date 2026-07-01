@@ -7,8 +7,13 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const sandbox = { window: {}, Math: Math, JSON: JSON, console: console };
+const sandbox = { window: {}, Math: Object.create(Math), JSON: JSON, console: console };
 vm.createContext(sandbox);
+// RNG を固定シードにする（他の全テストファイルと同じ流儀）。勝率テストは統計的なので、
+// 未シード＋少サンプルだと真の勝率(hard vs normal≈58%)でも 40戦では稀に45%を割って偽陰性になる。
+// シード固定＋サンプル増で「決定論的に」序列を検証する（閾値は不変）。
+let __seed = 20260701;
+sandbox.Math.random = function () { __seed = (__seed * 1103515245 + 12345) & 0x7fffffff; return __seed / 0x7fffffff; };
 function load(f) {
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'), sandbox, { filename: f });
 }
@@ -89,15 +94,15 @@ function winRate(levelA, levelB, games) {
   }
   return aWins / valid;
 }
-const strongVsWeak = winRate('hard', 'easy', 40);
+const strongVsWeak = winRate('hard', 'easy', 100);
 console.log(`  強 vs 弱 勝率: ${(strongVsWeak * 100).toFixed(0)}%`);
 ok(strongVsWeak >= 0.6, '強は弱に勝ち越す（>=60%）: ' + (strongVsWeak * 100).toFixed(0) + '%');
 
-const strongVsNormal = winRate('hard', 'normal', 40);
+const strongVsNormal = winRate('hard', 'normal', 100);
 console.log(`  強 vs 普通 勝率: ${(strongVsNormal * 100).toFixed(0)}%`);
 ok(strongVsNormal >= 0.45, '強は普通に対して互角以上（>=45%）: ' + (strongVsNormal * 100).toFixed(0) + '%');
 
-const normalVsWeak = winRate('normal', 'easy', 40);
+const normalVsWeak = winRate('normal', 'easy', 100);
 console.log(`  普通 vs 弱 勝率: ${(normalVsWeak * 100).toFixed(0)}%`);
 ok(normalVsWeak >= 0.55, '普通は弱に勝ち越す（>=55%）: ' + (normalVsWeak * 100).toFixed(0) + '%');
 

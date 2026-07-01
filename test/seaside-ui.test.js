@@ -75,6 +75,8 @@ try {
   { let s = pend({ type: 'sailor_trash', player: 0 }); s.players[0].hand = ['copper', 'estate']; show(s); ok($('.modal') && byText('button', '廃棄しない') && !runtimeError, '船乗り廃棄モーダル'); }
   { let s = pend({ type: 'sailor_play_gain', player: 0, card: 'caravan', dest: 'discard' }); show(s); ok($('.modal') && byText('button', '使う') && byText('button', '使わない') && !runtimeError, '船乗り即プレイ確認モーダル'); }
   { let s = pend({ type: 'pirate_gain', player: 0 }); show(s); ok($('.modal') && !runtimeError, '海賊獲得モーダル'); }
+  { let s = pend({ type: 'blockade', stage: 'react', player: 1, source: 0, victim: 1, gained: 'silver', queue: [] }); s.players[1].hand = ['moat', 'copper']; show(s); ok($('.modal') && byText('button', '受ける') && !runtimeError, '封鎖リアクション（堀で免疫）モーダル'); }
+  { let s = pend({ type: 'pirate_react', player: 1, queue: [] }); s.players[1].hand = ['pirate', 'copper']; show(s); ok($('.modal') && byText('button', '使う') && byText('button', '使わない') && !runtimeError, '海賊リアクション（手札から使う）モーダル'); }
 
   console.log('=== 島モーダル：選択チップが描画される ===');
   { let s = mk(); s.players[0].hand = ['island', 'province', 'copper']; s = play(s, 'island'); show(s);

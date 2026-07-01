@@ -1136,6 +1136,11 @@
     if (pd.type === 'sea_witch_discard') return modalSelectN(p, '海の魔女 — 手札を捨てる', '手札を2枚選んで捨てます。', Math.min(2, p.hand.length), '確定（捨てる）', (cards) => dispatch({ type: 'SEA_WITCH_DISCARD', cards }));
     if (pd.type === 'smugglers') return modalOptions('密輸人 — 獲得', '右隣が直前の手番に獲得したカード（6コスト以下）を1枚獲得します。', pd.candidates.map((c) => ({ label: DOM.CARDS[c].name + ' を獲得', on: () => dispatch({ type: 'SMUGGLERS_GAIN', card: c }) })));
     if (pd.type === 'blockade' && pd.stage === 'gain') return modalGainSupply(state, '封鎖 — 獲得して脇に置く', 'コスト4以下を1枚獲得して脇に置きます（次の手番に手札へ。場にある間、他人が同名を獲得すると呪い）。', (id) => effCost(state, id) <= 4, (id) => dispatch({ type: 'BLOCKADE_GAIN', card: id }));
+    if (pd.type === 'blockade' && pd.stage === 'react') return modalOptions('封鎖を受ける', '相手の封鎖が場にある間、封鎖された同名カードを獲得すると呪いを受けます（堀を公開すればこの封鎖から免疫）。', reactOptions(p, pd, { type: 'BLOCKADE_REACT' }));
+    if (pd.type === 'pirate_react') return modalOptions('海賊 — 手札から使う？', '財宝が獲得されました。手札の「海賊」を今すぐ使えます（次の手番に6コスト以下の財宝を手札に獲得）。', [
+      { label: '海賊を使う', cls: 'btn-primary', on: () => dispatch({ type: 'PIRATE_REACT', play: true }) },
+      { label: '使わない', on: () => dispatch({ type: 'PIRATE_REACT', play: false }) },
+    ]);
     if (pd.type === 'sailor_trash') return modalSingleHand(p, '船乗り — 廃棄（任意）', '手札1枚を廃棄できます（しなくてもよい）。', () => true, (card) => dispatch({ type: 'SAILOR_TRASH', card }), { label: '廃棄しない', on: () => dispatch({ type: 'SAILOR_TRASH', card: null }) }, '廃棄する');
     if (pd.type === 'sailor_play_gain') return modalOptions('船乗り — 獲得した持続カードを使う？', '「' + DOM.CARDS[pd.card].name + '」を今すぐ使えます（次の手番に持続効果）。', [
       { label: '「' + DOM.CARDS[pd.card].name + '」を使う', cls: 'btn-primary', on: () => dispatch({ type: 'SAILOR_PLAY_GAIN', play: true }) },
