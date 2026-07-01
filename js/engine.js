@@ -145,12 +145,17 @@
 
   // 1ターン分の turn オブジェクトを作る（createInitialState と cleanupAndAdvance で共用＝フィールドのズレ防止）。
   // 海辺用に gainedThisTurn（このターン獲得したid列・密輸人/宝物庫用）/ outpostUsed / isExtraTurn / startQueue を追加。
-  function freshTurn(active, isExtraTurn) {
+  function freshTurn(active, isExtraTurn, extra) {
+    extra = extra || {};
     return {
       active, phase: 'action', actions: 1, buys: 1, coins: 0, potions: 0, costReduction: 0,
       actionsPlayed: 0, copperBonus: 0, merchants: 0, silverPlayed: false,
       gainedThisTurn: [], outpostUsed: false, isExtraTurn: !!isExtraTurn, startQueue: null,
       corsairTrashed: false, // 私掠船：このターンに最初の銀/金を廃棄済みか（被害者ごと）
+      // 錬金術・支配：rotationSeat＝この手番が属する「通常の手番順の位置」（追加ターンでも回り順を崩さない）。
+      // possessedBy＝この手番を操作している支配者の席（支配されていなければ null）。
+      rotationSeat: extra.rotationSeat != null ? extra.rotationSeat : active,
+      possessedBy: extra.possessedBy != null ? extra.possessedBy : null,
     };
   }
 
@@ -276,6 +281,15 @@
   // サプライから pIndex が dest('discard'|'hand'|'deck') にカードを獲得
   function gain(state, pIndex, cardId, dest) {
     if ((state.supply[cardId] || 0) <= 0) return false;
+    const t = state.turn;
+    // 錬金術・支配：被支配者（手番のactive）が獲得するカードは脇に避け、ターン終了時に
+    // 支配者の捨て札へ渡す（獲得先が手札/山札でも脇に置く＝公式のルーリング）。獲得フックも動かさない。
+    if (t && t.possessedBy != null && pIndex === t.active) {
+      state.supply[cardId] -= 1;
+      (t.possessionGains = t.possessionGains || []).push(cardId);
+      log(state, `${state.players[pIndex].name} が獲得した「${C()[cardId].name}」は脇に置かれた（支配：${state.players[t.possessedBy].name} が受け取る）。`);
+      return true;
+    }
     state.supply[cardId] -= 1;
     const p = state.players[pIndex];
     if (dest === 'hand') p.hand.push(cardId);
@@ -519,6 +533,8 @@
     replace:       { onMoat: (s, pd) => replaceEnterVictim(s, pd.source, pd.queue) },
     cutpurse:      { onMoat: (s, pd) => cutpurseEnterVictim(s, pd.source, pd.queue) },
     sea_witch:     { onMoat: (s, pd) => seaWitchEnterVictim(s, pd.source, pd.queue) },
+    familiar:      { onMoat: (s, pd) => familiarEnterVictim(s, pd.source, pd.queue) },
+    scrying_pool:  { onMoat: (s, pd) => scryingEnterTarget(s, pd.source, pd.queue) },
     charlatan:     { onMoat: (s, pd) => charlatanEnterVictim(s, pd.source, pd.queue) },
     rabble:        { onMoat: (s, pd) => rabbleEnterVictim(s, pd.source, pd.queue) },
     clerk:         { onMoat: (s, pd) => clerkEnterVictim(s, pd.source, pd.queue) },
@@ -624,6 +640,77 @@
       log(state, `${state.players[victim].name} は呪いを獲得した（魔女）。`);
     }
     witchEnterVictim(state, source, queue);
+  }
+
+  /* ---------- 錬金術：使い魔（魔女と同型。各相手が呪いを獲得）---------- */
+  function familiarEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'familiar', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      familiarCurse(state, source, victim, rest);
+    }
+  }
+  function familiarCurse(state, source, victim, queue) {
+    if ((state.supply.curse || 0) > 0) {
+      gain(state, victim, 'curse', 'discard');
+      log(state, `${state.players[victim].name} は呪いを獲得した（使い魔）。`);
+    }
+    familiarEnterVictim(state, source, queue);
+  }
+
+  /* ---------- 錬金術：念視の泉（全員の山札の上を公開、使用者が捨てる/戻すを決める。
+     その後、使用者はアクション以外が出るまで山札を公開して全て手札に加える）---------- */
+  function scryingEnterTarget(state, attacker, queue) {
+    while (queue && queue.length) {
+      const target = queue[0];
+      if (target !== attacker) { // 相手はアタック（灯台免疫・堀リアクション）
+        if (attackImmune(state, target)) { queue = queue.slice(1); continue; }
+        if (hasReaction(state.players[target])) {
+          state.pending = { type: 'scrying_pool', stage: 'react', player: target, source: attacker, victim: target, queue: queue.slice(1) };
+          return;
+        }
+      }
+      scryingReveal(state, attacker, target, queue.slice(1));
+      return;
+    }
+    scryingDraw(state, attacker); // 全員終わったら使用者の連続公開ドロー
+  }
+  function scryingReveal(state, attacker, target, queue) {
+    const tp = state.players[target];
+    if (tp.deck.length === 0 && tp.discard.length > 0) { tp.deck = shuffle(tp.discard); tp.discard = []; }
+    if (tp.deck.length === 0) { scryingEnterTarget(state, attacker, queue); return; } // 公開できる札なし
+    reveal(state, target, [tp.deck[0]], '念視の泉で山札の上を公開');
+    state.pending = { type: 'scrying_pool', stage: 'decide', player: attacker, source: attacker, victim: target, card: tp.deck[0], queue };
+  }
+  function scryingDraw(state, attacker) {
+    const ap = state.players[attacker];
+    const taken = [];
+    let guard = 0;
+    while (guard++ < 100) {
+      if (ap.deck.length === 0) { if (ap.discard.length === 0) break; ap.deck = shuffle(ap.discard); ap.discard = []; }
+      if (ap.deck.length === 0) break;
+      const c = ap.deck.shift();
+      taken.push(c); ap.hand.push(c);
+      if (!DOM.isType(c, 'action')) break; // アクション以外が出たら止める（それも手札に加わる）
+    }
+    if (taken.length) { reveal(state, attacker, taken, '念視の泉で公開'); log(state, `${ap.name} は念視の泉でアクション以外が出るまで公開し、${taken.length}枚を手札に加えた。`); }
+    state.pending = null;
+  }
+
+  /* ---------- 錬金術：ゴーレム（見つけた2枚のアクションを好きな順で使う）----------
+     first を即 applyEffect、second は玉座と同じ replay キューへ（pending 解消後に runReplays）。*/
+  function golemPlay(state, pi, first, second) {
+    const p = state.players[pi];
+    state.pending = null;
+    if (second != null) { state.replay = state.replay || []; state.replay.push({ player: pi, card: second, label: 'golem' }); }
+    p.inPlay.push(first);
+    state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1; // 使った扱い（共謀者等の「このターンに使ったアクション数」に数える）
+    log(state, `${p.name} はゴーレムで「${C()[first].name}」を使った。`);
+    applyEffect(state, first, pi);
   }
 
   /* ---------- 役人（複数対象。各相手が勝利点1枚を山札の上へ）---------- */
@@ -1533,6 +1620,90 @@
         break;
       }
 
+      /* ===== 拡張: 錬金術（Alchemy 第二版）===== */
+      case 'transmute':
+        // 手札1枚を廃棄→種類ごとに獲得（アクション→公領／財宝→変成／勝利点→金貨）。
+        if (p.hand.length > 0) state.pending = { type: 'transmute', player: pi };
+        break;
+      case 'herbalist':
+        t.buys += 1; t.coins += 1;
+        // このターンの片付けで、場の財宝を（薬草商の数だけ）山札の上に置いてよい（cleanupで自動処理）。
+        t.herbalists = (t.herbalists || 0) + 1;
+        break;
+      case 'apothecary': {
+        draw(state, pi, 1); t.actions += 1;
+        // 山札の上4枚を公開し、銅貨とポーションを手札に、残りを好きな順で山札の上に戻す。
+        const revealed = [];
+        for (let i = 0; i < 4; i++) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; p.deck = shuffle(p.discard); p.discard = []; }
+          if (p.deck.length === 0) break;
+          revealed.push(p.deck.shift());
+        }
+        if (revealed.length) reveal(state, pi, revealed, '薬剤師で山札の上を公開');
+        const rest = [];
+        revealed.forEach((c) => { if (c === 'copper' || c === 'potion') p.hand.push(c); else rest.push(c); });
+        if (revealed.length) log(state, `${p.name} は薬剤師で ${revealed.length}枚 を公開し、銅貨・ポーションを手札に加えた。`);
+        if (rest.length >= 2) state.pending = { type: 'apothecary', player: pi, cards: rest }; // 2枚以上は並べ替え
+        else if (rest.length === 1) p.deck.unshift(rest[0]);
+        break;
+      }
+      case 'scrying_pool': {
+        t.actions += 1;
+        const q = [pi];
+        for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        scryingEnterTarget(state, pi, q);
+        break;
+      }
+      case 'university':
+        t.actions += 2;
+        // コスト5以下のアクションカードを獲得してよい（任意）。ポーション費用カードは$5に含めない（公式）。
+        if (anyGainable(state, (id) => DOM.isType(id, 'action') && cardCost(state, id) <= 5 && potionCost(id) === 0))
+          state.pending = { type: 'university', player: pi };
+        break;
+      case 'alchemist':
+        draw(state, pi, 2); t.actions += 1;
+        // 片付け開始時、場にポーションがあればこれを山札の上に置く（cleanupで自動処理）。
+        break;
+      case 'familiar': {
+        draw(state, pi, 1); t.actions += 1;
+        const vics = [];
+        for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
+        familiarEnterVictim(state, pi, vics);
+        break;
+      }
+      case 'golem': {
+        // ゴーレム以外のアクションが2枚出るまで山札を公開。残りを捨て、その2枚を好きな順で使う。
+        const found = []; const aside = []; let guard = 0;
+        while (found.length < 2 && guard++ < 200) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; p.deck = shuffle(p.discard); p.discard = []; }
+          if (p.deck.length === 0) break;
+          const c = p.deck.shift();
+          if (c !== 'golem' && DOM.isType(c, 'action')) found.push(c);
+          else aside.push(c); // ゴーレム自身・非アクションは脇へ→捨てる
+        }
+        if (found.concat(aside).length) reveal(state, pi, found.concat(aside), 'ゴーレムで公開');
+        aside.forEach((c) => p.discard.push(c));
+        log(state, `${p.name} はゴーレムでアクション ${found.length}枚 を見つけた。`);
+        if (found.length === 2) state.pending = { type: 'golem', player: pi, cards: found }; // 使う順を選ぶ
+        else if (found.length === 1) golemPlay(state, pi, found[0], null);
+        break;
+      }
+      case 'apprentice':
+        t.actions += 1;
+        // 手札1枚を廃棄→コスト$1につき+1カード（ポーション費用ありなら+2カード）。
+        if (p.hand.length > 0) state.pending = { type: 'apprentice', player: pi };
+        break;
+      case 'possession': {
+        // 支配：左隣がこのターンの後に追加ターンを行い、その間あなたが全ての決定を行う。
+        const victim = (pi + 1) % state.players.length;
+        // 連鎖支配：既に被支配中のターンで支配をプレイした場合も、操作は「元の支配者」が続ける
+        // （pi=被支配者ではなく現在の操作者 t.possessedBy を引き継ぐ）。
+        const controller = t.possessedBy != null ? t.possessedBy : pi;
+        (state.extraTurns = state.extraTurns || []).push({ seat: victim, possessedBy: controller, rotationSeat: t.rotationSeat != null ? t.rotationSeat : pi });
+        log(state, `${p.name} は支配を使った（${state.players[victim].name} の追加ターンを ${state.players[controller].name} が操作する）。`);
+        break;
+      }
+
       default:
         break;
     }
@@ -1748,6 +1919,25 @@
       while (removeOne(p.inPlay, 'treasury')) { p.deck.unshift('treasury'); n++; }
       if (n) log(state, `${p.name} は宝物庫 ${n}枚 を山札の上に戻した。`);
     }
+    // 錬金術：錬金術師＝片付け開始時、場にポーションがあれば山札の上に戻す（毎ターン使い回せて強いので自動）。
+    // ※薬草商より先に処理（薬草商がポーションを先に戻すと錬金術師の条件が崩れるため）。
+    if (p.inPlay.includes('alchemist') && p.inPlay.includes('potion')) {
+      let n = 0;
+      while (removeOne(p.inPlay, 'alchemist')) { p.deck.unshift('alchemist'); n++; }
+      if (n) log(state, `${p.name} は錬金術師 ${n}枚 を山札の上に戻した。`);
+    }
+    // 錬金術：薬草商＝この片付けで、場の財宝を（薬草商の数だけ）山札の上に置いてよい。
+    // 銀貨以上の価値ある財宝（ポーション/賢者の石/金貨/銀貨）を自動で戻す（銅貨はデッキを濁すので戻さない）。
+    if (state.turn.herbalists) {
+      let remain = state.turn.herbalists;
+      const rank = (c) => ({ potion: 5, philosophers_stone: 4, gold: 3, silver: 2 }[c] || 0);
+      while (remain-- > 0) {
+        const cand = p.inPlay.filter((c) => DOM.isType(c, 'treasure') && rank(c) > 0).sort((a, b) => rank(b) - rank(a))[0];
+        if (!cand) break;
+        removeOne(p.inPlay, cand); p.deck.unshift(cand);
+        log(state, `${p.name} は薬草商で「${C()[cand].name}」を山札の上に置いた。`);
+      }
+    }
     // 密輸人用：このターンに獲得したカードを「直前の手番の獲得」として保存（右隣がこれを参照）。
     p.lastTurnGains = (state.turn.gainedThisTurn || []).slice();
 
@@ -1769,6 +1959,18 @@
     p.inPlay = [];
     p.hand = [];
 
+    // 支配：この手番が被支配ターンなら精算する。
+    //   獲得したカード → 支配者の捨て札へ（支配者が受け取る）／廃棄したカード → 被支配者の捨て札へ戻す（実際には廃棄されない）。
+    if (state.turn.possessedBy != null) {
+      const possIdx = state.turn.possessedBy;
+      const gains = state.turn.possessionGains || [];
+      const back = state.turn.possessionTrash || [];
+      gains.forEach((c) => state.players[possIdx].discard.push(c));
+      back.forEach((c) => p.discard.push(c));
+      if (gains.length) log(state, `${state.players[possIdx].name} は支配で獲得された ${gains.length}枚 を受け取った。`);
+      if (back.length) log(state, `${p.name} は支配で廃棄されかけた ${back.length}枚 を取り戻した。`);
+    }
+
     // 前哨地：このプレイヤーの追加ターンか（手札3枚で同一プレイヤー続行）。
     const extra = !!p.outpostExtra;
     p.outpostExtra = false;
@@ -1781,9 +1983,22 @@
       log(state, `ゲーム終了：${state.result.reason}。`);
       return;
     }
-    const next = extra ? pi : (pi + 1) % state.players.length;
-    state.turn = freshTurn(next, extra);
-    log(state, extra ? `${state.players[next].name} の追加ターンです（前哨地）。` : `${state.players[next].name} の番です。`);
+    // 次の手番を決める：1)前哨地=同一プレイヤー 2)支配などの追加ターン待ち行列 3)通常=rotationSeatの次。
+    const n = state.players.length;
+    const anchor = state.turn.rotationSeat != null ? state.turn.rotationSeat : pi;
+    let next, isExtra = false, possessedBy = null, rotationSeat;
+    if (extra) {
+      next = pi; isExtra = true; rotationSeat = anchor;
+    } else if (state.extraTurns && state.extraTurns.length) {
+      const et = state.extraTurns.shift();
+      next = et.seat; isExtra = true; possessedBy = et.possessedBy; rotationSeat = et.rotationSeat;
+    } else {
+      next = (anchor + 1) % n; rotationSeat = next;
+    }
+    state.turn = freshTurn(next, isExtra, { rotationSeat, possessedBy });
+    log(state, possessedBy != null
+      ? `${state.players[possessedBy].name} が ${state.players[next].name} の追加ターンを操作します（支配）。`
+      : (extra ? `${state.players[next].name} の追加ターンです（前哨地）。` : `${state.players[next].name} の番です。`));
     // 海辺：次の手番開始時の予約効果を解決（非対話は即適用、対話は startQueue→pending）。
     resolveDurationStartEffects(state, next);
   }
@@ -1796,13 +2011,21 @@
     state = applyAction(state, action);
     return runReplays(state);
   }
-  // 玉座の間の「2回目の適用」を、選択待ちが解消したタイミングで実行する。
+  // 玉座の間の「2回目の適用」（および錬金術ゴーレムの2枚目）を、選択待ちが解消したタイミングで実行する。
   function runReplays(state) {
     let guard = 0;
     while (!state.pending && state.replay && state.replay.length && !state.gameOver && guard++ < 200) {
       const r = state.replay.shift();
-      state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
-      log(state, `${state.players[r.player].name} は玉座の間で「${C()[r.card].name}」をもう一度使った。`);
+      if (r.label === 'golem') {
+        // ゴーレムで見つけた2枚目：場に置いてから使う（クリーンアップで場から片付く）。
+        // アクション権は消費しないが「使った」扱い＝共謀者等の「このターンに使ったアクション数」には数える。
+        state.players[r.player].inPlay.push(r.card);
+        state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
+        log(state, `${state.players[r.player].name} はゴーレムで「${C()[r.card].name}」を使った。`);
+      } else {
+        state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
+        log(state, `${state.players[r.player].name} は玉座の間で「${C()[r.card].name}」をもう一度使った。`);
+      }
       applyEffect(state, r.card, r.player);
     }
     return state;
@@ -3162,6 +3385,100 @@
         return state;
       }
 
+      /* ===== 拡張: 錬金術（Alchemy 第二版）の選択解決 ===== */
+      /* ---- 変成：廃棄1枚→種類ごとに獲得 ---- */
+      case 'TRANSMUTE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'transmute') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0) return state;
+        removeOne(p.hand, card);
+        trashOwn(state, pd.player, card);
+        log(state, `${p.name} は「${C()[card].name}」を廃棄した（変成）。`);
+        // 多重タイプは各該当ぶん獲得（例：大広間=アクション+勝利点→公領+金貨）。
+        if (DOM.isType(card, 'action') && gain(state, pd.player, 'duchy', 'discard')) log(state, `${p.name} は公領を獲得した（変成）。`);
+        if (DOM.isType(card, 'treasure') && gain(state, pd.player, 'transmute', 'discard')) log(state, `${p.name} は変成を獲得した（変成）。`);
+        if (DOM.isType(card, 'victory') && gain(state, pd.player, 'gold', 'discard')) log(state, `${p.name} は金貨を獲得した（変成）。`);
+        state.pending = null;
+        return state;
+      }
+      /* ---- 薬剤師：残りを好きな順で山札の上に戻す ---- */
+      case 'APOTHECARY_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'apothecary') return state;
+        const p = state.players[pd.player];
+        const order = Array.isArray(action.order) && action.order.length ? action.order : pd.cards.slice();
+        // 検証：order が pd.cards の並べ替えであること（不正なら据え置き）
+        const a = order.slice().sort(), b = pd.cards.slice().sort();
+        if (a.length !== b.length || !a.every((x, i) => x === b[i])) return state;
+        for (let i = order.length - 1; i >= 0; i--) p.deck.unshift(order[i]); // order[0] が一番上
+        log(state, `${p.name} は残り ${order.length}枚 を山札の上に戻した（薬剤師）。`);
+        state.pending = null;
+        return state;
+      }
+      /* ---- 念視の泉：相手のリアクション／使用者が捨てるか戻すか ---- */
+      case 'SCRYING_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'scrying_pool' || pd.stage !== 'react') return state;
+        scryingReveal(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'SCRYING_DECIDE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'scrying_pool' || pd.stage !== 'decide') return state;
+        const tp = state.players[pd.victim];
+        if (action.discard && tp.deck.length > 0) {
+          const c = tp.deck.shift(); tp.discard.push(c);
+          log(state, `${tp.name} は山札の上の「${C()[c].name}」を捨てた（念視の泉）。`);
+        } else {
+          log(state, `${tp.name} は山札の上をそのままにした（念視の泉）。`);
+        }
+        scryingEnterTarget(state, pd.source, pd.queue);
+        return state;
+      }
+      /* ---- 大学：コスト5以下のアクションを獲得（任意）---- */
+      case 'UNIVERSITY_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'university') return state;
+        if (action.card == null) { state.pending = null; return state; } // 獲得しない
+        finishGain(state, pd, action.card, (id) => DOM.isType(id, 'action') && cardCost(state, id) <= 5 && potionCost(id) === 0, 'discard', '獲得した（大学）。');
+        return state;
+      }
+      /* ---- 使い魔：呪いを受ける ---- */
+      case 'FAMILIAR_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'familiar' || pd.stage !== 'react') return state;
+        familiarCurse(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      /* ---- ゴーレム：見つけた2枚を使う順を選ぶ ---- */
+      case 'GOLEM_ORDER': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'golem') return state;
+        const first = action.first;
+        const idx = pd.cards.indexOf(first);
+        if (idx < 0) return state;
+        const second = pd.cards[idx === 0 ? 1 : 0];
+        golemPlay(state, pd.player, first, second);
+        return state;
+      }
+      /* ---- 徒弟：廃棄1枚→コイン費用ぶん引く（ポーション費用ありは+2）---- */
+      case 'APPRENTICE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'apprentice') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (card == null || p.hand.indexOf(card) < 0) return state; // 手札があれば廃棄必須
+        removeOne(p.hand, card);
+        trashOwn(state, pd.player, card);
+        const n = cardCost(state, card) + (potionCost(card) ? 2 : 0);
+        draw(state, pd.player, n);
+        log(state, `${p.name} は「${C()[card].name}」を廃棄して ${n}枚 引いた（徒弟）。`);
+        state.pending = null;
+        return state;
+      }
+
       /* ===== 繁栄（Prosperity）の選択解決 ===== */
       case 'CHARLATAN_REACT': {
         const pd = state.pending;
@@ -3488,6 +3805,8 @@
     const s = clone(state);
     s.players = s.players.map((p, i) => {
       if (i === seat) return p; // 自分は全部見える
+      // 錬金術・支配：支配者は被支配者（手番のactive）の手札を見て操作する（山札は伏せたまま）。
+      const revealHand = state.turn && state.turn.possessedBy === seat && i === state.turn.active;
       // 海辺：脇置き(setAside)・原住民の村マットは秘密＝枚数だけ。島マット・持続カードは公開（公式どおり）。
       // delayedEffects（次手番の予約）は種別は見せるが、隠し札id（停泊所の脇置き・封鎖の獲得物）は伏せる。
       const maskedDelayed = (p.delayedEffects || []).map((e) => {
@@ -3497,7 +3816,7 @@
       });
       return Object.assign({}, p, {
         deck: new Array(p.deck.length).fill('back'),
-        hand: new Array(p.hand.length).fill('back'),
+        hand: revealHand ? p.hand.slice() : new Array(p.hand.length).fill('back'),
         discard: new Array(p.discard.length).fill('back'),
         setAside: new Array((p.setAside || []).length).fill('back'),
         nativeVillageMat: new Array((p.nativeVillageMat || []).length).fill('back'),
@@ -3558,6 +3877,9 @@
     'LOOKOUT_TRASH', 'LOOKOUT_DISCARD', 'ISLAND_PICK', 'NATIVE_VILLAGE_RESOLVE', 'TIDE_POOLS_DISCARD',
     'CUTPURSE_REACT', 'SEA_WITCH_REACT', 'SEA_WITCH_DISCARD', 'SMUGGLERS_GAIN', 'BLOCKADE_GAIN',
     'SAILOR_TRASH', 'SAILOR_PLAY_GAIN', 'PIRATE_GAIN',
+    // 錬金術（第二版）
+    'TRANSMUTE_TRASH', 'APOTHECARY_RESOLVE', 'SCRYING_REACT', 'SCRYING_DECIDE',
+    'UNIVERSITY_GAIN', 'FAMILIAR_REACT', 'GOLEM_ORDER', 'APPRENTICE_TRASH',
     // 繁栄（第二版）
     'CHARLATAN_REACT', 'RABBLE_REACT', 'CLERK_REACT', 'CLERK_TOPDECK', 'CLERK_START',
     'BISHOP_TRASH', 'BISHOP_OTHER', 'VAULT_DISCARD', 'VAULT_OTHER', 'MINT_REVEAL',
@@ -3579,7 +3901,17 @@
     maskStateFor,
     PLAYER_ACTIONS,
     // 「誰が今操作すべきか」: 選択待ちならその人、なければ手番のプレイヤー
-    actor: (state) => (state.pending ? state.pending.player : state.turn.active),
+    // 「誰が今操作すべきか」。支配中は、被支配者(active)自身の決定を支配者が代行する。
+    // 他プレイヤーのリアクション（pending.player が active 以外）は本人が行う。
+    actor: (state) => {
+      const t = state.turn;
+      if (state.pending) {
+        if (t && t.possessedBy != null && state.pending.player === t.active) return t.possessedBy;
+        return state.pending.player;
+      }
+      if (t && t.possessedBy != null) return t.possessedBy;
+      return t.active;
+    },
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = DOM;

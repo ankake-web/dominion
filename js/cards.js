@@ -412,8 +412,7 @@
     { id: 'basic',           kind: 'standard', name: '王国基本セット（第二版）', kingdom: DOM.KINGDOM },
     { id: 'intrigue',        kind: 'standard', name: '陰謀セット（第二版）', kingdom: DOM.KINGDOM_INTRIGUE },
     { id: 'seaside',         kind: 'standard', name: '海辺セット（第二版）', kingdom: DOM.KINGDOM_SEASIDE },
-    // ★錬金術セットは一時無効化：カードの実ゲームロジックが未実装で、選ぶと無効札になるため。実装完了後に下の2行を有効化する。
-    // { id: 'alchemy',         kind: 'standard', name: '錬金術セット（第二版）', kingdom: DOM.KINGDOM_ALCHEMY },
+    { id: 'alchemy',         kind: 'standard', name: '錬金術セット（第二版）', kingdom: DOM.KINGDOM_ALCHEMY },
     { id: 'prosperity',      kind: 'standard', name: '繁栄セット（第二版）', kingdom: DOM.KINGDOM_PROSPERITY },
     // ---- おすすめ（テーマ別・固定10種）----
     { id: 'big-money',       kind: 'recommend', name: 'ビッグマネー', desc: 'お金を伸ばして属州を狙う王道',
@@ -439,7 +438,7 @@
     // ---- ランダム（毎回その場で10種を抽選）----
     { id: 'random',          kind: 'random', name: '基本＋陰謀から', randomFrom: ['basic', 'intrigue'] },
     { id: 'random-seaside',  kind: 'random', name: '海辺から',       randomFrom: ['seaside'] },
-    // { id: 'random-alchemy',  kind: 'random', name: '錬金術から',     randomFrom: ['alchemy'] }, // 錬金術ロジック未実装のため一時無効
+    { id: 'random-alchemy',  kind: 'random', name: '錬金術から',     randomFrom: ['alchemy'] },
     { id: 'random-prosperity', kind: 'random', name: '繁栄から',     randomFrom: ['prosperity'] },
     { id: 'random-intrigue', kind: 'random', name: '陰謀のみから',   randomFrom: ['intrigue'] },
     { id: 'random-basic',    kind: 'random', name: '基本のみから',   randomFrom: ['basic'] },

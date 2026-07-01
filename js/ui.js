@@ -120,6 +120,14 @@
   function coinClass(id) { return (id === 'copper' || id === 'silver' || id === 'gold') ? ' c-' + id : ''; }
   // 実コスト（「橋」等のこのターンのコスト軽減を反映）。表示・購入判定で共通利用。
   function effCost(state, id) { return (state && E() && E().cardCost) ? E().cardCost(state, id) : DOM.CARDS[id].cost; }
+  // 錬金術：ポーション費用（コスト円の下に紫のポーション記号で出る費用。コイン軽減では下がらない）。
+  function potCost(id) { return (DOM.CARDS[id] && DOM.CARDS[id].potion) || 0; }
+  // コイン・ポーション・繁栄の制約を全て満たして「いま買える」か。
+  function affordable(state, id) {
+    const t = state.turn;
+    return effCost(state, id) <= t.coins && potCost(id) <= (t.potions || 0) &&
+      (!E() || !E().canBuyCard || E().canBuyCard(state, t.active, id));
+  }
   // 直近の「誰が何をした」行（手番案内・ゲーム進行行は除く）。全員に見せる用。
   function lastMove(log) {
     if (!Array.isArray(log)) return null;
@@ -618,7 +626,9 @@
 
     const frag = document.createDocumentFragment();
     frag.appendChild(viewBoard(state, viewer, actor, interactive));
-    if (interactive && state.pending && state.pending.player === viewer) {
+    // interactive は actor===viewer（＝この保留の決定者。支配中は支配者に委譲済み）を意味するので、
+    // pending があれば必ずこの人が解決する。旧来の pending.player===viewer 判定は支配で詰むため撤廃。
+    if (interactive && state.pending) {
       frag.appendChild(viewPendingModal(state, state.pending));
     }
     return frag;
@@ -728,6 +738,10 @@
     const t = state.turn;
     const active = state.players[t.active];
     const me = state.players[viewer];
+    // 錬金術・支配：自分が支配者としてこの被支配ターンを操作しているか。
+    // その場合、手札・場・マット・点数の表示は「操作対象（被支配者=手番のactive）」のものにする。
+    const possessing = t.possessedBy != null && t.possessedBy === viewer;
+    const handP = possessing ? active : me;
 
     const top = h('div', { class: 'topbar' },
       h('div', { class: 'menu-wrap' },
@@ -739,7 +753,11 @@
       h('div', { class: 'resources' },
         h('div', { class: 'badge act' }, h('div', { class: 'v' }, t.actions), h('div', { class: 'k' }, 'ACTION')),
         h('div', { class: 'badge buy' }, h('div', { class: 'v' }, t.buys), h('div', { class: 'k' }, 'BUY')),
-        h('div', { class: 'badge coin' }, h('div', { class: 'v' }, t.coins), h('div', { class: 'k' }, 'COIN')))
+        h('div', { class: 'badge coin' }, h('div', { class: 'v' }, t.coins), h('div', { class: 'k' }, 'COIN')),
+        // 錬金術：ポーションが供給される王国のときだけ POTION 量を表示（紫）。
+        state.supply.potion != null
+          ? h('div', { class: 'badge potion', style: 'background:#6b3fa0' }, h('div', { class: 'v' }, t.potions || 0), h('div', { class: 'k' }, 'POTION'))
+          : null)
     );
 
     // 他プレイヤー（複数対応）
@@ -766,8 +784,7 @@
 
     // サプライ（種類ごと）
     const buyableId = (id) => interactive && t.phase === 'buy' && !state.pending &&
-      (state.supply[id] || 0) > 0 && t.buys > 0 && effCost(state, id) <= t.coins &&
-      (!E() || !E().canBuyCard || E().canBuyCard(state, t.active, id)); // 繁栄：高級市場は場に銅貨があると不可
+      (state.supply[id] || 0) > 0 && t.buys > 0 && affordable(state, id); // コイン・ポーション・繁栄制約を満たす
     // 初心者モード：おすすめ購入の山を黄色枠でハイライト（購入フェーズ・自分の操作中のみ）。
     const recSet = (UI.beginner && interactive && t.phase === 'buy' && !state.pending) ? new Set(recommendedBuys(state)) : new Set();
     const supSection = (title, ids, size) =>
@@ -778,8 +795,9 @@
 
     // 王国カードはコストの安い順に並べる（同コストはid順で安定）。
     const kingdomByCost = state.kingdom.slice().sort((a, b) => DOM.CARDS[a].cost - DOM.CARDS[b].cost || a.localeCompare(b));
-    // 繁栄：プラチナ貨/植民地が供給されていれば 財宝/勝利点 の列に加える。
-    const treasureRow = state.supply.platinum != null ? DOM.TREASURES.concat(['platinum']) : DOM.TREASURES;
+    // 繁栄：プラチナ貨/植民地／錬金術：ポーション が供給されていれば 財宝/勝利点 の列に加える。
+    const treasureRow = (state.supply.platinum != null ? DOM.TREASURES.concat(['platinum']) : DOM.TREASURES)
+      .concat(state.supply.potion != null ? ['potion'] : []);
     const victoryRow = (state.supply.colony != null ? DOM.VICTORY.concat(['colony']) : DOM.VICTORY).concat(['curse']);
     const supply = h('div', null,
       // 財宝・勝利点は基本カード。デスクトップでは横並びにして縦スペースを節約。
@@ -807,8 +825,8 @@
       h('span', { class: 'mat-label' }, '⭐ 勝利点トークン: ' + me.vpTokens + ' 点')));
     const matsBlock = matRows.length ? h('div', { class: 'mats' }, matRows) : null;
 
-    // 手札（種類でグループ化・重ね表示）
-    const hg = handGroups(me.hand, state.kingdom);
+    // 手札（種類でグループ化・重ね表示）。支配中は操作対象（被支配者）の手札を出す。
+    const hg = handGroups(handP.hand, state.kingdom);
     const handTile = (id) => cardEl(id, {
       size: hg.counts[id] && DOM.isType(id, 'action') ? 'lg' : 'sm',
       count: hg.counts[id],
@@ -823,7 +841,7 @@
     if (compact.length) handBlocks.push(h('div', { class: 'hand-group' },
       h('div', { class: 'hg-label' }, '財宝・勝利点'),
       h('div', { class: 'hand-cards small' }, compact.map((id) => cardEl(id, { size: 'sm', count: hg.counts[id], dim: !handCardPlayable(state, id, interactive), onClick: () => onHandTap(state, id, interactive) })))));
-    if (!me.hand.length) handBlocks.push(h('div', { class: 'empty-note' }, '手札がありません'));
+    if (!handP.hand.length) handBlocks.push(h('div', { class: 'empty-note' }, '手札がありません'));
 
     const logLines = state.log.slice(-6);
     const logBox = h('div', { class: 'log', onclick: () => { UI.logModal = true; sfx('tap'); render(); } },
@@ -841,14 +859,17 @@
         coach ? h('div', { class: 'coach-bar' }, coach) : null),
       UI.mode === 'online' ? h('div', { class: 'muted', style: 'font-size:11px;text-align:center;margin:-2px 0 4px' }, '部屋 ' + UI.roomCode + '　/　あなた: ' + me.name) : null,
       banner,
+      // 錬金術・支配：あなたが支配者として相手の追加ターンを操作している間の案内。
+      possessing ? h('div', { class: 'cpu-banner', style: 'background:#6b3fa0;color:#fff' },
+        '🎭 支配中：' + active.name + ' のターンをあなたが操作しています（獲得したカードはあなたが受け取ります）') : null,
       h('div', { class: 'section-h' }, 'サプライ（場の山札）'),
       supply,
       h('div', { class: 'zone-h' }, h('span', { class: 't' }, '場')),
       playArea,
       matsBlock,
-      h('div', { class: 'zone-h' }, h('span', { class: 't' }, me.name + ' の手札'),
+      h('div', { class: 'zone-h' }, h('span', { class: 't' }, (possessing ? '🎭 ' + handP.name + ' の手札（支配中）' : handP.name + ' の手札')),
         h('span', { class: 'c', 'data-self-pile': '1' },
-          '山' + me.deck.length + '・捨' + me.discard.length + '・手' + me.hand.length + '｜' + E().vpOf(me) + '点'),
+          '山' + handP.deck.length + '・捨' + handP.discard.length + '・手' + handP.hand.length + '｜' + E().vpOf(handP) + '点'),
         (state.reveals && state.reveals[viewer])
           ? h('span', { class: 'self-reveal-wrap', onclick: () => openReveal(viewer) }, revealBadge(state, viewer))
           : null),
@@ -859,7 +880,9 @@
   }
 
   function handGroups(hand, kingdom) {
-    const order = DOM.SUPPLY_ORDER(kingdom);
+    // 錬金術：ポーションは王国カードでも SUPPLY_ORDER にも入らない共通財宝なので、明示的に並びへ足す
+    // （さもないと手札のポーションがどのグループにも入らず描画されない）。
+    const order = DOM.SUPPLY_ORDER(kingdom).concat(['potion']);
     const counts = {};
     hand.forEach((c) => (counts[c] = (counts[c] || 0) + 1));
     const present = order.filter((id) => counts[id]);
@@ -895,8 +918,10 @@
   function onPileTap(state, id, interactive) {
     const t = state.turn;
     const cost = effCost(state, id);
-    const canBuy = interactive && !state.pending && t.phase === 'buy' && (state.supply[id] || 0) > 0 && t.buys > 0 && cost <= t.coins;
-    if (canBuy) showSheet(id, { label: '購入する（' + cost + 'コイン）', cls: 'btn-primary', on: () => dispatch({ type: 'BUY', card: id }) });
+    const pc = potCost(id); // 錬金術：ポーション費用（あれば）
+    const canBuy = interactive && !state.pending && t.phase === 'buy' && (state.supply[id] || 0) > 0 && t.buys > 0 && affordable(state, id);
+    const label = '購入する（' + cost + 'コイン' + (pc ? '＋ポーション' + (pc > 1 ? pc : '') : '') + '）';
+    if (canBuy) showSheet(id, { label, cls: 'btn-primary', on: () => dispatch({ type: 'BUY', card: id }) });
     else showSheet(id, null);
   }
 
@@ -904,7 +929,7 @@
     const t = state.turn;
     if (state.pending) {
       const who = state.players[state.pending.player].name;
-      if (interactive && state.pending.player === viewer)
+      if (interactive) // interactive はこの保留の決定者（支配中は支配者に委譲済み）を意味する
         return h('div', { class: 'actions-bar' }, h('div', { class: 'btn btn-ghost btn-block', style: 'pointer-events:none' }, '↑ 選択してください'));
       return h('div', { class: 'actions-bar' }, h('div', { class: 'btn btn-ghost btn-block', style: 'pointer-events:none' }, who + ' の対応を待っています…'));
     }
@@ -916,7 +941,9 @@
       return h('div', { class: 'actions-bar' },
         h('button', { class: 'btn btn-primary btn-block', onclick: () => endActionPhase(state, viewer) }, '購入フェーズへ ▶'));
     }
-    const hasTreasure = state.players[viewer].hand.some((c) => DOM.CARDS[c].types.includes('treasure'));
+    // 支配中は操作対象（被支配者=t.active）の手札で判定する（財宝を出すのも engine では被支配者の手札）。
+    const hp = (t.possessedBy != null && t.possessedBy === viewer) ? state.players[t.active] : state.players[viewer];
+    const hasTreasure = hp.hand.some((c) => DOM.CARDS[c].types.includes('treasure'));
     return h('div', { class: 'actions-bar' },
       h('button', { class: 'btn btn-block', disabled: hasTreasure ? null : 'disabled', onclick: () => dispatch({ type: 'PLAY_ALL_TREASURES' }) }, '財宝を全部出す'),
       h('button', { class: 'btn btn-primary btn-block', onclick: () => endTurnTap(state, viewer) }, 'ターンを終える'));
@@ -925,7 +952,9 @@
   // 買い忘れ防止: 財宝を出していない／2コイン以上残して購入権があるときは確認を挟む
   function endTurnTap(state, viewer) {
     const t = state.turn;
-    const hasTreasure = state.players[viewer].hand.some((c) => DOM.CARDS[c].types.includes('treasure'));
+    // 支配中は操作対象（被支配者=t.active）の手札で判定する（財宝を出すのも engine では被支配者の手札）。
+    const hp = (t.possessedBy != null && t.possessedBy === viewer) ? state.players[t.active] : state.players[viewer];
+    const hasTreasure = hp.hand.some((c) => DOM.CARDS[c].types.includes('treasure'));
     if (t.buys > 0 && (hasTreasure || t.coins >= 2)) {
       UI.confirm = {
         message: hasTreasure
@@ -1113,6 +1142,20 @@
       { label: '使わない', on: () => dispatch({ type: 'SAILOR_PLAY_GAIN', play: false }) },
     ]);
     if (pd.type === 'pirate_gain') return modalGainSupply(state, '海賊 — 財宝を獲得', 'コスト6以下の財宝1枚を手札に獲得します。', (id) => DOM.isType(id, 'treasure') && effCost(state, id) <= 6, (id) => dispatch({ type: 'PIRATE_GAIN', card: id }), () => dispatch({ type: 'PIRATE_GAIN', card: null }));
+
+    /* ===== 拡張: 錬金術（Alchemy 第二版）===== */
+    if (pd.type === 'transmute') return modalSingleHand(p, '変成 — 廃棄', '手札から1枚を廃棄します（アクション→公領／財宝→変成／勝利点→金貨。多重タイプは各ぶん獲得）。', () => true, (card) => dispatch({ type: 'TRANSMUTE_TRASH', card }), null, '廃棄する');
+    if (pd.type === 'apothecary') return modalReorder('薬剤師 — 山札の上に戻す', '残ったカードを山札の上に戻す順をタップで選びます（最初のタップが一番上）。', pd.cards, (order) => dispatch({ type: 'APOTHECARY_RESOLVE', order }));
+    if (pd.type === 'scrying_pool' && pd.stage === 'react') return modalOptions('念視の泉を受ける', '山札の上が公開され、相手が捨てるか戻すか決めます。', reactOptions(p, pd, { type: 'SCRYING_REACT' }));
+    if (pd.type === 'scrying_pool' && pd.stage === 'decide') return modalOptions('念視の泉 — ' + state.players[pd.victim].name + ' の山札の上「' + DOM.CARDS[pd.card].name + '」',
+      (pd.victim === pd.source ? '自分の山札の上です。アクション以外を捨てると次のアクションまで掘れます。' : '相手の山札の上です。良い札を捨てさせられます。'), [
+      { label: '捨てさせる', cls: 'btn-primary', on: () => dispatch({ type: 'SCRYING_DECIDE', discard: true }) },
+      { label: '山札の上に残す', on: () => dispatch({ type: 'SCRYING_DECIDE', discard: false }) },
+    ]);
+    if (pd.type === 'university') return modalGainSupply(state, '大学 — 獲得（任意）', 'コスト5以下のアクションカードを1枚獲得できます（ポーション費用カードは不可・しなくてもよい）。', (id) => DOM.CARDS[id].types.includes('action') && effCost(state, id) <= 5 && (DOM.CARDS[id].potion || 0) === 0, (id) => dispatch({ type: 'UNIVERSITY_GAIN', card: id }), () => dispatch({ type: 'UNIVERSITY_GAIN', card: null }), true);
+    if (pd.type === 'familiar' && pd.stage === 'react') return modalOptions('使い魔を受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'FAMILIAR_REACT' }));
+    if (pd.type === 'golem') return modalOptions('ゴーレム — 使う順', '見つけた2枚のアクションを、どちらから使うか選びます。', pd.cards.map((c) => ({ label: '「' + DOM.CARDS[c].name + '」を先に使う', on: () => dispatch({ type: 'GOLEM_ORDER', first: c }) })));
+    if (pd.type === 'apprentice') return modalSingleHand(p, '徒弟 — 廃棄', '手札から1枚を廃棄します（コスト$1につき +1カード、ポーション費用ありなら +2カード）。', () => true, (card) => dispatch({ type: 'APPRENTICE_TRASH', card }), null, '廃棄する');
 
     /* ===== 繁栄（Prosperity）===== */
     if (pd.type === 'charlatan' && pd.stage === 'react') return modalOptions('ペテン師を受ける', '銅貨1枚を獲得します。', reactOptions(p, pd, { type: 'CHARLATAN_REACT' }));
@@ -1758,7 +1801,9 @@
   // アクションがまだ使えるのに購入フェーズへ進もうとしたら確認する
   function endActionPhase(state, viewer) {
     const t = state.turn;
-    const hasAction = t.actions > 0 && state.players[viewer].hand.some((c) => DOM.CARDS[c] && DOM.CARDS[c].types.includes('action'));
+    // 支配中は操作対象（被支配者）の手札で判定する。
+    const hp = (t.possessedBy != null && t.possessedBy === viewer) ? state.players[t.active] : state.players[viewer];
+    const hasAction = t.actions > 0 && hp.hand.some((c) => DOM.CARDS[c] && DOM.CARDS[c].types.includes('action'));
     if (hasAction) {
       UI.confirm = {
         message: 'まだアクションカードが使えます。購入フェーズに進みますか？',

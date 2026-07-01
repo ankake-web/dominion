@@ -116,7 +116,17 @@
     if (has('warehouse')) return 'warehouse';             // +3カード+1アクション→3枚捨て
     if (has('tide_pools')) return 'tide_pools';           // +3カード+1アクション（次手番2捨て）
     if (has('haven')) return 'haven';                     // +1カード+1アクション（脇置き）
+    // 錬金術：非ターミナル（+アクション付き）
+    if (has('alchemist')) return 'alchemist';             // +2カード+1アクション
+    if (has('apothecary')) return 'apothecary';           // +1カード+1アクション
+    if (has('familiar')) return 'familiar';               // +1カード+1アクション＋全員に呪い
+    if (has('scrying_pool')) return 'scrying_pool';       // +1アクション＋偵察＋連続ドロー
+    if (has('university')) return 'university';           // +2アクション＋アクション獲得
+    if (has('apprentice') && (has('estate') || has('curse'))) return 'apprentice'; // +1アクション（不要札を廃棄→ドロー）
     // --- ターミナル（効果の大きい順）---
+    if (has('golem')) return 'golem';                     // 山札のアクション2枚を使う
+    if (has('herbalist')) return 'herbalist';             // +1購入+1コイン
+    if (has('transmute') && has('estate')) return 'transmute'; // 屋敷→公領
     if (has('wharf')) return 'wharf';                     // 2ターン +2カード+1購入
     if (has('sea_witch')) return 'sea_witch';             // +2カード＋全員に呪い
     if (has('merchant_ship')) return 'merchant_ship';     // 2ターン +2コイン
@@ -202,7 +212,8 @@
 
   /* ---------- 購入フェーズ：買うカードを選ぶ（難易度別） ---------- */
   function kingdomAffordable(state, coins) {
-    return (state.kingdom || []).filter((id) => C()[id].cost <= coins && sup(state, id) > 0);
+    const potions = (state.turn && state.turn.potions) || 0; // 錬金術：ポーション費用も満たすものだけ
+    return (state.kingdom || []).filter((id) => C()[id].cost <= coins && (C()[id].potion || 0) <= potions && sup(state, id) > 0);
   }
 
   /* ---------- 終局認識（強CPU用） ----------
@@ -218,6 +229,8 @@
     if (dukes) vp += dukes * cards.filter((c) => c === 'duchy').length;
     const gardens = cards.filter((c) => c === 'gardens').length;
     if (gardens) vp += gardens * Math.floor(cards.length / 10);
+    const vineyards = cards.filter((c) => c === 'vineyard').length;
+    if (vineyards) vp += vineyards * Math.floor(cards.filter((c) => isType(c, 'action')).length / 3);
     vp += p.vpTokens || 0; // 繁栄：VPトークン
     return vp;
   }
@@ -249,7 +262,7 @@
     // 1) 勝って終われる購入があれば最優先（得点→コストの高い順）
     let winningEnd = null, bestKey = -Infinity;
     Object.keys(state.supply).forEach((id) => {
-      if (sup(state, id) <= 0 || C()[id].cost > coins) return;
+      if (sup(state, id) <= 0 || C()[id].cost > coins || (C()[id].potion || 0) > (state.turn.potions || 0)) return; // 錬金術：ポーション費用も満たす
       if (!buyEndsGame(state, id) || !winsIfEnds(state, seat, id)) return;
       const key = (C()[id].vp || 0) * 100 + C()[id].cost;
       if (key > bestKey) { bestKey = key; winningEnd = id; }
@@ -300,18 +313,41 @@
     return null;
   }
 
+  /* 錬金術：CPUがポーションを仕込む価値のある王国か（支配はCPUの操作が難しいので除外）。 */
+  function wantsPotion(state) {
+    return (state.kingdom || []).some((id) => (C()[id].potion || 0) > 0 && id !== 'possession' && sup(state, id) > 0);
+  }
+  /* 錬金術：このターンのポーション量で買える最善のポーション費用カード（GAIN_ORDER優先）。 */
+  function bestPotionBuy(state, real, potions) {
+    const cands = (state.kingdom || []).filter((id) =>
+      sup(state, id) > 0 && (C()[id].potion || 0) > 0 && (C()[id].potion || 0) <= potions &&
+      cost(state, id) <= real && id !== 'possession'); // 支配はCPUが扱いにくいので自動購入しない
+    for (const id of GAIN_ORDER) { if (cands.includes(id)) return id; }
+    return cands[0] || null;
+  }
+
   function chooseBuy(state, p, level) {
     if (state.turn.buys <= 0) return null;
     const real = state.turn.coins;
+    const potions = state.turn.potions || 0;
     // 「橋」等の軽減は“使える額が増える”のと等価なので、判断はその換算額で行う
     const coins = real + ((state.turn.costReduction) || 0);
+    // 錬金術：このターンにポーションが余っているなら、ポーション費用カードを優先して買う（使い切る）。
+    if (potions >= 1) { const pc = bestPotionBuy(state, real, potions); if (pc) return pc; }
     let pick = null;
     if (level === 'hard') pick = chooseBuyStrong(state, p, coins);
     else if (level === 'easy') pick = chooseBuyWeak(state, p, coins);
     else pick = chooseBuyNormal(state, p, coins);
-    // 念のため：買えない手は返さない（実コストで判定。繁栄：高級市場は場に銅貨があると不可）
+    // 錬金術：ポーション未所持で王国にポーション費用カードがあり、属州/金貨を優先しない局面ならポーションを仕込む。
+    if ((!pick || pick === 'silver') && owned(p, 'potion') === 0 && sup(state, 'potion') > 0 &&
+        wantsPotion(state) && real >= 4 && !(coins >= 8 && sup(state, 'province') > 0)) {
+      pick = 'potion';
+    }
+    // 念のため：買えない手は返さない（実コストで判定。繁栄：高級市場は場に銅貨があると不可）。
+    // 錬金術：ポーション費用も満たしていること（満たさない手を返すと reduce が no-op→CPU無限ループ）。
     const canBuy = !DOM.engine.canBuyCard || DOM.engine.canBuyCard(state, state.turn.active, pick);
-    if (pick && cost(state, pick) <= real && sup(state, pick) > 0 && canBuy) return pick;
+    const potOk = !pick || (C()[pick].potion || 0) <= (state.turn.potions || 0);
+    if (pick && cost(state, pick) <= real && potOk && sup(state, pick) > 0 && canBuy) return pick;
     return null;
   }
 
@@ -704,6 +740,45 @@
       case 'pirate_gain':
         return { type: 'PIRATE_GAIN', card: bestGain(state, 6, { treasureOnly: true }) };
 
+      /* ===== 拡張: 錬金術（Alchemy 第二版）===== */
+      case 'transmute': {
+        // 屋敷→公領 が最強。無ければ呪い（デッキ圧縮）→最も不要な札。
+        const c = p.hand.includes('estate') ? 'estate'
+          : (p.hand.includes('curse') ? 'curse' : p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0]);
+        return { type: 'TRANSMUTE_TRASH', card: c };
+      }
+      case 'apothecary': {
+        // 残りを山札の上へ。引きたい札（アクション/財宝）を上に、勝利点/呪いを下に。
+        const order = pd.cards.slice().sort((a, b) => keepValue(b) - keepValue(a));
+        return { type: 'APOTHECARY_RESOLVE', order };
+      }
+      case 'scrying_pool':
+        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'SCRYING_REACT' }; }
+        { // 自分＝アクション以外を捨ててアクションまで掘る／相手＝良い札を捨てさせ死に札を残す
+          const mine = pd.victim === pd.source;
+          const isAct = isType(pd.card, 'action');
+          const junk = isType(pd.card, 'curse') || pd.card === 'estate';
+          return { type: 'SCRYING_DECIDE', discard: mine ? !isAct : !junk };
+        }
+      case 'university': {
+        const actGain = GAIN_ORDER.find((id) => C()[id] && isType(id, 'action') && cost(state, id) <= 5 && (C()[id].potion || 0) === 0 && sup(state, id) > 0);
+        return { type: 'UNIVERSITY_GAIN', card: actGain || null };
+      }
+      case 'familiar':
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'FAMILIAR_REACT' };
+      case 'golem': {
+        // 順序はほぼ結果に影響しないため高コスト側を先に使う
+        const first = pd.cards.slice().sort((a, b) => C()[b].cost - C()[a].cost)[0];
+        return { type: 'GOLEM_ORDER', first };
+      }
+      case 'apprentice': {
+        // 屋敷（+2カード）＞呪い（圧縮）＞最も不要な札。手札があれば必須。
+        const c = p.hand.includes('estate') ? 'estate'
+          : (p.hand.includes('curse') ? 'curse' : p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0]);
+        return { type: 'APPRENTICE_TRASH', card: c };
+      }
+
       /* ===== 繁栄（Prosperity）===== */
       case 'charlatan':
         if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
@@ -778,19 +853,21 @@
 
   /* ---------- 公開API ---------- */
   function decide(state) {
-    const seat = DOM.engine.actor(state);
-    const p = state.players[seat];
-    if (state.pending && state.pending.player === seat) {
-      return decidePending(state, state.pending, p);
+    const ctrl = DOM.engine.actor(state); // 操作する人（支配中は支配者＝この CPU）
+    if (state.pending) {
+      // 決定の対象＝カードを持つ人（pending.player）。支配中の被支配者の選択も、判断材料は
+      // その対象の手札/山札なので pending.player の player を渡す（操作者は ctrl だが中身は対象）。
+      return decidePending(state, state.pending, state.players[state.pending.player]);
     }
     const t = state.turn;
+    const subj = state.players[t.active]; // 手番の主体（支配中は被支配者）の手札を操作する
     if (t.phase === 'action') {
-      const a = chooseAction(state, p);
+      const a = chooseAction(state, subj);
       return a ? { type: 'PLAY_ACTION', card: a } : { type: 'END_ACTION_PHASE' };
     }
-    // 購入フェーズ
-    if (p.hand.some((c) => isTreasure(c))) return { type: 'PLAY_ALL_TREASURES' };
-    const b = chooseBuy(state, p, p.cpuLevel || 'normal');
+    // 購入フェーズ（支配中は被支配者の手札の財宝を出し、獲得は支配者が受け取る）
+    if (subj.hand.some((c) => isTreasure(c))) return { type: 'PLAY_ALL_TREASURES' };
+    const b = chooseBuy(state, subj, (state.players[ctrl] && state.players[ctrl].cpuLevel) || 'normal');
     return b ? { type: 'BUY', card: b } : { type: 'END_TURN' };
   }
 
