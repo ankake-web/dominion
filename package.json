@@ -5,6 +5,7 @@
   "scripts": {
     "test": "node test/integrity.test.js && node test/invariants.test.js && node test/engine.test.js && node test/intrigue.test.js && node test/edition2.test.js && node test/seaside.test.js && node test/alchemy.test.js && node test/prosperity.test.js && node test/cpu.test.js && node test/ui.test.js && node test/intrigue-ui.test.js && node test/edition2-ui.test.js && node test/seaside-ui.test.js && node test/alchemy-ui.test.js && node test/prosperity-ui.test.js && node test/server.test.js && node test/online.test.js && node test/stress.test.js",
     "verify:visual": "node test/verify-visual.js",
+    "verify:e2e": "node test/verify-e2e.js",
     "start": "node server/index.js",
     "serve": "python3 -m http.server 8000",
     "dev": "node server/index.js & python3 -m http.server 8000"
