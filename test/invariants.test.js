@@ -35,15 +35,26 @@ function hasBack(s) { return s.players.some((p) => ZONES.some((z) => (p[z] || []
 function runGame(kingdom, players) {
   let s = E.createInitialState(players, kingdom, { startActive: 0 });
   const init = tally(s);
+  const n = s.players.length;
   let step = 0;
   while (!s.gameOver && step++ < 20000) {
     s = E.reduce(s, CPU.decide(s));
+    // 毎ステップ：負リソース・手番/フェーズの妥当性（対話中でも成り立つべき不変条件）
+    const t = s.turn;
+    if (t) {
+      if (t.coins < 0 || t.buys < 0 || t.actions < 0 || (t.potions || 0) < 0) return { okp: false, why: '負リソース step' + step + ' coins/buys/actions/pot=' + [t.coins, t.buys, t.actions, t.potions || 0].join('/') };
+      if (!(t.active >= 0 && t.active < n) || (t.phase !== 'action' && t.phase !== 'buy')) return { okp: false, why: '手番/フェーズ不正 step' + step + ' active=' + t.active + ' phase=' + t.phase };
+    }
     if (s.pending) continue;
     const d = diffTally(init, tally(s));
     if (d.length) return { okp: false, why: '保存則 step' + step + ': ' + d.join(' ') };
     if (Object.values(s.supply).some((v) => v < 0)) return { okp: false, why: 'supply負 step' + step };
     if (hasBack(s)) return { okp: false, why: 'back混入 step' + step };
     if (s.players.some((p) => (p.vpTokens || 0) < 0)) return { okp: false, why: 'vpTokens負 step' + step };
+  }
+  if (s.gameOver) {
+    const r = s.result;
+    if (!r || !Array.isArray(r.winners) || r.winners.length < 1 || !Array.isArray(r.scores) || r.scores.length !== n) return { okp: false, why: '終局結果不正: ' + JSON.stringify(r && { w: r.winners })  };
   }
   return { okp: !!s.gameOver, why: s.gameOver ? '' : '未終局(step上限)' };
 }
