@@ -1,164 +1,104 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-03 / branch `main`。**すべてコミット&push済（最新 `d339b95`）・Pages/Render 自動デプロイ済・作業ツリー clean**。`sw.js` は **v26**。
+最終更新: 2026-07-03 / branch `main`。**すべてコミット&push済・Pages/Render 自動デプロイ済・作業ツリー clean**。`sw.js` は **v26**。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
 **新セッションは まず `npm test` を実行し 19スイート・2438件オールグリーン（exit 0）を確認**してから着手すること。
-実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxのはみ出し検査）。
+実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
 
-## 直近セッション（2026-07-01）の総括
-多エージェント監査（Workflow）＋プロパティベースfuzz＋実測A/Bを全領域に実施し、**実バグ約20件を修正・恒久ガードを増設**した。各節に詳細:
-①全ロジック監査(5件修正・泥棒無限ループ=高) → ②オンライン層(情報漏洩2+DoS) → ③カード表示(ペテン師/会計士ラベル+webp再生成) → ④UI/UX(6件・支配render例外=高) → ⑤混成王国の潜在バグ(到達不能を証明・変更なし) → ⑥⑦カード保存則fuzz(闇市場消失・宝の地図複製を修正) → CPU強化(throne/sentry改善+戦略発見) → 実ブラウザE2E新設 → レスポンシブ検証 → アクセシビリティ → パフォーマンス監査 → 多人数アタック検証(クリーン)。
+---
 
-### 多人数アタック/リアクションのルール正当性を検証：クリーン（2026-07-01）
-- **多エージェント監査（Workflow, 3観点）＋決定論シナリオテスト の二方向で検証**。
-- **監査**：呪い配布/枯渇・反応と免疫・アタック複製 の3観点を高effortで精読（各36-41ツール呼び・計117）→ **確定バグ0**。
-- **恒久テスト新設 `test/attacks-multiplayer.test.js`（22アサーション）**：魔女＝3人で相手全員が呪い1枚ずつ・攻撃者は受けない／呪い山枯渇(残2)は**手番順の先着だけ**受ける／**堀は公開した本人だけ免疫**で他は受ける／灯台免疫／民兵＝全相手が手札3枚まで(堀免疫)／巾着切り＝全相手が銅貨捨て／役人＝全相手が勝利点を山札上＆攻撃者は銀貨／**玉座の間×魔女=呪い2枚・王の宮廷×魔女=呪い3枚**・複製でも呪い山ぶんで枯渇打ち止め、を検証＝**すべて正しい**。
-- 結論：多人数アタックの分配枚数・手番順・供給枯渇・免疫/反応・複製 いずれもルール通り。`npm test` 18→**19スイート・2438件緑**。コード変更なし（検証のみ）。
+## 0. 次セッションのタスク：B案＝王国ごとの「エンジン成立度」を評価するCPU購入AI（決定済み 2026-07-03）
 
-### パフォーマンス監査：エンジン/マスク/描画は良好（バグ無し・ログ上限を恒久ガード化）（2026-07-01）
-- **計測結果（いずれも良好）**：reduce は **~0.04ms/手で安定**（長期戦でも劣化なし。100手ごとに計測）。`maskStateFor`（毎ブロードキャストで状態を全clone）も **0.04ms/回**。ゲーム状態は **約6KBで頭打ち**。クライアント全再描画 `DOM.render`（`innerHTML`全書換）は **CPU 4x スロットリング(低速端末模擬)・モバイル390pxで avg12ms / p95 22ms**（ターン制には十分）。
-- **鍵**：`clone=JSON.parse(JSON.stringify)` を毎reduce/毎maskで呼ぶが、**ログが200行で刈られる**（engine.js:238）ため状態が肥大せず O(n^2) 化しない。→ この性能上の不変条件を守るため、`test/invariants.test.js` に**「ログ長 ≤ 250」を各安定点で検査**する回帰ガードを追加（誰かがログ上限を外したら即検知）。
-- 結論：性能面のバグは無し。コード変更は不要（ガードのみ追加）。全2416件緑（invariants は既存4アサーション内で追加検査）。
+### 決定と理由
+- 実測（下表）で「**現行CPUのエンジン買い（`bestEngineBuy`）は現実的な単一拡張王国では純ビッグマネー(BM)に大敗、ただし海辺だけは現行が勝つ**」と判明。買いを絞る単純な中間案は全て「basic/intrigue改善⇔seaside悪化」のトレードオフを壊せず失敗済み。
+- → **B案を採用**（ユーザー決定）：ゲーム開始時に王国10種を評価して「エンジンが成立する王国か」を判定し、**成立→エンジン構築買い／不成立→ビッグマネー買い に切り替える**。A案（hardを単純BM寄せ）は「seaside悪化＋CPUが王国カードを買わないUX」のため不採用。
+- **性能懸念なし**（確認済み）：静的評価はマイクロ秒オーダー。reduce実測0.04ms/手・CPU手番は演出ウェイト650-950msに埋没。モンテカルロ（プレイアウト先読み）方式にはしない。
 
-### アクセシビリティ改善：カード/山をスクリーンリーダー＆キーボード対応（2026-07-01）
-- **クリックできるカード/サプライの山**（`cardEl`/`pileEl` の `<div onclick>`）に `role="button"`＋`tabindex="0"`＋説明的 `aria-label`（例「銅貨、コスト0、残り46枚」「村、コスト3、2枚、アクション」）＋**Enter/Spaceキーで発火**（`a11yBtn`/`activateKey` を新設）。盤面のほぼ全インタラクティブ要素を一括で対応。
-- **アイコンのみボタン**（閉じる`✕`×2・メニュー`☰`）に `aria-label` を付与＝スクリーンリーダーが用途を読み上げられる。カード画像は既に `alt`（カード名）付き。
-- 回帰テスト4件追加（手札カード/サプライの role・aria-label・tabindex・Enterキー発火）。**全2416件緑**＋実ブラウザE2E 9/9。`sw.js` v25→**v26**。
-- 未対応（意図的）：`viewport` の `user-scalable=no`（タッチ操作中の誤ズーム防止の設計判断）は据置き。全面的なフォーカストラップ/ライブリージョンは視覚的カードゲームでのROIを踏まえ見送り（基本の読み上げ・キーボード到達は確保）。
+### 実測データ（判断の土台。自己対戦A/B＝NEW vs OLD、下記ハーネス）
+| セット | 純BM vs 現行(hard) | 純BM vs 現行(normal) |
+|---|---|---|
+| random-basic | 純BM **82%** | 72% |
+| random-intrigue | 純BM **88%** | 84% |
+| random(基本+陰謀) | 純BM **78%** | 83% |
+| random-alchemy | 純BM **67%** | 68% |
+| random-prosperity | 49%（互角） | 47% |
+| random-seaside | **43%＝現行が勝つ** | 41% |
 
-### 実ブラウザE2Eスモークを新設（2026-07-01）
-- **`test/verify-e2e.js`**：自前で静的サーバを立て、**ヘッドレスChrome(puppeteer)**でホーム→設定→CPU戦開始→通しプレイを駆動。検査：**JS例外(console/pageerror)ゼロ・カード画像webp 143枚すべて200・主要リソース読込失敗ゼロ・盤面描画と進行**。単体/jsdomでは捉えられない実ブラウザの統合レベルを確認。
-- 結果：**9/9 成功・バグ無し**（配信アプリは実機で無エラーに動作）。CI(npm test)には含めない（puppeteer依存・低速）。手動実行＝`npm run verify:e2e`。既存 `verify:visual`（レスポンシブ/はみ出し）と併用。
-- **レスポンシブ検証（`test/verify-visual.js` を自己完結化に更新）**：旧版はボタン文言が古く(`対戦をはじめる`→現行`CPUと対戦`)・`/tmp`依存で壊れていたため、E2Eと同じ自前サーバ方式に刷新＋「はみ出しの犯人要素」検出を追加。**320/360/390/414/768px の全幅×主要画面(home/setup/board/zoom/cardlist/rules)で横はみ出しゼロ**を確認。320px盤面・カード拡大モーダルを目視でもクリーンと確認（重なり/見切れ無し）。手動実行＝`npm run verify:visual`。
-- 実装メモ：静的サーバのMIME(webp/webmanifest/audio 等)を用意、SWはbypass、`.actions-bar`の主ボタンを駆動（無効ボタンはスキップ、確認ダイアログ`.modal.confirm-modal`は主ボタンで解決、CPU手番は内蔵ディレイぶん待機）。
+- **失敗済みの中間案（再試行しないこと）**：(a) 研究所型キャントリップ(+1アクション&+カード)のみ厳選 → 総合48%・**seaside 19%** ／(b) キャントリップ広め＋呪いアタック≤2 → 総合41-44%・seaside 29% ／(c) 村/ドローの支え条件付き → 総合43-44%・**seaside 17%**。教訓＝**半端なエンジンは無エンジンより弱い**。
+- 現行 `bestEngineBuy`（js/cpu.js）＝非ターミナル have<4／ターミナル have<2 かつ terminals<villages+1／王国財宝 have<2、GAIN_ORDER順。ヘルパ `plusActions`/`plusCards`（text正規表現）・`throneValue` あり。seasideで実証済みに機能する。
 
-### CPU強化(A) 実測ドリブン検証：throne/sentry を改善＋「純ビッグマネーが現行より強い」発見（2026-07-01）
-- **測定基盤**：参照ボット(BigMoney/BM+Smithy)＋**自己対戦A/B（NEW作業ツリー vs OLD git HEAD, 同一エンジンで席ごとにdecide差替え, 単一拡張セット, 席・王国交絡を除去してミラー=50%に校正）**を構築。改善は「NEWがOLDに勝ち越す」で判定。分析Workflow(4観点)で26提案を収集。
-- **採用（quality改善・A/Bはニュートラル=悪化なし）**：(1)**玉座の間/王の宮廷の対象**を「最高コスト」でなく `throneValue`（ドロー>アタック>獲得>+アクション/コイン）で選ぶ＝魔女3回/研究所3回等の強手を選べる。(2)**衛兵(sentry)**が銅貨を圧縮するように（財宝≥7で銅貨も廃棄・死に札は捨てて掘る）＝現行は銅貨を一切圧縮しない弱点だった。自己対戦A/Bは 50.0%/50.3%（低頻度カードのため勝率は不変だが、対人では明確に賢い手）。序列(強vs弱95%/強vs普通55%/普通vs弱87%)維持・全緑。
-- **重要な発見（未採用・要方針判断）**：**現行CPUのエンジン買い(`bestEngineBuy`)は現実的な単一拡張王国では純ビッグマネーに大敗する**（自己対戦A/B：pure-BM が現行に hard 68%/normal 66%）。内訳＝basic/intrigue/alchemy で pure-BM が 67-88% と圧勝（雑多なアクションを買ってデッキを薄めている）／一方 **seaside では現行エンジンが強い**（pure-BM 43%＝現行が勝つ。安価キャントリップ+持続+アタックが機能）／prosperity はほぼ互角。
-- **試したが不採用**：エンジン買いを (a)厳選キャントリップのみ (b)村/ドローの支え条件付き 等に絞る各版は、basic/intrigue で改善する一方 **seaside を大きく悪化**させ、単純ヒューリスティックでは全セット同時改善が不可能と判明（半端エンジンは無エンジンより弱い）。純BM化(+68%)は seaside 悪化＆「王国カードを一切買わない=つまらない/壊れて見える」UXトレードオフがあるため独断では入れず。
-- **推奨（次アクション候補）**：(A案)hard を「ビッグマネー基調＋厳選エンジン」に寄せて総合勝率を上げる（seaside悪化とエンジンレスUXを許容するか要判断）／(B案)王国ごとの「エンジン成立度」を評価する本格的な購入AI（大きめの実装）。いずれも実装前に方針確認が要る。
+### 設計の叩き台
+1. **`evaluateKingdom(kingdom)` を新設**（王国は対局中不変→ゲーム開始時1回評価してキャッシュ可）。見る要素＝村(+2アクション)の有無／ドロー(+2カード以上)の有無／安価(≤4)キャントリップ数／持続(seaside型テンポ)／呪い配布アタック。第一仮説＝**「村とドローが両方ある」or「seaside型（安キャントリップ＋持続）」→ ENGINE、それ以外 → MONEY**（seasideだけ現行が勝つ実測と整合）。
+2. strategy=ENGINE の王国では**現行 `bestEngineBuy` をそのまま**使い、strategy=MONEY では呼ばない（純BM）。MONEYでも「呪い配布アタック≤2枚だけは買う」はBM定石として試す価値あり。
+3. 適用範囲：`chooseBuy` 経由で hard/normal 共通に効かせてA/B。easy（`chooseBuyWeak`）はエンジン買い無しで影響なし。
+4. **採用条件＝自己対戦A/Bで 総合>52% かつ どのセット（特にseaside）も45%未満に悪化しない**。満たせなければ閾値調整、それでも駄目なら結果をこの§0に記録して不採用でよい（実測が正）。
 
-### 監査⑥：プロパティベース不変条件テスト（カード保存則）で闇市場のカード消失を発見・修正（2026-07-01）
-- **手法**：CPU対CPUを大量(敵対的キングダム＋全プール混成960戦)に走らせ、安定点(pending null)ごとに **カード保存則**（各カードidの総数＝supply＋trash＋全ゾーン＋blackMarket＋支配一時 が開始時から不変）・supply非負・'back'非混入・vpTokens非負 を検証。→ **保存則違反2件（同一原因）を検出**。
-- **発見バグ：闇市場の財宝プレイで公開カードが消失**：`BLACK_MARKET_PLAY_TREASURES` が財宝を `forEach` で無条件に全出しし、途中で「使ったとき」に pending を立てる財宝（投資/金床/水晶玉/ティアラ/ペテン師）が **闇市場 pending を上書き**→公開中の3枚が取りこぼされ消失していた（`PLAY_ALL_TREASURES` は `if(pending)break` で防いでいたが闇市場側は未対応）。→ **1枚ずつ出し、闇市場 pending が上書きされたら公開カードを闇市場デッキへ戻してから、その財宝 pending の解決に譲る**（今回の闇市場購入は中断）よう修正。
-- **到達性**：`black_market` は promo、pending財宝は prosperity で出荷セットでは共存しない＝**現状は到達不能**だが、修正は shipping では no-op（`state.pending !== pd` 分岐は踏まない）で低リスク。混成モード追加時の堅牢性を確保。
-- **大規模tail-hunt(3000戦)で2つ目のバグを発見：宝の地図(treasure_map)の複製**：`treasure_map` の効果が `removeOne(inPlay,'treasure_map'); state.trash.push('treasure_map')` と**無条件にtrashへpush**していたため、玉座の間/王の宮廷の2回目プレイ（1回目で既に廃棄済みで場に無い）で**存在しない宝の地図を1枚生成**していた（保存則違反 10→11）。→ **「これ」が場に無ければ何もしない**（`if(!removeOne(inPlay))break`）よう修正。これはルール的にも正（玉座2回目は「これ」を廃棄できないので効果なし）。到達性＝宝の地図(海辺)と玉座/王の宮廷(基本/繁栄)は出荷セットで共存せず現状到達不能だが、低リスクな複製修正。
-- **支配(Possession)の保存則も検証**：CPUは支配を買わないため通常フェーズでは踏まれない最複雑機構（actorルーティング/gain・trash精算/追加ターン/cleanup）を、手で支配を発動させて120戦検証→**保存則違反0**（gain/trash精算・cleanupが保存則を守ることを確認）。恒久テストにも支配強制12戦を追加。
-- **恒久ガード新設 `test/invariants.test.js`**：敵対的キングダム(玉座/王の宮廷×宝の地図/闇市場×pending財宝 等)＋全プール混成＋出荷セット各種＋支配強制で保存則等を毎回検証（決定論シード）。今後あらゆる状態破壊（カード複製/消失）を即検知する。`npm test` は17→**18スイート・2410件緑**。`sw.js` v22→**v24**（engine.js のキャッシュ更新）。
+### 自己対戦A/Bハーネスの再作成手順（前回の `_ab.tmp.js` は規約により削除済み）
+- vm sandbox に cards/engine を読み込み、**NEW=作業ツリーの js/cpu.js／OLD=`git show HEAD:js/cpu.js`** を別々に runInContext して DOM.cpu を2つ捕捉。1ゲーム内で `E.actor(s)===newSeat ? newCpu.decide : oldCpu.decide` と席で差し替え。
+- **校正の教訓（重要）**：席と王国が交絡しないよう、**同一(seed,セット)のキングダムを NEW=席0 / NEW=席1 の両方で対戦**させる。まずミラー（NEW=OLD）で NEW勝数=OLD勝数 になることを確認してから本計測。勝率＝NEW/(NEW+OLD)（tie除外）。
+- セット＝`DOM.kingdomForSet(x)`, x∈{random-basic, random-intrigue, random, random-seaside, random-alchemy, random-prosperity}。250キングダム×2席/水準 程度で判定。
+- ※参照ボット方式は使わない（前回「BM+Smithy」参照ボットが鍛冶屋2枚買いで自滅し校正失敗）。自己対戦A/Bが信頼できる指標。
+- プロジェクト直下に `_ab.tmp.js` で作り、終わったら必ず削除。
 
-### 多エージェント監査④：UI/UXの詰み・クラッシュ・誤誘導を修正（2026-07-01）
-- **監査手法**：Workflow で4次元（モーダル詰み/手番フロー/初心者モード/描画・モバイルa11y）を並行監査→敵対的検証（17エージェント）。13件検証→**確定8件（重複除き6種）**。共通テーマ＝**支配(Possession)UIが一部で「支配者の手札/pending」を見て被支配者を見ていなかった**（viewActionBar等は修正済みだったが maskStateForの看破秘匿・maybeAutoSkipAction・coachHint が漏れていた）。
-- **#U1（high・crash）オンライン支配中に被支配者が衛兵/見張り/水晶玉を出すと支配者の画面がrender例外で固まる**：`maskStateFor` が看破札(sentry/lookout の cards・crystal_ball の card)を `pending.player` 以外に 'back' 化するが、支配中の決定者は支配者(possessedBy)なので支配者に 'back' が届き、UIが未知id 'back' を描画して TypeError→画面フリーズ。→ `maskStateFor` を**決定者(支配中は支配者)にも看破を開示**するよう修正（`secretSeer`）＋**cardEl に未知idの伏せカード・プレースホルダ防御**を追加（将来の類似欠落でも巻き込みクラッシュしない）。
-- **#U2（med）支配中のアクション自動スキップが支配者の手札で判定**：`maybeAutoSkipAction` が `actor`(=支配者)の手札を見て、被支配者にアクションがあっても勝手に購入フェーズへ飛ばし操作権を奪っていた。→ 被支配者(t.active)の手札で判定（viewActionBar と同じルーティング）。
-- **#U3（med）初心者コーチ案内が支配中に支配者の手札を見て誤誘導**：`coachHint` を被支配者の手札に揃えた。
-- **#U4（med・playability）闇市場で得たサプライ外カードが手札に描画されず操作不能**：`handGroups` が `SUPPLY_ORDER` に無いidを全グループから落としていた（ポーションと同じ穴）。→ 手札の全idを網羅（順序外idは後ろに追加）。
-- **#U5（low）秘密の小部屋の戻し説明が手札1枚時に「2枚」と誤表示**：動的化。
-- **#U6（low）おすすめ買いが植民地/プラチナ(繁栄)を提案しない**：`recommendedBuys` に colony/platinum＋ポーション費用判定を追加。
-- **検証**：回帰テスト7件追加（engine +5＝支配中の看破開示マスク、ui +2＝サプライ外カードの手札描画）。**全2406件緑（exit 0）**。`sw.js` v21→**v22**（engine.js/ui.js のキャッシュ更新）。
-
-### 多エージェント監査③：カード表示（種別ラベル/ポーション表示）を修正（2026-07-01）
-- **監査手法**：Workflow で3次元（データ導出/実行時描画/画像生成）を並行監査→敵対的検証（14エージェント）。11件検証→**確定3種**（重複除く）。
-- **#C1（誤表示）ペテン師(charlatan)の種別が「アクション・アタック」**：types=`['treasure','attack']` だが `carddata.js` の `typeLabel`/`typeLabelEn` が先頭一致 return で財宝を考慮せず attack 分岐に落ちていた。→ `財宝・アタック / Treasure - Attack` に修正。
-- **#C2（誤表示）会計士(clerk)の種別からアタック脱落**：types=`['action','attack','reaction']` だが reaction 分岐が先に一致し「アクション・リアクション」＝attack欠落。→ `アクション・アタック・リアクション / Action - Attack - Reaction` に修正（3種type分岐を追加）。
-- **#C3（プレビューのみ）実行時SVG描画(cardview)にポーション費用表示が無い**：`cardview.js` のコストバッジがポーション費用を出さず、錬金術のポーション費用カードが無料に見えた。**ただし盤面/拡大は webp（フラスコ焼込済＝正しい）を使うので影響は cards.html プレビューのみ**。→ `buildDisplay` に `potion` を透過＋`cardview` のコストに紫フラスコ🧪を重畳。
-- **重要な構造の把握**：**盤面/拡大表示は `asset/cards/<id>.webp`（焼込画像）を `<img>` 表示**（ui.js:185/1492/1511）。`cardView` の SVG は cards.html プレビュー専用。よって #C1/#C2 の**盤面表示を直すには webp 再生成が必要**だった。
-- **webp再生成（このPCで実施）**：puppeteer＋ローカルアート（`asset/art/charlatan.png`/`clerk.png`）＋マスター枠が揃っていたので `CARDS_OUT=<temp>` で全117枚を temp に生成し、**charlatan.webp と clerk.webp の2枚だけを本番へコピー**（差分を最小化）。目視で正しいラベルを確認済み。
-- **回帰テスト**：`integrity.test.js` に**種別ラベルが全 type を落とさない網羅チェック**（＝charlatan/clerk 型のバグを構造的に検知）＋ポーション費用の単一ソース透過チェックを追加。**全2399件緑（exit 0）**。`sw.js` v20→**v21**（carddata.js/cardview.js/webp2枚のキャッシュ更新）。
-- **棄却された所見**：pirate/blockade 等の枠色・ラベル長オーバーフローは問題無し（既存の縮小ループで収まる）。charlatan の枠色（attack=赤）は「攻撃財宝は攻撃扱い」の設計意図として維持（ラベルのみ修正）。
-
-### 多エージェント監査②：オンライン対戦層の情報漏洩/DoSを修正（2026-07-01）
-- **監査手法**：Workflow で5次元（マスク漏洩/不正対策/権限/再接続トークン/クライアントdesync）を並行監査→各所見を「悪意ある改造クライアント」脅威モデルで敵対的検証（12エージェント）。7件検証→**4件確定**。**不正対策(anti-cheat)は exploit 無し**＝reducer が client 由来ペイロードを実状態に照らして検証しており、細工した action で勝敗を歪める穴は無いことを確認（棄却：resumeレート制限/dc席5分停止/獲得系のポーション費用＝いずれも問題無し）。確定4件はいずれも severity=low（カジュアル対戦アプリ）だが実在するため修正。
-- **#O1（info-leak）水晶玉の看破カードが相手席にも配信**：`state.pending={type:'crystal_ball',card:deck[0]}` は使用者だけの私的看破（reveal していない）なのに `maskStateFor` に伏せる分岐が無く、配信JSONを覗くと使用者の山札トップ（keep 時は次に引く札）が判明。→ sentry/lookout と同型の分岐を追加し所有者以外には `card:'back'`。
-- **#O2（info-leak）自分の山札が順序込みで配信され「次に引く札」が透視できる**：`maskStateFor` の自席分岐 `return p` が deck を順序込みで返していた。公式でも自山札の順序は不可視。→ **自席 deck を id ソートして配信**（中身・枚数は保持＝自分の得点 `vpOf` 表示は不変、順序だけ消す）。権威stateはサーバが完全順序で保持し reduce もサーバ側＝クライアントは reduce しないので実害なし。（当初 'back' 全伏せにしたら自分の得点計算 `vpOf(handP)` が壊れたため、順序のみ隠すソート方式に修正。）
-- **#O3+O4（DoS）ルームコード枯渇/部屋リーク**：4桁コード(1万)＋ロビー猶予60sで、create→即切断を大量反復するとコード空間を占有し得た。→ (a) `scheduleRelease` で**未開始かつ無人になるロビーは猶予を待たず即破棄**（create→即切断の占有を封じる）＋(b) `MAX_ROOMS=2000` の同時部屋上限（メモリ/コード空間の有界化）。開始後や複数人ロビーは従来どおり猶予で復帰可。
-  - **追補（監査⑦・自己修正）**：上記(a)の即破棄が `restoreRoom`（サーバ再起動時の復元）でも発火し、**復元直後の未開始ロビー**（全員未接続で始まる）を即破棄してしまう回帰を発見。→ `scheduleRelease(room, member, allowImmediate)` に引数追加し、**restoreRoom からは `false`** を渡して即破棄を抑止（復元は従来どおり猶予で resume を待つ）。ライブ切断（DoS対象）は既定 true のまま。server テストに復元ロビー非破棄の回帰テストを追加（47→49件）。
-- **検証**：回帰テスト9件追加（engine +7＝自席山札のソートマスク/水晶玉の看破秘匿、server +2＝ロビー空室の即破棄）。**全1876件緑（exit 0）**。`sw.js` v19→**v20**（engine.js のキャッシュ更新。server/gameServer.js は Render 自動デプロイ）。
-- **未対応（意図的）**：自席 deck の「中身(構成)」は公式でも既知なので配信する（順序のみ秘匿）。より厳密にするなら山札上公開系を全て pending 経由に寄せて deck 完全秘匿も可能だが、得点表示との両立コストに見合わないため見送り。
-
-### 多エージェント監査（ultracode）で発見した確定バグ5件を修正（2026-07-01）
-- **監査手法**：Workflow で8次元（拡張別＋CPU＋UI/online＋コア）を並行監査→各所見を独立スケプティックが実コードで敵対的に反証（18エージェント）。10件検証→**real&確信度≥medを5件確定**。反証で棄却＝支配の非Alchemy self-trash永久廃棄／改築系のポーション費用無視（いずれも出荷構成で到達不能）／ペテン師=銅貨（テキスト通りで正しい）／徒弟×石切場（石切場は継続割引で正しい）／玉座で持続複製（実害なし）。
-- **#B1（high・修正）泥棒(thief)王国のCPU戦が永久に終わらない**：泥棒が財宝を単調に廃棄→全員コイン0・購入0・パイル不変で `isGameOver` が永久false（オンラインCPU部屋も無限ループ）。対策＝(a)**CPU経済底上げフォールバック**（`chooseBuy`：財宝密度が低く何も買えない局面では最安財宝＝銅貨を必ず買い経済再建＋パイル消化。健全なデッキでは非発動）＋(b)`pickChapelTrash` を財宝が乏しければ銅貨を削らない＋(c)**エンジンの安全網**（`isGameOver`：どのプレイヤーも150手番に達したら現状スコアで打ち切り＝`scoreGame` reason「膠着のため打ち切り」）。泥棒は1E仕様で「公開財宝を必ず1枚廃棄」＝ルール正なので廃棄自体は変えない。検証：泥棒王国 全構成(2-4人×3難易度)終局・最長150手番。全プール混成500戦0詰み0no-op・最長71手番・安全網発動0（＝通常対戦には一切影響しない真のバックストップ）。
-- **#B2（med）会計士を手番開始時に2枚以上使うと2枚目以降が消える**：1枚目のアタックが山札上置きの pending を立てると `clerk_start` が startQueue に取り残された。対策＝`clerkEnterVictim` のアタック終端を `popStartQueue` に（通常/玉座プレイは startQueue=null で pending=null と等価＝無害）。
-- **#B3（med）ティアラでペテン師を2回使うと2回目のアタックが出ない**：`treasureReplayCoins` がコインしか再適用しなかった。対策＝2回目に 収集の+1購入・ペテン師のアタック（1回目が反応待ちでない時だけ再発火＝pending衝突回避）・銀行/賢者の石の動的コイン・ポーションのトークンも再適用。
-- **#B4（med）水晶玉で山札上の財宝を「使う」と特殊効果/動的コインが失われる**：`t.coins += treasureCoins` だけで銀行/賢者の石の動的コイン・ポーショントークン・ペテン師のアタックが発動しなかった。対策＝財宝は `playTreasureCard` に委譲（手札を一旦経由）して「使ったとき」効果を完全再現。
-- **#B5（low）同一プレイヤーが同名に複数の封鎖を伏せると呪いが1枚しか出ない**：`find`→`filter` にして封鎖1枚につき呪い1枚（免疫はエントリ個別判定）。
-- **検証**：回帰テスト11件追加（繁栄+8＝ティアラ×ペテン師2回/会計士2枚/水晶玉ペテン師、海辺+1＝封鎖×2、CPU+2＝泥棒終局・安全網）。**全1867件緑（exit 0）**。`sw.js` v18→**v19**（engine.js/cpu.js はクライアント配信＝キャッシュ更新のため）。UI(ui.js)は不変。
-
-### 海辺の簡略化2点を本格実装＋混成王国CPU購入バランス調整（2026-07-01）
-- **コミット&push済（`8235b32`）**。Pages/Render は自動デプロイ。`sw.js` v17→**v18**（ui.js にリアクションモーダル2種を追加したため）。テスト **1856件緑**（海辺 85→100・海辺UI 22→24 に増、他は不変）。
-- **#2a 封鎖（Blockade）の「堀で免疫」窓を本格実装**：封鎖はアタックカードなので、プレイ時（脇置き後）に各相手へ反応窓を出す（`blockadeEnterVictim`＋`ATTACKS.blockade` 登録）。堀/秘密の小部屋/外交官の反応窓を共用（`hasReaction`）。**堀を公開した相手／灯台で免疫の相手**は、その封鎖の予約 `delayedEffects` の `immune:[]` に席番号を登録（`markBlockadeImmune`）。呪い窓（他人が同名獲得→呪い）は `!(bl.immune||[]).includes(pIndex)` で免疫者をスキップ。新reducer `BLOCKADE_REACT`（堀を出さず受ける＝免疫なしで次へ）。`BLOCKADE_GAIN` はarm時に `immune:[]` を持たせ、獲得後に窓を起動。
-- **#2b 海賊（Pirate）の財宝獲得リアクションを本格実装**：`triggerOnGain` の末尾で「財宝を獲得したとき・`_gainDepth===1 && !pending`（＝トップレベルの安全な獲得）」に `pirateReactWindow` を起動。手番順（獲得者を含む）に、手札に海賊を持つ各プレイヤーへ「使う/使わない」窓（`pirate_react` pending）。使うと海賊を手札→場に出し `armDuration(pirate)`＝相手の手番中でも本人の次手番開始で発火（`cleanupAndAdvance` は手番主のみ処理するので、リアクションで出た海賊は本人の次クリーンアップで正しく捨て札化）。新reducer `PIRATE_REACT`。複数人連鎖・使わない選択も可（詰まらない）。
-- **設計上の安全側**：海賊窓は `!pending && _gainDepth===1` のときだけ発火（船乗り/物見やぐら/ティアラ等の既存on-gainフックと同じゲート）。深い入れ子（他アタックのgain中・pirate_gainの獲得中・隠し財産の金貨獲得＝depth2）では発火しない簡略化。ごく稀な取りこぼしのみで、pending衝突/CPU無限ループ/人間の詰みを回避。
-- **CPU/UI**：`decidePending` に `blockade`(react=堀/受ける)・`pirate_react`(常に使う＝タダのテンポ)を追加。`viewPendingModal` に封鎖リアクション（`reactOptions`）・海賊リアクション（使う/使わない）を追加。`PLAYER_ACTIONS` に `BLOCKADE_REACT`/`PIRATE_REACT` 追加（整合性テスト一致）。オンラインは actor()＝pending.player で自然に反応者へルーティング（サーバ無改修）。
-- **#1 混成王国のCPU購入バランス**：`chooseBuyNormal`/`chooseBuyStrong` はビッグマネー偏重（属州/金貨/銀貨/公領/市場/鍛冶屋のみ）で、繁栄×海辺などの強王国で**王国カードをほぼ買わない**（実測：繁栄+海辺で王国カード比率0-5%）ことを計測で確認。→ **`bestEngineBuy`** を追加：カードtextから「+Nアクション」を読み非ターミナル判定、村/研究所型は積み増し（≤4）・ターミナルは村数+1まで（衝突回避）・王国財宝≤2、GAIN_ORDERの強さ順で最良1枚。緑化前（属州>3〜4）に金貨の次点として購入。**支配(possession)はCPUが扱えないので除外**。
-- **#1 検証**：混成3種×難易度総当りを計測→王国カード比率が **0-5%→15-24%** に上昇、難易度序列(hard>normal>easy)を維持・全戦終局。**新hard vs 旧hard のA/B（同engine・decideのみ差替え）で 64%/93%/64% と新CPUが勝ち越し**（＝購入変更で絶対的に強化）。default王国の真の勝率も hard vs normal≈58%・hard vs easy≈93%・normal vs easy≈86%（各300戦）で健全。全プール混成ランダム王国 **400戦0詰み0no-op**。
-- **`test/cpu.test.js` を決定論化（重要な副次修正）**：このファイルだけ RNG 未シードで、勝率テストが40戦・少サンプルのため真の勝率(hard vs normal≈58%)でも稀に45%を割って**偽陰性で赤**になっていた（今回のエンジン買いで normal も強くなり hard-normal 差が 68%→58% に縮まり顕在化）。→ 他の全テストと同じく**固定シード(20260701)を導入＋勝率サンプルを40→100戦**に。閾値は不変。結果は決定論的に 強vs弱93%・強vs普通58%・普通vs弱94% で安定緑（2回連続で同値確認）。
-- **未実装/残**：#3 新拡張の画像化はアート入力（`asset/art/<id>.png`＝ローカルgitignore）が新規に必要で、コード側スキャフォールドは可能だがアートはこのPCでの別途生成が要る（未着手）。
-
-### 繁栄（Prosperity 第二版）27種を実プレイ可能に（2026-07-01）
-- **25王国＋プラチナ貨＋植民地**を実装。新セット「**繁栄セット**」(`DOM.KINGDOM_PROSPERITY` 固定10種)＋「**繁栄から**」(ランダム)。`POOLS.prosperity`(25種)。
-- **新基盤**：(1)**VPトークン** `player.vpTokens`（司教・記念碑・収集・投資。`vpOf` で加算・`maskStateFor` は素通し=公開）。(2)**プラチナ貨/植民地**＝`initSupply` が王国に繁栄カードがあるとき自動供給（platinum 12 / colony v）。盤面の財宝/勝利点列に条件表示。(3)**コスト軽減** `cardCost`（石切場＝場にある間アクション$2安／行商人＝購入時 場のアクション数×$2安）。(4)**動的財宝** 銀行＝`playTreasureCard` で場の財宝枚数ぶん。(5)**`canBuyCard`**（高級市場＝場に銅貨で不可。engine/CPU/UI 共用で空振り防止）。
-- **獲得時フック**（`triggerOnGain`）：隠し財産＝勝利点獲得→金貨（**購入時→獲得時に faithful 化**。`applyHoardOnBuy` は no-op 化）／収集＝アクション獲得→+VP／物見やぐら・ティアラ＝獲得物の廃棄/山札上（`_gainDepth===1 && !pending` の安全ガード＝自分の手番の主獲得時のみ）。
-- **アタック**：群衆／会計士／ペテン師を `ATTACKS` 登録（堀で無効化可）。**王の宮廷**＝`replay` に2回積んで3回プレイ（runReplays 上限 30→200）。**会計士の手番開始時プレイ**も実装（`clerk_start` を `resolveDurationStartEffects` で startQueue へ）。
-- 24+1 の新 reducer（`BISHOP_*`/`VAULT_*`/`MINT_REVEAL`/`EXPAND_*`/`FORGE_*`/`KINGS_COURT_CHOOSE`/`WAR_CHEST_*`/`WATCHTOWER`/`TIARA_*`/`ANVIL_*`/`INVESTMENT*`/`CRYSTAL_BALL`/`CLERK_*` 等）＋ `PLAYER_ACTIONS`＋CPU `decidePending` 全分岐＋`chooseAction`/`chooseBuy`(植民地/プラチナ優先)＋UI `viewPendingModal` 全モーダル。
-- **敵対的レビュー（サブエージェント）で発見→修正**：①司教を空手札で使うとデッドロック→`hand>0` ガード。②ティアラの2回目コインが相手の堀で取りこぼし→pending 無関係に常時加算。③会計士の手番開始プレイ未実装→実装。④runReplays 上限30→200。
-- **検証**：`test/prosperity.test.js`(56)・`test/prosperity-ui.test.js`(29) 追加。CPU対CPU **157戦(2-4人)0デッドロック**、実ブラウザで盤面描画＋webp読込(broken 0)、27枚モンタージュ目視OK。**全テスト約1737件緑**。
-- **カード画像**：`asset/cards/<id>.webp` 26枚新規＋hoard更新（繁栄調の新絵＋テキストを「獲得時」に修正）。`carddata.js` の hoard DISPLAY も修正。差分は新規26＋hoardのみ（既存はgrainのみ→`git checkout`で戻し）。
-- **デプロイ**：`sw.js` v15→**v16**（クライアント更新）。繁栄webpは deploy.yml の glob でコピー、実行時プリキャッシュ（precache不要）。
-
-### 錬金術（Alchemy 第二版）13種を実プレイ可能に（2026-07-01）
-- **12種＋支配**を実装。新セット「**錬金術セット**」(`DOM.KINGDOM_ALCHEMY` 固定10種)＋「**錬金術から**」(ランダム, `POOLS.alchemy`=王国12種)を**有効化**（上記で一時無効化していた2エントリを実装完了に伴い復活）。
-- **ポーション経済（新基盤）**：`initSupply` が王国にポーション費用カードがあると**ポーション山(16)**を自動供給／`freshTurn` に `turn.potions`／`playTreasureCard` で potion 財宝→`t.potions+=1`／**BUY にポーション費用判定を追加**（コスト0でもポーション無しはタダ取り不可＝重要）。`potionCost(id)`（コイン軽減では下がらない）。UI＝**POTIONバッジ(紫)＋ポーション山を財宝列に＋購入可否 `affordable()`**（コイン・ポーション・繁栄制約を1関数に集約）。
-- **各カード**：変成(種類ごと獲得・多重タイプは各ぶん)／ブドウ園(所持アクション3枚=1VP＝`vpOf` に加算)／薬草商(片付けで場の財宝を山上=cleanup自動)／薬剤師(上4枚の銅貨/ポーションを手札・残りを並べ替え)／念視の泉(密偵型アタック＋自分はアクション以外まで公開ドロー)／大学(アクション獲得)／錬金術師(場にポーションで山上=cleanup自動)／使い魔(魔女型アタック)／賢者の石(山札+捨て札÷5コイン)／ゴーレム(アクション2枚を replay で使う。runReplays に `label:'golem'` 分岐)／徒弟(廃棄コインぶんドロー・ポーション費用は+2)。使い魔・念視の泉を `ATTACKS` 登録。
-- **支配（Possession）＝最難**：`turn.possessedBy`(操作者)/`turn.rotationSeat`(回り順を崩さない)/`state.extraTurns`(追加ターン待ち行列)。**`actor()` を支配ルーティング化**（被支配者=activeの決定を支配者に委譲。他人のリアクションは本人）。**`gain()` リダイレクト**（被支配者の獲得→脇→精算で支配者の捨て札へ）。**`trashOwn()`**（被支配者の廃棄→脇→精算で本人の捨て札へ戻す＝永久廃棄しない。錬金術の廃棄は変成/徒弟が使用。§注意参照）。`cleanupAndAdvance` で精算＋次手番決定（前哨地→支配追加ターン→通常rotationSeat+1）。UI＝**maskStateForで支配者に被支配者の手札を開示／「🎭 支配中」バナー／被支配者の手札を操作対象として描画**（`handP`）／pendingモーダルの表示判定を `pending.player===viewer` から `interactive`(=actor===viewer)へ（支配で詰まないため）。オンラインは `actor()` 経由で**サーバ無改修**（送信可否・CPU判定とも actor で正しく分岐）。
-- **CPU**：`decidePending` 全8分岐＋`chooseAction`(非ターミナル/ターミナル分類)＋`chooseBuy`(ポーション所持で錬金カード優先・未所持なら potion 仕込み。支配はCPU自動購入から除外)＋`decide` を支配対応(被支配者の手札を操作・操作者levelで判断)。`vpOf` にブドウ園。
-- **敵対的レビュー（多エージェントWorkflow＋CPUストレス）で発見→全修正（7件）**：
-  ①**CPU無限ループ**：ポーション0でも「ポーション費用カード」を勝ち筋/廉価札として選び続け reduce が no-op（`chooseBuy` 最終ガード・`kingdomAffordable`・hard の勝ち筋スキャンがコイン費用のみ判定）→3箇所にポーション費用充足チェック追加。②**大学がポーション費用アクションを獲得できた**（ルール違反・純錬金術で踏む）→ engine 2箇所(anyGainable/UNIVERSITY_GAIN)＋cpu＋ui の述語に `potionCost===0` 追加。③**連鎖支配**（被支配ターン中に支配をプレイ）で操作権/獲得先が中間の被支配者に向く（オンライン悪用）→ `possessedBy` を「元の支配者」`t.possessedBy` から継承。④**手札のポーションが盤面に描画されない**（`handGroups` の `SUPPLY_ORDER` に potion が無く全グループから脱落・毎ゲーム発生）→ 並びに `potion` を追加。⑤支配中『財宝を全部出す』ボタン活性が支配者手札を見る→被支配者(`t.active`)で判定（`viewActionBar`/`endTurnTap`/`endActionPhase`）。⑥ゴーレム/連鎖で使ったアクションが `actionsPlayed` に計上されず（混成王国の共謀者）→加算。⑦（対応不要）CPUは支配を自動購入しないため CPU-支配者の買い最適化が被支配者向きなのはデッドコード。
-- **検証**：`test/alchemy.test.js`(80＝12種＋ポーション経済＋支配＋回帰)・`test/alchemy-ui.test.js`(20)。CPU対CPU **120戦(固定/ランダム×2-4人×全難易度)0詰み**、大学のポーション費用不変条件を確認。**全テスト1839件緑（17スイート・`npm test` exit 0）**。`sw.js` v16→**v17**。
-- **カード画像**：13枚は既存(前セッションで生成済み)。ロジック追加のみで画像/`carddata.js` は不変。
-
-過去の広い文脈（第二版化・単一ソース化・整合性テスト・オンライン再接続・枠画像方式の経緯など）は `docs/handover.md` を参照。
+### 完了条件・ガードレール
+- `npm test` 19スイート全緑。特に `test/cpu.test.js` の難易度序列（固定シード20260701・決定論：強vs弱≥60%／強vs普通≥45%／普通vs弱≥55%。現在95/55/87%）と `test/invariants.test.js`。
+- 購入ロジックのみの変更＝**新pendingを作らない**（CPU `decidePending`／UI `viewPendingModal` の追加不要）。
+- cpu.js はクライアント配信資産 → **`sw.js` VERSION v26→v27**。PROGRESS.md 追記 → コミット → push（Pages/Render自動）。
 
 ---
 
 ## 1. ゴール
 - スマホ向けドミニオン対戦Webアプリ（CPU戦・2〜4人ローカル・オンライン対戦）。回答/UIは日本語。
-- カードは「**金属枠＋AI生成の絵＋コード描画の文字** を合成した完成画像」(`asset/cards/<id>.webp`)。見栄えは基準カード `asset/<id>.jpg` と同等の高級感を目指す（達成済み＝金トリム方式）。
-- 拡張を「壊さず」増やせる単一ソース設計を維持する。
+- 基本・陰謀（第二版）＋プロモ、海辺27・錬金術13（支配含む）・繁栄27（各第二版）＝**全143枚を実プレイ可能**。
+- カードは「金属枠＋AI生成の絵＋コード描画の文字」を合成した完成画像（`asset/cards/<id>.webp`・金トリム方式）。
+- 拡張を「壊さず」増やせる単一ソース設計と、テストで守られた堅牢性を維持する。
 
 ## 2. アーキテクチャ（カードを増やす/触るとき必読）
-- **表示データの正本＝`js/cards.js` の `DOM.CARDS`**（id/name/cost/types/text、+ 海辺の持続や `potion`=ポーション費用など）。`js/carddata.js` がそこから名前/コスト/種別ラベル/枠色/画像パスを自動導出。`cards.html`(一覧プレビュー) も `tools/build-cards.js`(画像生成) も `DOM.CARDS` を見る。
-- **完成画像の生成**：`node tools/build-cards.js`（プロジェクト直下を cwd に）。masterフレーム1枚（`images/assets/…20_21_29.png`、recursiveに探索）を種別8スキンに recolor → 各カードで 枠＋絵(`asset/art/<id>.png`)＋文字(コスト/名前/種別/効果) を canvas 合成 → 768×1152 WebP を `asset/cards/<id>.webp` に出力（全143枚）。`CARDS_OUT` 環境変数で出力先を変えてプレビュー可。入力の `images/`・`asset/art/` は `.gitignore`（このPCのみ。webpだけ追跡）。
-- **エンジン**：`js/engine.js`。`reduce(state, action)` の純関数。`applyEffect` の per-card switch、選択は `state.pending` ＋ `*_RESOLVE` reducer。攻撃は `const ATTACKS={}` 登録表＋`*EnterVictim`。`DOM.engine.PLAYER_ACTIONS`(Set) が「プレイヤーが送れる action」の唯一の許可リスト（サーバも参照）。効果プリミティブ `discardFromHand/trashFromHand/finishGain`。
-- **CPU**：`js/cpu.js`。`chooseAction`(出すカード)・`decidePending`(各pendingへの応答＝**新pendingには必ず分岐を足す。無いとCPUが無限ループ**)・`GAIN_ORDER`(購入優先＝**全カード網羅必須**)。
-- **UI**：`js/ui.js`。`viewBoard`(盤面)・`viewPendingModal`(選択モーダル)・`modal*`ヘルパ。オンラインも同じ `ui.js`（NetStore.dispatch）。
-- **整合性テスト** `test/integrity.test.js`：reduce case↔PLAYER_ACTIONS一致／GAIN_ORDER=全カード／全カードがいずれかのPOOL所属／固定セットは10種／react攻撃はATTACKS登録／表示データ一致／種別ラベルが全typeを含む を自動検証。**抜けはCIで即赤**。
-- **テスト全体**：`npm test`＝19スイート（integrity／**invariants=カード保存則ほかプロパティベースfuzz**／engine／各拡張／cpu／**attacks-multiplayer**／UI各種(jsdom)／server／online／stress）。手動（puppeteer）＝`verify:e2e`（実ブラウザ通しプレイ）・`verify:visual`（レスポンシブ）・`test/verify-online.js`（要サーバ起動）。
-- **デプロイ**：main に push → `.github/workflows/deploy.yml` が `_site` を組んで Pages 公開、サーバ変更は Render が自動再デプロイ。**新しい配信フォルダを足したら deploy.yml のコピー対象に追加**（忘れると本番404）。**client資産（js/css/webp等）を変えたら `sw.js` の VERSION を上げる**（現在 v26）。コミット者はローカル設定済み（Naoki Inoue）。
+- **表示データの正本＝`js/cards.js` の `DOM.CARDS`**（id/name/cost/types/text、+持続や `potion` 等）。`js/carddata.js` が名前/コスト/種別ラベル/枠色/画像パスを自動導出。`cards.html`（一覧プレビュー）も `tools/build-cards.js`（画像生成）も `DOM.CARDS` を見る。
+- **完成画像の生成**：`node tools/build-cards.js`（プロジェクト直下がcwd）。masterフレームを種別スキンにrecolor→枠＋絵(`asset/art/<id>.png`)＋文字をcanvas合成→768×1152 WebP（全143枚）。`CARDS_OUT` で出力先変更可。入力 `images/`・`asset/art/` は `.gitignore`＝**このPCのみ**（再生成はこのPCでしかできない）。
+- **エンジン**：`js/engine.js`。`reduce(state, action)` の純関数。`applyEffect` の per-card switch、選択は `state.pending`＋`*_RESOLVE` reducer。攻撃は `ATTACKS` 登録表＋`*EnterVictim`。`PLAYER_ACTIONS`(Set) が送信可能actionの唯一の許可リスト（サーバも参照）。
+- **CPU**：`js/cpu.js`。`chooseAction`／`decidePending`（**新pendingには必ず分岐を足す。無いとCPU無限ループ**）／`GAIN_ORDER`（購入優先＝**全カード網羅必須**）／`chooseBuy`(easy/normal/hard)＋`bestEngineBuy`。
+- **UI**：`js/ui.js`。`viewBoard`／`viewPendingModal`（**新pendingには分岐必須＝無いと人間が詰む**）／`modal*`ヘルパ。オンラインも同じ ui.js（NetStore.dispatch。クライアントは reduce しない＝サーバ権威）。
+- **整合性テスト** `test/integrity.test.js`：reduce case↔PLAYER_ACTIONS一致／GAIN_ORDER=全カード／POOL所属／固定セット10種／react攻撃はATTACKS登録／表示データ一致／種別ラベルが全typeを含む。**抜けはCIで即赤**。
+- **テスト全体**：`npm test`＝19スイート（integrity／invariants=**カード保存則ほかプロパティベースfuzz**／engine／各拡張／cpu／attacks-multiplayer／UI各種(jsdom)／server／online／stress）。手動＝`verify:e2e`・`verify:visual`・`test/verify-online.js`（これのみ要サーバ起動）。
+- **デプロイ**：main に push → `.github/workflows/deploy.yml` が Pages 公開、サーバは Render 自動再デプロイ。**新しい配信フォルダは deploy.yml に追加**（忘れると本番404）。**client資産（js/css/webp等）を変えたら `sw.js` の VERSION を上げる**（現在 v26）。コミット者設定済み（Naoki Inoue）。
 
-## 3. 完了したこと（過去セッション 2026-06-30・すべてコミット＆デプロイ済み）
-- **カード完成画像（全117枚）**：基本/陰謀/プロモ77＋**海辺27**＋**錬金術13**。枠は「**金トリム方式**」＝色地カード(victory/curse/action/attack/reaction/duration)は地色＋**金レール**、財宝は銅/銀/金の専用メタル。コイン中央は暗いメダル＋白数字。持続=オレンジ枠。**錬金術のポーション費用は紫のフラスコ記号**（ポーションのみ=フラスコだけ／コイン+ポーション=数字+小フラスコ／支配=6+×2）。生成は `tools/build-cards.js`。
-- **海辺（Seaside 第二版）27種を実プレイ可能に**（commit `33876f5`）。新セット「海辺セット(固定10種)」「海辺から(ランダム)」。**持続(Duration)機構**＝`durationCards`/`delayedEffects`/`setAside`/`islandMat`/`nativeVillageMat`、`cleanupAndAdvance` で持ち越し仕分け、`resolveDurationStartEffects`+`turn.startQueue`+`popStartQueue`、`DURATION_RESOLVERS`、`armDuration`。マット(島/原住民)、追加ターン(前哨地)、灯台免疫(`attackImmune`を全攻撃に配線)、on-gain/on-playフック(`triggerOnGain`=サル/封鎖、`corsairOnPlayTreasure`=私掠船、再帰ガード付)、巾着切り/海の魔女をATTACKS登録、宝物庫/密輸人。**船乗りの「獲得した持続を即プレイ」も実装済み**(`sailor_play_gain`)。`test/seaside.test.js`(85)・`test/seaside-ui.test.js`(22)。
-- **オンライン/UI改善（commit `325e31d`/`18fb4d6`）**：盤面アクション列をコスト順／獲得アニメのカード上数字を削除／ゲストのロビーをホストと同項目(読取専用)＋初心者モードON/OFFをロビーに／名前を`localStorage`記憶／**手番順(上から順/ランダム)を選択可**(`server/gameServer.js` `randomOrder`)／カード拡大を閉じてもスクロール位置保持／カード一覧に海辺・錬金術追加／選択モーダルのカードを大きく表示。`sw.js` v15。
+## 3. 完了したこと（サマリ。詳細は各コミットメッセージ＝git log が正）
+### 2026-07-01〜03 堅牢化マラソン（多エージェント監査①〜⑦＋fuzz＋実測。実バグ約20件修正）
+- `8235b32` 海辺の簡略化2点を本格実装（封鎖の堀免疫窓＝`immune[]`／海賊の財宝獲得リアクション＝`pirate_react`）＋混成王国CPU購入バランス＋cpu.test決定論化（固定シード）
+- `0cb288c` 監査①: 泥棒王国の無限ループ(高)＝CPU経済フォールバック＋`isGameOver`150手番安全網／会計士2枚目消失／ティアラ×ペテン師2回目／水晶玉の財宝プレイ委譲／封鎖×2
+- `43c3e5a` 監査②オンライン: 水晶玉看破の漏洩／自席山札の順序透視→ソート配信／DoS対策(`MAX_ROOMS`＋無人ロビー即破棄)。**anti-cheatはexploit無しを確認**
+- `d6f5e45` 監査③表示: ペテン師「財宝・アタック」/会計士3種ラベル修正＋**webp2枚再生成**＋ラベル網羅テスト
+- `30cf5ba` 監査④UI/UX: 支配中の看破マスクでrender例外(高)＝`secretSeer`＋cardEl未知id防御／自動スキップ・コーチの被支配者ルーティング／闇市場サプライ外カードの手札描画／おすすめ買いにcolony/platinum
+- `54d3018` 監査⑤: 混成王国の潜在バグ2件（支配×外部self-trash・コイン獲得札×ポーション費用）は**全プール/全セット走査で到達不能を証明**＝意図的に未修正（§6参照）
+- `c94e84f` `d089a47` `b91bb2d` 監査⑥⑦: **カード保存則fuzz新設**(`test/invariants.test.js`)→闇市場の公開カード消失・宝の地図複製（玉座2回目）を修正＋支配強制12戦＋負リソース/手番/終局検査＋ログ長≤250ガード
+- `baee9dc` DoS即破棄が復元(restoreRoom)ロビーを壊す自己回帰を修正（`allowImmediate`引数）
+- `d105b68` CPU強化: `throneValue` による玉座/王の宮廷の対象選択＋衛兵の銅貨圧縮（A/Bニュートラル＝質改善）＋**§0の戦略的発見を記録**
+- `1a69139` 実ブラウザE2Eスモーク新設（`test/verify-e2e.js`・9/9・自己完結）
+- `49149de` `verify-visual.js` 刷新＝320/360/390/414/768px×主要画面で横はみ出しゼロ確認
+- `628ae15` a11y: カード/山に role=button＋aria-label＋Enter/Space（`a11yBtn`）
+- `7cf27f4` 性能監査: reduce 0.04ms/手・render p95 22ms(4xスロットル)＝良好・バグ無し
+- `d339b95` 多人数アタック検証: 監査0件＋シナリオ22件新設(`test/attacks-multiplayer.test.js`)＝**クリーン**（呪い枯渇は手番順先着・堀は公開者のみ免疫・玉座×魔女=2枚 等すべて正）
+- `2df9f83` ドキュメント総点検（PROGRESS/CLAUDE/README を現状同期）
+
+### 過去セッション（〜2026-07-01）
+- カード完成画像 全143枚（金トリム方式）／海辺27種の実プレイ化（持続機構・マット・前哨地・灯台免疫）／錬金術13種（ポーション経済・支配=actorルーティング/gain・trashOwn精算/追加ターン）／繁栄27種（VPトークン・プラチナ/植民地・コスト軽減・王の宮廷）。広い経緯は `docs/handover.md`。
 
 ## 4. 決定事項とその理由
-- **枠は画像（金属枠）方式**。コード描画SVGの金は基準カードの絵画的な金に構造的に届かなかったため（過去に5回差し戻し。詳細 `docs/handover.md`）。
-- **画像だけ先・ゲームロジックは別タスク**。新拡張はまず `DOM.CARDS` にカタログ追加＋**孤立プール**＋`GAIN_ORDER`追加で「画像は出るがゲームには入らない＝壊れない」状態にし、整合性テストを緑に保つ→後で実ゲーム化して `POOLS`→`CARD_SET` 昇格。海辺・錬金術・繁栄はすべて実プレイ可能化済み（この方式で段階実装した）。
-- **海辺の簡略化2点は本格実装済み（2026-07-01）**：封鎖の「呪い窓に堀で免疫」・海賊の「財宝獲得時リアクションで手札から出す」を実装（詳細は最上部の節）。on-gainの対話pendingは `!pending && _gainDepth===1` ゲートで安全側を維持しつつ実装。（船乗りの即プレイも実装済み。）
+- **CPU購入はB案（王国評価で ENGINE/MONEY 切替）で行く（2026-07-03決定）**：詳細と理由は §0。A案（BM寄せ）は seaside悪化＋エンジンレスUXのため不採用。性能懸念なしを確認済み。
+- **枠は画像（金属枠）方式**：コード描画SVGでは基準カードの絵画的な金に届かなかった（5回差し戻し。詳細 `docs/handover.md`）。
+- **画像だけ先・ゲームロジックは別タスク**：新拡張はまず `DOM.CARDS` カタログ＋孤立プール＋`GAIN_ORDER` で「画像は出るがゲームに入らない」状態にし整合性テストを緑に保つ→後で実ゲーム化（海辺/錬金術/繁栄はこの方式で完了）。
+- **海辺の簡略化2点は本格実装済み**：封鎖の堀免疫窓・海賊の財宝獲得リアクション。on-gain対話は `!pending && _gainDepth===1` ゲートで安全側。
 
-## 5. 未完了タスク（次セッションはここから・優先順）
-1. **新拡張の画像化（要アート）**：暗黒時代など次の拡張を段階実装する場合、コード側（`DOM.CARDS` カタログ＋孤立プール＋`GAIN_ORDER`）は追加できるが、**完成画像には `asset/art/<id>.png`（AI生成・ローカルgitignore）が新規に必要**。build-cards.js はアートが無いと枠＋文字のみ（絵が空白）で出力する（クラッシュはしない）。→ **どの拡張にするか＋アートをどう用意するかを決めてから着手**。
-2. **CPU購入戦略の方針判断（要ユーザー判断・保留中）**：実測で「現行のエンジン買いは basic/intrigue/alchemy で純ビッグマネーに大敗（pure-BM 67-88%勝ち）、seaside では現行が有効」と判明（詳細＝「CPU強化(A)」節）。(A案)hard をBM基調＋厳選エンジンに寄せて総合勝率を上げる（seaside悪化とエンジンレスUXを許容）／(B案)王国ごとの「エンジン成立度」を評価する本格購入AI（大きめ実装）。
-3. **錬金術アートの△3枚最終確認（任意）**：変成=金の変成光／薬草商=女性が薬草調合／薬剤師=天秤の男。入替えたい場合は `asset/art/<id>.png` を差し替え→`node tools/build-cards.js`→該当webp再デプロイ。
+## 5. 未完了タスク（優先順。次セッションは 1. から）
+1. **B案：王国評価型CPU購入AIの実装**（→ **§0 に完全な作業指示**。実測データ・設計叩き台・A/Bハーネス手順・採用条件すべて記載）。
+2. **新拡張の画像化（要アート）**：コード側（カタログ＋孤立プール＋GAIN_ORDER）は追加可能だが、完成画像には `asset/art/<id>.png`（AI生成・ローカルgitignore）が新規に必要。どの拡張か＋アートの用意方法を決めてから着手。
+3. **錬金術アートの△3枚最終確認（任意）**：変成/薬草商/薬剤師。差し替えは `asset/art/<id>.png` →`node tools/build-cards.js`→該当webpデプロイ。
 4. （任意・過去メモ）絵文字→game-icons.net SVG 化、vanilla効果DSL 等。
-※ 混成王国CPU購入バランス調整・海辺の簡略化2点の本格実装は **2026-07-01 に完了**（詳細は各節）。
 
 ## 6. 詰まり・注意点・保留中の判断
-- **新カードを `DOM.CARDS` に足すと整合性テストが赤くなる**（GAIN_ORDER網羅＋POOL所属を要求）。→ 孤立プール＋GAIN_ORDER追加で回避（§4）。実ゲーム化するときは ATTACKS/PLAYER_ACTIONS/CPU decidePending/UI viewPendingModal も忘れず（抜けはCIで赤 or CPU無限ループ）。
-- **デプロイ**：サーバ(`server/gameServer.js`)変更時は client(Pages)とserver(Render)が同時反映されるまで一時的に機能が空振りし得る（手番順トグル等）。push一発で両方走るが反映タイミング差に注意。`sw.js` VERSION更新を忘れない。
-- **一時スクリプト規約**：puppeteer/contact等の使い捨ては**プロジェクト直下に `_*.tmp.js`** で作り `node` 実行後に**必ず削除**（直下を汚さない）。スクショ/montageは scratchpad へ。**シェルのcwdが `images/` 等にずれることがある**ので、tmpスクリプトは絶対パス推奨、build/test実行前に `Set-Location 'C:\Users\b1242\claude\game\dominion'`。
-- 入力アセット（`images/`・`asset/art/`）は `.gitignore` で**このPCローカルのみ**。画像の再生成はこのPCでしかできない。
-- **支配（Possession）の廃棄カード返却の簡略化＝到達不能を証明済み（2026-07-01・監査⑤）＝意図的に未修正**：被支配者の廃棄を本人へ戻すのは `trashOwn` 経由（変成・徒弟）のみ。基本/陰謀/海辺/繁栄の self-trash（礼拝堂・鉱山等）は `state.trash.push` のままで、**理論上は混成王国で支配下に使うと実廃棄**になる。しかし **`possession` は `alchemy` プール専用で、複数プールを混ぜる出荷セットは `random`(basic+intrigue)・`random-promo`(basic+intrigue+promo)・`random-1e` の3つだけ＝いずれも alchemy を含まない**（node で全プール/全セットを走査し証明）。よって支配と「外部拡張の self-trash」は**どの出荷キングダムでも共存しない＝到達不能・実害ゼロ**。全 self-trash を `trashOwn` 化する“完全対応”は可能だが、約20箇所の中に**アタック廃棄（詐欺師/山賊/破壊工作員が相手の札を廃棄）や供給廃棄（伏魔殿）を誤って混ぜると到達可能な実バグを生む**リスクがあり、死んだ経路のために可到達コードを危険にさらす割に合わない。→ **混成alchemyモードを正式に追加する時に、そのモードを forcing function として一緒に対応する**方針（それまでは現状維持が正しい）。
-  - 関連：ポーション費用カードをコイン費用だけで獲得できる問題も同様に、コイン予算獲得札（改築/工房等）は basic/intrigue 側で alchemy と共存せず到達不能。alchemy 内で唯一該当した **大学(university) は監査①で `potionCost===0` ガード済み**＝可到達分は修正完了。
-- **支配のCPU簡略化**：CPUは支配を自動購入しない（`bestPotionBuy` で除外）。人間が買って使うぶんには支配者がCPUでも被支配ターンを操作できる（`decide` 対応済み）。
+- **新カードを `DOM.CARDS` に足すと整合性テストが赤くなる**（GAIN_ORDER網羅＋POOL所属を要求）→ 孤立プール＋GAIN_ORDER追加で回避。実ゲーム化時は ATTACKS/PLAYER_ACTIONS/CPU decidePending/UI viewPendingModal も忘れず（抜けはCIで赤 or CPU無限ループ/人間詰み）。
+- **デプロイ**：サーバ変更時は Pages と Render の反映タイミング差で一時的に空振りし得る。`sw.js` VERSION更新を忘れない。
+- **一時スクリプト規約**：使い捨ては**プロジェクト直下に `_*.tmp.js`** で作り実行後**必ず削除**。スクショ等は scratchpad へ。シェルcwdがずれることがあるので実行前に `Set-Location 'C:\Users\b1242\claude\game\dominion'`。
+- **支配（Possession）の廃棄カード返却の簡略化＝到達不能を証明済み（監査⑤）＝意図的に未修正**：`possession` は alchemy プール専用で、複数プールを混ぜる出荷セット（random/random-promo/random-1e）はいずれも alchemy を含まない＝支配と外部拡張self-trashはどの出荷王国でも共存しない。全self-trashのtrashOwn化はアタック廃棄/供給廃棄の誤変換で**可到達バグを生むリスク**があり見送り。**混成alchemyモードを正式追加する時に一緒に対応**する方針。同型のポーション費用問題も到達不能（可到達だった大学のみガード済み）。
+- **支配のCPU簡略化**：CPUは支配を自動購入しない（`bestPotionBuy` で除外）。人間が使うぶんは支配者がCPUでも動作する。
