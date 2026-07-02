@@ -3224,7 +3224,13 @@
         const p = state.players[pd.player];
         const treasures = p.hand.filter((c) => DOM.isType(c, 'treasure'))
           .sort((a, b) => (a === 'silver' ? -1 : 0) - (b === 'silver' ? -1 : 0));
-        treasures.forEach((card) => playTreasureCard(state, pd.player, card));
+        // 財宝を順に出す。投資/金床/水晶玉/ティアラ/ペテン師(堀) 等が「使ったとき」の pending を立てて
+        // 闇市場 pending を上書きした場合、公開中のカードを闇市場デッキへ戻してから、その財宝 pending の解決に譲る
+        // （さもないと公開中のカードが取りこぼされ消失する＝カード保存則違反）。今回の闇市場購入は中断。
+        for (const card of treasures) {
+          playTreasureCard(state, pd.player, card);
+          if (state.pending !== pd) { state.blackMarket = (state.blackMarket || []).concat(pd.revealed); return state; }
+        }
         if (treasures.length) log(state, `${p.name} は闇市場で財宝を出した。`);
         return state; // 同じ pending のまま（購入ステップへ）
       }
