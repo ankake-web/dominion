@@ -270,6 +270,45 @@ console.log('=== 会計士：手番開始時に手札から使える（アクシ
   s = resolveAll(s);
 }
 
+console.log('=== ティアラ×ペテン師：2回使うと相手は銅貨2枚を獲得（堀無し・2回目のアタックも発動）===');
+{
+  let s = mk(['charlatan', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'kings_court', 'peddler', 'watchtower'], ['A', 'B']);
+  s.turn.phase = 'buy'; s.players[0].hand = ['tiara', 'charlatan']; s.players[1].hand = ['estate', 'estate']; // 席1はリアクション無し
+  const before = count(s.players[1].discard, 'copper');
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'tiara' });
+  s = reduce(s, { type: 'TIARA_PLAY', card: 'charlatan' });
+  s = resolveAll(s);
+  ok(s.turn.coins === 6, 'ペテン師$3×2＝+6コイン (実 ' + s.turn.coins + ')');
+  ok(count(s.players[1].discard, 'copper') === before + 2, 'ティアラ×ペテン師：相手は銅貨2枚を獲得（実 +' + (count(s.players[1].discard, 'copper') - before) + '）');
+}
+
+console.log('=== 会計士：手番開始時に2枚とも使える（1枚目のアタックで選択が出ても2枚目が消えない）===');
+{
+  let s = mk(['clerk', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'kings_court', 'peddler', 'watchtower'], ['A', 'B']);
+  s.players[1].hand = ['clerk', 'clerk', 'copper', 'copper', 'copper']; // 席1の手番開始手札に会計士2枚
+  // 席0は開始手札5枚（銅貨/屋敷・リアクション無し）＝会計士のアタックで山札上置きの選択が出る
+  s = reduce(s, { type: 'END_ACTION_PHASE' });
+  s = reduce(s, { type: 'END_TURN' }); // →席1開始：clerk_start ×2 が startQueue に積まれる
+  ok(s.pending && s.pending.type === 'clerk_start' && s.pending.player === 1, '1枚目の会計士リアクションが出る');
+  s = resolveAll(s); // CPUが1枚目(+アタック)→2枚目(+アタック)を順に解決
+  ok(count(s.players[1].inPlay, 'clerk') === 2, '会計士2枚とも場に出た（2枚目がstartQueueに取り残されない。実 ' + count(s.players[1].inPlay, 'clerk') + '枚）');
+  ok(s.turn.coins === 4, '会計士2枚ぶんの +4コイン（実 ' + s.turn.coins + '）');
+}
+
+console.log('=== 水晶玉：山札上のペテン師を「使う」とアタックも発動する（特殊効果を取りこぼさない）===');
+{
+  let s = mk(['crystal_ball', 'charlatan', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'kings_court', 'peddler'], ['A', 'B']);
+  s.turn.phase = 'buy'; s.players[0].hand = ['crystal_ball']; s.players[0].deck = ['charlatan', 'copper', 'copper'];
+  s.players[1].hand = ['estate', 'estate']; // リアクション無し
+  const before = count(s.players[1].discard, 'copper');
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'crystal_ball' });
+  ok(s.pending && s.pending.type === 'crystal_ball' && s.pending.card === 'charlatan', '水晶玉：山札上（ペテン師）を見る');
+  s = reduce(s, { type: 'CRYSTAL_BALL', choice: 'play' });
+  s = resolveAll(s);
+  ok(s.players[0].inPlay.includes('charlatan'), '水晶玉：ペテン師を場に出して使った');
+  ok(count(s.players[1].discard, 'copper') === before + 1, '水晶玉で使ったペテン師のアタックで相手が銅貨獲得（実 +' + (count(s.players[1].discard, 'copper') - before) + '）');
+}
+
 console.log('=== CPU対CPU：繁栄フル王国で無限ループ無く終局（複数シード）===');
 {
   let okAll = true, ended = 0;

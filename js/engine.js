@@ -904,9 +904,12 @@
 
   /* ---------- 繁栄：会計士（手札5枚以上の各相手が、手札1枚を山札の上に置く）---------- */
   function clerkEnterVictim(state, source, queue) {
-    if (!queue || !queue.length) { state.pending = null; return; }
+    // アタック連鎖の終端では popStartQueue で開始キューを進める（手番開始プレイの会計士が2枚以上ある場合、
+    // 1枚目のアタックが pending を立てても2枚目以降が startQueue に取り残されないようにする）。
+    // 通常プレイ/玉座経由では startQueue は null のため popStartQueue は pending=null と等価で無害。
+    if (!queue || !queue.length) { popStartQueue(state); return; }
     queue = queue.filter((v) => !attackImmune(state, v));
-    if (!queue.length) { state.pending = null; return; }
+    if (!queue.length) { popStartQueue(state); return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
       state.pending = { type: 'clerk', stage: 'react', player: victim, source, victim, queue: rest };
@@ -935,11 +938,14 @@
     }
     state.pending = null;
   }
-  // 繁栄：ティアラ「財宝1枚を2回使う」の2回目＝コイン分を再適用（移動はしない。複雑財宝の追加効果は割愛）。
+  // 繁栄：ティアラ「財宝1枚を2回使う」の2回目＝コイン分を再適用（移動はしない）。
+  // 動的コイン(銀行/賢者の石)・ポーショントークンも2回目として正しく加算する。
   function treasureReplayCoins(state, pi, card) {
     const p = state.players[pi];
     const t = state.turn;
     if (card === 'bank') { const cnt = p.inPlay.filter((c) => DOM.isType(c, 'treasure')).length; t.coins += cnt; return cnt; }
+    if (card === 'philosophers_stone') { const add = Math.floor((p.deck.length + p.discard.length) / 5); t.coins += add; return add; }
+    if (card === 'potion') { t.potions = (t.potions || 0) + 1; return 0; } // ポーションは2回目もトークン+1
     const add = treasureCoins(state, card);
     t.coins += add;
     return add;
@@ -1739,7 +1745,13 @@
     return Object.keys(state.supply).filter((k) => state.supply[k] <= 0).length;
   }
   function isGameOver(state) {
-    return state.supply.province <= 0 || emptyPileCount(state) >= 3;
+    if (state.supply.province <= 0 || emptyPileCount(state) >= 3) return true;
+    // 安全網：ルール上あり得ない超長期化を打ち切る。例＝泥棒(thief)で全財宝が枯れ、銅貨の山も尽き、
+    // 全員コイン0で誰も購入できず山も減らない膠着（実カードでも起こり得る degenerate 盤面）。
+    // オンラインCPU部屋やCPU戦が永久に終わらないのを構造的に防ぐ。通常のゲームは遥か手前で終わる。
+    const maxTurns = state.players.reduce((m, p) => Math.max(m, p.turns || 0), 0);
+    if (maxTurns >= 150) return true;
+    return false;
   }
   function allCards(p) {
     // 海辺：持続カード・脇置き・島/原住民マットも所有カード＝VP（島の2点・庭園の枚数等）に数える。
@@ -1787,7 +1799,10 @@
         winners.push(i);
       }
     });
-    return { scores, winners, reason: state.supply.province <= 0 ? '属州の山が尽きた' : '3つの山が尽きた' };
+    const reason = state.supply.province <= 0 ? '属州の山が尽きた'
+      : emptyPileCount(state) >= 3 ? '3つの山が尽きた'
+      : '膠着のため打ち切り';
+    return { scores, winners, reason };
   }
 
   /* ============================================================
@@ -1870,11 +1885,14 @@
       if (op.monkeyActive && o !== pIndex && pIndex === (o - 1 + n) % n) {
         draw(state, o, 1); log(state, `${op.name} はサルの効果で +1カード（右隣の獲得）。`);
       }
-      // 封鎖：他人が「自分の手番で」封鎖された同名カードを獲得したら呪いを獲得
+      // 封鎖：他人が「自分の手番で」封鎖された同名カードを獲得したら呪いを獲得。
+      // 同じプレイヤーが同名に複数の封鎖を伏せている（玉座/王の宮廷）なら、封鎖1枚につき呪い1枚。
       if (o !== pIndex && state.turn && pIndex === state.turn.active) {
-        const bl = (op.delayedEffects || []).find((e) => e.type === 'blockade' && e.gained === cardId);
-        // 堀/灯台で免疫の相手（immune 登録済み）は呪いを受けない。
-        if (bl && !((bl.immune || []).includes(pIndex)) && (state.supply.curse || 0) > 0) { gain(state, pIndex, 'curse', 'discard'); log(state, `${state.players[pIndex].name} は封鎖により呪いを獲得した。`); }
+        const bls = (op.delayedEffects || []).filter((e) => e.type === 'blockade' && e.gained === cardId);
+        for (const bl of bls) {
+          // 堀/灯台で免疫の相手（immune 登録済み）は呪いを受けない。
+          if (!((bl.immune || []).includes(pIndex)) && (state.supply.curse || 0) > 0) { gain(state, pIndex, 'curse', 'discard'); log(state, `${state.players[pIndex].name} は封鎖により呪いを獲得した。`); }
+        }
       }
     }
     // 繁栄：自分の手番に勝利点カードを獲得 → 場の隠し財産1枚につき金貨1枚（hoard）。
@@ -3592,9 +3610,8 @@
           t.actionsPlayed = (t.actionsPlayed || 0) + 1;
           log(state, `${p.name} は手番開始時に会計士を使った。`);
           applyEffect(state, 'clerk', pd.player); // +2コイン＋アタック
-          // アタックの pending が立たなかった（相手不在/全員5枚未満）ときだけ開始キューを進める。
-          // 立った場合は解決後に pending=null となり、そのまま手番（アクションフェイズ）へ進む。
-          if (!state.pending) popStartQueue(state);
+          // 開始キューの進行は clerkEnterVictim の終端が popStartQueue で行う（アタックが pending を立てた
+          // 場合はその解決後に、立たなければ即座に）。ここでは何もしない＝2枚目以降の会計士も確実に使える。
         } else {
           popStartQueue(state);
         }
@@ -3793,6 +3810,12 @@
           playTreasureCard(state, pd.player, card); // 1回目（移動＋効果。ペテン師+堀などで pending が立つことがある）
           // 2回目のコインは反応待ちに関係なく確定で入る（pending の有無で取りこぼさない）。
           const add = treasureReplayCoins(state, pd.player, card);
+          // 2回目の「使ったとき」副次効果も適用する（pending を伴わない安全なものだけ）。
+          if (card === 'collection') state.turn.buys += 1; // 収集：+1購入
+          if (card === 'charlatan' && !state.pending) {    // ペテン師：各相手が銅貨1枚(2回目)。1回目が反応待ちでない時だけ。
+            const q = []; for (let k = 1; k < state.players.length; k++) q.push((pd.player + k) % state.players.length);
+            charlatanEnterVictim(state, pd.player, q);
+          }
           log(state, `${p.name} はティアラで「${C()[card].name}」をもう一度使った（+${add}コイン）。`);
         }
         return state;
@@ -3856,9 +3879,20 @@
         if (choice === 'trash') { p.deck.shift(); state.trash.push(top); log(state, `${p.name} は水晶玉で「${C()[top].name}」を廃棄した。`); }
         else if (choice === 'discard') { p.deck.shift(); p.discard.push(top); log(state, `${p.name} は水晶玉で「${C()[top].name}」を捨てた。`); }
         else if (choice === 'play' && (DOM.isType(top, 'action') || DOM.isType(top, 'treasure'))) {
-          p.deck.shift(); p.inPlay.push(top);
-          if (DOM.isType(top, 'treasure')) { t.coins += treasureCoins(state, top); log(state, `${p.name} は水晶玉で「${C()[top].name}」を使った（+${treasureCoins(state, top)}コイン）。`); }
-          else { t.actionsPlayed = (t.actionsPlayed || 0) + 1; log(state, `${p.name} は水晶玉で「${C()[top].name}」を使った。`); applyEffect(state, top, pd.player); }
+          p.deck.shift();
+          if (DOM.isType(top, 'treasure')) {
+            // 財宝は playTreasureCard に委譲し「使ったとき」の効果を完全再現する
+            // （銀行/賢者の石の動的コイン、ポーショントークン、ペテン師のアタック等を取りこぼさない）。
+            // playTreasureCard は手札からの除去を前提とするので一旦手札を経由してから呼ぶ。
+            p.hand.push(top);
+            log(state, `${p.name} は水晶玉で「${C()[top].name}」を使った。`);
+            playTreasureCard(state, pd.player, top);
+          } else {
+            p.inPlay.push(top);
+            t.actionsPlayed = (t.actionsPlayed || 0) + 1;
+            log(state, `${p.name} は水晶玉で「${C()[top].name}」を使った。`);
+            applyEffect(state, top, pd.player);
+          }
         }
         return state;
       }

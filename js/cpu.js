@@ -382,6 +382,20 @@
         wantsPotion(state) && real >= 4 && !(coins >= 8 && sup(state, 'province') > 0)) {
       pick = 'potion';
     }
+    // 経済崩壊の安全網：何も買わない判断になった局面でも、デッキの財宝が乏しければ最安の財宝を必ず買う。
+    // 泥棒(thief)等でゲーム全体の財宝が枯れると、全員がコイン0・購入0の均衡に陥り、パイルも減らず
+    // isGameOver が永久に false になる（＝CPU戦・オンラインCPU部屋が終わらない）。銅貨は$0で常に買えるので
+    // これで経済を建て直しつつ確実にパイルを消化し、終局へ向かわせる。健全なデッキ（財宝が十分）では発動しない。
+    if (!pick && state.turn.buys > 0) {
+      const all = allCards(p);
+      const deckCoin = all.reduce((s, c) => s + (isTreasure(c) ? (C()[c].coin || 0) : 0), 0);
+      // 財宝の「密度」で判定：1枚あたりの平均コイン産出が薄い（＝手札が$3に届きにくく経済再建できない）
+      // ときだけ発動。健全なデッキ（開始時7銅貨=密度0.7 やビッグマネー）では発動しない。
+      if (deckCoin < all.length * 0.5) {
+        if (cost(state, 'silver') <= real && sup(state, 'silver') > 0) pick = 'silver';
+        else if (sup(state, 'copper') > 0) pick = 'copper';
+      }
+    }
     // 念のため：買えない手は返さない（実コストで判定。繁栄：高級市場は場に銅貨があると不可）。
     // 錬金術：ポーション費用も満たしていること（満たさない手を返すと reduce が no-op→CPU無限ループ）。
     const canBuy = !DOM.engine.canBuyCard || DOM.engine.canBuyCard(state, state.turn.active, pick);
@@ -411,12 +425,15 @@
     return hand.map((c) => ({ c, v: trashValue(c) })).sort((a, b) => a.v - b.v).slice(0, n).map((x) => x.c);
   }
   // 礼拝堂で廃棄する札（最大4枚）: 呪い→屋敷→余剰銅貨（2枚は残す）。デッキ圧縮。
+  // 銅貨の余剰廃棄は「デッキ全体の財宝が十分（≒初期量以上）あるとき」だけ行う。泥棒等で財宝が枯れた
+  // 状態でさらに銅貨を削ると経済が崩壊して復帰不能になるため、財宝が乏しければ屋敷/呪いのみ圧縮する。
   function pickChapelTrash(p) {
     const out = [];
     p.hand.forEach((c) => { if (c === 'curse' && out.length < 4) out.push(c); });
     p.hand.forEach((c) => { if (c === 'estate' && out.length < 4) out.push(c); });
+    const deckTreasure = allCards(p).filter((c) => isTreasure(c)).length;
     const coppers = p.hand.filter((c) => c === 'copper').length;
-    for (let i = 2; i < coppers && out.length < 4; i++) out.push('copper');
+    if (deckTreasure >= 7) { for (let i = 2; i < coppers && out.length < 4; i++) out.push('copper'); }
     return out;
   }
   // 詐欺師で相手に与えるカード（相手の利得が最小＝呪い→弱い財宝/アクション。勝利点は点を与えるので避ける）。

@@ -66,6 +66,26 @@ for (let n = 2; n <= 4; n++) {
 }
 console.log(`  （最長 ${maxStepsSeen} ステップで終了）`);
 
+console.log('=== 泥棒(thief)王国: 財宝が枯れる膠着でも必ず終局する（安全網）===');
+{
+  // 監査で特定した degenerate 盤面：泥棒で全財宝が枯れ、経済0・購入0・パイル不変で永久ループしていた。
+  // 経済底上げフォールバック＋エンジンの手番数安全網（isGameOver 150ターン打ち切り）で必ず終局する。
+  const K = ['workshop', 'thief', 'bureaucrat', 'feast', 'chapel', 'adventurer', 'gardens', 'chancellor', 'village', 'throne_room'];
+  let allEnd = true, ended = 0, worstTurns = 0;
+  for (let n = 2; n <= 4; n++) {
+    for (const lv of ['easy', 'normal', 'hard']) {
+      let s = E.createInitialState(Array.from({ length: n }, (_, i) => ({ name: 'C' + i, isCpu: true, level: lv })), K, { startActive: 0 });
+      let step = 0;
+      while (!s.gameOver && step++ < 40000) s = E.reduce(s, CPU.decide(s));
+      if (!s.gameOver) allEnd = false; else ended++;
+      const mt = Math.max.apply(null, s.players.map((p) => p.turns || 0));
+      if (mt > worstTurns) worstTurns = mt;
+    }
+  }
+  ok(allEnd, `泥棒王国の全構成(2-4人×3難易度)が終局する (${ended}/9, 最長手番=${worstTurns})`);
+  ok(worstTurns <= 150, `安全網により手番数が上限内に収まる (最長 ${worstTurns} ターン)`);
+}
+
 console.log('=== 混在: 人間想定を含む構成でもCPUは止まらない ===');
 {
   // 席0は人間想定だが、CPUのdecideは呼ばない。CPU席だけ自動で進むのを模擬するのは複雑なので、

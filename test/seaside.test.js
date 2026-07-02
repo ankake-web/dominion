@@ -333,6 +333,24 @@ console.log('=== 封鎖+堀: プレイ時に堀を公開した相手はこの封
   ok(count(s.players[1].discard, 'curse') === before, `封鎖+堀: 免疫者は同名(${gained})獲得でも呪いを受けない`);
 }
 
+console.log('=== 封鎖×2（同名）: 同じプレイヤーが同名に2つ封鎖を伏せると呪い2枚（玉座/王の宮廷相当）===');
+{
+  let s = mkA();
+  // 席0が銀貨に対して2つの封鎖を伏せている状態（玉座の間/王の宮廷での複製に相当）を直接構築。
+  s.players[0].delayedEffects = [
+    { card: 'blockade', type: 'blockade', gained: 'silver', immune: [] },
+    { card: 'blockade', type: 'blockade', gained: 'silver', immune: [] },
+  ];
+  s.players[0].durationCards = ['blockade', 'blockade'];
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' }); // →席1
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); // 席1 購入フェイズ
+  const before = count(s.players[1].discard, 'curse');
+  s.turn.coins = 6; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'silver' });
+  s = resolveAll(s);
+  ok(count(s.players[1].discard, 'curse') === before + 2, `封鎖×2: 同名獲得で呪い2枚（実 +${count(s.players[1].discard, 'curse') - before}）`);
+}
+
 console.log('=== 封鎖+灯台: 灯台で免疫の相手は反応不要で呪いを受けない ===');
 {
   let s = mkA(); s.players[0].hand = ['blockade']; s.players[1].durationCards = ['lighthouse'];
