@@ -187,6 +187,20 @@ try {
   pump(5);
   ok(UI.store.state.turn.phase === 'buy', 'アクション0枚は自動で購入フェーズへ: ' + UI.store.state.turn.phase);
 
+  console.log('=== 手札のサプライ外カード（闇市場獲得等）も手札に描画される ===');
+  {
+    const K = ['cellar', 'moat', 'village', 'workshop', 'smithy', 'remodel', 'market', 'mine', 'militia', 'laboratory'];
+    const sx = DOM.engine.createInitialState(['あなた', '相手'], K, { startActive: 0 });
+    UI.mode = 'local'; UI.localViewer = 0;
+    sx.turn = { active: 0, phase: 'action', actions: 1, buys: 1, coins: 0 };
+    sx.players[0].isCpu = false;
+    sx.players[0].hand = ['witch', 'copper', 'estate']; // witch は王国(K)外＝SUPPLY_ORDER に無いサプライ外カード
+    go('game'); setState(sx); UI._autoSkipTimer = null;
+    ok(!runtimeError, 'サプライ外カードを含む手札で描画エラーなし');
+    const names = $all('.hand-cards .card .cname').map((e) => e.textContent);
+    ok(names.includes('魔女'), '王国外カード(魔女)が手札に描画される（handGroups から脱落しない）: ' + names.join(','));
+  }
+
   console.log('=== 手札ヘッダに勝利点表示 ===');
   ok(/｜\d+点/.test($('[data-self-pile]').textContent), 'VP合計が表示される: ' + $('[data-self-pile]').textContent);
 

@@ -3945,12 +3945,15 @@
       if (s.pending.picks[seat] != null) masked[seat] = s.pending.picks[seat];
       s.pending = Object.assign({}, s.pending, { picks: masked });
     }
-    // 衛兵・見張りで「見た」山札の上の数枚は本人だけの秘密情報。相手席への配信では中身を伏せる（枚数は残す）。
-    if (s.pending && (s.pending.type === 'sentry' || s.pending.type === 'lookout') && Array.isArray(s.pending.cards) && seat !== s.pending.player) {
+    // 衛兵・見張り・水晶玉で「見た」山札上の札は私的な看破（reveal していない）。
+    // 見てよいのは「本人」と、支配中ならその決定者＝支配者(possessedBy)。それ以外の席には中身を伏せる（枚数は残す）。
+    // ※支配中に決定者(支配者)へ配信しないと、UIが未知id 'back' を描画して render 例外→操作不能になる。
+    const secretSeer = (s.turn && s.turn.possessedBy != null && s.pending && s.pending.player === s.turn.active)
+      ? s.turn.possessedBy : (s.pending ? s.pending.player : -1);
+    if (s.pending && (s.pending.type === 'sentry' || s.pending.type === 'lookout') && Array.isArray(s.pending.cards) && seat !== s.pending.player && seat !== secretSeer) {
       s.pending = Object.assign({}, s.pending, { cards: new Array(s.pending.cards.length).fill('back') });
     }
-    // 水晶玉で「見た」山札トップ1枚も本人だけの秘密（reveal していない私的看破）。相手席には伏せる。
-    if (s.pending && s.pending.type === 'crystal_ball' && s.pending.card != null && seat !== s.pending.player) {
+    if (s.pending && s.pending.type === 'crystal_ball' && s.pending.card != null && seat !== s.pending.player && seat !== secretSeer) {
       s.pending = Object.assign({}, s.pending, { card: 'back' });
     }
     s.you = seat;

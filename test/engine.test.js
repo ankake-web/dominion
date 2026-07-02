@@ -371,6 +371,20 @@ const cbFoe = E.maskStateFor(s, 1);
 ok(cbSelf.pending.card === 'gold', '水晶玉: 本人(席0)には看破カードが見える');
 ok(cbFoe.pending.card === 'back', '水晶玉: 相手(席1)には看破カードを伏せる（山札トップの漏洩防止）');
 
+console.log('=== マスキング: 支配中は看破(水晶玉/衛兵)を決定者=支配者に開示し、無関係な席には伏せる ===');
+{
+  // 席0(A)が席1(B)を支配中。被支配者Bのpendingの看破は、決定者Aに見えないと 'back' 描画で render 例外になる。
+  let sp = E.createInitialState(['A', 'B', 'C']);
+  sp.turn.possessedBy = 0; sp.turn.active = 1;
+  sp.pending = { type: 'crystal_ball', player: 1, card: 'gold' };
+  ok(E.maskStateFor(sp, 0).pending.card === 'gold', '支配中: 決定者=支配者(席0)に水晶玉の看破が見える（backでない＝クラッシュ防止）');
+  ok(E.maskStateFor(sp, 1).pending.card === 'gold', '支配中: 被支配者本人(席1)にも見える');
+  ok(E.maskStateFor(sp, 2).pending.card === 'back', '支配中: 無関係な第三者(席2)には伏せる');
+  sp.pending = { type: 'sentry', player: 1, cards: ['gold', 'estate'] };
+  ok(E.maskStateFor(sp, 0).pending.cards.join(',') === 'gold,estate', '支配中: 支配者(席0)に衛兵の看破が見える');
+  ok(E.maskStateFor(sp, 2).pending.cards.every((c) => c === 'back'), '支配中: 第三者(席2)には衛兵の看破を伏せる');
+}
+
 console.log('=== 得点内訳（vpCards）が結果に含まれる ===');
 s = E.createInitialState(['A', 'B']);
 s.players[0].deck = ['province', 'province', 'estate', 'curse'];

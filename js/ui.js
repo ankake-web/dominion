@@ -192,6 +192,11 @@
   function cardEl(id, opts) {
     opts = opts || {};
     const c = DOM.CARDS[id];
+    // 未知id（'back'=伏せ札 等）は伏せカードのプレースホルダで描画し、render 全体の巻き込みクラッシュを防ぐ（防御）。
+    if (!c) {
+      return h('div', { class: 'card has-art facedown ' + (opts.size === 'sm' ? 'sm ' : '') + (opts.extra ? opts.extra : ''), onclick: opts.onClick },
+        h('div', { class: 'cname' }, '？'));
+    }
     const cls = 'card has-art ' + (opts.size === 'sm' ? 'sm ' : '') + typeClass(id) +
       (c.types.includes('attack') ? ' attack-mark' : '') + (opts.dim ? ' dim' : '') +
       (opts.extra ? ' ' + opts.extra : '');
@@ -641,9 +646,11 @@
   function recommendedBuys(state) {
     const t = state.turn;
     if (t.phase !== 'buy' || t.buys <= 0) return [];
-    const can = (id) => (state.supply[id] || 0) > 0 && effCost(state, id) <= t.coins;
+    const can = (id) => (state.supply[id] || 0) > 0 && effCost(state, id) <= t.coins && potCost(id) <= (t.potions || 0);
     const recs = [];
+    if (can('colony')) recs.push('colony');       // 繁栄：植民地(10点)が買えるなら最優先
     if (can('province')) recs.push('province');
+    if (can('platinum')) recs.push('platinum');   // 繁栄：プラチナ貨（強い財宝）
     if (can('gold')) recs.push('gold');
     else if (can('silver')) recs.push('silver');
     return recs;
@@ -652,7 +659,8 @@
   function coachHint(state, viewer, interactive) {
     if (!interactive || state.pending) return null;
     const t = state.turn;
-    const me = state.players[viewer];
+    // 支配中は操作対象＝被支配者(t.active)の手札を案内する（支配者自身の手札を見て誤誘導しない）。
+    const me = (t.possessedBy != null && t.possessedBy === viewer) ? state.players[t.active] : state.players[viewer];
     if (t.phase === 'action') {
       const playable = t.actions > 0 && me.hand.some((c) => DOM.CARDS[c].types.includes('action'));
       return playable
@@ -885,7 +893,9 @@
     const order = DOM.SUPPLY_ORDER(kingdom).concat(['potion']);
     const counts = {};
     hand.forEach((c) => (counts[c] = (counts[c] || 0) + 1));
-    const present = order.filter((id) => counts[id]);
+    // 手札の全idを網羅する（SUPPLY_ORDER 優先＋そこに無いid＝闇市場のサプライ外カード等を後ろに追加）。
+    // さもないと order に無いカードがどのグループにも入らず手札に描画されず、操作不能になる。
+    const present = order.filter((id) => counts[id]).concat(Object.keys(counts).filter((id) => DOM.CARDS[id] && order.indexOf(id) < 0));
     // 多重タイプ（貴族=勝利点+アクション、後宮=財宝+勝利点）は1グループだけに入れる。
     // 優先: アクション → 財宝 → 勝利点/呪い（手札での操作はこの順で扱える）。
     return {
@@ -1071,7 +1081,7 @@
       { label: '獲得する', cls: 'btn-primary', on: () => dispatch({ type: 'THIEF_GAIN', take: true }) },
       { label: '廃棄のまま', on: () => dispatch({ type: 'THIEF_GAIN', take: false }) }]);
     if (pd.type === 'throne') return modalSingleHand(p, '玉座の間 — 2回使うアクションを選ぶ', '手札のアクションカードを1枚選ぶと、それを2回使います。', (id) => DOM.isType(id, 'action'), (card) => dispatch({ type: 'THRONE_CHOOSE', card }), null, '2回使う');
-    if (pd.type === 'secret_chamber_putback') return modalSelectN(p, '秘密の小部屋 — 山札の上に戻す', '手札から2枚を選んで山札の上に戻します（最初のタップが一番上）。', Math.min(2, p.hand.length), '確定（戻す）', (cards) => dispatch({ type: 'SECRET_CHAMBER_PUTBACK', cards }));
+    if (pd.type === 'secret_chamber_putback') { const scn = Math.min(2, p.hand.length); return modalSelectN(p, '秘密の小部屋 — 山札の上に戻す', '手札から' + scn + '枚を選んで山札の上に戻します（最初のタップが一番上）。', scn, '確定（戻す）', (cards) => dispatch({ type: 'SECRET_CHAMBER_PUTBACK', cards })); }
 
     /* ===== 基本セット 第二版 ===== */
     if (pd.type === 'harbinger') return modalPickList(state, '前駆者 — 山札の上に置く', '捨て札から1枚を選んで山札の上に置けます（次のターンに引きます）。', p.discard, '山札の上に置く', (id) => dispatch({ type: 'HARBINGER_PUT', card: id }), { label: '置かない', on: () => dispatch({ type: 'HARBINGER_PUT', card: null }) });
@@ -1842,7 +1852,9 @@
     if (!p || p.isCpu) return;
     // 操作者本人の画面でのみ（ローカル: パスゲート通過後 / オンライン: 自分の番）
     if (UI.mode === 'local' ? actor !== UI.localViewer : actor !== UI.mySeat) return;
-    if (p.hand.some((c) => DOM.isType(c, 'action'))) return;
+    // 支配中は操作対象＝被支配者(t.active)の手札でアクション有無を判定する（支配者の手札で誤って飛ばさない）。
+    const handOf = (st, ac) => (st.turn.possessedBy != null && st.turn.possessedBy === ac) ? st.players[st.turn.active] : st.players[ac];
+    if (handOf(s, actor).hand.some((c) => DOM.isType(c, 'action'))) return;
     if (UI._autoSkipTimer) return;
     UI._autoSkipTimer = setTimeout(() => {
       UI._autoSkipTimer = null;
@@ -1852,7 +1864,7 @@
       const a2 = E().actor(cur);
       if (!cur.players[a2] || cur.players[a2].isCpu) return;
       if (UI.mode === 'local' ? a2 !== UI.localViewer : a2 !== UI.mySeat) return;
-      if (cur.players[a2].hand.some((c) => DOM.isType(c, 'action'))) return;
+      if (handOf(cur, a2).hand.some((c) => DOM.isType(c, 'action'))) return;
       UI.store.dispatch({ type: 'END_ACTION_PHASE' });
     }, 350);
   }
