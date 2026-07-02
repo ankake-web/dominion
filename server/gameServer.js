@@ -177,7 +177,7 @@ function restoreRoom(snap) {
   if (room.started && room.state) room.members.forEach((m) => setSeatDc(room, m.seat, true));
   rooms.set(room.code, room);
   // 復元直後は誰も接続していない。猶予の間に resume が来なければ掃除する。
-  room.members.forEach((m) => scheduleRelease(room, m));
+  room.members.forEach((m) => scheduleRelease(room, m, false)); // 復元直後は即破棄せず猶予で resume を待つ
   return room;
 }
 
@@ -255,12 +255,13 @@ function setSeatDc(room, seat, dc) {
   const p = room.state.players[seat];
   if (p) p.dc = !!dc;
 }
-function scheduleRelease(room, member) {
+function scheduleRelease(room, member, allowImmediate) {
   if (member.graceTimer) clearTimeout(member.graceTimer);
   // 未開始ロビーで、この切断により無人になる部屋（＝作成者のみで誰も join していない等）は
   // 猶予を待たず即破棄する。create→即切断でルームコード空間を占有する軽微DoSを防ぐ。
   // 対戦中(started)や、他に接続中の人間が残るロビーは従来どおり猶予を張って復帰を待つ。
-  if (!room.started && room.members.filter((m) => m !== member && m.connected).length === 0) {
+  // ただし復元直後(restoreRoom)は全員が未接続で始まるため即破棄しない（resume 猶予を残す）＝allowImmediate:false。
+  if (allowImmediate !== false && !room.started && room.members.filter((m) => m !== member && m.connected).length === 0) {
     destroyRoom(room); return;
   }
   const grace = room.started ? room.startedGraceMs : room.graceMs;

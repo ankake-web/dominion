@@ -308,6 +308,17 @@ function mkClient(url) {
     ok(zBack && zBack.state.players.length === snap.state.players.length, '復元された対戦の人数が一致');
     z2.close();
 
+    console.log('=== 永続化: 未開始ロビーの復元は即破棄されない（DoS即破棄は復元に適用しない）===');
+    const w1 = mkClient(URL); await w1.open();
+    w1.send({ t: 'create', name: 'W1' });
+    const w1j = await w1.waitFor((m) => m.t === 'joined');
+    const lobbySnap = roomSnapshot(rooms.get(w1j.code)); // 未開始ロビーのスナップショット
+    ok(lobbySnap && !lobbySnap.started && lobbySnap.state == null, 'ロビー(未開始・state無し)のスナップショット');
+    w1.close();
+    __reset();
+    restoreRoom(lobbySnap);
+    ok(rooms.has(w1j.code), '未開始ロビーは復元直後に即破棄されない（resume 猶予を残す）');
+
   } catch (e) {
     fail++; console.log('  ✗ 例外: ' + (e.stack || e.message));
   }
