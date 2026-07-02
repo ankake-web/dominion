@@ -168,7 +168,7 @@
     const close = () => { UI.revealView = null; render(); };
     return h('div', { class: 'scrim', onclick: (e) => { if (e.target.classList.contains('scrim')) close(); } },
       h('div', { class: 'sheet reveal-modal' },
-        h('button', { class: 'sheet-close', onclick: close }, '✕'),
+        h('button', { class: 'sheet-close', 'aria-label': '閉じる', onclick: close }, '✕'),
         h('div', { class: 'reveal-head' }, '👁 ' + p.name + '：' + (r.note || '公開')),
         h('div', { class: 'reveal-cards' }, r.cards.map((id) => {
           const def = DOM.CARDS[id] || { name: id };
@@ -178,6 +178,13 @@
             h('div', { class: 'reveal-name' }, def.name));
         })),
         h('button', { class: 'btn btn-ghost btn-block', style: 'margin-top:10px', onclick: close }, 'とじる')));
+  }
+  // アクセシビリティ：クリックできるカード/山をスクリーンリーダー＆キーボードでも操作できるようにする。
+  function activateKey(fn) { return (e) => { if (fn && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); fn(e); } }; }
+  function a11yBtn(props, onClick, label) {
+    if (!onClick) return props;
+    props.role = 'button'; props.tabindex = '0'; if (label) props['aria-label'] = label; props.onkeydown = activateKey(onClick);
+    return props;
   }
   function cardArt(id) {
     // 盤面（手札・サプライ）は軽量サムネを使う。拡大表示だけフル画像。
@@ -194,13 +201,15 @@
     const c = DOM.CARDS[id];
     // 未知id（'back'=伏せ札 等）は伏せカードのプレースホルダで描画し、render 全体の巻き込みクラッシュを防ぐ（防御）。
     if (!c) {
-      return h('div', { class: 'card has-art facedown ' + (opts.size === 'sm' ? 'sm ' : '') + (opts.extra ? opts.extra : ''), onclick: opts.onClick },
+      return h('div', a11yBtn({ class: 'card has-art facedown ' + (opts.size === 'sm' ? 'sm ' : '') + (opts.extra ? opts.extra : ''), onclick: opts.onClick }, opts.onClick, '伏せ札'),
         h('div', { class: 'cname' }, '？'));
     }
     const cls = 'card has-art ' + (opts.size === 'sm' ? 'sm ' : '') + typeClass(id) +
       (c.types.includes('attack') ? ' attack-mark' : '') + (opts.dim ? ' dim' : '') +
       (opts.extra ? ' ' + opts.extra : '');
-    return h('div', { class: cls, onclick: opts.onClick },
+    const aria = c.name + '、コスト' + c.cost + (potCost(id) ? '＋ポーション' : '') +
+      (opts.count && opts.count > 1 ? '、' + opts.count + '枚' : '') + '、' + typeLabel(id);
+    return h('div', a11yBtn({ class: cls, onclick: opts.onClick }, opts.onClick, aria),
       h('div', { class: 'ccost' }, c.cost),
       h('div', { class: 'cname' }, c.name),
       h('div', { class: 'ctype' }, typeLabel(id)),
@@ -220,7 +229,8 @@
       (n <= 0 ? ' empty' : '') + (opts.buyable ? ' buyable' : '') + (opts.gainable ? ' gainable' : '') +
       (opts.recommended ? ' recommended' : '') +
       (ec < c.cost ? ' discounted' : '');
-    return h('div', { class: cls, onclick: opts.onClick, 'data-pile': id },
+    const aria = c.name + '、コスト' + ec + (potCost(id) ? '＋ポーション' : '') + '、残り' + n + '枚' + (opts.recommended ? '、おすすめ' : '');
+    return h('div', a11yBtn({ class: cls, onclick: opts.onClick, 'data-pile': id }, opts.onClick, aria),
       h('div', { class: 'pcost' }, ec),
       h('div', { class: 'pname' }, c.name),
       cardArt(id),
@@ -753,7 +763,7 @@
 
     const top = h('div', { class: 'topbar' },
       h('div', { class: 'menu-wrap' },
-        h('button', { class: 'menu-btn', title: 'メニュー', onclick: () => { UI.menuOpen = !UI.menuOpen; render(); } }, '☰'),
+        h('button', { class: 'menu-btn', title: 'メニュー', 'aria-label': 'メニュー', onclick: () => { UI.menuOpen = !UI.menuOpen; render(); } }, '☰'),
         UI.menuOpen ? viewTopMenu() : null),
       h('div', { class: 'turn-tag' },
         h('div', { class: 'who' }, active.name + ' の番' + (active.isCpu ? '（CPU・' + LEVEL_JP[active.cpuLevel] + '）' : '')),
@@ -1515,7 +1525,7 @@
     const remain = state && state.supply && state.supply[id] != null ? state.supply[id] : null;
     return h('div', { class: 'scrim', onclick: (e) => { if (e.target.classList.contains('scrim')) closeSheet(); } },
       h('div', { class: 'sheet' },
-        h('button', { class: 'sheet-close', onclick: closeSheet }, '✕'),
+        h('button', { class: 'sheet-close', 'aria-label': '閉じる', onclick: closeSheet }, '✕'),
         h('div', { class: 'grip' }),
         h('div', { class: 'zoom-wrap ' + typeClass(id) },
           h('img', { class: 'zoom-img', src: 'asset/cards/' + id + '.webp', alt: c.name, onerror: function () { this.style.display = 'none'; if (this.parentElement) this.parentElement.classList.add('noimg'); } }),

@@ -90,6 +90,20 @@ try {
   // 重ねバッジ（銅貨×2）
   ok($all('.count-badge').some((b) => b.textContent.includes('×2')), '同カードは×2バッジ');
 
+  console.log('=== アクセシビリティ：クリックできるカード/山は role=button＋aria-label＋キーボード操作可 ===');
+  {
+    const handCard = $('.hand-cards .card');
+    ok(handCard && handCard.getAttribute('role') === 'button' && (handCard.getAttribute('aria-label') || '').length > 0,
+      '手札カードに role=button と aria-label がある（実 ' + (handCard && handCard.getAttribute('aria-label')) + '）');
+    ok(handCard && handCard.getAttribute('tabindex') === '0', '手札カードは tabindex=0（キーボード到達可）');
+    const pile = $('.supply-grid.big .pile') || $('.pile');
+    ok(pile && pile.getAttribute('role') === 'button' && /コスト|残り/.test(pile.getAttribute('aria-label') || ''),
+      'サプライの山に role=button と説明的 aria-label がある（実 ' + (pile && pile.getAttribute('aria-label')) + '）');
+    // Enter キーで手札カードのタップが発火する（onHandTap 経由で拡大シートが開く）
+    if (handCard) { handCard.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); }
+    ok(!runtimeError, 'カードの Enter キー操作で例外が出ない');
+  }
+
   console.log('=== アクション: 村をタップ→拡大→使う ===');
   byText('.hand-cards.big .card .cname', '村').closest('.card').click();
   ok($('.zoom-name').textContent === '村', '村の拡大表示');
