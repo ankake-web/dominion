@@ -119,6 +119,8 @@
     }
     if (has('treasure') && has('victory')) return '財宝・勝利点';
     if (has('victory') && has('action')) return '勝利点・アクション';
+    if (has('attack') && has('reaction')) return 'アクション・アタック・リアクション'; // 会計士（action+attack+reaction）
+    if (has('treasure') && has('attack')) return '財宝・アタック';                    // ペテン師（treasure+attack）
     if (has('reaction')) return 'アクション・リアクション';
     if (has('attack')) return 'アクション・アタック';
     if (has('treasure')) return '財宝';
@@ -137,6 +139,8 @@
     }
     if (has('treasure') && has('victory')) return 'Treasure - Victory';
     if (has('victory') && has('action')) return 'Victory - Action';
+    if (has('attack') && has('reaction')) return 'Action - Attack - Reaction'; // 会計士
+    if (has('treasure') && has('attack')) return 'Treasure - Attack';          // ペテン師
     if (has('reaction')) return 'Action - Reaction';
     if (has('attack')) return 'Action - Attack';
     if (has('treasure')) return 'Treasure';
@@ -157,6 +161,7 @@
       id: id,
       name: c.name,
       cost: c.cost,
+      potion: c.potion || 0, // 錬金術：ポーション費用（コストバッジに紫フラスコで表示）
       type: frame,
       types: c.types.slice(),
       typeLabel: typeLabel(c.types),

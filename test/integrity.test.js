@@ -113,6 +113,23 @@ console.log('=== 表示データと DOM.CARDS の id/名前/コストが一致 =
   Object.keys(cd).forEach((id) => ok(!!DOM.CARDS[id], '表示データの ' + id + ' が DOM.CARDS にもある'));
 }
 
+/* 5b. 種別ラベルが全 type を落とさない（複合カードの表記漏れ検知＝charlatan/clerk 型のバグを構造的に防ぐ） */
+console.log('=== 種別ラベルが全 type を含む（表記漏れ検知）===');
+{
+  const cd = DOM.CARD_DATA || {};
+  const JP = { treasure: '財宝', victory: '勝利点', curse: '呪い', action: 'アクション', attack: 'アタック', reaction: 'リアクション', duration: '持続' };
+  const EN = { treasure: 'Treasure', victory: 'Victory', curse: 'Curse', action: 'Action', attack: 'Attack', reaction: 'Reaction', duration: 'Duration' };
+  Object.keys(DOM.CARDS).forEach((id) => {
+    const d = cd[id]; if (!d) return;
+    (DOM.CARDS[id].types || []).forEach((t) => {
+      ok((d.typeLabel || '').includes(JP[t]), id + ' の日本語ラベルに ' + t + '(' + JP[t] + ') が含まれる（実: ' + d.typeLabel + '）');
+      ok((d.typeLabelEn || '').includes(EN[t]), id + ' の英語ラベルに ' + t + '(' + EN[t] + ') が含まれる（実: ' + d.typeLabelEn + '）');
+    });
+    // ポーション費用の単一ソース透過
+    ok((d.potion || 0) === (DOM.CARDS[id].potion || 0), id + ' のポーション費用が表示データに透過（実 ' + (d.potion || 0) + ' / 定義 ' + (DOM.CARDS[id].potion || 0) + '）');
+  });
+}
+
 console.log('\n========================================');
 console.log('整合性テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

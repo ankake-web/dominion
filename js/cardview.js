@@ -89,7 +89,11 @@
 
     /* z2：文字オーバーレイ（枠の所定位置に重ねる）。
        コスト数字は HTML で重ねる（SVG枠でも画像枠でも同じコイン位置に載る）。 */
-    const cost = el('div', 'dcard-cost', el('span', null, String(card.cost == null ? '' : card.cost)));
+    // 錬金術：ポーション費用があるカードは紫フラスコを重ねる。コスト0＋ポーションのみ（変成・ブドウ園）は数字を出さずフラスコだけ。
+    const potionN = card.potion || 0;
+    const costText = (card.cost == null) ? '' : ((card.cost === 0 && potionN > 0) ? '' : String(card.cost));
+    const cost = el('div', 'dcard-cost' + (potionN > 0 ? ' has-potion' : ''), el('span', null, costText));
+    if (potionN > 0) { const fl = el('span', 'dcard-potion', '🧪'); fl.setAttribute('aria-label', 'ポーション費用'); cost.appendChild(fl); }
     root.appendChild(cost);
 
     const title = el('div', 'dcard-title', el('span', null, card.name || '？'));
