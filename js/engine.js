@@ -3911,7 +3911,12 @@
   function maskStateFor(state, seat) {
     const s = clone(state);
     s.players = s.players.map((p, i) => {
-      if (i === seat) return p; // 自分は全部見える
+      // 自分：手札・捨て札・場・自分の山札の「中身(構成)」は見えてよい（公式でも自分のデッキ構成は既知）。
+      // ただし山札の「順序」＝次に引く札は公式でも不可視。配信JSONを覗く改造クライアントの山札透視を防ぐため、
+      // 自席の deck は id をソートして順序情報を消す（中身と枚数は保持＝自分の得点 vpOf 計算やUI表示は不変）。
+      // 権威stateはサーバが完全な順序で保持し reduce もそこで行う（クライアントは reduce しない）ので実害なし。
+      // 山札上を見る/並べ替える効果（薬剤師・衛兵・見張り・水晶玉等）は pending 側で本人にだけ明示公開する。
+      if (i === seat) return Object.assign({}, p, { deck: p.deck.slice().sort() });
       // 錬金術・支配：支配者は被支配者（手番のactive）の手札を見て操作する（山札は伏せたまま）。
       const revealHand = state.turn && state.turn.possessedBy === seat && i === state.turn.active;
       // 海辺：脇置き(setAside)・原住民の村マットは秘密＝枚数だけ。島マット・持続カードは公開（公式どおり）。
@@ -3943,6 +3948,10 @@
     // 衛兵・見張りで「見た」山札の上の数枚は本人だけの秘密情報。相手席への配信では中身を伏せる（枚数は残す）。
     if (s.pending && (s.pending.type === 'sentry' || s.pending.type === 'lookout') && Array.isArray(s.pending.cards) && seat !== s.pending.player) {
       s.pending = Object.assign({}, s.pending, { cards: new Array(s.pending.cards.length).fill('back') });
+    }
+    // 水晶玉で「見た」山札トップ1枚も本人だけの秘密（reveal していない私的看破）。相手席には伏せる。
+    if (s.pending && s.pending.type === 'crystal_ball' && s.pending.card != null && seat !== s.pending.player) {
+      s.pending = Object.assign({}, s.pending, { card: 'back' });
     }
     s.you = seat;
     return s;

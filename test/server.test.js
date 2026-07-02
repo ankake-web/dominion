@@ -252,6 +252,16 @@ function mkClient(url) {
       return false;
     })(), '全員の猶予切れで部屋が rooms から破棄される');
 
+    console.log('=== 未開始ロビーの空室は猶予を待たず即破棄（作成→即切断のコード占有DoS対策）===');
+    const q1 = mkClient(URL); await q1.open();
+    q1.send({ t: 'create', name: 'Q1' });
+    const q1j = await q1.waitFor((m) => m.t === 'joined');
+    ok(rooms.has(q1j.code), '作成直後は部屋がある');
+    q1.close();
+    // 作成者のみの未開始ロビーは猶予(graceMs=300ms)を待たず即破棄される＝150ms未満で消えることを確認。
+    ok(await (async () => { for (let i = 0; i < 10; i++) { if (!rooms.has(q1j.code)) return true; await sleep(15); } return false; })(),
+      '作成者のみのロビーは切断で（猶予を待たず）即破棄される');
+
     console.log('=== 人間ゼロの間は CPU が一時停止し、復帰で再開する ===');
     const y1 = mkClient(URL); await y1.open();
     y1.send({ t: 'create', name: 'Y1' }); // 既定 cpuCount=1 → 1人間+1CPU

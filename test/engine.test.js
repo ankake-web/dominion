@@ -352,6 +352,25 @@ ok(masked.players[1].discard.length === 3 && masked.players[1].discard.every((c)
 ok(masked.players[1].inPlay.join(',') === 'village', '場(inPlay)は公開のまま');
 ok(masked.players[1].hand.every((c) => c === 'back') && masked.players[1].deck.every((c) => c === 'back'), '手札・山札も伏せたまま');
 
+console.log('=== マスキング: 自分の山札は「順序」だけ隠す（中身と枚数は保持＝得点計算は不変）===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].deck = ['gold', 'estate', 'copper', 'province', 'silver']; // わざと非ソート順
+const md = E.maskStateFor(s, 0);
+ok(md.players[0].deck.length === 5, '自分の山札の枚数は保持');
+ok(md.players[0].deck.every((c) => c !== 'back'), '自分の山札の中身は見える（得点計算に必要）');
+ok(md.players[0].deck.join(',') !== 'gold,estate,copper,province,silver', '自分の山札の元の順序は配信されない（透視防止）');
+ok(md.players[0].deck.slice().sort().join(',') === ['gold', 'estate', 'copper', 'province', 'silver'].sort().join(','), '中身の多重集合は同一（ソートで順序だけ消す）');
+ok(md.players[0].deck.join(',') === md.players[0].deck.slice().sort().join(','), '自分の山札はソート順で配信される');
+
+console.log('=== マスキング: 水晶玉で見た山札トップは相手席に伏せる（本人には見える）===');
+s = E.createInitialState(['A', 'B']);
+s.players[0].deck = ['gold', 'copper'];
+s.pending = { type: 'crystal_ball', player: 0, card: 'gold' }; // 席0が山札トップ(gold)を看破中
+const cbSelf = E.maskStateFor(s, 0);
+const cbFoe = E.maskStateFor(s, 1);
+ok(cbSelf.pending.card === 'gold', '水晶玉: 本人(席0)には看破カードが見える');
+ok(cbFoe.pending.card === 'back', '水晶玉: 相手(席1)には看破カードを伏せる（山札トップの漏洩防止）');
+
 console.log('=== 得点内訳（vpCards）が結果に含まれる ===');
 s = E.createInitialState(['A', 'B']);
 s.players[0].deck = ['province', 'province', 'estate', 'curse'];
