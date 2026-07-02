@@ -281,6 +281,32 @@
     v += plusActions(id) * 1.5 + ((C()[id] && C()[id].coin) || 0) + ((C()[id] && C()[id].cost) || 0) * 0.1;
     return v;
   }
+  /* 王国の「エンジン成立度」を静的評価して ENGINE/MONEY を返す（B案）。
+     実測（自己対戦A/B）で「半端なエンジンは無エンジン(ビッグマネー)より弱い」と判明した。
+     ヒューリスティックな bestEngineBuy で確実に回せて勝てる王国だけ ENGINE と判定し、
+     それ以外は純ビッグマネー(bestEngineBuy を呼ばない)に切り替える。判定基準は自己対戦A/Bで確定:
+
+     (1) 海辺・繁栄の王国 … エンジンが本物で、現行 bestEngineBuy でも回せて勝てる。
+         固定セットのA/Bで BM は海辺15%・繁栄23%＝エンジン圧勝（random系は互角なので ENGINE でも損無し）。
+     (2) 基本/陰謀の「礼拝堂＋ドロー」王国 … 圧縮(chapel)＋+2カード級ドローが揃うと軽量エンジンが
+         成立し、BMより強い（例: 推奨「ビッグマネー」セットは BM だと43%＝エンジンが勝つ）。
+         ただし庭園(gardens)があれば大デッキ報酬＝圧縮エンジンと相反する“庭園ラッシュ”なので除外
+         （size-distortion 等は BM が99%勝つのを守る）。
+     上記以外（基本/陰謀/錬金術の大半）は純ビッグマネーが強い（BMが55〜96%勝ち）。
+     村/ドロー等の一般特徴量で分離しようとすると固定繁栄エンジンを取りこぼす（実測）ため上記に絞った。
+     王国は対局中不変なので内容キーで一度だけ評価してキャッシュする。 */
+  const __engCache = {};
+  function evaluateKingdom(kingdom) {
+    const K = kingdom || [];
+    const key = K.slice().sort().join(',');
+    if (__engCache[key]) return __engCache[key];
+    const POOLS = DOM.POOLS || {};
+    const inPool = (pool) => K.some((id) => (POOLS[pool] || []).indexOf(id) >= 0);
+    const hasChapelEngine = K.indexOf('chapel') >= 0 && K.indexOf('gardens') < 0 &&
+      K.some((id) => C()[id] && plusCards(id) >= 2); // 圧縮＋ドロー、ただし庭園ラッシュは除く
+    const isEngine = inPool('seaside') || inPool('prosperity') || hasChapelEngine;
+    return (__engCache[key] = isEngine ? 'ENGINE' : 'MONEY');
+  }
   function bestEngineBuy(state, p, coins) {
     const potions = (state.turn && state.turn.potions) || 0;
     const acts = allCards(p).filter((c) => isType(c, 'action'));
@@ -327,7 +353,8 @@
     else if (coins >= 6 && sup(state, 'gold') > 0) pick = 'gold';
     else {
       // 緑化フェーズに入る前は、強い王国カード（エンジン部品）を買って盤面を厚くする。
-      const eng = (province > 4) ? bestEngineBuy(state, p, coins) : null;
+      // ただしエンジンが成立する王国のときだけ（不成立なら純ビッグマネー）。
+      const eng = (province > 4 && evaluateKingdom(state.kingdom) === 'ENGINE') ? bestEngineBuy(state, p, coins) : null;
       if (eng) pick = eng;
       else if (coins >= 3 && sup(state, 'silver') > 0) pick = 'silver';
     }
@@ -345,8 +372,8 @@
     if (coins >= 9 && sup(state, 'platinum') > 0) return 'platinum';      // 繁栄：プラチナ貨
     if (coins >= 8 && province > 0) return 'province';
     if (coins >= 6 && sup(state, 'gold') > 0) return 'gold';
-    // 中盤：緑化前は強い王国カード（エンジン部品）を買ってビッグマネー偏重を避ける。
-    const eng = (province > 3) ? bestEngineBuy(state, p, coins) : null;
+    // 中盤：緑化前は強い王国カード（エンジン部品）を買う。エンジンが成立する王国のときだけ。
+    const eng = (province > 3 && evaluateKingdom(state.kingdom) === 'ENGINE') ? bestEngineBuy(state, p, coins) : null;
     if (eng) return eng;
     if (province <= 3 && coins >= 5 && sup(state, 'duchy') > 0) return 'duchy';
     if (coins >= 3 && sup(state, 'silver') > 0) return 'silver';
