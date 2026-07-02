@@ -6,6 +6,7 @@
 ### 実ブラウザE2Eスモークを新設（2026-07-01）
 - **`test/verify-e2e.js`**：自前で静的サーバを立て、**ヘッドレスChrome(puppeteer)**でホーム→設定→CPU戦開始→通しプレイを駆動。検査：**JS例外(console/pageerror)ゼロ・カード画像webp 143枚すべて200・主要リソース読込失敗ゼロ・盤面描画と進行**。単体/jsdomでは捉えられない実ブラウザの統合レベルを確認。
 - 結果：**9/9 成功・バグ無し**（配信アプリは実機で無エラーに動作）。CI(npm test)には含めない（puppeteer依存・低速）。手動実行＝`npm run verify:e2e`。既存 `verify:visual`（レスポンシブ/はみ出し）と併用。
+- **レスポンシブ検証（`test/verify-visual.js` を自己完結化に更新）**：旧版はボタン文言が古く(`対戦をはじめる`→現行`CPUと対戦`)・`/tmp`依存で壊れていたため、E2Eと同じ自前サーバ方式に刷新＋「はみ出しの犯人要素」検出を追加。**320/360/390/414/768px の全幅×主要画面(home/setup/board/zoom/cardlist/rules)で横はみ出しゼロ**を確認。320px盤面・カード拡大モーダルを目視でもクリーンと確認（重なり/見切れ無し）。手動実行＝`npm run verify:visual`。
 - 実装メモ：静的サーバのMIME(webp/webmanifest/audio 等)を用意、SWはbypass、`.actions-bar`の主ボタンを駆動（無効ボタンはスキップ、確認ダイアログ`.modal.confirm-modal`は主ボタンで解決、CPU手番は内蔵ディレイぶん待機）。
 
 ### CPU強化(A) 実測ドリブン検証：throne/sentry を改善＋「純ビッグマネーが現行より強い」発見（2026-07-01）
