@@ -266,7 +266,21 @@
     const m = t.match(/\+\s*(\d+)\s*アクション/);
     return m ? parseInt(m[1], 10) : 0;
   }
+  function plusCards(id) {
+    const t = (C()[id] && C()[id].text) || '';
+    const m = t.match(/\+\s*(\d+)\s*カード/);
+    return m ? parseInt(m[1], 10) : 0;
+  }
   function isNonTerminalAction(id) { return isType(id, 'action') && plusActions(id) >= 1; }
+  // 玉座の間/王の宮廷で「2回(3回)打つ価値」の目安。コスト順より賢く対象を選ぶために使う。
+  // ドロー(+カード)＞アタック(複製で妨害倍増)＞獲得系＞+アクション/コイン、を反映。
+  function throneValue(id) {
+    let v = plusCards(id) * 3;
+    if (isType(id, 'attack')) v += 6;
+    if (/獲得/.test((C()[id] && C()[id].text) || '')) v += 2;
+    v += plusActions(id) * 1.5 + ((C()[id] && C()[id].coin) || 0) + ((C()[id] && C()[id].cost) || 0) * 0.1;
+    return v;
+  }
   function bestEngineBuy(state, p, coins) {
     const potions = (state.turn && state.turn.potions) || 0;
     const acts = allCards(p).filter((c) => isType(c, 'action'));
@@ -572,7 +586,7 @@
         return { type: 'FEAST_GAIN', card: bestGain(state, 5, { noVictory: true }) || bestGain(state, 5) };
       case 'throne': {
         // 2回使う価値が高いアクション（玉座以外で最も高コスト）を選ぶ
-        const acts = p.hand.filter((c) => isType(c, 'action') && c !== 'throne_room').sort((a, b) => C()[b].cost - C()[a].cost);
+        const acts = p.hand.filter((c) => isType(c, 'action') && c !== 'throne_room').sort((a, b) => throneValue(b) - throneValue(a));
         const pick = acts[0] || p.hand.filter((c) => isType(c, 'action'))[0];
         return { type: 'THRONE_CHOOSE', card: pick };
       }
@@ -648,9 +662,16 @@
           return { type: 'BANDIT_PICK', card: c };
         }
       case 'sentry': {
-        // 呪い・屋敷は廃棄、それ以外は山札の上に戻す（銅貨は安全のため残す）
+        // 圧縮の主力：呪い/屋敷は廃棄。デッキに財宝が十分(≥7)あるとき銅貨も廃棄しデッキ密度を上げる。
+        // その他の死に札(勝利点)は捨てて次を掘る。強い札は山札の上に戻す。
         const tr = [], di = [], top = [];
-        pd.cards.forEach((c) => { if (c === 'curse' || c === 'estate') tr.push(c); else top.push(c); });
+        const deckTreasure = allCards(p).filter((c) => isTreasure(c)).length;
+        pd.cards.forEach((c) => {
+          if (c === 'curse' || c === 'estate') tr.push(c);
+          else if (c === 'copper' && deckTreasure >= 7) tr.push(c);
+          else if (isDead(c)) di.push(c);
+          else top.push(c);
+        });
         return { type: 'SENTRY_RESOLVE', trash: tr, discard: di, top };
       }
       case 'artisan':
@@ -880,8 +901,8 @@
         return { type: 'FORGE_GAIN', card: bestGainExact(state, pd.exact, { noVictory: true }) || bestGainExact(state, pd.exact) };
       case 'kings_court': {
         const acts = p.hand.filter((c) => isType(c, 'action'));
-        const nonKc = acts.filter((c) => c !== 'kings_court').sort((a, b) => C()[b].cost - C()[a].cost);
-        const card = nonKc[0] || acts.slice().sort((a, b) => C()[b].cost - C()[a].cost)[0];
+        const nonKc = acts.filter((c) => c !== 'kings_court').sort((a, b) => throneValue(b) - throneValue(a));
+        const card = nonKc[0] || acts.slice().sort((a, b) => throneValue(b) - throneValue(a))[0];
         return { type: 'KINGS_COURT_CHOOSE', card };
       }
       case 'war_chest':
