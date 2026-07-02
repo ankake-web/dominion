@@ -59,6 +59,7 @@ const ADVERSARIAL = [
   ['kings_court', 'throne_room', 'pirate', 'corsair', 'charlatan', 'rabble', 'mint', 'forge', 'monkey', 'sailor'],
   ['black_market', 'investment', 'anvil', 'charlatan', 'crystal_ball', 'tiara', 'throne_room', 'witch', 'village', 'market'], // 闇市場＋「使ったとき」pending財宝＝保存則の要注意ケース
   ['throne_room', 'university', 'apprentice', 'golem', 'familiar', 'scrying_pool', 'transmute', 'herbalist', 'apothecary', 'vineyard'],
+  ['throne_room', 'kings_court', 'treasure_map', 'feast', 'mining_village', 'wharf', 'market', 'remodel', 'mine', 'chapel'], // 玉座/王の宮廷×宝の地図/祝宴/鉱山の村（自己廃棄カードの複製＝保存則の要注意ケース）
 ];
 {
   let allOk = true;
@@ -96,6 +97,31 @@ console.log('=== カード保存則: 出荷セット（固定/ランダム各種
     }
   }
   ok(allOk, '出荷セット各種すべて保存則・不変条件を満たし終局');
+}
+
+// D) 支配(Possession)を強制して保存則検証（CPUは支配を買わないので手で発動させ、被支配ターンを操作させる）。
+// 支配は最も複雑（actorルーティング/gain・trash精算/追加ターン/cleanup）で、通常のCPU対戦では踏まれない。
+console.log('=== カード保存則: 支配(Possession)を強制（混成＝外部self-trash＋支配のcleanup精算） ===');
+{
+  const K = ['possession', 'village', 'smithy', 'market', 'militia', 'chapel', 'remodel', 'mine', 'witch', 'laboratory'];
+  let allOk = true;
+  for (let sd = 0; sd < 12; sd++) {
+    let s = E.createInitialState([{ name: 'P0', isCpu: true, level: 'hard' }, { name: 'P1', isCpu: true, level: 'normal' }], K, { startActive: 0 });
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    s.players[0].hand = s.players[0].hand.concat(['possession']); // 手札に支配を1枚追加（既存は保持）
+    const init = tally(s);
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'possession' });
+    let step = 0, bad = false;
+    while (!s.gameOver && step++ < 20000) {
+      s = E.reduce(s, CPU.decide(s));
+      if (s.pending) continue;
+      const d = diffTally(init, tally(s));
+      if (d.length) { allOk = false; bad = true; console.log('    POSS sd' + sd + ' step' + step + ': ' + d.join(' ')); break; }
+      if (hasBack(s) || Object.values(s.supply).some((v) => v < 0)) { allOk = false; bad = true; break; }
+    }
+    if (!bad && !s.gameOver) { allOk = false; console.log('    POSS sd' + sd + ': 未終局'); }
+  }
+  ok(allOk, '支配強制 12戦すべて保存則・不変条件を満たし終局（gain/trash精算・cleanupが保存則を守る）');
 }
 
 console.log('\n========================================');

@@ -1482,7 +1482,10 @@
       }
       case 'treasure_map': {
         // これ（場のtreasure_map 1枚）と手札のtreasure_map をもう1枚廃棄できれば金貨4枚を山札の上へ。
-        removeOne(p.inPlay, 'treasure_map'); state.trash.push('treasure_map');
+        // 「これ」が場に無い（玉座の間/王の宮廷の2回目＝1回目で既に廃棄済み）ときは何もしない。
+        // ※無条件に trash へ push すると存在しないカードを生成してしまう（カード保存則違反）。
+        if (!removeOne(p.inPlay, 'treasure_map')) break;
+        state.trash.push('treasure_map');
         let trashedTwo = false;
         if (removeOne(p.hand, 'treasure_map')) { state.trash.push('treasure_map'); trashedTwo = true; }
         log(state, `${p.name} は宝の地図を廃棄した${trashedTwo ? '（2枚）' : ''}。`);
