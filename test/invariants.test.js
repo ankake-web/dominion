@@ -51,6 +51,8 @@ function runGame(kingdom, players) {
     if (Object.values(s.supply).some((v) => v < 0)) return { okp: false, why: 'supply負 step' + step };
     if (hasBack(s)) return { okp: false, why: 'back混入 step' + step };
     if (s.players.some((p) => (p.vpTokens || 0) < 0)) return { okp: false, why: 'vpTokens負 step' + step };
+    // 性能：ログは上限で刈られ状態が肥大しない（毎reduceのclone がO(n^2)化するのを防ぐ不変条件）。
+    if ((s.log || []).length > 250) return { okp: false, why: 'log肥大 step' + step + ' len=' + s.log.length };
   }
   if (s.gameOver) {
     const r = s.result;
