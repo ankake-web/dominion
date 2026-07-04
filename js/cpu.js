@@ -53,9 +53,13 @@
     // 追加拡張（収穫祭/異郷/暗黒時代/新プロモ）＝孤立プールで実サプライに出ないため並び順はCPU挙動に無影響
     'stash', 'prince', 'captain', 'church', 'sauna', 'avanto', 'hamlet', 'fortune_teller', 'menagerie', 'farming_village', 'horse_traders', 'remake', 'tournament', 'young_witch', 'harvest', 'horn_of_plenty', 'hunting_party', 'jester', 'fairgrounds', 'bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed', 'crossroads', 'duchess', 'fools_gold', 'develop', 'oasis', 'oracle', 'scheme', 'tunnel', 'jack_of_all_trades', 'noble_brigand', 'nomad_camp', 'silk_road', 'spice_merchant', 'trader', 'cache', 'cartographer', 'embassy', 'haggler', 'highway', 'ill_gotten_gains', 'inn', 'mandarin', 'margrave', 'stables', 'border_village', 'farmland', 'nomads', 'trail', 'weaver', 'souk', 'cauldron', 'guard_dog', 'berserker', 'wheelwright', 'witchs_hut', 'poor_house', 'squire', 'vagrant', 'beggar', 'hermit', 'sage', 'forager', 'storeroom', 'urchin', 'market_square', 'ironmonger', 'wandering_minstrel', 'procession', 'scavenger', 'fortress', 'rats', 'armory', 'death_cart', 'marauder', 'feodum',
     'copper', 'curse'];
+  // 収穫祭：賞品(Prize)は馬上槍試合でのみ獲得する非サプライ札＝汎用の獲得効果(bestGain/bestGainExact)は
+  // 絶対に賞品を選ばない（豊穣の角等で$0賞品を不正獲得しない／賞品を拒否する reducer と噛み合って無限ループしない）。
+  const PRIZE_SET = new Set(['bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed']);
   function bestGain(state, maxCost, opts) {
     opts = opts || {};
     for (const id of GAIN_ORDER) {
+      if (PRIZE_SET.has(id)) continue;
       if (opts.treasureOnly && !isTreasure(id)) continue;
       if (opts.noVictory && (isType(id, 'victory') || isType(id, 'curse'))) continue;
       if (!C()[id]) continue;
@@ -68,11 +72,13 @@
   function bestGainExact(state, exact, opts) {
     opts = opts || {};
     for (const id of GAIN_ORDER) {
+      if (PRIZE_SET.has(id)) continue;
       if (opts.noVictory && (isType(id, 'victory') || isType(id, 'curse'))) continue;
       if (!C()[id]) continue;
       if (cost(state, id) === exact && sup(state, id) > 0) return id;
     }
     for (const id of Object.keys(state.supply)) {
+      if (PRIZE_SET.has(id)) continue;
       if (opts.noVictory && (isType(id, 'victory') || isType(id, 'curse'))) continue;
       if (C()[id] && cost(state, id) === exact && sup(state, id) > 0) return id;
     }
@@ -126,6 +132,13 @@
     if (has('scrying_pool')) return 'scrying_pool';       // +1アクション＋偵察＋連続ドロー
     if (has('university')) return 'university';           // +2アクション＋アクション獲得
     if (has('apprentice') && (has('estate') || has('curse'))) return 'apprentice'; // +1アクション（不要札を廃棄→ドロー）
+    // 収穫祭：非ターミナル（+アクション付き）
+    if (has('bag_of_gold')) return 'bag_of_gold';         // +1アクション＋金貨を山札の上に獲得（賞品）
+    if (has('farming_village')) return 'farming_village'; // +2アクション
+    if (has('hunting_party')) return 'hunting_party';     // +1カード+1アクション
+    if (has('menagerie')) return 'menagerie';             // +1アクション（重複なしで+3カード）
+    if (has('hamlet')) return 'hamlet';                   // +1カード+1アクション（任意で+アクション/+購入）
+    if (has('tournament')) return 'tournament';           // +1アクション（属州で賞品獲得）
     // --- ターミナル（効果の大きい順）---
     if (has('golem')) return 'golem';                     // 山札のアクション2枚を使う
     if (has('herbalist')) return 'herbalist';             // +1購入+1コイン
@@ -144,6 +157,16 @@
     if (has('salvager') && p.hand.length > 1) return 'salvager'; // 廃棄→コイン
     if (has('treasure_map') && p.hand.filter((c) => c === 'treasure_map').length >= 2) return 'treasure_map'; // 2枚揃いで金貨4枚
     if (has('tactician')) { const hc = p.hand.reduce((s, c) => s + (isTreasure(c) ? (C()[c].coin || 0) : 0), 0); if (hc <= 3 && p.hand.length > 1) return 'tactician'; }
+    // 収穫祭：ターミナル（アタック・格上げ・賞品）
+    if (has('jester')) return 'jester';                 // +2コイン＋アタック
+    if (has('young_witch')) return 'young_witch';       // +2カード＋全員に呪い
+    if (has('fortune_teller')) return 'fortune_teller'; // +2コイン＋アタック
+    if (has('followers')) return 'followers';           // +2カード＋屋敷＋呪い配布（賞品）
+    if (has('harvest')) return 'harvest';               // 山札上4枚公開→コイン
+    if (has('horse_traders')) return 'horse_traders';   // +3コイン+1購入（手札2枚捨て）
+    if (has('remake') && p.hand.length > 1) return 'remake'; // 廃棄→格上げ2回（手札が1枚だと損なので温存）
+    if (has('trusty_steed')) return 'trusty_steed';     // 異なる2つを選ぶ（賞品）
+    if (has('princess')) return 'princess';             // +1購入＋このターン全カード-2コスト（賞品）
     // 玉座の間: 2回使える別アクションが手札にあるときだけ（無駄打ち回避）
     if (has('throne_room') && p.hand.some((c) => isType(c, 'action') && c !== 'throne_room')) return 'throne_room';
     if (has('council_room')) return 'council_room'; // +4カード+1購入
@@ -234,6 +257,8 @@
     if (gardens) vp += gardens * Math.floor(cards.length / 10);
     const vineyards = cards.filter((c) => c === 'vineyard').length;
     if (vineyards) vp += vineyards * Math.floor(cards.filter((c) => isType(c, 'action')).length / 3);
+    const fairgrounds = cards.filter((c) => c === 'fairgrounds').length; // 収穫祭：品評会（engine.vpOf と同等に）
+    if (fairgrounds) vp += fairgrounds * 2 * Math.floor(new Set(cards).size / 5);
     vp += p.vpTokens || 0; // 繁栄：VPトークン
     return vp;
   }
@@ -515,6 +540,13 @@
   }
 
   function decidePending(state, pd, p) {
+    // 収穫祭：アタックの反応ステップで馬商人を持っていたら、まず脇に置く（次手番に+1カードで戻る＝常に得）。
+    // 脇に置くと手札から消えるので、次回の呼び出しでは通常の判断（堀公開/受ける）に進む＝無限ループしない。
+    // stage 'react' の各アタックに加え、embedded型（民兵/拷問人＝pending が反応窓を兼ねる）でも脇に置ける。
+    if (pd && p.hand && p.hand.includes('horse_traders') &&
+        (pd.stage === 'react' || pd.type === 'militia' || pd.type === 'torturer')) {
+      return { type: 'HORSE_TRADERS_REACT' };
+    }
     switch (pd.type) {
       case 'cellar':
         return { type: 'CELLAR_RESOLVE', cards: p.hand.filter((c) => isDead(c)) };
@@ -960,6 +992,59 @@
         else if (isType(c, 'action') || isType(c, 'treasure')) choice = 'play';
         return { type: 'CRYSTAL_BALL', choice };
       }
+
+      /* ===== 拡張: 収穫祭 ===== */
+      case 'hamlet': {
+        const junk = p.hand.find((c) => isDead(c)); // 死に札(勝利点/呪い)を捨てて +アクション/+購入
+        if (pd.stage === 'action') {
+          const other = p.hand.some((c) => isType(c, 'action')); // 他にアクションがあるときだけ+アクションが活きる
+          return { type: 'HAMLET_DISCARD', card: (other && junk) ? junk : null };
+        }
+        return { type: 'HAMLET_DISCARD', card: junk || null }; // 購入は常に有用＝死に札があれば捨てる
+      }
+      case 'fortune_teller':
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'FORTUNE_TELLER_REACT' };
+      case 'horse_traders':
+        return { type: 'HORSE_TRADERS_DISCARD', cards: pickDiscards(p.hand, Math.min(2, p.hand.length)) };
+      case 'remake':
+        if (pd.stage === 'trash') return { type: 'REMAKE_TRASH', card: pickRemodelTrash(state, p) };
+        return { type: 'REMAKE_GAIN', card: bestGainExact(state, pd.exactCost, { noVictory: true }) || bestGainExact(state, pd.exactCost) };
+      case 'tournament':
+        if (pd.stage === 'reveal_self') return { type: 'TOURNAMENT_REVEAL', reveal: true }; // 属州を公開して賞品を得る
+        if (pd.stage === 'reveal_opp') return { type: 'TOURNAMENT_REVEAL', reveal: true };  // 相手のボーナスを打ち消す
+        { // prize: 使える賞品を優先、無ければ公領
+          const pref = ['trusty_steed', 'bag_of_gold', 'followers', 'diadem', 'princess'];
+          let card = pref.find((id) => sup(state, id) > 0);
+          if (!card && sup(state, 'duchy') > 0) card = 'duchy';
+          return { type: 'TOURNAMENT_PRIZE', card };
+        }
+      case 'young_witch':
+        if (pd.stage === 'discard') return { type: 'YOUNG_WITCH_DISCARD', cards: pickDiscards(p.hand, Math.min(2, p.hand.length)) };
+        if (pd.bane && p.hand.includes(pd.bane)) return { type: 'YOUNG_WITCH_BANE' }; // 災いカードで免れる
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'YOUNG_WITCH_REACT' };
+      case 'jester':
+        if (pd.stage === 'react') {
+          if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+          return { type: 'JESTER_REACT' };
+        }
+        { // choose: 捨てられた札が良ければ自分が獲得、悪い(勝利点/呪い/銅貨)なら相手に押し付ける
+          const c = pd.card;
+          const bad = isType(c, 'victory') || isType(c, 'curse') || c === 'copper';
+          return { type: 'JESTER_CHOOSE', who: bad ? 'victim' : 'me' };
+        }
+      case 'followers':
+        if (pd.stage === 'react') {
+          if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+          return { type: 'FOLLOWERS_REACT' };
+        }
+        return { type: 'FOLLOWERS_DISCARD', cards: pickDiscards(p.hand, p.hand.length - 3) };
+      case 'trusty_steed':
+        // 常に +2カードを軸に、他にアクションがあれば +2アクション、無ければ +2コイン
+        return { type: 'TRUSTY_STEED_RESOLVE', choices: ['cards', p.hand.some((c) => isType(c, 'action')) ? 'actions' : 'coins'] };
+      case 'horn_of_plenty':
+        return { type: 'HORN_OF_PLENTY_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
 
       default:
         return { type: 'END_TURN' };

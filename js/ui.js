@@ -613,6 +613,7 @@
       (DOM.POOLS && DOM.POOLS.alchemy) ? group('王国カード（錬金術・第二版）', byCost(DOM.POOLS.alchemy)) : null,
       (DOM.POOLS && DOM.POOLS.prosperity) ? group('王国カード（繁栄・第二版）', byCost(DOM.POOLS.prosperity)) : null,
       (DOM.POOLS && DOM.POOLS.cornucopia) ? group('王国カード（収穫祭）', byCost(DOM.POOLS.cornucopia)) : null,
+      (DOM.POOLS && DOM.POOLS.prizes) ? group('賞品（褒賞・馬上槍試合）', byCost(DOM.POOLS.prizes)) : null,
       (DOM.POOLS && DOM.POOLS.hinterlands) ? group('王国カード（異郷）', byCost(DOM.POOLS.hinterlands)) : null,
       (DOM.POOLS && DOM.POOLS.darkages) ? group('王国カード（暗黒時代）', byCost(DOM.POOLS.darkages)) : null,
       (DOM.POOLS && DOM.POOLS.promo) ? group('プロモカード', byCost(DOM.POOLS.promo)) : null,
@@ -1232,6 +1233,47 @@
       return modalOptions('水晶玉 — 山札の上「' + DOM.CARDS[c].name + '」', 'どうしますか？', opts);
     }
 
+    /* ===== 拡張: 収穫祭 ===== */
+    if (pd.type === 'hamlet') return modalSingleHand(p, '小村 — ' + (pd.stage === 'action' ? '捨てて +1アクション' : '捨てて +1購入') + '（任意）',
+      pd.stage === 'action' ? '手札1枚を捨てると +1アクション（しなくてもよい）。' : '手札1枚を捨てると +1購入（しなくてもよい）。',
+      () => true, (card) => dispatch({ type: 'HAMLET_DISCARD', card }), { label: '捨てない', on: () => dispatch({ type: 'HAMLET_DISCARD', card: null }) }, '捨てる');
+    if (pd.type === 'fortune_teller' && pd.stage === 'react') return modalOptions('占い師を受ける', '山札の上が勝利点/呪いまでめくられ、手前は捨てられます。', reactOptions(p, pd, { type: 'FORTUNE_TELLER_REACT' }));
+    if (pd.type === 'horse_traders' && pd.stage === 'discard') return modalSelectN(p, '馬商人 — 手札を捨てる', '手札を' + Math.min(2, p.hand.length) + '枚選んで捨てます。', Math.min(2, p.hand.length), '確定（捨てる）', (cards) => dispatch({ type: 'HORSE_TRADERS_DISCARD', cards }));
+    if (pd.type === 'remake' && pd.stage === 'trash') return modalSingleHand(p, 'リメイク — 廃棄（' + (pd.iter + 1) + '/2回目）', '手札から1枚を廃棄します（その後、ちょうど$1高いカードを獲得）。', () => true, (card) => dispatch({ type: 'REMAKE_TRASH', card }), null, '廃棄する');
+    if (pd.type === 'remake' && pd.stage === 'gain') return modalGainSupply(state, 'リメイク — 獲得', '廃棄したカードよりちょうど$1高いカードを1枚獲得します。', (id) => effCost(state, id) === pd.exactCost, (id) => dispatch({ type: 'REMAKE_GAIN', card: id }));
+    if (pd.type === 'tournament' && (pd.stage === 'reveal_self' || pd.stage === 'reveal_opp')) return modalOptions('馬上槍試合 — 属州を公開？',
+      pd.stage === 'reveal_self' ? '手札の属州を公開すると、それを捨てて賞品または公領を山札の上に獲得します。'
+        : '属州を公開すると、' + state.players[pd.source].name + ' のボーナス（+1カード +1コイン）を無効にできます。', [
+      { label: '属州を公開する', cls: 'btn-primary', on: () => dispatch({ type: 'TOURNAMENT_REVEAL', reveal: true }) },
+      { label: '公開しない', on: () => dispatch({ type: 'TOURNAMENT_REVEAL', reveal: false }) },
+    ]);
+    if (pd.type === 'tournament' && pd.stage === 'prize') {
+      const prizeOpts = ['bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed', 'duchy']
+        .filter((id) => (state.supply[id] || 0) > 0)
+        .map((id) => ({ label: DOM.CARDS[id].name + ' を山札の上に獲得', cls: id === 'duchy' ? '' : 'btn-primary', on: () => dispatch({ type: 'TOURNAMENT_PRIZE', card: id }) }));
+      return modalOptions('馬上槍試合 — 賞品/公領を獲得', '賞品1枚または公領1枚を山札の上に獲得します。', prizeOpts);
+    }
+    if (pd.type === 'young_witch' && pd.stage === 'discard') return modalSelectN(p, '若き魔女 — 手札を捨てる', '手札を' + Math.min(2, p.hand.length) + '枚選んで捨てます。', Math.min(2, p.hand.length), '確定（捨てる）', (cards) => dispatch({ type: 'YOUNG_WITCH_DISCARD', cards }));
+    if (pd.type === 'young_witch' && pd.stage === 'react') {
+      const opts = reactOptions(p, pd, { type: 'YOUNG_WITCH_REACT' });
+      if (pd.bane && p.hand.includes(pd.bane)) opts.unshift({ label: '🃏 災いカード「' + DOM.CARDS[pd.bane].name + '」を公開して免れる', cls: 'btn-primary', on: () => dispatch({ type: 'YOUNG_WITCH_BANE' }) });
+      return modalOptions('若き魔女を受ける', '呪い1枚を獲得します。' + (pd.bane ? '災いカード「' + DOM.CARDS[pd.bane].name + '」を公開すれば免れます。' : ''), opts);
+    }
+    if (pd.type === 'jester' && pd.stage === 'react') return modalOptions('道化師を受ける', '山札の上が捨てられ、勝利点なら呪い、他は相手がコピーの獲得先を選びます。', reactOptions(p, pd, { type: 'JESTER_REACT' }));
+    if (pd.type === 'jester' && pd.stage === 'choose') return modalOptions('道化師 — 「' + DOM.CARDS[pd.card].name + '」のコピー', 'どちらが「' + DOM.CARDS[pd.card].name + '」のコピーを獲得しますか？', [
+      { label: state.players[pd.victim].name + ' に獲得させる', cls: 'btn-primary', on: () => dispatch({ type: 'JESTER_CHOOSE', who: 'victim' }) },
+      { label: '自分が獲得する', on: () => dispatch({ type: 'JESTER_CHOOSE', who: 'me' }) },
+    ]);
+    if (pd.type === 'followers' && pd.stage === 'react') return modalOptions('家臣団を受ける', '呪い1枚を獲得し、手札が3枚になるまで捨てます。', reactOptions(p, pd, { type: 'FOLLOWERS_REACT' }));
+    if (pd.type === 'followers' && pd.stage === 'discard') return modalSelectN(p, '家臣団 — 手札を捨てる', '手札が3枚になるまで（' + (p.hand.length - 3) + '枚）捨てます。', p.hand.length - 3, '確定（捨てる）', (cards) => dispatch({ type: 'FOLLOWERS_DISCARD', cards }));
+    if (pd.type === 'trusty_steed') return modalChooseN('頼もしい乗騎 — 異なる2つを選ぶ', '次から異なる2つを選びます。', [
+      { v: 'cards', label: '+2 カード' },
+      { v: 'actions', label: '+2 アクション' },
+      { v: 'coins', label: '+2 コイン' },
+      { v: 'silver', label: '銀貨4枚を獲得し山札を捨て札に' },
+    ], 2, (choices) => dispatch({ type: 'TRUSTY_STEED_RESOLVE', choices }));
+    if (pd.type === 'horn_of_plenty') return modalGainSupply(state, '豊穣の角 — 獲得', 'コスト ' + pd.maxCost + ' 以下のカードを1枚獲得します（勝利点なら豊穣の角を廃棄）。', (id) => effCost(state, id) <= pd.maxCost, (id) => dispatch({ type: 'HORN_OF_PLENTY_GAIN', card: id }));
+
     return h('div');
   }
 
@@ -1245,6 +1287,7 @@
     if (p.hand.includes('moat')) opts.push({ label: '🛡 堀を公開して無効化', cls: 'btn-primary', on: () => dispatch({ type: 'MOAT_REVEAL' }) });
     if (p.hand.includes('secret_chamber') && !pd.reacted) opts.push({ label: '🔮 秘密の小部屋を公開（+2引いて2枚戻す）', on: () => dispatch({ type: 'SECRET_CHAMBER_REVEAL' }) });
     if (canDiplomatReact(p, pd)) opts.push({ label: '🤝 外交官を公開（+2引いて3枚捨てる）', on: () => dispatch({ type: 'DIPLOMAT_REVEAL' }) });
+    if (p.hand.includes('horse_traders')) opts.push({ label: '🐴 馬商人を脇に置く（次の手番に +1カードで戻る／攻撃は受ける）', on: () => dispatch({ type: 'HORSE_TRADERS_REACT' }) });
     opts.push({ label: 'そのまま受ける', on: () => dispatch(proceed) });
     return opts;
   }
@@ -1313,6 +1356,7 @@
       hasMoat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'MOAT_REVEAL' }) }, '🛡 堀を公開して無効化') : null,
       hasSecret ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'SECRET_CHAMBER_REVEAL' }) }, '🔮 秘密の小部屋を公開（+2引いて2枚戻す）') : null,
       hasDiplomat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'DIPLOMAT_REVEAL' }) }, '🤝 外交官を公開（+2引いて3枚捨てる）') : null,
+      p.hand.includes('horse_traders') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'HORSE_TRADERS_REACT' }) }, '🐴 馬商人を脇に置く（次の手番に +1カードで戻る／攻撃は受ける）') : null,
       h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
         onclick: () => dispatch({ type: 'MILITIA_RESOLVE', cards: UI.selection.map((i) => p.hand[i]) }) },
         remain === 0 ? '確定（捨てる）' : 'あと ' + remain + ' 枚 選ぶ'));
@@ -1477,6 +1521,7 @@
       hasMoat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'MOAT_REVEAL' }) }, '🛡 堀を公開して無効化') : null,
       hasSecret ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'SECRET_CHAMBER_REVEAL' }) }, '🔮 秘密の小部屋を公開（+2引いて2枚戻す）') : null,
       hasDiplomat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'DIPLOMAT_REVEAL' }) }, '🤝 外交官を公開（+2引いて3枚捨てる）') : null,
+      p.hand.includes('horse_traders') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'HORSE_TRADERS_REACT' }) }, '🐴 馬商人を脇に置く（次の手番に +1カードで戻る／攻撃は受ける）') : null,
       h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
         onclick: () => dispatch({ type: 'TORTURER_RESOLVE', choice: 'discard', cards: UI.selection.map((i) => p.hand[i]) }) },
         remain === 0 ? '手札を捨てる（確定）' : '捨てる ' + remain + ' 枚 を選ぶ'),

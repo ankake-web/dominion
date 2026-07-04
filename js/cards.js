@@ -511,6 +511,9 @@
   // 錬金術（第二版）推奨10種。ポーション経済・変動VP(ブドウ園)・アタック(使い魔)・支配を味わえる構成。
   DOM.KINGDOM_ALCHEMY = ['vineyard', 'herbalist', 'apothecary', 'university', 'alchemist',
                          'familiar', 'philosophers_stone', 'golem', 'apprentice', 'possession'];
+  // 収穫祭 推奨10種。賞品山(馬上槍試合)・災いカード(若き魔女)・可変VP(品評会)・reveal系・アタックを味わえる構成。
+  DOM.KINGDOM_CORNUCOPIA = ['hamlet', 'menagerie', 'farming_village', 'remake', 'young_witch',
+                            'tournament', 'harvest', 'horn_of_plenty', 'jester', 'fairgrounds'];
   // 初版（第二版で廃止されたカードを含む懐かしのセット）
   DOM.KINGDOM_1E = ['cellar', 'chancellor', 'woodcutter', 'feast', 'militia',
                     'spy', 'thief', 'council_room', 'adventurer', 'market'];
@@ -560,8 +563,12 @@
 
   // 全王国カードのプール（後方互換: 'random' の既定母集団 = 基本＋陰謀 第二版）
   DOM.KINGDOM_POOL = DOM.POOLS.basic.concat(DOM.POOLS.intrigue);
-  // 追加拡張の孤立プール（画像・一覧用。CARD_SETS からは参照しないので実サプライには出ない＝段階1）
-  DOM.POOLS.cornucopia = ['hamlet', 'fortune_teller', 'menagerie', 'farming_village', 'horse_traders', 'remake', 'tournament', 'young_witch', 'harvest', 'horn_of_plenty', 'hunting_party', 'jester', 'fairgrounds', 'bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed'];
+  // 収穫祭（実プレイ化＝段階2）。王国カード13種＝抽選母集団（「収穫祭セット」固定10種と「収穫祭から」ランダムが参照）。
+  //   賞品（Prize）5種は王国カードではなく、馬上槍試合の専用山（各1枚・非サプライ）＝ POOLS.prizes に分離し、
+  //   ランダム抽選に混ざらないようにする（賞品は購入もランダム選出もされない）。若き魔女の災いカード（Bane）は
+  //   若き魔女が場にあるとき createInitialState が $2-3 の王国カードを1つ選んで11山目に足す（state.baneCard）。
+  DOM.POOLS.cornucopia = ['hamlet', 'fortune_teller', 'menagerie', 'farming_village', 'horse_traders', 'remake', 'tournament', 'young_witch', 'harvest', 'horn_of_plenty', 'hunting_party', 'jester', 'fairgrounds'];
+  DOM.POOLS.prizes = ['bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed'];
   DOM.POOLS.hinterlands = ['crossroads', 'duchess', 'fools_gold', 'develop', 'oasis', 'oracle', 'scheme', 'tunnel', 'jack_of_all_trades', 'noble_brigand', 'nomad_camp', 'silk_road', 'spice_merchant', 'trader', 'cache', 'cartographer', 'embassy', 'haggler', 'highway', 'ill_gotten_gains', 'inn', 'mandarin', 'margrave', 'stables', 'border_village', 'farmland', 'nomads', 'trail', 'weaver', 'souk', 'cauldron', 'guard_dog', 'berserker', 'wheelwright', 'witchs_hut'];
   DOM.POOLS.darkages = ['poor_house', 'squire', 'vagrant', 'beggar', 'hermit', 'sage', 'forager', 'storeroom', 'urchin', 'market_square', 'ironmonger', 'wandering_minstrel', 'procession', 'scavenger', 'fortress', 'rats', 'armory', 'death_cart', 'marauder', 'feodum'];
   // 画面で選べるセット（id はサーバ検証・保存にも使う）。
@@ -577,6 +584,7 @@
     { id: 'seaside',         kind: 'standard', name: '海辺セット（第二版）', kingdom: DOM.KINGDOM_SEASIDE },
     { id: 'alchemy',         kind: 'standard', name: '錬金術セット（第二版）', kingdom: DOM.KINGDOM_ALCHEMY },
     { id: 'prosperity',      kind: 'standard', name: '繁栄セット（第二版）', kingdom: DOM.KINGDOM_PROSPERITY },
+    { id: 'cornucopia',      kind: 'standard', name: '収穫祭セット', kingdom: DOM.KINGDOM_CORNUCOPIA },
     // ---- おすすめ（テーマ別・固定10種）----
     { id: 'big-money',       kind: 'recommend', name: 'ビッグマネー', desc: 'お金を伸ばして属州を狙う王道',
       kingdom: ['chapel', 'moneylender', 'harbinger', 'throne_room', 'bureaucrat', 'poacher', 'market', 'mine', 'laboratory', 'sentry'] },
@@ -603,6 +611,7 @@
     { id: 'random-seaside',  kind: 'random', name: '海辺から',       randomFrom: ['seaside'] },
     { id: 'random-alchemy',  kind: 'random', name: '錬金術から',     randomFrom: ['alchemy'] },
     { id: 'random-prosperity', kind: 'random', name: '繁栄から',     randomFrom: ['prosperity'] },
+    { id: 'random-cornucopia', kind: 'random', name: '収穫祭から',   randomFrom: ['cornucopia'] },
     { id: 'random-intrigue', kind: 'random', name: '陰謀のみから',   randomFrom: ['intrigue'] },
     { id: 'random-basic',    kind: 'random', name: '基本のみから',   randomFrom: ['basic'] },
     { id: 'random-promo',    kind: 'random', name: 'プロモ込みから',  randomFrom: ['basic', 'intrigue', 'promo'] },

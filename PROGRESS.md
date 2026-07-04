@@ -1,9 +1,32 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-04 / branch `main`。**すべてコミット&push済・Pages/Render 自動デプロイ済・作業ツリー clean**。`sw.js` は **v28**。
+最終更新: 2026-07-04 / branch `main`。**すべてコミット&push済・Pages/Render 自動デプロイ済・作業ツリー clean**。`sw.js` は **v29**。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
-**新セッションは まず `npm test` を実行し 19スイート・2438件オールグリーン（exit 0）を確認**してから着手すること。
+**新セッションは まず `npm test` を実行し 21スイート・オールグリーン（exit 0・整合性1947件・収穫祭107件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
+
+---
+
+## 0-2. 段階2＝収穫祭13＋褒賞5 を実プレイ化（2026-07-04 完了）
+
+### 結論
+- **収穫祭(Cornucopia)の王国カード13種＋賞品Prizes5種＝計18枚を段階2（実プレイ・完全忠実）で実装完了**。`DOM.CARD_SETS` に `cornucopia`（固定10種 `KINGDOM_CORNUCOPIA`）＋ `random-cornucopia` を追加し**出荷済み**（＝プレイ可能）。`sw.js` v28→**v29**。テスト **21スイート全緑**（`cornucopia.test.js` 107件＋`cornucopia-ui.test.js` 21件を新設・`package.json`登録・`invariants` にも cornucopia/random-cornucopia を追加）。CPU序列 100/64/95 維持。
+- **新機構をすべて新設（簡略化なし）**：
+  - **賞品Prizes山**＝`supply` の数値キー(各1枚)。`NON_SUPPLY` set で `emptyPileCount`(3山終了)・`canBuyCard`(購入)・`blackMarket`母集団・汎用獲得(`bestGain`/`bestGainExact`/`horn_of_plenty`)から除外。獲得は馬上槍試合のみ。
+  - **災いカードBane**（若き魔女）＝`createInitialState` が `$2-3` の王国カードを1つ選び `state.baneCard` に格納し `kingdom` に push（11山目・通常の購入可能サプライ・`pickBane`）。攻撃時は所持者に反応窓、公開で免除（手札に残す）。
+  - **可変VP品評会**＝`vpOf`（engine）＋`vpOfPlayer`（cpu）に `2×floor(異名数/5)×枚数`。
+  - **王女コスト-2**＝`cardCost` に active の場の princess 枚数ぶん減算。
+  - **馬商人リアクション**＝`hasReaction` に horse_traders 追加。反応窓（stage 'react' ＋ embedded民兵/拷問人）で脇置き→免疫にはならず攻撃は受ける→次手番開始で `DURATION_RESOLVERS.horse_traders` が +1カードして手札に戻す。CPU は decidePending 冒頭で先に脇置き（無限ループしない）。
+  - **アタック4種**（占い師/道化師/家臣団/若き魔女）＝witch型 EnterVictim/Apply/REACT ＋ `ATTACKS` 登録。**馬上槍試合**＝属州公開→賞品/公領を山札上、相手が公開しなければ +1カード+1コイン（属州も上置き→ボーナスで即引くのは公式挙動）。**豊穣の角**＝場の異名数コストまで獲得＋勝利点なら自身廃棄。
+- **新pendingは全て4点セット**（engine reducer＋PLAYER_ACTIONS＋CPU decidePending＋UI viewPendingModal）を満たす。
+
+### 敵対的レビュー（多エージェントWorkflow）で 8件の実バグを検出→全修正・回帰テスト済み
+- **【高】闇市場に賞品が漏れる**：`blackMarket` 母集団が全 `POOLS`（賞品含む）から作られ、tournament 不在の出荷セット（promo-pack 等）で賞品が $0 購入可能だった。→ `NON_SUPPLY` を母集団から除外。
+- **【高】豊穣の角で賞品を獲得できた**：`HORN_OF_PLENTY_GAIN` が `NON_SUPPLY` 未チェック＋CPU `bestGain` が賞品を提案。→ reducer に `NON_SUPPLY` ガード、CPU `bestGain`/`bestGainExact` から賞品(`PRIZE_SET`)を除外（reducer単独だとCPU無限ループ＝両方必須）。
+- **【中】CPU `vpOfPlayer` が品評会を未計上**（hard CPUの終局読み誤差）。→ engine.vpOf と同じ品評会項を追加。
+- **【低】頼もしい乗騎の選択順**：クリック順で解決し「銀貨→山札捨て」を先に処理し得た。→ カード記載順(`valid.filter`)で解決＝+2カードを先に。
+- **【低→実は到達可】馬商人リアクションが embedded型(民兵/拷問人)で欠落**（闇市場経由で到達）。→ CPU guard を民兵/拷問人へ拡張＋`modalMilitia`/`modalTorturer` に脇置きボタン。
+- 2つの高危険 exploit（闇市場・細工 HORN_OF_PLENTY_GAIN）は node で **閉鎖確認**、promo-pack/cornucopia/random-cornucopia の CPU 24戦が stuck/例外ゼロで完走。
 
 ---
 
@@ -84,7 +107,8 @@
 ## 5. 未完了タスク（優先順。次セッションは 1. から）
 1. **段階2＝全カード実プレイ化（ユーザー決定・約128枚・完全忠実）**。対象＝収穫祭13＋褒賞5＋異郷35＋**暗黒時代を全56に完成**＋新プロモ6＋**ギルド13**。方針＝特殊山・全トリガー・command系まで**機構ごと新設**（簡略化しない）。
    - **実装の設計図＝`docs/adding-cards.md`**（全機構の file:line ＋コピー元パターン＋落とし穴。毎回これを見れば実装できる）。
-   - **着手順（新機構の少ない順）＝ 収穫祭 → ギルド → 異郷 → 新プロモ → 暗黒時代完成**。1拡張ずつ 効果+pending+CPU+UI+ATTACKS/PLAYER_ACTIONS+テスト → `npm test`緑 → コミット。**各拡張は完成してから CARD_SET 昇格**（＝中途の暗黒時代がデプロイに出ない）。
+   - **着手順（新機構の少ない順）＝ ~~収穫祭~~✅ → ギルド → 異郷 → 新プロモ → 暗黒時代完成**。1拡張ずつ 効果+pending+CPU+UI+ATTACKS/PLAYER_ACTIONS+テスト → `npm test`緑 → コミット。**各拡張は完成してから CARD_SET 昇格**（＝中途の暗黒時代がデプロイに出ない）。
+   - **✅収穫祭は完了（2026-07-04・§0-2）**。**次はギルド（13枚）**：新機構＝コイントークンCoffers（per-player数値＋`COFFERS_SPEND` の4点セット）／overpay（購入時に超過払い＝BUY拡張）／司教型の圧縮。賞品Prizes山の実装（`NON_SUPPLY`・非サプライ数値キー）が良いコピー元。
    - **新設が要る機構**：賞品Prizes山（収穫祭）／Bane（若き魔女）／可変VP fairgrounds/silk_road/feodum（vpOfに1ブロック）／持続 captain/church（armDuration+RESOLVER）／command procession/band_of_misfits/captain/trusty_steed（replayキュー）／王子prince（脇から毎ターン）／コイントークンCoffers（ギルド・per-player数値+COFFERS_SPEND）／overpay（ギルド）／廃墟Ruins・騎士Knights混合山＋戦利品/狂人/傭兵（暗黒時代・top-level配列/非サプライ）／避難所Shelters（開始デッキ置換）／on-trash・on-discardフック（暗黒時代・要塞/市場の広場等で新設、本人任意廃棄に限定）。
    - **暗黒時代の残り**：段階1未追加の王国15枚（junk_dealer/bandit_camp/rebuild/catacombs/graverobber/count/band_of_misfits/mystic/rogue/pillage/cultist/knights/counterfeit/hunting_grounds/altar）＋廃墟5/避難所3/騎士10/戦利品/狂人/傭兵 のカタログ定義＆GAIN_ORDER＆（絵は後入れ）も要。**絵は後で挿入方針**＝定義とロジックを先に、webpは枠+文字で生成orアート後入れ。
 2. **錬金術アートの△3枚最終確認（任意）**：変成/薬草商/薬剤師。差し替えは `asset/art/<id>.png` →`node tools/build-cards.js`→該当webpデプロイ。
@@ -97,3 +121,4 @@
 - **一時スクリプト規約**：使い捨ては**プロジェクト直下に `_*.tmp.js`** で作り実行後**必ず削除**。スクショ等は scratchpad へ。シェルcwdがずれることがあるので実行前に `Set-Location 'C:\Users\b1242\claude\game\dominion'`。
 - **支配（Possession）の廃棄カード返却の簡略化＝到達不能を証明済み（監査⑤）＝意図的に未修正**：`possession` は alchemy プール専用で、複数プールを混ぜる出荷セット（random/random-promo/random-1e）はいずれも alchemy を含まない＝支配と外部拡張self-trashはどの出荷王国でも共存しない。全self-trashのtrashOwn化はアタック廃棄/供給廃棄の誤変換で**可到達バグを生むリスク**があり見送り。**混成alchemyモードを正式追加する時に一緒に対応**する方針。同型のポーション費用問題も到達不能（可到達だった大学のみガード済み）。
 - **支配のCPU簡略化**：CPUは支配を自動購入しない（`bestPotionBuy` で除外）。人間が使うぶんは支配者がCPUでも動作する。
+- **非サプライ数値キー山（賞品Prizes・将来の戦利品/狂人/傭兵）を足すときの必須チェックリスト**（§0-2のレビューで実際に踏んだ罠）：`NON_SUPPLY` set に登録し、**(1) `emptyPileCount`(3山終了) (2) `canBuyCard`(購入) (3) `blackMarket` 母集団（`createInitialState` の universe フィルタ） (4) 汎用獲得（engine の `*_GAIN` reducer と CPU `bestGain`/`bestGainExact`）** の4系統すべてから除外すること。特に「reducer だけガードして CPU 側を放置すると、CPU が拒否される獲得を出し続けて無限ループ」する（豊穣の角で実際に発生）＝**engine拒否とCPU非提案は必ずセット**。汎用獲得を持つ札（`horn_of_plenty` 等）は特に漏れやすい。

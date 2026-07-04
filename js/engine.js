@@ -11,6 +11,25 @@
   const clone = (s) => JSON.parse(JSON.stringify(s));
   const C = () => DOM.CARDS;
 
+  // 収穫祭：賞品（Prize）＝馬上槍試合の専用山。各1枚・購入不可・3山終了に数えない非サプライ。
+  const PRIZES = ['bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed'];
+  const NON_SUPPLY = new Set(PRIZES); // supply の数値キーだが「山」としては数えない/買えないもの
+  // 収穫祭：若き魔女の災いカード（Bane）を選ぶ。$2-3 の王国カードで、まだ場に無いものを1つ。
+  //   まず収穫祭プールから、無ければ基本＋陰謀プールから抽選（公式は $2-3 の王国カードから任意の1山）。
+  function pickBane(kingdom) {
+    const inK = new Set(kingdom);
+    const eligible = (id) => C()[id] && !inK.has(id) && !NON_SUPPLY.has(id) && !C()[id].potion &&
+      (C()[id].cost === 2 || C()[id].cost === 3) &&
+      (C()[id].types.includes('action') || C()[id].types.includes('treasure') || C()[id].types.includes('victory'));
+    const pools = [(DOM.POOLS && DOM.POOLS.cornucopia) || [],
+                   ((DOM.POOLS && DOM.POOLS.basic) || []).concat((DOM.POOLS && DOM.POOLS.intrigue) || [])];
+    for (const pool of pools) {
+      const cands = pool.filter(eligible);
+      if (cands.length) return cands[Math.floor(Math.random() * cands.length)];
+    }
+    return null;
+  }
+
   // このターンのコスト軽減（「橋」など）を反映した実コスト
   function cardCost(state, id) {
     let base = (C()[id] && C()[id].cost) || 0;
@@ -25,6 +44,11 @@
     if (id === 'peddler' && active && t.phase === 'buy') {
       const actionsInPlay = (active.inPlay || []).filter((x) => DOM.isType(x, 'action')).length;
       if (actionsInPlay) base -= 2 * actionsInPlay;
+    }
+    // 収穫祭：王女が場にある間、全カードは1枚につき$2安くなる（$0未満にはならない・王女の枚数ぶん重なる）。
+    if (active) {
+      const princesses = (active.inPlay || []).filter((x) => x === 'princess').length;
+      if (princesses) base -= 2 * princesses;
     }
     const red = (t && t.costReduction) || 0;
     return Math.max(0, base - red);
@@ -103,6 +127,19 @@
       t.buys += 1;
       if (p.hand.some((c) => DOM.isType(c, 'treasure'))) state.pending = { type: 'tiara_play', player: pIndex };
     }
+    // 収穫祭：宝冠（賞品）＝+2コイン（coin:2 で加算済み）＋未使用アクション1つにつき +1コイン。
+    if (card === 'diadem') {
+      const bonus = (t.actions || 0);
+      t.coins += bonus;
+      log(state, `${p.name} は宝冠を使った（未使用アクション${bonus}→+${bonus}コイン）。`);
+    }
+    // 収穫祭：豊穣の角＝場の異なる名前（これ自身を含む）1種につきコスト1まで、カード1枚を獲得。勝利点ならこれを廃棄。
+    if (card === 'horn_of_plenty') {
+      const distinct = new Set(p.inPlay.concat(p.durationCards || [])).size;
+      if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) <= distinct)) {
+        state.pending = { type: 'horn_of_plenty', player: pIndex, maxCost: distinct };
+      }
+    }
     // 海辺：私掠船マーク中なら、このターン最初の銀貨/金貨は出した後に廃棄される（コインは入る）。
     corsairOnPlayTreasure(state, pIndex, card);
   }
@@ -133,6 +170,9 @@
       curse: 10 * (numPlayers - 1),
     };
     kingdom.forEach((k) => (supply[k] = DOM.isType(k, 'victory') ? v : 10));
+    // 収穫祭：馬上槍試合が場にあれば、賞品（Prize）5種を各1枚ずつ専用山として加える。
+    //   賞品は非サプライ扱い＝購入できず（canBuyCard）・3山終了に数えない（emptyPileCount）。獲得は馬上槍試合のみ。
+    if (kingdom.includes('tournament')) PRIZES.forEach((id) => (supply[id] = 1));
     // 錬金術：王国にポーション費用カードがあれば、ポーション山（公式は16枚）を共通サプライに加える。
     if (kingdom.some((k) => C()[k] && C()[k].potion)) supply.potion = 16;
     // 繁栄：王国に繁栄の王国カードがあれば、プラチナ貨（12枚）と植民地（勝利点と同枚数）を共通サプライに加える。
@@ -164,7 +204,7 @@
      opts.startActive: 開始プレイヤー。整数(席番号) または 'random'。
        公式ルールは「ランダムに決める」。省略時は席0（既存テスト互換）。 */
   function createInitialState(playerConfigs, kingdom, opts) {
-    kingdom = kingdom || DOM.KINGDOM;
+    kingdom = (kingdom || DOM.KINGDOM).slice(); // caller の配列を壊さない（Bane を push するため）
     opts = opts || {};
     const cfgs = (playerConfigs || []).map((x) =>
       typeof x === 'string'
@@ -204,6 +244,13 @@
     else if (Number.isInteger(opts.startActive) && opts.startActive >= 0 && opts.startActive < players.length)
       startActive = opts.startActive;
 
+    // 収穫祭：若き魔女が場にあれば、$2-3 の王国カードを1つ選んで11山目（災いカード＝Bane）を足す。
+    //   Bane は購入可能な通常のサプライ山（3山終了にも数える）。攻撃を受けた相手は手札から公開して影響を免れる。
+    let baneCard = null;
+    if (kingdom.includes('young_witch')) {
+      baneCard = pickBane(kingdom);
+      if (baneCard) kingdom.push(baneCard);
+    }
     const supply = initSupply(players.length, kingdom);
 
     // 闇市場(Black Market)デッキ：使用中のサプライに無い王国カードを1枚ずつ集めてシャッフル。
@@ -212,7 +259,8 @@
     if (kingdom.indexOf('black_market') >= 0) {
       const universe = Array.from(new Set([].concat.apply([], Object.values(DOM.POOLS || {}))));
       const inSupply = (id) => Object.prototype.hasOwnProperty.call(supply, id);
-      blackMarket = shuffle(universe.filter((id) => DOM.CARDS[id] && id !== 'black_market' && !inSupply(id)));
+      // 収穫祭：賞品(NON_SUPPLY)は王国カードではない＝闇市場デッキに絶対に入れない（$0で買える不正防止）。
+      blackMarket = shuffle(universe.filter((id) => DOM.CARDS[id] && id !== 'black_market' && !NON_SUPPLY.has(id) && !inSupply(id)));
     }
 
     return {
@@ -220,6 +268,7 @@
       kingdom,
       players,
       supply,
+      baneCard, // 収穫祭：若き魔女の災いカード（無ければ null）
       trash: [],
       blackMarket, // 闇市場デッキ（無ければ null）
       turn: freshTurn(startActive),
@@ -326,6 +375,7 @@
   //   高級市場(grand_market)＝場に銅貨があるとき購入不可。CPU/UI もこれを参照して空振りを防ぐ。
   function canBuyCard(state, pi, id) {
     if (id === 'grand_market' && state.players[pi].inPlay.includes('copper')) return false;
+    if (NON_SUPPLY.has(id)) return false; // 収穫祭：賞品は購入できない（馬上槍試合でのみ獲得）
     return true;
   }
 
@@ -509,6 +559,7 @@
   // リアクション札（堀／秘密の小部屋）を持つか。被攻撃側に反応の機会を与えるか判定に使う。
   function hasReaction(player) {
     return player.hand.includes('moat') || player.hand.includes('secret_chamber') ||
+      player.hand.includes('horse_traders') || // 収穫祭：馬商人（脇に置いて次手番に+1カードで戻す。免疫にはならない）
       (player.hand.includes('diplomat') && player.hand.length >= 5);
   }
   // 秘密の小部屋のリアクションを差し込める「被攻撃側の反応ステップ」か。
@@ -536,6 +587,10 @@
     // 封鎖：プレイ時のアタック。堀を公開した相手はこの封鎖の呪い窓から免疫（immune 登録）＝以後同名を獲得しても呪いを受けない。
     blockade:      { onMoat: (s, pd) => { markBlockadeImmune(s, pd.source, pd.gained, pd.victim); blockadeEnterVictim(s, pd.source, pd.queue, pd.gained); } },
     familiar:      { onMoat: (s, pd) => familiarEnterVictim(s, pd.source, pd.queue) },
+    fortune_teller:{ onMoat: (s, pd) => fortuneTellerEnterVictim(s, pd.source, pd.queue) },
+    jester:        { onMoat: (s, pd) => jesterEnterVictim(s, pd.source, pd.queue) },
+    followers:     { onMoat: (s, pd) => followersEnterVictim(s, pd.source, pd.queue) },
+    young_witch:   { onMoat: (s, pd) => youngWitchEnterVictim(s, pd.source, pd.queue) },
     scrying_pool:  { onMoat: (s, pd) => scryingEnterTarget(s, pd.source, pd.queue) },
     charlatan:     { onMoat: (s, pd) => charlatanEnterVictim(s, pd.source, pd.queue) },
     rabble:        { onMoat: (s, pd) => rabbleEnterVictim(s, pd.source, pd.queue) },
@@ -966,6 +1021,166 @@
   }
 
   /* ---------- アクションカードの効果 ---------- */
+  /* ============================================================
+     収穫祭（Cornucopia）＝機構ヘルパ
+     ============================================================ */
+  // 山札の上から pred を満たすカードが出るまでめくる（山切れは捨て札をシャッフル）。
+  //   返り値 {matched, skipped}: matched=条件を満たしためくり札（無ければ null）、skipped=手前のめくり札列。
+  //   めくった札はすべて山札から取り除いて返す（呼び出し側が手札/捨て札/山札上へ振り分ける）。
+  function revealFromDeck(state, pi, pred) {
+    const p = state.players[pi];
+    const skipped = [];
+    let matched = null, guard = 0;
+    while (guard++ < 300) {
+      if (p.deck.length === 0) {
+        if (p.discard.length === 0) break;
+        p.deck = shuffle(p.discard); p.discard = [];
+      }
+      if (p.deck.length === 0) break;
+      const c = p.deck.shift();
+      if (pred(c)) { matched = c; break; }
+      skipped.push(c);
+    }
+    return { matched, skipped };
+  }
+
+  /* ---------- 占い師（アタック：勝利点/呪いが出るまで公開→上に戻し他は捨てる）---------- */
+  function fortuneTellerEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'fortune_teller', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      fortuneTellerApply(state, source, victim, rest);
+    }
+  }
+  function fortuneTellerApply(state, source, victim, queue) {
+    const v = state.players[victim];
+    const { matched, skipped } = revealFromDeck(state, victim, (c) => DOM.isType(c, 'victory') || DOM.isType(c, 'curse'));
+    const shown = skipped.concat(matched ? [matched] : []);
+    if (shown.length) reveal(state, victim, shown, '占い師で公開');
+    skipped.forEach((c) => v.discard.push(c)); // 勝利点/呪いより手前の札は捨てる
+    if (matched) v.deck.unshift(matched);       // 勝利点/呪いは山札の上に戻す
+    log(state, `${v.name} は占い師で${matched ? `「${C()[matched].name}」を山札の上に戻し、` : ''}${skipped.length}枚を捨てた。`);
+    fortuneTellerEnterVictim(state, source, queue);
+  }
+
+  /* ---------- 道化師（アタック：相手の山札上を捨て、勝利点なら呪い／他は攻撃側がコピー獲得先を選ぶ）---------- */
+  function jesterEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'jester', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      jesterApply(state, source, victim, rest);
+    }
+  }
+  function jesterApply(state, source, victim, queue) {
+    const v = state.players[victim];
+    if (v.deck.length === 0 && v.discard.length > 0) { v.deck = shuffle(v.discard); v.discard = []; }
+    if (v.deck.length === 0) { log(state, `${v.name} は山札が空だった（道化師）。`); jesterEnterVictim(state, source, queue); return; }
+    const top = v.deck.shift();
+    v.discard.push(top);
+    reveal(state, victim, [top], '道化師で山札の上を公開');
+    log(state, `${v.name} は山札の上の「${C()[top].name}」を捨てた（道化師）。`);
+    if (DOM.isType(top, 'victory')) {
+      if ((state.supply.curse || 0) > 0) { gain(state, victim, 'curse', 'discard'); log(state, `${v.name} は呪いを獲得した（道化師）。`); }
+      jesterEnterVictim(state, source, queue);
+    } else if (!NON_SUPPLY.has(top) && (state.supply[top] || 0) > 0) {
+      // 攻撃側が「相手が獲得」か「自分が獲得」かを選ぶ
+      state.pending = { type: 'jester', stage: 'choose', player: source, source, victim, card: top, queue };
+    } else {
+      log(state, `${v.name} の「${C()[top].name}」は獲得できる山が無かった（道化師）。`);
+      jesterEnterVictim(state, source, queue);
+    }
+  }
+
+  /* ---------- 家臣団（賞品・アタック：呪い＋手札3枚まで捨て）---------- */
+  function followersEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'followers', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      followersApply(state, source, victim, rest);
+    }
+  }
+  function followersApply(state, source, victim, queue) {
+    const v = state.players[victim];
+    if ((state.supply.curse || 0) > 0) { gain(state, victim, 'curse', 'discard'); log(state, `${v.name} は呪いを獲得した（家臣団）。`); }
+    if (v.hand.length > 3) {
+      state.pending = { type: 'followers', stage: 'discard', player: victim, source, victim, queue };
+    } else {
+      followersEnterVictim(state, source, queue);
+    }
+  }
+
+  /* ---------- 若き魔女（アタック：災いカードを公開すれば免れる／しなければ呪い）---------- */
+  function youngWitchLaunch(state, source) {
+    const q = [];
+    for (let k = 1; k < state.players.length; k++) q.push((source + k) % state.players.length);
+    youngWitchEnterVictim(state, source, q);
+  }
+  function youngWitchEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    const bane = state.baneCard;
+    const canReact = hasReaction(state.players[victim]) || (bane && state.players[victim].hand.includes(bane));
+    if (canReact) {
+      state.pending = { type: 'young_witch', stage: 'react', player: victim, source, victim, queue: rest, bane: bane || null };
+    } else {
+      youngWitchCurse(state, source, victim, rest);
+    }
+  }
+  function youngWitchCurse(state, source, victim, queue) {
+    if ((state.supply.curse || 0) > 0) { gain(state, victim, 'curse', 'discard'); log(state, `${state.players[victim].name} は呪いを獲得した（若き魔女）。`); }
+    youngWitchEnterVictim(state, source, queue);
+  }
+
+  /* ---------- 馬上槍試合（属州公開→賞品/公領、他の誰も公開しなければ +1カード +1コイン）---------- */
+  function tournamentStart(state, source) {
+    if (state.players[source].hand.includes('province')) {
+      state.pending = { type: 'tournament', stage: 'reveal_self', player: source, source };
+    } else {
+      tournamentOpponents(state, source);
+    }
+  }
+  function tournamentOpponents(state, source) {
+    const n = state.players.length, q = [];
+    for (let k = 1; k < n; k++) { const idx = (source + k) % n; if (state.players[idx].hand.includes('province')) q.push(idx); }
+    tournamentOppEnter(state, source, q, false);
+  }
+  function tournamentOppEnter(state, source, queue, revealedAny) {
+    queue = (queue || []).slice();
+    while (queue.length && !state.players[queue[0]].hand.includes('province')) queue.shift();
+    if (!queue.length) {
+      if (!revealedAny) { // 他の誰も属州を公開しなかった → +1カード +1コイン
+        draw(state, source, 1); state.turn.coins += 1;
+        log(state, `${state.players[source].name} は馬上槍試合のボーナス（+1カード +1コイン）。`);
+      }
+      state.pending = null; return;
+    }
+    const opp = queue[0];
+    state.pending = { type: 'tournament', stage: 'reveal_opp', player: opp, source, victim: opp, queue: queue.slice(1), revealedAny: !!revealedAny };
+  }
+
+  // リメイク：iter を1つ進める（2巡目まで。手札が尽きたら終了）。
+  function remakeNext(state, pi, iter) {
+    if (iter < 1 && state.players[pi].hand.length > 0) {
+      state.pending = { type: 'remake', stage: 'trash', player: pi, iter: iter + 1 };
+    } else {
+      state.pending = null;
+    }
+  }
+
   function applyEffect(state, cardId, pi) {
     const t = state.turn;
     const p = state.players[pi];
@@ -1738,6 +1953,115 @@
         break;
       }
 
+      /* ===== 拡張: 収穫祭 ===== */
+      case 'hamlet':
+        draw(state, pi, 1);
+        t.actions += 1;
+        // 手札1枚を捨てて+1アクション、もう1枚を捨てて+1購入（それぞれ任意）
+        if (p.hand.length > 0) state.pending = { type: 'hamlet', stage: 'action', player: pi };
+        break;
+      case 'fortune_teller': {
+        t.coins += 2;
+        const q = [];
+        for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        fortuneTellerEnterVictim(state, pi, q);
+        break;
+      }
+      case 'menagerie': {
+        t.actions += 1;
+        reveal(state, pi, p.hand.slice(), '移動動物園で手札を公開');
+        const dup = p.hand.length !== new Set(p.hand).size;
+        draw(state, pi, dup ? 1 : 3);
+        log(state, `${p.name} は移動動物園で手札を公開（${dup ? '同名あり→+1カード' : '同名なし→+3カード'}）。`);
+        break;
+      }
+      case 'farming_village': {
+        t.actions += 2;
+        const { matched, skipped } = revealFromDeck(state, pi, (c) => DOM.isType(c, 'action') || DOM.isType(c, 'treasure'));
+        const shown = skipped.concat(matched ? [matched] : []);
+        if (shown.length) reveal(state, pi, shown, '農村で公開');
+        skipped.forEach((c) => p.discard.push(c));
+        if (matched) { p.hand.push(matched); log(state, `${p.name} は農村で「${C()[matched].name}」を手札に加え、${skipped.length}枚を捨てた。`); }
+        else log(state, `${p.name} は農村でアクション/財宝が出ず、${skipped.length}枚を捨てた。`);
+        break;
+      }
+      case 'horse_traders':
+        t.buys += 1;
+        t.coins += 3;
+        // 手札2枚を捨てる（手札があれば必須）
+        if (p.hand.length > 0) state.pending = { type: 'horse_traders', stage: 'discard', player: pi };
+        break;
+      case 'remake':
+        if (p.hand.length > 0) state.pending = { type: 'remake', stage: 'trash', player: pi, iter: 0 };
+        break;
+      case 'tournament':
+        t.actions += 1;
+        tournamentStart(state, pi);
+        break;
+      case 'young_witch':
+        draw(state, pi, 2);
+        // 自分の手札を2枚捨てる → その後アタック
+        if (p.hand.length > 0) state.pending = { type: 'young_witch', stage: 'discard', player: pi, source: pi };
+        else youngWitchLaunch(state, pi);
+        break;
+      case 'harvest': {
+        const revealed = [];
+        for (let i = 0; i < 4; i++) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; p.deck = shuffle(p.discard); p.discard = []; }
+          if (p.deck.length === 0) break;
+          revealed.push(p.deck.shift());
+        }
+        if (revealed.length) reveal(state, pi, revealed.slice(), '収穫で公開');
+        revealed.forEach((c) => p.discard.push(c));
+        const distinct = new Set(revealed).size;
+        t.coins += distinct;
+        log(state, `${p.name} は収穫で${revealed.length}枚公開（異なる名前${distinct}種→+${distinct}コイン）。`);
+        break;
+      }
+      case 'hunting_party': {
+        draw(state, pi, 1);
+        t.actions += 1;
+        const handNames = new Set(p.hand);
+        reveal(state, pi, p.hand.slice(), '狩猟団で手札を公開');
+        const { matched, skipped } = revealFromDeck(state, pi, (c) => !handNames.has(c));
+        const shown = skipped.concat(matched ? [matched] : []);
+        if (shown.length) reveal(state, pi, shown, '狩猟団で公開');
+        skipped.forEach((c) => p.discard.push(c));
+        if (matched) { p.hand.push(matched); log(state, `${p.name} は狩猟団で「${C()[matched].name}」を手札に加え、${skipped.length}枚を捨てた。`); }
+        else log(state, `${p.name} は狩猟団で手札に無い札が出ず、${skipped.length}枚を捨てた。`);
+        break;
+      }
+      case 'jester': {
+        t.coins += 2;
+        const q = [];
+        for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        jesterEnterVictim(state, pi, q);
+        break;
+      }
+
+      /* ===== 賞品（Prize・馬上槍試合の専用山） ===== */
+      case 'bag_of_gold':
+        t.actions += 1;
+        if (gain(state, pi, 'gold', 'deck')) log(state, `${p.name} は金貨を山札の上に獲得した（金貨袋）。`);
+        break;
+      case 'followers':
+        draw(state, pi, 2);
+        if (gain(state, pi, 'estate', 'discard')) log(state, `${p.name} は屋敷を獲得した（家臣団）。`);
+        {
+          const q = [];
+          for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+          followersEnterVictim(state, pi, q);
+        }
+        break;
+      case 'princess':
+        t.buys += 1;
+        // 「場にある間、全カードのコスト -2」は cardCost が princess の場残数で処理（このカードは既に inPlay）。
+        log(state, `${p.name} は王女を使った（このターン、場にある間 全カードのコスト -2）。`);
+        break;
+      case 'trusty_steed':
+        state.pending = { type: 'trusty_steed', player: pi };
+        break;
+
       default:
         break;
     }
@@ -1745,7 +2069,8 @@
 
   /* ---------- ゲーム終了判定・得点 ---------- */
   function emptyPileCount(state) {
-    return Object.keys(state.supply).filter((k) => state.supply[k] <= 0).length;
+    // 賞品（Prize）は非サプライ＝空でも「3山終了」に数えない。
+    return Object.keys(state.supply).filter((k) => !NON_SUPPLY.has(k) && state.supply[k] <= 0).length;
   }
   function isGameOver(state) {
     if (state.supply.province <= 0 || emptyPileCount(state) >= 3) return true;
@@ -1773,6 +2098,9 @@
     // 錬金術：ブドウ園＝所持アクションカード3枚につき1勝利点（端数切り捨て）
     const vineyards = cards.filter((c) => c === 'vineyard').length;
     if (vineyards) vp += vineyards * Math.floor(cards.filter((c) => DOM.isType(c, 'action')).length / 3);
+    // 収穫祭：品評会＝所持カードの異なる名前5種類につき2勝利点（端数切り捨て・品評会1枚ごと）
+    const fairgrounds = cards.filter((c) => c === 'fairgrounds').length;
+    if (fairgrounds) vp += fairgrounds * 2 * Math.floor(new Set(cards).size / 5);
     // 繁栄：VPトークン（司教・記念碑・収集・投資で貯めた勝利点）を加算
     vp += p.vpTokens || 0;
     return vp;
@@ -1874,6 +2202,14 @@
     corsair: (s, pi) => { draw(s, pi, 1); log(s, `${s.players[pi].name} は私掠船の持続効果（+1カード）。`); },
     pirate: (s, pi) => { // 次手番に6コスト以下の財宝1枚を手札に獲得
       (s.turn.startQueue = s.turn.startQueue || []).push({ type: 'pirate_gain', player: pi });
+    },
+    horse_traders: (s, pi) => { // 収穫祭：脇に置いた馬商人を手札に戻し +1カード
+      const p = s.players[pi];
+      if (removeOne(p.setAside, 'horse_traders')) {
+        p.hand.push('horse_traders');
+        draw(s, pi, 1);
+        log(s, `${p.name} は脇に置いた馬商人を手札に戻し +1カード。`);
+      }
     },
   };
 
@@ -3906,6 +4242,214 @@
         return state;
       }
 
+      /* ===== 拡張: 収穫祭 ===== */
+      case 'HAMLET_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'hamlet') return state;
+        const p = state.players[pd.player];
+        if (action.card != null) {
+          if (p.hand.indexOf(action.card) < 0) return state;
+          removeOne(p.hand, action.card); p.discard.push(action.card);
+          if (pd.stage === 'action') { t.actions += 1; log(state, `${p.name} は1枚捨てて +1アクション（小村）。`); }
+          else { t.buys += 1; log(state, `${p.name} は1枚捨てて +1購入（小村）。`); }
+        }
+        if (pd.stage === 'action' && p.hand.length > 0) state.pending = { type: 'hamlet', stage: 'buy', player: pd.player };
+        else state.pending = null;
+        return state;
+      }
+      case 'FORTUNE_TELLER_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'fortune_teller' || pd.stage !== 'react') return state;
+        fortuneTellerApply(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'HORSE_TRADERS_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'horse_traders' || pd.stage !== 'discard') return state;
+        const want = Math.min(2, state.players[pd.player].hand.length);
+        if (!discardFromHand(state, pd.player, action.cards, want, '捨てた（馬商人）')) return state;
+        state.pending = null;
+        return state;
+      }
+      case 'HORSE_TRADERS_REACT': {
+        // 収穫祭：他プレイヤーがアタックを使ったとき、馬商人を手札から脇に置く（免疫にはならない）。
+        // アタックの反応ステップでのみ有効。pending は据え置き＝この後さらに堀公開/受けるを選べる。
+        const pd = state.pending;
+        if (!pd || !isAttackReactPending(pd)) return state;
+        const p = state.players[pd.player];
+        if (!removeOne(p.hand, 'horse_traders')) return state;
+        (p.setAside = p.setAside || []).push('horse_traders');
+        armDuration(state, pd.player, 'horse_traders');
+        log(state, `${p.name} は馬商人を脇に置いた（次の自分の手番開始時に +1カードで手札に戻る）。`);
+        return state;
+      }
+      case 'REMAKE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'remake' || pd.stage !== 'trash') return state;
+        const p = state.players[pd.player];
+        if (action.card == null || p.hand.indexOf(action.card) < 0) return state; // 廃棄は必須
+        removeOne(p.hand, action.card); state.trash.push(action.card);
+        log(state, `${p.name} は「${C()[action.card].name}」を廃棄した（リメイク）。`);
+        const exact = cardCost(state, action.card) + 1;
+        if (anyGainable(state, (id) => cardCost(state, id) === exact)) {
+          state.pending = { type: 'remake', stage: 'gain', player: pd.player, iter: pd.iter, exactCost: exact };
+        } else {
+          remakeNext(state, pd.player, pd.iter);
+        }
+        return state;
+      }
+      case 'REMAKE_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'remake' || pd.stage !== 'gain') return state;
+        const card = action.card;
+        if (card == null || cardCost(state, card) !== pd.exactCost || (state.supply[card] || 0) <= 0) return state;
+        gain(state, pd.player, card, 'discard');
+        log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した（リメイク）。`);
+        remakeNext(state, pd.player, pd.iter);
+        return state;
+      }
+      case 'TOURNAMENT_REVEAL': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'tournament') return state;
+        const doReveal = !!action.reveal;
+        const player = state.players[pd.player];
+        if (pd.stage === 'reveal_self') {
+          if (doReveal && player.hand.includes('province')) {
+            removeOne(player.hand, 'province'); player.discard.push('province');
+            reveal(state, pd.player, ['province'], '馬上槍試合で属州を公開');
+            log(state, `${player.name} は属州を公開・捨てた（馬上槍試合）。`);
+            if (anyGainable(state, (id) => NON_SUPPLY.has(id) || id === 'duchy')) {
+              state.pending = { type: 'tournament', stage: 'prize', player: pd.player, source: pd.source };
+            } else {
+              tournamentOpponents(state, pd.source);
+            }
+          } else {
+            tournamentOpponents(state, pd.source);
+          }
+        } else if (pd.stage === 'reveal_opp') {
+          let any = !!pd.revealedAny;
+          if (doReveal && player.hand.includes('province')) {
+            reveal(state, pd.player, ['province'], '馬上槍試合で属州を公開（相手）');
+            log(state, `${player.name} は属州を公開した（馬上槍試合＝ボーナス無効）。`);
+            any = true;
+          }
+          tournamentOppEnter(state, pd.source, pd.queue, any);
+        }
+        return state;
+      }
+      case 'TOURNAMENT_PRIZE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'tournament' || pd.stage !== 'prize') return state;
+        const card = action.card;
+        if (!card || !(NON_SUPPLY.has(card) || card === 'duchy') || (state.supply[card] || 0) <= 0) return state;
+        gain(state, pd.player, card, 'deck');
+        log(state, `${state.players[pd.player].name} は「${C()[card].name}」を山札の上に獲得した（馬上槍試合）。`);
+        tournamentOpponents(state, pd.source);
+        return state;
+      }
+      case 'YOUNG_WITCH_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'young_witch' || pd.stage !== 'discard') return state;
+        const p = state.players[pd.player];
+        const want = Math.min(2, p.hand.length);
+        if (!discardFromHand(state, pd.player, action.cards, want, '捨てた（若き魔女）')) return state;
+        youngWitchLaunch(state, pd.source);
+        return state;
+      }
+      case 'YOUNG_WITCH_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'young_witch' || pd.stage !== 'react') return state;
+        youngWitchCurse(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'YOUNG_WITCH_BANE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'young_witch' || pd.stage !== 'react') return state;
+        const p = state.players[pd.player];
+        if (!pd.bane || !p.hand.includes(pd.bane)) return state;
+        reveal(state, pd.player, [pd.bane], '災いカードを公開（若き魔女）');
+        log(state, `${p.name} は災いカード「${C()[pd.bane].name}」を公開し、若き魔女の影響を免れた。`);
+        youngWitchEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+      case 'JESTER_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'jester' || pd.stage !== 'react') return state;
+        jesterApply(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'JESTER_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'jester' || pd.stage !== 'choose') return state;
+        const who = action.who === 'me' ? pd.source : pd.victim; // 'me'=攻撃側 / 'victim'=相手
+        if ((state.supply[pd.card] || 0) > 0) {
+          gain(state, who, pd.card, 'discard');
+          log(state, `${state.players[who].name} は「${C()[pd.card].name}」のコピーを獲得した（道化師）。`);
+        }
+        jesterEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+      case 'FOLLOWERS_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'followers' || pd.stage !== 'react') return state;
+        followersApply(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'FOLLOWERS_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'followers' || pd.stage !== 'discard') return state;
+        const p = state.players[pd.player];
+        const target = Math.min(3, p.hand.length);
+        const discardCards = Array.isArray(action.cards) ? action.cards : [];
+        if (p.hand.length - discardCards.length !== target) return state;
+        const handCopy = p.hand.slice();
+        for (const c of discardCards) if (!removeOne(handCopy, c)) return state;
+        discardCards.forEach((c) => { removeOne(p.hand, c); p.discard.push(c); });
+        log(state, `${p.name} は手札を ${discardCards.length}枚 捨てた（家臣団）。`);
+        followersEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+      case 'TRUSTY_STEED_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'trusty_steed') return state;
+        const valid = ['cards', 'actions', 'coins', 'silver'];
+        let ch = Array.isArray(action.choices) ? action.choices.filter((c) => valid.includes(c)) : [];
+        // 公式ルール：「以下から異なる2つ」はカードの記載順（上から）で解決する。選択順ではない。
+        // これで「+2カード→銀貨で山札を捨て札に」の順が保たれ、山札の上2枚を先に引く（捨てる前に引く）。
+        ch = valid.filter((c) => ch.includes(c));
+        if (ch.length !== 2) return state; // 異なる2つを選ぶ
+        const p = state.players[pd.player];
+        ch.forEach((c) => {
+          if (c === 'cards') draw(state, pd.player, 2);
+          else if (c === 'actions') t.actions += 2;
+          else if (c === 'coins') t.coins += 2;
+          else if (c === 'silver') {
+            for (let i = 0; i < 4; i++) gain(state, pd.player, 'silver', 'discard');
+            if (p.deck.length) { p.discard.push(...p.deck); p.deck = []; } // 山札を捨て札へ
+          }
+        });
+        log(state, `${p.name} は頼もしい乗騎の効果（${ch.join('/')}）を選んだ。`);
+        state.pending = null;
+        return state;
+      }
+      case 'HORN_OF_PLENTY_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'horn_of_plenty') return state;
+        const card = action.card;
+        // 賞品(NON_SUPPLY)は馬上槍試合でのみ獲得＝豊穣の角では獲得できない（$0賞品の不正獲得防止）。
+        if (card == null || NON_SUPPLY.has(card) || cardCost(state, card) > pd.maxCost || (state.supply[card] || 0) <= 0) return state;
+        gain(state, pd.player, card, 'discard');
+        log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した（豊穣の角）。`);
+        if (DOM.isType(card, 'victory')) {
+          if (removeOne(state.players[pd.player].inPlay, 'horn_of_plenty')) {
+            state.trash.push('horn_of_plenty');
+            log(state, `${state.players[pd.player].name} は豊穣の角を廃棄した（勝利点を獲得したため）。`);
+          }
+        }
+        state.pending = null;
+        return state;
+      }
+
       default:
         return state;
     }
@@ -4014,6 +4558,12 @@
     'EXPAND_TRASH', 'EXPAND_GAIN', 'FORGE_TRASH', 'FORGE_GAIN', 'KINGS_COURT_CHOOSE',
     'WAR_CHEST_NAME', 'WAR_CHEST_GAIN', 'WATCHTOWER', 'TIARA_TOPDECK', 'TIARA_PLAY',
     'ANVIL_DISCARD', 'ANVIL_GAIN', 'INVESTMENT', 'INVESTMENT_TRASH', 'CRYSTAL_BALL',
+    // 収穫祭
+    'HAMLET_DISCARD', 'FORTUNE_TELLER_REACT', 'HORSE_TRADERS_DISCARD', 'HORSE_TRADERS_REACT',
+    'REMAKE_TRASH', 'REMAKE_GAIN', 'TOURNAMENT_REVEAL', 'TOURNAMENT_PRIZE',
+    'YOUNG_WITCH_DISCARD', 'YOUNG_WITCH_REACT', 'YOUNG_WITCH_BANE',
+    'JESTER_REACT', 'JESTER_CHOOSE', 'FOLLOWERS_REACT', 'FOLLOWERS_DISCARD',
+    'TRUSTY_STEED_RESOLVE', 'HORN_OF_PLENTY_GAIN',
   ]);
 
   /* ---------- 公開API ---------- */
