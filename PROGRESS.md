@@ -1,9 +1,30 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-05 / branch `main`。**段階1(§0-3)＋ギルド段階2(§0-4)まで push済（`6d1d69c`・本番デプロイ済）。異郷段階2(§0-5)＝コミット済・未push（push方針は§6参照）**。`sw.js` は **v32**。
+最終更新: 2026-07-05 / branch `main`。**push済は `c8b2f6c`（ギルド段階2まで本番デプロイ済）。以降 2コミットが未push**＝`3a48e8b`（異郷段階2・§0-5）＋`fcfae02`（冒険＋帝国 段階1画像/カタログ・§0-6）。`sw.js` は **v33**。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
-**新セッションは まず `npm test` を実行し 25スイート・オールグリーン（exit 0・整合性2417件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
+**新セッションは まず `npm test` を実行し 25スイート・オールグリーン（exit 0・整合性3115件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
+**未push 2コミットの push は都度確認（§6）。異郷=完成playable、冒険/帝国=画像のみ（ゲーム未参加）＝どちらも本番に出しても既存を壊さない**。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
+
+---
+
+## 0-6. 段階1＝冒険（Adventures）＋帝国（Empires）74枚を画像化・カタログ追加（2026-07-05 完了・`fcfae02`）
+
+### 結論
+- **冒険＋帝国の縦カード全74枚を段階1で追加**（＝画像は出るがゲーム未参加。CARD_SETS 未参照）。内訳＝**冒険 王国30＋トラベラー成長先8＝38**／**帝国 非分割18＋分割両面10＋城8＝36**。`DOM.CARDS`＋`POOLS.adventures/empires`＋`GAIN_ORDER`（74id）＋ui.js一覧グループを追加。`npm test` 25スイート全緑（整合性 2417→**3115**）。`sw.js` v32→**v33**。**webp74枚生成済（`asset/cards/*.webp`）**。
+- **カード定義（公式和名/コスト/負債/種別/効果テキスト）は多エージェント研究＋校閲Workflowで確定**（wikiwiki/fandom/dominionstrategy.com で裏取り・全74枚 confirmed）。研究データは scratchpad に保存（`adv_emp_carddata.json`）。
+- **新種別の表示対応**を carddata.js に追加：reserve(リザーブ)/traveller(トラベラー)/castle(城)/command(命令)＋action+treasure(冠)＋duration+reaction(隊商の護衛)の複合ラベル。integrity の JP/EN マップにも登録（種別ラベル網羅テストが緑）。frameType は base type に落ちるので新スキン不要。
+- **帝国の負債(Debt)コスト**を build-cards.js に**オレンジ六角トークン**で新規描画。負債のみ札（技術者/市街/大君主/王室の鍛冶屋＝cost:0,debt:8等）はコイン位置に大トークン、大金（cost:8+debt:8）はコイン＋小トークン。carddata に `debt` 透過。
+- **画像回収**＝Downloads の74枚を生成時刻でバッチ（A1〜E4）割当→ステージング→**多エージェント視覚判別**（各画像を Read で実見し id↔絵を一意確定）。**A1の最初2枚が生成逆順**（page↔coin_of_the_realm）だったのを訂正、他73枚は指示順どおり・全て high 信頼。→`asset/art/<id>.png` 回収→`CARDS_ONLY` で新74枚のみ webp生成（既存を再エンコードしない）。モンタージュで全74枚 目視OK（負債トークン・城の序列 粗末→王城 も正しい）。
+
+### 完全性（作った74枚 vs 公式全カード）＝**縦カードは冒険/帝国とも完全網羅・抜けなし**
+- **✅冒険38枚**＝王国30（法貨/トラベラー起点 page/peasant 含む）＋トラベラー成長先8（treasure_hunter/warrior/hero/champion/soldier/fugitive/disciple/teacher）。**縦カードの抜けゼロ**。
+- **✅帝国36枚**＝非分割18＋分割両面10（陣地/鹵獲品・パトリキ/エンポリウム・開拓者/騒がしい村・投石機/石・剣闘士/大金）＋城8（粗末→王城）。**縦カードの抜けゼロ**。
+- **❌未作成＝横長ランドスケープのみ**（現行の縦型枠768×1152では非対応のため意図的に除外）：**冒険 イベント20種**（Alms/Borrow/Quest/Save/Scouting Party/Travelling Fair/Bonfire/Expedition/Ferry/Plan/Mission/Pilgrimage/Ball/Raid/Seaway/Trade/Lost Arts/Training/Inheritance/Pathfinding）＋**帝国 イベント13種＋ランドマーク20種**。＝計約53枚。これらは横長枠パイプラインを作る時に別途。
+- **拡張パックの抜け**：発売順で冒険/帝国の次＝**夜想曲/ルネサンス/移動動物園/同盟/略奪/日の出づる国** は未着手（画像・カタログとも無し）。
+
+### 次（この段階1の続き）
+- **冒険/帝国を段階2（実プレイ化）するのは大仕事**：酒場マット(Reserve)・トラベラー交換・旅トークン・持続多数・負債コスト経済・分割山・城の混合山・命令(overlord/crown)・勝利点トークン・集合(Gathering)等の新機構が必要（`docs/adding-cards.md` に追記してから着手）。段階2の着手順（§5-1）では **新プロモ→暗黒時代完成 が先**。冒険/帝国段階2はその後。
 
 ---
 
@@ -187,7 +208,8 @@
 - **支配のCPU簡略化**：CPUは支配を自動購入しない（`bestPotionBuy` で除外）。人間が使うぶんは支配者がCPUでも動作する。
 - **非サプライ数値キー山（賞品Prizes・将来の戦利品/狂人/傭兵）を足すときの必須チェックリスト**（§0-2のレビューで実際に踏んだ罠）：`NON_SUPPLY` set に登録し、**(1) `emptyPileCount`(3山終了) (2) `canBuyCard`(購入) (3) `blackMarket` 母集団（`createInitialState` の universe フィルタ） (4) 汎用獲得（engine の `*_GAIN` reducer と CPU `bestGain`/`bestGainExact`）** の4系統すべてから除外すること。特に「reducer だけガードして CPU 側を放置すると、CPU が拒否される獲得を出し続けて無限ループ」する（豊穣の角で実際に発生）＝**engine拒否とCPU非提案は必ずセット**。汎用獲得を持つ札（`horn_of_plenty` 等）は特に漏れやすい。
 - **段階1(§0-3)＋ギルド段階2(§0-4)は push済（`6d1d69c`・2026-07-04・ユーザー確認の上で本番デプロイ）**。以後の段階2作業も 完成→CARD_SET昇格→全テスト緑→**都度確認の上で** push。
-- **異郷段階2(§0-5)＝コミット済・未push（2026-07-05）**。同セッションで並行中の「冒険＋帝国 段階1（画像カタログ化）」があるため、両方まとめて push するか個別かは**ユーザー確認の上で**判断。
+- **未push 2コミット（2026-07-05）＝`3a48e8b`異郷段階2 ＋ `fcfae02`冒険/帝国段階1（画像/カタログ）**。どちらも既存を壊さない（異郷=完成playable・全テスト緑／冒険帝国=画像のみゲーム未参加）。**push（本番デプロイ）は都度ユーザー確認の上で**。まとめて `git push` で両方本番へ。`sw.js` は v33。
+- **冒険/帝国段階1の画像回収メモ**：Downloads の ChatGPT画像はファイル名不定→生成時刻でバッチ割当→視覚判別で id確定（chatgpt-card-art-workflow 記憶＋今回は多エージェント判別）。`asset/art/*.png`・`images/` は gitignore＝このPCのみ。webp再生成は `CARDS_ONLY=<id,...> node tools/build-cards.js`。研究データは scratchpad `adv_emp_carddata.json`。
 - **異郷の許容簡略化（到達が稀 or 忠実性のみ・敵対レビューで重大でないと確定）＝意図的に未実装**：(1)**交易商人の獲得置換は自分の手番の獲得のみ**（相手ターンの魔女等の呪い獲得を銀貨に置換する反応は非対応＝獲得時対話ゲートが active限定・相手ターンだと pending 競合で潰れるため。呪いはそのまま受ける＝安全側）。(2)**値切り屋/農地/高貴な山賊の on-buy は「1購入=1 pending」**＝farmland/noble_brigand を買うと同ターン場の値切り屋の強制獲得がスキップされ得る（複数 on-buy を並べる汎用キューが無いため。カード保存則は保持・ループ/クラッシュ無し）。(3)**develop 等の獲得で入れ子の獲得時対話（border_village等）は `!pending` ゲートでスキップ**。いずれも「on-buy/on-gain の汎用 pending キュー」を導入する時にまとめて対応する方針（現状は保存則・非ループを敵対レビューで確認済）。
 - **【既存・スコープ外の別課題】闇市場デッキに「段階1のみ（＝engineロジック未実装）のプール」が漏れる**：`createInitialState` の黒市universeは全 `Object.values(DOM.POOLS)` を平坦化するため、promo-pack/random-promo で黒市デッキに hinterlands/darkages/knights/ruins/shelters/darkages_np（＋spoils/madman/mercenary）が混入する。これらは段階1（applyEffect未実装＝買って使っても何も起きない死に札）。**ギルドの段階2化で guilds プールは playable になった**ので問題なし。残りは各拡張が段階2化される都度 自動解消。**根治するなら黒市universeを「CARD_SETSが参照する playable プールのみ」に絞る**（＝段階2化の順に自然消化。急がば注意：正しく除外しないと変種が減る）。敵対レビューが指摘（元からの挙動＝ギルド作業とは独立）。
 - **段階1で追加した暗黒時代の非サプライ札（戦利品/狂人/傭兵/騎士10種/廃墟5/避難所3）を段階2で実プレイ化する時は、上の「4系統除外チェックリスト」を必ず通す**。特殊山（廃墟＝混合順序山→top-level配列・invariants tally追加／騎士＝混合山／避難所＝開始デッキ置換）は `docs/adding-cards.md` §C に実装手順あり。新種別 knight/ruins/shelter は表示ラベルのみ実装済（engineロジックは段階2で新設）。
