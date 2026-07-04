@@ -621,6 +621,8 @@
       (DOM.POOLS && DOM.POOLS.ruins) ? group('廃墟（暗黒時代）', byCost(DOM.POOLS.ruins)) : null,
       (DOM.POOLS && DOM.POOLS.shelters) ? group('避難所（暗黒時代）', byCost(DOM.POOLS.shelters)) : null,
       (DOM.POOLS && DOM.POOLS.darkages_np) ? group('非サプライ（戦利品・狂人・傭兵）', byCost(DOM.POOLS.darkages_np)) : null,
+      (DOM.POOLS && DOM.POOLS.adventures) ? group('王国カード（冒険・画像のみ）', byCost(DOM.POOLS.adventures)) : null,
+      (DOM.POOLS && DOM.POOLS.empires) ? group('王国カード（帝国・画像のみ）', byCost(DOM.POOLS.empires)) : null,
       (DOM.POOLS && DOM.POOLS.promo) ? group('プロモカード', byCost(DOM.POOLS.promo)) : null,
       (DOM.POOLS && DOM.POOLS.basic1e) ? group('初版のみ（第二版で廃止）', byCost(
         DOM.POOLS.basic1e.filter((id) => DOM.POOLS.basic.indexOf(id) < 0)

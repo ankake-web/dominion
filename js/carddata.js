@@ -114,6 +114,7 @@
     if (has('duration')) {
       if (has('treasure') && has('reaction')) return '財宝・持続・リアクション'; // 海賊
       if (has('attack')) return 'アクション・持続・アタック';                    // 封鎖/私掠船/海の魔女
+      if (has('reaction')) return 'アクション・持続・リアクション';              // 冒険：隊商の護衛
       if (has('treasure')) return '財宝・持続';                                  // アストロラーベ
       return 'アクション・持続';
     }
@@ -125,8 +126,22 @@
       if (has('reaction')) return 'リアクション・避難所';
       return 'アクション・避難所';
     }
+    // 冒険：トラベラー・リザーブ／帝国：命令・城（複合語を先に決めて全typeを落とさない）
+    if (has('traveller')) return has('attack') ? 'アクション・アタック・トラベラー' : 'アクション・トラベラー';
+    if (has('reserve')) {
+      if (has('treasure')) return '財宝・リザーブ';           // 法貨
+      if (has('victory')) return 'アクション・リザーブ・勝利点'; // 遠隔地
+      return 'アクション・リザーブ';
+    }
+    if (has('command')) return 'アクション・命令';            // 大君主
+    if (has('castle')) {
+      if (has('treasure')) return '財宝・勝利点・城';         // 粗末な城
+      if (has('action')) return 'アクション・勝利点・城';     // 小さい城/華やかな城
+      return '勝利点・城';
+    }
     if (has('treasure') && has('victory')) return '財宝・勝利点';
     if (has('victory') && has('action')) return '勝利点・アクション';
+    if (has('treasure') && has('action')) return 'アクション・財宝';                   // 帝国：冠（action+treasure）
     if (has('attack') && has('reaction')) return 'アクション・アタック・リアクション'; // 会計士（action+attack+reaction）
     if (has('treasure') && has('attack')) return '財宝・アタック';                    // ペテン師（treasure+attack）
     if (has('treasure') && has('reaction')) return '財宝・リアクション';              // 愚者の黄金（treasure+reaction）
@@ -144,6 +159,7 @@
     if (has('duration')) {
       if (has('treasure') && has('reaction')) return 'Treasure - Duration - Reaction'; // Pirate
       if (has('attack')) return 'Action - Duration - Attack';                          // Blockade/Corsair/Sea Witch
+      if (has('reaction')) return 'Action - Duration - Reaction';                      // Caravan Guard
       if (has('treasure')) return 'Treasure - Duration';                               // Astrolabe
       return 'Action - Duration';
     }
@@ -154,8 +170,21 @@
       if (has('reaction')) return 'Reaction - Shelter';
       return 'Action - Shelter';
     }
+    if (has('traveller')) return has('attack') ? 'Action - Attack - Traveller' : 'Action - Traveller';
+    if (has('reserve')) {
+      if (has('treasure')) return 'Treasure - Reserve';
+      if (has('victory')) return 'Action - Reserve - Victory';
+      return 'Action - Reserve';
+    }
+    if (has('command')) return 'Action - Command';
+    if (has('castle')) {
+      if (has('treasure')) return 'Treasure - Victory - Castle';
+      if (has('action')) return 'Action - Victory - Castle';
+      return 'Victory - Castle';
+    }
     if (has('treasure') && has('victory')) return 'Treasure - Victory';
     if (has('victory') && has('action')) return 'Victory - Action';
+    if (has('treasure') && has('action')) return 'Action - Treasure'; // Crown
     if (has('attack') && has('reaction')) return 'Action - Attack - Reaction'; // 会計士
     if (has('treasure') && has('attack')) return 'Treasure - Attack';          // ペテン師
     if (has('treasure') && has('reaction')) return 'Treasure - Reaction';      // Fool's Gold
@@ -181,6 +210,7 @@
       name: c.name,
       cost: c.cost,
       potion: c.potion || 0, // 錬金術：ポーション費用（コストバッジに紫フラスコで表示）
+      debt: c.debt || 0, // 帝国：負債コスト（コストバッジにオレンジの六角トークンで表示）
       type: frame,
       types: c.types.slice(),
       typeLabel: typeLabel(c.types),

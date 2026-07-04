@@ -221,12 +221,32 @@ const SKIN = {
       const asc = cm.actualBoundingBoxAscent || 105, desc = cm.actualBoundingBoxDescent || 0;
       outlined(cs, coinCx, coinCy + (asc - desc) / 2 - 2, '#fbf7ee', 6, 'rgba(0,0,0,0.55)');
     }
+    // 帝国：負債（Debt）＝オレンジの六角トークンに白抜き数字（cx,cy 中心・高さ目安 size）
+    function drawDebt(cx, cy, num, size) {
+      size = size || 150; ctx.save();
+      const r = size * 0.66;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) { const a = Math.PI / 2 + i * Math.PI / 3; const x = cx + r * Math.cos(a), y = cy + r * Math.sin(a); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
+      ctx.closePath();
+      ctx.fillStyle = '#d5872a'; ctx.fill();
+      ctx.lineWidth = Math.max(3, size * 0.05); ctx.strokeStyle = 'rgba(58,28,0,0.85)'; ctx.stroke();
+      ctx.font = '700 ' + Math.round(size * 0.74) + 'px ' + FF_NUM;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      const cm = ctx.measureText(String(num));
+      const asc = cm.actualBoundingBoxAscent || size * 0.52, desc = cm.actualBoundingBoxDescent || 0;
+      outlined(String(num), cx, cy + (asc - desc) / 2 - 1, '#fff4e0', Math.max(3, size * 0.05), 'rgba(58,28,0,0.9)');
+      ctx.restore();
+    }
+    const debtCost = card.debt || 0;
     if (card.cost > 0) {
       drawCostNumber(String(card.cost));
       if (potionCost > 0) { // コインの下にポーション記号（複数なら ×N）
         drawPotion(112, 240, 26);
         if (potionCost > 1) { ctx.font = '700 40px ' + FF_NUM; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; outlined('×' + potionCost, 140, 240, '#f0e6ff', 4, 'rgba(40,16,56,0.9)'); }
       }
+      if (debtCost > 0) drawDebt(112, 236, debtCost, 66); // 大金：コイン＋小さな負債トークン
+    } else if (debtCost > 0) { // 負債のみ（技術者/市街/大君主/王室の鍛冶屋）：コイン中央に負債トークン
+      drawDebt(coinCx, coinCy + 4, debtCost, 150);
     } else if (potionCost > 0) { // ポーションのみ（ブドウ園・変成）：コイン中央にフラスコ（数字なし）
       drawPotion(coinCx, coinCy + 8, 48);
     } else {
@@ -305,6 +325,7 @@ const SKIN = {
     const png = await page.evaluate(eval('(' + compositeFn + ')'), frameCache[skinOf(c)], artURI, {
       id: c.id, name: c.name, cost: c.cost, typeLabel: c.typeLabel, typeLabelEn: c.typeLabelEn, effects: c.effects,
       potion: (DOM.CARDS[c.id] && DOM.CARDS[c.id].potion) || 0,
+      debt: (DOM.CARDS[c.id] && DOM.CARDS[c.id].debt) || 0,
     }, W, H, FF_JP, FF_NUM, SKIN[skinOf(c)].base);
     fs.writeFileSync(path.join(OUTDIR, c.id + '.webp'), Buffer.from(png.split(',')[1], 'base64'));
     done++;
