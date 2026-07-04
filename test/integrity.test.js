@@ -117,8 +117,8 @@ console.log('=== 表示データと DOM.CARDS の id/名前/コストが一致 =
 console.log('=== 種別ラベルが全 type を含む（表記漏れ検知）===');
 {
   const cd = DOM.CARD_DATA || {};
-  const JP = { treasure: '財宝', victory: '勝利点', curse: '呪い', action: 'アクション', attack: 'アタック', reaction: 'リアクション', duration: '持続' };
-  const EN = { treasure: 'Treasure', victory: 'Victory', curse: 'Curse', action: 'Action', attack: 'Attack', reaction: 'Reaction', duration: 'Duration' };
+  const JP = { treasure: '財宝', victory: '勝利点', curse: '呪い', action: 'アクション', attack: 'アタック', reaction: 'リアクション', duration: '持続', knight: '騎士', ruins: '廃墟', shelter: '避難所' };
+  const EN = { treasure: 'Treasure', victory: 'Victory', curse: 'Curse', action: 'Action', attack: 'Attack', reaction: 'Reaction', duration: 'Duration', knight: 'Knight', ruins: 'Ruins', shelter: 'Shelter' };
   Object.keys(DOM.CARDS).forEach((id) => {
     const d = cd[id]; if (!d) return;
     (DOM.CARDS[id].types || []).forEach((t) => {

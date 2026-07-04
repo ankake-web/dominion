@@ -10,7 +10,10 @@ const path = require('path');
 const ROOT = 'c:/Users/b1242/claude/game/dominion';
 require(path.join(ROOT, 'js/cards.js'));
 require(path.join(ROOT, 'js/carddata.js'));
-const LIST = global.DOM.CARD_DATA_LIST;
+let LIST = global.DOM.CARD_DATA_LIST;
+// CARDS_ONLY=id1,id2,... を指定すると、その id だけ生成（既存 webp を再エンコードせず差分を最小化）。
+const CARDS_ONLY = (process.env.CARDS_ONLY || '').split(',').map((s) => s.trim()).filter(Boolean);
+if (CARDS_ONLY.length) LIST = LIST.filter((c) => CARDS_ONLY.includes(c.id));
 
 // master 金枠（緑＋マゼンタ窓の元1枚）を images/ 以下から再帰的に探す。
 // 置き場所が images/ 直下でも images/assets/ でも拾えるようにする（ローカル限定・.gitignore）。

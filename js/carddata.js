@@ -117,6 +117,14 @@
       if (has('treasure')) return '財宝・持続';                                  // アストロラーベ
       return 'アクション・持続';
     }
+    // 暗黒時代：騎士・廃墟・避難所（新種別。複合語を先に決めて全typeを落とさない）
+    if (has('knight')) return has('victory') ? 'アクション・アタック・騎士・勝利点' : 'アクション・アタック・騎士';
+    if (has('ruins')) return 'アクション・廃墟';
+    if (has('shelter')) {
+      if (has('victory')) return '勝利点・避難所';
+      if (has('reaction')) return 'リアクション・避難所';
+      return 'アクション・避難所';
+    }
     if (has('treasure') && has('victory')) return '財宝・勝利点';
     if (has('victory') && has('action')) return '勝利点・アクション';
     if (has('attack') && has('reaction')) return 'アクション・アタック・リアクション'; // 会計士（action+attack+reaction）
@@ -138,6 +146,13 @@
       if (has('attack')) return 'Action - Duration - Attack';                          // Blockade/Corsair/Sea Witch
       if (has('treasure')) return 'Treasure - Duration';                               // Astrolabe
       return 'Action - Duration';
+    }
+    if (has('knight')) return has('victory') ? 'Action - Attack - Knight - Victory' : 'Action - Attack - Knight';
+    if (has('ruins')) return 'Action - Ruins';
+    if (has('shelter')) {
+      if (has('victory')) return 'Victory - Shelter';
+      if (has('reaction')) return 'Reaction - Shelter';
+      return 'Action - Shelter';
     }
     if (has('treasure') && has('victory')) return 'Treasure - Victory';
     if (has('victory') && has('action')) return 'Victory - Action';

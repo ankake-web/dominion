@@ -492,6 +492,116 @@
                  text: '戦利品置き場から戦利品1枚を獲得する。\n他のプレイヤーは各自、廃墟1枚を獲得する。' },
     feodum: { id: 'feodum', name: '封土', cost: 4, types: ['victory'],
                  text: '（勝利点）\n所持している銀貨3枚につき 1 勝利点（端数切り捨て）。\nこれを廃棄したとき、銀貨3枚を獲得する。' },
+
+    // ===== ギルド（Guilds・段階1: 画像/カタログのみ）=====
+    candlestick_maker: { id: 'candlestick_maker', name: '蝋燭職人', cost: 2, types: ['action'],
+                 text: '+1 アクション\n+1 購入\n+1 財源' },
+    stonemason: { id: 'stonemason', name: '石工', cost: 2, types: ['action'],
+                 text: '手札からカード1枚を廃棄する。それよりコストの低いカードを2枚獲得する。\n————\nこれを購入する際、追加で支払ってよい。そうしたら、追加で支払った分のコストのアクションカードを2枚獲得する。' },
+    doctor: { id: 'doctor', name: '医者', cost: 3, types: ['action'],
+                 text: 'カード1枚を指定する。デッキの上から3枚を公開し、指定したものと同じカードをすべて廃棄する。残りを好きな順でデッキの上に戻す。\n————\nこれを購入する際、追加で支払ってよい。追加で支払った1コインにつき、デッキの一番上のカードを見て、それを廃棄するか、捨て札にするか、デッキの上に戻す。' },
+    masterpiece: { id: 'masterpiece', name: '名品', cost: 3, types: ['treasure'], coin: 1,
+                 text: '1 コイン\n————\nこれを購入する際、追加で支払ってよい。追加で支払った1コインにつき、銀貨1枚を獲得する。' },
+    advisor: { id: 'advisor', name: '助言者', cost: 4, types: ['action'],
+                 text: '+1 アクション\nデッキの上から3枚を公開する。左隣のプレイヤーがそのうち1枚を選ぶ。それを捨て札にし、残りを手札に加える。' },
+    plaza: { id: 'plaza', name: '広場', cost: 4, types: ['action'],
+                 text: '+1 カード\n+2 アクション\n財宝カード1枚を捨て札にしてよい。そうしたら、+1 財源。' },
+    taxman: { id: 'taxman', name: '収税吏', cost: 4, types: ['action', 'attack'],
+                 text: '手札から財宝カード1枚を廃棄してよい。そうしたら、手札が5枚以上の他のプレイヤーは各自、それと同じ財宝を1枚捨て札にする（持っていなければ手札を公開する）。廃棄した財宝よりコストが最大3コイン高い財宝カード1枚を獲得し、デッキの上に置く。' },
+    herald: { id: 'herald', name: '伝令官', cost: 4, types: ['action'],
+                 text: '+1 カード\n+1 アクション\nデッキの一番上のカードを公開する。それがアクションカードなら、それをプレイする。\n————\nこれを購入する際、追加で支払ってよい。追加で支払った1コインにつき、捨て札置き場を見て、その中のカード1枚をデッキの上に置く。' },
+    baker: { id: 'baker', name: 'パン屋', cost: 5, types: ['action'],
+                 text: '+1 カード\n+1 アクション\n+1 財源\n————\nゲーム開始時、各プレイヤーは財源1枚を得る。' },
+    butcher: { id: 'butcher', name: '肉屋', cost: 5, types: ['action'],
+                 text: '+2 財源\n手札からカード1枚を廃棄してよい。そうしたら、財源を好きな枚数支払い、廃棄したカードのコストに支払った財源の枚数を加えたコスト以下のカード1枚を獲得する。' },
+    journeyman: { id: 'journeyman', name: '熟練工', cost: 5, types: ['action'],
+                 text: 'カード1枚を指定する。指定したカード以外のカードを3枚公開するまで、デッキの上からカードを公開する。公開したその3枚を手札に加え、残りを捨て札にする。' },
+    merchant_guild: { id: 'merchant_guild', name: '商人ギルド', cost: 5, types: ['action'],
+                 text: '+1 購入\n+1 コイン\nこれが場に出ている間、あなたがカードを購入するたびに、+1 財源。' },
+    soothsayer: { id: 'soothsayer', name: '予言者', cost: 5, types: ['action', 'attack'],
+                 text: '金貨1枚を獲得する。\n他のプレイヤーは各自、呪い1枚を獲得する。獲得したなら、カードを1枚引く。' },
+
+    // ===== 暗黒時代（Dark Ages・残り王国＋騎士の山・段階1）=====
+    junk_dealer: { id: 'junk_dealer', name: '屑屋', cost: 5, types: ['action'],
+                 text: '+1 カード\n+1 アクション\n+1 コイン\n手札のカード1枚を廃棄する。' },
+    bandit_camp: { id: 'bandit_camp', name: '山賊の宿営地', cost: 5, types: ['action'],
+                 text: '+1 カード\n+2 アクション\n戦利品置き場から戦利品1枚を獲得する。' },
+    rebuild: { id: 'rebuild', name: '建て直し', cost: 5, types: ['action'],
+                 text: '+1 アクション\nカード名を1つ指定する。指定したカード以外の勝利点カードが出るまで、自分の山札の上からカードを公開する。\n公開した他のカードを捨て札にし、その勝利点カードを廃棄する。\nそのコストより $3 多いコストまでの勝利点カード1枚を獲得する。' },
+    catacombs: { id: 'catacombs', name: '地下墓所', cost: 5, types: ['action'],
+                 text: '自分の山札の上から3枚を見る。次から1つを選ぶ：\nそれらを手札に加える／それらを捨て札にし +3 カード。\nこれを廃棄したとき、これよりコストの低いカード1枚を獲得する。' },
+    graverobber: { id: 'graverobber', name: '墓暴き', cost: 5, types: ['action'],
+                 text: '次から1つを選ぶ：\n廃棄置き場からコスト3～6のカード1枚を獲得し、山札の一番上に置く／手札のアクションカード1枚を廃棄し、そのコストより $3 多いコストまでのカード1枚を獲得する。' },
+    count: { id: 'count', name: '伯爵', cost: 5, types: ['action'],
+                 text: '次から1つを選ぶ：\n手札のカード2枚を捨て札にする／手札のカード1枚を山札の一番上に置く／銅貨1枚を獲得する。\nその後、次から1つを選ぶ：\n+3 コイン／手札をすべて廃棄する／公領1枚を獲得する。' },
+    band_of_misfits: { id: 'band_of_misfits', name: 'はみだし者', cost: 5, types: ['action'],
+                 text: 'サプライにある、これよりコストの低い、命令ではないアクションカード1枚を、サプライに置いたまま使用する。' },
+    mystic: { id: 'mystic', name: '秘術師', cost: 5, types: ['action'],
+                 text: '+1 アクション\n+2 コイン\nカード名を1つ宣言し、自分の山札の一番上を公開する。\nそれが宣言したカードなら手札に加える。' },
+    rogue: { id: 'rogue', name: '盗賊', cost: 5, types: ['action', 'attack'],
+                 text: '+2 コイン\n廃棄置き場にコスト3～6のカードがあれば、その中から1枚を獲得する。\n無ければ、他のプレイヤーは各自、自分の山札の上から2枚を公開し、その中のコスト3～6のカード1枚を廃棄し、残りを捨て札にする。' },
+    pillage: { id: 'pillage', name: '略奪', cost: 5, types: ['action', 'attack'],
+                 text: 'これを廃棄する。\n戦利品置き場から戦利品2枚を獲得する。\n手札が5枚以上の他のプレイヤーは各自、手札を公開し、あなたが選んだカード1枚を捨て札にする。' },
+    cultist: { id: 'cultist', name: '狂信者', cost: 5, types: ['action', 'attack'],
+                 text: '+2 カード\n他のプレイヤーは各自、廃墟1枚を獲得する。\n手札の狂信者1枚を使用してよい。\nこれを廃棄したとき、+3 カード。' },
+    counterfeit: { id: 'counterfeit', name: '偽造通貨', cost: 5, types: ['treasure'], coin: 1,
+                 text: '1 コイン\n+1 購入\nこれを使用したとき、手札の財宝カード1枚を2回使用してよい。そうしたら、その財宝を廃棄する。' },
+    hunting_grounds: { id: 'hunting_grounds', name: '狩場', cost: 6, types: ['action'],
+                 text: '+4 カード\nこれを廃棄したとき、公領1枚または屋敷3枚を獲得する。' },
+    altar: { id: 'altar', name: '祭壇', cost: 6, types: ['action'],
+                 text: '手札のカード1枚を廃棄する。\nコスト5以下のカード1枚を獲得する。' },
+    knights: { id: 'knights', name: '騎士', cost: 5, types: ['action', 'attack', 'knight'],
+                 text: '（騎士の山）\n10種類の騎士（デイム/サー）を混ぜてシャッフルし、一番上の1枚だけ購入・獲得できる。' },
+
+    // ===== 騎士10種（Knights・混合山の中身・段階1）=====
+    dame_anna: { id: 'dame_anna', name: 'デイム・アンナ', cost: 5, types: ['action', 'attack', 'knight'],
+                 text: '手札からカードを2枚まで廃棄してもよい。\n他のプレイヤーは全員、自分の山札の上からカードを2枚公開し、その中からコスト3～6のカード1枚を廃棄し、残りを捨て札にする。これにより騎士が廃棄された場合、このカードを廃棄する。' },
+    dame_josephine: { id: 'dame_josephine', name: 'デイム・ジョセフィーヌ', cost: 5, types: ['action', 'attack', 'knight', 'victory'], vp: 2,
+                 text: '他のプレイヤーは全員、自分の山札の上からカードを2枚公開し、その中からコスト3～6のカード1枚を廃棄し、残りを捨て札にする。これにより騎士が廃棄された場合、このカードを廃棄する。\n————\n2 勝利点' },
+    dame_molly: { id: 'dame_molly', name: 'デイム・モリー', cost: 5, types: ['action', 'attack', 'knight'],
+                 text: '+2 アクション\n他のプレイヤーは全員、自分の山札の上からカードを2枚公開し、その中からコスト3～6のカード1枚を廃棄し、残りを捨て札にする。これにより騎士が廃棄された場合、このカードを廃棄する。' },
+    dame_natalie: { id: 'dame_natalie', name: 'デイム・ナタリー', cost: 5, types: ['action', 'attack', 'knight'],
+                 text: 'コスト3以下のカード1枚を獲得してもよい。\n他のプレイヤーは全員、自分の山札の上からカードを2枚公開し、その中からコスト3～6のカード1枚を廃棄し、残りを捨て札にする。これにより騎士が廃棄された場合、このカードを廃棄する。' },
+    dame_sylvia: { id: 'dame_sylvia', name: 'デイム・シルビア', cost: 5, types: ['action', 'attack', 'knight'],
+                 text: '+2 コイン\n他のプレイヤーは全員、自分の山札の上からカードを2枚公開し、その中からコスト3～6のカード1枚を廃棄し、残りを捨て札にする。これにより騎士が廃棄された場合、このカードを廃棄する。' },
+    sir_bailey: { id: 'sir_bailey', name: 'サー・ベイリー', cost: 5, types: ['action', 'attack', 'knight'],
+                 text: '+1 カード\n+1 アクション\n他のプレイヤーは全員、自分の山札の上からカードを2枚公開し、その中からコスト3～6のカード1枚を廃棄し、残りを捨て札にする。これにより騎士が廃棄された場合、このカードを廃棄する。' },
+    sir_destry: { id: 'sir_destry', name: 'サー・デストリー', cost: 5, types: ['action', 'attack', 'knight'],
+                 text: '+2 カード\n他のプレイヤーは全員、自分の山札の上からカードを2枚公開し、その中からコスト3～6のカード1枚を廃棄し、残りを捨て札にする。これにより騎士が廃棄された場合、このカードを廃棄する。' },
+    sir_martin: { id: 'sir_martin', name: 'サー・マーティン', cost: 4, types: ['action', 'attack', 'knight'],
+                 text: '+2 購入\n他のプレイヤーは全員、自分の山札の上からカードを2枚公開し、その中からコスト3～6のカード1枚を廃棄し、残りを捨て札にする。これにより騎士が廃棄された場合、このカードを廃棄する。' },
+    sir_michael: { id: 'sir_michael', name: 'サー・マイケル', cost: 5, types: ['action', 'attack', 'knight'],
+                 text: '他のプレイヤーは全員、手札が3枚になるように捨て札にする。\n他のプレイヤーは全員、自分の山札の上からカードを2枚公開し、その中からコスト3～6のカード1枚を廃棄し、残りを捨て札にする。これにより騎士が廃棄された場合、このカードを廃棄する。' },
+    sir_vander: { id: 'sir_vander', name: 'サー・ヴァンダー', cost: 5, types: ['action', 'attack', 'knight'],
+                 text: '他のプレイヤーは全員、自分の山札の上からカードを2枚公開し、その中からコスト3～6のカード1枚を廃棄し、残りを捨て札にする。これにより騎士が廃棄された場合、このカードを廃棄する。\n————\nサー・ヴァンダーが廃棄されたとき、金貨1枚を獲得する。' },
+
+    // ===== 廃墟5種（Ruins・段階1）=====
+    abandoned_mine: { id: 'abandoned_mine', name: '廃坑', cost: 0, types: ['action', 'ruins'],
+                 text: '+1 コイン' },
+    ruined_library: { id: 'ruined_library', name: '図書館跡地', cost: 0, types: ['action', 'ruins'],
+                 text: '+1 カード' },
+    ruined_market: { id: 'ruined_market', name: '市場跡地', cost: 0, types: ['action', 'ruins'],
+                 text: '+1 購入' },
+    ruined_village: { id: 'ruined_village', name: '廃村', cost: 0, types: ['action', 'ruins'],
+                 text: '+1 アクション' },
+    survivors: { id: 'survivors', name: '生存者', cost: 0, types: ['action', 'ruins'],
+                 text: 'あなたのデッキの一番上のカード2枚を見る。それらを捨て札にするか、好きな順番でデッキの上に戻す。' },
+
+    // ===== 避難所3種（Shelters・段階1）=====
+    hovel: { id: 'hovel', name: '納屋', cost: 1, types: ['reaction', 'shelter'],
+                 text: '勝利点カードを獲得したとき、手札からこのカードを廃棄してよい。' },
+    necropolis: { id: 'necropolis', name: '共同墓地', cost: 1, types: ['action', 'shelter'],
+                 text: '+2 アクション' },
+    overgrown_estate: { id: 'overgrown_estate', name: '草茂る屋敷', cost: 1, types: ['victory', 'shelter'],
+                 text: '0 勝利点\n————\nこのカードを廃棄したとき、+1 カードを引く。' },
+
+    // ===== 非サプライ（戦利品/狂人/傭兵・段階1）=====
+    spoils: { id: 'spoils', name: '戦利品', cost: 0, types: ['treasure'], coin: 3,
+                 text: '3 コイン\nこれを使用したとき、このカードを戦利品置き場に戻す。' },
+    madman: { id: 'madman', name: '狂人', cost: 0, types: ['action'],
+                 text: '+2 アクション\nこのカードを狂人置き場に戻す。そうしたら、あなたの手札1枚につき +1 カード。' },
+    mercenary: { id: 'mercenary', name: '傭兵', cost: 0, types: ['action', 'attack'],
+                 text: '手札からカード2枚を廃棄してよい。そうしたら、+2 カード、+2 コイン、他のプレイヤーは各自、手札が3枚になるように捨て札にする。' },
   };
 
   /* ---------- 王国カードのセット ----------
@@ -571,6 +681,14 @@
   DOM.POOLS.prizes = ['bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed'];
   DOM.POOLS.hinterlands = ['crossroads', 'duchess', 'fools_gold', 'develop', 'oasis', 'oracle', 'scheme', 'tunnel', 'jack_of_all_trades', 'noble_brigand', 'nomad_camp', 'silk_road', 'spice_merchant', 'trader', 'cache', 'cartographer', 'embassy', 'haggler', 'highway', 'ill_gotten_gains', 'inn', 'mandarin', 'margrave', 'stables', 'border_village', 'farmland', 'nomads', 'trail', 'weaver', 'souk', 'cauldron', 'guard_dog', 'berserker', 'wheelwright', 'witchs_hut'];
   DOM.POOLS.darkages = ['poor_house', 'squire', 'vagrant', 'beggar', 'hermit', 'sage', 'forager', 'storeroom', 'urchin', 'market_square', 'ironmonger', 'wandering_minstrel', 'procession', 'scavenger', 'fortress', 'rats', 'armory', 'death_cart', 'marauder', 'feodum'];
+  // 段階1（画像/カタログのみ・CARD_SETS 未参照＝実サプライには出さない）
+  DOM.POOLS.guilds = ['candlestick_maker', 'stonemason', 'doctor', 'masterpiece', 'advisor', 'plaza', 'taxman', 'herald', 'baker', 'butcher', 'journeyman', 'merchant_guild', 'soothsayer'];
+  // 暗黒時代の残り王国＋騎士の山を darkages プールへ合流（既存20種＋15種＝35種）
+  DOM.POOLS.darkages = DOM.POOLS.darkages.concat(['junk_dealer', 'bandit_camp', 'rebuild', 'catacombs', 'graverobber', 'count', 'band_of_misfits', 'mystic', 'rogue', 'pillage', 'cultist', 'counterfeit', 'hunting_grounds', 'altar', 'knights']);
+  DOM.POOLS.knights = ['dame_anna', 'dame_josephine', 'dame_molly', 'dame_natalie', 'dame_sylvia', 'sir_bailey', 'sir_destry', 'sir_martin', 'sir_michael', 'sir_vander'];   // 騎士の混合山の中身（非サプライ）
+  DOM.POOLS.ruins = ['abandoned_mine', 'ruined_library', 'ruined_market', 'ruined_village', 'survivors'];       // 廃墟（特殊供給）
+  DOM.POOLS.shelters = ['hovel', 'necropolis', 'overgrown_estate']; // 避難所（開始デッキ置換）
+  DOM.POOLS.darkages_np = ['spoils', 'madman', 'mercenary']; // 戦利品/狂人/傭兵（非サプライ）
   // 画面で選べるセット（id はサーバ検証・保存にも使う）。
   //   kingdom 固定 … おすすめ10種をそのまま使う
   //   randomFrom  … 指定した拡張プールを合わせた中から毎回10種を抽選

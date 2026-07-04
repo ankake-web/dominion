@@ -614,8 +614,13 @@
       (DOM.POOLS && DOM.POOLS.prosperity) ? group('王国カード（繁栄・第二版）', byCost(DOM.POOLS.prosperity)) : null,
       (DOM.POOLS && DOM.POOLS.cornucopia) ? group('王国カード（収穫祭）', byCost(DOM.POOLS.cornucopia)) : null,
       (DOM.POOLS && DOM.POOLS.prizes) ? group('賞品（褒賞・馬上槍試合）', byCost(DOM.POOLS.prizes)) : null,
+      (DOM.POOLS && DOM.POOLS.guilds) ? group('王国カード（ギルド）', byCost(DOM.POOLS.guilds)) : null,
       (DOM.POOLS && DOM.POOLS.hinterlands) ? group('王国カード（異郷）', byCost(DOM.POOLS.hinterlands)) : null,
       (DOM.POOLS && DOM.POOLS.darkages) ? group('王国カード（暗黒時代）', byCost(DOM.POOLS.darkages)) : null,
+      (DOM.POOLS && DOM.POOLS.knights) ? group('騎士（暗黒時代）', byCost(DOM.POOLS.knights)) : null,
+      (DOM.POOLS && DOM.POOLS.ruins) ? group('廃墟（暗黒時代）', byCost(DOM.POOLS.ruins)) : null,
+      (DOM.POOLS && DOM.POOLS.shelters) ? group('避難所（暗黒時代）', byCost(DOM.POOLS.shelters)) : null,
+      (DOM.POOLS && DOM.POOLS.darkages_np) ? group('非サプライ（戦利品・狂人・傭兵）', byCost(DOM.POOLS.darkages_np)) : null,
       (DOM.POOLS && DOM.POOLS.promo) ? group('プロモカード', byCost(DOM.POOLS.promo)) : null,
       (DOM.POOLS && DOM.POOLS.basic1e) ? group('初版のみ（第二版で廃止）', byCost(
         DOM.POOLS.basic1e.filter((id) => DOM.POOLS.basic.indexOf(id) < 0)
