@@ -1,11 +1,24 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-04 / branch `main`。**すべてコミット&push済・Pages/Render 自動デプロイ済・作業ツリー clean**。`sw.js` は **v29**。
+最終更新: 2026-07-04 / branch `main`。**段階1(下記§0-3)まで コミット済＝`651e3f6`（※未push・pushは要確認）。それ以前はpush済**。`sw.js` は **v30**。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
-**新セッションは まず `npm test` を実行し 21スイート・オールグリーン（exit 0・整合性1947件・収穫祭107件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
+**新セッションは まず `npm test` を実行し 21スイート・オールグリーン（exit 0・整合性2413件・収穫祭107件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
 
 ---
+
+## 0-3. 段階1＝ギルド13＋暗黒時代残り36 を画像化・カタログ追加（2026-07-04 完了・`651e3f6`）
+
+### 結論
+- **残り未カタログの全49枚を段階1で追加**（＝画像は出るがゲーム未参加。CARD_SETS 未参照）。内訳＝**ギルド13**／**暗黒時代 王国14＋騎士の山(knights)＋騎士10種／廃墟5／避難所3／非サプライ3（戦利品/狂人/傭兵）**。`npm test` 21スイート全緑（整合性 1947→**2413件**）。`sw.js` v29→**v30**。**これで Downloads の絵は全処理済（desktop.ini のみ残置）**。
+- **公式カードデータは多エージェント＋WebSearch で敵対的に確定**。和名は推測でなく公式採用：taxman=**収税吏**／herald=**伝令官**／soothsayer=**予言者**／junk_dealer=**屑屋**／mystic=**秘術師**／rogue=**盗賊**／catacombs=**地下墓所**／band_of_misfits=**はみだし者**／candlestick_maker=**蝋燭職人**／rebuild=**建て直し**／counterfeit=**偽造通貨**。**Coffers＝「財源」**（段階2で使う訳語を確定）。hovel=納屋/necropolis=共同墓地/overgrown_estate=草茂る屋敷。
+- **spoils の名前は「戦利品」を採用**（公式は「略奪品」だが、既存 marauder/新規 bandit_camp/pillage が「戦利品置き場」と参照＝プロジェクト内一貫性を優先。将来 Plunder/Loot を入れる時に再考）。
+- **新種別 knight/ruins/shelter を追加**：carddata の typeLabel/typeLabelEn（複合語を先に決めて全typeを落とさない）＋ integrity の JP/EN マップに登録。frameType は base type で既存スキンに落ちるので変更不要。dame_josephine は `['action','attack','knight','victory'] vp:2`。
+- **孤立プール** `guilds/knights/ruins/shelters/darkages_np` を新設＋`darkages` に15種合流（20→35）。GAIN_ORDER に49 id追加（整合性=全カード網羅）。ui.js カード一覧にギルド/騎士/廃墟/避難所/非サプライのグループ追加。
+- **画像回収**＝多エージェント識別（内容判別・Read で実見）＋敵対検証＋**カバレッジ整合で49画像↔49idを一意確定**（二重割当4件[catacombs/pillage/dame_natalie/masterpiece]を欠落4件[necropolis/ruined_village/dame_sylvia/journeyman]へ再割当）。**騎士10種は絵での個体判別不能＝性別(Dame/Sir)一致で割当（コスメのみ・ゲーム無影響）**。→`asset/art/<id>.png` 回収→`CARDS_ONLY` フィルタ（build-cards.js 新設）で新49枚のみ webp生成（既存222を再エンコードしない）。
+
+### 次（未着手）＝段階2: ギルド13枚を実プレイ化（§5-1）
+- 新機構＝**コイントークン Coffers(=財源)**（per-player数値＋消費action の4点セット）／**overpay 過払い**（BUY拡張：stonemason/doctor/masterpiece/herald）／**アタック2種**（収税吏 taxman・予言者 soothsayer）／trash-to-gain（stonemason/butcher/graverobber系）／merchant_guild の購入毎on-buyトリガー／baker のセットアップ（開始時全員+1財源）／advisor/journeyman/mystic の公開・宣言／plaza/candlestick_maker の財源。**賞品Prizes山(§0-2)と収穫祭の各機構が良いコピー元**。
 
 ## 0-2. 段階2＝収穫祭13＋褒賞5 を実プレイ化（2026-07-04 完了）
 
@@ -108,7 +121,8 @@
 1. **段階2＝全カード実プレイ化（ユーザー決定・約128枚・完全忠実）**。対象＝収穫祭13＋褒賞5＋異郷35＋**暗黒時代を全56に完成**＋新プロモ6＋**ギルド13**。方針＝特殊山・全トリガー・command系まで**機構ごと新設**（簡略化しない）。
    - **実装の設計図＝`docs/adding-cards.md`**（全機構の file:line ＋コピー元パターン＋落とし穴。毎回これを見れば実装できる）。
    - **着手順（新機構の少ない順）＝ ~~収穫祭~~✅ → ギルド → 異郷 → 新プロモ → 暗黒時代完成**。1拡張ずつ 効果+pending+CPU+UI+ATTACKS/PLAYER_ACTIONS+テスト → `npm test`緑 → コミット。**各拡張は完成してから CARD_SET 昇格**（＝中途の暗黒時代がデプロイに出ない）。
-   - **✅収穫祭は完了（2026-07-04・§0-2）**。**次はギルド（13枚）**：新機構＝コイントークンCoffers（per-player数値＋`COFFERS_SPEND` の4点セット）／overpay（購入時に超過払い＝BUY拡張）／司教型の圧縮。賞品Prizes山の実装（`NON_SUPPLY`・非サプライ数値キー）が良いコピー元。
+   - **✅収穫祭は完了（2026-07-04・§0-2）**。**✅段階1（画像化・カタログ）は残り全49枚[ギルド13＋暗黒時代残り36]完了（2026-07-04・§0-3・`651e3f6`）＝暗黒時代の残りカタログ定義もここで済んだ**（下記の「暗黒時代の残り」カタログ項は消化済／段階2ロジックが未実装）。
+   - **次はギルド（13枚）を段階2実プレイ化**：新機構＝コイントークンCoffers（=**財源**・per-player数値＋`COFFERS_SPEND` の4点セット）／overpay（購入時に超過払い＝BUY拡張。stonemason/doctor/masterpiece/herald）／trash-to-gain（stonemason/butcher）／アタック2種（収税吏taxman・予言者soothsayer）／merchant_guild の購入毎トリガー／baker のセットアップ。賞品Prizes山（`NON_SUPPLY`・非サプライ数値キー）と収穫祭の各機構が良いコピー元。**カード定義は§0-3で追加済＝engine効果/pending/CPU/UI/CARD_SET昇格を足すだけ**。
    - **新設が要る機構**：賞品Prizes山（収穫祭）／Bane（若き魔女）／可変VP fairgrounds/silk_road/feodum（vpOfに1ブロック）／持続 captain/church（armDuration+RESOLVER）／command procession/band_of_misfits/captain/trusty_steed（replayキュー）／王子prince（脇から毎ターン）／コイントークンCoffers（ギルド・per-player数値+COFFERS_SPEND）／overpay（ギルド）／廃墟Ruins・騎士Knights混合山＋戦利品/狂人/傭兵（暗黒時代・top-level配列/非サプライ）／避難所Shelters（開始デッキ置換）／on-trash・on-discardフック（暗黒時代・要塞/市場の広場等で新設、本人任意廃棄に限定）。
    - **暗黒時代の残り**：段階1未追加の王国15枚（junk_dealer/bandit_camp/rebuild/catacombs/graverobber/count/band_of_misfits/mystic/rogue/pillage/cultist/knights/counterfeit/hunting_grounds/altar）＋廃墟5/避難所3/騎士10/戦利品/狂人/傭兵 のカタログ定義＆GAIN_ORDER＆（絵は後入れ）も要。**絵は後で挿入方針**＝定義とロジックを先に、webpは枠+文字で生成orアート後入れ。
 2. **錬金術アートの△3枚最終確認（任意）**：変成/薬草商/薬剤師。差し替えは `asset/art/<id>.png` →`node tools/build-cards.js`→該当webpデプロイ。
