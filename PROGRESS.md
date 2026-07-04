@@ -44,6 +44,9 @@
 - **デプロイ**：main に push → `.github/workflows/deploy.yml` が Pages 公開、サーバは Render 自動再デプロイ。**新しい配信フォルダは deploy.yml に追加**（忘れると本番404）。**client資産（js/css/webp等）を変えたら `sw.js` の VERSION を上げる**（現在 v26）。コミット者設定済み（Naoki Inoue）。
 
 ## 3. 完了したこと（サマリ。詳細は各コミットメッセージ＝git log が正）
+### 2026-07-04 段階2の実装設計図を作成（`docs/adding-cards.md`）
+- 全カード実プレイ化（段階2）に向け、エンジンの全機構（効果/pending・on-gain等トリガー/リアクション・特殊山/セットアップ/トークン/CARD_SET昇格・持続/command/可変VP・テスト雛形）を多エージェント調査し、**file:line＋コピー元コード＋落とし穴**を `docs/adding-cards.md` に恒久化。段階2の作業計画は §5-1。
+
 ### 2026-07-04 新拡張カードの画像化・カタログ追加（段階1・79枚）
 - **収穫祭13＋褒賞5＋異郷35（初版26＋第二版新規9）＋暗黒時代20＋新プロモ6＝79枚を段階1で追加**（`DOM.CARDS`＋孤立プール `POOLS.cornucopia/hinterlands/darkages`＋promo合流＋`GAIN_ORDER`＋ui.js一覧グループ）。**画像は出るがゲーム未参加**（CARD_SETSから孤立プールを参照しない＝実サプライに出ない）。完成webp79枚生成済み（`asset/cards/*.webp`）。整合性テスト緑（fools_gold=財宝+リアクション／tunnel=勝利点+リアクションの新種別ラベルを carddata に追加）。`sw.js` v27→v28。
 - 絵はユーザーがChatGPTで生成→私がDL画像を判別し `asset/art/<id>.png` に回収（→ChatGPT運用ルールは記憶 `chatgpt-card-art-workflow` 参照）。カード定義・画像判別は多エージェントworkflowで起草/照合。
@@ -79,7 +82,11 @@
 - **海辺の簡略化2点は本格実装済み**：封鎖の堀免疫窓・海賊の財宝獲得リアクション。on-gain対話は `!pending && _gainDepth===1` ゲートで安全側。
 
 ## 5. 未完了タスク（優先順。次セッションは 1. から）
-1. **追加79枚の段階2（実プレイ化）**：収穫祭/異郷/暗黒時代/新プロモは段階1（画像＋孤立プール）まで完了。実ゲーム化には engine効果実装・CPU分岐（decidePending/chooseAction/chooseBuy）・UI（viewPendingModal）・CARD_SETへの昇格が必要。**新pendingを作る札が多い（賞品/廃墟/避難所/騎士/持続/リアクション）**ので拡張1つずつ慎重に。暗黒時代は残36枚＋特殊カード（廃墟5/避難所3/騎士10/戦利品・狂人・傭兵）のアート＆定義も未着手。
+1. **段階2＝全カード実プレイ化（ユーザー決定・約128枚・完全忠実）**。対象＝収穫祭13＋褒賞5＋異郷35＋**暗黒時代を全56に完成**＋新プロモ6＋**ギルド13**。方針＝特殊山・全トリガー・command系まで**機構ごと新設**（簡略化しない）。
+   - **実装の設計図＝`docs/adding-cards.md`**（全機構の file:line ＋コピー元パターン＋落とし穴。毎回これを見れば実装できる）。
+   - **着手順（新機構の少ない順）＝ 収穫祭 → ギルド → 異郷 → 新プロモ → 暗黒時代完成**。1拡張ずつ 効果+pending+CPU+UI+ATTACKS/PLAYER_ACTIONS+テスト → `npm test`緑 → コミット。**各拡張は完成してから CARD_SET 昇格**（＝中途の暗黒時代がデプロイに出ない）。
+   - **新設が要る機構**：賞品Prizes山（収穫祭）／Bane（若き魔女）／可変VP fairgrounds/silk_road/feodum（vpOfに1ブロック）／持続 captain/church（armDuration+RESOLVER）／command procession/band_of_misfits/captain/trusty_steed（replayキュー）／王子prince（脇から毎ターン）／コイントークンCoffers（ギルド・per-player数値+COFFERS_SPEND）／overpay（ギルド）／廃墟Ruins・騎士Knights混合山＋戦利品/狂人/傭兵（暗黒時代・top-level配列/非サプライ）／避難所Shelters（開始デッキ置換）／on-trash・on-discardフック（暗黒時代・要塞/市場の広場等で新設、本人任意廃棄に限定）。
+   - **暗黒時代の残り**：段階1未追加の王国15枚（junk_dealer/bandit_camp/rebuild/catacombs/graverobber/count/band_of_misfits/mystic/rogue/pillage/cultist/knights/counterfeit/hunting_grounds/altar）＋廃墟5/避難所3/騎士10/戦利品/狂人/傭兵 のカタログ定義＆GAIN_ORDER＆（絵は後入れ）も要。**絵は後で挿入方針**＝定義とロジックを先に、webpは枠+文字で生成orアート後入れ。
 2. **錬金術アートの△3枚最終確認（任意）**：変成/薬草商/薬剤師。差し替えは `asset/art/<id>.png` →`node tools/build-cards.js`→該当webpデプロイ。
 3. （任意・CPU購入の残課題）B案は「拡張＋礼拝堂エンジン」で ENGINE/MONEY を切替済み。さらに踏み込むなら **MONEY王国での BM+呪いアタック（魔女等≤2枚）** や **王国個別のエンジン成立度スコアリング**が候補（現状でも総合71%なので優先度は低い）。
 4. （任意・過去メモ）絵文字→game-icons.net SVG 化、vanilla効果DSL 等。
