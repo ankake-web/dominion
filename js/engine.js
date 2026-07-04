@@ -52,6 +52,11 @@
       const princesses = (active.inPlay || []).filter((x) => x === 'princess').length;
       if (princesses) base -= 2 * princesses;
     }
+    // 異郷：街道が場にある間、全カードは1枚につき$1安くなる（$0未満にはならない・街道の枚数ぶん重なる）。
+    if (active) {
+      const highways = (active.inPlay || []).filter((x) => x === 'highway').length;
+      if (highways) base -= highways;
+    }
     const red = (t && t.costReduction) || 0;
     return Math.max(0, base - red);
   }
@@ -142,6 +147,15 @@
         state.pending = { type: 'horn_of_plenty', player: pIndex, maxCost: distinct };
       }
     }
+    // 異郷：愚者の黄金＝このターン最初なら$1（coin:1 で計上済）、2枚目以降は$4（+3コイン）。
+    if (card === 'fools_gold') {
+      if (t.foolsGoldPlayed) { t.coins += 3; log(state, `${p.name} は愚者の黄金を使った（+4コイン）。`); }
+      t.foolsGoldPlayed = true;
+    }
+    // 異郷：大釜＝+2コイン（coin:2）＋1購入。3回目のアクション獲得の呪い配布は triggerOnGain。
+    if (card === 'cauldron') { t.buys += 1; }
+    // 異郷：不正利得＝銅貨1枚を手札に獲得してよい（$1 は coin:1 で計上済）。獲得時の呪い配布は triggerOnGain。
+    if (card === 'ill_gotten_gains') { state.pending = { type: 'igg_play', player: pIndex }; }
     // 海辺：私掠船マーク中なら、このターン最初の銀貨/金貨は出した後に廃棄される（コインは入る）。
     corsairOnPlayTreasure(state, pIndex, card);
   }
@@ -367,6 +381,7 @@
       (t.possessionTrash = t.possessionTrash || []).push(card);
     } else {
       state.trash.push(card);
+      triggerOnTrash(state, ownerIdx, card); // 異郷：遊牧民の廃棄時 +2コイン 等
     }
   }
 
@@ -622,6 +637,7 @@
   function hasReaction(player) {
     return player.hand.includes('moat') || player.hand.includes('secret_chamber') ||
       player.hand.includes('horse_traders') || // 収穫祭：馬商人（脇に置いて次手番に+1カードで戻す。免疫にはならない）
+      player.hand.includes('guard_dog') || // 異郷：番犬（相手のアタック時に手札から先に使ってよい。免疫にはならない）
       (player.hand.includes('diplomat') && player.hand.length >= 5);
   }
   // 秘密の小部屋のリアクションを差し込める「被攻撃側の反応ステップ」か。
@@ -660,6 +676,14 @@
     // ギルド：収税吏（廃棄財宝と同名を捨てさせる）・予言者（呪い配布＋引かせる）。
     taxman:        { onMoat: (s, pd) => taxmanEnterVictim(s, pd.source, pd.queue, pd.trashedName) },
     soothsayer:    { onMoat: (s, pd) => soothsayerEnterVictim(s, pd.source, pd.queue) },
+    // 異郷：辺境伯（各相手 +1カード→手札3枚まで捨て）・神託（各相手の山札上2枚を使用者が捨て/戻す）・
+    //       高貴な山賊（各相手の山札上2枚から銀/金を廃棄・使用者が獲得）・狂戦士/魔女の小屋/大釜（呪い配布）。
+    margrave:      { onMoat: (s, pd) => margraveEnterVictim(s, pd.source, pd.queue) },
+    oracle:        { onMoat: (s, pd) => oracleEnterTarget(s, pd.source, pd.queue) },
+    noble_brigand: { onMoat: (s, pd) => nobleBrigandEnterVictim(s, pd.source, pd.queue) },
+    berserker:     { onMoat: (s, pd) => berserkerEnterVictim(s, pd.source, pd.queue) },
+    witchs_hut:    { onMoat: (s, pd) => witchsHutEnterVictim(s, pd.source, pd.queue) },
+    cauldron:      { onMoat: (s, pd) => cauldronEnterVictim(s, pd.source, pd.queue) },
   };
   // 被攻撃側の反応（堀／秘密の小部屋／外交官）を差し込める局面か。
   function isAttackReactPending(pd) {
@@ -1040,6 +1064,228 @@
       }
     }
     soothsayerEnterVictim(state, source, queue);
+  }
+
+  /* ============================================================
+     異郷（Hinterlands）：アタック各種（すべて witch 型の EnterVictim/Apply/REACT ＋ ATTACKS 登録）
+     ============================================================ */
+  // 辺境伯：+3カード +1購入（applyEffect）。各相手は +1カード → 手札3枚まで捨てる。
+  function margraveEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'margrave', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      margraveApply(state, source, victim, rest);
+    }
+  }
+  function margraveApply(state, source, victim, queue) {
+    const v = state.players[victim];
+    draw(state, victim, 1);
+    log(state, `${v.name} は +1カード（辺境伯）。`);
+    if (v.hand.length > 3) {
+      state.pending = { type: 'margrave', stage: 'discard', player: victim, source, victim, queue };
+    } else {
+      margraveEnterVictim(state, source, queue);
+    }
+  }
+
+  // 神託：各プレイヤー（使用者含む）の山札上2枚を公開し、使用者が「捨てる/好きな順で山札上に戻す」を決める。全員後 +2カード。
+  function oracleEnterTarget(state, attacker, queue) {
+    while (queue && queue.length) {
+      const target = queue[0], rest = queue.slice(1);
+      if (target !== attacker) { // 相手はアタック（灯台免疫・堀リアクション）
+        if (attackImmune(state, target)) { queue = rest; continue; }
+        if (hasReaction(state.players[target])) {
+          state.pending = { type: 'oracle', stage: 'react', player: target, source: attacker, victim: target, queue: rest };
+          return;
+        }
+      }
+      oracleReveal(state, attacker, target, rest);
+      return;
+    }
+    draw(state, attacker, 2); // 全員終わったら使用者 +2カード
+    log(state, `${state.players[attacker].name} は神託で +2カード。`);
+    state.pending = null;
+  }
+  function oracleReveal(state, attacker, target, queue) {
+    const tp = state.players[target];
+    const look = [];
+    for (let i = 0; i < 2; i++) {
+      if (tp.deck.length === 0) { if (tp.discard.length === 0) break; tp.deck = shuffle(tp.discard); tp.discard = []; }
+      if (tp.deck.length === 0) break;
+      look.push(tp.deck.shift());
+    }
+    if (!look.length) { oracleEnterTarget(state, attacker, queue); return; } // 公開できる札なし
+    reveal(state, target, look, '神託で山札の上2枚を公開');
+    state.pending = { type: 'oracle', stage: 'decide', player: attacker, source: attacker, victim: target, cards: look, queue };
+  }
+
+  // 高貴な山賊：各相手は山札上2枚を公開。使用者が公開された銀貨/金貨1枚を廃棄して獲得、残りは捨てる。
+  //   財宝(銀/金)を1枚も公開しなかった相手は銅貨1枚を獲得。（プレイ時＝+1コイン、購入時にも発動）
+  function nobleBrigandAttack(state, source) {
+    const q = [];
+    for (let k = 1; k < state.players.length; k++) q.push((source + k) % state.players.length);
+    nobleBrigandEnterVictim(state, source, q);
+  }
+  function nobleBrigandEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'noble_brigand', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      nobleBrigandReveal(state, source, victim, rest);
+    }
+  }
+  function nobleBrigandReveal(state, source, victim, queue) {
+    const v = state.players[victim];
+    const revealed = [];
+    for (let i = 0; i < 2; i++) {
+      if (v.deck.length === 0) { if (v.discard.length === 0) break; v.deck = shuffle(v.discard); v.discard = []; }
+      if (v.deck.length === 0) break;
+      revealed.push(v.deck.shift());
+    }
+    if (revealed.length) reveal(state, victim, revealed, '高貴な山賊で山札の上を公開');
+    const cands = revealed.filter((c) => c === 'silver' || c === 'gold');
+    if (cands.length >= 2 && cands[0] !== cands[1]) {
+      state.pending = { type: 'noble_brigand', stage: 'pick', player: source, source, victim, revealed, queue };
+    } else {
+      nobleBrigandResolve(state, source, victim, revealed, cands[0] || null, queue);
+    }
+  }
+  function nobleBrigandResolve(state, source, victim, revealed, trashed, queue) {
+    const v = state.players[victim];
+    const rest = revealed.slice();
+    if (trashed) {
+      removeOne(rest, trashed);
+      // 廃棄された財宝は使用者が現物を獲得する（サプライは変えない＝廃棄→回収の合成）。
+      state.players[source].discard.push(trashed);
+      log(state, `${state.players[source].name} は ${v.name} の「${C()[trashed].name}」を廃棄して獲得した（高貴な山賊）。`);
+    }
+    rest.forEach((c) => v.discard.push(c));
+    const hadTreasure = revealed.some((c) => c === 'silver' || c === 'gold');
+    if (revealed.length && !hadTreasure) {
+      if (gain(state, victim, 'copper', 'discard')) log(state, `${v.name} は財宝を公開せず銅貨1枚を獲得した（高貴な山賊）。`);
+    }
+    nobleBrigandEnterVictim(state, source, queue);
+  }
+
+  // 狂戦士：各相手は手札3枚まで捨てる（獲得＋攻撃は applyEffect / BERSERKER_GAIN 側で先行）。
+  function berserkerEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'berserker', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      berserkerApply(state, source, victim, rest);
+    }
+  }
+  function berserkerApply(state, source, victim, queue) {
+    const v = state.players[victim];
+    if (v.hand.length > 3) {
+      state.pending = { type: 'berserker', stage: 'discard', player: victim, source, victim, queue };
+    } else {
+      berserkerEnterVictim(state, source, queue);
+    }
+  }
+  function berserkerLaunchAttack(state, source) {
+    const q = [];
+    for (let k = 1; k < state.players.length; k++) q.push((source + k) % state.players.length);
+    berserkerEnterVictim(state, source, q);
+  }
+
+  // 魔女の小屋：使用者が公開して捨てた手札2枚が両方アクションなら、各相手が呪いを獲得。
+  function witchsHutEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'witchs_hut', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      witchsHutCurse(state, source, victim, rest);
+    }
+  }
+  function witchsHutCurse(state, source, victim, queue) {
+    if ((state.supply.curse || 0) > 0) {
+      gain(state, victim, 'curse', 'discard');
+      log(state, `${state.players[victim].name} は呪いを獲得した（魔女の小屋）。`);
+    }
+    witchsHutEnterVictim(state, source, queue);
+  }
+
+  // 大釜：このターン3回目のアクション獲得で、各相手が呪いを獲得（大釜が場にある間）。
+  function cauldronEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'cauldron', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      cauldronCurse(state, source, victim, rest);
+    }
+  }
+  function cauldronCurse(state, source, victim, queue) {
+    if ((state.supply.curse || 0) > 0) {
+      gain(state, victim, 'curse', 'discard');
+      log(state, `${state.players[victim].name} は呪いを獲得した（大釜）。`);
+    }
+    cauldronEnterVictim(state, source, queue);
+  }
+
+  // 愚者の黄金：他プレイヤーが属州を獲得したとき、手札の愚者の黄金を廃棄して金貨を山札の上に獲得してよい（手番順に反応窓）。
+  function foolsGoldReactWindow(state, gainerIndex) {
+    const n = state.players.length;
+    const start = (state.turn && state.turn.active != null) ? state.turn.active : gainerIndex;
+    const queue = [];
+    for (let k = 0; k < n; k++) {
+      const seat = (start + k) % n;
+      if (seat !== gainerIndex && state.players[seat].hand.includes('fools_gold')) queue.push(seat);
+    }
+    if (queue.length) foolsGoldReactEnter(state, queue);
+  }
+  function foolsGoldReactEnter(state, queue) {
+    queue = (queue || []).slice();
+    while (queue.length && !state.players[queue[0]].hand.includes('fools_gold')) queue.shift();
+    if (!queue.length) { state.pending = null; return; }
+    state.pending = { type: 'fools_gold_react', player: queue[0], queue: queue.slice(1) };
+  }
+
+  // 公爵夫人：各プレイヤー（あなたを含む）が自分の山札の一番上を見て、捨ててよい（アタックではない＝手番順の窓）。
+  function duchessEnter(state, queue) {
+    queue = (queue || []).slice();
+    while (queue.length) {
+      const seat = queue[0], rest = queue.slice(1);
+      const sp = state.players[seat];
+      if (sp.deck.length === 0 && sp.discard.length === 0) { queue = rest; continue; } // 見る札なし
+      state.pending = { type: 'duchess_look', player: seat, queue: rest };
+      return;
+    }
+    state.pending = null;
+  }
+
+  // 何でも屋：手札5枚まで引き、財宝でない札があれば任意で1枚廃棄。
+  function jackDrawTo5(state, pi) {
+    const p = state.players[pi];
+    const need = Math.max(0, 5 - p.hand.length);
+    if (need) draw(state, pi, need);
+    if (p.hand.some((c) => !DOM.isType(c, 'treasure'))) state.pending = { type: 'jack', stage: 'trash', player: pi };
+    else state.pending = null;
+  }
+  // 開発：ちょうど +1/-1 コストのカードを（獲得可能なものから）好きな順で山札の上へ。
+  function developAdvance(state, pi, hi, lo, hiDone, loDone) {
+    const gainable = (c) => c >= 0 && anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) === c);
+    const hiOk = !hiDone && gainable(hi);
+    const loOk = !loDone && gainable(lo);
+    if (!hiOk && !loOk) { state.pending = null; return; }
+    state.pending = { type: 'develop', stage: 'gain', player: pi, hi, lo, hiDone, loDone };
   }
 
   /* ---------- 繁栄：群衆（各相手が山札の上3枚を公開→アクション/財宝を捨て、残りを上に戻す）---------- */
@@ -2257,6 +2503,137 @@
         break;
       }
 
+      /* ===== 拡張: 異郷（Hinterlands）===== */
+      case 'crossroads': {
+        reveal(state, pi, p.hand, '岐路で手札を公開');
+        const vics = p.hand.filter((c) => DOM.isType(c, 'victory')).length;
+        if (vics) draw(state, pi, vics);
+        const first = !t.crossroadsPlayed;
+        if (first) t.actions += 3;
+        t.crossroadsPlayed = (t.crossroadsPlayed || 0) + 1;
+        log(state, `${p.name} は岐路（勝利点${vics}枚 → +${vics}カード${first ? '、初回 +3アクション' : ''}）。`);
+        break;
+      }
+      case 'duchess': {
+        t.coins += 2;
+        const q = [];
+        for (let k = 0; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        duchessEnter(state, q);
+        break;
+      }
+      case 'develop':
+        if (p.hand.length > 0) state.pending = { type: 'develop', stage: 'trash', player: pi };
+        break;
+      case 'oasis':
+        draw(state, pi, 1); t.actions += 1; t.coins += 1;
+        if (p.hand.length > 0) state.pending = { type: 'oasis', player: pi };
+        break;
+      case 'oracle': {
+        const q = [];
+        for (let k = 0; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        oracleEnterTarget(state, pi, q);
+        break;
+      }
+      case 'scheme':
+        draw(state, pi, 1); t.actions += 1;
+        t.schemes = (t.schemes || 0) + 1;
+        break;
+      case 'jack_of_all_trades': {
+        if (gain(state, pi, 'silver', 'discard')) log(state, `${p.name} は銀貨を獲得した（何でも屋）。`);
+        if (p.deck.length === 0 && p.discard.length > 0) { p.deck = shuffle(p.discard); p.discard = []; }
+        if (p.deck.length > 0) state.pending = { type: 'jack', stage: 'look', player: pi, card: p.deck[0] };
+        else jackDrawTo5(state, pi);
+        break;
+      }
+      case 'noble_brigand':
+        t.coins += 1;
+        nobleBrigandAttack(state, pi);
+        break;
+      case 'nomad_camp':
+        t.buys += 1; t.coins += 2;
+        break;
+      case 'spice_merchant':
+        if (p.hand.some((c) => DOM.isType(c, 'treasure'))) state.pending = { type: 'spice_merchant', stage: 'trash', player: pi };
+        break;
+      case 'trader':
+        if (p.hand.length > 0) state.pending = { type: 'trader', stage: 'trash', player: pi };
+        break;
+      case 'cartographer': {
+        draw(state, pi, 1); t.actions += 1;
+        const look = [];
+        for (let i = 0; i < 4; i++) { if (p.deck.length === 0) { if (p.discard.length === 0) break; p.deck = shuffle(p.discard); p.discard = []; } if (p.deck.length === 0) break; look.push(p.deck.shift()); }
+        if (look.length) state.pending = { type: 'cartographer', player: pi, cards: look };
+        break;
+      }
+      case 'embassy':
+        draw(state, pi, 5);
+        if (p.hand.length > 0) state.pending = { type: 'embassy', player: pi };
+        break;
+      case 'haggler':
+        t.coins += 2;
+        break;
+      case 'highway':
+        draw(state, pi, 1); t.actions += 1;
+        break;
+      case 'inn':
+        draw(state, pi, 2); t.actions += 2;
+        if (p.hand.length > 0) state.pending = { type: 'inn', player: pi };
+        break;
+      case 'mandarin':
+        t.coins += 3;
+        if (p.hand.length > 0) state.pending = { type: 'mandarin', player: pi };
+        break;
+      case 'margrave': {
+        draw(state, pi, 3); t.buys += 1;
+        const q = [];
+        for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        margraveEnterVictim(state, pi, q);
+        break;
+      }
+      case 'stables':
+        if (p.hand.some((c) => DOM.isType(c, 'treasure'))) state.pending = { type: 'stables', player: pi };
+        break;
+      case 'border_village':
+        draw(state, pi, 1); t.actions += 2;
+        break;
+      case 'nomads':
+        t.buys += 1; t.coins += 2;
+        break;
+      case 'trail':
+        draw(state, pi, 1); t.actions += 1;
+        break;
+      case 'weaver':
+        state.pending = { type: 'weaver', player: pi };
+        break;
+      case 'souk': {
+        t.buys += 1;
+        const add = Math.max(0, 7 - p.hand.length);
+        t.coins += add;
+        log(state, `${p.name} はスーク（+1購入、+${add}コイン）。`);
+        break;
+      }
+      case 'guard_dog':
+        draw(state, pi, 2);
+        if (p.hand.length <= 5) draw(state, pi, 2);
+        break;
+      case 'berserker': {
+        const maxC = cardCost(state, 'berserker') - 1;
+        if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) <= maxC)) {
+          state.pending = { type: 'berserker', stage: 'gain', player: pi, maxCost: maxC };
+        } else {
+          berserkerLaunchAttack(state, pi);
+        }
+        break;
+      }
+      case 'wheelwright':
+        draw(state, pi, 1); t.actions += 1;
+        if (p.hand.length > 0) state.pending = { type: 'wheelwright', stage: 'discard', player: pi };
+        break;
+      case 'witchs_hut':
+        draw(state, pi, 4);
+        state.pending = { type: 'witchs_hut', stage: 'discard', player: pi };
+        break;
+
       default:
         break;
     }
@@ -2296,6 +2673,9 @@
     // 収穫祭：品評会＝所持カードの異なる名前5種類につき2勝利点（端数切り捨て・品評会1枚ごと）
     const fairgrounds = cards.filter((c) => c === 'fairgrounds').length;
     if (fairgrounds) vp += fairgrounds * 2 * Math.floor(new Set(cards).size / 5);
+    // 異郷：絹の道＝所持する勝利点カード4枚につき1勝利点（端数切り捨て・絹の道自身も数える・絹の道1枚ごと）
+    const silkRoads = cards.filter((c) => c === 'silk_road').length;
+    if (silkRoads) vp += silkRoads * Math.floor(cards.filter((c) => DOM.isType(c, 'victory')).length / 4);
     // 繁栄：VPトークン（司教・記念碑・収集・投資で貯めた勝利点）を加算
     vp += p.vpTokens || 0;
     return vp;
@@ -2429,6 +2809,29 @@
         }
       }
     }
+    // ===== 異郷：獲得時の「自動」効果（対話不要＝pending を立てない。連鎖は _gainDepth ガードで安全）=====
+    const gp = state.players[pIndex];
+    // キャッシュ：獲得したとき銅貨2枚を獲得。
+    if (cardId === 'cache') { let g = 0; for (let i = 0; i < 2; i++) if (gain(state, pIndex, 'copper', 'discard')) g++; log(state, `${gp.name} はキャッシュで銅貨 ${g}枚 を獲得した。`); }
+    // 大使館：獲得したとき、他の各プレイヤーは銀貨1枚を獲得。
+    if (cardId === 'embassy') { for (let o = 0; o < n; o++) if (o !== pIndex && gain(state, o, 'silver', 'discard')) log(state, `${state.players[o].name} は銀貨1枚を獲得した（大使館）。`); }
+    // 不正利得：獲得したとき、他の各プレイヤーは呪い1枚を獲得（アタックではない＝堀では防げない）。
+    if (cardId === 'ill_gotten_gains') { for (let o = 0; o < n; o++) if (o !== pIndex && (state.supply.curse || 0) > 0 && gain(state, o, 'curse', 'discard')) log(state, `${state.players[o].name} は呪い1枚を獲得した（不正利得）。`); }
+    // 遊牧民の野営地：獲得したとき、山札の一番上に置く。
+    if (cardId === 'nomad_camp') { const z = dest === 'hand' ? gp.hand : (dest === 'deck' ? gp.deck : gp.discard); if (removeOne(z, 'nomad_camp')) { gp.deck.unshift('nomad_camp'); log(state, `${gp.name} は遊牧民の野営地を山札の上に置いた。`); } }
+    // 遊牧民：獲得したとき +2コイン（自分の手番のときのみ意味がある）。廃棄時の+2は triggerOnTrash。
+    if (cardId === 'nomads' && state.turn && pIndex === state.turn.active) { state.turn.coins += 2; log(state, `${gp.name} は遊牧民の獲得で +2コイン。`); }
+    // 役人：獲得したとき、場のすべての財宝を山札の上に置く（置いた順＝そのまま／簡略に選択なし）。
+    if (cardId === 'mandarin') { const tre = gp.inPlay.filter((c) => DOM.isType(c, 'treasure')); tre.forEach((c) => { removeOne(gp.inPlay, c); gp.deck.unshift(c); }); if (tre.length) log(state, `${gp.name} は役人で場の財宝 ${tre.length}枚 を山札の上に置いた。`); }
+    // 大釜：自分の手番にアクションを獲得した回数を数え、3回目で（大釜が場にあれば）各相手が呪いを獲得。
+    if (state.turn && pIndex === state.turn.active && DOM.isType(cardId, 'action')) {
+      state.turn.actionsGainedThisTurn = (state.turn.actionsGainedThisTurn || 0) + 1;
+      if (state.turn.actionsGainedThisTurn === 3 && gp.inPlay.includes('cauldron') && state._gainDepth === 1 && !state.pending) {
+        log(state, `${gp.name} は大釜で このターン3回目のアクション獲得（各相手に呪い）。`);
+        const cq = []; for (let k = 1; k < n; k++) cq.push((pIndex + k) % n);
+        cauldronEnterVictim(state, pIndex, cq);
+      }
+    }
     // 繁栄：自分の手番に勝利点カードを獲得 → 場の隠し財産1枚につき金貨1枚（hoard）。
     if (state.turn && pIndex === state.turn.active && DOM.isType(cardId, 'victory')) {
       const hoards = state.players[pIndex].inPlay.filter((c) => c === 'hoard').length;
@@ -2447,6 +2850,41 @@
       const me = state.players[pIndex];
       if (me.hand.includes('watchtower')) state.pending = { type: 'watchtower', player: pIndex, card: cardId, dest: dest || 'discard' };
       else if (me.inPlay.includes('tiara')) state.pending = { type: 'tiara_topdeck', player: pIndex, card: cardId, dest: dest || 'discard' };
+      // 異郷：国境の村＝獲得したとき、それより安いカード1枚を獲得（必須・獲得先があるときのみ）。
+      else if (cardId === 'border_village' && anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) < cardCost(state, 'border_village'))) {
+        state.pending = { type: 'border_village', player: pIndex, maxCost: cardCost(state, 'border_village') - 1 };
+      }
+      // 異郷：宿屋＝獲得したとき、捨て札（これ自身含む）のアクションを好きな枚数、山札に混ぜてシャッフル。
+      else if (cardId === 'inn' && me.discard.some((c) => DOM.isType(c, 'action'))) {
+        state.pending = { type: 'inn_gain', player: pIndex };
+      }
+      // 異郷：スーク＝獲得したとき、手札から最大2枚を廃棄。
+      else if (cardId === 'souk' && me.hand.length > 0) {
+        state.pending = { type: 'souk_trash', player: pIndex };
+      }
+      // 異郷：公爵夫人＝公領を獲得したとき、公爵夫人1枚を獲得してよい（公爵夫人がサプライにあれば）。
+      else if (cardId === 'duchy' && (state.supply.duchess || 0) > 0) {
+        state.pending = { type: 'duchess_gain', player: pIndex };
+      }
+      // 異郷：交易商人のリアクション＝獲得したカードの代わりに銀貨を獲得してよい（自分の手番の獲得・銀貨自身は対象外）。
+      else if (me.hand.includes('trader') && cardId !== 'silver') {
+        state.pending = { type: 'trader_react', player: pIndex, card: cardId, dest: dest || 'discard' };
+      }
+    }
+    // 異郷：狂戦士＝獲得したとき、場にアクションがあればこれを（獲得先の捨て札から場へ移して）使う。
+    if (cardId === 'berserker' && state.turn && pIndex === state.turn.active && state._gainDepth === 1 && !state.pending &&
+        state.players[pIndex].inPlay.some((c) => DOM.isType(c, 'action'))) {
+      const bp = state.players[pIndex];
+      if (removeOne(bp.discard, 'berserker')) {
+        bp.inPlay.push('berserker');
+        state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
+        log(state, `${bp.name} は獲得した狂戦士を使った。`);
+        applyEffect(state, 'berserker', pIndex);
+      }
+    }
+    // 異郷：愚者の黄金＝他プレイヤーが属州を獲得したとき、手札の愚者の黄金を廃棄して金貨を山札の上に獲得してよい。
+    if (cardId === 'province' && state._gainDepth === 1 && !state.pending) {
+      foolsGoldReactWindow(state, pIndex);
     }
     // 船乗り：自分の手番に持続カードを獲得したら、このターン1度だけ即プレイしてよい（確認ダイアログ）。
     // 別の対話(pending)の最中に起きた獲得では出さない（安全側＝主に「購入」時に発動）。
@@ -2461,6 +2899,57 @@
     }
     state._gainDepth--;
   }
+  /* ---------- 異郷：捨て札にしたとき／廃棄したときのフック ---------- */
+  // 小道／織工を（捨て札や廃棄置き場から）場に出して使う共通処理。反応で使うので +アクションは自分の手番のときだけ。
+  function trailPlay(state, pi, fromZone) {
+    const p = state.players[pi];
+    const z = fromZone === 'trash' ? state.trash : p.discard;
+    if (!removeOne(z, 'trail')) return;
+    p.inPlay.push('trail');
+    if (state.turn && pi === state.turn.active) state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
+    draw(state, pi, 1);
+    if (state.turn && pi === state.turn.active) state.turn.actions += 1;
+    log(state, `${p.name} は小道を使った（+1カード${state.turn && pi === state.turn.active ? ' +1アクション' : ''}）。`);
+  }
+  // クリンナップ以外でカードを捨てたとき（tunnel=金貨獲得／trail=使う／weaver=使って獲得）。
+  //   discardedCards = 今捨てたカードの配列。tunnel/trail は常に自動（純利得）。weaver は安全なときだけ選択、
+  //   それ以外（相手のアタックで捨てさせられた等）は銀貨2枚（安全側・pending を立てない）。
+  function triggerOnDiscard(state, pIndex, discardedCards, noPrompt) {
+    const p = state.players[pIndex];
+    let weaverN = 0;
+    (discardedCards || []).forEach((c) => {
+      if (c === 'tunnel') { if (gain(state, pIndex, 'gold', 'discard')) log(state, `${p.name} はトンネルを公開して金貨1枚を獲得した。`); }
+      else if (c === 'trail') { trailPlay(state, pIndex, 'discard'); }
+      else if (c === 'weaver') weaverN++;
+    });
+    for (let i = 0; i < weaverN; i++) {
+      if (!removeOne(p.discard, 'weaver')) continue;
+      p.inPlay.push('weaver');
+      if (state.turn && pIndex === state.turn.active) state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
+      if (!noPrompt && state.turn && pIndex === state.turn.active && !state.pending) {
+        state.pending = { type: 'weaver', player: pIndex }; // 自分の手番・対話が無いときは獲得選択
+      } else {
+        let g = 0; for (let s = 0; s < 2; s++) if (gain(state, pIndex, 'silver', 'discard')) g++;
+        log(state, `${p.name} は捨てた織工を使い、銀貨 ${g}枚 を獲得した。`);
+      }
+    }
+  }
+  // 自分のカードを廃棄したときのフック（遊牧民＝+2コイン）。trashOwn から呼ぶ。
+  function triggerOnTrash(state, pIndex, card) {
+    if (card === 'nomads' && state.turn && pIndex === state.turn.active) {
+      state.turn.coins += 2;
+      log(state, `${state.players[pIndex].name} は遊牧民の廃棄で +2コイン。`);
+    }
+  }
+  // 異郷：値切り屋＝場にある間、カードを購入するたびに、そのコスト未満の勝利点でないカード1枚を獲得（枚数ぶん）。
+  function maybeHagglerGains(state, pi, boughtCost) {
+    const hagglers = state.players[pi].inPlay.filter((c) => c === 'haggler').length;
+    if (hagglers > 0 && !state.pending &&
+        anyGainable(state, (id) => !NON_SUPPLY.has(id) && !DOM.isType(id, 'victory') && cardCost(state, id) < boughtCost)) {
+      state.pending = { type: 'haggler', player: pi, remaining: hagglers, maxCost: boughtCost - 1 };
+    }
+  }
+
   // 「財宝を出したとき」フック（私掠船＝相手のターン最初の銀/金を廃棄。コインは入る）。
   function corsairOnPlayTreasure(state, pIndex, card) {
     if (card !== 'silver' && card !== 'gold') return;
@@ -2711,6 +3200,14 @@
         triggerMerchantGuild(state, pi);
         // ギルド：過払い（overpay）＝購入時に追加でコインを払える。残コインがあれば選択待ちを立てる。
         maybeStartOverpay(state, pi, card);
+        // 異郷：農地＝購入したとき、手札1枚を廃棄し、ちょうど$2高いカード1枚を獲得。
+        if (card === 'farmland' && me.hand.length > 0 && !state.pending) {
+          state.pending = { type: 'farmland', stage: 'trash', player: pi };
+        }
+        // 異郷：高貴な山賊＝購入したときもアタック（プレイ時の+1コインは付かない）。
+        if (card === 'noble_brigand' && !state.pending) nobleBrigandAttack(state, pi);
+        // 異郷：値切り屋＝場にある間、購入のたびに そのコスト未満の勝利点でないカード1枚を獲得。
+        maybeHagglerGains(state, pi, cost);
         return state;
       }
 
@@ -2724,6 +3221,12 @@
       case 'END_TURN': {
         if (state.pending) return state;
         if (t.phase !== 'buy') return state;
+        // 異郷：策謀＝クリンナップ開始時、場のアクション（非持続）を最大(このターンの策謀の数)枚 山札の上に置ける。
+        const schemes = t.schemes || 0;
+        if (schemes > 0 && me.inPlay.some((c) => DOM.isType(c, 'action') && !DOM.isType(c, 'duration'))) {
+          state.pending = { type: 'scheme_cleanup', player: pi, max: schemes };
+          return state;
+        }
         cleanupAndAdvance(state);
         return state;
       }
@@ -4923,6 +5426,503 @@
         return state;
       }
 
+      /* ===== 拡張: 異郷（Hinterlands）の選択解決 ===== */
+      case 'OASIS_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'oasis') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        if (card == null || pl.hand.indexOf(card) < 0) return state; // 1枚捨てる（必須）
+        removeOne(pl.hand, card); pl.discard.push(card);
+        log(state, `${pl.name} は手札1枚を捨てた（オアシス）。`);
+        state.pending = null;
+        triggerOnDiscard(state, pd.player, [card]);
+        return state;
+      }
+      case 'DUCHESS_LOOK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'duchess_look') return state;
+        const sp = state.players[pd.player];
+        let discarded = null;
+        if (action.discard) {
+          if (sp.deck.length === 0 && sp.discard.length > 0) { sp.deck = shuffle(sp.discard); sp.discard = []; }
+          if (sp.deck.length > 0) { discarded = sp.deck.shift(); sp.discard.push(discarded); log(state, `${sp.name} は公爵夫人で山札の上を捨てた。`); }
+        }
+        // ★pending は 'duchess_look' のまま保持して捨て処理＝tunnel の金貨獲得等が獲得時対話を立てて
+        //   残りのプレイヤーの窓キューを潰すのを防ぐ。織工は noPrompt で自動（銀貨）。
+        if (discarded) triggerOnDiscard(state, pd.player, [discarded], true);
+        state.pending = null;
+        duchessEnter(state, pd.queue);
+        return state;
+      }
+      case 'DEVELOP_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'develop' || pd.stage !== 'trash') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        if (card == null || pl.hand.indexOf(card) < 0) return state; // 廃棄必須
+        removeOne(pl.hand, card); trashOwn(state, pd.player, card);
+        log(state, `${pl.name} は「${C()[card].name}」を廃棄した（開発）。`);
+        const cst = cardCost(state, card);
+        developAdvance(state, pd.player, cst + 1, cst - 1, false, false);
+        return state;
+      }
+      case 'DEVELOP_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'develop' || pd.stage !== 'gain') return state;
+        const card = action.card;
+        if (card == null || !C()[card] || NON_SUPPLY.has(card) || (state.supply[card] || 0) <= 0) return state;
+        const cc = cardCost(state, card);
+        let hiDone = pd.hiDone, loDone = pd.loDone;
+        if (!hiDone && cc === pd.hi) hiDone = true;
+        else if (!loDone && cc === pd.lo) loDone = true;
+        else return state; // どちらのコスト帯とも一致しない
+        gain(state, pd.player, card, 'deck');
+        log(state, `${state.players[pd.player].name} は「${C()[card].name}」を山札の上に獲得した（開発）。`);
+        developAdvance(state, pd.player, pd.hi, pd.lo, hiDone, loDone);
+        return state;
+      }
+      case 'ORACLE_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'oracle' || pd.stage !== 'react') return state;
+        oracleReveal(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'ORACLE_DECIDE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'oracle' || pd.stage !== 'decide') return state;
+        const tp = state.players[pd.victim];
+        const cards = (pd.cards || []).slice();
+        // ★pending は 'oracle' のまま保持したまま捨て処理する＝tunnel の金貨獲得等が trader_react 等の
+        //   獲得時対話を立てて攻撃キュー（残りの被害者・使用者の+2カード）を潰すのを防ぐ。
+        if (action.discard) {
+          cards.forEach((c) => tp.discard.push(c));
+          log(state, `${state.players[pd.source].name} は ${tp.name} の公開2枚を捨てさせた（神託）。`);
+          triggerOnDiscard(state, pd.victim, cards, true);
+        } else {
+          let order = Array.isArray(action.order) && action.order.length === cards.length ? action.order.slice() : cards.slice();
+          const chk = cards.slice(); let okOrder = true;
+          for (const c of order) { const i = chk.indexOf(c); if (i < 0) { okOrder = false; break; } chk.splice(i, 1); }
+          if (!okOrder) order = cards.slice();
+          for (let i = order.length - 1; i >= 0; i--) tp.deck.unshift(order[i]); // order[0] が一番上
+          log(state, `${state.players[pd.source].name} は ${tp.name} の公開2枚を山札の上に戻した（神託）。`);
+        }
+        state.pending = null;
+        oracleEnterTarget(state, pd.source, pd.queue);
+        return state;
+      }
+      case 'JACK_LOOK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'jack' || pd.stage !== 'look') return state;
+        const pl = state.players[pd.player];
+        let discarded = null;
+        if (action.discard && pl.deck.length > 0) { discarded = pl.deck.shift(); pl.discard.push(discarded); log(state, `${pl.name} は何でも屋で山札の上を捨てた。`); }
+        if (discarded) triggerOnDiscard(state, pd.player, [discarded], true); // この後 draw/trash が続くので織工は自動
+        jackDrawTo5(state, pd.player);
+        return state;
+      }
+      case 'JACK_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'jack' || pd.stage !== 'trash') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        if (card == null) { state.pending = null; return state; } // 廃棄しない（任意）
+        if (pl.hand.indexOf(card) < 0 || DOM.isType(card, 'treasure')) return state; // 財宝でない札のみ
+        removeOne(pl.hand, card); trashOwn(state, pd.player, card);
+        log(state, `${pl.name} は「${C()[card].name}」を廃棄した（何でも屋）。`);
+        state.pending = null;
+        return state;
+      }
+      case 'NOBLE_BRIGAND_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'noble_brigand' || pd.stage !== 'react') return state;
+        nobleBrigandReveal(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'NOBLE_BRIGAND_PICK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'noble_brigand' || pd.stage !== 'pick') return state;
+        const card = action.card;
+        if ((card !== 'silver' && card !== 'gold') || (pd.revealed || []).indexOf(card) < 0) return state;
+        nobleBrigandResolve(state, pd.source, pd.victim, pd.revealed, card, pd.queue);
+        return state;
+      }
+      case 'SPICE_MERCHANT_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'spice_merchant' || pd.stage !== 'trash') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        if (card == null) { state.pending = null; return state; } // 廃棄しない＝効果なし
+        if (pl.hand.indexOf(card) < 0 || !DOM.isType(card, 'treasure')) return state;
+        removeOne(pl.hand, card); trashOwn(state, pd.player, card);
+        log(state, `${pl.name} は「${C()[card].name}」を廃棄した（香辛料商人）。`);
+        state.pending = { type: 'spice_merchant', stage: 'choose', player: pd.player };
+        return state;
+      }
+      case 'SPICE_MERCHANT_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'spice_merchant' || pd.stage !== 'choose') return state;
+        if (action.choice === 'cards') { draw(state, pd.player, 2); t.actions += 1; log(state, `${me.name} は香辛料商人（+2カード +1アクション）。`); }
+        else { t.coins += 2; t.buys += 1; log(state, `${me.name} は香辛料商人（+2コイン +1購入）。`); }
+        state.pending = null;
+        return state;
+      }
+      case 'TRADER_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'trader' || pd.stage !== 'trash') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        if (card == null || pl.hand.indexOf(card) < 0) return state; // 廃棄必須
+        removeOne(pl.hand, card); trashOwn(state, pd.player, card);
+        const cst = cardCost(state, card);
+        let g = 0; for (let i = 0; i < cst; i++) if (gain(state, pd.player, 'silver', 'discard')) g++;
+        log(state, `${pl.name} は「${C()[card].name}」を廃棄し 銀貨 ${g}枚 を獲得した（交易商人）。`);
+        state.pending = null;
+        return state;
+      }
+      case 'TRADER_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'trader_react') return state;
+        const pl = state.players[pd.player];
+        if (action.reveal && pl.hand.includes('trader')) {
+          const zone = pd.dest === 'hand' ? pl.hand : (pd.dest === 'deck' ? pl.deck : pl.discard);
+          if (removeOne(zone, pd.card)) {
+            state.supply[pd.card] = (state.supply[pd.card] || 0) + 1; // 獲得しかけたカードをサプライへ戻す
+            log(state, `${pl.name} は交易商人を公開し、「${C()[pd.card].name}」の代わりに銀貨を獲得した。`);
+            gain(state, pd.player, 'silver', 'discard');
+          }
+        }
+        state.pending = null;
+        return state;
+      }
+      case 'CARTOGRAPHER_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'cartographer') return state;
+        const pl = state.players[pd.player];
+        const look = (pd.cards || []).slice();
+        const discard = Array.isArray(action.discard) ? action.discard : [];
+        const top = Array.isArray(action.top) ? action.top : [];
+        const chk = look.slice();
+        for (const c of discard.concat(top)) { const i = chk.indexOf(c); if (i < 0) return state; chk.splice(i, 1); }
+        if (chk.length !== 0) return state; // discard+top が look の並べ替えであること
+        discard.forEach((c) => pl.discard.push(c));
+        for (let i = top.length - 1; i >= 0; i--) pl.deck.unshift(top[i]); // top[0] が一番上
+        log(state, `${pl.name} は地図職人（${discard.length}枚 捨て、${top.length}枚 を山札の上へ）。`);
+        state.pending = null;
+        if (discard.length) triggerOnDiscard(state, pd.player, discard, true);
+        return state;
+      }
+      case 'EMBASSY_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'embassy') return state;
+        const pl = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length !== Math.min(3, pl.hand.length)) return state;
+        const copy = pl.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        cards.forEach((c) => { removeOne(pl.hand, c); pl.discard.push(c); });
+        log(state, `${pl.name} は ${cards.length}枚 捨てた（大使館）。`);
+        state.pending = null;
+        triggerOnDiscard(state, pd.player, cards);
+        return state;
+      }
+      case 'INN_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'inn') return state;
+        const pl = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length !== Math.min(2, pl.hand.length)) return state;
+        const copy = pl.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        cards.forEach((c) => { removeOne(pl.hand, c); pl.discard.push(c); });
+        log(state, `${pl.name} は ${cards.length}枚 捨てた（宿屋）。`);
+        state.pending = null;
+        triggerOnDiscard(state, pd.player, cards);
+        return state;
+      }
+      case 'INN_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'inn_gain') return state;
+        const pl = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        const copy = pl.discard.slice();
+        for (const c of cards) { if (!DOM.isType(c, 'action') || !removeOne(copy, c)) return state; }
+        cards.forEach((c) => removeOne(pl.discard, c));
+        pl.deck = shuffle(pl.deck.concat(cards));
+        log(state, `${pl.name} は宿屋で 捨て札のアクション ${cards.length}枚 を山札に混ぜてシャッフルした。`);
+        state.pending = null;
+        return state;
+      }
+      case 'MANDARIN_TOPDECK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'mandarin') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        if (card == null || pl.hand.indexOf(card) < 0) return state; // 手札1枚を山札の上へ（必須）
+        removeOne(pl.hand, card); pl.deck.unshift(card);
+        log(state, `${pl.name} は手札1枚を山札の上に置いた（役人）。`);
+        state.pending = null;
+        return state;
+      }
+      case 'MARGRAVE_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'margrave' || pd.stage !== 'react') return state;
+        margraveApply(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'MARGRAVE_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'margrave' || pd.stage !== 'discard') return state;
+        const v = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (v.hand.length - cards.length !== Math.min(3, v.hand.length)) return state;
+        const copy = v.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        cards.forEach((c) => { removeOne(v.hand, c); v.discard.push(c); });
+        log(state, `${v.name} は手札を ${cards.length}枚 捨てた（辺境伯）。`);
+        state.pending = null;
+        triggerOnDiscard(state, pd.player, cards);
+        if (state.pending) return state;
+        margraveEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+      case 'STABLES_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'stables') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        if (card == null) { state.pending = null; return state; } // 捨てない＝効果なし
+        if (pl.hand.indexOf(card) < 0 || !DOM.isType(card, 'treasure')) return state;
+        removeOne(pl.hand, card); pl.discard.push(card);
+        draw(state, pd.player, 3); t.actions += 1;
+        log(state, `${pl.name} は財宝1枚を捨てて +3カード +1アクション（厩舎）。`);
+        state.pending = null;
+        return state;
+      }
+      case 'BORDER_VILLAGE_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'border_village') return state;
+        finishGain(state, pd, action.card, (id) => !!C()[id] && !NON_SUPPLY.has(id) && cardCost(state, id) <= pd.maxCost, 'discard', '獲得した（国境の村）。');
+        return state;
+      }
+      case 'WEAVER_MODE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'weaver' || pd.stage) return state; // 初期段階のみ（モード選択）
+        if (action.mode === 'silver') {
+          let g = 0; for (let i = 0; i < 2; i++) if (gain(state, pd.player, 'silver', 'discard')) g++;
+          log(state, `${state.players[pd.player].name} は織工で 銀貨 ${g}枚 を獲得した。`);
+          state.pending = null;
+        } else {
+          state.pending = { type: 'weaver', stage: 'gain', player: pd.player };
+        }
+        return state;
+      }
+      case 'WEAVER_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'weaver' || pd.stage !== 'gain') return state;
+        finishGain(state, pd, action.card, (id) => !!C()[id] && !NON_SUPPLY.has(id) && cardCost(state, id) <= 4, 'discard', '獲得した（織工）。');
+        return state;
+      }
+      case 'SOUK_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'souk_trash') return state;
+        const pl = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length > 2) return state; // 最大2枚
+        const copy = pl.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        cards.forEach((c) => { removeOne(pl.hand, c); trashOwn(state, pd.player, c); });
+        if (cards.length) log(state, `${pl.name} はスークの獲得で 手札 ${cards.length}枚 を廃棄した。`);
+        state.pending = null;
+        return state;
+      }
+      case 'GUARD_DOG_REACT': {
+        // 異郷：他プレイヤーがアタックを使ったとき、手札の番犬を先に使う（免疫にはならず、pending は据え置き）。
+        const pd = state.pending;
+        if (!pd || !isAttackReactPending(pd)) return state;
+        const pl = state.players[pd.player];
+        if (!removeOne(pl.hand, 'guard_dog')) return state;
+        pl.inPlay.push('guard_dog');
+        draw(state, pd.player, 2);
+        const extra = pl.hand.length <= 5;
+        if (extra) draw(state, pd.player, 2);
+        log(state, `${pl.name} は番犬を先に使った（+2カード${extra ? '、さらに+2カード' : ''}）。`);
+        return state; // pending 据え置き＝この後さらに堀公開/受けるを選べる
+      }
+      case 'BERSERKER_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'berserker' || pd.stage !== 'gain') return state;
+        const canGain = (id) => !!C()[id] && !NON_SUPPLY.has(id) && cardCost(state, id) <= pd.maxCost;
+        if (action.card == null) {
+          if (anyGainable(state, canGain)) return state; // 獲得先があるのに辞退＝拒否（必須）
+          berserkerLaunchAttack(state, pd.player); return state;
+        }
+        if (!canGain(action.card) || (state.supply[action.card] || 0) <= 0) return state;
+        gain(state, pd.player, action.card, 'discard');
+        log(state, `${state.players[pd.player].name} は「${C()[action.card].name}」を獲得した（狂戦士）。`);
+        berserkerLaunchAttack(state, pd.player);
+        return state;
+      }
+      case 'BERSERKER_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'berserker' || pd.stage !== 'react') return state;
+        berserkerApply(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'BERSERKER_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'berserker' || pd.stage !== 'discard') return state;
+        const v = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (v.hand.length - cards.length !== Math.min(3, v.hand.length)) return state;
+        const copy = v.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        cards.forEach((c) => { removeOne(v.hand, c); v.discard.push(c); });
+        log(state, `${v.name} は手札を ${cards.length}枚 捨てた（狂戦士）。`);
+        state.pending = null;
+        triggerOnDiscard(state, pd.player, cards);
+        if (state.pending) return state;
+        berserkerEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+      case 'WHEELWRIGHT_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'wheelwright' || pd.stage !== 'discard') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        if (card == null) { state.pending = null; return state; } // 捨てない
+        if (pl.hand.indexOf(card) < 0) return state;
+        removeOne(pl.hand, card); pl.discard.push(card);
+        const cst = cardCost(state, card);
+        log(state, `${pl.name} は「${C()[card].name}」を捨てた（車大工）。`);
+        triggerOnDiscard(state, pd.player, [card], true); // この後 獲得ステップがあるので織工は自動
+        if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && DOM.isType(id, 'action') && cardCost(state, id) <= cst)) {
+          state.pending = { type: 'wheelwright', stage: 'gain', player: pd.player, maxCost: cst };
+        } else {
+          state.pending = null;
+        }
+        return state;
+      }
+      case 'WHEELWRIGHT_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'wheelwright' || pd.stage !== 'gain') return state;
+        finishGain(state, pd, action.card, (id) => !!C()[id] && !NON_SUPPLY.has(id) && DOM.isType(id, 'action') && cardCost(state, id) <= pd.maxCost, 'discard', 'アクションを獲得した（車大工）。');
+        return state;
+      }
+      case 'WITCHS_HUT_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'witchs_hut' || pd.stage !== 'discard') return state;
+        const pl = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length !== Math.min(2, pl.hand.length)) return state;
+        const copy = pl.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        if (cards.length) reveal(state, pd.player, cards, '魔女の小屋で公開して捨てる');
+        cards.forEach((c) => { removeOne(pl.hand, c); pl.discard.push(c); });
+        const bothActions = cards.length === 2 && cards.every((c) => DOM.isType(c, 'action'));
+        log(state, `${pl.name} は魔女の小屋で ${cards.length}枚 を公開して捨てた${bothActions ? '（両方アクション→呪い配布）' : ''}。`);
+        state.pending = null;
+        triggerOnDiscard(state, pd.player, cards, true);
+        if (bothActions && !state.pending) {
+          const q = [];
+          for (let k = 1; k < state.players.length; k++) q.push((pd.player + k) % state.players.length);
+          witchsHutEnterVictim(state, pd.player, q);
+        }
+        return state;
+      }
+      case 'WITCHS_HUT_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'witchs_hut' || pd.stage !== 'react') return state;
+        witchsHutCurse(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'CAULDRON_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'cauldron' || pd.stage !== 'react') return state;
+        cauldronCurse(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'DUCHESS_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'duchess_gain') return state;
+        if (action.gain && (state.supply.duchess || 0) > 0) {
+          gain(state, pd.player, 'duchess', 'discard');
+          log(state, `${state.players[pd.player].name} は公領の獲得で 公爵夫人1枚 を獲得した。`);
+        }
+        state.pending = null;
+        return state;
+      }
+      case 'FARMLAND_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'farmland' || pd.stage !== 'trash') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        if (card == null || pl.hand.indexOf(card) < 0) return state; // 廃棄必須（購入時）
+        removeOne(pl.hand, card); trashOwn(state, pd.player, card);
+        const exact = cardCost(state, card) + 2;
+        log(state, `${pl.name} は「${C()[card].name}」を廃棄した（農地）。`);
+        if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) === exact)) {
+          state.pending = { type: 'farmland', stage: 'gain', player: pd.player, exactCost: exact };
+        } else {
+          state.pending = null;
+        }
+        return state;
+      }
+      case 'FARMLAND_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'farmland' || pd.stage !== 'gain') return state;
+        finishGain(state, pd, action.card, (id) => !!C()[id] && !NON_SUPPLY.has(id) && cardCost(state, id) === pd.exactCost, 'discard', '獲得した（農地）。');
+        return state;
+      }
+      case 'HAGGLER_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'haggler') return state;
+        const canGain = (id) => !!C()[id] && !NON_SUPPLY.has(id) && !DOM.isType(id, 'victory') && cardCost(state, id) <= pd.maxCost;
+        if (action.card == null) {
+          if (anyGainable(state, canGain)) return state; // 獲得先があるのに辞退＝拒否（値切り屋は必須）
+          state.pending = null; return state;
+        }
+        if (!canGain(action.card) || (state.supply[action.card] || 0) <= 0) return state;
+        gain(state, pd.player, action.card, 'discard');
+        log(state, `${state.players[pd.player].name} は値切り屋で「${C()[action.card].name}」を獲得した。`);
+        const remaining = (pd.remaining || 1) - 1;
+        state.pending = (remaining > 0 && anyGainable(state, canGain)) ? { type: 'haggler', player: pd.player, remaining, maxCost: pd.maxCost } : null;
+        return state;
+      }
+      case 'FOOLS_GOLD_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'fools_gold_react') return state;
+        const pl = state.players[pd.player];
+        if (action.trash && pl.hand.includes('fools_gold')) {
+          removeOne(pl.hand, 'fools_gold'); trashOwn(state, pd.player, 'fools_gold');
+          gain(state, pd.player, 'gold', 'deck');
+          log(state, `${pl.name} は愚者の黄金を廃棄し、金貨1枚を山札の上に獲得した。`);
+        }
+        foolsGoldReactEnter(state, pd.queue);
+        return state;
+      }
+      case 'IGG_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'igg_play') return state;
+        if (action.gain) { if (gain(state, pd.player, 'copper', 'hand')) log(state, `${state.players[pd.player].name} は不正利得で 銅貨1枚を手札に獲得した。`); }
+        state.pending = null;
+        return state;
+      }
+      case 'SCHEME_CLEANUP': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'scheme_cleanup') return state;
+        const pl = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length > (pd.max || 0)) return state;
+        const copy = pl.inPlay.slice();
+        for (const c of cards) { if (!DOM.isType(c, 'action') || DOM.isType(c, 'duration') || !removeOne(copy, c)) return state; }
+        cards.forEach((c) => { removeOne(pl.inPlay, c); pl.deck.unshift(c); });
+        if (cards.length) log(state, `${pl.name} は策謀で ${cards.length}枚 を山札の上に置いた。`);
+        state.pending = null;
+        cleanupAndAdvance(state);
+        return state;
+      }
+
       default:
         return state;
     }
@@ -5046,6 +6046,16 @@
     'STONEMASON_TRASH', 'STONEMASON_GAIN', 'DOCTOR_NAME', 'DOCTOR_ORDER', 'ADVISOR_CHOOSE',
     'PLAZA_DISCARD', 'TAXMAN_TRASH', 'TAXMAN_GAIN', 'TAXMAN_REACT',
     'BUTCHER_TRASH', 'BUTCHER_PAY', 'BUTCHER_GAIN', 'JOURNEYMAN_NAME', 'SOOTHSAYER_REACT',
+    // 異郷
+    'OASIS_RESOLVE', 'DUCHESS_LOOK', 'DEVELOP_TRASH', 'DEVELOP_GAIN', 'ORACLE_REACT', 'ORACLE_DECIDE',
+    'JACK_LOOK', 'JACK_TRASH', 'NOBLE_BRIGAND_REACT', 'NOBLE_BRIGAND_PICK',
+    'SPICE_MERCHANT_TRASH', 'SPICE_MERCHANT_CHOOSE', 'TRADER_TRASH', 'TRADER_REACT',
+    'CARTOGRAPHER_RESOLVE', 'EMBASSY_DISCARD', 'INN_DISCARD', 'INN_GAIN', 'MANDARIN_TOPDECK',
+    'MARGRAVE_REACT', 'MARGRAVE_DISCARD', 'STABLES_DISCARD', 'BORDER_VILLAGE_GAIN',
+    'WEAVER_MODE', 'WEAVER_GAIN', 'SOUK_TRASH', 'GUARD_DOG_REACT',
+    'BERSERKER_GAIN', 'BERSERKER_REACT', 'BERSERKER_DISCARD',
+    'WHEELWRIGHT_DISCARD', 'WHEELWRIGHT_GAIN', 'WITCHS_HUT_DISCARD', 'WITCHS_HUT_REACT', 'CAULDRON_REACT',
+    'DUCHESS_GAIN', 'FARMLAND_TRASH', 'FARMLAND_GAIN', 'HAGGLER_GAIN', 'FOOLS_GOLD_REACT', 'IGG_PLAY', 'SCHEME_CLEANUP',
   ]);
 
   /* ---------- 公開API ---------- */

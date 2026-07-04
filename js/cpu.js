@@ -149,6 +149,16 @@
     if (has('plaza')) return 'plaza';                     // +1カード+2アクション（財宝を捨てて財源）
     if (has('herald')) return 'herald';                   // +1カード+1アクション（山札の上がアクションなら使う）
     if (has('advisor')) return 'advisor';                 // +1アクション（上3枚→左隣が1枚捨てさせ、残りを手札へ）
+    // 異郷：非ターミナル（+アクション付き）
+    if (has('border_village')) return 'border_village';   // +1カード+2アクション
+    if (has('crossroads') && (!t.crossroadsPlayed || p.hand.some((c) => isType(c, 'victory')))) return 'crossroads'; // 初回+3アクション/勝利点で+カード
+    if (has('highway')) return 'highway';                 // +1カード+1アクション（全カード-1コスト）
+    if (has('inn')) return 'inn';                         // +2カード+2アクション（2枚捨て）
+    if (has('cartographer')) return 'cartographer';       // +1カード+1アクション（山札整理）
+    if (has('oasis')) return 'oasis';                     // +1カード+1アクション+1コイン（1枚捨て）
+    if (has('scheme')) return 'scheme';                   // +1カード+1アクション（片付けで山札の上へ）
+    if (has('trail')) return 'trail';                     // +1カード+1アクション
+    if (has('wheelwright')) return 'wheelwright';         // +1カード+1アクション（捨てて格上げ獲得）
     // --- ターミナル（効果の大きい順）---
     if (has('golem')) return 'golem';                     // 山札のアクション2枚を使う
     if (has('herbalist')) return 'herbalist';             // +1購入+1コイン
@@ -187,6 +197,25 @@
     if (has('stonemason') && (has('copper') || has('curse'))) return 'stonemason';
     // 医者＝不要札を山札から抜ける見込みがあるときだけ（ターミナルなので無駄打ち回避）。
     if (has('doctor') && (owned(p, 'curse') > 0 || owned(p, 'estate') > 0 || owned(p, 'copper') > 3)) return 'doctor';
+    // 異郷：ターミナル（アタック＞ドロー＞財源系）
+    if (has('margrave')) return 'margrave';               // +3カード+1購入＋アタック（強力）
+    if (has('witchs_hut')) return 'witchs_hut';           // +4カード＋（両方アクション捨てで）呪い
+    if (has('oracle')) return 'oracle';                   // 相手妨害＋2カード
+    if (has('berserker')) return 'berserker';             // 格下げ獲得＋相手手札削り
+    if (has('noble_brigand')) return 'noble_brigand';     // +1コイン＋相手の銀/金を奪う
+    if (has('embassy')) return 'embassy';                 // +5カード→3枚捨て
+    if (has('guard_dog')) return 'guard_dog';             // +2(〜4)カード
+    if (has('jack_of_all_trades')) return 'jack_of_all_trades'; // 銀貨獲得＋圧縮
+    if (has('mandarin')) return 'mandarin';               // +3コイン＋財宝を山札の上へ
+    if (has('souk')) return 'souk';                       // +1購入＋大量コイン
+    if (has('haggler')) return 'haggler';                 // +2コイン＋購入時に格下げ獲得
+    if (has('duchess')) return 'duchess';                 // +2コイン
+    if (has('nomad_camp')) return 'nomad_camp';           // +2コイン+1購入
+    if (has('nomads')) return 'nomads';                   // +2コイン+1購入
+    if (has('weaver')) return 'weaver';                   // 銀貨2枚/コスト4以下を獲得
+    if (has('spice_merchant') && p.hand.includes('copper')) return 'spice_merchant'; // 銅貨を廃棄→ボーナス
+    if (has('stables') && p.hand.includes('copper')) return 'stables';               // 銅貨を捨て→+3カード+1アクション
+    if (has('develop') && p.hand.some((c) => c === 'estate' || c === 'copper' || isType(c, 'curse'))) return 'develop'; // 不要札を2枚に格上げ
     // 玉座の間: 2回使える別アクションが手札にあるときだけ（無駄打ち回避）
     if (has('throne_room') && p.hand.some((c) => isType(c, 'action') && c !== 'throne_room')) return 'throne_room';
     if (has('council_room')) return 'council_room'; // +4カード+1購入
@@ -279,6 +308,8 @@
     if (vineyards) vp += vineyards * Math.floor(cards.filter((c) => isType(c, 'action')).length / 3);
     const fairgrounds = cards.filter((c) => c === 'fairgrounds').length; // 収穫祭：品評会（engine.vpOf と同等に）
     if (fairgrounds) vp += fairgrounds * 2 * Math.floor(new Set(cards).size / 5);
+    const silkRoads = cards.filter((c) => c === 'silk_road').length; // 異郷：絹の道（勝利点カード4枚毎に1点）
+    if (silkRoads) vp += silkRoads * Math.floor(cards.filter((c) => isType(c, 'victory')).length / 4);
     vp += p.vpTokens || 0; // 繁栄：VPトークン
     return vp;
   }
@@ -567,6 +598,11 @@
     if (pd && p.hand && p.hand.includes('horse_traders') &&
         (pd.stage === 'react' || pd.type === 'militia' || pd.type === 'torturer')) {
       return { type: 'HORSE_TRADERS_REACT' };
+    }
+    // 異郷：番犬＝アタックの反応窓で手札から先に使う（+2〜4カード・常に得。使うと手札から消え次回は通常判断）。
+    if (pd && p.hand && p.hand.includes('guard_dog') &&
+        (pd.stage === 'react' || pd.type === 'militia' || pd.type === 'torturer')) {
+      return { type: 'GUARD_DOG_REACT' };
     }
     switch (pd.type) {
       case 'cellar':
@@ -1155,6 +1191,103 @@
       case 'soothsayer':
         if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
         return { type: 'SOOTHSAYER_REACT' };
+
+      /* ===== 拡張: 異郷（Hinterlands）===== */
+      case 'oasis':
+        return { type: 'OASIS_RESOLVE', card: pickDiscards(p.hand, 1)[0] };
+      case 'duchess_look': {
+        const look = p.deck[0] || p.discard[0];
+        return { type: 'DUCHESS_LOOK', discard: !!look && (isType(look, 'victory') || isType(look, 'curse')) };
+      }
+      case 'develop':
+        if (pd.stage === 'trash') return { type: 'DEVELOP_TRASH', card: pickRemodelTrash(state, p) };
+        {
+          const pickFor = (c) => bestGainExact(state, c, { noVictory: true }) || bestGainExact(state, c);
+          if (!pd.hiDone && pickFor(pd.hi)) return { type: 'DEVELOP_GAIN', card: pickFor(pd.hi) };
+          if (!pd.loDone && pickFor(pd.lo)) return { type: 'DEVELOP_GAIN', card: pickFor(pd.lo) };
+          return { type: 'DEVELOP_GAIN', card: null };
+        }
+      case 'oracle':
+        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'ORACLE_REACT' }; }
+        {
+          const good = (pd.cards || []).some((c) => isTreasure(c) || isType(c, 'action'));
+          const mine = pd.victim === pd.source;
+          return { type: 'ORACLE_DECIDE', discard: mine ? !good : good, order: (pd.cards || []).slice() };
+        }
+      case 'jack':
+        if (pd.stage === 'look') { const top = p.deck[0]; return { type: 'JACK_LOOK', discard: !!top && (isType(top, 'victory') || isType(top, 'curse')) }; }
+        { const junk = p.hand.find((c) => !isTreasure(c) && (isType(c, 'curse') || c === 'estate')); return { type: 'JACK_TRASH', card: junk || null }; }
+      case 'noble_brigand':
+        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'NOBLE_BRIGAND_REACT' }; }
+        return { type: 'NOBLE_BRIGAND_PICK', card: (pd.revealed || []).includes('gold') ? 'gold' : 'silver' };
+      case 'spice_merchant':
+        if (pd.stage === 'trash') return { type: 'SPICE_MERCHANT_TRASH', card: p.hand.includes('copper') ? 'copper' : null };
+        return { type: 'SPICE_MERCHANT_CHOOSE', choice: p.hand.some((c) => isType(c, 'action')) ? 'cards' : 'coins' };
+      case 'trader':
+        return { type: 'TRADER_TRASH', card: pickRemodelTrash(state, p) };
+      case 'trader_react': {
+        const c = pd.card;
+        const worse = isType(c, 'curse') || c === 'copper' || c === 'estate' || (!isType(c, 'victory') && !isTreasure(c) && cost(state, c) < 3);
+        return { type: 'TRADER_REACT', reveal: !!worse };
+      }
+      case 'cartographer': {
+        const discard = (pd.cards || []).filter((c) => isDead(c));
+        const top = (pd.cards || []).filter((c) => !isDead(c)).sort((a, b) => keepValue(b) - keepValue(a));
+        return { type: 'CARTOGRAPHER_RESOLVE', discard, top };
+      }
+      case 'embassy':
+        return { type: 'EMBASSY_DISCARD', cards: pickDiscards(p.hand, Math.min(3, p.hand.length)) };
+      case 'inn':
+        return { type: 'INN_DISCARD', cards: pickDiscards(p.hand, Math.min(2, p.hand.length)) };
+      case 'inn_gain':
+        return { type: 'INN_GAIN', cards: p.discard.filter((c) => isType(c, 'action')) };
+      case 'mandarin':
+        return { type: 'MANDARIN_TOPDECK', card: p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0] };
+      case 'margrave':
+        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'MARGRAVE_REACT' }; }
+        return { type: 'MARGRAVE_DISCARD', cards: pickDiscards(p.hand, Math.max(0, p.hand.length - 3)) };
+      case 'stables':
+        return { type: 'STABLES_DISCARD', card: p.hand.includes('copper') ? 'copper' : null };
+      case 'border_village':
+        return { type: 'BORDER_VILLAGE_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
+      case 'weaver':
+        if (pd.stage === 'gain') return { type: 'WEAVER_GAIN', card: bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) };
+        return { type: 'WEAVER_MODE', mode: 'silver' }; // 銀貨2枚が堅実
+      case 'souk_trash':
+        return { type: 'SOUK_TRASH', cards: p.hand.filter((c) => isType(c, 'curse') || c === 'estate').slice(0, 2) };
+      case 'berserker':
+        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'BERSERKER_REACT' }; }
+        if (pd.stage === 'discard') return { type: 'BERSERKER_DISCARD', cards: pickDiscards(p.hand, Math.max(0, p.hand.length - 3)) };
+        return { type: 'BERSERKER_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
+      case 'wheelwright':
+        if (pd.stage === 'discard') return { type: 'WHEELWRIGHT_DISCARD', card: p.hand.includes('estate') ? 'estate' : null };
+        { const g = GAIN_ORDER.find((id) => C()[id] && isType(id, 'action') && !PRIZE_SET.has(id) && cost(state, id) <= pd.maxCost && sup(state, id) > 0); return { type: 'WHEELWRIGHT_GAIN', card: g || null }; }
+      case 'witchs_hut': {
+        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'WITCHS_HUT_REACT' }; }
+        const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => cost(state, a) - cost(state, b));
+        const cards = acts.length >= 2 ? acts.slice(0, 2) : pickDiscards(p.hand, Math.min(2, p.hand.length));
+        return { type: 'WITCHS_HUT_DISCARD', cards };
+      }
+      case 'cauldron':
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'CAULDRON_REACT' };
+      case 'duchess_gain':
+        return { type: 'DUCHESS_GAIN', gain: false }; // デッキを濁さないため受け取らない
+      case 'farmland':
+        if (pd.stage === 'trash') return { type: 'FARMLAND_TRASH', card: pickRemodelTrash(state, p) };
+        return { type: 'FARMLAND_GAIN', card: bestGainExact(state, pd.exactCost, { noVictory: true }) || bestGainExact(state, pd.exactCost) };
+      case 'haggler':
+        // 兄弟(border_village/weaver/berserker/farmland)と同じく curse を含むフォールバックを持つ
+        // （engine の canGain は非勝利点＝呪いを許可＝必須獲得。noVictory だけだと呪いのみの局面で null→無限ループ）。
+        return { type: 'HAGGLER_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
+      case 'fools_gold_react':
+        return { type: 'FOOLS_GOLD_REACT', trash: true };
+      case 'igg_play':
+        return { type: 'IGG_PLAY', gain: false };
+      case 'scheme_cleanup': {
+        const acts = p.inPlay.filter((c) => isType(c, 'action') && !isType(c, 'duration')).sort((a, b) => throneValue(b) - throneValue(a)).slice(0, pd.max || 0);
+        return { type: 'SCHEME_CLEANUP', cards: acts };
+      }
 
       default:
         return { type: 'END_TURN' };

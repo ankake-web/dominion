@@ -629,6 +629,10 @@
   //   セットアップ=パン屋(開始時 全員+1財源)、購入毎トリガー=商人ギルド。
   DOM.KINGDOM_GUILDS = ['candlestick_maker', 'stonemason', 'doctor', 'advisor', 'taxman',
                         'herald', 'baker', 'butcher', 'merchant_guild', 'soothsayer'];
+  // 異郷 推奨10種。on-gain トリガー(国境の村/大使館系)・可変VP(絹の道)・on-discard リアクション(トンネル)・
+  //   on-buy(値切り屋/農地)・獲得置換(交易商人は混成で登場)・アタック(辺境伯)・財宝リアクション(愚者の黄金) を味わえる構成。
+  DOM.KINGDOM_HINTERLANDS = ['crossroads', 'fools_gold', 'develop', 'oasis', 'tunnel',
+                             'jack_of_all_trades', 'silk_road', 'haggler', 'margrave', 'border_village'];
   // 初版（第二版で廃止されたカードを含む懐かしのセット）
   DOM.KINGDOM_1E = ['cellar', 'chancellor', 'woodcutter', 'feast', 'militia',
                     'spy', 'thief', 'council_room', 'adventurer', 'market'];
@@ -709,6 +713,7 @@
     { id: 'prosperity',      kind: 'standard', name: '繁栄セット（第二版）', kingdom: DOM.KINGDOM_PROSPERITY },
     { id: 'cornucopia',      kind: 'standard', name: '収穫祭セット', kingdom: DOM.KINGDOM_CORNUCOPIA },
     { id: 'guilds',          kind: 'standard', name: 'ギルドセット', kingdom: DOM.KINGDOM_GUILDS },
+    { id: 'hinterlands',     kind: 'standard', name: '異郷セット', kingdom: DOM.KINGDOM_HINTERLANDS },
     // ---- おすすめ（テーマ別・固定10種）----
     { id: 'big-money',       kind: 'recommend', name: 'ビッグマネー', desc: 'お金を伸ばして属州を狙う王道',
       kingdom: ['chapel', 'moneylender', 'harbinger', 'throne_room', 'bureaucrat', 'poacher', 'market', 'mine', 'laboratory', 'sentry'] },
@@ -737,6 +742,7 @@
     { id: 'random-prosperity', kind: 'random', name: '繁栄から',     randomFrom: ['prosperity'] },
     { id: 'random-cornucopia', kind: 'random', name: '収穫祭から',   randomFrom: ['cornucopia'] },
     { id: 'random-guilds',   kind: 'random', name: 'ギルドから',     randomFrom: ['guilds'] },
+    { id: 'random-hinterlands', kind: 'random', name: '異郷から',    randomFrom: ['hinterlands'] },
     { id: 'random-intrigue', kind: 'random', name: '陰謀のみから',   randomFrom: ['intrigue'] },
     { id: 'random-basic',    kind: 'random', name: '基本のみから',   randomFrom: ['basic'] },
     { id: 'random-promo',    kind: 'random', name: 'プロモ込みから',  randomFrom: ['basic', 'intrigue', 'promo'] },

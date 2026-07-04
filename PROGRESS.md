@@ -1,9 +1,35 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-04 / branch `main`。**段階1(§0-3)＋ギルド段階2(§0-4)まで コミット＆push済（`6d1d69c`・本番デプロイ済）**。`sw.js` は **v31**。
+最終更新: 2026-07-05 / branch `main`。**段階1(§0-3)＋ギルド段階2(§0-4)まで push済（`6d1d69c`・本番デプロイ済）。異郷段階2(§0-5)＝コミット済・未push（push方針は§6参照）**。`sw.js` は **v32**。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
-**新セッションは まず `npm test` を実行し 23スイート・オールグリーン（exit 0・整合性2415件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
+**新セッションは まず `npm test` を実行し 25スイート・オールグリーン（exit 0・整合性2417件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
+
+---
+
+## 0-5. 段階2＝異郷（Hinterlands）35枚を実プレイ化（2026-07-05 完了）
+
+### 結論
+- **異郷の王国カード35種を段階2（実プレイ・完全忠実）で実装完了**。`DOM.CARD_SETS` に `hinterlands`（固定10種 `KINGDOM_HINTERLANDS`）＋`random-hinterlands` を追加し**出荷済み**。`sw.js` v31→**v32**。テスト **25スイート全緑**（`hinterlands.test.js` 83件＋`hinterlands-ui.test.js` 44件を新設・`package.json`登録・`invariants` に hinterlands/random-hinterlands も追加）。整合性 2415→**2417**。CPU序列 100/64/95 維持。
+- **固定10種 `DOM.KINGDOM_HINTERLANDS`**＝岐路/愚者の黄金/開発/オアシス/トンネル/何でも屋/絹の道/値切り屋/辺境伯/国境の村（on-gainトリガー・可変VP・on-discardリアクション・on-buy・アタック・財宝リアクションを味わえる showcase）。**公式の異郷専用10種は存在しない**＝常に混成なので自作。異郷は**特殊山・非サプライ・持続カードが無い**＝「4系統除外チェックリスト」不要でシンプルな部類。
+- **新機構をすべて新設（簡略化なし）**：
+  - **on-gainトリガー**（triggerOnGain 拡張）：自動＝キャッシュ(銅貨2)/大使館(他者銀貨)/不正利得(他者呪い・非アタック＝堀不可)/遊牧民の野営地(山札上)/遊牧民(+2コイン)/役人(場の財宝を山札上)。対話＝国境の村(安いカード獲得)/宿屋(捨て札アクションを山札へ混ぜる)/スーク(手札2枚廃棄)/公爵夫人(公領獲得で公爵夫人)/狂戦士(獲得時プレイ)。獲得時対話ゲート `_gainDepth===1 && !pending` の else-if 連鎖（1獲得=1対話）。
+  - **on-discardフック**（`triggerOnDiscard`）：トンネル(金貨自動)/小道(自動プレイ)/織工(獲得選択・noPromptで銀貨自動)。**異郷は基本/他拡張と混成しない**ので、フックは異郷の捨て札リデューサ（オアシス/地図職人/何でも屋/大使館/宿屋/公爵夫人/神託/辺境伯/狂戦士/魔女の小屋/車大工）にのみ配線。
+  - **on-trashフック**（`triggerOnTrash`＝trashOwn経由）：遊牧民(+2コイン)。
+  - **on-buyフック**（BUY内）：値切り屋(購入毎に格下げ獲得・while in play)/農地(廃棄→+2コスト獲得)/高貴な山賊(プレイ/購入の両方でアタック)。
+  - **獲得置換リアクション**（交易商人 trader_react）：自分の手番の獲得を銀貨に置換（サプライへ戻す）。**active本人・銀貨以外・pending無しのみ**（相手ターンの呪い獲得置換は非対応＝§6の既知簡略化）。
+  - **番犬**（guard_dog）：`hasReaction` 入り＝攻撃反応窓で先にプレイ（+2〜4カード・免疫にはならない・馬商人型）。
+  - **アタック6種**（辺境伯/神託/高貴な山賊/狂戦士/魔女の小屋/大釜）＝witch型 EnterVictim/Apply/REACT ＋ ATTACKS登録＋堀/灯台免疫。大釜＝このターン3回目のアクション獲得で呪い配布（actionsGainedThisTurn カウンタ）。
+  - **可変VP**（silk_road＝所持勝利点カード/4・vpOf/vpOfPlayer両方）／**コスト軽減**（highway＝場の枚数ぶん-1）／**策謀のクリンナップ**（END_TURN→scheme_cleanup で場の非持続アクションを山札上へ→cleanupAndAdvance）／**愚者の黄金**（1枚目$1/2枚目$4・他者の属州獲得で金貨化リアクション）。
+- **新pendingは全て4点セット**（engine reducer＋PLAYER_ACTIONS＋CPU decidePending＋UI viewPendingModal）。CPU＝chooseActionに35枚・decidePendingに全pending（終端保証＝必須獲得は候補あれば必ず非null）。evaluateKingdom は**異郷を MONEY 既定のまま**（§0の「半端エンジンは負け」を踏襲＝CPUは異郷で純ビッグマネー。CPU序列は無悪化を確認）。
+
+### 自作スモーク＋敵対レビュー（多エージェント6次元→独立検証）で バグ5件検出→修正
+- **自作スモーク（CPU 60戦＋3-4人48戦）で無限ループ3件**：神託(ORACLE_DECIDE)・辺境伯(MARGRAVE_DISCARD)・狂戦士(BERSERKER_DISCARD) の捨て札解決が **pending を null にせず前進**し、CPUが同じ捨てを反復→修正（`state.pending=null` を前進前に追加）。＝**新reducerで「捨て→triggerOnDiscard→次へ」型は null 忘れが定番の罠**。
+- **敵対レビューで2件（出荷到達は稀だが実在の潜在バグ）を追加修正**：(1)**値切り屋CPUのフォールバック欠落**（`bestGain(noVictory) || bestGain(...)` に揃える＝呪いしか無い局面で card:null→engine必須獲得と噛み合い無限ループ。兄弟border_village/weaver/berserker/farmlandは持っていた書き漏れ）。(2)**神託/公爵夫人の自分対象でトンネル捨て→金貨獲得が trader_react 等を立て、攻撃キュー（残り被害者＋使用者+2カード）を潰す**＝triggerOnDiscard中は pending を保持して獲得時対話を抑止するよう修正（回帰テスト2件追加）。
+- **偽陽性1件**（狂戦士×交易商人の pending 上書き）＝BERSERKER_GAIN は gain前に pending を保持＝trader ゲートで抑止済＝バグでない、を検証で確認。
+
+### 次（未着手）＝段階2の残り拡張（§5-1）
+- **着手順＝ ~~収穫祭~~✅ → ~~ギルド~~✅ → ~~異郷~~✅ → 新プロモ6 → 暗黒時代を全56に完成**。暗黒時代＝廃墟/騎士の混合山・避難所・戦利品/狂人/傭兵・要塞等のon-trash等（特殊山は§6の「4系統除外チェックリスト」必須）。設計図＝`docs/adding-cards.md`。
 
 ---
 
@@ -144,9 +170,9 @@
 ## 5. 未完了タスク（優先順。次セッションは 1. から）
 1. **段階2＝全カード実プレイ化（ユーザー決定・完全忠実）**。~~収穫祭13✅~~ ~~ギルド13✅~~ の次＝**異郷35＋褒賞5＋暗黒時代を全56に完成＋新プロモ6**。方針＝特殊山・全トリガー・command系まで**機構ごと新設**（簡略化しない）。
    - **実装の設計図＝`docs/adding-cards.md`**（全機構の file:line ＋コピー元パターン＋落とし穴。毎回これを見れば実装できる）。
-   - **着手順（新機構の少ない順）＝ ~~収穫祭~~✅ → ~~ギルド~~✅ → 異郷 → 新プロモ → 暗黒時代完成**。1拡張ずつ 効果+pending+CPU+UI+ATTACKS/PLAYER_ACTIONS+テスト → `npm test`緑 → コミット。**各拡張は完成してから CARD_SET 昇格**（＝中途の暗黒時代がデプロイに出ない）。
+   - **着手順（新機構の少ない順）＝ ~~収穫祭~~✅ → ~~ギルド~~✅ → ~~異郷~~✅(§0-5) → 新プロモ → 暗黒時代完成**。1拡張ずつ 効果+pending+CPU+UI+ATTACKS/PLAYER_ACTIONS+テスト → `npm test`緑 → コミット。**各拡張は完成してから CARD_SET 昇格**（＝中途の暗黒時代がデプロイに出ない）。
    - **✅収穫祭は完了（2026-07-04・§0-2）**。**✅段階1（画像化・カタログ）は残り全49枚[ギルド13＋暗黒時代残り36]完了（2026-07-04・§0-3・`651e3f6`）**。**✅ギルド13枚の段階2実プレイ化も完了（2026-07-04・§0-4）＝財源/過払い/アタック2種/公開/trash-to-gain を全て新設・出荷済み**。
-   - **次は異郷（35枚）を段階2実プレイ化**：新機構＝on-gainトリガー各種（宝の地図系/ホード類/margrave等）・可変VP（silk_road=勝利点数/4・feodum=銀貨数/3）・trader/inn/mandarin等の獲得置換。良いコピー元＝繁栄のtriggerOnGain・収穫祭/ギルドの可変VPブロック。設計図＝`docs/adding-cards.md`。
+   - **✅異郷35枚 完了（2026-07-05・§0-5）**＝on-gain/on-discard/on-trash/on-buyフック・獲得置換(交易商人)・番犬リアクション・アタック6種・可変VP(絹の道)・コスト軽減(街道)・策謀のクリンナップ を全て新設。**次は新プロモ6**（次いで暗黒時代を全56に完成）。
    - **新設が要る機構**：賞品Prizes山（収穫祭）／Bane（若き魔女）／可変VP fairgrounds/silk_road/feodum（vpOfに1ブロック）／持続 captain/church（armDuration+RESOLVER）／command procession/band_of_misfits/captain/trusty_steed（replayキュー）／王子prince（脇から毎ターン）／コイントークンCoffers（ギルド・per-player数値+COFFERS_SPEND）／overpay（ギルド）／廃墟Ruins・騎士Knights混合山＋戦利品/狂人/傭兵（暗黒時代・top-level配列/非サプライ）／避難所Shelters（開始デッキ置換）／on-trash・on-discardフック（暗黒時代・要塞/市場の広場等で新設、本人任意廃棄に限定）。
    - **暗黒時代の残り**：段階1未追加の王国15枚（junk_dealer/bandit_camp/rebuild/catacombs/graverobber/count/band_of_misfits/mystic/rogue/pillage/cultist/knights/counterfeit/hunting_grounds/altar）＋廃墟5/避難所3/騎士10/戦利品/狂人/傭兵 のカタログ定義＆GAIN_ORDER＆（絵は後入れ）も要。**絵は後で挿入方針**＝定義とロジックを先に、webpは枠+文字で生成orアート後入れ。
 2. **錬金術アートの△3枚最終確認（任意）**：変成/薬草商/薬剤師。差し替えは `asset/art/<id>.png` →`node tools/build-cards.js`→該当webpデプロイ。
@@ -160,6 +186,8 @@
 - **支配（Possession）の廃棄カード返却の簡略化＝到達不能を証明済み（監査⑤）＝意図的に未修正**：`possession` は alchemy プール専用で、複数プールを混ぜる出荷セット（random/random-promo/random-1e）はいずれも alchemy を含まない＝支配と外部拡張self-trashはどの出荷王国でも共存しない。全self-trashのtrashOwn化はアタック廃棄/供給廃棄の誤変換で**可到達バグを生むリスク**があり見送り。**混成alchemyモードを正式追加する時に一緒に対応**する方針。同型のポーション費用問題も到達不能（可到達だった大学のみガード済み）。
 - **支配のCPU簡略化**：CPUは支配を自動購入しない（`bestPotionBuy` で除外）。人間が使うぶんは支配者がCPUでも動作する。
 - **非サプライ数値キー山（賞品Prizes・将来の戦利品/狂人/傭兵）を足すときの必須チェックリスト**（§0-2のレビューで実際に踏んだ罠）：`NON_SUPPLY` set に登録し、**(1) `emptyPileCount`(3山終了) (2) `canBuyCard`(購入) (3) `blackMarket` 母集団（`createInitialState` の universe フィルタ） (4) 汎用獲得（engine の `*_GAIN` reducer と CPU `bestGain`/`bestGainExact`）** の4系統すべてから除外すること。特に「reducer だけガードして CPU 側を放置すると、CPU が拒否される獲得を出し続けて無限ループ」する（豊穣の角で実際に発生）＝**engine拒否とCPU非提案は必ずセット**。汎用獲得を持つ札（`horn_of_plenty` 等）は特に漏れやすい。
-- **段階1(§0-3)＋ギルド段階2(§0-4)は push済（`6d1d69c`・2026-07-04・ユーザー確認の上で本番デプロイ）**。以後の段階2作業（異郷等）も 完成→CARD_SET昇格→全テスト緑→**都度確認の上で** push。
+- **段階1(§0-3)＋ギルド段階2(§0-4)は push済（`6d1d69c`・2026-07-04・ユーザー確認の上で本番デプロイ）**。以後の段階2作業も 完成→CARD_SET昇格→全テスト緑→**都度確認の上で** push。
+- **異郷段階2(§0-5)＝コミット済・未push（2026-07-05）**。同セッションで並行中の「冒険＋帝国 段階1（画像カタログ化）」があるため、両方まとめて push するか個別かは**ユーザー確認の上で**判断。
+- **異郷の許容簡略化（到達が稀 or 忠実性のみ・敵対レビューで重大でないと確定）＝意図的に未実装**：(1)**交易商人の獲得置換は自分の手番の獲得のみ**（相手ターンの魔女等の呪い獲得を銀貨に置換する反応は非対応＝獲得時対話ゲートが active限定・相手ターンだと pending 競合で潰れるため。呪いはそのまま受ける＝安全側）。(2)**値切り屋/農地/高貴な山賊の on-buy は「1購入=1 pending」**＝farmland/noble_brigand を買うと同ターン場の値切り屋の強制獲得がスキップされ得る（複数 on-buy を並べる汎用キューが無いため。カード保存則は保持・ループ/クラッシュ無し）。(3)**develop 等の獲得で入れ子の獲得時対話（border_village等）は `!pending` ゲートでスキップ**。いずれも「on-buy/on-gain の汎用 pending キュー」を導入する時にまとめて対応する方針（現状は保存則・非ループを敵対レビューで確認済）。
 - **【既存・スコープ外の別課題】闇市場デッキに「段階1のみ（＝engineロジック未実装）のプール」が漏れる**：`createInitialState` の黒市universeは全 `Object.values(DOM.POOLS)` を平坦化するため、promo-pack/random-promo で黒市デッキに hinterlands/darkages/knights/ruins/shelters/darkages_np（＋spoils/madman/mercenary）が混入する。これらは段階1（applyEffect未実装＝買って使っても何も起きない死に札）。**ギルドの段階2化で guilds プールは playable になった**ので問題なし。残りは各拡張が段階2化される都度 自動解消。**根治するなら黒市universeを「CARD_SETSが参照する playable プールのみ」に絞る**（＝段階2化の順に自然消化。急がば注意：正しく除外しないと変種が減る）。敵対レビューが指摘（元からの挙動＝ギルド作業とは独立）。
 - **段階1で追加した暗黒時代の非サプライ札（戦利品/狂人/傭兵/騎士10種/廃墟5/避難所3）を段階2で実プレイ化する時は、上の「4系統除外チェックリスト」を必ず通す**。特殊山（廃墟＝混合順序山→top-level配列・invariants tally追加／騎士＝混合山／避難所＝開始デッキ置換）は `docs/adding-cards.md` §C に実装手順あり。新種別 knight/ruins/shelter は表示ラベルのみ実装済（engineロジックは段階2で新設）。
