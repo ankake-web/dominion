@@ -655,10 +655,19 @@
     if (interactive && state.pending) {
       frag.appendChild(viewPendingModal(state, state.pending));
     }
+    // ギルド：財源を使うオーバーレイ（pending ではない。購入フェイズ・自分の操作中のみ）。
+    if (interactive && UI.coffersOpen && !state.pending && state.turn.phase === 'buy' && state.turn.active === viewer) {
+      frag.appendChild(modalCoffersSpend(state, viewer));
+    } else if (UI.coffersOpen) {
+      UI.coffersOpen = false; // 条件を満たさなくなったら閉じる（フェイズ移行など）
+    }
     return frag;
   }
 
   function phaseLabel(ph) { return ph === 'action' ? 'アクション フェーズ' : '購入 フェーズ'; }
+  // ギルド：財源(Coffers)を使う王国か（財源を付与するカードが王国にあれば財源バッジ/使用ボタンを出す）。
+  const COFFERS_CARDS = ['candlestick_maker', 'plaza', 'baker', 'butcher', 'merchant_guild'];
+  function usesCoffers(kingdom) { return (kingdom || []).some((id) => COFFERS_CARDS.includes(id)); }
 
   /* ---------- 初心者モードの支援（案内・おすすめ買い物・カードのやさしい説明） ---------- */
   // 今のコインで買える中から、序盤に強い財宝＆勝ち筋を提案（盤面で黄色枠ハイライト）。
@@ -784,6 +793,10 @@
         // 錬金術：ポーションが供給される王国のときだけ POTION 量を表示（紫）。
         state.supply.potion != null
           ? h('div', { class: 'badge potion', style: 'background:#6b3fa0' }, h('div', { class: 'v' }, t.potions || 0), h('div', { class: 'k' }, 'POTION'))
+          : null,
+        // ギルド：財源(Coffers)を使う王国のときだけ COFFERS を表示（金色）。手番プレイヤーの財源を出す。
+        usesCoffers(state.kingdom)
+          ? h('div', { class: 'badge coffers', style: 'background:#b8860b' }, h('div', { class: 'v' }, active.coffers || 0), h('div', { class: 'k' }, '財源'))
           : null)
     );
 
@@ -973,9 +986,21 @@
     // 支配中は操作対象（被支配者=t.active）の手札で判定する（財宝を出すのも engine では被支配者の手札）。
     const hp = (t.possessedBy != null && t.possessedBy === viewer) ? state.players[t.active] : state.players[viewer];
     const hasTreasure = hp.hand.some((c) => DOM.CARDS[c].types.includes('treasure'));
+    // ギルド：財源(Coffers)を持っていれば「財源を使う」ボタン（購入フェイズ・1枚=+1コイン）。
+    const cofferBtn = (t.active === viewer && (state.players[viewer].coffers || 0) > 0)
+      ? h('button', { class: 'btn btn-block', style: 'background:#b8860b;color:#fff', onclick: () => { UI.coffersOpen = true; UI.amount = null; render(); } }, '💰 財源を使う（' + state.players[viewer].coffers + '）')
+      : null;
     return h('div', { class: 'actions-bar' },
       h('button', { class: 'btn btn-block', disabled: hasTreasure ? null : 'disabled', onclick: () => dispatch({ type: 'PLAY_ALL_TREASURES' }) }, '財宝を全部出す'),
+      cofferBtn,
       h('button', { class: 'btn btn-primary btn-block', onclick: () => endTurnTap(state, viewer) }, 'ターンを終える'));
+  }
+  // ギルド：財源を何枚使うか選ぶ（購入フェイズの任意タイミング。1枚=+1コイン）。pending ではない独立オーバーレイ。
+  function modalCoffersSpend(state, viewer) {
+    const coffers = state.players[viewer].coffers || 0;
+    return modalAmount('財源を使う', '財源を1枚使うごとに +1コイン になります（現在 ' + state.turn.coins + ' コイン）。', coffers, 0,
+      (n) => (n > 0 ? '財源を ' + n + '枚 使う（+' + n + 'コイン）' : '使わない'),
+      (n) => { UI.coffersOpen = false; if (n > 0) dispatch({ type: 'COFFERS_SPEND', amount: n }); else render(); });
   }
 
   // 買い忘れ防止: 財宝を出していない／2コイン以上残して購入権があるときは確認を挟む
@@ -1011,7 +1036,7 @@
   /* ---------- 選択モーダル ---------- */
   function viewPendingModal(state, pd) {
     const key = pd.type + (pd.stage || '');
-    if (UI._selKey !== key) { UI.selection = []; UI.sentryChoice = null; UI._selKey = key; }
+    if (UI._selKey !== key) { UI.selection = []; UI.sentryChoice = null; UI.amount = null; UI._selKey = key; }
     const p = state.players[pd.player];
 
     if (pd.type === 'cellar') return modalMultiHand(p, '地下貯蔵庫', '捨てるカードを選び、同じ枚数を引きます。（0枚でもOK）',
@@ -1279,6 +1304,40 @@
     ], 2, (choices) => dispatch({ type: 'TRUSTY_STEED_RESOLVE', choices }));
     if (pd.type === 'horn_of_plenty') return modalGainSupply(state, '豊穣の角 — 獲得', 'コスト ' + pd.maxCost + ' 以下のカードを1枚獲得します（勝利点なら豊穣の角を廃棄）。', (id) => effCost(state, id) <= pd.maxCost, (id) => dispatch({ type: 'HORN_OF_PLENTY_GAIN', card: id }));
 
+    /* ===== 拡張: ギルド（Guilds）===== */
+    if (pd.type === 'overpay') {
+      const info = {
+        masterpiece: '過払い1コインにつき銀貨1枚を獲得します。',
+        stonemason: '過払い額とちょうど同じコストのアクションカードを2枚獲得します。',
+        doctor: '過払い1コインにつき、山札の上を1枚見て 廃棄/捨て/戻す を選べます。',
+        herald: '過払い1コインにつき、捨て札から1枚を山札の上に置けます。',
+      }[pd.card] || '';
+      return modalAmount('過払い — 「' + DOM.CARDS[pd.card].name + '」', '追加で支払うコインを選びます（0＝過払いしない）。' + info, pd.max, 0,
+        (n) => (n > 0 ? '+' + n + 'コイン 過払いする' : '過払いしない'), (n) => dispatch({ type: 'OVERPAY_RESOLVE', amount: n }));
+    }
+    if (pd.type === 'stonemason_overpay') return modalGainSupply(state, '石工（過払い） — アクションを獲得', 'ちょうどコスト $' + pd.exact + ' のアクションカードを獲得します（残り ' + pd.remaining + ' 枚）。', (id) => DOM.isType(id, 'action') && effCost(state, id) === pd.exact, (id) => dispatch({ type: 'STONEMASON_OVERPAY_GAIN', card: id }));
+    if (pd.type === 'doctor_overpay') return modalOptions('医者（過払い） — 山札の上「' + DOM.CARDS[pd.card].name + '」', '残り ' + pd.remaining + ' 回。この札をどうしますか？', [
+      { label: 'そのまま（山札の上に戻す）', cls: 'btn-primary', on: () => dispatch({ type: 'DOCTOR_OVERPAY', choice: 'topdeck' }) },
+      { label: '捨て札にする', on: () => dispatch({ type: 'DOCTOR_OVERPAY', choice: 'discard' }) },
+      { label: '廃棄する', on: () => dispatch({ type: 'DOCTOR_OVERPAY', choice: 'trash' }) },
+    ]);
+    if (pd.type === 'herald_overpay') return modalPickList(state, '伝令官（過払い） — 山札の上に置く', '捨て札から1枚を選んで山札の上に置きます（残り ' + pd.remaining + ' 回）。', p.discard, '山札の上に置く', (id) => dispatch({ type: 'HERALD_OVERPAY', card: id }));
+    if (pd.type === 'stonemason' && pd.stage === 'trash') return modalSingleHand(p, '石工 — 廃棄', '手札から1枚を廃棄します（その後、それより安いカードを2枚獲得）。', () => true, (card) => dispatch({ type: 'STONEMASON_TRASH', card }), null, '廃棄する');
+    if (pd.type === 'stonemason' && pd.stage === 'gain') return modalGainSupply(state, '石工 — 獲得', 'コスト $' + (pd.maxCost - 1) + ' 以下のカードを獲得します（残り ' + pd.remaining + ' 枚）。', (id) => effCost(state, id) < pd.maxCost, (id) => dispatch({ type: 'STONEMASON_GAIN', card: id }));
+    if (pd.type === 'doctor' && pd.stage === 'name') return modalNameCard(state, '医者 — カードを指定', '山札の上3枚を公開し、指定と同名を全て廃棄します。1種を指定してください。', (id) => dispatch({ type: 'DOCTOR_NAME', card: id }));
+    if (pd.type === 'doctor' && pd.stage === 'order') return modalReorder('医者 — 山札の上に戻す', '廃棄しなかったカードを山札の上に戻す順番をタップで選びます（最初のタップが一番上）。', pd.cards, (order) => dispatch({ type: 'DOCTOR_ORDER', order }));
+    if (pd.type === 'advisor') return modalPickList(state, '助言者 — 捨てさせるカードを選ぶ', state.players[pd.source].name + ' が公開した ' + pd.cards.length + '枚 から、捨てさせる1枚を選びます（残りは ' + state.players[pd.source].name + ' の手札へ）。', pd.cards, '捨てさせる', (id) => dispatch({ type: 'ADVISOR_CHOOSE', card: id }));
+    if (pd.type === 'plaza') return modalSingleHand(p, '広場 — 財宝を捨てる', '財宝1枚を捨てると +1財源（しなくてもよい）。', (id) => DOM.isType(id, 'treasure'), (card) => dispatch({ type: 'PLAZA_DISCARD', card }), { label: '捨てない', on: () => dispatch({ type: 'PLAZA_DISCARD', card: null }) }, '捨てる');
+    if (pd.type === 'taxman' && pd.stage === 'trash') return modalSingleHand(p, '収税吏 — 財宝を廃棄', '手札の財宝1枚を廃棄できます（廃棄すると、そのコスト+$3までの財宝を山札の上に獲得し、相手に同名を捨てさせます）。', (id) => DOM.isType(id, 'treasure'), (card) => dispatch({ type: 'TAXMAN_TRASH', card }), { label: '廃棄しない', on: () => dispatch({ type: 'TAXMAN_TRASH', card: null }) }, '廃棄する');
+    if (pd.type === 'taxman' && pd.stage === 'gain') return modalGainSupply(state, '収税吏 — 財宝を獲得', 'コスト $' + pd.maxCost + ' 以下の財宝を山札の上に獲得します。', (id) => DOM.isType(id, 'treasure') && effCost(state, id) <= pd.maxCost, (id) => dispatch({ type: 'TAXMAN_GAIN', card: id }), () => dispatch({ type: 'TAXMAN_GAIN', card: null }));
+    if (pd.type === 'taxman' && pd.stage === 'react') return modalOptions('収税吏を受ける', '手札が5枚以上なら「' + DOM.CARDS[pd.trashedName].name + '」を1枚捨てます（無ければ手札を公開）。', reactOptions(p, pd, { type: 'TAXMAN_REACT' }));
+    if (pd.type === 'butcher' && pd.stage === 'trash') return modalSingleHand(p, '肉屋 — 廃棄', '手札1枚を廃棄できます（廃棄すると、財源を払って格上げ獲得）。', () => true, (card) => dispatch({ type: 'BUTCHER_TRASH', card }), { label: '廃棄しない', on: () => dispatch({ type: 'BUTCHER_TRASH', card: null }) }, '廃棄する');
+    if (pd.type === 'butcher' && pd.stage === 'pay') return modalAmount('肉屋 — 財源を支払う', '財源を支払うと、獲得できるカードのコスト上限が上がります（廃棄したカードのコスト $' + pd.trashedCost + ' ＋ 支払った財源）。', p.coffers || 0, 0,
+      (n) => '財源を ' + n + '枚 支払う（獲得上限 $' + (pd.trashedCost + n) + '）', (n) => dispatch({ type: 'BUTCHER_PAY', amount: n }));
+    if (pd.type === 'butcher' && pd.stage === 'gain') return modalGainSupply(state, '肉屋 — 獲得', 'コスト $' + pd.maxCost + ' 以下のカードを1枚獲得します。', (id) => effCost(state, id) <= pd.maxCost, (id) => dispatch({ type: 'BUTCHER_GAIN', card: id }), () => dispatch({ type: 'BUTCHER_GAIN', card: null }));
+    if (pd.type === 'journeyman') return modalNameCard(state, '熟練工 — カードを指定', '指定したカード以外が3枚公開されるまで山札を公開し、その3枚を手札に加えます。1種を指定してください。', (id) => dispatch({ type: 'JOURNEYMAN_NAME', card: id }));
+    if (pd.type === 'soothsayer' && pd.stage === 'react') return modalOptions('予言者を受ける', '呪い1枚を獲得します（獲得したら +1カード）。', reactOptions(p, pd, { type: 'SOOTHSAYER_REACT' }));
+
     return h('div');
   }
 
@@ -1545,6 +1604,19 @@
     const footer = (skipOnEmpty && (!elig.length || alwaysSkip))
       ? h('button', { class: 'btn btn-block', onclick: skipOnEmpty }, '獲得せずに進む') : null;
     return modalShell(title, desc, chips, footer);
+  }
+  // ギルド：数量を −/＋ ステッパーで選ぶ（過払い額・肉屋の財源支払い）。UI.amount に現在値を保持。
+  function modalAmount(title, desc, max, min, confirmLabel, onConfirm) {
+    min = min || 0;
+    if (typeof UI.amount !== 'number' || UI.amount < min || UI.amount > max) UI.amount = min;
+    const stepper = h('div', { style: 'display:flex;align-items:center;justify-content:center;gap:18px;margin:14px 0' },
+      h('button', { class: 'btn', style: 'width:56px;font-size:22px', disabled: UI.amount <= min ? 'disabled' : null, onclick: () => { if (UI.amount > min) { UI.amount--; render(); } } }, '−'),
+      h('div', { style: 'font-size:30px;font-weight:700;min-width:52px;text-align:center' }, String(UI.amount)),
+      h('button', { class: 'btn', style: 'width:56px;font-size:22px', disabled: UI.amount >= max ? 'disabled' : null, onclick: () => { if (UI.amount < max) { UI.amount++; render(); } } }, '＋'));
+    const footer = h('div', null, stepper,
+      // 確定時に UI.amount をクリア＝次の数量モーダル（同種の連続購入＝同一 pending キー）が前回値を引き継がない。
+      h('button', { class: 'btn btn-primary btn-block', onclick: () => { const v = UI.amount; UI.amount = null; onConfirm(v); } }, confirmLabel(UI.amount)));
+    return modalShell(title, desc, [], footer);
   }
   function modalShell(title, desc, chips, footer) {
     return h('div', { class: 'modal-scrim', onclick: (e) => { if (e.target.classList.contains('modal-scrim')) { /* 選択は閉じない */ } } },

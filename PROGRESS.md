@@ -1,9 +1,33 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-04 / branch `main`。**段階1(下記§0-3)まで コミット済＝`651e3f6`（※未push・pushは要確認）。それ以前はpush済**。`sw.js` は **v30**。
+最終更新: 2026-07-04 / branch `main`。**段階1(§0-3)＋ギルド段階2(§0-4)まで コミット済（※未push・pushは要確認）。それ以前はpush済**。`sw.js` は **v31**。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
-**新セッションは まず `npm test` を実行し 21スイート・オールグリーン（exit 0・整合性2413件・収穫祭107件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
+**新セッションは まず `npm test` を実行し 23スイート・オールグリーン（exit 0・整合性2415件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
+
+---
+
+## 0-4. 段階2＝ギルド（Guilds）13枚を実プレイ化（2026-07-04 完了）
+
+### 結論
+- **ギルドの王国カード13種を段階2（実プレイ・完全忠実）で実装完了**。`DOM.CARD_SETS` に `guilds`（固定10種 `KINGDOM_GUILDS`）＋`random-guilds` を追加し**出荷済み**。`sw.js` v30→**v31**。テスト **23スイート全緑**（`guilds.test.js` 81件＋`guilds-ui.test.js` 25件を新設・`package.json`登録・`invariants` に guilds/random-guilds も追加）。整合性 2413→**2415**。CPU序列 100/64/95 維持。
+- **固定10種 `DOM.KINGDOM_GUILDS`**＝蝋燭職人/石工/医者/助言者/収税吏/伝令官/パン屋/肉屋/商人ギルド/予言者（財源・過払い・アタック2種・公開・trash-to-gain・on-buy・setup を全て味わえる構成）。**公式のギルド専用10種は存在しない**（Guildsは13枚のみ＝常に基本/陰謀と混成。研究Workflowで確認）ので showcase 用の自作10種。
+- **新機構をすべて新設（簡略化なし）**：
+  - **財源 Coffers（＝日本語名「財源」）**＝per-player数値 `coffers`（createInitialStateで初期化・**公開＝マスク不要・VPに数えない**）。付与＝蝋燭職人/パン屋+1・肉屋+2・広場（財宝捨てで+1）・商人ギルド（購入毎）。消費＝`COFFERS_SPEND`（購入フェイズに1枚=+1コイン）。UI＝金色バッジ＋「💰財源を使う」ボタン＋数量ステッパー `modalAmount`。**パン屋のセットアップ**＝王国にbakerがあれば開始時 全員+1財源。
+  - **商人ギルド**＝`t.merchantGuildPlays`（このターンの使用回数）を購入毎に財源へ。**公式2E＝プレイ回数で累積**（玉座で2回使えば購入毎+2）＝場の枚数ではない。出荷セットでは玉座系と同居しないため差は出ないが忠実性のためプレイ回数で実装。
+  - **過払い overpay**＝`OVERPAY_CARDS`(石工/医者/名品/伝令官)。BUY後（残コインがあれば）`maybeStartOverpay`→`overpay` pending→`OVERPAY_RESOLVE`(額確定)→カード別 `applyOverpayEffect`。名品=銀貨/枚・石工=ちょうど同コストのアクション2枚(`stonemason_overpay`)・医者=1枚ずつ山札上を廃棄/捨て/戻す(`doctor_overpay`・私的なので**maskで伏せる**)・伝令官=捨て札から山札上へ(`herald_overpay`)。**闇市場購入でも過払いを提供**（promo-pack/random-promoで黒市デッキにギルド札が入るため到達可＝敵対レビューで確定・修正済）。
+  - **アタック2種**＝収税吏 taxman（財宝廃棄→+$3までの財宝を山札上に獲得→他の各自[手札5枚以上]が同名を捨てる。廃棄しなければ無効果）／予言者 soothsayer（金貨獲得→他の各自が呪い獲得→**引いたら+1カード**。呪い枯渇なら引かない）。`ATTACKS` 登録＋`*EnterVictim`＋堀/灯台免疫。
+  - **trash-to-gain**＝石工（廃棄→それより安い2枚）／肉屋（+2財源→廃棄→財源を払い(廃棄コスト+財源)以下を獲得）。**公開系**＝助言者（上3枚→**左隣**が1枚捨てさせ残りは使用者の手札へ・pending.player=左席）／熟練工（指定以外が3枚出るまで公開→手札）／伝令官（山札上を公開しアクションならプレイ）。
+- **新pendingは全て4点セット**（engine reducer＋PLAYER_ACTIONS＋CPU decidePending＋UI viewPendingModal）。CPU＝`chooseAction`に13枚・`decidePending`に全pending・**`coffersToSpend`**（財源を最小枚数だけ使って買いを底上げ・終端保証）・`evaluateKingdom`に`inPool('guilds')`追加（guilds→ENGINE＝CPUがエンジンを組む）・GAIN_ORDERに13枚を強度順再配置。
+
+### 敵対的レビュー（多エージェントWorkflow・7次元→再現検証）＝確定バグ2件（両方修正済）
+- **【低】闇市場で過払い対象カードを買っても過払いが飛ばされていた**（「出荷セットで到達不能」コメントが誤り＝promo-pack/random-promoで黒市デッキに全POOLS[ギルド含む]が入る）。→ `BLACK_MARKET_BUY` に `maybeStartOverpay` を追加＋回帰テスト。
+- **【低】過払い数量ステッパーが連続購入で前回値を持ち越す**（同一 pending キー`overpay`でリセットされず、意図しない過払いの恐れ）。→ `modalAmount` の確定時に `UI.amount=null`（card識別だけでは名品2連続で不足＝インスタンス毎リセットが正解）。
+- **自分の事前精査で1件修正**：必須獲得(収税吏/肉屋)で獲得先が皆無（銅貨/銀貨/名品 枯渇）のとき card=null を拒否し続けCPU無限ループ/人間詰みの恐れ→ engine で「候補ゼロなら獲得せず解決（収税吏はアタックは実行）」＋UIに skip フォールバック＋回帰テスト。
+- 他5次元（coffers/attacks/baseeffects/cpu/conservation-integrity）は**クリーン**（偽陽性0・nit0）。
+
+### 次（未着手）＝段階2の残り拡張（§5-1）
+- **着手順（新機構の少ない順）＝ ~~収穫祭~~✅ → ~~ギルド~~✅ → 異郷35 → 新プロモ6 → 暗黒時代を全56に完成**。異郷=on-gainトリガー/可変VP(silk_road/feodum)等、暗黒時代=廃墟/騎士の混合山・避難所・戦利品/狂人/傭兵・要塞等のon-trash等。設計図＝`docs/adding-cards.md`。
 
 ---
 
@@ -118,11 +142,11 @@
 - **海辺の簡略化2点は本格実装済み**：封鎖の堀免疫窓・海賊の財宝獲得リアクション。on-gain対話は `!pending && _gainDepth===1` ゲートで安全側。
 
 ## 5. 未完了タスク（優先順。次セッションは 1. から）
-1. **段階2＝全カード実プレイ化（ユーザー決定・約128枚・完全忠実）**。対象＝収穫祭13＋褒賞5＋異郷35＋**暗黒時代を全56に完成**＋新プロモ6＋**ギルド13**。方針＝特殊山・全トリガー・command系まで**機構ごと新設**（簡略化しない）。
+1. **段階2＝全カード実プレイ化（ユーザー決定・完全忠実）**。~~収穫祭13✅~~ ~~ギルド13✅~~ の次＝**異郷35＋褒賞5＋暗黒時代を全56に完成＋新プロモ6**。方針＝特殊山・全トリガー・command系まで**機構ごと新設**（簡略化しない）。
    - **実装の設計図＝`docs/adding-cards.md`**（全機構の file:line ＋コピー元パターン＋落とし穴。毎回これを見れば実装できる）。
-   - **着手順（新機構の少ない順）＝ ~~収穫祭~~✅ → ギルド → 異郷 → 新プロモ → 暗黒時代完成**。1拡張ずつ 効果+pending+CPU+UI+ATTACKS/PLAYER_ACTIONS+テスト → `npm test`緑 → コミット。**各拡張は完成してから CARD_SET 昇格**（＝中途の暗黒時代がデプロイに出ない）。
-   - **✅収穫祭は完了（2026-07-04・§0-2）**。**✅段階1（画像化・カタログ）は残り全49枚[ギルド13＋暗黒時代残り36]完了（2026-07-04・§0-3・`651e3f6`）＝暗黒時代の残りカタログ定義もここで済んだ**（下記の「暗黒時代の残り」カタログ項は消化済／段階2ロジックが未実装）。
-   - **次はギルド（13枚）を段階2実プレイ化**：新機構＝コイントークンCoffers（=**財源**・per-player数値＋`COFFERS_SPEND` の4点セット）／overpay（購入時に超過払い＝BUY拡張。stonemason/doctor/masterpiece/herald）／trash-to-gain（stonemason/butcher）／アタック2種（収税吏taxman・予言者soothsayer）／merchant_guild の購入毎トリガー／baker のセットアップ。賞品Prizes山（`NON_SUPPLY`・非サプライ数値キー）と収穫祭の各機構が良いコピー元。**カード定義は§0-3で追加済＝engine効果/pending/CPU/UI/CARD_SET昇格を足すだけ**。
+   - **着手順（新機構の少ない順）＝ ~~収穫祭~~✅ → ~~ギルド~~✅ → 異郷 → 新プロモ → 暗黒時代完成**。1拡張ずつ 効果+pending+CPU+UI+ATTACKS/PLAYER_ACTIONS+テスト → `npm test`緑 → コミット。**各拡張は完成してから CARD_SET 昇格**（＝中途の暗黒時代がデプロイに出ない）。
+   - **✅収穫祭は完了（2026-07-04・§0-2）**。**✅段階1（画像化・カタログ）は残り全49枚[ギルド13＋暗黒時代残り36]完了（2026-07-04・§0-3・`651e3f6`）**。**✅ギルド13枚の段階2実プレイ化も完了（2026-07-04・§0-4）＝財源/過払い/アタック2種/公開/trash-to-gain を全て新設・出荷済み**。
+   - **次は異郷（35枚）を段階2実プレイ化**：新機構＝on-gainトリガー各種（宝の地図系/ホード類/margrave等）・可変VP（silk_road=勝利点数/4・feodum=銀貨数/3）・trader/inn/mandarin等の獲得置換。良いコピー元＝繁栄のtriggerOnGain・収穫祭/ギルドの可変VPブロック。設計図＝`docs/adding-cards.md`。
    - **新設が要る機構**：賞品Prizes山（収穫祭）／Bane（若き魔女）／可変VP fairgrounds/silk_road/feodum（vpOfに1ブロック）／持続 captain/church（armDuration+RESOLVER）／command procession/band_of_misfits/captain/trusty_steed（replayキュー）／王子prince（脇から毎ターン）／コイントークンCoffers（ギルド・per-player数値+COFFERS_SPEND）／overpay（ギルド）／廃墟Ruins・騎士Knights混合山＋戦利品/狂人/傭兵（暗黒時代・top-level配列/非サプライ）／避難所Shelters（開始デッキ置換）／on-trash・on-discardフック（暗黒時代・要塞/市場の広場等で新設、本人任意廃棄に限定）。
    - **暗黒時代の残り**：段階1未追加の王国15枚（junk_dealer/bandit_camp/rebuild/catacombs/graverobber/count/band_of_misfits/mystic/rogue/pillage/cultist/knights/counterfeit/hunting_grounds/altar）＋廃墟5/避難所3/騎士10/戦利品/狂人/傭兵 のカタログ定義＆GAIN_ORDER＆（絵は後入れ）も要。**絵は後で挿入方針**＝定義とロジックを先に、webpは枠+文字で生成orアート後入れ。
 2. **錬金術アートの△3枚最終確認（任意）**：変成/薬草商/薬剤師。差し替えは `asset/art/<id>.png` →`node tools/build-cards.js`→該当webpデプロイ。
@@ -136,5 +160,6 @@
 - **支配（Possession）の廃棄カード返却の簡略化＝到達不能を証明済み（監査⑤）＝意図的に未修正**：`possession` は alchemy プール専用で、複数プールを混ぜる出荷セット（random/random-promo/random-1e）はいずれも alchemy を含まない＝支配と外部拡張self-trashはどの出荷王国でも共存しない。全self-trashのtrashOwn化はアタック廃棄/供給廃棄の誤変換で**可到達バグを生むリスク**があり見送り。**混成alchemyモードを正式追加する時に一緒に対応**する方針。同型のポーション費用問題も到達不能（可到達だった大学のみガード済み）。
 - **支配のCPU簡略化**：CPUは支配を自動購入しない（`bestPotionBuy` で除外）。人間が使うぶんは支配者がCPUでも動作する。
 - **非サプライ数値キー山（賞品Prizes・将来の戦利品/狂人/傭兵）を足すときの必須チェックリスト**（§0-2のレビューで実際に踏んだ罠）：`NON_SUPPLY` set に登録し、**(1) `emptyPileCount`(3山終了) (2) `canBuyCard`(購入) (3) `blackMarket` 母集団（`createInitialState` の universe フィルタ） (4) 汎用獲得（engine の `*_GAIN` reducer と CPU `bestGain`/`bestGainExact`）** の4系統すべてから除外すること。特に「reducer だけガードして CPU 側を放置すると、CPU が拒否される獲得を出し続けて無限ループ」する（豊穣の角で実際に発生）＝**engine拒否とCPU非提案は必ずセット**。汎用獲得を持つ札（`horn_of_plenty` 等）は特に漏れやすい。
-- **段階1(§0-3)は コミット済だが未push**（`651e3f6`本体＋`e833fbd`/本ハンドオフのdoc）。**ユーザー決定＝push はギルド段階2完成後にまとめて**（段階1は画像のみ＝ゲーム未参加なので単独push不要）。次セッションでギルド段階2を完成させ、CARD_SET昇格まで済んだら `git push`（本番デプロイ）を**都度確認の上で**行う。
+- **段階1(§0-3)＋ギルド段階2(§0-4)は コミット済だが未push**。**ユーザー決定＝ギルド段階2完成後にまとめて push（都度確認の上で）**。CARD_SET昇格まで済み＝ギルドは本番に出るので、push＝本番デプロイ。
+- **【既存・スコープ外の別課題】闇市場デッキに「段階1のみ（＝engineロジック未実装）のプール」が漏れる**：`createInitialState` の黒市universeは全 `Object.values(DOM.POOLS)` を平坦化するため、promo-pack/random-promo で黒市デッキに hinterlands/darkages/knights/ruins/shelters/darkages_np（＋spoils/madman/mercenary）が混入する。これらは段階1（applyEffect未実装＝買って使っても何も起きない死に札）。**ギルドの段階2化で guilds プールは playable になった**ので問題なし。残りは各拡張が段階2化される都度 自動解消。**根治するなら黒市universeを「CARD_SETSが参照する playable プールのみ」に絞る**（＝段階2化の順に自然消化。急がば注意：正しく除外しないと変種が減る）。敵対レビューが指摘（元からの挙動＝ギルド作業とは独立）。
 - **段階1で追加した暗黒時代の非サプライ札（戦利品/狂人/傭兵/騎士10種/廃墟5/避難所3）を段階2で実プレイ化する時は、上の「4系統除外チェックリスト」を必ず通す**。特殊山（廃墟＝混合順序山→top-level配列・invariants tally追加／騎士＝混合山／避難所＝開始デッキ置換）は `docs/adding-cards.md` §C に実装手順あり。新種別 knight/ruins/shelter は表示ラベルのみ実装済（engineロジックは段階2で新設）。

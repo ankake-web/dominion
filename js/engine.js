@@ -14,6 +14,8 @@
   // 収穫祭：賞品（Prize）＝馬上槍試合の専用山。各1枚・購入不可・3山終了に数えない非サプライ。
   const PRIZES = ['bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed'];
   const NON_SUPPLY = new Set(PRIZES); // supply の数値キーだが「山」としては数えない/買えないもの
+  // ギルド：過払い（overpay）できるカード＝購入時に追加でコインを払うと追加効果。BUY 後に overpay pending を立てる。
+  const OVERPAY_CARDS = new Set(['stonemason', 'doctor', 'masterpiece', 'herald']);
   // 収穫祭：若き魔女の災いカード（Bane）を選ぶ。$2-3 の王国カードで、まだ場に無いものを1つ。
   //   まず収穫祭プールから、無ければ基本＋陰謀プールから抽選（公式は $2-3 の王国カードから任意の1山）。
   function pickBane(kingdom) {
@@ -235,8 +237,11 @@
         nativeVillageMat: [], // 原住民の村マット（手札に回収できる。秘密）
         lastTurnGains: [], // 直前の自分の手番に獲得したカードid（密輸人が右隣のこれを参照）
         vpTokens: 0,       // 繁栄：勝利点トークンの累計（司教・記念碑・収集・投資。公開・終了時に加算）
+        coffers: 0,        // ギルド：財源（Coffers）トークン。購入フェイズに1枚=+1コインで使える。公開・VPには数えない。
       };
     });
+    // ギルド：パン屋（Baker）のセットアップ＝ゲーム開始時、各プレイヤーは財源1枚を得る。
+    if (kingdom.includes('baker')) players.forEach((pl) => { pl.coffers = (pl.coffers || 0) + 1; });
 
     // 開始プレイヤー（公式: ランダム）。範囲外は席0に丸める。
     let startActive = 0;
@@ -424,6 +429,63 @@
     return true;
   }
 
+  /* ---------- ギルド：財源(Coffers)・過払い(overpay)の共通部品 ---------- */
+  // 商人ギルド：このターンに商人ギルドを使った回数ぶん、購入のたびに財源を得る（BUY / 闇市場の購入から呼ぶ）。
+  //   公式（2E）＝「使うたびに累積」＝玉座の間で2回使えば購入毎に+2財源（＝場の枚数ではなくプレイ回数）。
+  //   ※現行出荷セットでは玉座系と商人ギルドは同居しないため、場の枚数と結果は一致する（忠実性のためプレイ回数で数える）。
+  function triggerMerchantGuild(state, pi) {
+    const me = state.players[pi];
+    const n = (state.turn && state.turn.merchantGuildPlays) || 0;
+    if (n > 0) {
+      me.coffers = (me.coffers || 0) + n;
+      log(state, `${me.name} は商人ギルドで +${n} 財源。`);
+    }
+  }
+  // 過払い：overpay 対象カードを購入した直後、残コインがあれば「いくら過払いするか」の選択待ちを立てる。
+  function maybeStartOverpay(state, pi, card) {
+    if (!OVERPAY_CARDS.has(card)) return;
+    const t = state.turn;
+    // 支配中の被支配者の購入では過払いも被支配者が選ぶ（gain は既に脇置き処理済み）。ここは通常どおり本人が選ぶ。
+    if ((t.coins || 0) > 0) state.pending = { type: 'overpay', player: pi, card, max: t.coins };
+  }
+  // 過払い額を確定して、カードごとの過払い効果へ分岐する（OVERPAY_RESOLVE から呼ぶ）。
+  function applyOverpayEffect(state, pi, card, amount) {
+    const p = state.players[pi];
+    if (amount <= 0) { state.pending = null; return; }
+    if (card === 'masterpiece') {
+      // 名品：過払い1コインにつき銀貨1枚を獲得。
+      let g = 0;
+      for (let i = 0; i < amount; i++) { if (gain(state, pi, 'silver', 'discard')) g++; }
+      log(state, `${p.name} は名品の過払い（+${amount}コイン）で銀貨 ${g}枚 を獲得した。`);
+      state.pending = null;
+    } else if (card === 'stonemason') {
+      // 石工：過払い額とちょうど同じコストのアクションカードを2枚獲得。
+      if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && DOM.isType(id, 'action') && cardCost(state, id) === amount)) {
+        state.pending = { type: 'stonemason_overpay', player: pi, exact: amount, remaining: 2 };
+      } else {
+        log(state, `${p.name} は石工の過払い（$${amount}）で獲得できるアクションがなかった。`);
+        state.pending = null;
+      }
+    } else if (card === 'doctor') {
+      // 医者：過払い1コインにつき、山札の一番上を見て 廃棄／捨て札／山札の上に戻す を選ぶ。
+      startDoctorOverpay(state, pi, amount);
+    } else if (card === 'herald') {
+      // 伝令官：過払い1コインにつき、捨て札置き場からカード1枚を選んで山札の上に置く。
+      if (p.discard.length > 0) state.pending = { type: 'herald_overpay', player: pi, remaining: amount };
+      else state.pending = null;
+    } else {
+      state.pending = null;
+    }
+  }
+  // 医者の過払い：残り回数ぶん、山札の上を1枚ずつ見て処理する。次に見る札を pending.card に載せる（山札が尽きたら終了）。
+  function startDoctorOverpay(state, pi, remaining) {
+    const p = state.players[pi];
+    if (remaining <= 0) { state.pending = null; return; }
+    if (p.deck.length === 0 && p.discard.length > 0) { p.deck = shuffle(p.discard); p.discard = []; }
+    if (p.deck.length === 0) { state.pending = null; return; } // もう見る札が無い
+    state.pending = { type: 'doctor_overpay', player: pi, remaining, card: p.deck[0] };
+  }
+
   // 民兵：次の対象プレイヤーへ進む（いなければ選択待ち解除）
   function advanceMilitia(state, pd) {
     if (pd.queue && pd.queue.length) {
@@ -595,6 +657,9 @@
     charlatan:     { onMoat: (s, pd) => charlatanEnterVictim(s, pd.source, pd.queue) },
     rabble:        { onMoat: (s, pd) => rabbleEnterVictim(s, pd.source, pd.queue) },
     clerk:         { onMoat: (s, pd) => clerkEnterVictim(s, pd.source, pd.queue) },
+    // ギルド：収税吏（廃棄財宝と同名を捨てさせる）・予言者（呪い配布＋引かせる）。
+    taxman:        { onMoat: (s, pd) => taxmanEnterVictim(s, pd.source, pd.queue, pd.trashedName) },
+    soothsayer:    { onMoat: (s, pd) => soothsayerEnterVictim(s, pd.source, pd.queue) },
   };
   // 被攻撃側の反応（堀／秘密の小部屋／外交官）を差し込める局面か。
   function isAttackReactPending(pd) {
@@ -926,6 +991,55 @@
   function charlatanApply(state, source, victim, queue) {
     if ((state.supply.copper || 0) > 0) { gain(state, victim, 'copper', 'discard'); log(state, `${state.players[victim].name} は銅貨1枚を獲得した（ペテン師）。`); }
     charlatanEnterVictim(state, source, queue);
+  }
+
+  /* ---------- ギルド：収税吏のアタック（他の各自[手札5枚以上]が、廃棄された財宝と同名を1枚捨てる）---------- */
+  function taxmanEnterVictim(state, source, queue, trashedName) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'taxman', stage: 'react', player: victim, source, victim, queue: rest, trashedName };
+    } else {
+      taxmanApply(state, source, victim, rest, trashedName);
+    }
+  }
+  function taxmanApply(state, source, victim, queue, trashedName) {
+    const v = state.players[victim];
+    // 手札5枚以上の相手のみ影響を受ける（公式）。
+    if (v.hand.length >= 5) {
+      if (v.hand.includes(trashedName)) {
+        removeOne(v.hand, trashedName); v.discard.push(trashedName);
+        log(state, `${v.name} は「${C()[trashedName].name}」を1枚捨てた（収税吏）。`);
+      } else {
+        reveal(state, victim, v.hand, '収税吏：同名の財宝なしの手札を公開');
+        log(state, `${v.name} は「${C()[trashedName].name}」を持っておらず手札を公開した（収税吏）。`);
+      }
+    }
+    taxmanEnterVictim(state, source, queue, trashedName);
+  }
+
+  /* ---------- ギルド：予言者のアタック（各相手が呪いを獲得→獲得したら+1カード）---------- */
+  function soothsayerEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'soothsayer', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      soothsayerCurse(state, source, victim, rest);
+    }
+  }
+  function soothsayerCurse(state, source, victim, queue) {
+    if ((state.supply.curse || 0) > 0) {
+      if (gain(state, victim, 'curse', 'discard')) {
+        draw(state, victim, 1); // 呪いを獲得したなら+1カード
+        log(state, `${state.players[victim].name} は呪いを獲得し、+1カードした（予言者）。`);
+      }
+    }
+    soothsayerEnterVictim(state, source, queue);
   }
 
   /* ---------- 繁栄：群衆（各相手が山札の上3枚を公開→アクション/財宝を捨て、残りを上に戻す）---------- */
@@ -2062,6 +2176,87 @@
         state.pending = { type: 'trusty_steed', player: pi };
         break;
 
+      /* ===== ギルド（Guilds）===== */
+      case 'candlestick_maker':
+        t.actions += 1; t.buys += 1;
+        p.coffers = (p.coffers || 0) + 1;
+        log(state, `${p.name} は蝋燭職人で +1財源。`);
+        break;
+      case 'stonemason':
+        // 手札1枚を廃棄→それより安いカードを2枚獲得（手札があれば必須）。
+        if (p.hand.length > 0) state.pending = { type: 'stonemason', stage: 'trash', player: pi };
+        break;
+      case 'doctor':
+        // カードを1つ指定→山札の上3枚を公開→同名を全て廃棄→残りを好きな順で山札の上へ。
+        state.pending = { type: 'doctor', stage: 'name', player: pi };
+        break;
+      case 'advisor': {
+        t.actions += 1;
+        const look = [];
+        for (let i = 0; i < 3; i++) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; p.deck = shuffle(p.discard); p.discard = []; }
+          if (p.deck.length === 0) break;
+          look.push(p.deck.shift());
+        }
+        if (look.length) {
+          reveal(state, pi, look, '助言者で山札の上を公開');
+          // 左隣（次の席）が1枚を選んで捨てさせる。残りは使用者の手札へ。
+          const left = (pi + 1) % state.players.length;
+          state.pending = { type: 'advisor', player: left, source: pi, cards: look };
+        }
+        break;
+      }
+      case 'plaza':
+        draw(state, pi, 1); t.actions += 2;
+        if (p.hand.some((c) => DOM.isType(c, 'treasure'))) state.pending = { type: 'plaza', player: pi };
+        break;
+      case 'taxman':
+        // 手札に財宝があれば「廃棄してよい」選択を出す（無ければ何も起きない）。
+        if (p.hand.some((c) => DOM.isType(c, 'treasure'))) state.pending = { type: 'taxman', stage: 'trash', player: pi };
+        break;
+      case 'herald': {
+        draw(state, pi, 1); t.actions += 1;
+        // 山札の一番上を公開。アクションならそれをプレイする（アクション権は消費しない）。
+        if (p.deck.length === 0 && p.discard.length > 0) { p.deck = shuffle(p.discard); p.discard = []; }
+        if (p.deck.length > 0) {
+          const top = p.deck[0];
+          reveal(state, pi, [top], '伝令官で山札の上を公開');
+          if (DOM.isType(top, 'action')) {
+            p.deck.shift();
+            p.inPlay.push(top);
+            t.actionsPlayed = (t.actionsPlayed || 0) + 1;
+            log(state, `${p.name} は伝令官で「${C()[top].name}」をプレイした。`);
+            applyEffect(state, top, pi); // 別の選択待ちが立つこともある
+          }
+        }
+        break;
+      }
+      case 'baker':
+        draw(state, pi, 1); t.actions += 1;
+        p.coffers = (p.coffers || 0) + 1;
+        log(state, `${p.name} はパン屋で +1財源。`);
+        break;
+      case 'butcher':
+        p.coffers = (p.coffers || 0) + 2;
+        log(state, `${p.name} は肉屋で +2財源。`);
+        if (p.hand.length > 0) state.pending = { type: 'butcher', stage: 'trash', player: pi };
+        break;
+      case 'journeyman':
+        state.pending = { type: 'journeyman', stage: 'name', player: pi };
+        break;
+      case 'merchant_guild':
+        t.buys += 1; t.coins += 1;
+        // 「使うたびに累積」＝このターンの使用回数を記録。購入のたびに triggerMerchantGuild が回数ぶん財源を付与。
+        t.merchantGuildPlays = (t.merchantGuildPlays || 0) + 1;
+        break;
+      case 'soothsayer': {
+        if (gain(state, pi, 'gold', 'discard')) log(state, `${p.name} は金貨を獲得した（予言者）。`);
+        const q = [];
+        for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        soothsayerEnterVictim(state, pi, q);
+        break;
+      }
+
       default:
         break;
     }
@@ -2512,6 +2707,10 @@
           inPlayT.forEach((c) => { removeOne(me.inPlay, c); state.trash.push(c); });
           if (inPlayT.length) log(state, `${me.name} は造幣所の購入で場の財宝 ${inPlayT.length}枚 を廃棄した。`);
         }
+        // ギルド：商人ギルドが場にある間、カードを購入するたびに財源(Coffers)を得る（場の枚数ぶん）。
+        triggerMerchantGuild(state, pi);
+        // ギルド：過払い（overpay）＝購入時に追加でコインを払える。残コインがあれば選択待ちを立てる。
+        maybeStartOverpay(state, pi, card);
         return state;
       }
 
@@ -3584,9 +3783,12 @@
         state.players[pd.player].discard.push(card); // サプライ外のカードを獲得（捨て札へ）
         log(state, `${state.players[pd.player].name} は闇市場で「${C()[card].name}」を購入した。`);
         applyHoardOnBuy(state, pd.player, card);
+        triggerMerchantGuild(state, pd.player); // ギルド：闇市場の購入でも商人ギルドの財源が付く
         const rest = pd.revealed.filter((c) => c !== card);
-        state.blackMarket = (state.blackMarket || []).concat(rest); // 残りは底へ
+        state.blackMarket = (state.blackMarket || []).concat(rest); // 残りは底へ（過払い前に片付ける）
         state.pending = null;
+        // ギルド：闇市場でも過払い対象カード(名品/石工/医者/伝令官)を買えば過払いできる（promo込みセットで到達可）。
+        maybeStartOverpay(state, pd.player, card);
         return state;
       }
       case 'BLACK_MARKET_SKIP': {
@@ -4450,6 +4652,277 @@
         return state;
       }
 
+      /* ============ ギルド（Guilds）============ */
+      // 財源(Coffers)を使う：購入フェイズに任意枚数の財源を +1コインずつ に変える。
+      case 'COFFERS_SPEND': {
+        if (state.pending) return state;
+        if (t.phase !== 'buy') return state;
+        const amount = action.amount | 0;
+        if (amount <= 0) return state;
+        if (amount > (me.coffers || 0)) return state;
+        me.coffers -= amount;
+        t.coins += amount;
+        log(state, `${me.name} は財源 ${amount}枚 を使った（+${amount}コイン）。`);
+        return state;
+      }
+      // 過払い額を確定する（0でもよい）。カードごとの過払い効果へ分岐。
+      case 'OVERPAY_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'overpay') return state;
+        let amount = action.amount | 0;
+        if (amount < 0) amount = 0;
+        if (amount > pd.max) return state; // 過払いは残コインの範囲
+        t.coins -= amount;
+        if (amount > 0) log(state, `${state.players[pd.player].name} は「${C()[pd.card].name}」に +${amount}コイン 過払いした。`);
+        applyOverpayEffect(state, pd.player, pd.card, amount);
+        return state;
+      }
+      // 石工の過払い：ちょうど exact コストのアクションを2枚獲得（順に）。
+      case 'STONEMASON_OVERPAY_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'stonemason_overpay') return state;
+        const card = action.card;
+        const canGain = (id) => !!C()[id] && !NON_SUPPLY.has(id) && DOM.isType(id, 'action') && cardCost(state, id) === pd.exact;
+        if (card == null || !canGain(card) || (state.supply[card] || 0) <= 0) return state; // 獲得は必須
+        gain(state, pd.player, card, 'discard');
+        log(state, `${state.players[pd.player].name} は石工の過払いで「${C()[card].name}」を獲得した。`);
+        const remaining = pd.remaining - 1;
+        if (remaining > 0 && anyGainable(state, canGain)) state.pending = { type: 'stonemason_overpay', player: pd.player, exact: pd.exact, remaining };
+        else state.pending = null;
+        return state;
+      }
+      // 医者の過払い：山札の上1枚を 廃棄／捨て札／山札の上に戻す。残り回数だけ繰り返す。
+      case 'DOCTOR_OVERPAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'doctor_overpay') return state;
+        const pl = state.players[pd.player];
+        if (pl.deck[0] !== pd.card) return state; // 表示していた札と山札の上が一致すること
+        const choice = action.choice;
+        if (choice !== 'trash' && choice !== 'discard' && choice !== 'topdeck') return state;
+        if (choice === 'topdeck') {
+          log(state, `${pl.name} は医者の過払いで山札の上をそのままにした。`);
+        } else {
+          const c = pl.deck.shift();
+          if (choice === 'trash') { trashOwn(state, pd.player, c); log(state, `${pl.name} は医者の過払いで「${C()[c].name}」を廃棄した。`); }
+          else { pl.discard.push(c); log(state, `${pl.name} は医者の過払いで「${C()[c].name}」を捨てた。`); }
+        }
+        startDoctorOverpay(state, pd.player, pd.remaining - 1);
+        return state;
+      }
+      // 伝令官の過払い：捨て札置き場からカード1枚を山札の上に置く。残り回数だけ繰り返す。
+      case 'HERALD_OVERPAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'herald_overpay') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        if (card == null || !removeOne(pl.discard, card)) return state; // 捨て札に実在する札のみ
+        pl.deck.unshift(card);
+        log(state, `${pl.name} は伝令官の過払いで「${C()[card].name}」を山札の上に置いた。`);
+        const remaining = pd.remaining - 1;
+        if (remaining > 0 && pl.discard.length > 0) state.pending = { type: 'herald_overpay', player: pd.player, remaining };
+        else state.pending = null;
+        return state;
+      }
+      // 石工：手札1枚を廃棄→それより安いカードを2枚獲得。
+      case 'STONEMASON_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'stonemason' || pd.stage !== 'trash') return state;
+        const card = action.card;
+        if (me.hand.indexOf(card) < 0) return state; // 廃棄は必須（手札に実在する札のみ）
+        const cst = cardCost(state, card);
+        removeOne(me.hand, card); trashOwn(state, pi, card);
+        log(state, `${me.name} は石工で「${C()[card].name}」を廃棄した。`);
+        if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) < cst)) {
+          state.pending = { type: 'stonemason', stage: 'gain', player: pi, maxCost: cst, remaining: 2 };
+        } else { state.pending = null; }
+        return state;
+      }
+      case 'STONEMASON_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'stonemason' || pd.stage !== 'gain') return state;
+        const card = action.card;
+        const canGain = (id) => !!C()[id] && !NON_SUPPLY.has(id) && cardCost(state, id) < pd.maxCost;
+        if (card == null || !canGain(card) || (state.supply[card] || 0) <= 0) return state; // 獲得は必須
+        gain(state, pi, card, 'discard');
+        log(state, `${me.name} は石工で「${C()[card].name}」を獲得した。`);
+        const remaining = pd.remaining - 1;
+        if (remaining > 0 && anyGainable(state, canGain)) state.pending = { type: 'stonemason', stage: 'gain', player: pi, maxCost: pd.maxCost, remaining };
+        else state.pending = null;
+        return state;
+      }
+      // 医者：カードを1つ指定→山札の上3枚を公開→指定と同名を全て廃棄→残りを好きな順で山札の上へ。
+      case 'DOCTOR_NAME': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'doctor' || pd.stage !== 'name') return state;
+        const named = action.card;
+        if (!C()[named]) return state; // 実在するカード名のみ
+        const look = [];
+        for (let i = 0; i < 3; i++) {
+          if (me.deck.length === 0) { if (me.discard.length === 0) break; me.deck = shuffle(me.discard); me.discard = []; }
+          if (me.deck.length === 0) break;
+          look.push(me.deck.shift());
+        }
+        if (look.length) reveal(state, pi, look, '医者で山札の上を公開');
+        const rest = [];
+        look.forEach((c) => { if (c === named) { trashOwn(state, pi, c); } else rest.push(c); });
+        const trashed = look.length - rest.length;
+        if (trashed) log(state, `${me.name} は医者で「${C()[named].name}」を ${trashed}枚 廃棄した。`);
+        if (rest.length >= 2) {
+          state.pending = { type: 'doctor', stage: 'order', player: pi, cards: rest };
+        } else {
+          rest.forEach((c) => me.deck.unshift(c)); // 0〜1枚はそのまま山札の上へ
+          state.pending = null;
+        }
+        return state;
+      }
+      case 'DOCTOR_ORDER': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'doctor' || pd.stage !== 'order') return state;
+        const order = Array.isArray(action.order) ? action.order.slice() : [];
+        const a = order.slice().sort(); const b = pd.cards.slice().sort();
+        if (a.length !== b.length || a.some((c, i) => c !== b[i])) return state; // 同じ多重集合のみ
+        for (let i = order.length - 1; i >= 0; i--) me.deck.unshift(order[i]); // order[0] が一番上
+        log(state, `${me.name} は医者で残り ${order.length}枚 を山札の上に戻した。`);
+        state.pending = null;
+        return state;
+      }
+      // 助言者：山札の上3枚を公開→左隣が1枚を選んで捨て、残りは手札へ。
+      case 'ADVISOR_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'advisor') return state;
+        const card = action.card;
+        if (pd.cards.indexOf(card) < 0) return state;
+        const src = state.players[pd.source];
+        const rest = pd.cards.slice();
+        rest.splice(rest.indexOf(card), 1);
+        src.discard.push(card);
+        rest.forEach((c) => src.hand.push(c));
+        log(state, `${state.players[pd.player].name} は助言者で「${C()[card].name}」を捨てさせ、${src.name} は残り ${rest.length}枚 を手札に加えた。`);
+        state.pending = null;
+        return state;
+      }
+      // 広場：財宝1枚を捨てて +1財源（任意）。
+      case 'PLAZA_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'plaza') return state;
+        const card = action.card;
+        if (card != null) {
+          if (me.hand.indexOf(card) < 0 || !DOM.isType(card, 'treasure')) return state;
+          removeOne(me.hand, card); me.discard.push(card);
+          me.coffers = (me.coffers || 0) + 1;
+          log(state, `${me.name} は広場で財宝1枚を捨てて +1財源。`);
+        }
+        state.pending = null;
+        return state;
+      }
+      // 収税吏：手札の財宝1枚を廃棄してよい→そのコスト+3までの財宝を山札の上に獲得→他の各自(手札5枚以上)は同名を捨てる。
+      case 'TAXMAN_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'taxman' || pd.stage !== 'trash') return state;
+        const card = action.card;
+        if (card == null) { state.pending = null; return state; } // 廃棄しない＝何も起きない
+        if (me.hand.indexOf(card) < 0 || !DOM.isType(card, 'treasure')) return state;
+        const cst = cardCost(state, card);
+        removeOne(me.hand, card); trashOwn(state, pi, card);
+        log(state, `${me.name} は収税吏で「${C()[card].name}」を廃棄した。`);
+        state.pending = { type: 'taxman', stage: 'gain', player: pi, trashedName: card, maxCost: cst + 3 };
+        return state;
+      }
+      case 'TAXMAN_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'taxman' || pd.stage !== 'gain') return state;
+        const card = action.card;
+        const canGain = (id) => !!C()[id] && !NON_SUPPLY.has(id) && DOM.isType(id, 'treasure') && cardCost(state, id) <= pd.maxCost;
+        // アタック：他の各プレイヤー（手札5枚以上）は廃棄した財宝と同名を1枚捨てる。獲得の可否に関わらず必ず行う。
+        const launchAttack = () => {
+          const vics = [];
+          for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
+          taxmanEnterVictim(state, pi, vics, pd.trashedName);
+        };
+        if (card == null) {
+          if (anyGainable(state, canGain)) return state; // 獲得できる財宝があるのに辞退＝拒否（必須）
+          launchAttack(); return state;                  // 獲得できる財宝が無い＝獲得せずにアタックへ
+        }
+        if (!canGain(card) || (state.supply[card] || 0) <= 0) return state;
+        gain(state, pi, card, 'deck');
+        log(state, `${me.name} は収税吏で「${C()[card].name}」を山札の上に獲得した。`);
+        launchAttack();
+        return state;
+      }
+      case 'TAXMAN_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'taxman' || pd.stage !== 'react') return state;
+        taxmanApply(state, pd.source, pd.victim, pd.queue, pd.trashedName);
+        return state;
+      }
+      // 肉屋：+2財源→手札1枚を廃棄してよい→財源を任意枚数払い、(廃棄コスト+払った財源)以下のカードを獲得。
+      case 'BUTCHER_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'butcher' || pd.stage !== 'trash') return state;
+        const card = action.card;
+        if (card == null) { state.pending = null; return state; } // 廃棄しない
+        if (me.hand.indexOf(card) < 0) return state;
+        const cst = cardCost(state, card);
+        removeOne(me.hand, card); trashOwn(state, pi, card);
+        log(state, `${me.name} は肉屋で「${C()[card].name}」を廃棄した。`);
+        state.pending = { type: 'butcher', stage: 'pay', player: pi, trashedCost: cst };
+        return state;
+      }
+      case 'BUTCHER_PAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'butcher' || pd.stage !== 'pay') return state;
+        let amount = action.amount | 0;
+        if (amount < 0) amount = 0;
+        if (amount > (me.coffers || 0)) return state;
+        me.coffers -= amount;
+        if (amount > 0) log(state, `${me.name} は肉屋で財源 ${amount}枚 を支払った。`);
+        state.pending = { type: 'butcher', stage: 'gain', player: pi, maxCost: pd.trashedCost + amount };
+        return state;
+      }
+      case 'BUTCHER_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'butcher' || pd.stage !== 'gain') return state;
+        const card = action.card;
+        const canGain = (id) => !!C()[id] && !NON_SUPPLY.has(id) && cardCost(state, id) <= pd.maxCost;
+        if (card == null) {
+          if (anyGainable(state, canGain)) return state; // 獲得できるカードがあるのに辞退＝拒否（廃棄したので必須）
+          state.pending = null; return state;            // 獲得先が無い＝獲得せず終了
+        }
+        if (!canGain(card) || (state.supply[card] || 0) <= 0) return state;
+        gain(state, pi, card, 'discard');
+        log(state, `${me.name} は肉屋で「${C()[card].name}」を獲得した。`);
+        state.pending = null;
+        return state;
+      }
+      // 熟練工：カードを1つ指定→指定以外が3枚公開されるまで山札を公開→その3枚を手札へ、残りを捨てる。
+      case 'JOURNEYMAN_NAME': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'journeyman' || pd.stage !== 'name') return state;
+        const named = action.card;
+        if (!C()[named]) return state;
+        const toHand = []; const toDiscard = []; const revealed = [];
+        let guard = 0;
+        while (toHand.length < 3 && guard++ < 200) {
+          if (me.deck.length === 0) { if (me.discard.length === 0) break; me.deck = shuffle(me.discard); me.discard = []; }
+          if (me.deck.length === 0) break;
+          const c = me.deck.shift(); revealed.push(c);
+          if (c === named) toDiscard.push(c); else toHand.push(c);
+        }
+        if (revealed.length) reveal(state, pi, revealed, '熟練工で山札の上を公開');
+        toHand.forEach((c) => me.hand.push(c));
+        toDiscard.forEach((c) => me.discard.push(c));
+        log(state, `${me.name} は熟練工で ${toHand.length}枚 を手札に加え、${toDiscard.length}枚 を捨てた（指定＝${C()[named].name}）。`);
+        state.pending = null;
+        return state;
+      }
+      // 予言者：金貨を獲得→他の各自は呪いを獲得（獲得したら+1カード）。
+      case 'SOOTHSAYER_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'soothsayer' || pd.stage !== 'react') return state;
+        soothsayerCurse(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+
       default:
         return state;
     }
@@ -4509,6 +4982,10 @@
     if (s.pending && s.pending.type === 'crystal_ball' && s.pending.card != null && seat !== s.pending.player && seat !== secretSeer) {
       s.pending = Object.assign({}, s.pending, { card: 'back' });
     }
+    // ギルド：医者の過払いで「見た」山札の上1枚は私的（本人と支配者のみ）。他席には伏せる。
+    if (s.pending && s.pending.type === 'doctor_overpay' && s.pending.card != null && seat !== s.pending.player && seat !== secretSeer) {
+      s.pending = Object.assign({}, s.pending, { card: 'back' });
+    }
     s.you = seat;
     return s;
   }
@@ -4564,6 +5041,11 @@
     'YOUNG_WITCH_DISCARD', 'YOUNG_WITCH_REACT', 'YOUNG_WITCH_BANE',
     'JESTER_REACT', 'JESTER_CHOOSE', 'FOLLOWERS_REACT', 'FOLLOWERS_DISCARD',
     'TRUSTY_STEED_RESOLVE', 'HORN_OF_PLENTY_GAIN',
+    // ギルド
+    'COFFERS_SPEND', 'OVERPAY_RESOLVE', 'STONEMASON_OVERPAY_GAIN', 'DOCTOR_OVERPAY', 'HERALD_OVERPAY',
+    'STONEMASON_TRASH', 'STONEMASON_GAIN', 'DOCTOR_NAME', 'DOCTOR_ORDER', 'ADVISOR_CHOOSE',
+    'PLAZA_DISCARD', 'TAXMAN_TRASH', 'TAXMAN_GAIN', 'TAXMAN_REACT',
+    'BUTCHER_TRASH', 'BUTCHER_PAY', 'BUTCHER_GAIN', 'JOURNEYMAN_NAME', 'SOOTHSAYER_REACT',
   ]);
 
   /* ---------- 公開API ---------- */

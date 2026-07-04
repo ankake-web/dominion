@@ -49,11 +49,13 @@
     'kings_court', 'grand_market', 'bank', 'expand', 'forge', 'peddler', 'city', 'vault', 'rabble',
     'magnate', 'mint', 'collection', 'crystal_ball', 'charlatan', 'war_chest', 'bishop',
     'monument', 'workers_village', 'watchtower', 'tiara', 'quarry', 'investment', 'anvil', 'clerk',
+    // ギルド（実プレイ＝段階2）＝強さ/コストの目安順。供給があるときだけ効く（bestEngineBuy/bestGain が参照）。
+    'soothsayer', 'taxman', 'butcher', 'merchant_guild', 'journeyman', 'baker', 'herald', 'advisor', 'plaza', 'doctor', 'candlestick_maker', 'stonemason', 'masterpiece',
     'pawn', 'lurker', 'moat', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke',
     // 追加拡張（収穫祭/異郷/暗黒時代/新プロモ）＝孤立プールで実サプライに出ないため並び順はCPU挙動に無影響
     'stash', 'prince', 'captain', 'church', 'sauna', 'avanto', 'hamlet', 'fortune_teller', 'menagerie', 'farming_village', 'horse_traders', 'remake', 'tournament', 'young_witch', 'harvest', 'horn_of_plenty', 'hunting_party', 'jester', 'fairgrounds', 'bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed', 'crossroads', 'duchess', 'fools_gold', 'develop', 'oasis', 'oracle', 'scheme', 'tunnel', 'jack_of_all_trades', 'noble_brigand', 'nomad_camp', 'silk_road', 'spice_merchant', 'trader', 'cache', 'cartographer', 'embassy', 'haggler', 'highway', 'ill_gotten_gains', 'inn', 'mandarin', 'margrave', 'stables', 'border_village', 'farmland', 'nomads', 'trail', 'weaver', 'souk', 'cauldron', 'guard_dog', 'berserker', 'wheelwright', 'witchs_hut', 'poor_house', 'squire', 'vagrant', 'beggar', 'hermit', 'sage', 'forager', 'storeroom', 'urchin', 'market_square', 'ironmonger', 'wandering_minstrel', 'procession', 'scavenger', 'fortress', 'rats', 'armory', 'death_cart', 'marauder', 'feodum',
-    // 段階1追加（ギルド＋暗黒時代残り。CARD_SETS 未参照＝実際には獲得されないが GAIN_ORDER=全カードの整合性を満たす）
-    'candlestick_maker', 'stonemason', 'doctor', 'masterpiece', 'advisor', 'plaza', 'taxman', 'herald', 'baker', 'butcher', 'journeyman', 'merchant_guild', 'soothsayer', 'junk_dealer', 'bandit_camp', 'rebuild', 'catacombs', 'graverobber', 'count', 'band_of_misfits', 'mystic', 'rogue', 'pillage', 'cultist', 'counterfeit', 'hunting_grounds', 'altar', 'knights', 'dame_anna', 'dame_josephine', 'dame_molly', 'dame_natalie', 'dame_sylvia', 'sir_bailey', 'sir_destry', 'sir_martin', 'sir_michael', 'sir_vander', 'abandoned_mine', 'ruined_library', 'ruined_market', 'ruined_village', 'survivors', 'hovel', 'necropolis', 'overgrown_estate', 'spoils', 'madman', 'mercenary',
+    // 段階1追加（暗黒時代残り。CARD_SETS 未参照＝実際には獲得されないが GAIN_ORDER=全カードの整合性を満たす）
+    'junk_dealer', 'bandit_camp', 'rebuild', 'catacombs', 'graverobber', 'count', 'band_of_misfits', 'mystic', 'rogue', 'pillage', 'cultist', 'counterfeit', 'hunting_grounds', 'altar', 'knights', 'dame_anna', 'dame_josephine', 'dame_molly', 'dame_natalie', 'dame_sylvia', 'sir_bailey', 'sir_destry', 'sir_martin', 'sir_michael', 'sir_vander', 'abandoned_mine', 'ruined_library', 'ruined_market', 'ruined_village', 'survivors', 'hovel', 'necropolis', 'overgrown_estate', 'spoils', 'madman', 'mercenary',
     'copper', 'curse'];
   // 収穫祭：賞品(Prize)は馬上槍試合でのみ獲得する非サプライ札＝汎用の獲得効果(bestGain/bestGainExact)は
   // 絶対に賞品を選ばない（豊穣の角等で$0賞品を不正獲得しない／賞品を拒否する reducer と噛み合って無限ループしない）。
@@ -141,6 +143,12 @@
     if (has('menagerie')) return 'menagerie';             // +1アクション（重複なしで+3カード）
     if (has('hamlet')) return 'hamlet';                   // +1カード+1アクション（任意で+アクション/+購入）
     if (has('tournament')) return 'tournament';           // +1アクション（属州で賞品獲得）
+    // ギルド：非ターミナル（+アクション付き）
+    if (has('candlestick_maker')) return 'candlestick_maker'; // +1アクション+1購入+1財源
+    if (has('baker')) return 'baker';                     // +1カード+1アクション+1財源
+    if (has('plaza')) return 'plaza';                     // +1カード+2アクション（財宝を捨てて財源）
+    if (has('herald')) return 'herald';                   // +1カード+1アクション（山札の上がアクションなら使う）
+    if (has('advisor')) return 'advisor';                 // +1アクション（上3枚→左隣が1枚捨てさせ、残りを手札へ）
     // --- ターミナル（効果の大きい順）---
     if (has('golem')) return 'golem';                     // 山札のアクション2枚を使う
     if (has('herbalist')) return 'herbalist';             // +1購入+1コイン
@@ -169,6 +177,16 @@
     if (has('remake') && p.hand.length > 1) return 'remake'; // 廃棄→格上げ2回（手札が1枚だと損なので温存）
     if (has('trusty_steed')) return 'trusty_steed';     // 異なる2つを選ぶ（賞品）
     if (has('princess')) return 'princess';             // +1購入＋このターン全カード-2コスト（賞品）
+    // ギルド：ターミナル（アタック＞財源＞公開＞trash-to-gain）
+    if (has('soothsayer')) return 'soothsayer';         // 金貨獲得＋全員に呪い（強力）
+    if (has('taxman')) return 'taxman';                 // 財宝廃棄→格上げ＋相手に同名捨てさせる
+    if (has('butcher')) return 'butcher';               // +2財源（任意で trash-to-gain）＝常に得
+    if (has('merchant_guild')) return 'merchant_guild'; // +1購入+1コイン＋購入毎に財源
+    if (has('journeyman')) return 'journeyman';         // 指定以外を3枚引く
+    // 石工＝廃棄が必須。銅貨/呪いがあるときだけプレイ（純粋な圧縮＝獲得なし。屋敷は獲得で銅貨が増えるので温存）。
+    if (has('stonemason') && (has('copper') || has('curse'))) return 'stonemason';
+    // 医者＝不要札を山札から抜ける見込みがあるときだけ（ターミナルなので無駄打ち回避）。
+    if (has('doctor') && (owned(p, 'curse') > 0 || owned(p, 'estate') > 0 || owned(p, 'copper') > 3)) return 'doctor';
     // 玉座の間: 2回使える別アクションが手札にあるときだけ（無駄打ち回避）
     if (has('throne_room') && p.hand.some((c) => isType(c, 'action') && c !== 'throne_room')) return 'throne_room';
     if (has('council_room')) return 'council_room'; // +4カード+1購入
@@ -334,7 +352,8 @@
     const inPool = (pool) => K.some((id) => (POOLS[pool] || []).indexOf(id) >= 0);
     const hasChapelEngine = K.indexOf('chapel') >= 0 && K.indexOf('gardens') < 0 &&
       K.some((id) => C()[id] && plusCards(id) >= 2); // 圧縮＋ドロー、ただし庭園ラッシュは除く
-    const isEngine = inPool('seaside') || inPool('prosperity') || hasChapelEngine;
+    // ギルド＝財源経済＋キャントリップ(蝋燭職人/パン屋/広場/伝令官/助言者)でエンジンが組める拡張。
+    const isEngine = inPool('seaside') || inPool('prosperity') || inPool('guilds') || hasChapelEngine;
     return (__engCache[key] = isEngine ? 'ENGINE' : 'MONEY');
   }
   function bestEngineBuy(state, p, coins) {
@@ -1048,6 +1067,95 @@
       case 'horn_of_plenty':
         return { type: 'HORN_OF_PLENTY_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
 
+      /* ===== 拡張: ギルド（Guilds）===== */
+      case 'overpay': {
+        // いくら過払いするか。名品＝銀貨レートが良いので全額／石工＝2枚とれる最大コスト／伝令官＝捨て札の良札分／医者＝しない。
+        const card = pd.card, max = pd.max;
+        let amt = 0;
+        if (card === 'masterpiece') amt = max; // 過払い1コイン→銀貨1枚は好レート。全額。
+        else if (card === 'stonemason') {
+          for (let x = max; x >= 1; x--) {
+            if (Object.keys(state.supply).some((id) => C()[id] && isType(id, 'action') && !isType(id, 'victory') &&
+                !PRIZE_SET.has(id) && cost(state, id) === x && sup(state, id) > 0)) { amt = x; break; }
+          }
+        } else if (card === 'herald') {
+          const good = p.discard.filter((c) => keepValue(c) >= 60).length; // 良い札を山札の上へ
+          amt = Math.min(max, good, 2);
+        } // doctor は過払いしない（安全側＝amt=0）
+        return { type: 'OVERPAY_RESOLVE', amount: amt };
+      }
+      case 'stonemason_overpay': {
+        let g = null;
+        for (const id of GAIN_ORDER) {
+          if (C()[id] && isType(id, 'action') && !PRIZE_SET.has(id) && cost(state, id) === pd.exact && sup(state, id) > 0) { g = id; break; }
+        }
+        return { type: 'STONEMASON_OVERPAY_GAIN', card: g };
+      }
+      case 'doctor_overpay': {
+        const c = pd.card;
+        let choice = 'topdeck';
+        if (isType(c, 'curse')) choice = 'trash';
+        else if (isType(c, 'victory')) choice = 'discard'; // 勝利点は引きたくない→山札から除く
+        else if (c === 'copper' && allCards(p).filter((x) => isTreasure(x)).length >= 8) choice = 'trash';
+        return { type: 'DOCTOR_OVERPAY', choice };
+      }
+      case 'herald_overpay': {
+        const best = p.discard.slice().sort((a, b) => keepValue(b) - keepValue(a))[0];
+        return { type: 'HERALD_OVERPAY', card: best };
+      }
+      case 'stonemason':
+        if (pd.stage === 'trash') {
+          // 銅貨/呪いを廃棄（コスト0＝獲得なしの純圧縮）。無ければ最も不要な札。
+          const c = p.hand.includes('copper') ? 'copper' : (p.hand.includes('curse') ? 'curse' : pickTrash(p.hand, 1)[0]);
+          return { type: 'STONEMASON_TRASH', card: c };
+        }
+        return { type: 'STONEMASON_GAIN', card: bestGain(state, pd.maxCost - 1, { noVictory: true }) || bestGain(state, pd.maxCost - 1) };
+      case 'doctor':
+        if (pd.stage === 'name') {
+          const named = owned(p, 'curse') > 0 ? 'curse' : (owned(p, 'estate') > 0 ? 'estate' : 'copper');
+          return { type: 'DOCTOR_NAME', card: named };
+        }
+        { const order = pd.cards.slice().sort((a, b) => keepValue(b) - keepValue(a)); return { type: 'DOCTOR_ORDER', order }; }
+      case 'advisor': {
+        // 自分は左隣＝相手(source)の公開札から1枚を捨てさせる。相手に最も価値の高い札を捨てさせて損させる。
+        const worstForOpp = pd.cards.slice().sort((a, b) => keepValue(b) - keepValue(a))[0];
+        return { type: 'ADVISOR_CHOOSE', card: worstForOpp };
+      }
+      case 'plaza': {
+        // 銅貨があれば捨てて +1財源（銀貨/金貨は捨てない）。
+        const tre = p.hand.filter((c) => isTreasure(c)).sort((a, b) => (C()[a].coin || 0) - (C()[b].coin || 0))[0];
+        return { type: 'PLAZA_DISCARD', card: tre === 'copper' ? 'copper' : null };
+      }
+      case 'taxman':
+        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'TAXMAN_REACT' }; }
+        if (pd.stage === 'trash') {
+          if (p.hand.includes('copper') && sup(state, 'silver') > 0) return { type: 'TAXMAN_TRASH', card: 'copper' }; // 銅貨→銀貨（圧縮＋テンポ）
+          if (p.hand.includes('silver') && sup(state, 'gold') > 0) return { type: 'TAXMAN_TRASH', card: 'silver' };  // 銀貨→金貨
+          const tre = p.hand.filter((c) => isTreasure(c)).sort((a, b) => (C()[a].coin || 0) - (C()[b].coin || 0))[0];
+          return { type: 'TAXMAN_TRASH', card: tre || null };
+        }
+        return { type: 'TAXMAN_GAIN', card: bestGain(state, pd.maxCost, { treasureOnly: true }) };
+      case 'butcher':
+        if (pd.stage === 'trash') {
+          const junk = p.hand.includes('curse') ? 'curse' : (p.hand.includes('estate') ? 'estate' : (p.hand.includes('copper') ? 'copper' : null));
+          return { type: 'BUTCHER_TRASH', card: junk };
+        }
+        if (pd.stage === 'pay') {
+          const coffers = p.coffers || 0;
+          const total = pd.trashedCost + coffers;
+          const target = bestGain(state, total, { noVictory: true }) || bestGain(state, total);
+          const need = target ? Math.max(0, cost(state, target) - pd.trashedCost) : 0;
+          return { type: 'BUTCHER_PAY', amount: Math.min(coffers, need) };
+        }
+        return { type: 'BUTCHER_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
+      case 'journeyman': {
+        const named = owned(p, 'curse') > 0 ? 'curse' : (owned(p, 'estate') > 0 ? 'estate' : (owned(p, 'copper') > 0 ? 'copper' : mostLikelyTop(p)));
+        return { type: 'JOURNEYMAN_NAME', card: named };
+      }
+      case 'soothsayer':
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'SOOTHSAYER_REACT' };
+
       default:
         return { type: 'END_TURN' };
     }
@@ -1069,8 +1177,30 @@
     }
     // 購入フェーズ（支配中は被支配者の手札の財宝を出し、獲得は支配者が受け取る）
     if (subj.hand.some((c) => isTreasure(c))) return { type: 'PLAY_ALL_TREASURES' };
-    const b = chooseBuy(state, subj, (state.players[ctrl] && state.players[ctrl].cpuLevel) || 'normal');
+    const level = (state.players[ctrl] && state.players[ctrl].cpuLevel) || 'normal';
+    // ギルド：財源(Coffers)を使うか判断。財宝を出し切ったあと、財源を足すとより良い買いになるなら最小枚数だけ使う。
+    const spend = coffersToSpend(state, subj, level);
+    if (spend > 0) return { type: 'COFFERS_SPEND', amount: spend };
+    const b = chooseBuy(state, subj, level);
     return b ? { type: 'BUY', card: b } : { type: 'END_TURN' };
+  }
+  // 財源を何枚使うか：現状の最善買いより価値の高い買いに届く最小の財源枚数を返す（届かなければ0＝温存）。
+  function coffersToSpend(state, p, level) {
+    const coffers = p.coffers || 0;
+    if (coffers <= 0 || state.turn.buys <= 0) return 0;
+    const buyValue = (id) => id ? ((C()[id].vp || 0) * 100 + cost(state, id) * 2 + (isTreasure(id) ? 1 : 0)) : -1;
+    const saved = state.turn.coins;
+    let baseVal;
+    try {
+      baseVal = buyValue(chooseBuy(state, p, level));
+      let bestSpend = 0, bestVal = baseVal;
+      for (let s = 1; s <= coffers; s++) {
+        state.turn.coins = saved + s;
+        const v = buyValue(chooseBuy(state, p, level));
+        if (v > bestVal) { bestVal = v; bestSpend = s; } // より価値の高い買いに届く最小額を採用
+      }
+      return bestSpend;
+    } finally { state.turn.coins = saved; } // 判定用の一時変更は必ず戻す（chooseBuy は読み取り専用）
   }
 
   // この手の後にどれくらい「間」を置くか（ミリ秒）— 見て分かるように

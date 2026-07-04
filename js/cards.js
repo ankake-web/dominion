@@ -624,6 +624,11 @@
   // 収穫祭 推奨10種。賞品山(馬上槍試合)・災いカード(若き魔女)・可変VP(品評会)・reveal系・アタックを味わえる構成。
   DOM.KINGDOM_CORNUCOPIA = ['hamlet', 'menagerie', 'farming_village', 'remake', 'young_witch',
                             'tournament', 'harvest', 'horn_of_plenty', 'jester', 'fairgrounds'];
+  // ギルド 推奨10種。財源(Coffers)経済・過払い(overpay)・アタック2種・公開系・trash-to-gain を味わえる構成。
+  //   財源札=蝋燭職人/パン屋/肉屋/商人ギルド、過払い=石工/医者/伝令官、アタック=収税吏/予言者、公開=助言者、
+  //   セットアップ=パン屋(開始時 全員+1財源)、購入毎トリガー=商人ギルド。
+  DOM.KINGDOM_GUILDS = ['candlestick_maker', 'stonemason', 'doctor', 'advisor', 'taxman',
+                        'herald', 'baker', 'butcher', 'merchant_guild', 'soothsayer'];
   // 初版（第二版で廃止されたカードを含む懐かしのセット）
   DOM.KINGDOM_1E = ['cellar', 'chancellor', 'woodcutter', 'feast', 'militia',
                     'spy', 'thief', 'council_room', 'adventurer', 'market'];
@@ -703,6 +708,7 @@
     { id: 'alchemy',         kind: 'standard', name: '錬金術セット（第二版）', kingdom: DOM.KINGDOM_ALCHEMY },
     { id: 'prosperity',      kind: 'standard', name: '繁栄セット（第二版）', kingdom: DOM.KINGDOM_PROSPERITY },
     { id: 'cornucopia',      kind: 'standard', name: '収穫祭セット', kingdom: DOM.KINGDOM_CORNUCOPIA },
+    { id: 'guilds',          kind: 'standard', name: 'ギルドセット', kingdom: DOM.KINGDOM_GUILDS },
     // ---- おすすめ（テーマ別・固定10種）----
     { id: 'big-money',       kind: 'recommend', name: 'ビッグマネー', desc: 'お金を伸ばして属州を狙う王道',
       kingdom: ['chapel', 'moneylender', 'harbinger', 'throne_room', 'bureaucrat', 'poacher', 'market', 'mine', 'laboratory', 'sentry'] },
@@ -730,6 +736,7 @@
     { id: 'random-alchemy',  kind: 'random', name: '錬金術から',     randomFrom: ['alchemy'] },
     { id: 'random-prosperity', kind: 'random', name: '繁栄から',     randomFrom: ['prosperity'] },
     { id: 'random-cornucopia', kind: 'random', name: '収穫祭から',   randomFrom: ['cornucopia'] },
+    { id: 'random-guilds',   kind: 'random', name: 'ギルドから',     randomFrom: ['guilds'] },
     { id: 'random-intrigue', kind: 'random', name: '陰謀のみから',   randomFrom: ['intrigue'] },
     { id: 'random-basic',    kind: 'random', name: '基本のみから',   randomFrom: ['basic'] },
     { id: 'random-promo',    kind: 'random', name: 'プロモ込みから',  randomFrom: ['basic', 'intrigue', 'promo'] },
