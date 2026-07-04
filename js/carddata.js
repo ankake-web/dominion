@@ -121,6 +121,8 @@
     if (has('victory') && has('action')) return '勝利点・アクション';
     if (has('attack') && has('reaction')) return 'アクション・アタック・リアクション'; // 会計士（action+attack+reaction）
     if (has('treasure') && has('attack')) return '財宝・アタック';                    // ペテン師（treasure+attack）
+    if (has('treasure') && has('reaction')) return '財宝・リアクション';              // 愚者の黄金（treasure+reaction）
+    if (has('victory') && has('reaction')) return '勝利点・リアクション';             // 抜け道（victory+reaction）
     if (has('reaction')) return 'アクション・リアクション';
     if (has('attack')) return 'アクション・アタック';
     if (has('treasure')) return '財宝';
@@ -141,6 +143,8 @@
     if (has('victory') && has('action')) return 'Victory - Action';
     if (has('attack') && has('reaction')) return 'Action - Attack - Reaction'; // 会計士
     if (has('treasure') && has('attack')) return 'Treasure - Attack';          // ペテン師
+    if (has('treasure') && has('reaction')) return 'Treasure - Reaction';      // Fool's Gold
+    if (has('victory') && has('reaction')) return 'Victory - Reaction';        // Tunnel
     if (has('reaction')) return 'Action - Reaction';
     if (has('attack')) return 'Action - Attack';
     if (has('treasure')) return 'Treasure';

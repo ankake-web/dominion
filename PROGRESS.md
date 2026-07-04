@@ -1,6 +1,6 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-03 / branch `main`。**すべてコミット&push済・Pages/Render 自動デプロイ済・作業ツリー clean**。`sw.js` は **v27**。
+最終更新: 2026-07-04 / branch `main`。**すべてコミット&push済・Pages/Render 自動デプロイ済・作業ツリー clean**。`sw.js` は **v28**。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
 **新セッションは まず `npm test` を実行し 19スイート・2438件オールグリーン（exit 0）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
@@ -44,6 +44,11 @@
 - **デプロイ**：main に push → `.github/workflows/deploy.yml` が Pages 公開、サーバは Render 自動再デプロイ。**新しい配信フォルダは deploy.yml に追加**（忘れると本番404）。**client資産（js/css/webp等）を変えたら `sw.js` の VERSION を上げる**（現在 v26）。コミット者設定済み（Naoki Inoue）。
 
 ## 3. 完了したこと（サマリ。詳細は各コミットメッセージ＝git log が正）
+### 2026-07-04 新拡張カードの画像化・カタログ追加（段階1・79枚）
+- **収穫祭13＋褒賞5＋異郷35（初版26＋第二版新規9）＋暗黒時代20＋新プロモ6＝79枚を段階1で追加**（`DOM.CARDS`＋孤立プール `POOLS.cornucopia/hinterlands/darkages`＋promo合流＋`GAIN_ORDER`＋ui.js一覧グループ）。**画像は出るがゲーム未参加**（CARD_SETSから孤立プールを参照しない＝実サプライに出ない）。完成webp79枚生成済み（`asset/cards/*.webp`）。整合性テスト緑（fools_gold=財宝+リアクション／tunnel=勝利点+リアクションの新種別ラベルを carddata に追加）。`sw.js` v27→v28。
+- 絵はユーザーがChatGPTで生成→私がDL画像を判別し `asset/art/<id>.png` に回収（→ChatGPT運用ルールは記憶 `chatgpt-card-art-workflow` 参照）。カード定義・画像判別は多エージェントworkflowで起草/照合。
+- **未完了＝段階2（実プレイ化）**：engine効果／CPU decidePending・chooseAction・chooseBuy／UI viewPendingModal／CARD_SETへの昇格が未実装。暗黒時代は20/56のみ（残36＋廃墟/避難所/騎士/特殊は未着手）。§5参照。
+
 ### 2026-07-03 CPU購入AI強化（B案）
 - **B案＝王国評価型 CPU購入AI 実装完了**（`js/cpu.js` `evaluateKingdom`）。ENGINE/MONEY 切替で総合勝率 hard 71.5%/normal 71.3%・全22出荷セット≥48.5%。詳細・A/B結果・実測の修正点は **§0**。`sw.js` v26→v27。テスト19スイート全緑・難易度序列 100/64/95%。
 
@@ -74,7 +79,7 @@
 - **海辺の簡略化2点は本格実装済み**：封鎖の堀免疫窓・海賊の財宝獲得リアクション。on-gain対話は `!pending && _gainDepth===1` ゲートで安全側。
 
 ## 5. 未完了タスク（優先順。次セッションは 1. から）
-1. **新拡張の画像化（要アート）**：コード側（カタログ＋孤立プール＋GAIN_ORDER）は追加可能だが、完成画像には `asset/art/<id>.png`（AI生成・ローカルgitignore）が新規に必要。どの拡張か＋アートの用意方法を決めてから着手。
+1. **追加79枚の段階2（実プレイ化）**：収穫祭/異郷/暗黒時代/新プロモは段階1（画像＋孤立プール）まで完了。実ゲーム化には engine効果実装・CPU分岐（decidePending/chooseAction/chooseBuy）・UI（viewPendingModal）・CARD_SETへの昇格が必要。**新pendingを作る札が多い（賞品/廃墟/避難所/騎士/持続/リアクション）**ので拡張1つずつ慎重に。暗黒時代は残36枚＋特殊カード（廃墟5/避難所3/騎士10/戦利品・狂人・傭兵）のアート＆定義も未着手。
 2. **錬金術アートの△3枚最終確認（任意）**：変成/薬草商/薬剤師。差し替えは `asset/art/<id>.png` →`node tools/build-cards.js`→該当webpデプロイ。
 3. （任意・CPU購入の残課題）B案は「拡張＋礼拝堂エンジン」で ENGINE/MONEY を切替済み。さらに踏み込むなら **MONEY王国での BM+呪いアタック（魔女等≤2枚）** や **王国個別のエンジン成立度スコアリング**が候補（現状でも総合71%なので優先度は低い）。
 4. （任意・過去メモ）絵文字→game-icons.net SVG 化、vanilla効果DSL 等。

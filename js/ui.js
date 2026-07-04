@@ -612,6 +612,9 @@
       (DOM.POOLS && DOM.POOLS.seaside) ? group('王国カード（海辺・第二版）', byCost(DOM.POOLS.seaside)) : null,
       (DOM.POOLS && DOM.POOLS.alchemy) ? group('王国カード（錬金術・第二版）', byCost(DOM.POOLS.alchemy)) : null,
       (DOM.POOLS && DOM.POOLS.prosperity) ? group('王国カード（繁栄・第二版）', byCost(DOM.POOLS.prosperity)) : null,
+      (DOM.POOLS && DOM.POOLS.cornucopia) ? group('王国カード（収穫祭）', byCost(DOM.POOLS.cornucopia)) : null,
+      (DOM.POOLS && DOM.POOLS.hinterlands) ? group('王国カード（異郷）', byCost(DOM.POOLS.hinterlands)) : null,
+      (DOM.POOLS && DOM.POOLS.darkages) ? group('王国カード（暗黒時代）', byCost(DOM.POOLS.darkages)) : null,
       (DOM.POOLS && DOM.POOLS.promo) ? group('プロモカード', byCost(DOM.POOLS.promo)) : null,
       (DOM.POOLS && DOM.POOLS.basic1e) ? group('初版のみ（第二版で廃止）', byCost(
         DOM.POOLS.basic1e.filter((id) => DOM.POOLS.basic.indexOf(id) < 0)
