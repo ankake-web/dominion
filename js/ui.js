@@ -106,7 +106,8 @@
   }
 
   /* ---------- カード見た目ヘルパ ---------- */
-  const TYPE_JP = { treasure: '財宝', victory: '勝利点', curse: '呪い', action: 'アクション', attack: 'アタック', reaction: 'リアクション' };
+  const TYPE_JP = { treasure: '財宝', victory: '勝利点', curse: '呪い', action: 'アクション', attack: 'アタック', reaction: 'リアクション',
+    duration: '持続', command: '命令', knight: '騎士', ruins: '廃墟', shelter: '避難所', reserve: 'リザーブ', traveller: 'トラベラー', castle: '城' };
   function typeClass(id) {
     const c = DOM.CARDS[id];
     if (c.types.includes('treasure')) return 'type-treasure';
@@ -848,10 +849,11 @@
         supSection('勝利点', victoryRow, 'small')),
       supSection('王国カード（アクション）', kingdomByCost, 'big'));
 
-    // 場（プレイ済み）＋持続カード（⏳付き・場に残る）
+    // 場（プレイ済み）＋持続カード（⏳付き・場に残る）＋王子の脇（👑・毎ターン開始時に使用）
     const inPlayChips = active.inPlay.map((id) => h('div', { class: 'chip-card ' + typeClass(id) + coinClass(id) }, DOM.CARDS[id].name));
     const durChips = (active.durationCards || []).map((id) => h('div', { class: 'chip-card duration', title: '持続中（次の手番に効果）' }, '⏳ ' + DOM.CARDS[id].name));
-    const allPlayChips = inPlayChips.concat(durChips);
+    const princeChips = (active.princes || []).map((id) => h('div', { class: 'chip-card duration', title: '王子の脇（毎ターン開始時に使用）' }, '👑 ' + DOM.CARDS[id].name));
+    const allPlayChips = inPlayChips.concat(durChips, princeChips);
     const playArea = allPlayChips.length
       ? h('div', { class: 'play-area' }, allPlayChips)
       : h('div', { class: 'play-area' }, h('div', { class: 'empty-note' }, 'まだ場にカードはありません'));
@@ -865,6 +867,10 @@
     // 繁栄：勝利点トークン（司教・記念碑・収集・投資。終了時に得点へ加算）
     if (me.vpTokens) matRows.push(h('div', { class: 'mat-row' },
       h('span', { class: 'mat-label' }, '⭐ 勝利点トークン: ' + me.vpTokens + ' 点')));
+    // 新プロモ：王子の脇（自分が手番でないときも自分の脇は常時見える。公開情報）
+    if ((me.princes || []).length && me !== active) matRows.push(h('div', { class: 'mat-row' },
+      h('span', { class: 'mat-label' }, '👑 王子の脇: '),
+      me.princes.map((id) => h('span', { class: 'chip-card ' + typeClass(id) }, DOM.CARDS[id].name))));
     const matsBlock = matRows.length ? h('div', { class: 'mats' }, matRows) : null;
 
     // 手札（種類でグループ化・重ね表示）。支配中は操作対象（被支配者）の手札を出す。
@@ -981,8 +987,22 @@
       const who = state.players[actor].name;
       return h('div', { class: 'actions-bar' }, h('div', { class: 'btn btn-ghost btn-block', style: 'pointer-events:none' }, who + ' の番です…'));
     }
+    // プロモ：へそくり(Stash)の配置方針トグル（所持者が自分の手番中いつでも変更可・公開情報）。
+    // シャッフルは効果解決中に同期で起こるため、事前に方針を決めておく方式（山札の上／混ぜる／一番下）。
+    const stashBtn = (() => {
+      if (t.active !== viewer) return null;
+      const mp = state.players[viewer];
+      const ownStash = [].concat(mp.hand, mp.deck, mp.discard, mp.inPlay, mp.setAside || []).includes('stash');
+      if (!ownStash) return null;
+      const cur = mp.stashPlacement || 'top';
+      const label = { top: '山札の上', mix: '混ぜる', bottom: '一番下' };
+      const next = { top: 'mix', mix: 'bottom', bottom: 'top' };
+      return h('button', { class: 'btn btn-block', onclick: () => dispatch({ type: 'STASH_SETTING', player: viewer, value: next[cur] }) },
+        '🧧 へそくり配置: ' + label[cur] + '（タップで変更）');
+    })();
     if (t.phase === 'action') {
       return h('div', { class: 'actions-bar' },
+        stashBtn,
         h('button', { class: 'btn btn-primary btn-block', onclick: () => endActionPhase(state, viewer) }, '購入フェーズへ ▶'));
     }
     // 支配中は操作対象（被支配者=t.active）の手札で判定する（財宝を出すのも engine では被支配者の手札）。
@@ -995,6 +1015,7 @@
     return h('div', { class: 'actions-bar' },
       h('button', { class: 'btn btn-block', disabled: hasTreasure ? null : 'disabled', onclick: () => dispatch({ type: 'PLAY_ALL_TREASURES' }) }, '財宝を全部出す'),
       cofferBtn,
+      stashBtn,
       h('button', { class: 'btn btn-primary btn-block', onclick: () => endTurnTap(state, viewer) }, 'ターンを終える'));
   }
   // ギルド：財源を何枚使うか選ぶ（購入フェイズの任意タイミング。1枚=+1コイン）。pending ではない独立オーバーレイ。
@@ -1172,6 +1193,38 @@
     if (pd.type === 'dismantle' && pd.stage === 'trash') return modalSingleHand(p, '取り壊し — 廃棄', '廃棄するカードを1枚選びます（$1以上なら 安いカード＋金貨を獲得）。', () => true, (card) => dispatch({ type: 'DISMANTLE_TRASH', card }));
     if (pd.type === 'dismantle' && pd.stage === 'gain') return modalGainSupply(state, '取り壊し — 獲得', '廃棄したカードより安いカードを1枚獲得します。', (id) => effCost(state, id) <= pd.maxCost, (id) => dispatch({ type: 'DISMANTLE_GAIN', card: id }));
     if (pd.type === 'black_market') return modalBlackMarket(state, pd, p);
+    /* ===== 新プロモ（王子/船長/教会/サウナ/アヴァント）===== */
+    if (pd.type === 'prince') return modalSingleHand(p, '王子 — 脇に置く',
+      'コスト4以下の（持続・命令以外の）アクション1枚を王子の脇に置けます。以降あなたの毎ターン開始時、脇に置いたまま使用します（置かなくてもよい）。',
+      (id) => E() && E().cardCost ? (DOM.CARDS[id].types.includes('action') && !DOM.CARDS[id].types.includes('duration') && !DOM.CARDS[id].types.includes('command') && !DOM.CARDS[id].potion && effCost(state, id) <= 4) : false,
+      (card) => dispatch({ type: 'PRINCE_SETASIDE', card }),
+      { label: '脇に置かない', on: () => dispatch({ type: 'PRINCE_SETASIDE', card: null }) }, '脇に置く');
+    if (pd.type === 'prince_play') return modalOptions('王子 — ターン開始時',
+      '王子の脇の「' + (DOM.CARDS[pd.card] ? DOM.CARDS[pd.card].name : pd.card) + '」を（脇に置いたまま）使用します。',
+      [{ label: '「' + (DOM.CARDS[pd.card] ? DOM.CARDS[pd.card].name : pd.card) + '」を使う', cls: 'btn-primary', on: () => dispatch({ type: 'PRINCE_PLAY' }) }]);
+    if (pd.type === 'captain') {
+      const cands = (E() && E().captainTargets) ? E().captainTargets(state) : [];
+      return modalGainSupply(state, '船長 — サプライのカードを使う',
+        'サプライにあるコスト4以下の（持続・命令以外の）アクション1枚を、サプライに残したまま使用します。',
+        (id) => cands.includes(id),
+        (id) => dispatch({ type: 'CAPTAIN_PLAY', card: id }),
+        () => dispatch({ type: 'CAPTAIN_PLAY', card: null }), false, '使う');
+    }
+    if (pd.type === 'church') return modalMultiHand(p, '教会 — 脇に置く',
+      '手札から最大3枚を裏向きで脇に置きます（次のあなたのターン開始時に手札へ戻り、その後1枚廃棄できます）。0枚でもOK。',
+      (n) => '確定（' + n + '枚 置く）', true, (cards) => dispatch({ type: 'CHURCH_SETASIDE', cards }), 3);
+    if (pd.type === 'church_trash') return modalSingleHand(p, '教会 — 廃棄（任意）',
+      '手札1枚を廃棄できます（しなくてもよい）。', () => true,
+      (card) => dispatch({ type: 'CHURCH_TRASH', card }),
+      { label: '廃棄しない', on: () => dispatch({ type: 'CHURCH_TRASH', card: null }) });
+    if (pd.type === 'sauna_chain') return modalOptions(pd.next === 'avanto' ? 'サウナ — アヴァントを使う？' : 'アヴァント — サウナを使う？',
+      '手札の「' + (pd.next === 'avanto' ? 'アヴァント' : 'サウナ') + '」を（アクションを消費せず）使えます。',
+      [{ label: '使う', cls: 'btn-primary', on: () => dispatch({ type: 'SAUNA_CHAIN', play: true }) },
+       { label: '使わない', on: () => dispatch({ type: 'SAUNA_CHAIN', play: false }) }]);
+    if (pd.type === 'sauna_trash') return modalSingleHand(p, 'サウナ — 廃棄（任意）',
+      '銀貨を使ったので、手札1枚を廃棄できます（あと' + (pd.remaining || 1) + '回・しなくてもよい）。', () => true,
+      (card) => dispatch({ type: 'SAUNA_TRASH', card }),
+      { label: '廃棄しない', on: () => dispatch({ type: 'SAUNA_TRASH', card: null }) });
 
     /* ===== 拡張: 海辺（Seaside 第二版）===== */
     if (pd.type === 'warehouse') return modalSelectN(p, '倉庫 — 捨てる', '手札を3枚選んで捨てます。', Math.min(3, p.hand.length), '確定（捨てる）', (cards) => dispatch({ type: 'WAREHOUSE_DISCARD', cards }));

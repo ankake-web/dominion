@@ -90,6 +90,14 @@
       if (t.merchants) { t.coins += t.merchants; log(state, `${p.name} は商人の効果で +${t.merchants} コイン。`); }
       t.silverPlayed = true;
     }
+    // プロモ：サウナ＝このターンに使ったサウナ1枚につき、銀貨を使うたび手札1枚を廃棄してよい
+    // （+2コインの計上後に解決＝公式）。別の選択待ちの最中（闇市場の財宝プレイ等）は上書きせず、
+    // 同種の sauna_trash 中なら回数を合算する（ティアラ等で銀貨を連続プレイした場合）。
+    if (card === 'silver' && (t.saunaPlays || 0) > 0 && p.hand.length > 0) {
+      if (!state.pending) state.pending = { type: 'sauna_trash', player: pIndex, remaining: t.saunaPlays };
+      else if (state.pending.type === 'sauna_trash' && state.pending.player === pIndex)
+        state.pending.remaining += t.saunaPlays;
+    }
     // 海辺：アストロラーベ（財宝・持続）＝このターン +1コイン +1購入、次の手番開始時も同じ。
     if (card === 'astrolabe') {
       t.coins += 1; t.buys += 1;
@@ -126,7 +134,7 @@
     }
     // 水晶玉：山札の上1枚を見て 廃棄／捨て札／（アクションか財宝なら）使う（コイン1は coin:1）。
     if (card === 'crystal_ball') {
-      if (p.deck.length === 0 && p.discard.length > 0) { p.deck = shuffle(p.discard); p.discard = []; }
+      if (p.deck.length === 0 && p.discard.length > 0) { reshuffleDeck(p); }
       if (p.deck.length > 0) state.pending = { type: 'crystal_ball', player: pIndex, card: p.deck[0] };
     }
     // ティアラ：+1購入。手札の財宝1枚を2回使ってよい（獲得時の山札上置きは triggerOnGain が処理）。
@@ -169,6 +177,24 @@
     }
     return a;
   }
+  // プロモ：へそくり(Stash)＝「これをシャッフルするとき、山札の好きな位置に置いてよい」。
+  // シャッフルの多くはカード効果の解決中に同期で発生し対話を挟めない（業界最大手 Shuffle iT も
+  // 未実装のままの難物）ため、各プレイヤーの常設方針 stashPlacement（'top'既定/'mix'/'bottom'）に
+  // 従って自動配置する（本人はいつでも STASH_SETTING で変更可＝§6 許容簡略化）。
+  // へそくりは裏面が異なる＝山札内の位置は公開情報（maskStateFor も位置を隠さない）。
+  function placeStash(p) {
+    const mode = p.stashPlacement || 'top';
+    if (mode === 'mix') return;
+    let n = 0;
+    while (removeOne(p.deck, 'stash')) n++;
+    for (let i = 0; i < n; i++) { if (mode === 'top') p.deck.unshift('stash'); else p.deck.push('stash'); }
+  }
+  // 捨て札を山札にシャッフルする共通入口（全リデューサはこれを使う＝へそくりの配置を一元処理）。
+  function reshuffleDeck(p) {
+    p.deck = shuffle(p.discard);
+    p.discard.length = 0;
+    placeStash(p);
+  }
 
   /* ---------- サプライ初期化 ----------
      勝利点の山は人数で枚数が変わる（2人=8, 3-4人=12）。屋敷/公領/属州だけでなく
@@ -189,6 +215,9 @@
     // 収穫祭：馬上槍試合が場にあれば、賞品（Prize）5種を各1枚ずつ専用山として加える。
     //   賞品は非サプライ扱い＝購入できず（canBuyCard）・3山終了に数えない（emptyPileCount）。獲得は馬上槍試合のみ。
     if (kingdom.includes('tournament')) PRIZES.forEach((id) => (supply[id] = 1));
+    // プロモ：サウナ/アヴァントは10枚の分割山（上5枚サウナ・下5枚アヴァント）＝各5枚に上書き。
+    // アヴァントはサウナが尽きるまで購入/獲得できない（gain/canBuyCard がガード）。
+    if (kingdom.includes('sauna')) { supply.sauna = 5; supply.avanto = 5; }
     // 錬金術：王国にポーション費用カードがあれば、ポーション山（公式は16枚）を共通サプライに加える。
     if (kingdom.some((k) => C()[k] && C()[k].potion)) supply.potion = 16;
     // 繁栄：王国に繁栄の王国カードがあれば、プラチナ貨（12枚）と植民地（勝利点と同枚数）を共通サプライに加える。
@@ -252,6 +281,8 @@
         lastTurnGains: [], // 直前の自分の手番に獲得したカードid（密輸人が右隣のこれを参照）
         vpTokens: 0,       // 繁栄：勝利点トークンの累計（司教・記念碑・収集・投資。公開・終了時に加算）
         coffers: 0,        // ギルド：財源（Coffers）トークン。購入フェイズに1枚=+1コインで使える。公開・VPには数えない。
+        princes: [],       // プロモ：王子の脇に置いたカードid列（公開）。毎ターン開始時に脇のままプレイ。1要素=王子1枚が稼働中。
+        stashPlacement: 'top', // プロモ：へそくり(Stash)のシャッフル時配置方針 'top'|'mix'|'bottom'（本人がいつでも変更可）。
       };
     });
     // ギルド：パン屋（Baker）のセットアップ＝ゲーム開始時、各プレイヤーは財源1枚を得る。
@@ -270,6 +301,11 @@
       baneCard = pickBane(kingdom);
       if (baneCard) kingdom.push(baneCard);
     }
+    // プロモ：サウナ/アヴァント＝1つの分割山（上5枚サウナ・下5枚アヴァント）。どちらかが王国に
+    // あれば両方をサプライに置く（emptyPileCount では1山として数える）。抽選はサウナに正規化済み
+    // （DOM.randomKingdom）だが、固定セットや外部指定に avanto 単独が来ても補正する。
+    if (kingdom.includes('avanto') && !kingdom.includes('sauna')) kingdom.push('sauna');
+    if (kingdom.includes('sauna') && !kingdom.includes('avanto')) kingdom.push('avanto');
     const supply = initSupply(players.length, kingdom);
 
     // 闇市場(Black Market)デッキ：使用中のサプライに無い王国カードを1枚ずつ集めてシャッフル。
@@ -337,8 +373,7 @@
     for (let i = 0; i < n; i++) {
       if (p.deck.length === 0) {
         if (p.discard.length === 0) break;
-        p.deck = shuffle(p.discard);
-        p.discard = [];
+        reshuffleDeck(p);
       }
       drawn.push(p.deck.shift());
     }
@@ -349,6 +384,8 @@
   // サプライから pIndex が dest('discard'|'hand'|'deck') にカードを獲得
   function gain(state, pIndex, cardId, dest) {
     if ((state.supply[cardId] || 0) <= 0) return false;
+    // プロモ：サウナ/アヴァント分割山＝山の一番上のカードしか獲得できない（サウナが残る間アヴァントは不可）。
+    if (cardId === 'avanto' && (state.supply.sauna || 0) > 0) return false;
     const t = state.turn;
     // 錬金術・支配：被支配者（手番のactive）が獲得するカードは脇に避け、ターン終了時に
     // 支配者の捨て札へ渡す（獲得先が手札/山札でも脇に置く＝公式のルーリング）。獲得フックも動かさない。
@@ -396,6 +433,7 @@
   function canBuyCard(state, pi, id) {
     if (id === 'grand_market' && state.players[pi].inPlay.includes('copper')) return false;
     if (NON_SUPPLY.has(id)) return false; // 収穫祭：賞品は購入できない（馬上槍試合でのみ獲得）
+    if (id === 'avanto' && (state.supply.sauna || 0) > 0) return false; // プロモ：分割山の上（サウナ）が先
     return true;
   }
 
@@ -438,7 +476,8 @@
       state.pending = null; return true;             // 候補なし→辞退
     }
     if (!canGain(card) || (state.supply[card] || 0) <= 0) return false;
-    gain(state, pd.player, card, dest);
+    // gain が拒否するカード（分割山の下段アヴァント等）は「獲得したことになるが動かない」を防ぐため再選択に戻す
+    if (!gain(state, pd.player, card, dest)) return false;
     if (note) log(state, `${state.players[pd.player].name} は「${C()[card].name}」を${note}`);
     state.pending = null;
     return true;
@@ -496,7 +535,7 @@
   function startDoctorOverpay(state, pi, remaining) {
     const p = state.players[pi];
     if (remaining <= 0) { state.pending = null; return; }
-    if (p.deck.length === 0 && p.discard.length > 0) { p.deck = shuffle(p.discard); p.discard = []; }
+    if (p.deck.length === 0 && p.discard.length > 0) { reshuffleDeck(p); }
     if (p.deck.length === 0) { state.pending = null; return; } // もう見る札が無い
     state.pending = { type: 'doctor_overpay', player: pi, remaining, card: p.deck[0] };
   }
@@ -535,7 +574,7 @@
   // 犠牲者の山札の上1枚を廃棄→攻撃側が同コストの獲得物を選ぶ（候補が無ければ次へ）。
   function swindlerTrash(state, source, victim, queue) {
     const v = state.players[victim];
-    if (v.deck.length === 0 && v.discard.length > 0) { v.deck = shuffle(v.discard); v.discard = []; }
+    if (v.deck.length === 0 && v.discard.length > 0) { reshuffleDeck(v); }
     if (v.deck.length === 0) {
       log(state, `${v.name} は山札が空で廃棄できなかった。`);
       swindlerEnterVictim(state, source, queue);
@@ -572,7 +611,7 @@
     while (true) {
       if (v.deck.length === 0) {
         if (v.discard.length === 0) break;
-        v.deck = shuffle(v.discard); v.discard = [];
+        reshuffleDeck(v);
       }
       const c = v.deck.shift();
       if (cardCost(state, c) >= 3) { trashed = c; break; }
@@ -699,7 +738,7 @@
     while (p.hand.length < 7) {
       if (p.deck.length === 0) {
         if (p.discard.length === 0) break;
-        p.deck = shuffle(p.discard); p.discard = [];
+        reshuffleDeck(p);
       }
       if (p.deck.length === 0) break;
       const c = p.deck.shift();
@@ -728,7 +767,7 @@
   }
   function spyReveal(state, attacker, target, queue) {
     const tp = state.players[target];
-    if (tp.deck.length === 0 && tp.discard.length > 0) { tp.deck = shuffle(tp.discard); tp.discard = []; }
+    if (tp.deck.length === 0 && tp.discard.length > 0) { reshuffleDeck(tp); }
     if (tp.deck.length === 0) { // 公開する札が無い
       spyEnterTarget(state, attacker, queue);
       return;
@@ -753,7 +792,7 @@
     const v = state.players[victim];
     const revealed = [];
     for (let i = 0; i < 2; i++) {
-      if (v.deck.length === 0) { if (v.discard.length === 0) break; v.deck = shuffle(v.discard); v.discard = []; }
+      if (v.deck.length === 0) { if (v.discard.length === 0) break; reshuffleDeck(v); }
       if (v.deck.length === 0) break;
       revealed.push(v.deck.shift());
     }
@@ -827,7 +866,7 @@
   }
   function scryingReveal(state, attacker, target, queue) {
     const tp = state.players[target];
-    if (tp.deck.length === 0 && tp.discard.length > 0) { tp.deck = shuffle(tp.discard); tp.discard = []; }
+    if (tp.deck.length === 0 && tp.discard.length > 0) { reshuffleDeck(tp); }
     if (tp.deck.length === 0) { scryingEnterTarget(state, attacker, queue); return; } // 公開できる札なし
     reveal(state, target, [tp.deck[0]], '念視の泉で山札の上を公開');
     state.pending = { type: 'scrying_pool', stage: 'decide', player: attacker, source: attacker, victim: target, card: tp.deck[0], queue };
@@ -837,7 +876,7 @@
     const taken = [];
     let guard = 0;
     while (guard++ < 100) {
-      if (ap.deck.length === 0) { if (ap.discard.length === 0) break; ap.deck = shuffle(ap.discard); ap.discard = []; }
+      if (ap.deck.length === 0) { if (ap.discard.length === 0) break; reshuffleDeck(ap); }
       if (ap.deck.length === 0) break;
       const c = ap.deck.shift();
       taken.push(c); ap.hand.push(c);
@@ -900,7 +939,7 @@
     const v = state.players[victim];
     const revealed = [];
     for (let i = 0; i < 2; i++) {
-      if (v.deck.length === 0) { if (v.discard.length === 0) break; v.deck = shuffle(v.discard); v.discard = []; }
+      if (v.deck.length === 0) { if (v.discard.length === 0) break; reshuffleDeck(v); }
       if (v.deck.length === 0) break;
       revealed.push(v.deck.shift());
     }
@@ -1114,7 +1153,7 @@
     const tp = state.players[target];
     const look = [];
     for (let i = 0; i < 2; i++) {
-      if (tp.deck.length === 0) { if (tp.discard.length === 0) break; tp.deck = shuffle(tp.discard); tp.discard = []; }
+      if (tp.deck.length === 0) { if (tp.discard.length === 0) break; reshuffleDeck(tp); }
       if (tp.deck.length === 0) break;
       look.push(tp.deck.shift());
     }
@@ -1145,7 +1184,7 @@
     const v = state.players[victim];
     const revealed = [];
     for (let i = 0; i < 2; i++) {
-      if (v.deck.length === 0) { if (v.discard.length === 0) break; v.deck = shuffle(v.discard); v.discard = []; }
+      if (v.deck.length === 0) { if (v.discard.length === 0) break; reshuffleDeck(v); }
       if (v.deck.length === 0) break;
       revealed.push(v.deck.shift());
     }
@@ -1302,7 +1341,7 @@
     const v = state.players[victim];
     const look = [];
     for (let i = 0; i < 3; i++) {
-      if (v.deck.length === 0) { if (v.discard.length === 0) break; v.deck = shuffle(v.discard); v.discard = []; }
+      if (v.deck.length === 0) { if (v.discard.length === 0) break; reshuffleDeck(v); }
       if (v.deck.length === 0) break;
       look.push(v.deck.shift());
     }
@@ -1394,7 +1433,7 @@
     while (guard++ < 300) {
       if (p.deck.length === 0) {
         if (p.discard.length === 0) break;
-        p.deck = shuffle(p.discard); p.discard = [];
+        reshuffleDeck(p);
       }
       if (p.deck.length === 0) break;
       const c = p.deck.shift();
@@ -1441,7 +1480,7 @@
   }
   function jesterApply(state, source, victim, queue) {
     const v = state.players[victim];
-    if (v.deck.length === 0 && v.discard.length > 0) { v.deck = shuffle(v.discard); v.discard = []; }
+    if (v.deck.length === 0 && v.discard.length > 0) { reshuffleDeck(v); }
     if (v.deck.length === 0) { log(state, `${v.name} は山札が空だった（道化師）。`); jesterEnterVictim(state, source, queue); return; }
     const top = v.deck.shift();
     v.discard.push(top);
@@ -1540,6 +1579,24 @@
       state.pending = null;
     }
   }
+
+  /* ---------- 新プロモ：王子/船長の対象判定 ---------- */
+  // 王子：手札から脇に置ける対象＝持続でも命令でもない、コスト4以下（ポーション費用なし）のアクション。
+  // コストは判定時点の現在コスト（橋・街道等の軽減込み＝公式）。
+  function princeEligible(state, id) {
+    return DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && !DOM.isType(id, 'command') &&
+      !(C()[id] && C()[id].potion) && cardCost(state, id) <= 4;
+  }
+  // 船長：サプライで使える対象＝残数>0・非サプライ（賞品等）以外・持続/命令以外・
+  // コスト4以下（ポーション費用なし）のアクション。分割山は一番上のみ（アヴァントは$5なので自然に除外）。
+  function captainTargets(state) {
+    return Object.keys(state.supply).filter((id) =>
+      (state.supply[id] || 0) > 0 && !NON_SUPPLY.has(id) && C()[id] &&
+      DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && !DOM.isType(id, 'command') &&
+      !C()[id].potion && cardCost(state, id) <= 4 &&
+      !(id === 'avanto' && (state.supply.sauna || 0) > 0));
+  }
+  function anyCaptainTarget(state) { return captainTargets(state).length > 0; }
 
   function applyEffect(state, cardId, pi) {
     const t = state.turn;
@@ -1690,7 +1747,7 @@
         for (let i = 0; i < 4; i++) {
           if (p.deck.length === 0) {
             if (p.discard.length === 0) break;
-            p.deck = shuffle(p.discard); p.discard = [];
+            reshuffleDeck(p);
           }
           revealed.push(p.deck.shift());
         }
@@ -1793,7 +1850,7 @@
       case 'adventurer': {
         let found = 0; const aside = [];
         while (found < 2) {
-          if (p.deck.length === 0) { if (p.discard.length === 0) break; p.deck = shuffle(p.discard); p.discard = []; }
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
           if (p.deck.length === 0) break;
           const c = p.deck.shift();
           if (DOM.isType(c, 'treasure')) { p.hand.push(c); found++; } else aside.push(c);
@@ -1830,7 +1887,7 @@
         for (let i = 0; i < 2; i++) {
           if (left.deck.length === 0) {
             if (left.discard.length === 0) break;
-            left.deck = shuffle(left.discard); left.discard = [];
+            reshuffleDeck(left);
           }
           revealed.push(left.deck.shift());
         }
@@ -1867,7 +1924,7 @@
         break;
       case 'vassal': {
         t.coins += 2;
-        if (p.deck.length === 0 && p.discard.length > 0) { p.deck = shuffle(p.discard); p.discard = []; }
+        if (p.deck.length === 0 && p.discard.length > 0) { reshuffleDeck(p); }
         if (p.deck.length > 0) {
           const top = p.deck.shift();
           p.discard.push(top); // 一旦捨てる（公式どおり：捨ててから使うなら捨て札から場へ）
@@ -1897,7 +1954,7 @@
         t.actions += 1;
         const look = []; // 山札の上2枚を「見る」（他者には公開しない）
         for (let i = 0; i < 2; i++) {
-          if (p.deck.length === 0) { if (p.discard.length === 0) break; p.deck = shuffle(p.discard); p.discard = []; }
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
           if (p.deck.length === 0) break;
           look.push(p.deck.shift());
         }
@@ -1932,7 +1989,7 @@
         draw(state, pi, 3);
         const revealed = [];
         for (let i = 0; i < 4; i++) {
-          if (p.deck.length === 0) { if (p.discard.length === 0) break; p.deck = shuffle(p.discard); p.discard = []; }
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
           if (p.deck.length === 0) break;
           revealed.push(p.deck.shift());
         }
@@ -1963,7 +2020,7 @@
       case 'envoy': {
         const revealed = [];
         for (let i = 0; i < 5; i++) {
-          if (p.deck.length === 0) { if (p.discard.length === 0) break; p.deck = shuffle(p.discard); p.discard = []; }
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
           if (p.deck.length === 0) break;
           revealed.push(p.deck.shift());
         }
@@ -1993,6 +2050,46 @@
         }
         break;
       }
+
+      /* ===== 新プロモ（王子/船長/教会/サウナ/アヴァント。へそくりは財宝＝placeStash/STASH_SETTING）===== */
+      case 'prince': {
+        // 王子（2022年エラッタ版）：手札のコスト4以下・持続/命令以外のアクション1枚を王子の脇に
+        // 置いてよい。以降あなたの各ターン開始時、それを脇に置いたまま使用する（場には出ない）。
+        // 置いた王子は持続としてゲーム終了まで場に残る（cleanupAndAdvance が princes の数だけ保持）。
+        // 玉座の間×王子＝2回解決で2枚まで脇置きできる（現行公式ルール）。
+        if (p.inPlay.includes('prince') && p.hand.some((c) => princeEligible(state, c))) {
+          state.pending = { type: 'prince', player: pi };
+        } else if (p.inPlay.includes('prince')) {
+          log(state, `${p.name} の王子：脇に置けるカードが手札にない。`);
+        }
+        break;
+      }
+      case 'captain':
+        // 船長：このターンと次のターン開始時、サプライのコスト4以下・持続/命令以外のアクションを
+        // サプライに残したまま使用する。
+        armDuration(state, pi, 'captain');
+        if (anyCaptainTarget(state)) state.pending = { type: 'captain', player: pi };
+        else log(state, `${p.name} の船長：サプライに使えるアクションがない。`);
+        break;
+      case 'church':
+        // 教会：+1アクション。手札から最大3枚を裏向きで脇に置く。次のターン開始時に手札へ戻し、
+        // その後 手札1枚を廃棄してよい（脇0枚でも廃棄の機会はある＝公式）。
+        t.actions += 1;
+        if (p.hand.length > 0) state.pending = { type: 'church', player: pi };
+        else armDuration(state, pi, 'church', { stashed: [] });
+        break;
+      case 'sauna':
+        // サウナ：+1カード+1アクション。手札のアヴァント1枚を使ってよい。
+        // このターン、銀貨を使うたび（このターンのサウナ使用回数ぶん）手札1枚を廃棄してよい。
+        draw(state, pi, 1); t.actions += 1;
+        t.saunaPlays = (t.saunaPlays || 0) + 1;
+        if (p.hand.includes('avanto')) state.pending = { type: 'sauna_chain', player: pi, next: 'avanto' };
+        break;
+      case 'avanto':
+        // アヴァント：+3カード。手札のサウナ1枚を使ってよい。
+        draw(state, pi, 3);
+        if (p.hand.includes('sauna')) state.pending = { type: 'sauna_chain', player: pi, next: 'sauna' };
+        break;
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
       // --- バニラ系（即時のみ・非対話）---
@@ -2048,7 +2145,7 @@
         // 山札の上3枚を見る（足りなければある分）
         const look = [];
         for (let i = 0; i < 3; i++) {
-          if (p.deck.length === 0) { if (p.discard.length === 0) break; p.deck = shuffle(p.discard); p.discard = []; }
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
           if (p.deck.length === 0) break;
           look.push(p.deck.shift());
         }
@@ -2073,7 +2170,7 @@
       case 'sea_chart': {
         draw(state, pi, 1); t.actions += 1;
         // 山札の上を公開。同名カードが場（inPlay/durationCards）にあれば手札に。
-        if (p.deck.length === 0 && p.discard.length > 0) { p.deck = shuffle(p.discard); p.discard = []; }
+        if (p.deck.length === 0 && p.discard.length > 0) { reshuffleDeck(p); }
         if (p.deck.length > 0) {
           const top = p.deck[0];
           reveal(state, pi, [top], '海図で山札の上を公開');
@@ -2085,8 +2182,9 @@
         break;
       }
       case 'island':
-        // 島自身を島マットへ（場のこのカードを取り除く）＋手札1枚を島マットへ
-        removeOne(p.inPlay, 'island'); p.islandMat.push('island');
+        // 島自身を島マットへ（場のこのカードを取り除く）＋手札1枚を島マットへ。
+        // 王子で「動かさず使用」した場合は場に島が無い＝自身は移動しない（幻の複製を防ぐ＝treasure_map/祝宴と同型ガード）。
+        if (removeOne(p.inPlay, 'island')) p.islandMat.push('island');
         if (p.hand.length > 0) state.pending = { type: 'island', player: pi };
         else log(state, `${p.name} は島を島マットに置いた。`);
         break;
@@ -2244,7 +2342,7 @@
         // 山札の上4枚を公開し、銅貨とポーションを手札に、残りを好きな順で山札の上に戻す。
         const revealed = [];
         for (let i = 0; i < 4; i++) {
-          if (p.deck.length === 0) { if (p.discard.length === 0) break; p.deck = shuffle(p.discard); p.discard = []; }
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
           if (p.deck.length === 0) break;
           revealed.push(p.deck.shift());
         }
@@ -2284,7 +2382,7 @@
         // ゴーレム以外のアクションが2枚出るまで山札を公開。残りを捨て、その2枚を好きな順で使う。
         const found = []; const aside = []; let guard = 0;
         while (found.length < 2 && guard++ < 200) {
-          if (p.deck.length === 0) { if (p.discard.length === 0) break; p.deck = shuffle(p.discard); p.discard = []; }
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
           if (p.deck.length === 0) break;
           const c = p.deck.shift();
           if (c !== 'golem' && DOM.isType(c, 'action')) found.push(c);
@@ -2367,7 +2465,7 @@
       case 'harvest': {
         const revealed = [];
         for (let i = 0; i < 4; i++) {
-          if (p.deck.length === 0) { if (p.discard.length === 0) break; p.deck = shuffle(p.discard); p.discard = []; }
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
           if (p.deck.length === 0) break;
           revealed.push(p.deck.shift());
         }
@@ -2440,7 +2538,7 @@
         t.actions += 1;
         const look = [];
         for (let i = 0; i < 3; i++) {
-          if (p.deck.length === 0) { if (p.discard.length === 0) break; p.deck = shuffle(p.discard); p.discard = []; }
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
           if (p.deck.length === 0) break;
           look.push(p.deck.shift());
         }
@@ -2463,7 +2561,7 @@
       case 'herald': {
         draw(state, pi, 1); t.actions += 1;
         // 山札の一番上を公開。アクションならそれをプレイする（アクション権は消費しない）。
-        if (p.deck.length === 0 && p.discard.length > 0) { p.deck = shuffle(p.discard); p.discard = []; }
+        if (p.deck.length === 0 && p.discard.length > 0) { reshuffleDeck(p); }
         if (p.deck.length > 0) {
           const top = p.deck[0];
           reveal(state, pi, [top], '伝令官で山札の上を公開');
@@ -2540,7 +2638,7 @@
         break;
       case 'jack_of_all_trades': {
         if (gain(state, pi, 'silver', 'discard')) log(state, `${p.name} は銀貨を獲得した（何でも屋）。`);
-        if (p.deck.length === 0 && p.discard.length > 0) { p.deck = shuffle(p.discard); p.discard = []; }
+        if (p.deck.length === 0 && p.discard.length > 0) { reshuffleDeck(p); }
         if (p.deck.length > 0) state.pending = { type: 'jack', stage: 'look', player: pi, card: p.deck[0] };
         else jackDrawTo5(state, pi);
         break;
@@ -2561,7 +2659,7 @@
       case 'cartographer': {
         draw(state, pi, 1); t.actions += 1;
         const look = [];
-        for (let i = 0; i < 4; i++) { if (p.deck.length === 0) { if (p.discard.length === 0) break; p.deck = shuffle(p.discard); p.discard = []; } if (p.deck.length === 0) break; look.push(p.deck.shift()); }
+        for (let i = 0; i < 4; i++) { if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); } if (p.deck.length === 0) break; look.push(p.deck.shift()); }
         if (look.length) state.pending = { type: 'cartographer', player: pi, cards: look };
         break;
       }
@@ -2642,7 +2740,13 @@
   /* ---------- ゲーム終了判定・得点 ---------- */
   function emptyPileCount(state) {
     // 賞品（Prize）は非サプライ＝空でも「3山終了」に数えない。
-    return Object.keys(state.supply).filter((k) => !NON_SUPPLY.has(k) && state.supply[k] <= 0).length;
+    // サウナ/アヴァントは1つの分割山＝sauna 側で「両方尽きたら空」と数え、avanto キーは数えない。
+    return Object.keys(state.supply).filter((k) => {
+      if (NON_SUPPLY.has(k)) return false;
+      if (k === 'avanto') return false;
+      if (k === 'sauna') return (state.supply.sauna || 0) <= 0 && (state.supply.avanto || 0) <= 0;
+      return state.supply[k] <= 0;
+    }).length;
   }
   function isGameOver(state) {
     if (state.supply.province <= 0 || emptyPileCount(state) >= 3) return true;
@@ -2655,8 +2759,10 @@
   }
   function allCards(p) {
     // 海辺：持続カード・脇置き・島/原住民マットも所有カード＝VP（島の2点・庭園の枚数等）に数える。
+    // 新プロモ：王子の脇に置いたカード（princes）も所有カード（ゲーム終了時はデッキに戻して数える＝公式）。
     return [].concat(p.deck, p.hand, p.discard, p.inPlay,
-      p.durationCards || [], p.setAside || [], p.islandMat || [], p.nativeVillageMat || []);
+      p.durationCards || [], p.setAside || [], p.islandMat || [], p.nativeVillageMat || [],
+      p.princes || []);
   }
   function vpOf(p) {
     const cards = allCards(p);
@@ -2739,6 +2845,10 @@
       const r = DURATION_RESOLVERS[e.type];
       if (r) r(state, pi, e); // 非対話はここで適用、対話は state.turn.startQueue に積む
     }
+    // 新プロモ：王子＝脇に置いたカードを毎ターン開始時に（脇に置いたまま）使用する（強制・アクション権不要）。
+    (p.princes || []).forEach((card, i) => {
+      state.turn.startQueue.push({ type: 'prince_play', player: pi, idx: i, card });
+    });
     // 繁栄：会計士＝手番開始時、手札の会計士を（アクションを消費せず）使ってよい。startQueue の最後に積む。
     const clerks = p.hand.filter((c) => c === 'clerk').length;
     for (let i = 0; i < clerks; i++) state.turn.startQueue.push({ type: 'clerk_start', player: pi });
@@ -2785,6 +2895,16 @@
         draw(s, pi, 1);
         log(s, `${p.name} は脇に置いた馬商人を手札に戻し +1カード。`);
       }
+    },
+    church: (s, pi, e) => { // 新プロモ：脇に伏せたカードを手札へ戻し、その後 手札1枚を廃棄してよい（対話＝startQueueへ）
+      const p = s.players[pi];
+      const back = (e.stashed || []).filter((c) => removeOne(p.setAside, c));
+      back.forEach((c) => p.hand.push(c));
+      if (back.length) log(s, `${p.name} は教会で脇に置いた ${back.length}枚 を手札に戻した。`);
+      if (p.hand.length > 0) (s.turn.startQueue = s.turn.startQueue || []).push({ type: 'church_trash', player: pi });
+    },
+    captain: (s, pi) => { // 新プロモ：次のターン開始時も、サプライのコスト4以下アクションを使う（対話＝startQueueへ）
+      (s.turn.startQueue = s.turn.startQueue || []).push({ type: 'captain', player: pi });
     },
   };
 
@@ -3035,6 +3155,9 @@
     // --- 海辺：持続カードの仕分け（捨てずに持ち越す）---
     // 予約（delayedEffects）が残っている枚数ぶんだけ durationCards に保持。出し切った持続は捨て札へ。
     const cnt = {}; (p.delayedEffects || []).forEach((e) => { cnt[e.card] = (cnt[e.card] || 0) + 1; });
+    // 新プロモ：王子＝カードを脇に置いた王子は（毎ターン開始時効果を持つ持続として）ゲーム終了まで
+    // 場に残り続ける。稼働中の王子（princes の要素数）ぶんだけ物理カードを保持する。
+    if ((p.princes || []).length) cnt.prince = (cnt.prince || 0) + p.princes.length;
     const used = {}; const newDur = [];
     for (const c of (p.durationCards || [])) {
       if ((used[c] || 0) < (cnt[c] || 0)) { newDur.push(c); used[c] = (used[c] || 0) + 1; }
@@ -3100,7 +3223,16 @@
   function reduce(state, action) {
     state = clone(state);
     state = applyAction(state, action);
-    return runReplays(state);
+    state = runReplays(state);
+    // 開始時キューの安全網：選択待ちが無いのに startQueue に項目が残っていたら次を進める。
+    // （王子/船長がターン開始時にアタック等を使うと、そのアタック連鎖の終端は pending=null で
+    //   閉じるだけで popStartQueue を呼ばない＝後続の開始時効果が取り残されるのを防ぐ。
+    //   通常時は startQueue が null/空なので何もしない。）
+    if (!state.pending && !state.gameOver && state.turn && state.turn.startQueue && state.turn.startQueue.length) {
+      popStartQueue(state);
+      state = runReplays(state); // 念のため（開始時効果が replay を積むことは無いが無害）
+    }
+    return state;
   }
   // 玉座の間の「2回目の適用」（および錬金術ゴーレムの2枚目）を、選択待ちが解消したタイミングで実行する。
   function runReplays(state) {
@@ -3408,7 +3540,7 @@
         const p = state.players[pd.player];
         const named = action.card;
         if (!C()[named]) return state;
-        if (p.deck.length === 0 && p.discard.length > 0) { p.deck = shuffle(p.discard); p.discard = []; }
+        if (p.deck.length === 0 && p.discard.length > 0) { reshuffleDeck(p); }
         const top = p.deck.length ? p.deck[0] : null;
         if (top != null) {
           reveal(state, pd.player, [top], '願いの井戸で山札の上を公開');
@@ -4303,6 +4435,127 @@
         return state;
       }
 
+      /* ===== 新プロモ（王子/船長/教会/サウナ/アヴァント/へそくり）の選択解決 ===== */
+      /* ---- 王子：手札のコスト4以下（持続/命令以外）のアクション1枚を王子の脇に置いてよい ---- */
+      case 'PRINCE_SETASIDE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'prince') return state;
+        const p = state.players[pd.player];
+        if (action.card == null) { state.pending = null; return state; } // 置かない（王子は普通に捨て札へ）
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0 || !princeEligible(state, card)) return state;
+        if (p.inPlay.indexOf('prince') < 0) return state; // 場の王子が母体（玉座×王子は2回解決で2枚置ける＝公式）
+        removeOne(p.hand, card);
+        p.princes = p.princes || [];
+        p.princes.push(card); // 王子自身は場に残り続ける（クリンナップが princes の数だけ保持）
+        log(state, `${p.name} は「${C()[card].name}」を王子の脇に置いた（毎ターン開始時に使用）。`);
+        state.pending = null;
+        return state;
+      }
+      /* ---- 王子：ターン開始時＝脇のカードを（脇に置いたまま）使用する（強制・1ボタン） ---- */
+      case 'PRINCE_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'prince_play') return state;
+        const p = state.players[pd.player];
+        const card = (p.princes || [])[pd.idx];
+        state.pending = null; // 先に閉じる（applyEffect が新たな選択待ちを立てることがある）
+        if (card) {
+          t.actionsPlayed = (t.actionsPlayed || 0) + 1; // アクションの使用に数える（共謀者等）。カードは場に出ない。
+          log(state, `${p.name} は王子で「${C()[card].name}」を使った（脇に置いたまま）。`);
+          applyEffect(state, card, pd.player);
+        }
+        return state; // 残りの開始時キューは reduce の startQueue 安全網が進める
+      }
+      /* ---- 船長：サプライのコスト4以下（持続/命令以外）のアクションを、サプライに残したまま使用 ---- */
+      case 'CAPTAIN_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'captain') return state;
+        const cands = captainTargets(state);
+        if (action.card == null) {
+          if (cands.length) return state; // 対象があるうちは使用必須（公式：mayではない）
+          state.pending = null;
+          return state;
+        }
+        const card = action.card;
+        if (cands.indexOf(card) < 0) return state;
+        state.pending = null; // 先に閉じる（applyEffect が新たな選択待ちを立てることがある）
+        t.actionsPlayed = (t.actionsPlayed || 0) + 1; // 使用に数えるが、カードはサプライに残る（場に出ない）
+        log(state, `${state.players[pd.player].name} は船長でサプライの「${C()[card].name}」を使った（サプライに残る）。`);
+        applyEffect(state, card, pd.player);
+        return state; // ターン開始時ぶんの後続は startQueue 安全網が進める
+      }
+      /* ---- 教会：手札から最大3枚を裏向きで脇に置く ---- */
+      case 'CHURCH_SETASIDE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'church') return state;
+        const p = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length > 3) return state;
+        const copy = p.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state; // 手札に無い指定は拒否
+        cards.forEach((c) => { removeOne(p.hand, c); p.setAside.push(c); });
+        armDuration(state, pd.player, 'church', { stashed: cards.slice() });
+        if (cards.length) log(state, `${p.name} は教会で ${cards.length}枚 を裏向きで脇に置いた。`);
+        state.pending = null;
+        return state;
+      }
+      /* ---- 教会：次のターン開始時＝手札1枚を廃棄してよい ---- */
+      case 'CHURCH_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'church_trash') return state;
+        const p = state.players[pd.player];
+        if (action.card != null) {
+          if (p.hand.indexOf(action.card) < 0) return state;
+          removeOne(p.hand, action.card);
+          trashOwn(state, pd.player, action.card);
+          log(state, `${p.name} は「${C()[action.card].name}」を廃棄した（教会）。`);
+        }
+        popStartQueue(state); // 開始時キューの次へ（無ければ通常の手番へ）
+        return state;
+      }
+      /* ---- サウナ/アヴァント：手札の相方を使ってよい（連鎖） ---- */
+      case 'SAUNA_CHAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'sauna_chain') return state;
+        const p = state.players[pd.player];
+        state.pending = null;
+        if (action.play && p.hand.includes(pd.next)) {
+          removeOne(p.hand, pd.next);
+          p.inPlay.push(pd.next);
+          t.actionsPlayed = (t.actionsPlayed || 0) + 1; // アクション権は消費しない（「使ってよい」）
+          log(state, `${p.name} は${pd.next === 'avanto' ? 'サウナ' : 'アヴァント'}で「${C()[pd.next].name}」を使った。`);
+          applyEffect(state, pd.next, pd.player);
+        }
+        return state;
+      }
+      /* ---- サウナ：銀貨を使ったとき、手札1枚を廃棄してよい（サウナの使用回数ぶん） ---- */
+      case 'SAUNA_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'sauna_trash') return state;
+        const p = state.players[pd.player];
+        if (action.card == null) { state.pending = null; return state; } // 残り回数ぶんまとめて辞退
+        if (p.hand.indexOf(action.card) < 0) return state;
+        removeOne(p.hand, action.card);
+        trashOwn(state, pd.player, action.card);
+        log(state, `${p.name} は「${C()[action.card].name}」を廃棄した（サウナ）。`);
+        pd.remaining = (pd.remaining || 1) - 1;
+        if (pd.remaining <= 0 || p.hand.length === 0) state.pending = null; // 使い切り or 手札切れで終了
+        return state;
+      }
+      /* ---- へそくり：シャッフル時の配置方針を変更（本人の手番/選択窓でのみ・公開情報） ---- */
+      case 'STASH_SETTING': {
+        // オンラインはサーバが「actor（手番 or 選択中の人）」しか dispatch できない。ここでは
+        // action.player がその actor 本人（支配中は被支配者=山札の持ち主）であることを検証し、
+        // 他人の配置方針を書き換えられないようにする。
+        const actorSeat = state.pending ? state.pending.player : t.active;
+        if (action.player !== actorSeat) return state;
+        const pl = state.players[action.player];
+        const v = action.value;
+        if (!pl || (v !== 'top' && v !== 'mix' && v !== 'bottom')) return state;
+        pl.stashPlacement = v;
+        return state;
+      }
+
       /* ===== 拡張: 海辺（Seaside 第二版）の選択解決 ===== */
       case 'WAREHOUSE_DISCARD': {
         const pd = state.pending;
@@ -4398,7 +4651,7 @@
         if (action.mode === 'take') {
           if (p.nativeVillageMat.length) { p.hand.push(...p.nativeVillageMat); log(state, `${p.name} は原住民の村マットの ${p.nativeVillageMat.length}枚 を手札に加えた。`); p.nativeVillageMat = []; }
         } else { // 'set'：山札の上1枚を見ずにマットへ
-          if (p.deck.length === 0 && p.discard.length > 0) { p.deck = shuffle(p.discard); p.discard = []; }
+          if (p.deck.length === 0 && p.discard.length > 0) { reshuffleDeck(p); }
           if (p.deck.length > 0) { p.nativeVillageMat.push(p.deck.shift()); log(state, `${p.name} は山札の上1枚を原住民の村マットに置いた。`); }
         }
         state.pending = null;
@@ -4440,8 +4693,10 @@
         const card = action.card;
         if ((pd.candidates || []).indexOf(card) < 0) return state;
         if ((state.supply[card] || 0) <= 0) { state.pending = null; return state; }
-        gain(state, pd.player, card, 'discard');
-        log(state, `${state.players[pd.player].name} は密輸人で「${C()[card].name}」を獲得した。`);
+        // gain が拒否したら（分割山の下段アヴァント等）獲得無しで解決（候補は他に無い前提の安全側）
+        if (gain(state, pd.player, card, 'discard')) {
+          log(state, `${state.players[pd.player].name} は密輸人で「${C()[card].name}」を獲得した。`);
+        }
         state.pending = null;
         return state;
       }
@@ -4866,6 +5121,13 @@
             const q = []; for (let k = 1; k < state.players.length; k++) q.push((pd.player + k) % state.players.length);
             charlatanEnterVictim(state, pd.player, q);
           }
+          // プロモ：サウナ＝銀貨を「使うたび」廃棄機会。ティアラの2回目は playTreasureCard を通らないので
+          // ここで手動加算する（1回目で立った sauna_trash に合算＝銀貨2回×サウナ使用回数ぶんの廃棄機会）。
+          if (card === 'silver' && (state.turn.saunaPlays || 0) > 0 && p.hand.length > 0) {
+            if (!state.pending) state.pending = { type: 'sauna_trash', player: pd.player, remaining: state.turn.saunaPlays };
+            else if (state.pending.type === 'sauna_trash' && state.pending.player === pd.player)
+              state.pending.remaining += state.turn.saunaPlays;
+          }
           log(state, `${p.name} はティアラで「${C()[card].name}」をもう一度使った（+${add}コイン）。`);
         }
         return state;
@@ -5261,7 +5523,7 @@
         if (!C()[named]) return state; // 実在するカード名のみ
         const look = [];
         for (let i = 0; i < 3; i++) {
-          if (me.deck.length === 0) { if (me.discard.length === 0) break; me.deck = shuffle(me.discard); me.discard = []; }
+          if (me.deck.length === 0) { if (me.discard.length === 0) break; reshuffleDeck(me); }
           if (me.deck.length === 0) break;
           look.push(me.deck.shift());
         }
@@ -5406,7 +5668,7 @@
         const toHand = []; const toDiscard = []; const revealed = [];
         let guard = 0;
         while (toHand.length < 3 && guard++ < 200) {
-          if (me.deck.length === 0) { if (me.discard.length === 0) break; me.deck = shuffle(me.discard); me.discard = []; }
+          if (me.deck.length === 0) { if (me.discard.length === 0) break; reshuffleDeck(me); }
           if (me.deck.length === 0) break;
           const c = me.deck.shift(); revealed.push(c);
           if (c === named) toDiscard.push(c); else toHand.push(c);
@@ -5445,7 +5707,7 @@
         const sp = state.players[pd.player];
         let discarded = null;
         if (action.discard) {
-          if (sp.deck.length === 0 && sp.discard.length > 0) { sp.deck = shuffle(sp.discard); sp.discard = []; }
+          if (sp.deck.length === 0 && sp.discard.length > 0) { reshuffleDeck(sp); }
           if (sp.deck.length > 0) { discarded = sp.deck.shift(); sp.discard.push(discarded); log(state, `${sp.name} は公爵夫人で山札の上を捨てた。`); }
         }
         // ★pending は 'duchess_look' のまま保持して捨て処理＝tunnel の金貨獲得等が獲得時対話を立てて
@@ -5649,6 +5911,7 @@
         for (const c of cards) { if (!DOM.isType(c, 'action') || !removeOne(copy, c)) return state; }
         cards.forEach((c) => removeOne(pl.discard, c));
         pl.deck = shuffle(pl.deck.concat(cards));
+        placeStash(pl); // 山札全体のシャッフル＝へそくりも配置方針に従い再配置
         log(state, `${pl.name} は宿屋で 捨て札のアクション ${cards.length}枚 を山札に混ぜてシャッフルした。`);
         state.pending = null;
         return state;
@@ -5942,7 +6205,12 @@
       // 自席の deck は id をソートして順序情報を消す（中身と枚数は保持＝自分の得点 vpOf 計算やUI表示は不変）。
       // 権威stateはサーバが完全な順序で保持し reduce もそこで行う（クライアントは reduce しない）ので実害なし。
       // 山札上を見る/並べ替える効果（薬剤師・衛兵・見張り・水晶玉等）は pending 側で本人にだけ明示公開する。
-      if (i === seat) return Object.assign({}, p, { deck: p.deck.slice().sort() });
+      // 例外＝へそくり(Stash)：裏面が異なる＝山札内の「位置」は公式でも公開情報。位置だけ保存してソートする。
+      if (i === seat) {
+        const rest = p.deck.filter((c) => c !== 'stash').sort();
+        let ri = 0;
+        return Object.assign({}, p, { deck: p.deck.map((c) => (c === 'stash' ? 'stash' : rest[ri++])) });
+      }
       // 錬金術・支配：支配者は被支配者（手番のactive）の手札を見て操作する（山札は伏せたまま）。
       const revealHand = state.turn && state.turn.possessedBy === seat && i === state.turn.active;
       // 海辺：脇置き(setAside)・原住民の村マットは秘密＝枚数だけ。島マット・持続カードは公開（公式どおり）。
@@ -5953,13 +6221,14 @@
         return c;
       });
       return Object.assign({}, p, {
-        deck: new Array(p.deck.length).fill('back'),
-        hand: revealHand ? p.hand.slice() : new Array(p.hand.length).fill('back'),
+        // へそくり(Stash)は裏面が異なる＝相手の山札内の位置も公開情報（公式）。stash だけ晒して残りは伏せる。
+        deck: p.deck.map((c) => (c === 'stash' ? 'stash' : 'back')),
+        hand: revealHand ? p.hand.slice() : p.hand.map((c) => (c === 'stash' ? 'stash' : 'back')),
         discard: new Array(p.discard.length).fill('back'),
-        setAside: new Array((p.setAside || []).length).fill('back'),
+        setAside: (p.setAside || []).map((c) => (c === 'stash' ? 'stash' : 'back')),
         nativeVillageMat: new Array((p.nativeVillageMat || []).length).fill('back'),
         delayedEffects: maskedDelayed,
-        // inPlay / durationCards / islandMat は場に表向き＝そのまま
+        // inPlay / durationCards / islandMat / princes（王子の脇＝公開）は表向き＝そのまま
       });
     });
     // 闇市場デッキは伏せ札。中身は誰にも見えないよう枚数だけ残す（公開された3枚は pending.revealed 側に出る）。
@@ -6021,6 +6290,9 @@
     // プロモ
     'ENVOY_PICK', 'GOVERNOR_CHOOSE', 'GOVERNOR_REMODEL_TRASH', 'GOVERNOR_REMODEL_GAIN',
     'DISMANTLE_TRASH', 'DISMANTLE_GAIN', 'BLACK_MARKET_PLAY_TREASURES', 'BLACK_MARKET_BUY', 'BLACK_MARKET_SKIP',
+    // 新プロモ（王子/船長/教会/サウナ/アヴァント/へそくり）
+    'PRINCE_SETASIDE', 'PRINCE_PLAY', 'CAPTAIN_PLAY', 'CHURCH_SETASIDE', 'CHURCH_TRASH',
+    'SAUNA_CHAIN', 'SAUNA_TRASH', 'STASH_SETTING',
     // 海辺（第二版）
     'WAREHOUSE_DISCARD', 'HAVEN_SETASIDE', 'TACTICIAN_RESOLVE', 'SALVAGER_TRASH',
     'LOOKOUT_TRASH', 'LOOKOUT_DISCARD', 'ISLAND_PICK', 'NATIVE_VILLAGE_RESOLVE', 'TIDE_POOLS_DISCARD',
@@ -6068,6 +6340,7 @@
     isGameOver,
     emptyPileCount,
     canBuyCard,
+    captainTargets, // 新プロモ：船長の対象（CPU/UIが同じ候補を参照＝engine拒否とCPU非提案のセット）
     maskStateFor,
     PLAYER_ACTIONS,
     // 「誰が今操作すべきか」: 選択待ちならその人、なければ手番のプレイヤー

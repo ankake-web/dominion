@@ -34,8 +34,8 @@
 
   /* 獲得したいカードの優先順（高いほど良い）。基本＋拡張(陰謀)の全王国カードを網羅。 */
   const GAIN_ORDER = ['colony', 'platinum', 'province', 'gold', 'artisan', 'nobles', 'harem', 'duchy',
-    'adventurer', 'laboratory', 'festival', 'witch', 'bandit', 'governor', 'council_room', 'patrol', 'library', 'market', 'minion', 'mine', 'sentry', 'courtier', 'replace', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'spy', 'thief', 'upgrade', 'bureaucrat', 'feast', 'silver',
-    'poacher', 'mining_village', 'smithy', 'mill', 'walled_village', 'dismantle', 'envoy', 'secret_passage', 'diplomat', 'courtyard', 'masquerade', 'throne_room', 'great_hall', 'tribute', 'militia', 'steward', 'trading_post', 'baron', 'scout',
+    'adventurer', 'laboratory', 'festival', 'witch', 'bandit', 'governor', 'captain', 'council_room', 'patrol', 'avanto', 'library', 'market', 'minion', 'mine', 'sentry', 'prince', 'courtier', 'replace', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'spy', 'thief', 'upgrade', 'bureaucrat', 'feast', 'stash', 'silver',
+    'sauna', 'poacher', 'mining_village', 'smithy', 'mill', 'walled_village', 'dismantle', 'envoy', 'secret_passage', 'diplomat', 'courtyard', 'masquerade', 'throne_room', 'great_hall', 'tribute', 'militia', 'steward', 'church', 'trading_post', 'baron', 'scout',
     'remodel', 'moneylender', 'merchant', 'harbinger', 'vassal', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith', 'chancellor', 'black_market', 'hoard',
     // 海辺（第二版）＝強さ/コストの目安順。CPUの購入優先度（サプライにある時だけ効く）。
     'wharf', 'sea_witch', 'bazaar', 'corsair', 'blockade', 'treasury', 'island', 'merchant_ship', 'fishing_village',
@@ -52,8 +52,9 @@
     // ギルド（実プレイ＝段階2）＝強さ/コストの目安順。供給があるときだけ効く（bestEngineBuy/bestGain が参照）。
     'soothsayer', 'taxman', 'butcher', 'merchant_guild', 'journeyman', 'baker', 'herald', 'advisor', 'plaza', 'doctor', 'candlestick_maker', 'stonemason', 'masterpiece',
     'pawn', 'lurker', 'moat', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke',
-    // 追加拡張（収穫祭/異郷/暗黒時代/新プロモ）＝孤立プールで実サプライに出ないため並び順はCPU挙動に無影響
-    'stash', 'prince', 'captain', 'church', 'sauna', 'avanto', 'hamlet', 'fortune_teller', 'menagerie', 'farming_village', 'horse_traders', 'remake', 'tournament', 'young_witch', 'harvest', 'horn_of_plenty', 'hunting_party', 'jester', 'fairgrounds', 'bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed', 'crossroads', 'duchess', 'fools_gold', 'develop', 'oasis', 'oracle', 'scheme', 'tunnel', 'jack_of_all_trades', 'noble_brigand', 'nomad_camp', 'silk_road', 'spice_merchant', 'trader', 'cache', 'cartographer', 'embassy', 'haggler', 'highway', 'ill_gotten_gains', 'inn', 'mandarin', 'margrave', 'stables', 'border_village', 'farmland', 'nomads', 'trail', 'weaver', 'souk', 'cauldron', 'guard_dog', 'berserker', 'wheelwright', 'witchs_hut', 'poor_house', 'squire', 'vagrant', 'beggar', 'hermit', 'sage', 'forager', 'storeroom', 'urchin', 'market_square', 'ironmonger', 'wandering_minstrel', 'procession', 'scavenger', 'fortress', 'rats', 'armory', 'death_cart', 'marauder', 'feodum',
+    // 追加拡張（収穫祭/異郷/暗黒時代）＝孤立プールで実サプライに出ないため並び順はCPU挙動に無影響
+    // （新プロモ6種は実プレイ化済み＝上の実強度順の位置に配置済み）
+    'hamlet', 'fortune_teller', 'menagerie', 'farming_village', 'horse_traders', 'remake', 'tournament', 'young_witch', 'harvest', 'horn_of_plenty', 'hunting_party', 'jester', 'fairgrounds', 'bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed', 'crossroads', 'duchess', 'fools_gold', 'develop', 'oasis', 'oracle', 'scheme', 'tunnel', 'jack_of_all_trades', 'noble_brigand', 'nomad_camp', 'silk_road', 'spice_merchant', 'trader', 'cache', 'cartographer', 'embassy', 'haggler', 'highway', 'ill_gotten_gains', 'inn', 'mandarin', 'margrave', 'stables', 'border_village', 'farmland', 'nomads', 'trail', 'weaver', 'souk', 'cauldron', 'guard_dog', 'berserker', 'wheelwright', 'witchs_hut', 'poor_house', 'squire', 'vagrant', 'beggar', 'hermit', 'sage', 'forager', 'storeroom', 'urchin', 'market_square', 'ironmonger', 'wandering_minstrel', 'procession', 'scavenger', 'fortress', 'rats', 'armory', 'death_cart', 'marauder', 'feodum',
     // 段階1追加（暗黒時代残り。CARD_SETS 未参照＝実際には獲得されないが GAIN_ORDER=全カードの整合性を満たす）
     'junk_dealer', 'bandit_camp', 'rebuild', 'catacombs', 'graverobber', 'count', 'band_of_misfits', 'mystic', 'rogue', 'pillage', 'cultist', 'counterfeit', 'hunting_grounds', 'altar', 'knights', 'dame_anna', 'dame_josephine', 'dame_molly', 'dame_natalie', 'dame_sylvia', 'sir_bailey', 'sir_destry', 'sir_martin', 'sir_michael', 'sir_vander', 'abandoned_mine', 'ruined_library', 'ruined_market', 'ruined_village', 'survivors', 'hovel', 'necropolis', 'overgrown_estate', 'spoils', 'madman', 'mercenary',
     // 段階1追加（冒険＋帝国。CARD_SETS 未参照＝実際には獲得されないが GAIN_ORDER=全カードの整合性を満たす）
@@ -63,10 +64,14 @@
   // 収穫祭：賞品(Prize)は馬上槍試合でのみ獲得する非サプライ札＝汎用の獲得効果(bestGain/bestGainExact)は
   // 絶対に賞品を選ばない（豊穣の角等で$0賞品を不正獲得しない／賞品を拒否する reducer と噛み合って無限ループしない）。
   const PRIZE_SET = new Set(['bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed']);
+  // 新プロモ：サウナ/アヴァント分割山＝上のサウナが残る間はアヴァントを獲得できない
+  // （engine の gain/canBuyCard 拒否と必ずセット＝提案すると強制獲得と噛み合い無限ループ）。
+  function splitBlocked(state, id) { return id === 'avanto' && sup(state, 'sauna') > 0; }
   function bestGain(state, maxCost, opts) {
     opts = opts || {};
     for (const id of GAIN_ORDER) {
       if (PRIZE_SET.has(id)) continue;
+      if (splitBlocked(state, id)) continue;
       if (opts.treasureOnly && !isTreasure(id)) continue;
       if (opts.noVictory && (isType(id, 'victory') || isType(id, 'curse'))) continue;
       if (!C()[id]) continue;
@@ -80,16 +85,31 @@
     opts = opts || {};
     for (const id of GAIN_ORDER) {
       if (PRIZE_SET.has(id)) continue;
+      if (splitBlocked(state, id)) continue;
       if (opts.noVictory && (isType(id, 'victory') || isType(id, 'curse'))) continue;
       if (!C()[id]) continue;
       if (cost(state, id) === exact && sup(state, id) > 0) return id;
     }
     for (const id of Object.keys(state.supply)) {
       if (PRIZE_SET.has(id)) continue;
+      if (splitBlocked(state, id)) continue;
       if (opts.noVictory && (isType(id, 'victory') || isType(id, 'curse'))) continue;
       if (C()[id] && cost(state, id) === exact && sup(state, id) > 0) return id;
     }
     return null;
+  }
+
+  /* ---------- 新プロモ：王子の脇置き対象を選ぶ ---------- */
+  // 対象＝持続/命令以外・ポーション費用なし・コスト4以下のアクション（engine の princeEligible と同条件）。
+  // 自分をマット等へ動かして空振りする札（島/宝の地図）は毎ターン再生の価値が無いので選ばない。
+  const PRINCE_AVOID = new Set(['island', 'treasure_map']);
+  function bestPrinceTarget(state, p) {
+    const elig = p.hand.filter((c) =>
+      isType(c, 'action') && !isType(c, 'duration') && !isType(c, 'command') &&
+      !(C()[c] && C()[c].potion) && cost(state, c) <= 4 && !PRINCE_AVOID.has(c));
+    if (!elig.length) return null;
+    for (const id of GAIN_ORDER) { if (elig.includes(id)) return id; } // 実強度順で最良
+    return elig[0];
   }
 
   /* ---------- アクションフェーズ：使うカードを選ぶ ---------- */
@@ -152,6 +172,10 @@
     if (has('plaza')) return 'plaza';                     // +1カード+2アクション（財宝を捨てて財源）
     if (has('herald')) return 'herald';                   // +1カード+1アクション（山札の上がアクションなら使う）
     if (has('advisor')) return 'advisor';                 // +1アクション（上3枚→左隣が1枚捨てさせ、残りを手札へ）
+    // 新プロモ：非ターミナル（+アクション付き）
+    if (has('sauna')) return 'sauna';                     // +1カード+1アクション（アヴァント連鎖・銀貨で廃棄）
+    // 教会＝+1アクションだが手札は増えない。呪いの処分か手札余剰があるときだけ使う（無駄打ち回避）。
+    if (has('church') && (p.hand.includes('curse') || p.hand.length >= 6)) return 'church';
     // 異郷：非ターミナル（+アクション付き）
     if (has('border_village')) return 'border_village';   // +1カード+2アクション
     if (has('crossroads') && (!t.crossroadsPlayed || p.hand.some((c) => isType(c, 'victory')))) return 'crossroads'; // 初回+3アクション/勝利点で+カード
@@ -163,6 +187,10 @@
     if (has('trail')) return 'trail';                     // +1カード+1アクション
     if (has('wheelwright')) return 'wheelwright';         // +1カード+1アクション（捨てて格上げ獲得）
     // --- ターミナル（効果の大きい順）---
+    // 新プロモ：王子＝良い対象（$4以下の持続/命令以外）が手札にあるときだけ（毎ターン無料再生＝最優先）。
+    if (has('prince') && bestPrinceTarget(state, p)) return 'prince';
+    if (has('captain')) return 'captain';                 // サプライの$4以下アクションを今と次ターンに使う
+    if (has('avanto')) return 'avanto';                   // +3カード（サウナ連鎖）
     if (has('golem')) return 'golem';                     // 山札のアクション2枚を使う
     if (has('herbalist')) return 'herbalist';             // +1購入+1コイン
     if (has('transmute') && has('estate')) return 'transmute'; // 屋敷→公領
@@ -399,6 +427,8 @@
       if (!C()[id]) continue;
       if (!(state.kingdom || []).includes(id)) continue;         // 王国カードのみ（基本の財宝/勝利点は別ロジック）
       if (id === 'possession') continue;                          // CPUは支配を使いこなせないので買わない
+      if (id === 'prince') continue;                              // 王子($8)は属州優先のCPUには扱いが難しいので自動購入しない
+      if (splitBlocked(state, id)) continue;                      // 分割山の下（アヴァント）はサウナが尽きるまで買えない
       if (isType(id, 'victory') || isType(id, 'curse')) continue; // 勝利点は緑化ロジックで扱う
       if (sup(state, id) <= 0) continue;
       if (cost(state, id) > coins) continue;
@@ -439,6 +469,8 @@
       // ただしエンジンが成立する王国のときだけ（不成立なら純ビッグマネー）。
       const eng = (province > 4 && evaluateKingdom(state.kingdom) === 'ENGINE') ? bestEngineBuy(state, p, coins) : null;
       if (eng) pick = eng;
+      // 新プロモ：へそくり($5・+2コイン財宝)は銀貨の上位互換的な金量札＝$5で銀貨に落ちる前に確保（2枚まで）。
+      else if (coins >= 5 && sup(state, 'stash') > 0 && owned(p, 'stash') < 2) pick = 'stash';
       else if (coins >= 3 && sup(state, 'silver') > 0) pick = 'silver';
     }
 
@@ -459,6 +491,7 @@
     const eng = (province > 3 && evaluateKingdom(state.kingdom) === 'ENGINE') ? bestEngineBuy(state, p, coins) : null;
     if (eng) return eng;
     if (province <= 3 && coins >= 5 && sup(state, 'duchy') > 0) return 'duchy';
+    if (coins >= 5 && sup(state, 'stash') > 0 && owned(p, 'stash') < 2) return 'stash'; // 新プロモ：$5の金量札
     if (coins >= 3 && sup(state, 'silver') > 0) return 'silver';
     return null;
   }
@@ -867,6 +900,36 @@
           return { type: 'DISMANTLE_TRASH', card };
         }
         return { type: 'DISMANTLE_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
+      /* ===== 新プロモ（王子/船長/教会/サウナ/アヴァント） ===== */
+      case 'prince': {
+        // 良い対象があれば脇置き、無ければ置かない（王子は普通に捨て札へ＝後で再挑戦できる）。
+        return { type: 'PRINCE_SETASIDE', card: bestPrinceTarget(state, p) };
+      }
+      case 'prince_play':
+        return { type: 'PRINCE_PLAY' }; // ターン開始時の強制プレイ（選択なし）
+      case 'captain': {
+        // 対象があれば必ず使用（公式＝mayではない）。GAIN_ORDER の実強度順で最良を選ぶ。
+        const cands = (DOM.engine && DOM.engine.captainTargets) ? DOM.engine.captainTargets(state) : [];
+        if (!cands.length) return { type: 'CAPTAIN_PLAY', card: null };
+        for (const id of GAIN_ORDER) { if (cands.includes(id)) return { type: 'CAPTAIN_PLAY', card: id }; }
+        return { type: 'CAPTAIN_PLAY', card: cands[0] }; // 終端保証（GAIN_ORDER 外でも必ず選ぶ）
+      }
+      case 'church':
+        // 脇置きは0枚で確定（戻ってくるだけ＝CPUには利得が薄い）。次ターンの廃棄だけ活用する。
+        return { type: 'CHURCH_SETASIDE', cards: [] };
+      case 'church_trash': {
+        if (p.hand.includes('curse')) return { type: 'CHURCH_TRASH', card: 'curse' };
+        return { type: 'CHURCH_TRASH', card: null };
+      }
+      case 'sauna_chain':
+        return { type: 'SAUNA_CHAIN', play: true }; // 相方は常に使う（+3カード/キャントリップ＝常に得）
+      case 'sauna_trash': {
+        if (p.hand.includes('curse')) return { type: 'SAUNA_TRASH', card: 'curse' };
+        // 銅貨は所持が多いときだけ圧縮（財宝を削りすぎない）
+        if (p.hand.includes('copper') && owned(p, 'copper') > 4) return { type: 'SAUNA_TRASH', card: 'copper' };
+        return { type: 'SAUNA_TRASH', card: null };
+      }
+
       case 'black_market': {
         if (p.hand.some((c) => isTreasure(c))) return { type: 'BLACK_MARKET_PLAY_TREASURES' };
         const coins = state.turn.coins;

@@ -7,7 +7,7 @@
    - クロスオリジン（Google Fonts / WebSocket）は触らない。
    バージョンを上げると activate で旧キャッシュを全部捨てる。
    ============================================================ */
-const VERSION = 'v33';
+const VERSION = 'v34';
 const CACHE = 'dominion-' + VERSION;
 
 // オフラインに最低限必要なファイル（盤面サムネ含む・約1MB）

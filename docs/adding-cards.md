@@ -67,6 +67,12 @@ case 'market': draw(state,pi,1); t.actions+=1; t.buys+=1; t.coins+=1; break;   /
 - **避難所Shelters**＝供給山でなく**開始デッキ置換**（createInitialState の `for(...) start.push('estate')` を条件で `hovel/necropolis/overgrown_estate` に）。deck開始なので保存則自動。DOM.CARDS定義・GAIN_ORDER・POOL所属・マスクは別途。
 - 非サプライ・非プールの新カードを足すなら integrity の base 除外リスト（copper/silver/gold/estate/duchy/province/curse/potion/platinum/colony）に追記が要る場合あり。
 
+**分割山**（サウナ/アヴァント。帝国の陣地/鹵獲品等も同型）＝ supply に両方のキーを持たせ「上が尽きるまで下は取れない」制約で表現:
+- createInitialState で片方を kingdom に正規化＋もう片方を push（bane と同じ kingdom.push 方式）／initSupply で各5枚に上書き。
+- **(a) `gain()` 冒頭ガード (b) `canBuyCard` (c) `emptyPileCount`（ペアで1山＝両方0で空） (d) CPU `bestGain`/`bestGainExact`/`bestEngineBuy` の `splitBlocked` スキップ** の4点セット（賞品の4系統チェックリストと同型）。
+- 抽選は `DOM.randomKingdom` で下側を上側に正規化（分割山は1山ぶんの枠しか使わない）。
+- **`finishGain` は gain() の戻り値を検証する**（拒否カードで「獲得したことにして pending を閉じる」と保存則は保つがログが嘘をつく＋UI が混乱）。
+
 **per-playerトークン**（VP/Coffers/Villagers）: createInitialState の player に `vpTokens:0` の隣へ `coffers:0` 等。付与は `p.coffers=(p.coffers||0)+n`（記念碑が手本）。**消費するトークン（Coffers購入時/Villagersアクション時）は新 action（例 `COFFERS_SPEND`）＋PLAYER_ACTIONS＋CPU消費＋UIボタンの4点セット**。vpTokensは vpOf に加算・Coffersは加算しない。マスク不要（公開）。
 
 **1拡張を playable に**（海辺/繁栄と同じ）: (1)全カード定義 (2)固定推奨10種 `DOM.KINGDOM_X`（integrityがちょうど10種要求）(3)`DOM.POOLS.x`（孤立から昇格＝実体同じ）(4)`DOM.CARD_SETS` に2行（固定 `{id:'x',kind:'standard',kingdom:DOM.KINGDOM_X}` ＋ランダム `{id:'random-x',kind:'random',randomFrom:['x']}`）(5)基本サプライ追加が要るなら initSupply に条件節 (6)GAIN_ORDER を実強度順の正しい位置へ (7)各カード効果実装。
@@ -83,6 +89,16 @@ case 'market': draw(state,pi,1); t.actions+=1; t.buys+=1; t.coins+=1; break;   /
 - 玉座 THRONE_CHOOSE: 手札→場移動→1回目 applyEffect→`state.replay.push({player,card})`。王の宮廷は push×2。
 - 「他カードをプレイ」（procession/band_of_misfits/captain）: golemPlay / VASSAL_PLAY（別位置のカードを inPlay に移して applyEffect）が雛形。procession の trash→+1コスト獲得は玉座＋後処理（remodelの2段pending型）。
 - **`t.actionsPlayed+=1`（共謀者判定）を忘れない**。アクション権 t.actions は玉座/ゴーレム/家臣とも消費しない。self-trash系は removeOne 戻り値チェック（treasure_map の教訓＝2回目に場に無い→保存則違反）。
+
+**「動かさずに使用」(play leaving it there)**（船長=サプライから／王子=脇から。冒険 necromancer も同型）:
+- ゾーン移動せず `t.actionsPlayed+=1` ＋ `applyEffect` だけ呼ぶ。自己移動（採掘村の自己廃棄等）は各カードの `removeOne` 戻り値チェックが false になり**自然に**失敗する（=公式挙動。移動が条件のボーナスは出ない・無条件の効果は出る）。場に出ないので「場のカード数」参照（豊穣の角/行商人）にも自然に入らない。
+- 船長の対象は `captainTargets(state)`（供給>0・非NON_SUPPLY・action・非duration/command・ポーション費用なし・現在コスト≤4・分割山は一番上のみ）。**engine 拒否と CPU/UI 候補は同じ関数を参照**（exports 済み）。
+
+**永続持続**（王子。冒険 hireling/champion も同型）: `p.princes` 等の「稼働数」を cleanupAndAdvance の持続仕分け `cnt` に加算すると、その枚数ぶん物理カードが durationCards に残り続ける（delayedEffects を毎ターン再armしない）。ターン開始時の繰り返し効果は resolveDurationStartEffects で startQueue に push。
+
+**startQueue 安全網**（reduce 末尾）: ターン開始時効果（王子/船長/会計士等）がアタックを使うと、アタック連鎖の終端は pending=null で閉じるだけで popStartQueue を呼ばない＝後続の開始時効果が取り残される。`reduce()` が「pending 無し＆startQueue 残あり」を検知して popStartQueue する安全網で全ケースを一括救済（clerk 型の個別終端 pop は不要になったが残置・無害）。
+
+**シャッフル介入**（へそくり）: 捨て札→山札の再シャッフルは**必ず `reshuffleDeck(p)` を使う**（37箇所を一括置換済み。生の `p.deck=shuffle(p.discard)` を新規に書かない）。山札全体をシャッフルする効果（宿屋等）は直後に `placeStash(p)`。対話は挟めないので常設方針 `p.stashPlacement`（STASH_SETTING・actor本人のみ変更可）で自動配置。
 
 **可変VP**: 全得点は `vpOf(p)` 一箇所（`allCards(p)`＝deck/hand/discard/inPlay/durationCards/setAside/マット全部が対象）。固定VPは定義の `vp:`。可変は1ブロック追加（duke/gardens/vineyard が手本）:
 - fairgrounds: `異なる名前数(new Set(cards).size)/5 の切り捨て ×2 ×枚数`

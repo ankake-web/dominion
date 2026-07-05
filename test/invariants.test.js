@@ -19,7 +19,8 @@ const DOM = sandbox.window.DOM, E = DOM.engine, CPU = DOM.cpu;
 let pass = 0, fail = 0;
 function ok(c, m) { if (c) { pass++; } else { fail++; console.log('  ✗ FAIL: ' + m); } }
 
-const ZONES = ['deck', 'hand', 'discard', 'inPlay', 'durationCards', 'setAside', 'islandMat', 'nativeVillageMat'];
+const ZONES = ['deck', 'hand', 'discard', 'inPlay', 'durationCards', 'setAside', 'islandMat', 'nativeVillageMat',
+  'princes']; // 新プロモ：王子の脇に置いたカード（公開ゾーン。王子本体は inPlay/durationCards に残る）
 function tally(s) {
   const t = {}; const add = (id) => { if (id != null) t[id] = (t[id] || 0) + 1; };
   Object.keys(s.supply).forEach((id) => { const n = s.supply[id] | 0; for (let i = 0; i < n; i++) add(id); });
@@ -99,7 +100,7 @@ console.log('=== カード保存則: 全プール混成ランダム王国 ===');
 // C) 出荷セット（各セットを実際に組んで検証）
 console.log('=== カード保存則: 出荷セット（固定/ランダム各種） ===');
 {
-  const sets = ['basic', 'intrigue', 'seaside', 'alchemy', 'prosperity', 'cornucopia', 'guilds', 'hinterlands', 'random', 'random-promo', 'random-seaside', 'random-alchemy', 'random-prosperity', 'random-cornucopia', 'random-guilds', 'random-hinterlands'];
+  const sets = ['basic', 'intrigue', 'seaside', 'alchemy', 'prosperity', 'cornucopia', 'guilds', 'hinterlands', 'promo2-pack', 'random', 'random-promo', 'random-seaside', 'random-alchemy', 'random-prosperity', 'random-cornucopia', 'random-guilds', 'random-hinterlands'];
   let allOk = true;
   for (const setId of sets) {
     for (let sd = 0; sd < 3; sd++) {

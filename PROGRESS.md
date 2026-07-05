@@ -1,9 +1,35 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-05 / branch `main`。**`21336f0` まで push済（本番デプロイ済）**＝異郷段階2(§0-5)＋冒険/帝国段階1(§0-6・画像/カタログ) を含む。`sw.js` は **v33**。
+最終更新: 2026-07-05 / branch `main`。**push済ベース=`c8b2f6c`（本番デプロイ済）**。以後 **未push4件**＝`3a48e8b`異郷段階2(§0-5)＋`fcfae02`冒険/帝国段階1(§0-6)＋`21336f0`handoff＋**新プロモ段階2(§0-7・実プレイ化)コミット**。`sw.js` は **v34**。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
-**新セッションは まず `npm test` を実行し 25スイート・オールグリーン（exit 0・整合性3115件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
+**新セッションは まず `npm test` を実行し 27スイート・オールグリーン（exit 0・整合性3122件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
+
+---
+
+## 0-7. 段階2＝新プロモ6枚（王子/船長/教会/サウナ/アヴァント/へそくり）を実プレイ化（2026-07-05 完了）
+
+### 結論
+- **新プロモの王国カード6種を段階2（実プレイ・現行エラッタ準拠）で実装完了**。`DOM.CARD_SETS` に `promo2-pack`（固定10種＝moat/village/militia/smithy/market＋stash/prince/captain/church/sauna）を追加し**出荷済み**。既存 `random-promo`（basic+intrigue+promo 抽選）でも 6種が実プレイになった。`sw.js` v33→**v34**。テスト **27スイート全緑**（`promo2.test.js` 141件＋`promo2-ui.test.js` 22件を新設・`package.json`登録・`invariants` に `promo2-pack` セット＋`princes` ゾーン追加）。整合性 3115→**3122**。CPU序列 100/64/95 維持。
+- **公式ルールは多エージェント研究＋敵対検証Workflowで確定**（wiki.dominionstrategy.com/wikiwiki/RGG公式FAQ で裏取り）。**王子/船長は現行エラッタで種別が アクション-持続-命令（Action-Duration-Command）に変更**済み＝それを採用（王子=2022改訂・船長=2019改訂。「動かさずに使用」＝場に出さずプレイ）。webp（prince/captain）を新種別・新文言で再生成。carddata に `アクション・持続・命令` の複合ラベル追加。
+- **新機構をすべて新設（簡略化なし）**：
+  - **分割山（サウナ/アヴァント）**＝10枚1山（上5サウナ・下5アヴァント）。`supply.sauna/avanto` 各5＋「上が尽きるまで下は取れない」を **4系統ガード**（`gain()`冒頭・`canBuyCard`・`emptyPileCount`はペアで1山・CPU `splitBlocked`）で表現。抽選 `randomKingdom` は avanto→sauna に正規化（1山ぶんの枠）。`createInitialState` が sauna⇔avanto を相互補完。**`finishGain`/`SMUGGLERS_GAIN` は gain() の戻り値を検証**（拒否カードで pending を閉じない）。
+  - **サウナ/アヴァント連鎖**（`sauna_chain` pending）＝アクション権を消費せず相方をプレイ。**サウナの銀貨トリガー**＝`t.saunaPlays`（このターンの使用回数）ぶん、銀貨を使うたび手札1枚を廃棄してよい（`sauna_trash` pending・+2コイン計上後・玉座で累積）。`playTreasureCard` の銀貨分岐＋TIARA_PLAY の2回目にも配線（§敵対レビューで後者の漏れを修正）。
+  - **教会**（アクション-持続）＝手札最大3枚を伏せて脇（`church_setaside`）→次ターン開始時に手札へ戻し任意廃棄（`DURATION_RESOLVERS.church`→`church_trash` を startQueue へ・0枚でも廃棄機会）。脇置きは相手にマスク（setAside＋delayedEffects.stashed 両方伏せる）。
+  - **船長**（アクション-持続-命令）＝現在と次ターン開始時、サプライの $4以下・非持続/命令アクションを**サプライに残したまま**使用（`captain` pending・`captainTargets` を engine/CPU/UI で共有）。自己移動（採掘村の廃棄等）は removeOne 失敗で**自然に不発**（+2コインも出ない＝公式）。次ターンぶんは `DURATION_RESOLVERS.captain`→startQueue。アタックもサプライから通常どおり機能（堀/リアクション窓OK）。
+  - **王子**（アクション-持続-命令・現行）＝手札の $4以下・非持続/命令アクションを脇（`p.princes[]`）に置き（`prince_setaside`）、**毎ターン開始時に脇のまま強制プレイ**（`prince_play`・resolveDurationStartEffects が startQueue へ）。置いた王子は**持続としてゲーム終了まで場に残る**（cleanupAndAdvance が `cnt.prince += princes.length`）。脇のカードも所有カード（`allCards` に princes）。玉座×王子＝2枚脇置き（現行公式）。自己移動する対象（島/宝の地図）は複製しない＝removeOne ガード（§敵対レビューで island の欠落を修正）。
+  - **へそくり**（財宝$5+2コイン）＝「シャッフル時に山札の好きな位置へ」。シャッフルは効果解決中に同期発生し対話を挟めない（業界最大手も未実装の難物）ため、**常設方針 `stashPlacement`（top既定/mix/bottom・`STASH_SETTING` で本人がいつでも変更）で自動配置**。全リシャッフルを共通入口 `reshuffleDeck(p)`（37箇所を一括置換）＋`placeStash(p)` に集約。裏面が異なる＝**山札/手札/脇のへそくり位置は公開情報**（maskStateFor が位置だけ晒す）。
+  - **startQueue 安全網**（`reduce()` 末尾）＝王子/船長がターン開始時にアタック等を使うと連鎖の終端が pending=null で閉じるだけで後続の開始時効果を取り残す→「pending無し＆startQueue残」を検知して popStartQueue する一括救済。
+- **新pendingは全て4点セット**（engine reducer＋PLAYER_ACTIONS＋CPU decidePending＋UI viewPendingModal）＝8種（PRINCE_SETASIDE/PRINCE_PLAY/CAPTAIN_PLAY/CHURCH_SETASIDE/CHURCH_TRASH/SAUNA_CHAIN/SAUNA_TRASH/STASH_SETTING）。CPU＝chooseActionに6枚＋`bestPrinceTarget`（PRINCE_AVOID=島/宝の地図）＋chooseBuyのstash分岐＋GAIN_ORDER実強度順再配置。UI＝へそくり配置トグル・王子の脇チップ（👑）表示。
+
+### 敵対的レビュー（多エージェント8次元Workflow）＝確定バグ2件（両方修正・回帰テスト済）＋自己検証6次元クリーン
+- **【中】王子×島の複製**（保存則違反・VP無限増殖）：王子で島を「動かさず使用」すると `case 'island'` が inPlay に島が無いのに `islandMat.push` し、幻の島が毎ターン増殖。→ `removeOne` 成功時のみ push（treasure_map/祝宴と同型ガード）。**黒市場経由で島を入手＋王子＝到達可**（CPUは PRINCE_AVOID で回避するため CPU戦では出ない）。
+- **【低】ティアラ×サウナの銀貨トリガー漏れ**：ティアラの2回目は `playTreasureCard` を通らず、銀貨の2回目でサウナの廃棄機会が立たなかった（remaining が1のまま）。→ TIARA_PLAY の2回目副次効果に silver 分岐を配線（1回目の sauna_trash に合算）。黒市場経由の稀ケース。
+- **自己検証（Workflowがセッション上限で8/10中断→残りをmain側で直接再現検証）**：船長で各種$4以下アタック（民兵/役人/追いはぎ）をサプライからプレイ→リアクション/堀/保存則OK・王子で獲得系（工房）を脇置き→毎ターン獲得pending→startQueue安全網OK・分割山の全獲得経路（BUY/闇市場/改築/密輸人/物見やぐら型on-gain）でavantoガードOK・anyGainable×avanto の極端局面でも無限ループ無し・教会のマスク漏れ無し。**CPUソーク約240戦（promo2-pack/random-promo 2-4人）で stuck/例外/保存則違反ゼロ**。
+
+### 次（未着手）＝段階2の残り拡張（§5-1）
+- **着手順＝ ~~収穫祭~~✅ → ~~ギルド~~✅ → ~~異郷~~✅ → ~~新プロモ~~✅(§0-7) → 暗黒時代を全56に完成**。暗黒時代＝廃墟/騎士の混合山・避難所・戦利品/狂人/傭兵・要塞等のon-trash等（特殊山は§6「4系統除外チェックリスト」必須）。設計図＝`docs/adding-cards.md`（分割山/「動かさず使用」/永続持続/startQueue安全網/シャッフル介入 の手順を §0-7 で追記済み）。
+- **冒険/帝国の段階2（実プレイ化）は別の大仕事**（Reserve/酒場マット/トラベラー交換/旅トークン/負債経済/分割山/城/命令/勝利点トークン/集合）＝暗黒時代の後。
 
 ---
 
@@ -207,7 +233,7 @@
 - **支配のCPU簡略化**：CPUは支配を自動購入しない（`bestPotionBuy` で除外）。人間が使うぶんは支配者がCPUでも動作する。
 - **非サプライ数値キー山（賞品Prizes・将来の戦利品/狂人/傭兵）を足すときの必須チェックリスト**（§0-2のレビューで実際に踏んだ罠）：`NON_SUPPLY` set に登録し、**(1) `emptyPileCount`(3山終了) (2) `canBuyCard`(購入) (3) `blackMarket` 母集団（`createInitialState` の universe フィルタ） (4) 汎用獲得（engine の `*_GAIN` reducer と CPU `bestGain`/`bestGainExact`）** の4系統すべてから除外すること。特に「reducer だけガードして CPU 側を放置すると、CPU が拒否される獲得を出し続けて無限ループ」する（豊穣の角で実際に発生）＝**engine拒否とCPU非提案は必ずセット**。汎用獲得を持つ札（`horn_of_plenty` 等）は特に漏れやすい。
 - **段階1(§0-3)＋ギルド段階2(§0-4)は push済（`6d1d69c`・2026-07-04・ユーザー確認の上で本番デプロイ）**。以後の段階2作業も 完成→CARD_SET昇格→全テスト緑→**都度確認の上で** push。
-- **未push 2コミット（2026-07-05）＝`3a48e8b`異郷段階2 ＋ `fcfae02`冒険/帝国段階1（画像/カタログ）**。どちらも既存を壊さない（異郷=完成playable・全テスト緑／冒険帝国=画像のみゲーム未参加）。**push（本番デプロイ）は都度ユーザー確認の上で**。まとめて `git push` で両方本番へ。`sw.js` は v33。
+- **未push 4コミット（2026-07-05）＝`3a48e8b`異郷段階2 ＋ `fcfae02`冒険/帝国段階1（画像/カタログ）＋`21336f0`handoff ＋ 新プロモ段階2(§0-7)**。いずれも既存を壊さない（異郷/新プロモ=完成playable・全テスト緑／冒険帝国=画像のみゲーム未参加）。**push（本番デプロイ）は都度ユーザー確認の上で**。まとめて `git push` で全て本番へ。`sw.js` は v34。
 - **冒険/帝国段階1の画像回収メモ**：Downloads の ChatGPT画像はファイル名不定→生成時刻でバッチ割当→視覚判別で id確定（chatgpt-card-art-workflow 記憶＋今回は多エージェント判別）。`asset/art/*.png`・`images/` は gitignore＝このPCのみ。webp再生成は `CARDS_ONLY=<id,...> node tools/build-cards.js`。研究データは scratchpad `adv_emp_carddata.json`。
 - **異郷の許容簡略化（到達が稀 or 忠実性のみ・敵対レビューで重大でないと確定）＝意図的に未実装**：(1)**交易商人の獲得置換は自分の手番の獲得のみ**（相手ターンの魔女等の呪い獲得を銀貨に置換する反応は非対応＝獲得時対話ゲートが active限定・相手ターンだと pending 競合で潰れるため。呪いはそのまま受ける＝安全側）。(2)**値切り屋/農地/高貴な山賊の on-buy は「1購入=1 pending」**＝farmland/noble_brigand を買うと同ターン場の値切り屋の強制獲得がスキップされ得る（複数 on-buy を並べる汎用キューが無いため。カード保存則は保持・ループ/クラッシュ無し）。(3)**develop 等の獲得で入れ子の獲得時対話（border_village等）は `!pending` ゲートでスキップ**。いずれも「on-buy/on-gain の汎用 pending キュー」を導入する時にまとめて対応する方針（現状は保存則・非ループを敵対レビューで確認済）。
 - **【既存・スコープ外の別課題】闇市場デッキに「段階1のみ（＝engineロジック未実装）のプール」が漏れる**：`createInitialState` の黒市universeは全 `Object.values(DOM.POOLS)` を平坦化するため、promo-pack/random-promo で黒市デッキに hinterlands/darkages/knights/ruins/shelters/darkages_np（＋spoils/madman/mercenary）が混入する。これらは段階1（applyEffect未実装＝買って使っても何も起きない死に札）。**ギルドの段階2化で guilds プールは playable になった**ので問題なし。残りは各拡張が段階2化される都度 自動解消。**根治するなら黒市universeを「CARD_SETSが参照する playable プールのみ」に絞る**（＝段階2化の順に自然消化。急がば注意：正しく除外しないと変種が減る）。敵対レビューが指摘（元からの挙動＝ギルド作業とは独立）。

@@ -52,7 +52,7 @@ try {
   // 「おすすめ」を選ぶと既定のテーマ(先頭=ビッグマネー)になりタイルが並ぶ
   clickText('.set-top-seg .seg-btn', 'おすすめ');
   ok(UI.setup.kingdomSet === 'big-money', 'おすすめ選択で先頭テーマ(ビッグマネー)に');
-  ok($all('.set-tile').length === 9, 'おすすめタイルが9枚（おすすめ6＋初版2＋プロモ1）');
+  ok($all('.set-tile').length === 10, 'おすすめタイルが10枚（おすすめ6＋初版2＋プロモ2）');
   ok(byText('.set-tile-name', '勝利点レース（陰謀）'), 'テーマ「勝利点レース」タイルがある');
   clickTile('策謀コンボ');
   ok(UI.setup.kingdomSet === 'secret-schemes', 'タイルで策謀コンボを選択');

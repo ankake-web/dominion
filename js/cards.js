@@ -336,10 +336,12 @@
     /* ===== 追加拡張カタログ（収穫祭/異郷/暗黒時代/新プロモ）＝段階1: 画像は出るがゲーム未参加 ===== */
     stash: { id: 'stash', name: 'へそくり', cost: 5, types: ['treasure'], coin: 2,
                  text: 'コイン +2\nこれを含めてシャッフルするとき、シャッフル後の山札の好きな位置にこれを置いてよい' },
-    prince: { id: 'prince', name: '王子', cost: 8, types: ['action'],
-                 text: 'このカードを脇に置いてよい\nそうしたら手札から4コスト以下のアクションカード1枚を脇に置く\n以降毎ターン開始時、脇のアクションを使う（脇に置いたまま）' },
-    captain: { id: 'captain', name: '船長', cost: 6, types: ['action', 'duration'],
-                 text: 'このターンと次のターン開始時、サプライにある4コスト以下のアクションカード（持続・命令を除く）1枚を使う（そのまま場に残す）' },
+    // 王子/船長は現行エラッタ版（王子=2022年改訂/2024年再版・船長=2019年改訂）の
+    // テキスト・種別（アクション-持続-命令）を採用。和訳は日本語wikiの定訳（Dominion Online訳）ベース。
+    prince: { id: 'prince', name: '王子', cost: 8, types: ['action', 'duration', 'command'],
+                 text: '手札からコスト4以下の、\n持続でも命令でもない\nアクションカード1枚を、\nこのカードの脇に置いてもよい。\nあなたの各ターンの開始時、\nそれを動かさずに使用する。' },
+    captain: { id: 'captain', name: '船長', cost: 6, types: ['action', 'duration', 'command'],
+                 text: '現在と、あなたの次のターンの開始時に\nサプライにある、持続でも命令でもない\nコスト4以下のアクションカード1枚を、\n動かさずに使用する。' },
     church: { id: 'church', name: '教会', cost: 3, types: ['action', 'duration'],
                  text: '+1 アクション\n手札から最大3枚を裏向きで脇に置く\n次のターン開始時、それらを手札に加え、その後手札1枚を廃棄してよい' },
     sauna: { id: 'sauna', name: 'サウナ', cost: 4, types: ['action'],
@@ -889,6 +891,10 @@
     // ---- プロモ ----
     { id: 'promo-pack',       kind: 'recommend', name: 'プロモ全部入り', desc: 'プロモ6種＋基本4種',
       kingdom: ['cellar', 'walled_village', 'envoy', 'dismantle', 'militia', 'hoard', 'governor', 'market', 'black_market', 'witch'] },
+    // 新プロモ5山（サウナ/アヴァントは1つの分割山＝avanto は createInitialState が自動追加）＋基本5種。
+    // 村/鍛冶屋/民兵/堀は 王子（$4以下を脇置き）と船長（サプライの$4以下を使用）の対象になる構成。
+    { id: 'promo2-pack',      kind: 'recommend', name: '新プロモ全部入り', desc: '王子・船長・教会・サウナ/アヴァント・へそくり＋基本5種',
+      kingdom: ['moat', 'village', 'militia', 'smithy', 'market', 'stash', 'prince', 'captain', 'church', 'sauna'] },
     // ---- ランダム（毎回その場で10種を抽選）----
     { id: 'random',          kind: 'random', name: '基本＋陰謀から', randomFrom: ['basic', 'intrigue'] },
     { id: 'random-seaside',  kind: 'random', name: '海辺から',       randomFrom: ['seaside'] },
@@ -904,7 +910,10 @@
   ];
   // プールから重複なく n 種を選ぶ（コスト順に並べて返す）
   DOM.randomKingdom = function (n, pool) {
-    const src = (pool || DOM.KINGDOM_POOL).slice();
+    let src = (pool || DOM.KINGDOM_POOL).slice();
+    // プロモ：サウナ/アヴァントは1つの分割山（上5枚サウナ・下5枚アヴァント）。抽選ではサウナに
+    // 一本化して1山ぶんだけ枠を使う（sauna が選ばれたら createInitialState が avanto を自動追加する）。
+    if (src.includes('avanto')) { src = src.filter((id) => id !== 'avanto'); if (!src.includes('sauna')) src.push('sauna'); }
     for (let i = src.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = src[i]; src[i] = src[j]; src[j] = t; }
     return src.slice(0, n || 10).sort((a, b) => DOM.CARDS[a].cost - DOM.CARDS[b].cost || a.localeCompare(b));
   };

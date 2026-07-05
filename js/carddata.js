@@ -113,6 +113,7 @@
     // 海辺：持続の複合（本家の表記順に合わせる）
     if (has('duration')) {
       if (has('treasure') && has('reaction')) return '財宝・持続・リアクション'; // 海賊
+      if (has('command')) return 'アクション・持続・命令';                       // プロモ：王子/船長
       if (has('attack')) return 'アクション・持続・アタック';                    // 封鎖/私掠船/海の魔女
       if (has('reaction')) return 'アクション・持続・リアクション';              // 冒険：隊商の護衛
       if (has('treasure')) return '財宝・持続';                                  // アストロラーベ
@@ -158,6 +159,7 @@
     const has = (t) => types.includes(t);
     if (has('duration')) {
       if (has('treasure') && has('reaction')) return 'Treasure - Duration - Reaction'; // Pirate
+      if (has('command')) return 'Action - Duration - Command';                        // Prince/Captain
       if (has('attack')) return 'Action - Duration - Attack';                          // Blockade/Corsair/Sea Witch
       if (has('reaction')) return 'Action - Duration - Reaction';                      // Caravan Guard
       if (has('treasure')) return 'Treasure - Duration';                               // Astrolabe
