@@ -140,6 +140,11 @@
       if (p.deck.length === 0 && p.discard.length > 0) { reshuffleDeck(p); }
       if (p.deck.length > 0) state.pending = { type: 'crystal_ball', player: pIndex, card: p.deck[0] };
     }
+    // 暗黒時代：戦利品＝+$3（coin:3 で加算済み）。使ったら戦利品の山（非サプライ）へ戻す。
+    if (card === 'spoils') {
+      if (removeOne(p.inPlay, 'spoils')) state.supply.spoils = (state.supply.spoils || 0) + 1;
+      log(state, `${p.name} は戦利品を使った（+$3）→山へ戻した。`);
+    }
     // ティアラ：+1購入。手札の財宝1枚を2回使ってよい（獲得時の山札上置きは triggerOnGain が処理）。
     if (card === 'tiara') {
       t.buys += 1;
@@ -2136,6 +2141,87 @@
         draw(state, pi, 3);
         if (p.hand.includes('sauna')) state.pending = { type: 'sauna_chain', player: pi, next: 'sauna' };
         break;
+
+      /* ===== 拡張: 暗黒時代（Dark Ages）===== */
+      // --- 単純（即時・非対話）---
+      case 'necropolis': // 避難所：+2アクション
+        t.actions += 2;
+        break;
+      case 'fortress': // +1カード +2アクション（on-trashで手札に戻る＝triggerOnTrash）
+        draw(state, pi, 1); t.actions += 2;
+        break;
+      case 'market_square': // +1カード +1アクション +1購入（リアクションは hasReaction/market_square_react）
+        draw(state, pi, 1); t.actions += 1; t.buys += 1;
+        break;
+      case 'poor_house': {
+        // +$4、手札を公開し手札の財宝1枚につき-$1（コイン合計は$0未満にならない）。
+        t.coins += 4;
+        reveal(state, pi, p.hand.slice(), '貧民街');
+        const tr = p.hand.filter((c) => DOM.isType(c, 'treasure')).length;
+        t.coins = Math.max(0, t.coins - tr);
+        log(state, `${p.name} は貧民街（+$4、手札の財宝${tr}枚で-$${tr}）。`);
+        break;
+      }
+      case 'vagrant': {
+        // +1カード +1アクション。山札の一番上を公開し、呪い/廃墟/避難所/勝利点なら手札へ。
+        draw(state, pi, 1); t.actions += 1;
+        if (p.deck.length === 0 && p.discard.length > 0) reshuffleDeck(p);
+        if (p.deck.length > 0) {
+          const top = p.deck[0];
+          reveal(state, pi, [top], '放浪者');
+          if (['curse', 'ruins', 'shelter', 'victory'].some((ty) => DOM.isType(top, ty))) {
+            p.deck.shift(); p.hand.push(top);
+            log(state, `${p.name} は放浪者で「${C()[top].name}」を手札に加えた。`);
+          }
+        }
+        break;
+      }
+      case 'sage': {
+        // +1アクション。$3以上が出るまで山札の上を公開→それを手札へ、残りは捨て札。
+        t.actions += 1;
+        const rev = []; let found = null;
+        while (true) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
+          const c = p.deck.shift();
+          if (cardCost(state, c) >= 3) { found = c; break; }
+          rev.push(c);
+        }
+        reveal(state, pi, rev.concat(found ? [found] : []), '賢者');
+        if (found) { p.hand.push(found); log(state, `${p.name} は賢者で「${C()[found].name}」を手札に加えた。`); }
+        rev.forEach((c) => p.discard.push(c));
+        break;
+      }
+      case 'beggar': {
+        // 銅貨3枚を手札に獲得（リアクションは hasReaction/beggar_react）。
+        let g = 0; for (let i = 0; i < 3; i++) if (gain(state, pi, 'copper', 'hand')) g++;
+        log(state, `${p.name} は物乞いで銅貨${g}枚を手札に獲得した。`);
+        break;
+      }
+      case 'madman': {
+        // +2アクション。狂人を山へ戻せたら、その時点の手札枚数ぶん +1カード。
+        t.actions += 2;
+        if (removeOne(p.inPlay, 'madman')) {
+          state.supply.madman = (state.supply.madman || 0) + 1; // 非サプライ山へ返却
+          const n = p.hand.length;
+          if (n) draw(state, pi, n);
+          log(state, `${p.name} は狂人を山へ戻し +${n}カード。`);
+        }
+        break;
+      }
+      // 廃墟（Ruins・混合山の中身。全て$0のアクション）
+      case 'abandoned_mine':
+        t.coins += 1;
+        break;
+      case 'ruined_library':
+        draw(state, pi, 1);
+        break;
+      case 'ruined_market':
+        t.buys += 1;
+        break;
+      case 'ruined_village':
+        t.actions += 1;
+        break;
+      // survivors（山札上2枚を見て捨てる/戻す）・その他の対話/アタックカードは後続の実装ブロックで追加。
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
       // --- バニラ系（即時のみ・非対話）---
