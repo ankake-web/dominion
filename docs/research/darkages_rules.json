@@ -1,0 +1,1379 @@
+{
+  "cards": [
+    {
+      "id": "poor_house",
+      "en": "Poor House",
+      "text_en": "+$4\nReveal your hand. -$1 per Treasure card in your hand. (You can't go below $0.)",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 1,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "機能的エラッタなし（公式Errata一覧に非掲載。旧版1刷は文言テンプレートの違いのみ）",
+      "rulings": [
+        "処理順は「先に+$4 →その後に手札を公開し、手札の財宝カード1枚につき-$1」（公式FAQ, dominionstrategy.miraheze.org/wiki/Poor_House）",
+        "既にコインを持っていれば$4を超えて減らされ得るが、コイン合計は$0未満にはならない（公式FAQ）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "squire",
+      "en": "Squire",
+      "text_en": "+$1\nChoose one: +2 Actions; +2 Buys; or gain a Silver.\n---\nWhen you trash this, gain an Attack card.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 2,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "機能的エラッタなし（公式Errata一覧に非掲載）",
+      "rulings": [
+        "どんな手段で廃棄されてもアタック獲得トリガーは発動する（'If Squire is trashed somehow, you gain an Attack card'）（公式FAQ, dominionstrategy.miraheze.org/wiki/Squire）",
+        "獲得できるのはサプライにあるアタックカードのみ。サプライにアタックが1枚も無ければ獲得しない（公式FAQ）",
+        "Mercenary は非サプライなので Squire 廃棄では獲得できない（Other rules clarifications）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "vagrant",
+      "en": "Vagrant",
+      "text_en": "+1 Card\n+1 Action\nReveal the top card of your deck. If it's a Curse, Ruins, Shelter, or Victory card, put it into your hand.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 2,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "機能的エラッタなし（公式Errata一覧に非掲載）",
+      "rulings": [
+        "先に1枚引いてから山札の一番上を公開する（公式FAQ, dominionstrategy.miraheze.org/wiki/Vagrant）",
+        "公開したカードが呪い/廃墟/避難所/勝利点カードなら手札へ。それ以外なら山札の上に戻す（公式FAQ）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "beggar",
+      "en": "Beggar",
+      "text_en": "Gain 3 Coppers to your hand.\n---\nWhen another player plays an Attack card, you may first discard this to gain 2 Silvers, putting one onto your deck.",
+      "types_en": [
+        "Action",
+        "Reaction"
+      ],
+      "cost": 2,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "機能変更なし。後年の刷りでリアクション文言のみ現代化（旧2012版『you may discard this. If you do, gain two Silvers, putting one on top of your deck.』→現行『you may first discard this to gain 2 Silvers, putting one onto your deck.』）。公式Errata一覧（2016/2019/2020/2022/2023/2024）に Beggar は非掲載",
+      "rulings": [
+        "プレイ時: 銅貨3枚を手札に獲得。サプライに3枚未満なら残っているだけ獲得（公式FAQ, dominionstrategy.miraheze.org/wiki/Beggar）",
+        "リアクション: 他プレイヤーがアタックをプレイした時、攻撃の解決『前』（first）に手札から Beggar を捨て札にしてよい。捨てたら銀貨2枚を獲得し、1枚は山札の上へ、もう1枚は捨て札置き場へ（公式FAQ）",
+        "サプライに銀貨が1枚しか無い場合、その1枚は山札の上へ置く。銀貨が0枚なら何も獲得しない（公式FAQ）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "hermit",
+      "en": "Hermit",
+      "text_en": "Look through your discard pile. You may trash a non-Treasure from it or from your hand. Gain a card costing up to $3.\nAt the end of your Buy phase this turn, if you didn't gain any cards in it, exchange this for a Madman.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 3,
+      "pile_count": 10,
+      "setup": "王国に Hermit がある場合、非サプライの Madman 山（10枚）を用意する",
+      "errata": "2022年エラッタ（公式Errata一覧の『2022 errata』に掲載）。旧2012版『When you discard this from play, if you did not buy any cards this turn, trash this and gain a Madman.』→現行『At the end of your Buy phase this turn, if you didn't gain any cards in it, exchange this for a Madman.』。変更点＝(1)トリガーが『場から捨て札にした時』→『購入フェイズ終了時』、(2)条件が『このターン buy していない』→『その購入フェイズ中に1枚も gain していない』（購入以外の獲得でも交換不可になる）、(3)『trash して Madman 獲得』→『Madman と交換(exchange)』（Hermit は Hermit の山に戻る）",
+      "rulings": [
+        "廃棄は任意・非財宝のみ・捨て札置き場か手札から1枚。廃棄の有無に関わらず$3以下のカード獲得は強制（公式FAQ 2022, dominionstrategy.miraheze.org/wiki/Hermit）",
+        "交換の処理: Hermit を Hermit の山に戻し、非サプライの Madman 山から Madman を1枚取って自分の捨て札置き場に置く（公式FAQ 2022）",
+        "購入フェイズ中に何かを buy または gain したら交換できない（例: Ball を買う、March で Hermit をプレイ等）（公式FAQ 2022）",
+        "交換時に Hermit が場に無ければ交換できない（Procession で廃棄済み、Band of Misfits でプレイした等）（公式FAQ 2022）",
+        "Madman 山が空なら交換は不成立（Hermit は場に残る）（公式FAQ 2022）",
+        "1ターンに複数回購入フェイズがある場合（Villa/Cavalry 等）、各購入フェイズごとに『そのフェイズ中の獲得』を判定する（公式FAQ 2022）",
+        "購入フェイズ後に Hermit をプレイした場合（Innovation 等）、そのターンは交換の機会が無い（公式FAQ 2022）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "sage",
+      "en": "Sage",
+      "text_en": "+1 Action\nReveal cards from the top of your deck until you reveal one costing $3 or more. Put that card into your hand and discard the rest.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 3,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "機能的エラッタなし（公式Errata一覧に非掲載）",
+      "rulings": [
+        "公開中に山札が尽きたら、捨て札置き場（公開中のカードは含めない）をシャッフルして続行（公式FAQ, dominionstrategy.miraheze.org/wiki/Sage）",
+        "山札も捨て札も尽きたらそこで終了。公開した全カードを捨て札にし、手札には何も入らない（公式FAQ）",
+        "$3以上のカードを見つけたらそれを手札に入れ、残りの公開カードを全て捨て札にする（公式FAQ例: 銅貨,銅貨,呪い,属州と公開→属州($8)で停止し手札へ、残り3枚を捨て札）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "forager",
+      "en": "Forager",
+      "text_en": "+1 Action\n+1 Buy\nTrash a card from your hand, then +$1 per differently named Treasure in the trash.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 3,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "機能的エラッタなし（公式Errata一覧に非掲載）",
+      "rulings": [
+        "廃棄は可能なら強制（'Trash a card from your hand if you can'）。手札が空で廃棄できなくても +1アクション/+1購入/+$計上は行う（公式FAQ, dominionstrategy.miraheze.org/wiki/Forager）",
+        "『異なる名前の財宝』1種につき+$1。同名の複数枚はカウントを増やさない（例: 廃棄置き場に銅貨4枚+Counterfeit 1枚→+$2）（公式FAQ）",
+        "自分がいま Forager で廃棄したカードが財宝なら、それもカウントに含まれる（Other rules clarifications）",
+        "+$の計算タイミングは『廃棄直後（when-trash 効果を全て解決した後）』に1回だけ。後で廃棄置き場が変わっても遡及しない。逆に廃棄置き場から財宝が回収されれば（Treasurer 等）以後の Forager は減る（Other rules clarifications）",
+        "Potion は財宝カードなので廃棄置き場にあれば『異なる名前の財宝』としてカウントされる（種別が Treasure であることによる一般則。カードページのFAQに明示例は無し）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "storeroom",
+      "en": "Storeroom",
+      "text_en": "+1 Buy\nDiscard any number of cards, then draw that many.\nThen discard any number of cards for +$1 each.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 3,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "機能変更なし・文言のみ。2012年初版は「+1 Buy / Discard any number of cards. +1 Card per card discarded. Discard any number of cards. +$1 per card discarded the second time.」。2016年エラッタ/整形で途中ドローを『draw』表記に変更（wikiの2016 Errata and Formatting Changesページに記載。同ページは2020年エラッタでの表記再調整にも言及）。現行印刷は上記text_en（dominionstrategy.com all-cardsで確認）。",
+      "rulings": [
+        "捨て札は2段階の別々の行為。1段階目で引いたカードを2段階目で捨ててよい（公式DAルールブック2020 FAQ: 'which could include cards you just drew'）。+$1が付くのは2段階目に捨てた枚数のみ。",
+        "どちらの段階も0枚でよい（『任意の枚数』=0可）。1段階目を0枚にして2段階目だけ使うことも可（BGGスレッド/公式FAQの帰結）。",
+        "1段階目は『まとめて捨ててから同枚数を引く』（1枚ずつ交互ではない）。",
+        "両段階とも実際の『捨て札にする』行為なので、on-discard反応（異郷トンネル等）は各段階で発動し得る（一般ルール。※本アプリでは暗黒時代と異郷は混成しないため実装上は影響小）。",
+        "出典: 公式Dark Agesルールブック2020年版FAQ（riograndegames.com PDF）, wiki.dominionstrategy.com/index.php/2016_Errata_and_Formatting_Changes（検索経由）, dominionstrategy.com/all-cards/"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "urchin",
+      "en": "Urchin",
+      "text_en": "+1 Card\n+1 Action\nEach other player discards down to 4 cards in hand.\n―\nWhen you play another Attack card with this in play, you may first trash this, to gain a Mercenary.",
+      "types_en": [
+        "Action",
+        "Attack"
+      ],
+      "cost": 3,
+      "pile_count": 10,
+      "setup": "王国にUrchinを含む場合、非サプライの傭兵(Mercenary)山（10枚）を用意する。傭兵はUrchinのトリガーでのみ獲得可能（購入・汎用獲得は不可）。",
+      "errata": "機能変更なし・文言刷新のみ（後年の再版）。初版は「While this is in play, when you play another Attack card, you may trash this. If you do, gain a Mercenary from the Mercenary pile.」→現行は『you may first trash this, to gain a Mercenary』で、廃棄がアタック解決『前』であることを明文化。",
+      "rulings": [
+        "トリガー条件＝『このUrchinが場にある状態で、別のアタックカードをプレイしたとき』。タイミング＝そのアタックカードの効果を解決する前（'first'）にUrchinを廃棄してよく、廃棄したら傭兵を獲得（wiki Urchinページ・公式DAルールブック2020 FAQとも一致）。",
+        "アタックの解決前＝Way選択よりも前（wiki）。また、そのアタックが実際に相手へ影響するかは無関係（誰にも効かないアタックでも廃棄トリガーは成立）。",
+        "同じUrchin 1枚を玉座の間/Procession等で2回プレイしても、自分自身のトリガーにはならない。別の（2枚目の）Urchinをプレイした場合は、2枚目も『別のアタックカード』なので1枚目を廃棄できる（公式FAQ・wiki両方に明記）。",
+        "傭兵は非サプライの傭兵山から。傭兵山が尽きていたら廃棄はできるが傭兵は獲得しない（公式FAQ）。",
+        "廃棄先行の帰結（wiki）: 例えばRogueをプレイしてUrchinを廃棄した場合、Rogueの解決でトラッシュのそのUrchinを獲得できる（＝アプリ実装では『廃棄→傭兵獲得→その後アタック解決』の順序を厳守すること）。",
+        "手札4枚以下のプレイヤーは何もしない（公式FAQ）。",
+        "出典: 公式Dark Agesルールブック2020年版FAQ（riograndegames.com PDF）, wiki.dominionstrategy.com/index.php/Urchin（検索経由）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "market_square",
+      "en": "Market Square",
+      "text_en": "+1 Card\n+1 Action\n+1 Buy\n―\nWhen one of your cards is trashed, you may discard this from your hand to gain a Gold.",
+      "types_en": [
+        "Action",
+        "Reaction"
+      ],
+      "cost": 3,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "機能変更なし・文言のみ。初版は「...you may discard this from your hand. If you do, gain a Gold.」→現行は『...to gain a Gold.』（後年の再版での定型化）。",
+      "rulings": [
+        "反応窓＝『自分の（自分が所有する）カードが廃棄されたとき』。誰のターンかは問わない＝相手のアタック（騎士等）で自分のデッキのカードが廃棄された時も手札からMarket Squareを捨てて金貨を獲得できる（公式DAルールブック2020 FAQ・wiki）。",
+        "1回の廃棄（1枚のカードの廃棄）に対して、手札にある複数のMarket Squareをそれぞれ捨ててよい＝金貨を複数獲得できる（公式FAQ: 'You may discard multiple Market Squares when a single card of yours is trashed'）。",
+        "金貨がサプライに残っていなければ獲得しない（捨てること自体は可能）（公式FAQ）。",
+        "廃棄トリガーが発生した時点で手札に無くてもよい場合がある: 同じ廃棄イベントに紐づくon-trash効果（Cultistの+3ドロー等）と解決順を自分で選べるため、先にドローしてMarket Squareを手札に加えてから捨てられる（wiki: Cultist例）。",
+        "自分が所有していないカードの廃棄（例: Lurkerでサプライのカードを廃棄）では反応できない（wiki）。廃棄されるMarket Square自身は手札に無いので自分の廃棄には反応できない（別のMSなら可）。",
+        "獲得した金貨は通常どおり捨て札置き場へ。",
+        "出典: 公式Dark Agesルールブック2020年版FAQ（riograndegames.com PDF）, wiki.dominionstrategy.com/index.php/Market_Square 系ミラー（検索経由）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "ironmonger",
+      "en": "Ironmonger",
+      "text_en": "+1 Card\n+1 Action\nReveal the top card of your deck; you may discard it. Either way, if it is an...\nAction card, +1 Action\nTreasure card, +$1\nVictory card, +1 Card",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 4,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "",
+      "rulings": [
+        "解決順（公式DAルールブック2020 FAQ）: (1)+1カードを引く → (2)山札の一番上を公開 → (3)そのカードを捨てるか山札の上へ戻すか選ぶ → (4)どちらを選んでも、公開したカードの種別に応じたボーナスを得る。※捨てる/戻すの選択がボーナスより先。",
+        "複合種別カードは該当するボーナスを全て得る（公式FAQ: Haremなら+1カードと+$1の両方）。Action-Victory（貴族/Dame Josephine等）なら+1アクション+1カード。廃墟(Ruins)はActionカードなので+1アクション。",
+        "呪い(Curse)はAction/Treasure/Victoryのどれでもない（Curseは独立種別）→ボーナス無し（BGGスレッド『Ironmonger - Revealed a Curse Card』と種別の一般ルール）。",
+        "勝利点カードを公開して山札上へ戻した場合、+1カードでそのカード自身を引く（公式想定どおり）。捨てた場合は次のカードを引く。",
+        "公開時に山札が空なら捨て札をシャッフルして公開（一般ルール）。それでも公開できるカードが無ければ(3)(4)は発生しない＝ボーナス無し。",
+        "出典: 公式Dark Agesルールブック2020年版FAQ（riograndegames.com PDF）, wiki.dominionstrategy.com/index.php/Ironmonger（検索経由）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "wandering_minstrel",
+      "en": "Wandering Minstrel",
+      "text_en": "+1 Card\n+2 Actions\nReveal the top 3 cards of your deck. Put the Actions back on top in any order and discard the rest.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 4,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "",
+      "rulings": [
+        "解決順（公式DAルールブック2020 FAQ）: 先に1枚引き、その後で山札の上3枚を公開。山札が3枚未満なら捨て札をシャッフルして続行、それでも足りなければ公開できるだけ公開する。",
+        "公開したうちActionカード（複合種別でActionを含むカード全て。廃墟・アタックも含む）を好きな順番で山札の上に戻し、残り（非Action）を捨て札にする（公式FAQ）。",
+        "Actionが1枚も公開されなかった場合は何も戻さない＝公開した全カードを捨て札にする（公式FAQ）。",
+        "戻す順番はプレイヤーが任意に決める（公開情報のまま並べ替え）。",
+        "出典: 公式Dark Agesルールブック2020年版FAQ（riograndegames.com PDF）, dominiondeck.com / dominionstrategy.com all-cards（本文照合）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "procession",
+      "en": "Procession",
+      "text_en": "You may play a non-Duration Action card from your hand twice. Trash it. Gain an Action card costing exactly $1 more than it.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 4,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "2019年エラッタ（機能変更あり）: 対象が『Action card』→『non-Duration Action card』に変更＝持続カードを対象にできなくなった（玉座系×持続のトラッキング問題の解消が目的。dominionstrategy.com『Dominion 2019 Errata and Rules Tweaks』および2020年版公式ルールブックFAQで確認）。Command関連のエラッタはProcession自体には無い（Command化されたのはBand of Misfits/Overlord側）。",
+      "rulings": [
+        "手札の非持続アクションをプレイするかは任意。プレイしたら『2回目のプレイ→廃棄→ちょうど$1高いアクションの獲得』は必須（公式DAルールブック2020 FAQ: 'Gaining a card is not optional once you choose to play an Action card'）。ただし該当コストのカードがサプライに無ければ獲得は不発。",
+        "廃棄に失敗しても獲得は行う（公式FAQ: 'even if somehow you failed to trash it'）。例: 対象が自己移動済み（一時消失カード等）で場に無く廃棄できなくても、そのカードのコスト+$1のアクションを獲得する。※現行の『動かなくなったカードは追わない』ルールと整合。",
+        "on-trash効果（Cultist廃棄の+3ドロー等）は獲得より先に解決する（公式FAQ）。Fortressを廃棄した場合は手札に戻るが獲得($5)は通常どおり行う。",
+        "獲得するカードは持続カードでもよい（公式FAQ: 'The gained card can be a Duration card'）＝制限は『プレイする対象』のみ。",
+        "アクション権の消費はProcession自身の1つだけ。対象を2回プレイしても追加のアクション権は消費しない。2回のプレイの間に他のカードを挟むことはできない（公式FAQ）。",
+        "Procession×Processionの入れ子: 内側のProcessionで別のアクションを2回プレイ→廃棄→獲得、をもう1周した後、内側のProcession自体を廃棄し$5のアクションを獲得（公式FAQに明記）。",
+        "命令(Command)カード（現行のBand of Misfits等・非持続）は対象にできる。獲得コストの基準は廃棄したカード自身のコスト（例: $5のBand of Misfitsなら$6のアクションを獲得。エミュレート先のコストではない）＝カード文言『costing exactly $1 more than it』の一般解釈。※この例自体はwikiページ本文を直接閲覧できず未確認のため一般ルールからの導出。",
+        "『ちょうど$1高い』はコストの他成分（ポーション/負債）を保存する（Upgrade等と同じ一般ルール。$4Pのカードなら$5Pが必要）。",
+        "出典: dominionstrategy.com/2019/09/25/dominion-2019-errata-and-rules-tweaks/, 公式Dark Agesルールブック2020年版FAQ（riograndegames.com PDF）, wiki.dominionstrategy.com/index.php/Procession（検索経由）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "scavenger",
+      "en": "Scavenger",
+      "text_en": "+$2\nYou may put your deck into your discard pile. Look through your discard pile and put one card from it onto your deck.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 4,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "機能変更なし・文言のみ。初版の『on top of your deck』が2016年の整形で『onto your deck』に統一。",
+      "rulings": [
+        "山札を捨て札置き場に置くのは任意。その後『捨て札から1枚選んで山札の上に置く』のは強制＝捨て札が空の場合のみ何も置かない（公式DAルールブック2020 FAQ: 'Putting your deck into your discard pile is optional, but putting a card from your discard pile on top of your deck is not'）。",
+        "山札→捨て札置き場への移動は『捨て札にする(discard)』行為ではない＝トンネル（異郷）等のon-discard反応は発動しない（公式FAQに明記）。",
+        "捨て札の中身は全て見て（Look through）選べる。順序は非公開情報のままでよい（選んだ1枚のみ山札上へ）。",
+        "出典: 公式Dark Agesルールブック2020年版FAQ（riograndegames.com PDF）, dominionstrategy.com all-cards（本文照合）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "fortress",
+      "en": "Fortress",
+      "text_en": "+1 Card\n+2 Actions\n―\nWhen you trash this, put it into your hand.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 4,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "機能エラッタ無し（Old Version 1＝2012年版はテンプレート/文言体裁のみの差・機能同一）",
+      "rulings": [
+        "廃棄自体は発生する（trashは成立）。公式FAQ:「You still trashed Fortress, even though you got it back; for example if you play Death Cart and choose to trash Fortress, you did trash it and so get +$5.」＝廃棄トリガー（Death Cartの+$5、Processionの獲得等）は満たされる。[dominionstrategy.miraheze.org/wiki/Fortress]",
+        "処理＝廃棄されたら廃棄置き場(trash)から取って手札に入れる。誰のターンに廃棄されても発動し、任意ではなく強制。[同上 Official FAQ]",
+        "手札に戻すのは『獲得(gain)』ではない＝Trader/Watchtower等の獲得リアクション不可。[同上 Other Rules clarifications]",
+        "LurkerでサプライのFortressを廃棄した場合、その廃棄したプレイヤーの手札に入る（これも獲得扱いにならない）。[同上]",
+        "Possession（支配）中に被支配者のFortressが廃棄された場合、支配者が『即座に手札へ戻す』か『廃棄カードとして脇に置きターン終了時に被支配者の捨て札へ返す』かを選ぶ。[同上]"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "rats",
+      "en": "Rats",
+      "text_en": "+1 Card\n+1 Action\nGain a Rats. Trash a card from your hand other than a Rats (or reveal a hand of all Rats).\n―\nWhen you trash this, +1 Card.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 4,
+      "pile_count": 20,
+      "setup": "山は通常の10枚ではなく20枚。プレイ人数に関係なく常に20枚で開始。[公式FAQ: \"There are 20 copies of Rats, rather than the usual 10; the pile starts with all 20, regardless of the number of players.\"]",
+      "errata": "機能エラッタ無し（Old Version 1＝2012年版は体裁のみの差・機能同一）",
+      "rulings": [
+        "解決順は記載順＝(1)+1カード引く→(2)Ratsを獲得→(3)手札からRats以外を1枚廃棄。[dominionstrategy.miraheze.org/wiki/Rats Official FAQ]",
+        "Rats山が空なら獲得しない（残りの処理は続行）。[同上]",
+        "手札がRatsのみ（Rats以外が無い）なら手札を公開して廃棄しない。Rats以外が1枚でもあれば廃棄は強制。[同上]",
+        "on-trash: Ratsが廃棄されたら+1カード（そのRatsの持ち主が引く）。自分のターンでも他人のターンでも、どのプレイヤーのカードが廃棄を引き起こしたかに関係なく発動。[同上: \"If Rats is trashed, you draw a card. This happens whether it is your turn or another player's, and regardless of which player has the card that trashed Rats.\"]"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "armory",
+      "en": "Armory",
+      "text_en": "Gain a card onto your deck costing up to $4.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 4,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "機能エラッタ無し。文言のみ現代化（旧2012年版: \"Gain a card costing up to $4, putting it on top of your deck.\" → 現行: \"Gain a card onto your deck costing up to $4.\"＝gain-onto-deckテンプレート化・機能同一）",
+      "rulings": [
+        "獲得カードは直接 山札の一番上へ置く（捨て札を経由しない）。[dominionstrategy.miraheze.org/wiki/Armory Official FAQ]",
+        "Traderのリアクションで銀貨に置換した場合、銀貨は捨て札へ行く（山札上ではない）。[同上 Other rules clarifications]",
+        "本来手札に獲得されるカード（Guardian/Ghost Town等）でもArmoryなら山札上に獲得。[同上]",
+        "対象は種別不問（アクション/財宝/勝利点いずれも可）で$4以下。ポーションコストを含むカードは$4以下の条件を満たさない（一般コスト規則）。"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "death_cart",
+      "en": "Death Cart",
+      "text_en": "You may trash this or an Action card from your hand, for +$5.\n―\nWhen you gain this, gain 2 Ruins.",
+      "types_en": [
+        "Action",
+        "Looter"
+      ],
+      "cost": 4,
+      "pile_count": 10,
+      "setup": "Looterのため廃墟(Ruins)山を使用: 全Ruinsをシャッフルし『1人目を除く1人につき10枚』（2人=10/3人=20/4人=30）を裏向きで山にし、一番上だけ表向き。[dominionstrategy.miraheze.org/wiki/Ruins]",
+      "errata": "2019年エラッタで機能変更。旧2012年版: \"+$5. You may trash an Action card from your hand. If you don't, trash this. — When you gain this, gain 2 Ruins.\"（+$5は無条件・廃棄しないなら自身を強制廃棄）→ 現行: 廃棄は完全に任意になり、+$5は『実際に廃棄した場合のみ』の対価に変更。[dominionstrategy.miraheze.org/wiki/Errata: \"Death Cart only gets the +$5 bonus if it trashed a card and trashing is optional.\"]",
+      "rulings": [
+        "プレイ時: 『これ（場のDeath Cart自身）』か『手札のアクション1枚』を廃棄してもよい。どちらもしなくてよい。どちらかを廃棄した場合のみ+$5。[dominionstrategy.miraheze.org/wiki/Death_Cart Official FAQ (2020)]",
+        "on-gain: 購入でも他の獲得でも、Death Cartを獲得したらRuinsを上から2枚獲得（中身は選べない・公開される）。Ruinsが足りなければあるだけ獲得。[同上]",
+        "TraderでDeath Cartの獲得を銀貨に置換したらRuinsは獲得しない。Masqueradeで渡すのは獲得ではない。他人のターンの獲得（Ambassador等）でもRuinsは付く。[同上 Deprecated FAQ (2017)の一般裁定・現行も同様]",
+        "命令カード（Band of Misfits等）でDeath Cartを『サプライに残したままプレイ』した場合、『これ』は場に無いので自身の廃棄は不発＝手札のアクション廃棄でのみ+$5を得られる（アプリの船長と同じ『自己移動失敗＝不発』パターン）。",
+        "廃棄先候補としてFortressを廃棄した場合も『廃棄した』事実は成立し+$5が出る（Fortress側FAQで明言）。"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "marauder",
+      "en": "Marauder",
+      "text_en": "Gain a Spoils. Each other player gains a Ruins.",
+      "types_en": [
+        "Action",
+        "Attack",
+        "Looter"
+      ],
+      "cost": 4,
+      "pile_count": 10,
+      "setup": "Looterのため廃墟(Ruins)山を使用（枚数はDeath Cart欄と同じ: 10×(人数-1)・裏向き山で一番上のみ表）。加えて非サプライのSpoils山を使用。[dominionstrategy.miraheze.org/wiki/Ruins, /wiki/Spoils]",
+      "errata": "機能エラッタ無し。文言のみ現代化（旧: \"Gain a Spoils from the Spoils pile. ...\" → 現行: \"Gain a Spoils.\"＝2019年の一般規則『非サプライカードは名指しされれば常に獲得可』により注記が不要になった。Old Versions 1,2は体裁差・機能同一）",
+      "rulings": [
+        "解決順: まず自分がSpoilsを1枚獲得（Spoils山は非サプライ）。Spoilsが残っていなければ獲得しない。[dominionstrategy.miraheze.org/wiki/Marauder Official FAQ]",
+        "次に他の各プレイヤーが左隣から手番順にRuinsを獲得。各自が一番上のRuinsを取り、そのたび次の1枚を表にする。Ruins山が尽きたらその時点で以降のプレイヤーは獲得しない。[同上]",
+        "Ruins山はサプライの一部＝空になれば3山終了条件に数える。Spoils山は非サプライ＝終了条件に数えない。[dominionstrategy.miraheze.org/wiki/Ruins, /wiki/Spoils]",
+        "アタックなので堀等のリアクション対象（Ruins配布部分が攻撃）。Spoils自体のテキストは「プレイ時+$3し、Spoils山に戻す」（Spoils山の総数15枚は本調査で参照したページ上では確認できず＝実装時はDark Ages同梱数15を別途確認推奨）。"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "feodum",
+      "en": "Feodum",
+      "text_en": "Worth 1 VP per 3 Silvers you have (round down).\n―\nWhen you trash this, gain 3 Silvers.",
+      "types_en": [
+        "Victory"
+      ],
+      "cost": 4,
+      "pile_count": 12,
+      "setup": "勝利点カードの通常規則: 2人戦=8枚・3人以上=12枚。[dominionstrategy.miraheze.org/wiki/Feodum Official FAQ: \"use eight copies for games with two players, or 12 for games with three or more players\"]",
+      "errata": "機能エラッタ無し（Old Version 1＝2012年版 \"Worth 1 VP for every 3 Silvers in your deck (rounded down).\" は文言差のみ・機能同一）",
+      "rulings": [
+        "ゲーム終了時、Feodum 1枚につき所有する銀貨3枚ごとに1VP（端数切り捨て）。例: 銀貨11枚ならFeodum各3VP。『所有』＝山札/手札/捨て札/場など全カード。[dominionstrategy.miraheze.org/wiki/Feodum Official FAQ]",
+        "on-trash: Feodumが廃棄されたら銀貨3枚を獲得。銀貨が足りなければあるだけ獲得。[同上]",
+        "on-trashは廃棄の原因・手番を問わず持ち主に発動（Rats/Fortressと同じDark Ages共通裁定）。"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "junk_dealer",
+      "en": "Junk Dealer",
+      "text_en": "+1 Card\n+1 Action\n+$1\nTrash a card from your hand.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "機能エラッタ無し（Old Version 1＝2012年版は体裁のみの差・機能同一）",
+      "rulings": [
+        "先に1枚引いてから廃棄する（引いたカードも廃棄候補に含まれる）。[dominionstrategy.miraheze.org/wiki/Junk_Dealer Official FAQ: \"You draw before trashing.\"]",
+        "廃棄は強制: 手札にカードがあれば必ず1枚廃棄しなければならない。手札が空（引けず廃棄対象も無い）の場合のみ廃棄しない。[同上: \"You have to trash a card from your hand if you can.\"]"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "bandit_camp",
+      "en": "Bandit Camp",
+      "text_en": "+1 Card\n+2 Actions\n\nGain a Spoils.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "サプライ外の Spoils（略奪品）の山＝15枚 を用意する（Bandit Camp/Marauder/Pillage が王国にあるとき）。Spoils 山はサプライではなく、3山終了条件にも数えない。",
+      "errata": "",
+      "rulings": [
+        "カードを1枚引いてから Spoils を獲得する（順序固定）。[RGG公式ルールブック(2020版PDF)/miraheze wiki 両方で確認]",
+        "Spoils は Spoils 山（サプライ外）から来る。Spoils 山が空なら獲得しない（何も起きない）。[公式FAQ]",
+        "Spoils 自体（財宝・コスト$0*）：プレイすると+$3、プレイ時に Spoils 山へ戻す。サプライ外なので Ambassador で戻せない・Mint でコピー獲得できない。Spoils 山は終了条件に数えない。[Spoils 公式FAQ]",
+        "物理コンポーネントは Spoils 15枚（ルールブックのカードリストで確認。wikiモジュールの amount=10 表記よりルールブックが優先）。"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "rebuild",
+      "en": "Rebuild",
+      "text_en": "+1 Action\n\nName a card. Reveal cards from your deck until you reveal a Victory card you did not name. Discard the rest, trash the Victory card, and gain a Victory card costing up to $3 more than it.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "機能エラッタ無し。後年の印刷で文言のみ簡素化（旧: \"until you reveal a Victory card that is not the named card. Discard the other cards.\" → 現行: \"a Victory card you did not name. Discard the rest,\"。処理は同一）。",
+      "rulings": [
+        "指定するカードは任意（このゲームで使われていないカードでも、勝利点カードでなくてもよい）。[公式FAQ 2020]",
+        "「指定しなかった勝利点カード」が公開されるまで山札を公開し続ける。指定した名前の勝利点カードが公開されても止まらず公開を続け、最後に『残り』としてまとめて捨て札になる。[公式FAQ 2020]",
+        "山札が尽きたら捨て札をシャッフルして続行する。このとき既に公開したカードはシャッフルに混ぜない。[公式FAQ 2020]",
+        "山札も捨て札も尽きて該当の勝利点カードが見つからなかったら、そこで停止し、公開したカードを全て捨て札にして、それ以上何も起きない（廃棄も獲得も無し）。[公式FAQ 2020]",
+        "見つかった場合：他の公開カードを捨て札→その勝利点カードを廃棄→それよりコスト最大$3高い勝利点カード1枚を獲得（通常獲得＝捨て札へ）。獲得は『may』ではなく強制（可能な限り実行。該当コスト帯に獲得できる勝利点カードが無ければ獲得は不発）。[カードテキスト＋公式FAQ 2020]"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "catacombs",
+      "en": "Catacombs",
+      "text_en": "Look at the top 3 cards of your deck. Choose one: Put them into your hand; or discard them and +3 Cards.\n---\nWhen you trash this, gain a cheaper card.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "",
+      "rulings": [
+        "山札の上3枚を『見る』（公開ではない）。3枚全部を手札に入れるか、3枚全部を捨て札にして+3枚引くかの二択（部分選択は不可）。[公式FAQ]",
+        "捨てて引く場合、3枚引くためにシャッフルが必要なら今捨てた3枚も混ぜてシャッフルする（同じカードを引き直す可能性あり）。[公式FAQ]",
+        "on-trash: これが廃棄されたとき、これより安いカード1枚を獲得する（『cheaper』＝現在のCatacombsのコスト未満。通常$5未満。コスト軽減の影響を受ける）。獲得は強制・通常獲得（捨て札へ）。[公式FAQ]",
+        "on-trash は自分のターンでも他人のターンでも、誰のカードで廃棄されても発動する。[公式FAQ]",
+        "Remodel 等で廃棄した場合、Catacombs の獲得（on-trash）を先に解決し、その後 Remodel の獲得を行う。[wiki Other rules clarifications]"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "graverobber",
+      "en": "Graverobber",
+      "text_en": "Choose one: Gain a card from the trash costing from $3 to $6, onto your deck; or trash an Action card from your hand and gain a card costing up to $3 more than it.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "",
+      "rulings": [
+        "選択肢はどちらも『選んでからできる範囲で実行』＝実行不可能でもその選択肢を選べる（例：廃棄置き場に$3〜$6のカードが無くても選択肢1を選べる→獲得は不発）。[公式FAQ]",
+        "選択肢1（廃棄置き場から獲得）：獲得先は山札の上（onto your deck）。何を取ったかは全プレイヤーに公開される。[公式FAQ]",
+        "通常なら手札に獲得されるカード（Ghost Town 等）でも、廃棄置き場からの獲得は山札の上に置く。[wiki Other rules clarifications]",
+        "ポーションコスト[P]や負債[D]を含むコストのカードは『$3〜$6』に該当しない。[公式FAQ]",
+        "選択肢2（手札のアクション廃棄→+$3まで獲得）：獲得先は通常どおり捨て札。獲得はアクションに限らず任意の種類のカード。[公式FAQ]"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "count",
+      "en": "Count",
+      "text_en": "Choose one: Discard 2 cards; or put a card from your hand onto your deck; or gain a Copper.\n\nChoose one: +$3; or trash your hand; or gain a Duchy.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "",
+      "rulings": [
+        "独立した2段階の三択：まず前半（2枚捨てる／手札1枚を山札の上へ／銅貨獲得）を選んで解決し、その後に後半（+$3／手札全廃棄／公領獲得）を選んで解決する。組み合わせは自由。[公式FAQ]",
+        "実行できない選択肢も選べる（例：手札0枚で『2枚捨てる』を選ぶ＝何も起きない）。[公式FAQ]",
+        "『手札を廃棄』で on-trash 持ちを複数枚同時廃棄した場合：まず全部廃棄してから、廃棄で誘発した効果を好きな順に解決する。[公式FAQ]",
+        "銅貨/公領の獲得は山が空なら不発（通常獲得＝捨て札へ）。[一般ルール]"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "band_of_misfits",
+      "en": "Band of Misfits",
+      "text_en": "Play a non-Command Action card from the Supply that costs less than this, leaving it there.",
+      "types_en": [
+        "Action",
+        "Command"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "2019年エラッタで大改訂：Command（命令）型が新設され Band of Misfits / Overlord / Captain に付与。種別が Action → Action-Command に変更。旧版（2012）は『安いアクションカードとしてプレイし、場にある間そのカードになる』だったが、現行版は『サプライのカードを動かさずに（サプライに残したまま）使用する』方式に変更。Command カードは互いにプレイできない。[dominionstrategy.miraheze.org/wiki/Errata で確認]",
+      "rulings": [
+        "対象＝サプライにある・Command でない・アクションカード・これよりコストが安い（costs less than this＝BoM の現在コスト$5未満。コスト軽減の影響あり）。[現行カードテキスト＋公式FAQ 2020]",
+        "サプライの山の一番上のカードしかプレイできない（空の山や、下に隠れているカードは不可）。非サプライカード（Madman 等）も不可。[公式FAQ 2020]",
+        "プレイされたカードはサプライに残ったまま。そのカードが自分自身を動かそうとする効果（Death Cart の自己廃棄等）は失敗する。『廃棄したか』をチェックする効果（Death Cart）はその部分が不発になるが、チェックしない効果は残りが通常どおり起きる。[公式FAQ 2020]",
+        "プレイされたカードは場に出ていないので『これが場にある間』の能力（Highway 等）は機能しない。[公式FAQ 2020]",
+        "持続の追跡：BoM は『プレイしたカードが場を離れるはずだったターンのクリンナップ』まで場に残る。通常はそのターンに捨てるが、持続カードをプレイした場合は持続と同様に場に残り続ける。玉座系で複数回プレイした場合は最後のカードが離れるターンまで残る。[公式FAQ 2020]",
+        "プレイ可能な対象がサプライに無い場合は何も起きない（BoM 自体は場に出てプレイ済み扱い。アクション消費のみ）。[『できる範囲で実行』の一般ルール＋wiki 旧FAQ の同旨記述]"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "mystic",
+      "en": "Mystic",
+      "text_en": "+1 Action\n+$2\n\nName a card, then reveal the top card of your deck. If you named it, put it into your hand.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "",
+      "rulings": [
+        "+1アクションと+$2 を先に得て、その後カード名を1つ指定→山札の一番上を公開。[公式FAQ]",
+        "指定はカード名（『Copper』等）であり種別（『Treasure』）は不可。サプライにあるカードでなくてもよい。[公式FAQ]",
+        "名前は完全一致が必要（例：Sir Destry と Sir Martin は不一致）。[公式FAQ]",
+        "当たったら公開したカードを手札に入れる。外れたら公開したカードは山札の上に戻す。[公式FAQ]",
+        "山札が空で捨て札もない場合は公開できるカードが無く、指定部分は何も起きない（+1アクション+$2 は得る）。[一般ルール]"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "rogue",
+      "en": "Rogue",
+      "text_en": "+$2\nIf there are any cards in the trash costing from $3 to $6, gain one of them. Otherwise, each other player reveals the top 2 cards of their deck, trashes one of them costing from $3 to $6, and discards the rest.",
+      "types_en": [
+        "Action",
+        "Attack"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "機能エラッタ無し。2016年の表記統一で「the top two cards of his deck」→「the top 2 cards of their deck」（his→their・two→2）に変わっただけで挙動は不変。2019/2022エラッタの対象外。",
+      "rulings": [
+        "廃棄置き場に$3〜$6のカードがある場合、獲得は強制（任意ではない）。どれを獲得するかはローグの使用者が選ぶ。獲得カードは捨て札置き場へ行き、他プレイヤーに公開される。（出典: RGG公式Dark Agesルルブ2020年版 Rogue項 'you have to gain one of them; it is not optional. ... The gained card goes into your discard pile.'）",
+        "ポーション($P)や負債($D)をコストに含むカードは「$3〜$6」に該当しない。（出典: 同ルルブ 'Cards with (Potion) or (Debt) in the cost do not cost from $3 to $6.'）",
+        "アタック分岐（廃棄置き場に$3-6が無い場合のみ）：左隣からターン順に各被害者を解決。（出典: 同ルルブ 'Go in turn order, starting with the player to your left.'）",
+        "【重要・実装影響】公開した2枚のうちどちらを廃棄するかは「公開した本人（被害者）」が選ぶ。使用者ではない。（出典: 同ルルブ 'have each other player reveal the top two cards of their deck, trash one of them of their choice that costs from $3 to $6 (if possible), and discard the rest.'）両方$3-6なら被害者が選択、1枚だけ該当ならそれを廃棄、該当無しなら2枚とも捨て札。",
+        "分岐判定は解決開始時に1回だけ。廃棄置き場が空で攻撃分岐に入った後、最初の被害者が廃棄したカードが置き場に入っても、残りの被害者への攻撃は続行される（テキストが単一のIf/Otherwise構造のため）。",
+        "通常のアタック：堀/灯台等の免疫が適用される。廃棄置き場から獲得する分岐でも「アタックカードをプレイした」事実は変わらずリアクション窓は開く（ただし免疫でも使用者の+$2と獲得は止まらない）。"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "pillage",
+      "en": "Pillage",
+      "text_en": "Trash this. If you did, gain 2 Spoils, and each other player with 5 or more cards in hand reveals their hand and discards a card that you choose.",
+      "types_en": [
+        "Action",
+        "Attack"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "略奪品(Spoils)の山（15枚・サプライ外・非売品）を使用する。Spoils山が空でも3山終了条件には数えない。",
+      "errata": "2019年エラッタ（Donald X 'Dominion 2019 Errata and Rules Tweaks'）。旧2012年版: 'Trash this. Each other player with 5 or more cards in hand reveals their hand and discards a card that you choose. Gain 2 Spoils from the Spoils pile.' → 新版: 'Trash this. If you did, ...'。【核心】廃棄できなかった場合は何も起きない（Spoils獲得もアタックも無し）。玉座の間の2回目のプレイ（既に廃棄置き場にあり動かせない）、Captain/はみだし者等で「サプライに残したままプレイ」した場合などが該当。",
+      "rulings": [
+        "被害者が捨てるカードは、公開された手札の中から「使用者（アタック側）」が選ぶ。（出典: RGG公式Dark Agesルルブ2020年版 'discards a card of your choice'）",
+        "手札4枚以下のプレイヤーは公開も捨て札もしない（影響を受けない）。ただしアタックカードがプレイされたこと自体は変わらないので、堀等のリアクションは公開可能。（出典: 同ルルブ・カードテキスト 'each other player with 5 or more cards in hand'）",
+        "被害者の解決は左隣からターン順。（出典: 同ルルブ 'This happens in turn order, starting with the player to your left.'）",
+        "Spoilsはサプライ外のSpoils山から獲得。残1枚なら1枚だけ、0枚なら獲得無し。（出典: 同ルルブ 'If there are no Spoils cards left, you do not get one; if there is only one, you just get one.'）",
+        "解決順の注記: 現行カードテキストでは「Spoils獲得→アタック」の順だが、公式ルルブ2020年版FAQは「アタック→Spoils獲得」の順で記述しており不整合がある。被害者への影響は皆無（差が出るのは使用者自身のon-gain反応の窓のみ）。実装は現行テキスト順（廃棄→成功ならSpoils 2枚獲得→各被害者へアタック）を推奨。",
+        "玉座の間×略奪: 1回目のプレイで廃棄成功（Spoils+アタックあり）。2回目は場に無いため廃棄に失敗し「If you did」が偽→2回目は完全に無効果。（2019エラッタの明示的意図。旧テキスト時代のBGG裁定では2回目もアタック有効だったが、現行では無効）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "cultist",
+      "en": "Cultist",
+      "text_en": "+2 Cards\nEach other player gains a Ruins. You may play a Cultist from your hand.\n—\nWhen you trash this, +3 Cards.",
+      "types_en": [
+        "Action",
+        "Attack",
+        "Looter"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "Looter種別のため廃墟(Ruins)山を使用: 全50枚の廃墟をシャッフルし、2人戦=10枚/3人戦=20枚/4人戦=30枚（プレイヤー数-1 ×10枚）を裏向きの山にして一番上だけ表向き。残りは箱に戻す。廃墟山はサプライの一部＝空になれば3山終了条件に数える。獲得できるのは常に山の一番上の廃墟のみ。",
+      "errata": "機能エラッタ無し（2019/2022エラッタの対象外）。",
+      "rulings": [
+        "廃墟の配布は左隣からターン順。各被害者はその時点の一番上の廃墟を獲得し、次の1枚をめくって表にする。廃墟山が尽きたらそこで配布終了。（出典: RGG公式Dark Agesルルブ2020年版 Cultist項）",
+        "【重要・実装影響】「手札の狂信者を使用してよい」はアクション権を消費しない無料プレイ。元の狂信者が1アクションを使っただけで、連鎖分は追加消費ゼロ。今引いた狂信者でも元々手札にあった狂信者でも良い。（出典: 同ルルブ 'Playing a Cultist this way does not use up any extra Actions ... the original Cultist uses up one Action and that is it.'）",
+        "連鎖プレイされた狂信者も完全なプレイ＝+2カードを引き、再び各対戦相手が廃墟を獲得し、さらに連鎖できる。（出典: 同ルルブのプレイ例＝Kevinが狂信者を連鎖するたびKentが廃墟を獲得している）",
+        "連鎖の各プレイは独立した「アタックカードのプレイ」＝堀・乞食等のリアクション窓はプレイごとに開く。（出典: 同ルルブのプレイ例で乞食が個別のプレイに反応）",
+        "【重要・実装影響】on-trash「+3カードを引く」は誰のターンか・誰のカードが廃棄させたかに関係なく機能する。相手のアタック（騎士等）で廃棄された場合も、廃棄を指示された側＝持ち主が3枚引く。廃棄置き場に置かれた直後、効果解決の途中でも即時解決（例: 墓暴きで狂信者を廃棄→先に3枚引いてから獲得処理）。（出典: 同ルルブ 'Do this whether or not it is your turn, and whether or not the card that causes Cultist to be trashed was yours.' ＋ 汎用when-trash規定）",
+        "カード公開中に廃棄された場合（騎士アタック等）: 公開されて捨て札になる予定のカードを+3ドローで引くことはできない。（出典: 同ルルブ 'If you trash a Cultist while revealing cards, such as to a Knight attack, you do not draw the revealed cards that are about to be discarded.'）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "counterfeit",
+      "en": "Counterfeit",
+      "text_en": "$1\n+1 Buy\nYou may play a non-Duration Treasure from your hand twice. If you do, trash that Treasure.",
+      "types_en": [
+        "Treasure"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "2022年エラッタで「non-Duration（持続でない）」が追加（Counterfeit/Mint/Cryptが対象の一括変更）。理由=Plunder等で財宝-持続カードが登場し、場から廃棄すると持続効果の追跡が壊れるため、アストロラーベ等の持続財宝を2度使い対象にできなくした。旧2012年版: '$1 +1 Buy. When you play this, you may play a Treasure from your hand twice. If you do, trash that Treasure.'（新テンプレートで'When you play this,'の前置きも削除）",
+      "rulings": [
+        "対象は「手札の」持続でない財宝1枚。プレイするかは任意（may）。プレイした場合のみ、2度使用した後にその財宝を廃棄する。廃棄してもその財宝が生んだコインは全て有効。（出典: RGG公式Dark Agesルルブ2020年版 'You still get any coins that Treasure gave you from playing it, despite trashing it.'）",
+        "Counterfeit自身は廃棄されない（廃棄されるのは対象の財宝のみ）。",
+        "【重要・実装影響】自分で移動した財宝は廃棄に失敗する（lose track）。例: 略奪品(Spoils)を対象にすると、+$3×2=+$6は得るが、Spoilsは1回目のプレイで山に戻るため廃棄できない。（出典: 同ルルブ 'if you use Counterfeit to play Spoils, you will be unable to trash it, as Counterfeit expects to find Spoils in play (but Spoils returned to its pile).'）",
+        "プレイ時効果を持つ財宝を対象にすると、その効果は2回発生する（例: Counterfeit×Counterfeit=+$2・+2購入・さらに別の財宝を2度使い→廃棄の機会が2回）。（出典: 同ルルブ 'you will do that thing twice.'）",
+        "財宝なので購入フェイズにプレイ。玉座の間等の対象にはならない（アクションではない）。ティアラ/Crown等の財宝2度使いで使うとCounterfeitの効果全体が2回発生する。"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "hunting_grounds",
+      "en": "Hunting Grounds",
+      "text_en": "+4 Cards\n—\nWhen you trash this, gain a Duchy or 3 Estates.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 6,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "機能エラッタ無し。",
+      "rulings": [
+        "on-trashの「公領1枚 or 屋敷3枚」の選択は、when-trash能力が機能するプレイヤー＝「そのカードの廃棄を指示された側（持ち主）」が行う。誰のターンか・誰のカードが廃棄させたか（騎士/Swindler等の相手アタックでも）に関係なく機能し、選択権も持ち主にある。（出典: RGG公式Dark Agesルルブ2020年版 汎用規定 'These abilities function no matter whose turn the card is trashed on. The player that a when-you-trash ability functions for is the player told to trash the card' ＋ Hunting Grounds項 'your choice'）",
+        "屋敷3枚を選んで残りが3枚未満なら、あるだけ獲得。（出典: 同ルルブ 'If you choose the three Estates and there are not three left, just gain as many as you can.'）",
+        "実行できない選択肢も選べる（公領の山が空でも「公領」を選べる→何も獲得しない）。（出典: 同ルルブの一般原則＝Count項 'You can choose an option even if you cannot do it.' をwhen-trash選択に適用。wiki FAQも同旨）",
+        "廃棄置き場に置かれた直後に即時解決（廃棄させたカードの効果解決の途中に割り込む）。獲得先は通常どおり捨て札置き場。（出典: 同ルルブ汎用when-trash規定）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "altar",
+      "en": "Altar",
+      "text_en": "Trash a card from your hand. Gain a card costing up to $5.",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 6,
+      "pile_count": 10,
+      "setup": "",
+      "errata": "機能エラッタ無し。",
+      "rulings": [
+        "手札があれば廃棄は強制（任意ではない）。（出典: RGG公式Dark Agesルルブ2020年版 'You trash a card from your hand if you can'）",
+        "【重要・実装影響】獲得も強制で、廃棄できたかどうかに関係なく行う＝手札0枚で廃棄できなくても$5以下のカード1枚を獲得する。（出典: 同ルルブ 'and then gain a card whether or not you trashed one.'）",
+        "廃棄したカードのon-trash効果は獲得の前に解決される（例: 草茂る屋敷を廃棄→先に1枚引いてから$5以下を獲得）。（出典: 同ルルブ 'if you use Altar to trash Overgrown Estate, you first draw a card, then...'）",
+        "獲得はサプライから・捨て札置き場へ（通常獲得）。$5以下のカードがサプライに1枚も無ければ獲得は不発。"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "dame_anna",
+      "en": "Dame Anna",
+      "text_en": "You may trash up to 2 cards from your hand. Each other player reveals the top 2 cards of their deck, trashes one of them costing from $3 to $6, and discards the rest. If a Knight is trashed by this, trash this.",
+      "types_en": [
+        "Action",
+        "Attack",
+        "Knight"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "騎士山＝10種各1枚(計10枚)をシャッフルし裏向きの1山として設置、一番上だけ常に表向き。購入/獲得できるのは一番上のカードのみ。山の購入コスト＝一番上のカードのコスト。Trade Routeトークンは置かれない。（公式ルールブックPreparation/miraheze Knight）",
+      "errata": "機能的エラッタなし。初版(2012)は英文が旧表記（his deck / trash this card 系）で、2019年以降の印刷で their deck / trash this に表記現代化（挙動不変）。wikiに旧版画像(Old Version)あり。",
+      "rulings": [
+        "自分の手札廃棄は0枚・1枚・2枚を自由に選べる（任意）。［公式FAQ/ルールブック2020: \"you may choose to trash zero, one, or two cards\"］",
+        "効果はカード記載順＝手札廃棄が先、アタックが後。［公式FAQ: \"Follow the rules on Knights in order from top to bottom\"］",
+        "『If a Knight is trashed by this』はアタック部分にのみ係る。第1能力で自分の手札から騎士を廃棄してもデイム・アンナ自身は廃棄されない。［miraheze Dame Anna: Other Rules clarifications］",
+        "2枚同時廃棄時は先に両方廃棄してから、廃棄時効果（Fortress等）の解決順を選ぶ。［ルールブック: \"first trash them all, then pick an order\"］",
+        "共通アタック: 廃棄する1枚は公開した本人（被害者）が選ぶが、選択権があるのは公開2枚が両方$3〜$6の時のみ。両方該当で片方が騎士でも、本人が他方を選べば使用騎士は廃棄されない。左隣からターン順に解決。［公式FAQ/ルールブック］",
+        "ポーション(錬金術)や負債(帝国)をコストに含むカードは$3〜$6に該当しない。［公式FAQ］",
+        "騎士山はサプライの王国カード山＝空になれば3山終了条件の1山に数える（ルールブックはRuins山に明記、騎士山も『Knights Kingdom card pile』としてサプライの山）。名前の異なる騎士は別名カード扱い。特定カード獲得効果は目当てが一番上でなければ不発。Ambassadorで戻す場合は山の一番上へ。［ルールブック］",
+        "Black Market併用時はランダマイザーでなく騎士1枚を直接ブラックマーケットデッキへ。［公式FAQ］",
+        "使用騎士が既に場を離れて所在不明なら自己廃棄は不発（移動不能の一般則）。使用騎士が廃棄されても残りの被害者への攻撃は最後まで解決する（場を離れても指示は解決し続ける一般則）。"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "dame_josephine",
+      "en": "Dame Josephine",
+      "text_en": "Each other player reveals the top 2 cards of their deck, trashes one of them costing from $3 to $6, and discards the rest. If a Knight is trashed by this, trash this.\n—\n2 VP",
+      "types_en": [
+        "Action",
+        "Attack",
+        "Victory",
+        "Knight"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "騎士山＝10種各1枚をシャッフルし裏向き・一番上のみ表向き。一番上だけ購入/獲得可。山の購入コスト＝一番上のコスト。ジョセフィーヌが一番上でも騎士山は勝利点の山ではなくTrade Routeトークンは置かれない。（公式FAQ）",
+      "errata": "機能的エラッタなし。初版(2012)は旧表記（his deck / trash this card 系）→現行印刷は their deck / trash this（表記現代化のみ・挙動不変）。",
+      "rulings": [
+        "勝利点カードでもあり、ゲーム終了時2VP。ただし騎士山は勝利点の山ではない（Trade Route(繁栄)のトークン対象外）。［公式FAQ: \"Dame Josephine is also a Victory card, worth 2 VP...The Knight pile is not a Victory pile though\"］",
+        "公式の種別表記順は Action – Attack – Victory – Knight。［miraheze Dame Josephine: Types］",
+        "コスト$5なので、他の騎士のアタックで公開されると$3〜$6の廃棄対象になり得る（騎士が廃棄されれば攻撃騎士も廃棄）。",
+        "共通アタック: 廃棄する1枚は公開した本人が選ぶ（両方$3〜$6の時のみ選択権）。両方該当で片方が騎士でも他方を選べば使用騎士は廃棄されない。左隣からターン順に解決。［公式FAQ］",
+        "ポーション/負債コストを含むカードは$3〜$6に該当しない。［公式FAQ］",
+        "騎士山はサプライの王国カード山＝空なら山切れ判定の1山。Black Market併用時は騎士1枚を直接BMデッキへ。［ルールブック/公式FAQ］"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "dame_molly",
+      "en": "Dame Molly",
+      "text_en": "+2 Actions\nEach other player reveals the top 2 cards of their deck, trashes one of them costing from $3 to $6, and discards the rest. If a Knight is trashed by this, trash this.",
+      "types_en": [
+        "Action",
+        "Attack",
+        "Knight"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "騎士山＝10種各1枚をシャッフルし裏向き・一番上のみ表向き。一番上だけ購入/獲得可。山の購入コスト＝一番上のコスト。Trade Routeトークンなし。",
+      "errata": "機能的エラッタなし。初版(2012)は旧表記→現行印刷は their deck / trash this（表記現代化のみ）。",
+      "rulings": [
+        "+2アクションが先、アタックが後（記載順）。［公式FAQ: 上から下に解決］",
+        "共通アタック: 廃棄する1枚は公開した本人が選ぶ（両方$3〜$6の時のみ選択権）。両方該当で片方が騎士でも他方を選べば使用騎士は廃棄されない。左隣からターン順に解決。［公式FAQ/ルールブック2020］",
+        "ポーション/負債コストを含むカードは$3〜$6に該当しない。［公式FAQ］",
+        "騎士山はサプライの王国カード山＝空なら山切れ判定の1山。名前の異なる騎士は別名カード扱い。Black Market併用時は騎士1枚を直接BMデッキへ。［ルールブック/公式FAQ］",
+        "使用騎士が場を離れていれば自己廃棄は不発。使用騎士が廃棄されても残りの被害者への攻撃は継続解決（一般則）。"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "dame_natalie",
+      "en": "Dame Natalie",
+      "text_en": "You may gain a card costing up to $3. Each other player reveals the top 2 cards of their deck, trashes one of them costing from $3 to $6, and discards the rest. If a Knight is trashed by this, trash this.",
+      "types_en": [
+        "Action",
+        "Attack",
+        "Knight"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "騎士山＝10種各1枚をシャッフルし裏向き・一番上のみ表向き。一番上だけ購入/獲得可。山の購入コスト＝一番上のコスト。Trade Routeトークンなし。",
+      "errata": "機能的エラッタなし。初版(2012)は旧表記→現行印刷は their deck / trash this（表記現代化のみ）。",
+      "rulings": [
+        "$3以下の獲得は任意（獲得しなくてよい）。獲得先の指定がないので通常どおり捨て札置き場へ。獲得が先・アタックが後（記載順）。［カードテキスト＋公式FAQの記載順ルール］",
+        "共通アタック: 廃棄する1枚は公開した本人が選ぶ（両方$3〜$6の時のみ選択権）。両方該当で片方が騎士でも他方を選べば使用騎士は廃棄されない。左隣からターン順に解決。［公式FAQ/ルールブック2020］",
+        "ポーション/負債コストを含むカードは$3〜$6に該当しない。［公式FAQ］",
+        "騎士山はサプライの王国カード山＝空なら山切れ判定の1山。特定カード獲得効果は目当てが山の一番上でなければ不発。Black Market併用時は騎士1枚を直接BMデッキへ。［ルールブック/公式FAQ］",
+        "使用騎士が場を離れていれば自己廃棄は不発。使用騎士が廃棄されても残りの被害者への攻撃は継続解決（一般則）。"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "dame_sylvia",
+      "en": "Dame Sylvia",
+      "text_en": "+$2\nEach other player reveals the top 2 cards of their deck, trashes one of them costing from $3 to $6, and discards the rest. If a Knight is trashed by this, trash this.",
+      "types_en": [
+        "Action",
+        "Attack",
+        "Knight"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "騎士山＝10種各1枚をシャッフルし裏向き・一番上のみ表向き。一番上だけ購入/獲得可。山の購入コスト＝一番上のコスト。Trade Routeトークンなし。",
+      "errata": "機能的エラッタなし。初版(2012)は旧表記→現行印刷は their deck / trash this（表記現代化のみ）。",
+      "rulings": [
+        "+$2が先、アタックが後（記載順）。［公式FAQ: 上から下に解決］",
+        "共通アタック: 廃棄する1枚は公開した本人が選ぶ（両方$3〜$6の時のみ選択権）。両方該当で片方が騎士でも他方を選べば使用騎士は廃棄されない。左隣からターン順に解決。［公式FAQ/ルールブック2020］",
+        "ポーション/負債コストを含むカードは$3〜$6に該当しない。［公式FAQ］",
+        "騎士山はサプライの王国カード山＝空なら山切れ判定の1山。Black Market併用時は騎士1枚を直接BMデッキへ。［ルールブック/公式FAQ］",
+        "使用騎士が場を離れていれば自己廃棄は不発。使用騎士が廃棄されても残りの被害者への攻撃は継続解決（一般則）。"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "sir_bailey",
+      "en": "Sir Bailey",
+      "text_en": "+1 Card\n+1 Action\nEach other player reveals the top 2 cards of their deck, trashes one of them costing from $3 to $6, and discards the rest. If a Knight is trashed by this, trash this.",
+      "types_en": [
+        "Action",
+        "Attack",
+        "Knight"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "騎士山＝10種各1枚をシャッフルし裏向き・一番上のみ表向き。一番上だけ購入/獲得可。山の購入コスト＝一番上のコスト。Trade Routeトークンなし。",
+      "errata": "機能的エラッタなし。初版(2012)は旧表記→現行印刷は their deck / trash this（表記現代化のみ）。",
+      "rulings": [
+        "+1カード+1アクションが先、アタックが後（記載順）。［公式FAQ: 上から下に解決］",
+        "共通アタック: 廃棄する1枚は公開した本人が選ぶ（両方$3〜$6の時のみ選択権）。両方該当で片方が騎士でも他方を選べば使用騎士は廃棄されない。左隣からターン順に解決。［公式FAQ/ルールブック2020］",
+        "ポーション/負債コストを含むカードは$3〜$6に該当しない。［公式FAQ］",
+        "騎士山はサプライの王国カード山＝空なら山切れ判定の1山。Black Market併用時は騎士1枚を直接BMデッキへ。［ルールブック/公式FAQ］",
+        "使用騎士が場を離れていれば自己廃棄は不発。使用騎士が廃棄されても残りの被害者への攻撃は継続解決（一般則）。"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "sir_destry",
+      "en": "Sir Destry",
+      "text_en": "+2 Cards\nEach other player reveals the top 2 cards of their deck, trashes one of them costing from $3 to $6, and discards the rest. If a Knight is trashed by this, trash this.",
+      "types_en": [
+        "Action",
+        "Attack",
+        "Knight"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "騎士山＝10種各1枚をシャッフルし裏向き・一番上のみ表向き。一番上だけ購入/獲得可。山の購入コスト＝一番上のコスト。Trade Routeトークンなし。",
+      "errata": "機能的エラッタなし。初版(2012)は旧表記→現行印刷は their deck / trash this（表記現代化のみ）。",
+      "rulings": [
+        "+2カードが先、アタックが後（記載順）。［公式FAQ: 上から下に解決］",
+        "共通アタック: 廃棄する1枚は公開した本人が選ぶ（両方$3〜$6の時のみ選択権）。両方該当で片方が騎士でも他方を選べば使用騎士は廃棄されない。左隣からターン順に解決。［公式FAQ/ルールブック2020］",
+        "ポーション/負債コストを含むカードは$3〜$6に該当しない。［公式FAQ］",
+        "騎士山はサプライの王国カード山＝空なら山切れ判定の1山。Black Market併用時は騎士1枚を直接BMデッキへ。［ルールブック/公式FAQ］",
+        "使用騎士が場を離れていれば自己廃棄は不発。使用騎士が廃棄されても残りの被害者への攻撃は継続解決（一般則）。"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "sir_martin",
+      "en": "Sir Martin",
+      "text_en": "+2 Buys\nEach other player reveals the top 2 cards of their deck, trashes one of them costing from $3 to $6, and discards the rest. If a Knight is trashed by this, trash this.",
+      "types_en": [
+        "Action",
+        "Attack",
+        "Knight"
+      ],
+      "cost": 4,
+      "pile_count": 10,
+      "setup": "騎士山＝10種各1枚をシャッフルし裏向き・一番上のみ表向き。一番上だけ購入/獲得可。山の購入コスト＝一番上のコスト＝サー・マーティンが上の時は$4。Trade Routeトークンなし。",
+      "errata": "機能的エラッタなし。初版(2012)は旧表記→現行印刷は their deck / trash this（表記現代化のみ）。",
+      "rulings": [
+        "唯一コスト$4（他の騎士は全員$5）。山の一番上にある時はArmory（〜$4獲得）等でも獲得できる。［公式FAQ: \"Sir Martin only costs $4...it can be gained with an Armory and so on\"］",
+        "コスト$4なので、他の騎士のアタックで公開されると$3〜$6の廃棄対象になり得る。",
+        "+2購入が先、アタックが後（記載順）。［公式FAQ: 上から下に解決］",
+        "共通アタック: 廃棄する1枚は公開した本人が選ぶ（両方$3〜$6の時のみ選択権）。両方該当で片方が騎士でも他方を選べば使用騎士は廃棄されない。左隣からターン順に解決。［公式FAQ/ルールブック2020］",
+        "ポーション/負債コストを含むカードは$3〜$6に該当しない。［公式FAQ］",
+        "騎士山はサプライの王国カード山＝空なら山切れ判定の1山。Ambassadorで戻したサー・マーティンは山の一番上に置かれ、次に獲得されるのはそれ（下の別名騎士は対象外）。［ルールブック実例］",
+        "使用騎士が場を離れていれば自己廃棄は不発。使用騎士が廃棄されても残りの被害者への攻撃は継続解決（一般則）。"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "sir_michael",
+      "en": "Sir Michael",
+      "text_en": "Each other player discards down to 3 cards in hand. Each other player reveals the top 2 cards of their deck, trashes one of them costing from $3 to $6, and discards the rest. If a Knight is trashed by this, trash this.",
+      "types_en": [
+        "Action",
+        "Attack",
+        "Knight"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "騎士山＝10種各1枚をシャッフルし裏向き・一番上のみ表向き。一番上だけ購入/獲得可。山の購入コスト＝一番上のコスト。Trade Routeトークンなし。",
+      "errata": "機能的エラッタなし。初版(2012)は旧表記→現行印刷は their deck / trash this（表記現代化のみ）。",
+      "rulings": [
+        "効果順は記載順＝『手札3枚になるまで捨てる』が先、『上2枚公開→廃棄』が後。［公式FAQ/ルールブック2020: \"Sir Michael causes players to discard before it trashes cards\"］",
+        "手札から捨てたカードは捨て札置き場へ行くので、直後に公開する山札の上2枚には含まれない（山札と捨て札は別）。",
+        "両方ともアタック効果なので、堀等で無効化した被害者は捨ても公開廃棄も両方受けない（アタック1回として反応）。",
+        "共通アタック: 廃棄する1枚は公開した本人が選ぶ（両方$3〜$6の時のみ選択権）。両方該当で片方が騎士でも他方を選べば使用騎士は廃棄されない。左隣からターン順に解決。［公式FAQ/ルールブック2020］",
+        "ポーション/負債コストを含むカードは$3〜$6に該当しない。［公式FAQ］",
+        "騎士山はサプライの王国カード山＝空なら山切れ判定の1山。Black Market併用時は騎士1枚を直接BMデッキへ。［ルールブック/公式FAQ］",
+        "使用騎士が場を離れていれば自己廃棄は不発。使用騎士が廃棄されても残りの被害者への攻撃は継続解決（一般則）。"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "sir_vander",
+      "en": "Sir Vander",
+      "text_en": "Each other player reveals the top 2 cards of their deck, trashes one of them costing from $3 to $6, and discards the rest. If a Knight is trashed by this, trash this.\n—\nWhen you trash this, gain a Gold.",
+      "types_en": [
+        "Action",
+        "Attack",
+        "Knight"
+      ],
+      "cost": 5,
+      "pile_count": 10,
+      "setup": "騎士山＝10種各1枚をシャッフルし裏向き・一番上のみ表向き。一番上だけ購入/獲得可。山の購入コスト＝一番上のコスト。Trade Routeトークンなし。",
+      "errata": "機能的エラッタなし。初版(2012)は旧表記→現行印刷は their deck / trash this（表記現代化のみ）。下段の廃棄時能力は初版から同一。",
+      "rulings": [
+        "『廃棄されたら金貨獲得』は誰のターンに廃棄されても、誰のカードが廃棄させても機能する。金貨を得るのはサー・ヴァンダーの持ち主（廃棄するよう指示されたプレイヤー）であり、廃棄させたカードの使用者ではない。［公式FAQ: \"The player who had Sir Vander is the one who gains the Gold, regardless of who played the card that trashed it\"］",
+        "例: 相手の騎士アタックで自分のサー・ヴァンダーが公開・廃棄された場合、金貨を得るのは自分（被害者）。自分が使用したサー・ヴァンダーが（相手の騎士を廃棄したことで）自己廃棄された場合も自分が金貨を得る。",
+        "廃棄時能力はカードがトラッシュに置かれた直後に解決される（効果解決の途中でも割り込む）。サプライに金貨が無ければ得られない。［ルールブック: when-trash一般則］",
+        "共通アタック: 廃棄する1枚は公開した本人が選ぶ（両方$3〜$6の時のみ選択権）。両方該当で片方が騎士でも他方を選べば使用騎士は廃棄されない。左隣からターン順に解決。［公式FAQ/ルールブック2020］",
+        "ポーション/負債コストを含むカードは$3〜$6に該当しない。［公式FAQ］",
+        "騎士山はサプライの王国カード山＝空なら山切れ判定の1山。Black Market併用時は騎士1枚を直接BMデッキへ。［ルールブック/公式FAQ］",
+        "使用騎士が場を離れていれば自己廃棄は不発。使用騎士が廃棄されても残りの被害者への攻撃は継続解決（一般則）。"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "ruined_village",
+      "en": "Ruined Village",
+      "text_en": "+1 Action",
+      "types_en": [
+        "Action",
+        "Ruins"
+      ],
+      "cost": 0,
+      "pile_count": 10,
+      "setup": "Looter（Cultist/Death Cart/Marauder）が王国にある時のみ廃墟の混合山を使用。5種×10枚=50枚をシャッフルし 10×(プレイヤー数−1) 枚（2人10/3人20/4人30/5人40/6人50）を裏向きの1つの山にし、一番上だけ表向き。残りは箱へ戻す。",
+      "errata": "",
+      "rulings": [
+        "山の一番上のカードだけが購入/獲得/選択可能。山の中は見られず、上が裏向きになったら常に表に返す（公式ルールブック2020 p.3）",
+        "廃墟はアクションカードであり $0 で購入もできる。廃墟の山はサプライの一部で、空になれば3山終了条件に数える（公式ルールブック2020 p.3・wikiwiki.jp/dominiondeckでも確認）",
+        "名前の異なる廃墟は『異なる名前のカード』として数える（例: Menagerie は Copper+Ruined Market+Ruined Library で+3カード）（公式ルールブック2020 p.3）",
+        "Talisman等『同じカードをもう1枚獲得』は、購入した廃墟のすぐ下（次の一番上）が同名の場合のみ成功（公式ルールブック2020 p.3）",
+        "Ambassador で山に返す場合は一番上に置く。Embargo トークンは山全体に効くが、Contraband の指名は特定の廃墟名1つだけを止める（公式ルールブック2020 p.3）",
+        "Cultist/Marauder の配布は左隣から手番順に一番上を1枚ずつ取り、その都度次を表向きにする。山が尽きたらそこで配布終了（公式ルールブック2020 p.5/p.7）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "ruined_market",
+      "en": "Ruined Market",
+      "text_en": "+1 Buy",
+      "types_en": [
+        "Action",
+        "Ruins"
+      ],
+      "cost": 0,
+      "pile_count": 10,
+      "setup": "Looterがある時のみ使用する廃墟混合山（10×(プレイヤー数−1)枚・上だけ表向き）の1種。詳細は ruined_village の setup と同じ。",
+      "errata": "",
+      "rulings": [
+        "使用時は+1購入のみ（公式ルールブック2020 p.10: \"When you play this, you just get +1 Buy.\"）",
+        "混合山ルール（上だけ獲得/購入可・$0で購入可・山切れは3山条件に数える）は ruined_village の rulings 参照（公式ルールブック2020 p.3）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "ruined_library",
+      "en": "Ruined Library",
+      "text_en": "+1 Card",
+      "types_en": [
+        "Action",
+        "Ruins"
+      ],
+      "cost": 0,
+      "pile_count": 10,
+      "setup": "Looterがある時のみ使用する廃墟混合山（10×(プレイヤー数−1)枚・上だけ表向き）の1種。詳細は ruined_village の setup と同じ。",
+      "errata": "",
+      "rulings": [
+        "使用時は1枚引くのみ（公式ルールブック2020 p.10: \"When you play this, you draw a card.\"）",
+        "混合山ルールは ruined_village の rulings 参照（公式ルールブック2020 p.3）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "abandoned_mine",
+      "en": "Abandoned Mine",
+      "text_en": "+$1",
+      "types_en": [
+        "Action",
+        "Ruins"
+      ],
+      "cost": 0,
+      "pile_count": 10,
+      "setup": "Looterがある時のみ使用する廃墟混合山（10×(プレイヤー数−1)枚・上だけ表向き）の1種。詳細は ruined_village の setup と同じ。",
+      "errata": "",
+      "rulings": [
+        "使用時は+$1のみ（公式ルールブック2020 p.10: \"When you play this, you just get +$1.\"。旧表記 '+1 Coin' は同義）",
+        "混合山ルールは ruined_village の rulings 参照（公式ルールブック2020 p.3）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "survivors",
+      "en": "Survivors",
+      "text_en": "Look at the top 2 cards of your deck. Discard them or put them back in any order.",
+      "types_en": [
+        "Action",
+        "Ruins"
+      ],
+      "cost": 0,
+      "pile_count": 10,
+      "setup": "Looterがある時のみ使用する廃墟混合山（10×(プレイヤー数−1)枚・上だけ表向き）の1種。詳細は ruined_village の setup と同じ。",
+      "errata": "",
+      "rulings": [
+        "2枚とも捨てるか、2枚とも（好きな順で）山札の上に戻すかの二択。1枚だけ捨てることはできない（公式ルールブック2020 p.10: \"You either discard both cards, or put both cards back on top; you cannot just discard one card.\"）",
+        "山札が1枚以下なら見られる分だけで同様に処理（一般ルール）。混合山ルールは ruined_village の rulings 参照（公式ルールブック2020 p.3）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "hovel",
+      "en": "Hovel",
+      "text_en": "When you gain a Victory card, you may trash this from your hand.",
+      "types_en": [
+        "Reaction",
+        "Shelter"
+      ],
+      "cost": 1,
+      "pile_count": 6,
+      "setup": "サプライに山を作らない開始デッキ専用カード（箱に6枚）。Shelters使用時、各プレイヤーの開始デッキ＝銅貨7＋納屋＋共同墓地＋草茂る屋敷（屋敷3枚の置換）。使用条件＝王国10種がすべて暗黒時代なら必ず使用、混成なら使用中の暗黒時代カードの比率でランダム決定（例: ランダマイザーから最後に配った1枚が暗黒時代ならShelters使用）。Platinum/Colony判定と同じカードで決めない。屋敷のサプライは通常どおり8/12枚（公式ルールブック2020 p.2）。",
+      "errata": "2022年エラッタ: 「When you buy a Victory card, you may trash this from your hand.」（購入時）→「When you gain a Victory card, you may trash this from your hand.」（獲得時）に変更。購入によらない獲得（工房系・Remodel等）でも廃棄可能になった（wikiwiki.jp/dominiondeck 納屋ページで新旧両文言を確認・2022 Errataとして検索でも確認）。",
+      "rulings": [
+        "勝利点カードを1枚獲得するたびに誘発。そのとき Hovel が手札にあれば任意で廃棄できる。廃棄しても何も得ない＝単なる圧縮（公式ルールブック2020 p.11、文言は2022年版に更新）",
+        "アクションでも財宝でも勝利点でもない（Reaction-Shelterのみ）＝プレイ不可・VPに数えない",
+        "Shelters はサプライに山が無く、購入も『サプライから獲得』もできず、Ambassador で返すこともできない。廃棄されれば廃棄置き場には行く（公式ルールブック2020 p.3/p.11）",
+        "複数の勝利点カードを獲得すればその獲得ごとに（手札にある限り）誘発機会がある（獲得1回=誘発1回の一般リアクションルール）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "necropolis",
+      "en": "Necropolis",
+      "text_en": "+2 Actions",
+      "types_en": [
+        "Action",
+        "Shelter"
+      ],
+      "cost": 1,
+      "pile_count": 6,
+      "setup": "サプライに山を作らない開始デッキ専用カード（箱に6枚）。Shelters使用条件と開始デッキ構成は hovel の setup と同じ（公式ルールブック2020 p.2）。",
+      "errata": "",
+      "rulings": [
+        "通常のアクションカードとしてプレイでき、+2アクションを得るだけ（公式ルールブック2020 p.11: \"This is an Action card; when you play it, you get +2 Actions.\"）",
+        "サプライに山なし・購入/通常獲得不可・Ambassadorで返せない（公式ルールブック2020 p.3/p.11）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "overgrown_estate",
+      "en": "Overgrown Estate",
+      "text_en": "0 VP\nWhen you trash this, +1 Card.",
+      "types_en": [
+        "Victory",
+        "Shelter"
+      ],
+      "cost": 1,
+      "pile_count": 6,
+      "setup": "サプライに山を作らない開始デッキ専用カード（箱に6枚）。Shelters使用条件と開始デッキ構成は hovel の setup と同じ（公式ルールブック2020 p.2）。",
+      "errata": "",
+      "rulings": [
+        "0VPだが勝利点カード。『勝利点カード』を参照する効果（Crossroads/Silk Road/Vagrant等）に数える（公式ルールブック2020 p.11: \"This is a Victory card despite being worth 0 VP.\"）",
+        "廃棄されたら即座に+1カード。他の効果の解決中でも割り込んで引く（例: Altarで廃棄→先に1枚引いてから$5以下獲得）。誰のターンに廃棄されても、廃棄させられた側（持ち主）が引く。強制（公式ルールブック2020 p.3/p.11）",
+        "自身を廃棄する手段は持たない＝他のカードで廃棄した時にのみ機能（公式ルールブック2020 p.11）",
+        "サプライに山なし・購入/通常獲得不可・Ambassadorで返せない（公式ルールブック2020 p.3/p.11）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "spoils",
+      "en": "Spoils",
+      "text_en": "$3\nWhen you play this, return it to the Spoils pile.\n(This is not in the Supply.)",
+      "types_en": [
+        "Treasure"
+      ],
+      "cost": 0,
+      "pile_count": 15,
+      "setup": "非サプライ。Bandit Camp / Marauder / Pillage のいずれかが王国にある時のみ、15枚の Spoils 山を脇に用意する（枚数はプレイヤー数によらず15固定・公式ルールブック2020 p.2「15 Spoils」）。",
+      "errata": "",
+      "rulings": [
+        "入手手段は Bandit Camp（1枚）/ Marauder（1枚）/ Pillage（2枚）のみ。サプライ外＝購入不可・Armory等『サプライから獲得』するカードでは獲得不可・Ambassadorで返せない（公式ルールブック2020 p.3）",
+        "山が尽きていたら獲得できない（あるだけ取る）（公式ルールブック2020 p.4/p.7 の Bandit Camp/Pillage FAQ）",
+        "この山が空でも3山終了条件・Poacher等の空山カウントには数えない（公式ルールブック2020 p.3）",
+        "プレイしたら+$3、山への返却は強制。ただし手札の財宝をプレイすること自体は強制ではない＝使わずに手札に残してよい（公式ルールブック2020 p.11）",
+        "Counterfeit で2回プレイした場合: +$3+$3を得て Spoils は（1回目のプレイ時に）山へ戻る。Counterfeit の廃棄は『場にあるはずのカードが無い』ため失敗する（公式ルールブック2020 p.3 lose-track / p.4 Counterfeit FAQ）",
+        "現行英文は wikiwiki.jp/dominiondeck 略奪品ページで確認（\"$3 — When you play this, return it to the Spoils pile. (This is not in the Supply.)\"）。エラッタなし"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "madman",
+      "en": "Madman",
+      "text_en": "+2 Actions\nReturn this to the Madman pile. If you do, +1 Card per card in your hand.\n(This is not in the Supply.)",
+      "types_en": [
+        "Action"
+      ],
+      "cost": 0,
+      "pile_count": 10,
+      "setup": "非サプライ。Hermit（隠遁者）が王国にある時のみ、10枚の Madman 山を脇に用意する（公式ルールブック2020 p.2「10 each Madman, Mercenary」）。",
+      "errata": "Madman 自体のカードエラッタなし。ただし2022年の Hermit エラッタで入手方法が変更: 旧「クリンナップでHermitを場から捨てる際、このターンカードを購入していなければHermitを廃棄しMadmanを獲得」→ 新「クリンナップ開始時、このターンの購入フェイズ中にカードを獲得していなければHermitをMadmanと交換(exchange)」。交換は獲得ではないため獲得時効果は誘発せず、Hermitは廃棄置き場でなく自分の山へ戻る（wiki Hermit ページ・miraheze ミラーで確認）。",
+      "rulings": [
+        "入手は Hermit 経由のみ。サプライ外＝購入不可・『サプライから獲得』不可・Ambassadorで返せない。山が空なら得られない（公式ルールブック2020 p.3/p.6）",
+        "交換で得た Madman は捨て札置き場に置かれる（miraheze wiki: \"you take a Madman from its pile and put it into your discard pile\"）",
+        "この山が空でも3山終了条件・空山カウントには数えない（公式ルールブック2020 p.3）",
+        "山へ戻すのは可能なら強制。戻せた場合のみ、その時点の手札枚数につき+1カード引く。手札枚数は『Madmanプレイ後』＝Madman自身（場にある）を含まない（公式ルールブック2020 p.11: 手札3枚なら3枚引く）",
+        "Throne Room / Procession で2回プレイ: 1回目で山に戻るため2回目は戻せず（lose-track）、2回目は+2アクションのみでカードは引けない。Procession の場合はさらに廃棄にも失敗するが、$1高いアクションの獲得は行う（公式ルールブック2020 p.11 の Procession×Madman 実例）",
+        "現行文言は 'If you do'（wikiwiki.jp/dominiondeck 狂人ページの英文引用、およびBGGスレッドの完全一致フレーズで確認。2022エラッタ対象リストに Madman 本体は含まれない）"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "mercenary",
+      "en": "Mercenary",
+      "text_en": "You may trash 2 cards from your hand.\nIf you did, +2 Cards, +$2, and each other player discards down to 3 cards in hand.\n(This is not in the Supply.)",
+      "types_en": [
+        "Action",
+        "Attack"
+      ],
+      "cost": 0,
+      "pile_count": 10,
+      "setup": "非サプライ。Urchin（浮浪児）が王国にある時のみ、10枚の Mercenary 山を脇に用意する（公式ルールブック2020 p.2「10 each Madman, Mercenary」）。",
+      "errata": "Mercenary 本体は機能変更なし。現行印刷の条件節は 'If you did'（2020年版公式ルールブックFAQが『will fail the \"if you did\"』とカード文言を引用・miraheze ミラーの現行テキストも一致）。入手元 Urchin は2022年に「…you may first trash this, to gain a Mercenary」へ文言整理（機能は同等＝別のアタックをプレイする際、解決前に場のUrchinを廃棄してMercenary獲得）。",
+      "rulings": [
+        "入手は Urchin 経由のみ: Urchin が場にある状態で別のアタックカードをプレイした時、その解決前に Urchin を廃棄してよく、廃棄したら Mercenary 山から1枚獲得。同じ Urchin を同ターン2回プレイしても不可、別の Urchin ならプレイ時に先の Urchin を廃棄できる（公式ルールブック2020 p.9 Urchin FAQ）",
+        "サプライ外＝購入不可・『サプライから獲得』不可・Ambassadorで返せない。山が空なら獲得できない。この山が空でも3山終了・空山カウントに数えない（公式ルールブック2020 p.3/p.9）",
+        "廃棄は『ちょうど2枚』で任意。手札が1枚しかない時にあえて廃棄してもよいが、2枚廃棄していないので 'If you did' を満たさず +2カード/+$2/アタックは一切発生しない（公式ルールブック2020 p.11: \"If you play this with only one card in hand, you may choose to trash that card, but then will fail the 'if you did' and will not draw cards and so on.\"）",
+        "堀や Beggar 等のリアクションは『使用者が2枚廃棄するかどうか決める前』に宣言しなければならない＝リアクション窓はプレイ時（アタック解決前）に開く（公式ルールブック2020 p.11）",
+        "アタック部分（他プレイヤーが手札3枚まで捨てる）は2枚廃棄した場合のみ実行。すでに3枚以下のプレイヤーは何もしない（公式ルールブック2020 p.11）",
+        "2枚は同時に廃棄し、その後で廃棄時効果（Fortress・Overgrown Estate等）の解決順を選ぶ（公式ルールブック2020 p.11）"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "setup": [
+    {
+      "topic": "1. Looter種別の完全リスト",
+      "answer": "Looter種別を持つカードは Cultist(狂信者)・Death Cart(死の荷車)・Marauder(略奪者) の3枚で全部。ルールブック原文: \"If any Kingdom card has the type Looter (Cultist, Death Cart, and Marauder have this type), then the Ruins pile is used this game.\"＝この括弧書きが全列挙。Looterは暗黒時代のみの種別で、他拡張に追加例なし（wikiのLooterページも3枚のみ列挙）。",
+      "source": "Rio Grande公式ルールブックPDF p.3 (riograndegames.com/wp-content/uploads/2022/03/Dominion-Rules-DarkAges.pdf) ＋ wiki.dominionstrategy.com/index.php/Looter (WebSearch結果)",
+      "confidence": "high"
+    },
+    {
+      "topic": "2. 廃墟(Ruins)の山",
+      "answer": "箱の構成＝50枚（Abandoned Mine廃坑/Ruined Library廃図書館/Ruined Market廃市場/Ruined Village廃村/Survivors生存者の5種×各10枚）。使用条件＝王国カードにLooterが1枚でもあれば使用。準備＝『全Ruinsをシャッフルし、最初のプレイヤーを除いて1人あたり10枚を数え取る：2人=10枚・3人=20枚・4人=30枚・5人=40枚・6人=50枚。裏向きの山にして一番上だけ表向き。残りはこのゲームでは使わない』（＝2人戦の10枚はランダムな10枚で、各種2枚ずつとは限らない点に注意）。買う/獲得する/選べるのは常に一番上の1枚のみ・山の中身は見られない・一番上が裏なら常に表に返す。Ruinsの山は使用時サプライの一部＝空になれば通常の終了条件（3山）に数える。Ruinsはアクションカードで購入も可能（コスト$0）。Ambassadorで戻すと山の一番上に載る。Talisman等『サプライから特定カードを獲得』は同名カードが一番上にない限り失敗。名前が違うRuinsは別名カード扱い（Menagerieの+3カード例あり）。配布ルール＝Cultist/Marauderは左隣から手番順に各自が一番上を取り、そのつど次を表にする。山が尽きたらそこで配布終了。Death Cartの獲得時Ruins2枚も『一番上から2枚をそのまま取る・足りなければ取れるだけ・他プレイヤーに公開』。",
+      "source": "Rio Grande公式ルールブックPDF p.2-3（Preparation/Additional Rules）＋各カード解説（Cultist/Marauder/Death Cart）",
+      "confidence": "high"
+    },
+    {
+      "topic": "3. 騎士(Knights)の山",
+      "answer": "10種×各1枚（Dame Anna/Dame Josephine/Dame Molly/Dame Natalie/Dame Sylvia/Sir Bailey/Sir Destry/Sir Martin/Sir Michael/Sir Vander）。ゲーム前にシャッフルし、裏向きの山・一番上だけ表向き。買う/獲得する/選べるのは一番上のみ・山の中は見られない。騎士は『Knights王国カードの山』＝王国10山の1つ＝サプライの一部なので、空になれば3山終了条件に数える（ルールブックが\"the Knights Kingdom card pile\"と明記）。購入時コストは一番上の騎士の印刷コスト＝Sir Martinのみ$4、他の9枚は$5（原文: \"Sir Martin only costs $4, though the other Knights all cost $5. When Sir Martin is the top card of the pile, it can be gained with an Armory and so on.\"）。Dame Josephineは勝利点カード(2VP)だが騎士の山自体は勝利点の山ではない（Trade Routeのトークンは一番上がDame Josephineでも置かない）。Black Market併用時はランダマイザーでなく騎士カード1枚を直接BMデッキに入れる。効果は上から順に解決（Sir Michaelは捨てさせてから廃棄）。共通能力＝各対戦相手が山札の上2枚を公開し、$3〜$6のカードを1枚選んで廃棄、残りを捨てる。騎士が廃棄されたら使用した騎士も廃棄。名前が違う騎士は別名カード扱い。",
+      "source": "Rio Grande公式ルールブックPDF p.3・p.7-8（Knights解説）",
+      "confidence": "high"
+    },
+    {
+      "topic": "4. 避難所(Shelters)ルール",
+      "answer": "箱に18枚＝Hovel(納屋)/Necropolis(共同墓地)/Overgrown Estate(草茂る屋敷)×各6枚（最大6人分）。使用判定の公式ルール＝『王国カード10種がすべてDark Agesなら避難所を使用。混成の場合は使用中のDark Agesカードの割合に基づきランダムに決定。例：使用する王国カードから1枚ランダムに選び（ランダマイザーデッキから最後に配られた1枚など）、それがDark Agesなら避難所を使う。Platinum/Colony（繁栄）の判定と同じカードを使ってはいけない』。使用時＝各プレイヤーの初期デッキは銅貨7＋Hovel＋Necropolis＋Overgrown Estate（屋敷3枚の置換）。屋敷のサプライは変わらない（2人8枚・3人以上12枚）。避難所は対応するサプライの山を持たない＝購入不可・Ambassadorでどこにも戻せない・廃棄は可能。ルールブックの推奨セットは全て『これらのゲームでは避難所を使用』と指定。",
+      "source": "Rio Grande公式ルールブックPDF p.2（Preparation）・p.11（Shelters解説）・p.12（推奨セット冒頭）",
+      "confidence": "high"
+    },
+    {
+      "topic": "5. Rats(ネズミ)の枚数",
+      "answer": "20枚で確定。原文: \"There are 20 copies of Rats, rather than the usual 10; the pile starts with all 20, regardless of the number of players.\"＝通常の10枚でなく20枚、プレイヤー数に関係なく常に20枚全部で山を作る（2人戦でも20枚）。",
+      "source": "Rio Grande公式ルールブックPDF p.2（内容物 \"20 Rats\"）・p.9（Rats解説）",
+      "confidence": "high"
+    },
+    {
+      "topic": "6. 非サプライ札（Spoils/Madman/Mercenary）",
+      "answer": "枚数＝Spoils(戦利品/略奪品)15枚・Madman(狂人)10枚・Mercenary(傭兵)10枚（内容物リスト \"35 other cards: 15 Spoils, 10 each Madman, Mercenary\"）。非サプライ規定＝『暗黒時代の6枚（Spoils・Madman・Mercenary・避難所3種）は決してサプライの一部にならない。購入できず、サプライからカードを獲得するカード（Armory等）でも獲得できず、Ambassadorでサプライに戻すこともできない。廃棄されることはあり得る。これらの山が空でもゲーム終了条件には数えず、Poacher等の空山カウントにも数えない』。尽きたら獲得不可＝Bandit Camp/Marauder/Pillage『Spoilsが残っていなければ得られない』・Hermit→Madman・Urchin→Mercenaryも同様。挙動＝Spoilsはプレイで+$3、そのSpoilsを山へ戻す。MadmanはHermit経由のみで入手、+2アクション→山へ戻す（強制）→戻せたら手札1枚につき1枚ドロー（Throne Room/Processionで2回プレイすると2回目は戻せず追加ドローなし）。MercenaryはUrchin経由のみで入手。Counterfeit×Spoils＝Spoilsは自分の山へ戻るため廃棄は失敗（移動失敗ルール）。",
+      "source": "Rio Grande公式ルールブックPDF p.2（内容物）・p.3-4（非サプライ規定）・p.11-12（Madman/Mercenary/Spoils解説）",
+      "confidence": "high"
+    },
+    {
+      "topic": "7. 暗黒時代単独の公式推奨サプライ",
+      "answer": "公式ルールブックの推奨セットに『Dark Ages alone』が2組ある（両方とも避難所を使用する指定）。(1) Grim Parade：Armory(武器庫)/Band of Misfits(はみだし者)/Catacombs(地下墓所)/Cultist(狂信者)/Forager(採集者)/Fortress(要塞)/Knights(騎士)/Market Square(市場の広場)/Procession(行進)/Hunting Grounds(狩場)。(2) Playing Chess With Death：Bandit Camp(山賊の宿営地)/Graverobber(墓暴き)/Junk Dealer(屑屋)/Mystic(秘術師)/Pillage(浮浪者ではなくPillage=略奪)/Rats(ネズミ)/Sage(賢者)/Scavenger(ゴミあさり)/Storeroom(物置)/Vagrant(浮浪児)。※Grim ParadeはCultist入り＝廃墟の山使用＋Knights入り＝騎士の山使用。Playing Chess With DeathはBandit Camp/Pillage入り＝Spoils使用。英語名10種は原文どおり確定。日本語のセット名・カード和名の一部は当プロジェクト既存訳を当てた参考表記（公式和訳セット名は本調査では未確認）。",
+      "source": "Rio Grande公式ルールブックPDF p.12（Recommended Sets of 10 \"Dark Ages alone\"）",
+      "confidence": "high"
+    },
+    {
+      "topic": "8. 現行(2022以降)ルールが暗黒時代に及ぶ点",
+      "answer": "(1) 暗黒時代自体にトークン・マットの追加/変更は無い＝内容物はカード500枚＋トレイ＋ルールブックのみ（トークン/マット類ゼロ。ゴミ箱マット/カードは基本セットのものを流用）。(2) Band of Misfits(はみだし者)は現行エラッタでCommand(命令)型に変更＝種別 Action-Command、『自分より安い非Commandアクションカードをサプライから、そこに残したままプレイする』。プレイされたカードは場に出ないため自己移動（Death Cartの自己廃棄等）は失敗し、\"while this is in play\"能力（Highway等）も機能しない。持続カードをプレイした場合はBand of Misfitsを持続と同様に場に残す（最後にプレイしたカードが場を離れるはずのターンのクリンナップまで）。2022印刷でBand of Misfits/Overlord/CaptainにCommand種別が付与された（当プロジェクトの王子/船長と同じエラッタ波）。(3) 現代の『カード移動失敗(lose track)』ルールがルールブックp.4に成文化済み＝Counterfeit×Spoils、Procession×Madman、Band of Misfits×Death Cart等に適用。(4) 廃墟/騎士/避難所/非サプライ山の運用ルール自体に2022以降の変更なし。Trade Routeトークン（繁栄1版）を騎士の山に置かないという注記が残るのみ（繁栄2版ではTrade Route自体が削除されたため実質無関係）。取得したPDFは©2012,2017,2020表記でRGG公式サイトに2022-03掲載＝Command型BoM・移動失敗ルール・Menagerie期までの推奨セットを含む現行印刷版。",
+      "source": "Rio Grande公式ルールブックPDF p.2（内容物）・p.4（移動失敗ルール）・p.5（Band of Misfits解説）＋ WebSearch（dominionstrategy.miraheze.org/wiki/Errata・forum.dominionstrategy.com 2022 Additional Errata・wiki Command variant）",
+      "confidence": "high"
+    },
+    {
+      "topic": "補足: 調査ソースの品質メモ",
+      "answer": "wiki.dominionstrategy.com は現在ボット保護(Anubis)で直接取得不可のため、一次情報源として Rio Grande Games 公式サイト掲載の現行版ルールブックPDF全12ページを取得・全文抽出して使用した（URL: https://www.riograndegames.com/wp-content/uploads/2022/03/Dominion-Rules-DarkAges.pdf。抽出全文はスクラッチパッド darkages_rules.txt に保存）。ultraboardgames.com（ルール転載）とWebSearch経由のwiki断片で交差確認済み。カード個別の現行テキスト（Hermit/Urchin等の細かい文言改訂の有無）は本担当のスコープ外＝カード個別調査エージェント側で要確認。",
+      "source": "本調査の手順記録（scratchpad/darkages_rules.txt に全文保存済み）",
+      "confidence": "high"
+    }
+  ],
+  "interactions": [
+    {
+      "topic": "1. Fortress×騎士/Rogue（相手アタックでの廃棄）",
+      "answer": "城塞は廃棄されると誰のターンでも（騎士/盗賊のアタック含む）廃棄置き場から持ち主の手札に戻る。強制（not optional）。公式FAQ原文:「If this is trashed, you take it from the trash and put it into your hand. This happens no matter whose turn it is. It is not optional. You still trashed Fortress, even though you got it back」＝手札に戻っても『廃棄した』事実は残る（Death Cartの+$5例が明文）。手札に戻す処理は『獲得』ではない（Trader/Watchtowerで反応不可、と明文）。騎士の自己廃棄は「If a Knight is trashed by this, trash this」＝騎士が廃棄された時のみ→Fortressは騎士でないので騎士は自己廃棄しない（Knight共通FAQ:「if one is a Knight but the player picks the other card, that will not cause the played Knight to be trashed」）。",
+      "source": "wiki.dominionstrategy.com 公式FAQ（bot保護のため完全ミラー dominionstrategy.miraheze.org の Module:Fortress / Module:Knight から原文取得）",
+      "confidence": "high"
+    },
+    {
+      "topic": "2. Fortress×Procession（廃棄→手札に戻っても+1コスト獲得するか）",
+      "answer": "獲得は実行される。Procession公式FAQ(2020)原文:「you then play it a second time, then trash it, then gain an Action card costing exactly [1] more than it (even if somehow you failed to trash it)」＝廃棄に失敗した場合ですら獲得は起きる。城塞の場合は実際に廃棄が成立し（その後手札に戻る）、$4+1=ちょうど$5のアクションを獲得する。獲得は「ちょうど$1高い」であり該当コストがサプライに無ければ不発。廃棄時効果（Cultistの+3枚等）は獲得より先に解決、と明文。現行Processionは2020エラッタで「非持続(non-Duration)アクション」限定。",
+      "source": "dominionstrategy.miraheze.org Module:Procession（Official FAQ 2020）＋ Module:Fortress",
+      "confidence": "high"
+    },
+    {
+      "topic": "3. Counterfeit×Spoils（2回使用の解決）",
+      "answer": "公式FAQに完全明文:「If you use Counterfeit to play Spoils twice, you will get +[6] (in addition to the [1] from Counterfeit) and return Spoils to the Spoils pile; you will be unable to trash it.」＝Spoilsの+$3は2回とも入り計+$6（Counterfeit自体の$1と合わせ$7）。Spoilsは1回目のプレイで略奪品の山に戻り、Counterfeitの廃棄は不発（廃棄されない）。なおCounterfeitは2022エラッタで「非持続(non-Duration)の財宝」限定（Astrolabe等を2回プレイ不可）。実装では『play twice→戻り済みの2回目も効果テキストは実行』『trashはカードが場に無ければ不発』のstop-moving則。",
+      "source": "dominionstrategy.miraheze.org Module:Counterfeit（Official FAQ 2020＋2022エラッタ注記）／Module:Spoils",
+      "confidence": "high"
+    },
+    {
+      "topic": "4. Feodum廃棄時の銀貨3枚獲得タイミング",
+      "answer": "「If Feodum is trashed, you gain three Silvers. If there are not enough Silvers left, gain as many as you can.」＝廃棄された瞬間に持ち主が銀貨3枚（不足時はあるだけ）を通常獲得（捨て札へ）。自分のTrader廃棄でも他人の騎士アタック廃棄でも同じ＝on-trash能力は誰のターンでも持ち主に起きる一般則が同拡張の明文で確立（Knight FAQ:「If Sir Vander is trashed, you gain a Gold; this happens whether it is your turn or someone else's. The player who had Sir Vander is the one who gains the Gold, regardless of who played the card that trashed it」／Cultist・Ratsにも同型明文）。解決は即時（Overgrown Estate FAQ:「right then, even in the middle of resolving another card」と同型）。Trader廃棄ならTraderの銀貨4枚（コスト$4）＋Feodumの3枚の両方。",
+      "source": "dominionstrategy.miraheze.org Module:Feodum＋Module:Knight（Sir Vander項）＋Module:Cultist/Module:Overgrown_Estate の一般則明文",
+      "confidence": "high"
+    },
+    {
+      "topic": "5. Market Square（相手ターン反応・複数枚反応）",
+      "answer": "トリガーは「When one of your cards is trashed」＝所有ベースで、相手ターンの騎士被弾でも自分のカードが廃棄されれば反応可。裏の明文:「Market Square cannot be discarded if you trash a card you don't own, such as with Lurker」＝条件は自分の所有カードか否かのみ。複数枚反応は明文で可:「You may discard multiple Market Squares when a single card of yours is trashed.」金貨は通常獲得＝捨て札へ（金貨枯渇なら獲得なし）。タイミングはon-trash効果と同格で順序は自分が選ぶ。さらに「廃棄の結果引いたMarket Squareも捨てて反応できる」（Cultist廃棄で引いた例が明文）＝反応窓は廃棄解決後でよい。",
+      "source": "dominionstrategy.miraheze.org Module:Market_Square（Official FAQ＋Other Rules clarifications）",
+      "confidence": "high"
+    },
+    {
+      "topic": "6. Squire廃棄時のアタック獲得（騎士の山の一番上は可か）",
+      "answer": "「You can gain any Attack card available in the Supply, but if no Attack card is available, you do not gain one.」＝サプライにある任意のアタックカード。Mercenaryは非サプライなので不可（明文:「You cannot gain Mercenary by trashing a Squire, since Mercenary is not in the supply」）。騎士の山はサプライの山で「一番上のカードのみ購入・獲得できる」（Knightsカード明文）＋全騎士はアタック種別＝一番上の騎士は獲得可（Knight FAQにも『Sir Martinが一番上ならArmory等で獲得できる』と獲得系での前例明文）。実装: 供給山の一番上の騎士を候補に含め、2枚目以降は不可。",
+      "source": "dominionstrategy.miraheze.org Module:Squire＋Module:Knights（山ルール）＋Module:Knight（Official FAQ）",
+      "confidence": "high"
+    },
+    {
+      "topic": "7. Hunting Grounds廃棄時の選択者",
+      "answer": "「If this is trashed, you either gain a Duchy or three Estates, your choice.」＝選ぶのは廃棄されたカードの持ち主本人。相手ターンの騎士被弾廃棄でも持ち主が選んで獲得する（on-trashは誰のターンでも持ち主に起きる一般則＝Cultist「whether or not it is your turn」・Sir Vander「The player who had Sir Vander is the one who gains」の明文と同型）。屋敷3枚を選んで3枚未満ならあるだけ獲得。「公領の山が空でも公領を選べる（何も獲得しない）」と明文＝実装では空山でも選択肢を出す（または同等の結果になる自動処理）。",
+      "source": "dominionstrategy.miraheze.org Module:Hunting_Grounds（Official FAQ＋Other Rules clarifications）＋Module:Cultist/Module:Knightの一般則明文",
+      "confidence": "high"
+    },
+    {
+      "topic": "8. Cultist on-trash +3カードのタイミング",
+      "answer": "誰のターンでも・廃棄原因のカードが誰のものでも、廃棄された瞬間に持ち主が即3枚引く。明文:「When you trash a Cultist, you draw three cards. This happens whether or not it is your turn, and whether or not the card that causes Cultist to be trashed was yours.」重要な追加裁定:「If you trash a Cultist while revealing cards, such as to a Knight attack, you do not draw the revealed cards that are about to be discarded」＝騎士被弾で公開中の残り1枚は+3枚のドロー対象にならない（公開カードは山札に無い扱い）。実装: 騎士アタック処理中のドローは公開済みカードを除いた山札から。",
+      "source": "dominionstrategy.miraheze.org Module:Cultist（Official FAQ）",
+      "confidence": "high"
+    },
+    {
+      "topic": "9. Urchin→Mercenary（トリガーのタイミングと複数Urchin）",
+      "answer": "明文:「While Urchin is in play, when you play another Attack card, before resolving it, you may trash the Urchin. If you do, you gain a Mercenary.」＝後続アタックの解決前（かつWayの選択前・相手のリアクション窓より前）に浮浪児を廃棄→傭兵獲得。同じUrchinをProcession/玉座で2回プレイしても自分自身では廃棄不可（明文）。別の2枚目のUrchinをプレイすると1枚目を廃棄できる（明文）。Band of Misfits等コマンドでサプライのアタックをプレイした場合もトリガーする（明文）。傭兵枯渇なら獲得なし。RogueでUrchinを廃棄した場合そのRogueで廃棄置き場のUrchinを拾える・TormentorならImp獲得（先に廃棄が済むため、と明文）。※『場に複数Urchinがあり別のアタック1枚をプレイ→全部廃棄して傭兵複数獲得』は各コピーが独立トリガーという一般則からの帰結だが、この形の個別明文はwiki/検索で未発見のためmedium扱い（実装は各Urchinごとに任意廃棄が安全）。",
+      "source": "dominionstrategy.miraheze.org Module:Urchin／Module:Mercenary（Official FAQ＋Other Rules clarifications）。複数同時トリガーの個別明文のみ未確認",
+      "confidence": "medium"
+    },
+    {
+      "topic": "10. Hermitの現行文言とMadman枯渇時",
+      "answer": "現行（2022エラッタ）テキスト:「At the end of your Buy phase this turn, if you didn't gain any cards in it, exchange this for a Madman.」＝『購入しなかった』ではなく『その購入フェイズ中にカードを1枚も獲得しなかった』が現行条件（Ballを買う等、購入以外の獲得でも交換は起きない）。処理は廃棄ではなく交換(exchange)＝Hermitを自分の山に戻しMadmanを取って捨て札へ。FAQ明文:「If there are no Madmen in the pile, you'll fail to exchange the Hermit」＝Madman枯渇なら交換ごと不発で何も起きない（旧2020版の『廃棄だけ起きる』は現行では発生しない。旧版FAQはDeprecated欄に隔離済み）。Hermitが場に無い場合（Processionで廃棄済み・BoM経由プレイ）も交換不可（明文）。複数購入フェイズ（Villa等）は各フェイズごとに判定（明文）。",
+      "source": "dominionstrategy.miraheze.org Module:Hermit（Unofficial FAQ 2022＋Deprecated official FAQ 2020の対比）／Module:Madman",
+      "confidence": "high"
+    },
+    {
+      "topic": "11. Rats廃棄時の+1カードは誰が引くか",
+      "answer": "廃棄されたRatsの持ち主が引く。明文:「If Rats is trashed, you draw a card. This happens whether it is your turn or another player's, and regardless of which player has the card that trashed Rats.」＝相手の騎士アタック等で廃棄されても持ち主が+1カード。補足: Ratsの山は20枚（プレイ人数に関係なく）・プレイ時はRats獲得→Rats以外を手札から廃棄（Ratsしか無ければ手札公開で廃棄なし・Rats山が空なら獲得だけ不発）。",
+      "source": "dominionstrategy.miraheze.org Module:Rats（Official FAQ）",
+      "confidence": "high"
+    },
+    {
+      "topic": "12. Band of Misfits（現行エラッタとコスト軽減）",
+      "answer": "現行（2019エラッタ・2020FAQ）テキスト:「Play a non-Command Action card from the Supply that costs less than this, leaving it there.」＝サプライに残したまま、山の一番上のカードのみプレイ可。プレイされたカードが自己移動を試みても不発（Death Cart例が明文）・「場にある間」能力（Highway等）は場に無いので機能しない（明文）。『costing less than it』のitはBoMの現在コスト＝コスト比較は両者とも現在コストで動的評価（Highway1枚でBoM$4→『$4未満』のカードをプレイ、対象側も-1されるので実質窓は不変）。Highway等でBoMが$0まで下がると『$0未満』のカードは存在せず何もプレイできない（2019エラッタ解説記事＋BGG総合FAQで確認）。Command種別はコマンド同士の相互プレイ禁止のみの意味（明文）。持続をプレイした場合はその持続が場を離れるはずのターンまでBoMが場に残る（明文）。",
+      "source": "dominionstrategy.miraheze.org Module:Band_of_Misfits（Official FAQ 2020）＋dominionstrategy.com『Band of Misfits and Overlord』(2019/1/10)＋BGG Complete Dominion FAQ（$0エッジケース）",
+      "confidence": "high"
+    },
+    {
+      "topic": "13. Shelters（$1コスト・Ambassador等の対象・通常獲得不可）",
+      "answer": "3種とも確かにコスト$1: Hovel=リアクション-避難所（2022エラッタでリアクション種別化・トリガーも『勝利点カードを購入』→『獲得』に変更:「Hovel got errata in 2022 to trigger when you gain a Victory card, even if you didn't buy it. So if you gain a Province with Rebuild, you may trash your Hovel」）／Necropolis=アクション-避難所（+2アクション）／Overgrown Estate=勝利点-避難所（{0}・廃棄時+1カードを即時、Altar中でも先に引く、と明文）。3枚とも非サプライ＝通常の獲得・購入は不可。Ambassador裁定は3枚とも同一明文:「it is not returned to the Supply (since it is not in the Supply) and opponents do not gain a copy of it」＝公開はできるがサプライに戻らず相手も獲得しない。実装: Salvager等のコスト参照は$1として扱い、獲得系の候補には決して出さない。",
+      "source": "dominionstrategy.miraheze.org Module:Hovel／Module:Necropolis／Module:Overgrown_Estate（cost=1をモジュールデータで確認・Official FAQ＋Other Rules clarifications）",
+      "confidence": "high"
+    },
+    {
+      "topic": "14. Rebuild（指名した勝利点の扱い・山札+捨て札枯渇時）",
+      "answer": "指名した名前の勝利点カードは公開されても素通り＝最後に『残り(the rest)』として捨て札へ回る（山札上には戻らない）。公式FAQ(2020)明文: 「If you run out of cards, shuffle your discard pile and continue, without shuffling in the revealed cards.」＝山札が尽きたら公開済みカードを混ぜずに捨て札だけをシャッフルして続行。「If you run out of cards with no cards left in your discard pile, stop there, discard everything, and nothing more happens.」＝両方尽きて未指名の勝利点が見つからなければ全公開カードを捨てて終了（廃棄も獲得も起きない）。見つかれば: 残りを捨て→その勝利点を廃棄→それより最大$3高い勝利点を獲得（通常獲得=捨て札へ）。指名はゲーム外の名前や非勝利点でも可（明文）。",
+      "source": "dominionstrategy.miraheze.org Module:Rebuild（Official FAQ 2020）",
+      "confidence": "high"
+    },
+    {
+      "topic": "15. Graverobberの獲得先（廃棄置き場から/アップグレードで）",
+      "answer": "明文で二択の行き先が異なる: (a)「If you choose to gain a card from the trash, the other players get to see what it is, and it goes on top of your deck.」＝廃棄置き場から$3〜6のカードを獲得→山札の一番上へ（公開）。手札に獲得される系のカード(Ghost Town等)でも山札上へ、と明文（Villaのみ獲得後に自己移動するので例外）。(b)「If you choose instead to trash an Action card from your hand, the card you gain is put into your discard pile.」＝手札のアクション廃棄→最大+$3のカード獲得は捨て札へ。選択は実行不能でも選べる（廃棄置き場に$3-6が無ければ不発・明文）。ポーション/負債コスト付きは$3-6に該当しない（明文）。廃棄置き場はいつでも閲覧可。",
+      "source": "dominionstrategy.miraheze.org Module:Graverobber（Official FAQ＋Other rules clarifications）",
+      "confidence": "high"
+    },
+    {
+      "topic": "補足A. Knight共通アタックの解決順（実装用）",
+      "answer": "Knight共通FAQ: 各騎士のテキストは上から順に解決（Sir Michaelは捨てさせてから廃棄）。共通部は「各他プレイヤーが山札上2枚公開→$3-6のうち1枚を“本人が選んで”廃棄→残りを捨てる。その結果“騎士が”廃棄されていたらプレイした騎士を廃棄」。左隣から手番順に解決。2枚とも$3-6のときのみ選択権があり、片方が騎士でももう片方を選べば騎士自己廃棄は起きない（明文）。ポーション/負債コスト付きは$3-6に該当しない。Sir Martinのみ$4（他は$5）。騎士の山はTrade Routeのトークン対象外（Dame Josephineが一番上でも）。Black Market使用時はランダマイザでなく騎士1枚を直接黒市デッキへ。",
+      "source": "dominionstrategy.miraheze.org Module:Knight（Official FAQ全文）",
+      "confidence": "high"
+    },
+    {
+      "topic": "補足B. Mercenary/Madman/Spoilsの非サプライ共通則（実装用）",
+      "answer": "3種とも非サプライ: Mercenary=Urchinのみで獲得・Madman=Hermitのみで入手（交換）・Spoils=Bandit Camp/Marauder/Pillageのみで獲得（+Thief/Masqueradeでの移動は可、と明文）。非サプライ山の枯渇は3山終了条件に数えない（Madman/Spoilsに明文）。SpoilsはMint等『サプライから獲得』の対象外（明文）。Mercenaryのプレイ: 手札2枚廃棄は任意だが、1枚しか無いのに廃棄を選ぶと『if you did』不成立で+2カード+$2もアタックも起きない（明文）。廃棄2枚のon-trash効果は両方廃棄後に好きな順で解決（明文）。相手のリアクション(Beggar等)は廃棄するか決める前に宣言させる（明文）。",
+      "source": "dominionstrategy.miraheze.org Module:Mercenary／Module:Madman／Module:Spoils（Official FAQ）",
+      "confidence": "high"
+    }
+  ],
+  "verdicts": [
+    {
+      "claim": "Rats の山は20枚・on-trash「+1 Card」がある（現行テキスト全文）",
+      "verdict": "confirmed",
+      "detail": "確認済み。山は常に20枚（プレイ人数に関わらず。通常の10枚ではない）。現行テキスト全文＝「+1 Card, +1 Action. Gain a Rats. Trash a card from your hand other than a Rats (or reveal a hand of all Rats). --- When you trash this, +1 Card.」。2012初版→2017年2刷→2020年3刷でフォーマット変更のみで、文面の実質エラッタは無し（on-trash の +1 Card は初版から現行まで同じ）。",
+      "source": "wiki.dominionstrategy.com/index.php/Rats（r.jina.ai 経由で本文取得）＋ dominionstrategy.com/2012/11/12/dark-ages-rats/"
+    },
+    {
+      "claim": "廃墟の山の枚数は 10×(プレイヤー数-1)（2人戦=10枚）で、5種を混ぜてシャッフルし一番上だけ獲得/購入できる（コスト$0）",
+      "verdict": "confirmed",
+      "detail": "確認済み。公式ルールブック（Rio Grande 版 Dark Ages ルール）＝「Shuffle the Ruins cards, then count out 10 per player after the first: 10 for two players, 20 for three players, 30 for four players...（残りは箱に戻す）」＝ちょうど 10×(人数-1)、2人戦=10枚。Ruins は5種（Abandoned Mine / Ruined Library / Ruined Market / Ruined Village / Survivors、各10枚=計50枚）を全部混ぜてシャッフルしてから枚数を数え取る。山は裏向き・一番上だけ表向きで、「買える/獲得できる/選べるのは一番上のカードのみ」。各 Ruins のコストは $0（種別 Action–Ruins）。Looter が王国にある時のみサプライに加わり、空になれば3山終了条件に数える。",
+      "source": "Rio Grande 公式ルールブック Dominion-Rules-DarkAges.pdf（riograndegames.com）引用＝ultraboardgames.com/dominion/dark-ages.php・dark-ages-additional-rules.php ＋ wiki.dominionstrategy.com/index.php/Ruins（検索スニペット）"
+    },
+    {
+      "claim": "騎士の山は10種1枚ずつをシャッフルし一番上だけ購入/獲得できる。購入コストは一番上の騎士のコスト（Sir Martin=$4、他=$5）",
+      "verdict": "confirmed",
+      "detail": "確認済み。Knights の山は互いに異なる10種の騎士カード各1枚（Dame Anna/Josephine/Molly/Natalie/Sylvia、Sir Bailey/Destry/Martin/Michael/Vander）。ゲーム前にシャッフルし、裏向きで一番上だけ表向き。「買える/獲得できるのは一番上のカードのみ」で、支払うコストはその一番上の騎士自身のコスト。Sir Martin のみ $4、他の9種は全て $5（wiki 曰く Sir Martin が $4 なのは公式ジョークで『自己肯定感が低いから』）。",
+      "source": "wiki.dominionstrategy.com/index.php/Knight（検索スニペット）＋ Rio Grande 公式ルールブック引用（ultraboardgames.com/dominion/dark-ages.php・dark-ages-additional-rules.php「The only card that may be bought or gained or chosen from one of these piles is the card on top」）"
+    },
+    {
+      "claim": "Hermit の現行(最新印刷)の Madman 獲得条件の文言（you didn't buy / didn't gain in your Buy phase のどちらか）",
+      "verdict": "confirmed",
+      "detail": "現行は『didn't gain in your Buy phase』側。2022年エラッタ後の現行テキスト＝「Look through your discard pile. You may trash a non-Treasure from it or from your hand. Gain a card costing up to $3. At the end of your Buy phase this turn, if you didn't gain any cards in it, exchange this for a Madman.」＝『このターンの購入フェイズ終了時、そのフェイズ中に1枚もカードを獲得していなければ、これを狂人と交換する（exchange、廃棄ではない）』。旧版（2012初版〜2020刷）は『クリンナップで場から捨て札にする時、このターンにカードを購入(buy)していなければ、これを廃棄して Madman を獲得』だった。エラッタは Donald X が2021年6月に予告→2022年エラッタとして確定（トリガーが捨て札時→購入フェイズ終了時、buy基準→gain基準、trash+gain→exchange に変更）。実装は gain 基準＋exchange の現行版に準拠すべき。",
+      "source": "wiki.dominionstrategy.com/index.php/Hermit（r.jina.ai 経由で本文取得）＋ wiki.dominionstrategy.com/index.php/2022_Errata（検索スニペット）"
+    },
+    {
+      "claim": "Death Cart の現行テキスト（+$5 が「アクションかこれを廃棄」の対価である文言）と Looter 種別",
+      "verdict": "confirmed",
+      "detail": "確認済み。Donald X 公式の2019年エラッタで +$5 が廃棄の対価に変更された。現行テキスト＝「You may trash this or an Action card from your hand, for +$5. --- When you gain this, gain 2 Ruins.」種別＝Action – Looter、コスト $4。※現行の正確な文言は『..., for +$5』形（『If you do, +$5』ではなく同義の簡約形）。旧2012版は「+$5」が無条件で先頭にあり（+$5。手札のアクション1枚かこれを廃棄してもよい）、廃棄しなくても $5 が出た。獲得時の「Ruins 2枚獲得」は新旧共通。実装は『廃棄した場合のみ +$5』の現行版に準拠すべき。",
+      "source": "dominionstrategy.com/2019/09/25/dominion-2019-errata-and-rules-tweaks/（Donald X 公式エラッタ記事、本文取得）"
+    },
+    {
+      "claim": "Band of Misfits の現行テキスト＝Action-Command、「サプライに置いたまま、これよりコストの低い非Commandアクションを使用」",
+      "verdict": "confirmed",
+      "detail": "現行（2019エラッタ以降）＝ Action – Command / $5 /「Play a non-Command Action card from the Supply that costs less than this, leaving it there.」。公式2020年版ルールブックFAQも『This plays a non-Command Action card from the Supply costing less than it』『The played Action card stays in the Supply; if an effect tries to move it (Death Cart の自己廃棄等), it will fail to move it』と明記。プレイしたカードはサプライに残るため自己移動効果は不発、『while this is in play』能力（Highway等）も機能しない。Band of Misfits 自体は場に残り、プレイしたカードが場を離れるはずのターンのクリンナップで捨てられる。2012年原版は『become（そのカードになる）』方式だったが2019エラッタでCommand型＋『サプライに置いたままプレイ』方式に変更＝主張どおり。",
+      "source": "Rio Grande公式Dark Agesルールブック2020年版PDF (riograndegames.com/wp-content/uploads/2022/03/Dominion-Rules-DarkAges.pdf) ＋ dominionstrategy.com/2019/09/25/dominion-2019-errata-and-rules-tweaks/ ＋ wiki検索スニペット（Donald X. forum / dominionleague.org）"
+    },
+    {
+      "claim": "Pillage の現行テキスト（「これを廃棄する。そうしたら、Spoils2枚獲得＋手札5枚以上の他プレイヤーは手札公開しあなたが選ぶ1枚を捨てる」）",
+      "verdict": "confirmed",
+      "detail": "現行（2019エラッタ）＝ Action – Attack / $5 /「Trash this. If you did, gain 2 Spoils, and each other player with 5 or more cards in hand reveals their hand and discards a card that you choose.」＝主張の構造と完全一致（Spoils獲得と攻撃の両方が『廃棄できたら（If you did）』の条件付き。捨てる1枚は攻撃者が選ぶ）。2012年原版は廃棄が条件になっておらず（玉座の間の2回目でも攻撃が出た）、2019エラッタで条件化された。公式ルールブックFAQの解決順は『先にPillage廃棄→できていたら左隣から順に攻撃（手札5枚以上が公開しあなたの選ぶ1枚を捨てる）→Spoils2枚獲得（Spoils山は非サプライ・残1なら1枚、残0なら獲得なし）』。",
+      "source": "dominionstrategy.com/2019/09/25/dominion-2019-errata-and-rules-tweaks/（新テキスト全文）＋ Rio Grande公式Dark Agesルールブック2020年版PDFのPillage FAQ ＋ dominionstrategy.miraheze.org/wiki/Pillage 検索スニペット"
+    },
+    {
+      "claim": "騎士アタックで山札上2枚が両方コスト3〜6のとき、どちらを廃棄するかは公開した本人（被害者）が選ぶ",
+      "verdict": "confirmed",
+      "detail": "被害者本人が選ぶで正しい。現行カード文言は『each other player reveals the top 2 cards of their deck, trashes one of them that they choose costing from $3 to $6, and discards the rest』（2019エラッタで『that they choose』が明文化）。公式2020年版ルールブックFAQに『The player losing a card only gets a choice if both cards revealed cost from $3 to $6. If they both do and one is a Knight but the player picks the other card, that will not cause the played Knight to be trashed.』と明記＝両方3〜6のときのみ被害者に選択権があり、片方が騎士でも騎士以外を選べば使用者の騎士は道連れ廃棄されない。解決は使用者の左隣からターン順。ポーション/負債コスト入りのカードは$3〜$6に該当しない。",
+      "source": "Rio Grande公式Dark Agesルールブック2020年版PDF（Knights節・原文引用）＋ wiki.dominionstrategy.com/index.php/Knight 検索スニペット"
+    },
+    {
+      "claim": "Rogue のアタックで廃棄するカードの選択者（被害者本人か）と、廃棄置き場に3〜6コストが有る場合は獲得のみ行う分岐",
+      "verdict": "confirmed",
+      "detail": "両方正しい。現行テキスト＝「+$2. If there are any cards in the trash costing from $3 to $6, gain one of them. Otherwise, each other player reveals the top 2 cards of their deck, trashes one of them costing from $3 to $6, and discards the rest.」。公式ルールブックFAQ：『If there is a card in the trash costing from $3 to $6, you have to gain one of them; it is not optional』（獲得は強制・獲得カードは捨て札へ・何を取ったか公開）／『If there was no card in the trash costing from $3 to $6, you instead have each other player reveal the top two cards of their deck, trash one of them of their choice that costs from $3 to $6 (if possible), and discard the rest』＝廃棄置き場に3〜6があれば獲得のみでアタックは行わない（instead）。アタック時にどちらを廃棄するかは公開した被害者本人の選択（of their choice）。左隣からターン順に解決。",
+      "source": "Rio Grande公式Dark Agesルールブック2020年版PDF（Rogue節・原文引用）"
+    },
+    {
+      "claim": "Counterfeit で Spoils を2回使用したときの公式裁定（コインは合計いくら・Spoilsの行き先）",
+      "verdict": "confirmed",
+      "detail": "公式FAQ＝「If you use Counterfeit to play Spoils twice, you will get +$6 (in addition to the $1 from Counterfeit) and return Spoils to the Spoils pile; you will be unable to trash it.」＝Spoilsの2回プレイで+$6（$3×2）、Counterfeit自身の+$1と合わせこの2枚から計$7（＋1購入）。SpoilsはSpoilsの山に戻る（1回だけ）＝廃棄置き場には行かず、Counterfeitの『それを廃棄する』はSpoilsが既に場を離れているため不発。文の骨格（数字がコイン画像のため欠落）は公式2020年版ルールブックPDFのCounterfeit FAQで直接確認し、金額$6/$1は wiki.dominionstrategy.com/index.php/Counterfeit の同一FAQ文（検索スニペット）で照合。",
+      "source": "Rio Grande公式Dark Agesルールブック2020年版PDF（Counterfeit節）＋ wiki.dominionstrategy.com/index.php/Counterfeit・dominionstrategy.fandom.com/wiki/Spoils 検索スニペット"
+    },
+    {
+      "claim": "Fortress × Procession: 廃棄後手札に戻っても Procession の「ちょうど+1コストのアクション獲得」は行われる",
+      "verdict": "confirmed",
+      "detail": "公式ルールブックのProcession FAQに「then trash it, then gain an Action card costing exactly [$1] more than it (even if somehow you failed to trash it)」＝廃棄に失敗した場合でも獲得は行われると明記。さらにFortress FAQに「You still trashed Fortress, even though you got it back」＝手札に戻っても『廃棄した』事実は成立（Death Cartの例で 'if you did trash' が真になる）。城塞は$4なので行進で廃棄すると$5アクションを獲得しつつ城塞が手札に残る＝wikiに『Combo: Procession and Fortress』ページが存在する公認コンボ。補足: 現行エラッタでProcessionの対象は『非・持続(non-Duration)アクション』に限定（獲得するカードは持続でも可）。",
+      "source": "Rio Grande Games公式Dark AgesルールブックPDF (riograndegames.com/wp-content/uploads/2022/03/Dominion-Rules-DarkAges.pdf) Procession/Fortress FAQ節＋dominionstrategy wiki Module:Procession/Module:Fortress（Official FAQ 2020）"
+    },
+    {
+      "claim": "避難所の公式使用ルール（ランダム選択時に暗黒時代カードの枚数比率で判定）と、開始デッキの屋敷3枚を納屋/共同墓地/草茂る屋敷に置換（屋敷は購入用に山に残る）",
+      "verdict": "confirmed",
+      "detail": "公式ルールブックPreparation節で全て確認。(1)暗黒時代のみの王国なら必ず避難所使用。混成なら「the use of Shelters should be determined randomly, based on the proportion of Dark Ages cards in use」＝使用中の暗黒時代カードの比率でランダム判定（例＝ランダマイザから最後に配った1枚が暗黒時代なら避難所を使う。白金/植民地判定と同じカードを使い回さないこと）。(2)開始デッキは「seven Coppers, a Hovel, a Necropolis, and an Overgrown Estate」＝銅貨7＋納屋(Hovel)＋共同墓地(Necropolis)＋草茂る屋敷(Overgrown Estate)各1。(3)「Using Shelters does not change the Estate Supply pile; it still contains eight Estates for two players and 12 Estates for 3 or more players」＝屋敷サプライ山は2人8枚/3人以上12枚のまま不変＝購入用に残る。避難所は対応サプライ山なし・購入不可・Ambassadorでも戻せない。",
+      "source": "Rio Grande Games公式Dark AgesルールブックPDF Preparation節(p.2)＋p.11 Shelters節（ultraboardgames.com/dominion/dark-ages.php にも同文転載）"
+    },
+    {
+      "claim": "Madman: 「Madmanの山に戻す。そうしたら手札1枚につき+1カード」＝戻せなければ引けない。Madman/Mercenary/Spoils は購入不可・通常獲得不可・空山判定に数えない",
+      "verdict": "confirmed",
+      "detail": "カード本文「+2 Actions / Return this to the Madman pile. If you do, +1 Card per card in your hand. (This is not in the Supply.)」を確認。FAQで「return it to the Madman pile if you can (this is not optional)」＝戻すのは強制、「if you did return it, you draw a card per card in your hand」＝戻せた場合のみドロー。玉座/行進で2回プレイした2回目は既に山に戻っていて「fail to return Madman and so not draw cards the second time」＝戻せなければ引けない（行進の例では廃棄にも失敗するが+$1コスト獲得は実行）。非サプライ札は「These cards cannot be bought, and cannot be gained by cards that gain cards from the Supply, such as Armory」＋「These piles being empty does not count towards the end condition for the game, or towards the count of empty piles for cards like Poacher」＝購入不可・サプライから獲得する汎用獲得の対象外・空山判定（3山終了/Cityの空山数）に数えない。注意点: Masquerade(手渡し)やThief(奪取)などサプライ経由でない移動は可能（Spoils FAQ）。",
+      "source": "Rio Grande Games公式Dark AgesルールブックPDF p.3(非サプライ6枚の共通ルール)＋p.11 Madman/Mercenary/Spoils FAQ＋dominionstrategy wiki Module:Madman/Module:Spoils（'the Madman pile being empty does NOT count towards the three-pile end-game condition'）"
+    },
+    {
+      "claim": "Urchin: 別のアタックカードをプレイしたとき「先に」Urchinを廃棄して傭兵獲得＝そのアタック解決前。Mercenary は「手札2枚廃棄してよい。そうしたら+2カード+$2＋他者は手札3枚まで捨てる」",
+      "verdict": "confirmed",
+      "detail": "Urchin本文（下段）「When you play another Attack card with this in play, you may first trash this, to gain a Mercenary.」を確認。FAQ「While Urchin is in play, when you play another Attack card, before resolving it, you may trash the Urchin. If you do, you gain a Mercenary.」＝『first』はそのアタックの解決前を意味する。傭兵が尽きていれば獲得なし。同一Urchinを行進等で2回プレイしても自分自身では廃棄トリガー不可（『another』）、別の2枚目のUrchinプレイなら1枚目を廃棄可。他の方法でUrchinを廃棄しても傭兵は得られない。Mercenary現行本文「You may trash 2 cards from your hand. If you did, +2 Cards, +[$2], and each other player discards down to 3 cards in hand. (This is not in the Supply.)」＝主張どおり（廃棄しなければ何も起きない。手札1枚だけで廃棄を選ぶと'if you did'を満たせず効果なし。BeggarなどのリアクションはMercenaryプレイ時＝廃棄するか決める前に宣言）。種別はアクション-アタック。",
+      "source": "Rio Grande Games公式Dark AgesルールブックPDF p.10 Urchin FAQ・p.11 Mercenary FAQ＋dominionstrategy wiki Module:Urchin/Module:Mercenary（カード現行テキスト）"
+    }
+  ]
+}

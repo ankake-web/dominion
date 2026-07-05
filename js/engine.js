@@ -3054,12 +3054,33 @@
       }
     }
   }
-  // 自分のカードを廃棄したときのフック（遊牧民＝+2コイン）。trashOwn から呼ぶ。
+  // カードを廃棄したときのフック（誰の廃棄でも「持ち主」に発動）。trashCard から呼ぶ。
+  //   戻り値 = そのカードが廃棄置き場に残ったか（城塞＝手札に戻るので false）。
+  //   ※対話（pending）を要する on-trash（地下墓所/狩場/従者）は §カード実装バッチで on-trash キューとして追加する。
   function triggerOnTrash(state, pIndex, card) {
+    const p = state.players[pIndex];
+    // 異郷：遊牧民＝廃棄したとき +2コイン（自分の手番のときのみ意味がある）。
     if (card === 'nomads' && state.turn && pIndex === state.turn.active) {
       state.turn.coins += 2;
-      log(state, `${state.players[pIndex].name} は遊牧民の廃棄で +2コイン。`);
+      log(state, `${p.name} は遊牧民の廃棄で +2コイン。`);
     }
+    // 暗黒時代：城塞＝廃棄されたとき手札に戻る（廃棄自体は成立＝死の荷車の+$5や行進の獲得は満たされる）。
+    if (card === 'fortress') {
+      removeOne(state.trash, 'fortress');
+      p.hand.push('fortress');
+      log(state, `${p.name} は城塞を廃棄したが手札に戻した。`);
+      return false;
+    }
+    // 暗黒時代：ネズミ／草茂る屋敷＝廃棄されたとき +1カード（持ち主が引く）。
+    if (card === 'rats') { draw(state, pIndex, 1); log(state, `${p.name} はネズミの廃棄で +1カード。`); }
+    if (card === 'overgrown_estate') { draw(state, pIndex, 1); log(state, `${p.name} は草茂る屋敷の廃棄で +1カード。`); }
+    // 暗黒時代：封土＝廃棄されたとき銀貨3枚を獲得。
+    if (card === 'feodum') { let g = 0; for (let i = 0; i < 3; i++) if (gain(state, pIndex, 'silver', 'discard')) g++; log(state, `${p.name} は封土の廃棄で銀貨 ${g}枚 を獲得した。`); }
+    // 暗黒時代：サー・ヴァンダー＝廃棄されたとき金貨1枚を獲得。
+    if (card === 'sir_vander') { if (gain(state, pIndex, 'gold', 'discard')) log(state, `${p.name} はサー・ヴァンダーの廃棄で金貨1枚を獲得した。`); }
+    // 暗黒時代：狂信者＝廃棄されたとき +3カード（持ち主が引く。相手のアタックで廃棄されても発動）。
+    if (card === 'cultist') { draw(state, pIndex, 3); log(state, `${p.name} は狂信者の廃棄で +3カード。`); }
+    return true;
   }
   // 異郷：値切り屋＝場にある間、カードを購入するたびに、そのコスト未満の勝利点でないカード1枚を獲得（枚数ぶん）。
   function maybeHagglerGains(state, pi, boughtCost) {

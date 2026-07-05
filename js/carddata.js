@@ -127,6 +127,7 @@
       if (has('reaction')) return 'リアクション・避難所';
       return 'アクション・避難所';
     }
+    if (has('looter')) return has('attack') ? 'アクション・アタック・略奪者' : 'アクション・略奪者'; // 暗黒時代：略奪者/狂信者/死の荷車
     // 冒険：トラベラー・リザーブ／帝国：命令・城（複合語を先に決めて全typeを落とさない）
     if (has('traveller')) return has('attack') ? 'アクション・アタック・トラベラー' : 'アクション・トラベラー';
     if (has('reserve')) {
@@ -172,6 +173,7 @@
       if (has('reaction')) return 'Reaction - Shelter';
       return 'Action - Shelter';
     }
+    if (has('looter')) return has('attack') ? 'Action - Attack - Looter' : 'Action - Looter';
     if (has('traveller')) return has('attack') ? 'Action - Attack - Traveller' : 'Action - Traveller';
     if (has('reserve')) {
       if (has('treasure')) return 'Treasure - Reserve';
