@@ -23,7 +23,11 @@ const ZONES = ['deck', 'hand', 'discard', 'inPlay', 'durationCards', 'setAside',
   'princes']; // 新プロモ：王子の脇に置いたカード（公開ゾーン。王子本体は inPlay/durationCards に残る）
 function tally(s) {
   const t = {}; const add = (id) => { if (id != null) t[id] = (t[id] || 0) + 1; };
-  Object.keys(s.supply).forEach((id) => { const n = s.supply[id] | 0; for (let i = 0; i < n; i++) add(id); });
+  Object.keys(s.supply).forEach((id) => {
+    if (id === 'ruins' || id === 'knights') return; // 暗黒時代の混合山は実カードを state.ruins/knights で数える（下）
+    const n = s.supply[id] | 0; for (let i = 0; i < n; i++) add(id);
+  });
+  (s.ruins || []).forEach(add); (s.knights || []).forEach(add); // 暗黒時代：混合山の中身（実カードid配列）
   (s.trash || []).forEach(add); (s.blackMarket || []).forEach(add);
   s.players.forEach((p) => ZONES.forEach((z) => (p[z] || []).forEach(add)));
   if (s.turn) { (s.turn.possessionGains || []).forEach(add); (s.turn.possessionTrash || []).forEach(add); }

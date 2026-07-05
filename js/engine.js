@@ -13,7 +13,7 @@
 
   // 収穫祭：賞品（Prize）＝馬上槍試合の専用山。各1枚・購入不可・3山終了に数えない非サプライ。
   const PRIZES = ['bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed'];
-  const NON_SUPPLY = new Set(PRIZES); // supply の数値キーだが「山」としては数えない/買えないもの
+  const NON_SUPPLY = new Set([].concat(PRIZES, ['spoils', 'madman', 'mercenary'])); // supply の数値キーだが「山」としては数えない/買えないもの（賞品＋暗黒時代の戦利品/狂人/傭兵）
   // ギルド：過払い（overpay）できるカード＝購入時に追加でコインを払うと追加効果。BUY 後に overpay pending を立てる。
   const OVERPAY_CARDS = new Set(['stonemason', 'doctor', 'masterpiece', 'herald']);
   // 収穫祭：若き魔女の災いカード（Bane）を選ぶ。$2-3 の王国カードで、まだ場に無いものを1つ。
@@ -34,7 +34,10 @@
 
   // このターンのコスト軽減（「橋」など）を反映した実コスト
   function cardCost(state, id) {
-    let base = (C()[id] && C()[id].cost) || 0;
+    // 暗黒時代：騎士の混合山は「山の一番上の実騎士」のコストで判断する（Sir Martin だけ$4等）。
+    let base = (id === 'knights' && Array.isArray(state.knights) && state.knights.length)
+      ? ((C()[state.knights[0]] && C()[state.knights[0]].cost) || 0)
+      : ((C()[id] && C()[id].cost) || 0);
     const t = state.turn;
     const active = t ? state.players[t.active] : null;
     // 繁栄：石切場が場にある間、アクションカードは1枚につき$2安い（$0未満にはならない）。
@@ -225,6 +228,17 @@
       supply.platinum = 12;
       supply.colony = v;
     }
+    // 暗黒時代：特殊山の枚数（王国にトリガーカードがあるときだけ設定）。
+    //   ネズミ＝常に20枚（通常10の上書き）。廃墟＝looter(死の荷車/略奪者/狂信者)があれば (人数-1)×10枚。
+    //   騎士＝'knights' が王国にあれば上の kingdom.forEach で既に10枚。
+    if (kingdom.includes('rats')) supply.rats = 20;
+    // 廃墟(Ruins)山は supply の数値キーを持たず state.ruins（実カード配列）で管理する（createInitialState で生成）。
+    //   ※'ruins' の山キーはカタログに無い＝supply に持つと CPU/UI の supply 走査が C()['ruins'] で落ちるため。
+    //   騎士(knights)はカタログ有り・王国枠＝supply.knights（10枚・購入可）を kingdom.forEach で既に持つ。
+    //   非サプライ山：戦利品(山賊の宿営地/略奪者/略奪)=15固定、狂人(隠遁者)=10、傭兵(浮浪児)=10。
+    if (kingdom.some((k) => ['bandit_camp', 'marauder', 'pillage'].includes(k))) supply.spoils = 15;
+    if (kingdom.includes('hermit')) supply.madman = 10;
+    if (kingdom.includes('urchin')) supply.mercenary = 10;
     return supply;
   }
 
@@ -256,10 +270,14 @@
         ? { name: x, isCpu: false, level: 'normal' }
         : { name: x.name, isCpu: !!x.isCpu, level: x.level || 'normal' }
     );
+    // 暗黒時代：避難所(Shelters)使用時（固定 darkages セットのみ ON＝opts.shelters）、開始デッキの
+    // 屋敷3枚を 納屋/共同墓地/草茂る屋敷 に置換する。random系ではOFF（決定論的で公平＝決定事項）。
+    const useShelters = !!opts.shelters;
     const players = cfgs.map((cfg, i) => {
       const start = [];
       for (let n = 0; n < 7; n++) start.push('copper');
-      for (let n = 0; n < 3; n++) start.push('estate');
+      if (useShelters) start.push('hovel', 'necropolis', 'overgrown_estate');
+      else for (let n = 0; n < 3; n++) start.push('estate');
       const deck = shuffle(start);
       const hand = deck.splice(0, 5);
       return {
@@ -307,6 +325,15 @@
     if (kingdom.includes('avanto') && !kingdom.includes('sauna')) kingdom.push('sauna');
     if (kingdom.includes('sauna') && !kingdom.includes('avanto')) kingdom.push('avanto');
     const supply = initSupply(players.length, kingdom);
+    // 暗黒時代：混合山の中身（実カードid配列）。supply.ruins/knights（残枚数）と長さを同期させる。
+    //   廃墟＝looterがあれば全50枚(5種×10)をシャッフルして (人数-1)×10 枚。騎士＝10種をシャッフルして1山。
+    let ruins = null, knights = null;
+    if (kingdom.some((k) => DOM.isType(k, 'looter'))) {
+      const pool = [];
+      (DOM.POOLS.ruins || []).forEach((id) => { for (let n = 0; n < 10; n++) pool.push(id); });
+      ruins = shuffle(pool).slice(0, 10 * (players.length - 1));
+    }
+    if (kingdom.includes('knights')) knights = shuffle((DOM.POOLS.knights || []).slice());
 
     // 闇市場(Black Market)デッキ：使用中のサプライに無い王国カードを1枚ずつ集めてシャッフル。
     // 闇市場が王国に含まれるときだけ用意する。
@@ -323,6 +350,8 @@
       kingdom,
       players,
       supply,
+      ruins,    // 暗黒時代：廃墟の混合山（実カードid配列。無ければ null）。supply.ruins と長さ同期。
+      knights,  // 暗黒時代：騎士の混合山（実カードid配列。無ければ null）。supply.knights と長さ同期。
       baneCard, // 収穫祭：若き魔女の災いカード（無ければ null）
       trash: [],
       blackMarket, // 闇市場デッキ（無ければ null）
@@ -383,28 +412,39 @@
 
   // サプライから pIndex が dest('discard'|'hand'|'deck') にカードを獲得
   function gain(state, pIndex, cardId, dest) {
-    if ((state.supply[cardId] || 0) <= 0) return false;
-    // プロモ：サウナ/アヴァント分割山＝山の一番上のカードしか獲得できない（サウナが残る間アヴァントは不可）。
-    if (cardId === 'avanto' && (state.supply.sauna || 0) > 0) return false;
+    // 暗黒時代：混合山（廃墟/騎士）は state[cardId]（実カード配列）の在庫で判定・供給する。
+    //   'ruins'/'knights' を山の先頭の実カードid（'survivors'/'sir_martin'等）へ解決して獲得する。
+    //   騎士は supply.knights（数値・王国枠）も同期させる。廃墟は supply キーを持たない（state.ruins のみ）。
+    const isMixed = (cardId === 'ruins' || cardId === 'knights');
+    if (isMixed) {
+      if (!Array.isArray(state[cardId]) || state[cardId].length === 0) return false;
+    } else {
+      if ((state.supply[cardId] || 0) <= 0) return false;
+      // プロモ：サウナ/アヴァント分割山＝山の一番上のカードしか獲得できない（サウナが残る間アヴァントは不可）。
+      if (cardId === 'avanto' && (state.supply.sauna || 0) > 0) return false;
+    }
+    const realId = isMixed ? state[cardId][0] : cardId;
     const t = state.turn;
     // 錬金術・支配：被支配者（手番のactive）が獲得するカードは脇に避け、ターン終了時に
     // 支配者の捨て札へ渡す（獲得先が手札/山札でも脇に置く＝公式のルーリング）。獲得フックも動かさない。
     if (t && t.possessedBy != null && pIndex === t.active) {
-      state.supply[cardId] -= 1;
-      (t.possessionGains = t.possessionGains || []).push(cardId);
-      log(state, `${state.players[pIndex].name} が獲得した「${C()[cardId].name}」は脇に置かれた（支配：${state.players[t.possessedBy].name} が受け取る）。`);
+      if (isMixed) { state[cardId].shift(); if (state.supply[cardId] != null) state.supply[cardId] -= 1; }
+      else state.supply[cardId] -= 1;
+      (t.possessionGains = t.possessionGains || []).push(realId);
+      log(state, `${state.players[pIndex].name} が獲得した「${C()[realId].name}」は脇に置かれた（支配：${state.players[t.possessedBy].name} が受け取る）。`);
       return true;
     }
-    state.supply[cardId] -= 1;
+    if (isMixed) { state[cardId].shift(); if (state.supply[cardId] != null) state.supply[cardId] -= 1; }
+    else state.supply[cardId] -= 1;
     const p = state.players[pIndex];
-    if (dest === 'hand') p.hand.push(cardId);
-    else if (dest === 'deck') p.deck.unshift(cardId);
-    else p.discard.push(cardId);
+    if (dest === 'hand') p.hand.push(realId);
+    else if (dest === 'deck') p.deck.unshift(realId);
+    else p.discard.push(realId);
     // 海辺：手番プレイヤーの獲得を記録（密輸人・宝物庫の「このターン勝利点を獲得したか」用）
     if (state.turn && pIndex === state.turn.active) {
-      (state.turn.gainedThisTurn || (state.turn.gainedThisTurn = [])).push(cardId);
+      (state.turn.gainedThisTurn || (state.turn.gainedThisTurn = [])).push(realId);
     }
-    triggerOnGain(state, pIndex, cardId, dest); // サル/封鎖/船乗りの「獲得時」フック（§手6で実装）
+    triggerOnGain(state, pIndex, realId, dest); // サル/封鎖/船乗りの「獲得時」フック（§手6で実装）
     return true;
   }
 
@@ -437,6 +477,7 @@
   //   高級市場(grand_market)＝場に銅貨があるとき購入不可。CPU/UI もこれを参照して空振りを防ぐ。
   function canBuyCard(state, pi, id) {
     if (id === 'grand_market' && state.players[pi].inPlay.includes('copper')) return false;
+    if (id === 'ruins') return false; // 暗黒時代：廃墟は購入できない（略奪者アタック/獲得でのみ配られる）
     if (NON_SUPPLY.has(id)) return false; // 収穫祭：賞品は購入できない（馬上槍試合でのみ獲得）
     if (id === 'avanto' && (state.supply.sauna || 0) > 0) return false; // プロモ：分割山の上（サウナ）が先
     return true;
@@ -2746,12 +2787,15 @@
   function emptyPileCount(state) {
     // 賞品（Prize）は非サプライ＝空でも「3山終了」に数えない。
     // サウナ/アヴァントは1つの分割山＝sauna 側で「両方尽きたら空」と数え、avanto キーは数えない。
-    return Object.keys(state.supply).filter((k) => {
+    let n = Object.keys(state.supply).filter((k) => {
       if (NON_SUPPLY.has(k)) return false;
       if (k === 'avanto') return false;
       if (k === 'sauna') return (state.supply.sauna || 0) <= 0 && (state.supply.avanto || 0) <= 0;
       return state.supply[k] <= 0;
     }).length;
+    // 暗黒時代：廃墟(Ruins)山はサプライだが supply の数値キーを持たない（state.ruins で管理）。空なら3山終了に数える。
+    if (Array.isArray(state.ruins) && state.ruins.length === 0) n += 1;
+    return n;
   }
   function isGameOver(state) {
     if (state.supply.province <= 0 || emptyPileCount(state) >= 3) return true;
@@ -6253,6 +6297,9 @@
     });
     // 闇市場デッキは伏せ札。中身は誰にも見えないよう枚数だけ残す（公開された3枚は pending.revealed 側に出る）。
     if (Array.isArray(s.blackMarket)) s.blackMarket = new Array(s.blackMarket.length).fill('back');
+    // 暗黒時代：混合山（廃墟/騎士）は一番上の1枚だけ公開情報。残りは裏向き（枚数のみ見せる）。
+    if (Array.isArray(s.ruins)) s.ruins = s.ruins.map((c, i) => (i === 0 ? c : 'back'));
+    if (Array.isArray(s.knights)) s.knights = s.knights.map((c, i) => (i === 0 ? c : 'back'));
     // 仮面舞踏会のパスは「同時・秘密」。逐次解決中の picks(他席が渡したカード)を
     // 後手席に配信すると情報優位になるため、自分の選択分以外は伏せる。
     if (s.pending && s.pending.type === 'masquerade' && s.pending.stage === 'pass' && s.pending.picks) {
