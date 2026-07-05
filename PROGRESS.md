@@ -1,40 +1,44 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-05 / branch `main`。**`144b775` まで push済（本番＝新プロモ段階2・`sw.js` v34）**。その後に**未pushのWIPコミットあり＝暗黒時代 段階2 着手（§0-8）**：公式ルール研究＋カタログ現行化＋triggerOnTrash自動系のみ完了・基盤機構は未着手。**CARD_SET未昇格＝本番/実プレイへの影響なし**。push は都度ユーザー確認。
+最終更新: 2026-07-05 / branch `main`（最新は `git log` で確認）。**`144b775` まで push済（本番＝新プロモ段階2・`sw.js` v34）**。その後に**未pushのWIPコミット多数＝暗黒時代 段階2 進行中（§0-8）**：研究＋カタログ現行化＋on-trash自動系に加え、今セッションで**trashCard統一＋基盤機構（混合山/非サプライ/避難所/initSupply/invariants）＋カード効果24/56枚まで完了**。**CARD_SET未昇格＝本番/実プレイへの影響なし**。push は都度ユーザー確認。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
 **新セッションは まず `npm test` を実行し 27スイート・オールグリーン（exit 0・整合性3130件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
 
 ---
 
-## 0-8. 段階2＝暗黒時代56枚 着手（2026-07-05・**WIP＝研究完了＋カタログ現行化＋on-trash自動系まで。基盤機構は未着手**）
+## 0-8. 段階2＝暗黒時代56枚 実装中（2026-07-05・**基盤機構完了＋カード効果24/56枚。残り＝カード効果32枚＋UI＋テスト＋昇格**）
 
-### 現在地（正確に。今セッションで「実装済みのはず」の誤認を git diff で正した結果）
-- **完了①＝公式ルール研究**（多エージェント13体Workflow・wiki/RGG公式ルールブック2020で裏取り・敵対検証14件**全confirmed**）。成果物＝**`docs/research/darkages_rules.json`**（55枚の現行英文テキスト/エラッタ/裁定/山構成）と **`docs/research/darkages_catalog_diff.md`**（カタログ差分レポート・重要度順）。**実装前に必ず読む**。
-- **完了②＝カタログ現行化（cards.js / carddata.js / integrity.test.js）**：エラッタ6枚＝hermit（2022＝購入フェイズ終了時・そのフェイズ中gainゼロなら**狂人と交換**）／procession（2019＝**非持続**アクション限定）／pillage（2019＝「これを廃棄する。**そうしたら**…」）／death_cart（2019＝廃棄は完全任意・**廃棄時のみ+$5**）／rats（on-trash「+1カード」追記・山20枚）／counterfeit（2022＝**非持続**財宝限定）。種別4枚＝death_cart/marauder/cultist に **looter**・band_of_misfits に **command**。carddata に looter 複合ラベル（JP/EN）・integrity の JP/EN マップに looter 追加。→ この時点で **27スイート全緑（整合性 3122→3130）** 確認済み。
-- **完了③＝triggerOnTrash 拡張（engine.js・自動系6枚・テスト全緑確認済み）**：城塞（trashから取り出し手札へ・**戻り値false=「trashに残らない」**）／ネズミ・草茂る屋敷（+1カード）／封土（銀貨3枚）／サー・ヴァンダー（金貨1枚）／狂信者（+3カード）。すべて「**誰の廃棄でも持ち主に発動**」。※統一関数 `trashCard` は**未作成**＝現状 `trashOwn`→`triggerOnTrash` の既存経路でのみ発火（=自分の任意廃棄のみ。アタック廃棄への配線が次の仕事）。
-- **未着手＝それ以外すべて**：trashCard統一関数・混合山（state.ruins/knights）・非サプライ3種（NON_SUPPLY追加）・避難所・initSupply条件節（rats20/廃墟10×(n-1)/騎士10/spoils15/madman10/mercenary10）・invariants tally・カード効果56枚・CPU・UI・darkagesテスト・CARD_SET昇格・webp再生成。
-- **CARD_SET未昇格＝実プレイ/デプロイに一切出ていない（安全）**。
+### 現在地（今セッションで大きく前進。すべて未pushコミット・CARD_SET未昇格＝本番影響ゼロ）
+- **完了①＝公式ルール研究**（成果物＝**`docs/research/darkages_rules.json`**＝55枚の現行英文/エラッタ/裁定/山構成、**`docs/research/darkages_catalog_diff.md`**＝差分レポート）。**実装前に該当カードを必ず読む**。
+- **完了②＝カタログ現行化**（cards.js/carddata.js/integrity.test.js。エラッタ6枚＋looter/command種別。整合性3130）。
+- **完了③＝triggerOnTrash 自動系6枚**（城塞=手札へ戻り戻り値false／ネズミ・草茂る屋敷=+1カード／封土=銀貨3／サー・ヴァンダー=金貨1／狂信者=+3カード。誰の廃棄でも持ち主に発動）。
+- **完了④＝trashCard 統一関数＋on-trash第2層配線（今セッション）**：`trashOwn`→`trashCard(state,owner,card)`にリネーム＋**戻り値=trashに残ったか**（城塞=false）。本人任意廃棄（礼拝堂/司教/改築/拡張/溶鉱炉/仮面舞踏会/引揚水夫/金貸し/取壊し/身代わり/総督/鉱山/改良/衛兵/見張り/物見やぐら/水晶玉/remake/forge/sentry/salvager/bishop等）とアタック廃棄（詐欺師/破壊工作員/山賊/盗賊thief/私掠船corsair＝owner=被害者）を寄せた。明示除外（自己廃棄札=投資/祝宴/宝の地図/鉱山の村/豊穣の角・lurkerのサプライ廃棄）は据え置き。
+- **完了⑤＝基盤機構（今セッション）**：**混合山**＝騎士は`supply.knights`（数値・王国枠・購入可）＋`state.knights`（実カード配列）／**廃墟は`state.ruins`配列のみ**（`'ruins'`はカタログ非在＝supplyに持つとCPU/UIのsupply走査が`C()['ruins']`で落ちるため）。gain冒頭で山先頭を実カードid（survivors/sir_martin）に解決しshift。`cardCost('knights')`=山の一番上の実コスト（sir_martin=$4）。`canBuyCard('ruins')`=false。emptyPileCountで`state.ruins.length===0`を明示加算。maskStateForで混合山は先頭1枚だけ公開。invariants tallyは混合山を実カード(state.ruins/knights)で数え supply数値のruins/knightsはskip。非サプライ＝NON_SUPPLYにspoils/madman/mercenary追加。避難所＝`opts.shelters`で開始デッキの屋敷3枚→納屋/共同墓地/草茂る屋敷。initSupply条件節＝rats20固定・looterで廃墟state・spoils15/madman10/mercenary10。**全プール混成fuzz緑**。
+- **完了⑥＝カード効果24/56枚（今セッション）**：単純15（廃墟4種abandoned_mine/ruined_library/ruined_market/ruined_village・城塞・共同墓地・貧民街poor_house・放浪者vagrant・賢者sage・物乞いbeggar・狂人madman・青空市場market_square・戦利品spoils）＋対話9（生存者survivors・ネズミrats・武器庫armory・採集者forager・従者squire+on-trashアタック獲得・倉庫storeroom・清掃scavenger・鉄物商ironmonger・放浪楽師wandering_minstrel）。**engine reducer＋PLAYER_ACTIONS＋CPU decidePending の4点セット済み（UIは未実装）**。CPU側は`NON_SUPPLY_SET`（PRIZE_SET＋戦利品/狂人/傭兵）で汎用獲得の無限ループを防止。
+- **未着手（残り）**：**カード効果32枚**＝中盤14（屑屋junk_dealer/秘術師mystic/墓暴きgraverobber/地下墓所catacombs/建て直しrebuild/伯爵count/はみだし者band_of_misfits(命令)/盗賊rogue/略奪pillage/山賊の宿営地bandit_camp/偽造counterfeit/狩場hunting_grounds/祭壇altar/隠遁者hermit）＋アタック（略奪者marauder/狂信者cultist/傭兵mercenary/浮浪児urchin）＋**騎士10種**＋death_cart(on-gain廃墟2枚)。／**UI**（viewPendingModal 新pending分岐＋混合山top表示）／**darkages.test.js・darkages-ui.test.js**／**CARD_SET昇格**（darkages固定10種＋random-darkages）／敵対レビュー＋CPUソーク／webp9枚再生成＋sw.js v35。
 
 ### 決定事項（ユーザー委任により確定。再議論しない）
-1. **避難所＝固定 `darkages` セットのみON／random系（random-darkages・全プール混成）はOFF**（決定論的で公平・混成の事故要因減）。
-2. **on-trash 配線は3層方針**（当初案「`state.trash.push` 全置換」は**撤回**＝生カウント46箇所には無意味・危険な置換が混じる）：
-   - **第1層**＝新規実装する暗黒時代カードの廃棄は最初から `trashCard(state, owner, card)` を使う（固定darkagesセットの廃棄経路はこれで100%）。
-   - **第2層**＝既存reducerは「**本人の手札/デッキ任意廃棄**」（礼拝堂/司教/改築/拡張/溶鉱炉/仮面舞踏会/引揚水夫/金貸し/取り壊し/身代わり/総督/鉱山/改良/衛兵/見張り等）と「**アタック廃棄**」（詐欺師/破壊工作員/山賊/盗賊/私掠船＝owner=**被害者**）だけ trashCard へ寄せる（25〜30箇所・**1箇所ずつ npm test**）。
-   - **第3層＝許容簡略化として明示除外**：lurker（サプライ廃棄＝持ち主なし。陰謀×暗黒の激レア混成で城塞が戻らない等）／自己廃棄札（祝宴/鉱山の村/投資/宝の地図＝該当idにon-trash無く寄せても素通り）／possessed_trash_marker／cleanupの一括移動。
-3. **経路別の明示テスト必須**（保存則fuzzは「城塞がtrashに残ったまま」を検知できない＝カード総数は保存されるため）：城塞×礼拝堂／狂信者×死の荷車／封土×騎士 等をdarkages.test.jsに。
-4. 対話系on-trash（catacombs=安い獲得／hunting_grounds=公領or屋敷3／squire=アタック獲得）とリアクション（market_square/hovel）は pending/キューが別途必要＝自動系（完了③）とは別実装。
+1. **避難所＝固定 `darkages` セットのみON**（`createInitialState` の `opts.shelters`。CARD_SET昇格時に darkages だけ true を渡す）／random系はOFF。
+2. **on-trash第2層は完了④で配線済み**。第1層＝新規暗黒時代カードは最初から `trashCard` を使う。第3層＝lurker/自己廃棄札は明示除外（据え置き）。
+3. **経路別の明示テスト必須**（保存則fuzzは「城塞がtrashに残ったまま」を検知できない）：城塞×礼拝堂／狂信者×死の荷車／封土×騎士 等をdarkages.test.jsに。
+4. 対話系on-trash（catacombs=安い獲得／hunting_grounds=公領or屋敷3／squire=アタック獲得）とリアクション（market_square/hovel/beggar）は pending/キューが別途必要。**squireのon-trashは`!state.pending`ガードの簡略実装済み**（複数on-trash競合は先着のみ＝許容簡略化）。catacombs/hunting_groundsのon-trash対話はまだ未実装。
 
 ### 実装設計の要点（下敷き＝§0-7の各機構＋docs/adding-cards.md。裁定の正本＝docs/research/darkages_rules.json）
-- **混合山**＝`supply.ruins/knights`（数値）＋`state.ruins/knights`（実カードid配列）の二重持ち。gain冒頭で配列shift解決・`cardCost('knights')`=山の一番上の実コスト（sir_martin=$4）・emptyPileCountはsauna/avanto型の特別扱い・maskStateForで**先頭1枚だけ公開**・**invariants tally に forEach 追加必須**（漏れ=保存則誤検知）。
-- **非サプライ**＝NON_SUPPLYにspoils/madman/mercenary追加→§6の4系統除外が自動で効く（賞品と同型）。
-- **騎士アタック**＝thief/saboteur型の複合（山札上2枚公開→$3-6を**被害者が選んで**廃棄→残り捨て札→騎士が廃棄されたら攻撃騎士も廃棄）。dame_anna（先に自分の廃棄≤2）/sir_michael（先に手札3枚まで捨て=民兵型）/dame_natalie（≤$3任意獲得）は前段付き。
-- **はみだし者**＝captainTargets/CAPTAIN_PLAYの同型（上限=自身の現在コスト-1・非Command・サプライに残したまま）。
-- **隠遁者交換**＝END_TURN（cleanup前）で「購入フェイズ中にgainゼロ」判定→隠遁者を山へ戻し狂人を捨て札へ（**gainでなく交換＝獲得フック不発・狂人山空なら不成立**）。turn に gainedInBuyPhase 系の旗が要る。
-- 主要裁定（rules.json の rulings に全部ある）：行進×城塞=廃棄成立で獲得実行／浮浪児=「**先に**」廃棄→傭兵獲得→アタック解決／青空市場=相手ターンでも・1廃棄に複数枚反応可／ネズミ+1カードは誰のターンでも持ち主／偽造通貨×戦利品。
+- **混合山（実装後の確定形）**＝**騎士**は`supply.knights`＋`state.knights`（購入・獲得とも `gain(pi,'knights')` で山先頭を取る）。**廃墟**は`state.ruins`のみ（`gain(pi,'ruins')`で配布。購入不可）。`gain`は`isMixed`分岐で `state[cardId].shift()` し、supply.knightsがあればデクリメント。UIは混合山を「先頭1枚（maskで公開）」で描画する（Todo10）。
+- **騎士アタック**＝thief/saboteur型の複合（山札上2枚公開→$3-6を**被害者が選んで**廃棄→残り捨て札→**騎士が廃棄されたら攻撃騎士も廃棄**）。dame_anna（先に自分の廃棄≤2）/sir_michael（先に手札3枚まで捨て=民兵型）/dame_natalie（≤$3任意獲得）は前段付き。cardCost('knights')は山の一番上で変動。
+- **はみだし者(band_of_misfits・命令)**＝既存 captainTargets/CAPTAIN_PLAY の同型（上限=自身の現在コスト-1・非Command・サプライに残したまま使用）。
+- **隠遁者交換(hermit)**＝END_TURN（cleanup前）で「購入フェイズ中にgainゼロ」判定→隠遁者を山へ戻し狂人を捨て札へ（**gainでなく交換＝獲得フック不発・狂人山空なら不成立**）。turn に「購入フェイズ中に獲得したか」の旗が要る。
+- **death_cart**＝on-gain（triggerOnGain）で廃墟2枚を`gain(pi,'ruins')`。プレイ時は「これ or 手札のアクション1枚を廃棄（任意）→廃棄したら+$5」。
+- **主要裁定**（rules.json rulings 参照）：行進×城塞=廃棄成立で獲得実行／浮浪児=「**先に**」廃棄→傭兵獲得→アタック解決／青空市場=相手ターンでも・1廃棄に複数枚反応可／偽造通貨×戦利品／伯爵count=独立2段階の三択。
 
-### 次の一歩（この順で）
-1. `trashCard` 統一関数新設＋第2層配線（1箇所ずつテスト）→ 2. 基盤機構（混合山→非サプライ→避難所→initSupply→invariants）→ 3. カード効果（単純→pending→アタック→複雑）→ 4. CPU/UI → 5. darkagesテスト新設→CARD_SET昇格 → 6. 敵対レビューWorkflow→CPUソーク → 7. webp9枚再生成・sw.js v35・PROGRESS更新→コミット（push確認）。
+### 次の一歩（この順で・各グループ末で `node test/invariants.test.js` 緑を確認しコミット）
+1. **カード効果の残り32枚**：素直なpending（屑屋/秘術師/墓暴き/地下墓所/建て直し）→ アタック（略奪者/狂信者/略奪/傭兵/浮浪児/盗賊）→ **騎士10種**（混合山アタック）→ 複雑（伯爵count/はみだし者band_of_misfits命令/隠遁者hermit交換/death_cart on-gain/catacombs・hunting_groundsのon-trash対話/counterfeit/altar）。各カード engine reducer＋PLAYER_ACTIONS＋CPU decidePending の4点セット必須（UIは2.でまとめて）。
+2. **UI**（ui.js `viewPendingModal` に新pending分岐＋混合山topの盤面表示）。
+3. **darkages.test.js / darkages-ui.test.js 新設**（経路別on-trashテスト＝城塞×礼拝堂/狂信者×死の荷車/封土×騎士 は必須）。
+4. **CARD_SET昇格**（DOM.CARD_SETS に darkages固定10種＋random-darkages。darkagesにだけ `opts.shelters=true` を渡す配線）→ **全27+スイート緑**（新スイート含む）。
+5. 敵対レビューWorkflow→確定バグ修正→CPUソーク（240戦級）。
+6. **webp9枚再生成**（hermit/procession/pillage/death_cart/rats/counterfeit/marauder/cultist/band_of_misfits＝文言/種別変更ぶん。`CARDS_ONLY=<ids> node tools/build-cards.js`・このPCのみ可）→ sw.js v34→v35 → PROGRESS更新 → コミット（**pushはユーザー確認**）。
 
 ---
 
