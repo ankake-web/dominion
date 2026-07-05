@@ -1,6 +1,6 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-05 / branch `main`。**push済ベース=`c8b2f6c`（本番デプロイ済）**。以後 **未push4件**＝`3a48e8b`異郷段階2(§0-5)＋`fcfae02`冒険/帝国段階1(§0-6)＋`21336f0`handoff＋**新プロモ段階2(§0-7・実プレイ化)コミット**。`sw.js` は **v34**。
+最終更新: 2026-07-05 / branch `main`。**`5150017` まで push済（本番デプロイ済）**＝異郷段階2(§0-5)・冒険/帝国段階1(§0-6)・**新プロモ段階2(§0-7・実プレイ化)** を含む。`sw.js` は **v34**。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
 **新セッションは まず `npm test` を実行し 27スイート・オールグリーン（exit 0・整合性3122件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
@@ -233,7 +233,7 @@
 - **支配のCPU簡略化**：CPUは支配を自動購入しない（`bestPotionBuy` で除外）。人間が使うぶんは支配者がCPUでも動作する。
 - **非サプライ数値キー山（賞品Prizes・将来の戦利品/狂人/傭兵）を足すときの必須チェックリスト**（§0-2のレビューで実際に踏んだ罠）：`NON_SUPPLY` set に登録し、**(1) `emptyPileCount`(3山終了) (2) `canBuyCard`(購入) (3) `blackMarket` 母集団（`createInitialState` の universe フィルタ） (4) 汎用獲得（engine の `*_GAIN` reducer と CPU `bestGain`/`bestGainExact`）** の4系統すべてから除外すること。特に「reducer だけガードして CPU 側を放置すると、CPU が拒否される獲得を出し続けて無限ループ」する（豊穣の角で実際に発生）＝**engine拒否とCPU非提案は必ずセット**。汎用獲得を持つ札（`horn_of_plenty` 等）は特に漏れやすい。
 - **段階1(§0-3)＋ギルド段階2(§0-4)は push済（`6d1d69c`・2026-07-04・ユーザー確認の上で本番デプロイ）**。以後の段階2作業も 完成→CARD_SET昇格→全テスト緑→**都度確認の上で** push。
-- **未push 4コミット（2026-07-05）＝`3a48e8b`異郷段階2 ＋ `fcfae02`冒険/帝国段階1（画像/カタログ）＋`21336f0`handoff ＋ 新プロモ段階2(§0-7)**。いずれも既存を壊さない（異郷/新プロモ=完成playable・全テスト緑／冒険帝国=画像のみゲーム未参加）。**push（本番デプロイ）は都度ユーザー確認の上で**。まとめて `git push` で全て本番へ。`sw.js` は v34。
+- **`5150017` まで push済（2026-07-05・本番デプロイ済）＝異郷段階2＋冒険/帝国段階1＋新プロモ段階2(§0-7)**。以後の段階2作業も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push。`sw.js` は v34。
 - **冒険/帝国段階1の画像回収メモ**：Downloads の ChatGPT画像はファイル名不定→生成時刻でバッチ割当→視覚判別で id確定（chatgpt-card-art-workflow 記憶＋今回は多エージェント判別）。`asset/art/*.png`・`images/` は gitignore＝このPCのみ。webp再生成は `CARDS_ONLY=<id,...> node tools/build-cards.js`。研究データは scratchpad `adv_emp_carddata.json`。
 - **異郷の許容簡略化（到達が稀 or 忠実性のみ・敵対レビューで重大でないと確定）＝意図的に未実装**：(1)**交易商人の獲得置換は自分の手番の獲得のみ**（相手ターンの魔女等の呪い獲得を銀貨に置換する反応は非対応＝獲得時対話ゲートが active限定・相手ターンだと pending 競合で潰れるため。呪いはそのまま受ける＝安全側）。(2)**値切り屋/農地/高貴な山賊の on-buy は「1購入=1 pending」**＝farmland/noble_brigand を買うと同ターン場の値切り屋の強制獲得がスキップされ得る（複数 on-buy を並べる汎用キューが無いため。カード保存則は保持・ループ/クラッシュ無し）。(3)**develop 等の獲得で入れ子の獲得時対話（border_village等）は `!pending` ゲートでスキップ**。いずれも「on-buy/on-gain の汎用 pending キュー」を導入する時にまとめて対応する方針（現状は保存則・非ループを敵対レビューで確認済）。
 - **【既存・スコープ外の別課題】闇市場デッキに「段階1のみ（＝engineロジック未実装）のプール」が漏れる**：`createInitialState` の黒市universeは全 `Object.values(DOM.POOLS)` を平坦化するため、promo-pack/random-promo で黒市デッキに hinterlands/darkages/knights/ruins/shelters/darkages_np（＋spoils/madman/mercenary）が混入する。これらは段階1（applyEffect未実装＝買って使っても何も起きない死に札）。**ギルドの段階2化で guilds プールは playable になった**ので問題なし。残りは各拡張が段階2化される都度 自動解消。**根治するなら黒市universeを「CARD_SETSが参照する playable プールのみ」に絞る**（＝段階2化の順に自然消化。急がば注意：正しく除外しないと変種が減る）。敵対レビューが指摘（元からの挙動＝ギルド作業とは独立）。
