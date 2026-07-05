@@ -150,6 +150,11 @@
       t.buys += 1;
       if (p.hand.some((c) => DOM.isType(c, 'treasure'))) state.pending = { type: 'tiara_play', player: pIndex };
     }
+    // 暗黒時代：偽造通貨＝+1購入（+$1は coin:1）。手札の非持続財宝を1枚選んで2回使い、それを廃棄してよい。
+    if (card === 'counterfeit') {
+      t.buys += 1;
+      if (p.hand.some((c) => DOM.isType(c, 'treasure') && !DOM.isType(c, 'duration'))) state.pending = { type: 'counterfeit', player: pIndex };
+    }
     // 収穫祭：宝冠（賞品）＝+2コイン（coin:2 で加算済み）＋未使用アクション1つにつき +1コイン。
     if (card === 'diadem') {
       const bonus = (t.actions || 0);
@@ -452,6 +457,8 @@
     // 海辺：手番プレイヤーの獲得を記録（密輸人・宝物庫の「このターン勝利点を獲得したか」用）
     if (state.turn && pIndex === state.turn.active) {
       (state.turn.gainedThisTurn || (state.turn.gainedThisTurn = [])).push(realId);
+      // 暗黒時代：隠遁者＝「購入フェイズ中に1枚でも獲得したか」（獲得すれば狂人と交換しない）。
+      if (state.turn.phase === 'buy') state.turn.buyPhaseGained = true;
     }
     triggerOnGain(state, pIndex, realId, dest); // サル/封鎖/船乗りの「獲得時」フック（§手6で実装）
     return true;
@@ -1656,6 +1663,17 @@
       !(id === 'avanto' && (state.supply.sauna || 0) > 0));
   }
   function anyCaptainTarget(state) { return captainTargets(state).length > 0; }
+  // 暗黒時代：はみだし者（命令）＝サプライにある「これより安い・非Command・非持続のアクション」を、
+  //   サプライに残したまま使う。コスト比較ははみだし者の現在コスト（コスト軽減の影響あり）で動的判定。
+  //   ※持続を対象にすると持続の追跡が要る（船長と同じ簡略化で除外）＝忠実性のわずかな簡略化。
+  function bandOfMisfitsTargets(state) {
+    const mx = cardCost(state, 'band_of_misfits');
+    return Object.keys(state.supply).filter((id) =>
+      (state.supply[id] || 0) > 0 && !NON_SUPPLY.has(id) && C()[id] &&
+      DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && !DOM.isType(id, 'command') &&
+      !C()[id].potion && cardCost(state, id) < mx &&
+      !(id === 'avanto' && (state.supply.sauna || 0) > 0));
+  }
 
   function applyEffect(state, cardId, pi) {
     const t = state.turn;
@@ -2322,7 +2340,19 @@
       case 'count': // 独立2段階の三択（前半：2枚捨て/1枚山札上/銅貨獲得、後半：+$3/手札全廃棄/公領獲得）
         state.pending = { type: 'count', stage: 'part1', player: pi };
         break;
-      // アタック/複雑（略奪者/狂信者/略奪/浮浪児/騎士/隠遁者/死の荷車 等）は後続ブロックで追加。
+      case 'death_cart': // これ自身か手札のアクション1枚を廃棄してよい→廃棄したら+$5（on-gainは廃墟2枚）
+        state.pending = { type: 'death_cart', player: pi };
+        break;
+      case 'band_of_misfits': // 命令：サプライの「これより安い・非Command・非持続アクション」をサプライに残したまま使う
+        if (bandOfMisfitsTargets(state).length) state.pending = { type: 'band_of_misfits', player: pi };
+        break;
+      case 'hermit': // 捨て札/手札の非財宝1枚を廃棄してよい→コスト3以下を獲得（購入フェイズ終了時に無獲得なら狂人と交換）
+        state.pending = { type: 'hermit', stage: 'trash', player: pi };
+        break;
+      case 'procession': // 手札の非持続アクションを2回使う→廃棄→ちょうど+$1高いアクションを獲得（使わなくてよい）
+        if (p.hand.some((c) => DOM.isType(c, 'action') && !DOM.isType(c, 'duration'))) state.pending = { type: 'procession', player: pi };
+        break;
+      // アタック（略奪者/狂信者/略奪/浮浪児/盗賊/傭兵）・騎士10種は後続ブロックで追加。
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
       // --- バニラ系（即時のみ・非対話）---
@@ -3180,6 +3210,8 @@
     if (cardId === 'nomad_camp') { const z = dest === 'hand' ? gp.hand : (dest === 'deck' ? gp.deck : gp.discard); if (removeOne(z, 'nomad_camp')) { gp.deck.unshift('nomad_camp'); log(state, `${gp.name} は遊牧民の野営地を山札の上に置いた。`); } }
     // 遊牧民：獲得したとき +2コイン（自分の手番のときのみ意味がある）。廃棄時の+2は triggerOnTrash。
     if (cardId === 'nomads' && state.turn && pIndex === state.turn.active) { state.turn.coins += 2; log(state, `${gp.name} は遊牧民の獲得で +2コイン。`); }
+    // 暗黒時代：死の荷車＝獲得したとき廃墟を2枚獲得（山の一番上から。足りなければあるだけ・非サプライではない配布）。
+    if (cardId === 'death_cart') { let g = 0; for (let i = 0; i < 2; i++) if (gain(state, pIndex, 'ruins', 'discard')) g++; if (g) log(state, `${gp.name} は死の荷車の獲得で廃墟 ${g}枚 を獲得した。`); }
     // 役人：獲得したとき、場のすべての財宝を山札の上に置く（置いた順＝そのまま／簡略に選択なし）。
     if (cardId === 'mandarin') { const tre = gp.inPlay.filter((c) => DOM.isType(c, 'treasure')); tre.forEach((c) => { removeOne(gp.inPlay, c); gp.deck.unshift(c); }); if (tre.length) log(state, `${gp.name} は役人で場の財宝 ${tre.length}枚 を山札の上に置いた。`); }
     // 大釜：自分の手番にアクションを獲得した回数を数え、3回目で（大釜が場にあれば）各相手が呪いを獲得。
@@ -3522,12 +3554,28 @@
     let guard = 0;
     while (!state.pending && state.replay && state.replay.length && !state.gameOver && guard++ < 200) {
       const r = state.replay.shift();
+      if (r.label === 'procession_finish') {
+        // 暗黒時代：行進＝2回のプレイが終わった後、対象を場から廃棄し、ちょうど+$1高いアクションを獲得（強制）。
+        //   対象が自己移動していれば廃棄は不発だが獲得は行う（公式）。廃棄の on-trash は先に解決される。
+        const p = state.players[r.player];
+        const tc = cardCost(state, r.card), tp = potionCost(r.card);
+        if (removeOne(p.inPlay, r.card)) { trashCard(state, r.player, r.card); log(state, `${p.name} は行進で「${C()[r.card].name}」を廃棄した。`); }
+        else log(state, `${p.name} は行進で対象を廃棄できなかった（場に無い）。`);
+        const mx = tc + 1;
+        if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && DOM.isType(id, 'action') && cardCost(state, id) === mx && potionCost(id) === tp)) {
+          state.pending = { type: 'procession_gain', player: r.player, exact: mx, pot: tp };
+        }
+        continue; // applyEffect は行わない（制御項目）。pending を立てたら while が停止する。
+      }
       if (r.label === 'golem') {
         // ゴーレムで見つけた2枚目：場に置いてから使う（クリーンアップで場から片付く）。
         // アクション権は消費しないが「使った」扱い＝共謀者等の「このターンに使ったアクション数」には数える。
         state.players[r.player].inPlay.push(r.card);
         state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
         log(state, `${state.players[r.player].name} はゴーレムで「${C()[r.card].name}」を使った。`);
+      } else if (r.label === 'procession2') {
+        state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
+        log(state, `${state.players[r.player].name} は行進で「${C()[r.card].name}」をもう一度使った。`);
       } else {
         state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
         log(state, `${state.players[r.player].name} は玉座の間で「${C()[r.card].name}」をもう一度使った。`);
@@ -3636,6 +3684,17 @@
       case 'END_TURN': {
         if (state.pending) return state;
         if (t.phase !== 'buy') return state;
+        // 暗黒時代：隠遁者＝購入フェイズ中に1枚も獲得していなければ、場の隠遁者を狂人と交換する
+        //   （交換＝獲得ではない＝獲得フック不発。隠遁者は山へ戻し狂人を捨て札へ。狂人山が空なら不成立）。
+        if (me.inPlay.includes('hermit') && !t.buyPhaseGained) {
+          let ex = 0;
+          while (me.inPlay.includes('hermit') && (state.supply.madman || 0) > 0) {
+            removeOne(me.inPlay, 'hermit');
+            state.supply.hermit = (state.supply.hermit || 0) + 1; // 隠遁者は自分の山へ戻る
+            state.supply.madman -= 1; me.discard.push('madman'); ex++;
+          }
+          if (ex) log(state, `${me.name} は購入フェイズで何も獲得しなかったので隠遁者 ${ex}枚 を狂人と交換した。`);
+        }
         // 異郷：策謀＝クリンナップ開始時、場のアクション（非持続）を最大(このターンの策謀の数)枚 山札の上に置ける。
         const schemes = t.schemes || 0;
         if (schemes > 0 && me.inPlay.some((c) => DOM.isType(c, 'action') && !DOM.isType(c, 'duration'))) {
@@ -5184,6 +5243,96 @@
           if (gain(state, pd.player, 'duchy', 'discard')) log(state, `${p.name} は伯爵で公領を獲得した。`);
         } else return state;
         state.pending = null;
+        return state;
+      }
+      case 'DEATH_CART_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'death_cart') return state;
+        const p = state.players[pd.player];
+        if (action.mode === 'this') {
+          if (removeOne(p.inPlay, 'death_cart')) { trashCard(state, pd.player, 'death_cart'); t.coins += 5; log(state, `${p.name} は死の荷車を廃棄した（+$5）。`); }
+        } else if (action.mode === 'hand') {
+          const card = action.card;
+          if (card == null || p.hand.indexOf(card) < 0 || !DOM.isType(card, 'action')) return state;
+          removeOne(p.hand, card); trashCard(state, pd.player, card); t.coins += 5;
+          log(state, `${p.name} は死の荷車で「${C()[card].name}」を廃棄した（+$5）。`);
+        } // else 'none' → 何もしない
+        state.pending = null;
+        return state;
+      }
+      case 'BAND_OF_MISFITS_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'band_of_misfits') return state;
+        const cands = bandOfMisfitsTargets(state);
+        if (action.card == null) { if (cands.length) return state; state.pending = null; return state; } // 対象があるうちは使用必須
+        const card = action.card;
+        if (cands.indexOf(card) < 0) return state;
+        state.pending = null; // 先に閉じる（applyEffect が新たな選択待ちを立てることがある）
+        t.actionsPlayed = (t.actionsPlayed || 0) + 1; // 使用に数えるがカードはサプライに残る
+        log(state, `${state.players[pd.player].name} ははみだし者でサプライの「${C()[card].name}」を使った（サプライに残る）。`);
+        applyEffect(state, card, pd.player);
+        return state;
+      }
+      case 'HERMIT_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'hermit' || pd.stage !== 'trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (card != null) {
+          const from = action.from === 'discard' ? p.discard : p.hand;
+          if (from.indexOf(card) < 0 || DOM.isType(card, 'treasure')) return state; // 非財宝のみ・捨て札/手札から
+          removeOne(from, card); trashCard(state, pd.player, card);
+          log(state, `${p.name} は隠遁者で「${C()[card].name}」を廃棄した。`);
+        }
+        // 廃棄の有無に関わらず コスト3以下を1枚獲得（強制）。
+        state.pending = anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) <= 3)
+          ? { type: 'hermit', stage: 'gain', player: pd.player }
+          : null;
+        return state;
+      }
+      case 'HERMIT_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'hermit' || pd.stage !== 'gain') return state;
+        finishGain(state, pd, action.card, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) <= 3, 'discard', '獲得した（隠遁者）。');
+        return state;
+      }
+      case 'PROCESSION_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'procession') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (card == null) { state.pending = null; return state; } // 使わない
+        if (p.hand.indexOf(card) < 0 || !DOM.isType(card, 'action') || DOM.isType(card, 'duration')) return state;
+        removeOne(p.hand, card); p.inPlay.push(card);
+        t.actionsPlayed = (t.actionsPlayed || 0) + 1;
+        state.pending = null;
+        log(state, `${p.name} は行進で「${C()[card].name}」を使った（1回目）。`);
+        applyEffect(state, card, pd.player); // 1回目
+        state.replay = state.replay || [];
+        state.replay.push({ player: pd.player, card, label: 'procession2' });       // 2回目
+        state.replay.push({ player: pd.player, card, label: 'procession_finish' }); // 2回後に廃棄＋獲得
+        return state;
+      }
+      case 'PROCESSION_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'procession_gain') return state;
+        finishGain(state, pd, action.card, (id) => !NON_SUPPLY.has(id) && DOM.isType(id, 'action') && cardCost(state, id) === pd.exact && potionCost(id) === pd.pot, 'discard', '獲得した（行進）。');
+        return state;
+      }
+      case 'COUNTERFEIT_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'counterfeit') return state;
+        const p = state.players[pd.player];
+        const card = action.card; // null = しない
+        state.pending = null;
+        if (card != null && p.hand.indexOf(card) >= 0 && DOM.isType(card, 'treasure') && !DOM.isType(card, 'duration')) {
+          playTreasureCard(state, pd.player, card); // 1回目（移動＋効果。戦利品は山へ戻る）
+          const add = treasureReplayCoins(state, pd.player, card); // 2回目のコイン
+          if (card === 'collection') t.buys += 1; // 2回目の+1購入（安全な副次効果のみ）
+          log(state, `${p.name} は偽造通貨で「${C()[card].name}」を2回使った（+${add}コイン）。`);
+          if (removeOne(p.inPlay, card)) { trashCard(state, pd.player, card); log(state, `${p.name} は偽造通貨で「${C()[card].name}」を廃棄した。`); }
+          // 対象が自己移動していれば（戦利品が山へ戻る等）廃棄は不発（lose track）。
+        }
         return state;
       }
 
@@ -6934,6 +7083,8 @@
     'JUNK_DEALER_TRASH', 'MYSTIC_NAME', 'ALTAR_TRASH', 'ALTAR_GAIN', 'CATACOMBS_RESOLVE', 'CATACOMBS_TRASH_GAIN',
     'HUNTING_GROUNDS_TRASH', 'GRAVEROBBER_MODE', 'GRAVEROBBER_FROM_TRASH', 'GRAVEROBBER_TRASH', 'GRAVEROBBER_GAIN',
     'REBUILD_NAME', 'REBUILD_GAIN', 'COUNT_PART1', 'COUNT_DISCARD', 'COUNT_TOPDECK', 'COUNT_PART2',
+    'DEATH_CART_RESOLVE', 'BAND_OF_MISFITS_PLAY', 'HERMIT_TRASH', 'HERMIT_GAIN',
+    'PROCESSION_CHOOSE', 'PROCESSION_GAIN', 'COUNTERFEIT_PLAY',
     // 海辺（第二版）
     'WAREHOUSE_DISCARD', 'HAVEN_SETASIDE', 'TACTICIAN_RESOLVE', 'SALVAGER_TRASH',
     'LOOKOUT_TRASH', 'LOOKOUT_DISCARD', 'ISLAND_PICK', 'NATIVE_VILLAGE_RESOLVE', 'TIDE_POOLS_DISCARD',
@@ -6982,6 +7133,7 @@
     emptyPileCount,
     canBuyCard,
     captainTargets, // 新プロモ：船長の対象（CPU/UIが同じ候補を参照＝engine拒否とCPU非提案のセット）
+    bandOfMisfitsTargets, // 暗黒時代：はみだし者の対象（CPU/UIが同じ候補を参照）
     maskStateFor,
     PLAYER_ACTIONS,
     // 「誰が今操作すべきか」: 選択待ちならその人、なければ手番のプレイヤー

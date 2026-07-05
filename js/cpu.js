@@ -262,10 +262,19 @@
     if (has('spice_merchant') && p.hand.includes('copper')) return 'spice_merchant'; // 銅貨を廃棄→ボーナス
     if (has('stables') && p.hand.includes('copper')) return 'stables';               // 銅貨を捨て→+3カード+1アクション
     if (has('develop') && p.hand.some((c) => c === 'estate' || c === 'copper' || isType(c, 'curse'))) return 'develop'; // 不要札を2枚に格上げ
-    // 暗黒時代：ターミナル（ドロー＞trash-to-gain）
+    // 暗黒時代：ターミナル（ドロー＞trash-to-gain＞その他）
     if (has('hunting_grounds')) return 'hunting_grounds';   // +4カード（強力）
+    if (has('band_of_misfits') && (DOM.engine && DOM.engine.bandOfMisfitsTargets ? DOM.engine.bandOfMisfitsTargets(state).length : 0)) return 'band_of_misfits'; // サプライの安いアクションを使う
+    if (has('death_cart')) return 'death_cart';             // +$5（廃墟/自身を廃棄）
     if (has('catacombs')) return 'catacombs';               // 上3枚を手札へ or 捨てて+3カード
     if (has('count')) return 'count';                       // +$3 or 公領獲得（前半で山札整理）
+    if (has('hermit')) return 'hermit';                     // 非財宝廃棄→$3以下獲得（無獲得ターンで狂人化）
+    // 行進＝アップグレード先(ちょうど+$1のアクション)がある非持続アクションが手札にあるとき
+    if (has('procession')) {
+      const cands = p.hand.filter((c) => isType(c, 'action') && !isType(c, 'duration') && c !== 'procession');
+      const upOK = cands.some((c) => { const mx = cost(state, c) + 1, pot = C()[c].potion || 0; return GAIN_ORDER.some((id) => C()[id] && isType(id, 'action') && !NON_SUPPLY_SET.has(id) && cost(state, id) === mx && (C()[id].potion || 0) === pot && sup(state, id) > 0); });
+      if (upOK) return 'procession';
+    }
     // 建て直し＝屋敷/公領を持っているとき（勝利点を格上げ）
     if (has('rebuild') && (owned(p, 'estate') > 0 || owned(p, 'duchy') > 0)) return 'rebuild';
     // 墓暴き＝廃棄置き場に$3-6があるか、手札にアクションがあるとき（不発の無駄打ち回避）
@@ -1467,6 +1476,42 @@
         if (pd.stage === 'topdeck') return { type: 'COUNT_TOPDECK', card: p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0] };
         if (pd.stage === 'discard') return { type: 'COUNT_DISCARD', cards: p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b)).slice(0, pd.need) };
         return { type: 'COUNT_PART2', mode: 'coins' }; // stage 'part2'
+      }
+      case 'death_cart': {
+        const junk = p.hand.find((c) => isType(c, 'ruins')); // 廃墟を廃棄すれば+$5＋死の荷車を温存
+        if (junk) return { type: 'DEATH_CART_RESOLVE', mode: 'hand', card: junk };
+        return { type: 'DEATH_CART_RESOLVE', mode: 'this' }; // 自身を廃棄して+$5
+      }
+      case 'band_of_misfits': {
+        const cands = (DOM.engine && DOM.engine.bandOfMisfitsTargets) ? DOM.engine.bandOfMisfitsTargets(state) : [];
+        if (!cands.length) return { type: 'BAND_OF_MISFITS_PLAY', card: null };
+        for (const id of GAIN_ORDER) { if (cands.includes(id)) return { type: 'BAND_OF_MISFITS_PLAY', card: id }; }
+        return { type: 'BAND_OF_MISFITS_PLAY', card: cands[0] }; // 終端保証
+      }
+      case 'hermit': {
+        if (pd.stage === 'trash') {
+          const pickJunk = (arr) => { const nonT = arr.filter((c) => !isType(c, 'treasure')); return nonT.find((c) => isType(c, 'curse')) || nonT.find((c) => isType(c, 'victory')) || nonT.find((c) => isType(c, 'ruins')); };
+          const h = pickJunk(p.hand); if (h) return { type: 'HERMIT_TRASH', from: 'hand', card: h };
+          const d = pickJunk(p.discard); if (d) return { type: 'HERMIT_TRASH', from: 'discard', card: d };
+          return { type: 'HERMIT_TRASH', card: null };
+        }
+        return { type: 'HERMIT_GAIN', card: bestGain(state, 3) }; // stage 'gain'（コスト3以下の最善＝通常は銀貨）
+      }
+      case 'procession': {
+        const cands = p.hand.filter((c) => isType(c, 'action') && !isType(c, 'duration') && c !== 'procession');
+        const upgradeable = (c) => { const mx = cost(state, c) + 1, pot = C()[c].potion || 0; return GAIN_ORDER.some((id) => C()[id] && isType(id, 'action') && !NON_SUPPLY_SET.has(id) && cost(state, id) === mx && (C()[id].potion || 0) === pot && sup(state, id) > 0); };
+        const ok = cands.filter(upgradeable).sort((a, b) => ((isType(b, 'ruins') ? 1 : 0) - (isType(a, 'ruins') ? 1 : 0)) || (cost(state, a) - cost(state, b)));
+        return { type: 'PROCESSION_CHOOSE', card: ok[0] || null };
+      }
+      case 'procession_gain': {
+        let g = null;
+        for (const id of GAIN_ORDER) { if (C()[id] && isType(id, 'action') && !NON_SUPPLY_SET.has(id) && cost(state, id) === pd.exact && (C()[id].potion || 0) === pd.pot && sup(state, id) > 0) { g = id; break; } }
+        return { type: 'PROCESSION_GAIN', card: g };
+      }
+      case 'counterfeit': {
+        if (p.hand.includes('spoils')) return { type: 'COUNTERFEIT_PLAY', card: 'spoils' }; // +$6・山へ戻り廃棄されない
+        if (p.hand.includes('copper')) return { type: 'COUNTERFEIT_PLAY', card: 'copper' }; // +$2＋銅貨圧縮
+        return { type: 'COUNTERFEIT_PLAY', card: null }; // 良い財宝は温存
       }
 
       default:
