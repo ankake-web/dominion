@@ -200,6 +200,7 @@
     if (has('ironmonger')) return 'ironmonger';           // +1カード+1アクション＋種別ボーナス
     if (has('sage')) return 'sage';                       // +1アクション（$3以上を手札へ）
     if (has('market_square')) return 'market_square';     // +1カード+1アクション+1購入
+    if (has('urchin')) return 'urchin';                   // +1カード+1アクション＋手札削り（傭兵化トリガー）
     if (has('rats') && p.hand.some((c) => c !== 'rats' && isDead(c))) return 'rats'; // 圧縮対象があるとき
     // --- ターミナル（効果の大きい順）---
     // 新プロモ：王子＝良い対象（$4以下の持続/命令以外）が手札にあるときだけ（毎ターン無料再生＝最優先）。
@@ -262,7 +263,13 @@
     if (has('spice_merchant') && p.hand.includes('copper')) return 'spice_merchant'; // 銅貨を廃棄→ボーナス
     if (has('stables') && p.hand.includes('copper')) return 'stables';               // 銅貨を捨て→+3カード+1アクション
     if (has('develop') && p.hand.some((c) => c === 'estate' || c === 'copper' || isType(c, 'curse'))) return 'develop'; // 不要札を2枚に格上げ
-    // 暗黒時代：ターミナル（ドロー＞trash-to-gain＞その他）
+    // 暗黒時代：ターミナル（アタック＞ドロー＞trash-to-gain＞その他）
+    if (has('cultist')) return 'cultist';                   // +2カード＋廃墟配布＋連鎖（強力）
+    if (has('marauder')) return 'marauder';                 // 戦利品＋廃墟配布
+    if (has('pillage')) return 'pillage';                   // 廃棄→戦利品2枚＋手札を捨てさせる
+    if (has('rogue')) return 'rogue';                       // +$2＋廃棄置き場回収 or 相手の$3-6廃棄
+    // 傭兵＝手札に不要札が2枚以上あるとき（廃棄して+2カード+$2＋アタック）
+    if (has('mercenary') && p.hand.filter((c) => trashValue(c) < 10).length >= 2) return 'mercenary';
     if (has('hunting_grounds')) return 'hunting_grounds';   // +4カード（強力）
     if (has('band_of_misfits') && (DOM.engine && DOM.engine.bandOfMisfitsTargets ? DOM.engine.bandOfMisfitsTargets(state).length : 0)) return 'band_of_misfits'; // サプライの安いアクションを使う
     if (has('death_cart')) return 'death_cart';             // +$5（廃墟/自身を廃棄）
@@ -672,12 +679,12 @@
     // 脇に置くと手札から消えるので、次回の呼び出しでは通常の判断（堀公開/受ける）に進む＝無限ループしない。
     // stage 'react' の各アタックに加え、embedded型（民兵/拷問人＝pending が反応窓を兼ねる）でも脇に置ける。
     if (pd && p.hand && p.hand.includes('horse_traders') &&
-        (pd.stage === 'react' || pd.type === 'militia' || pd.type === 'torturer')) {
+        (pd.stage === 'react' || pd.type === 'militia' || pd.type === 'torturer' || pd.type === 'discard_down')) {
       return { type: 'HORSE_TRADERS_REACT' };
     }
     // 異郷：番犬＝アタックの反応窓で手札から先に使う（+2〜4カード・常に得。使うと手札から消え次回は通常判断）。
     if (pd && p.hand && p.hand.includes('guard_dog') &&
-        (pd.stage === 'react' || pd.type === 'militia' || pd.type === 'torturer')) {
+        (pd.stage === 'react' || pd.type === 'militia' || pd.type === 'torturer' || pd.type === 'discard_down')) {
       return { type: 'GUARD_DOG_REACT' };
     }
     switch (pd.type) {
@@ -1512,6 +1519,41 @@
         if (p.hand.includes('spoils')) return { type: 'COUNTERFEIT_PLAY', card: 'spoils' }; // +$6・山へ戻り廃棄されない
         if (p.hand.includes('copper')) return { type: 'COUNTERFEIT_PLAY', card: 'copper' }; // +$2＋銅貨圧縮
         return { type: 'COUNTERFEIT_PLAY', card: null }; // 良い財宝は温存
+      }
+      case 'marauder': // react のみ（廃墟獲得は自動）
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'MARAUDER_REACT' };
+      case 'cultist': // react のみ
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'CULTIST_REACT' };
+      case 'cultist_chain':
+        return { type: 'CULTIST_CHAIN', play: true }; // 連鎖は無料＝常に使う
+      case 'pillage':
+        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'PILLAGE_REACT' }; }
+        // stage 'pick'：使用者として被害者の最も価値の高い手札を捨てさせる
+        return { type: 'PILLAGE_PICK', card: state.players[pd.victim].hand.slice().sort((a, b) => keepValue(b) - keepValue(a))[0] };
+      case 'rogue':
+        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'ROGUE_REACT' }; }
+        if (pd.stage === 'gain_from_trash') {
+          const cands = (state.trash || []).filter((c) => { const cc = cost(state, c); return cc >= 3 && cc <= 6 && (C()[c].potion || 0) === 0; }).sort((a, b) => cost(state, b) - cost(state, a));
+          return { type: 'ROGUE_GAIN_FROM_TRASH', card: cands[0] };
+        }
+        // stage 'pick'：被害者として価値の低い方を廃棄（良い方を残す）
+        return { type: 'ROGUE_PICK', card: (pd.trashable || []).slice().sort((a, b) => keepValue(a) - keepValue(b))[0] };
+      case 'discard_down': {
+        const target = Math.min(pd.down, p.hand.length);
+        const toDiscard = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b)).slice(0, p.hand.length - target);
+        return { type: 'DISCARD_DOWN_RESOLVE', cards: toDiscard };
+      }
+      case 'mercenary': {
+        const junk = p.hand.filter((c) => trashValue(c) < 10).sort((a, b) => trashValue(a) - trashValue(b));
+        if (junk.length >= 2) return { type: 'MERCENARY_TRASH', cards: junk.slice(0, 2) };
+        return { type: 'MERCENARY_TRASH', cards: [] }; // 不要札が2枚未満なら廃棄しない
+      }
+      case 'urchin_trash': {
+        // 不要札が十分あれば浮浪児→傭兵に格上げ（傭兵は強力）。無ければ浮浪児を温存。
+        const junkOwned = owned(p, 'copper') + owned(p, 'estate') + owned(p, 'curse');
+        return { type: 'URCHIN_TRASH', trash: junkOwned >= 4 };
       }
 
       default:

@@ -789,6 +789,12 @@
     berserker:     { onMoat: (s, pd) => berserkerEnterVictim(s, pd.source, pd.queue) },
     witchs_hut:    { onMoat: (s, pd) => witchsHutEnterVictim(s, pd.source, pd.queue) },
     cauldron:      { onMoat: (s, pd) => cauldronEnterVictim(s, pd.source, pd.queue) },
+    // 暗黒時代：略奪者/狂信者（廃墟配布）・略奪（手札公開）・盗賊（山札上2枚廃棄）・手札削り（浮浪児/傭兵）。
+    marauder:      { onMoat: (s, pd) => marauderEnterVictim(s, pd.source, pd.queue) },
+    cultist:       { onMoat: (s, pd) => cultistEnterVictim(s, pd.source, pd.queue) },
+    pillage:       { onMoat: (s, pd) => pillageEnterVictim(s, pd.source, pd.queue) },
+    rogue:         { onMoat: (s, pd) => rogueEnterVictim(s, pd.source, pd.queue) },
+    discard_down:  { embedded: true, onMoat: (s, pd) => advanceDiscardDown(s, pd) },
   };
   // 被攻撃側の反応（堀／秘密の小部屋／外交官）を差し込める局面か。
   function isAttackReactPending(pd) {
@@ -891,6 +897,88 @@
       log(state, `${state.players[victim].name} は呪いを獲得した（魔女）。`);
     }
     witchEnterVictim(state, source, queue);
+  }
+
+  /* ========== 暗黒時代：アタック各種（廃墟配布/手札公開/山札上2枚廃棄/手札削り） ========== */
+  // 略奪者：各相手が廃墟を1枚獲得（魔女型・非対話）。
+  function marauderEnterVictim(state, source, queue) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'marauder', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      if (gain(state, victim, 'ruins', 'discard')) log(state, `${state.players[victim].name} は廃墟を獲得した（略奪者）。`);
+      marauderEnterVictim(state, source, rest);
+    }
+  }
+  // 狂信者：各相手が廃墟を獲得→終端で「手札の狂信者を連鎖使用してよい」。
+  function cultistEnterVictim(state, source, queue) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    if (!queue.length) { cultistAfter(state, source); return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'cultist', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      if (gain(state, victim, 'ruins', 'discard')) log(state, `${state.players[victim].name} は廃墟を獲得した（狂信者）。`);
+      cultistEnterVictim(state, source, rest);
+    }
+  }
+  function cultistAfter(state, source) {
+    if (state.players[source].hand.includes('cultist')) state.pending = { type: 'cultist_chain', player: source };
+    else state.pending = null;
+  }
+  // 略奪：手札5枚以上の各相手が手札を公開し、使用者が1枚選んで捨てさせる。
+  function pillageEnterVictim(state, source, queue) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v) && state.players[v].hand.length >= 5);
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'pillage', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      reveal(state, victim, state.players[victim].hand.slice(), '略奪で手札公開');
+      state.pending = { type: 'pillage', stage: 'pick', player: source, source, victim, queue: rest };
+    }
+  }
+  // 盗賊：廃棄置き場に$3-6が無いとき＝各相手が山札の上2枚を公開し、$3-6の1枚を（本人が選んで）廃棄、残りを捨てる。
+  function rogueEnterVictim(state, source, queue) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'rogue', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      rogueReveal(state, source, victim, rest);
+    }
+  }
+  function rogueReveal(state, source, victim, queue) {
+    const v = state.players[victim];
+    const revealed = [];
+    for (let i = 0; i < 2; i++) { if (v.deck.length === 0) { if (v.discard.length === 0) break; reshuffleDeck(v); } if (v.deck.length === 0) break; revealed.push(v.deck.shift()); }
+    if (revealed.length) reveal(state, victim, revealed, '盗賊で山札の上を公開');
+    const trashable = revealed.filter((c) => { const cc = cardCost(state, c); return cc >= 3 && cc <= 6 && potionCost(c) === 0; });
+    if (trashable.length === 0) {
+      revealed.forEach((c) => v.discard.push(c));
+      if (revealed.length) log(state, `${v.name} は公開した ${revealed.length}枚 を捨てた（盗賊）。`);
+      rogueEnterVictim(state, source, queue);
+    } else if (trashable.length === 1) {
+      const tc = trashable[0]; const rest = revealed.slice(); removeOne(rest, tc);
+      trashCard(state, victim, tc); rest.forEach((c) => v.discard.push(c));
+      log(state, `${v.name} の「${C()[tc].name}」を廃棄した（盗賊）。`);
+      rogueEnterVictim(state, source, queue);
+    } else {
+      state.pending = { type: 'rogue', stage: 'pick', player: victim, source, victim, revealed, trashable, queue };
+    }
+  }
+  // 手札N枚まで捨てる汎用アタック（民兵型・embedded。浮浪児=4/傭兵=3）。
+  function discardDownEnter(state, source, down, victims) {
+    if (victims && victims.length) state.pending = { type: 'discard_down', player: victims[0], source, down, queue: victims.slice(1) };
+    else state.pending = null;
+  }
+  function advanceDiscardDown(state, pd) {
+    const q = pd.queue || [];
+    if (q.length) state.pending = { type: 'discard_down', player: q[0], source: pd.source, down: pd.down, queue: q.slice(1) };
+    else state.pending = null;
   }
 
   /* ---------- 錬金術：使い魔（魔女と同型。各相手が呪いを獲得）---------- */
@@ -2352,7 +2440,49 @@
       case 'procession': // 手札の非持続アクションを2回使う→廃棄→ちょうど+$1高いアクションを獲得（使わなくてよい）
         if (p.hand.some((c) => DOM.isType(c, 'action') && !DOM.isType(c, 'duration'))) state.pending = { type: 'procession', player: pi };
         break;
-      // アタック（略奪者/狂信者/略奪/浮浪児/盗賊/傭兵）・騎士10種は後続ブロックで追加。
+      case 'marauder': { // 戦利品を獲得（自分）＋各相手が廃墟を獲得（アタック）
+        if (gain(state, pi, 'spoils', 'discard')) log(state, `${p.name} は略奪者で戦利品を獲得した。`);
+        const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        marauderEnterVictim(state, pi, q);
+        break;
+      }
+      case 'cultist': { // +2カード。各相手が廃墟を獲得。手札の狂信者を連鎖使用してよい（on-trashで+3カード）
+        draw(state, pi, 2);
+        const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        cultistEnterVictim(state, pi, q);
+        break;
+      }
+      case 'pillage': { // これを廃棄→戦利品2枚＋手札5枚以上の各相手が手札公開→使用者が1枚捨てさせる
+        if (!removeOne(p.inPlay, 'pillage')) break; // 場に無い（玉座2回目/はみだし者）＝If you did が偽
+        trashCard(state, pi, 'pillage');
+        let g = 0; for (let i = 0; i < 2; i++) if (gain(state, pi, 'spoils', 'discard')) g++;
+        if (g) log(state, `${p.name} は略奪で戦利品 ${g}枚 を獲得した。`);
+        const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        pillageEnterVictim(state, pi, q);
+        break;
+      }
+      case 'rogue': { // +$2。廃棄置き場に$3-6があれば1枚獲得（使用者）／無ければ各相手の山札上2枚から$3-6を廃棄
+        t.coins += 2;
+        const inRange = (state.trash || []).some((c) => { const cc = cardCost(state, c); return cc >= 3 && cc <= 6 && potionCost(c) === 0; });
+        if (inRange) {
+          state.pending = { type: 'rogue', stage: 'gain_from_trash', player: pi };
+        } else {
+          const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+          rogueEnterVictim(state, pi, q);
+        }
+        break;
+      }
+      case 'urchin': { // +1カード +1アクション。各相手が手札4枚まで捨てる（別アタックのプレイで傭兵化トリガー）
+        draw(state, pi, 1); t.actions += 1;
+        const others = [];
+        for (let k = 1; k < state.players.length; k++) { const idx = (pi + k) % state.players.length; if (state.players[idx].hand.length > 4 && !attackImmune(state, idx)) others.push(idx); }
+        discardDownEnter(state, pi, 4, others);
+        break;
+      }
+      case 'mercenary': // 手札からちょうど2枚廃棄してよい→+2カード +$2＋各相手が手札3枚まで捨てる
+        if (p.hand.length >= 2) state.pending = { type: 'mercenary', stage: 'trash', player: pi };
+        break;
+      // 騎士10種は後続ブロックで追加（混合山アタック）。
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
       // --- バニラ系（即時のみ・非対話）---
@@ -3609,6 +3739,13 @@
         t.actions -= 1;
         t.actionsPlayed = (t.actionsPlayed || 0) + 1; // 共謀者の判定用（このターンに使ったアクション数）
         log(state, `${me.name} は「${C()[card].name}」を使った。`);
+        // 暗黒時代：浮浪児＝場に浮浪児がある状態で「別の」アタックをプレイしたとき、その解決前に
+        //   場の浮浪児を廃棄して傭兵を獲得してよい（傭兵山が空なら意味が無いので提示しない）。
+        const priorUrchins = me.inPlay.filter((c) => c === 'urchin').length - (card === 'urchin' ? 1 : 0);
+        if (DOM.isType(card, 'attack') && priorUrchins > 0 && (state.supply.mercenary || 0) > 0) {
+          state.pending = { type: 'urchin_trash', player: pi, deferred: card }; // 効果は URCHIN_TRASH 解決後に適用
+          return state;
+        }
         applyEffect(state, card, pi);
         return state;
       }
@@ -5333,6 +5470,128 @@
           if (removeOne(p.inPlay, card)) { trashCard(state, pd.player, card); log(state, `${p.name} は偽造通貨で「${C()[card].name}」を廃棄した。`); }
           // 対象が自己移動していれば（戦利品が山へ戻る等）廃棄は不発（lose track）。
         }
+        return state;
+      }
+      /* ===== 暗黒時代：アタックの選択解決 ===== */
+      case 'MARAUDER_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'marauder' || pd.stage !== 'react') return state;
+        if (gain(state, pd.victim, 'ruins', 'discard')) log(state, `${state.players[pd.victim].name} は廃墟を獲得した（略奪者）。`);
+        marauderEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+      case 'CULTIST_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'cultist' || pd.stage !== 'react') return state;
+        if (gain(state, pd.victim, 'ruins', 'discard')) log(state, `${state.players[pd.victim].name} は廃墟を獲得した（狂信者）。`);
+        cultistEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+      case 'CULTIST_CHAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'cultist_chain') return state;
+        const p = state.players[pd.player];
+        if (action.play && p.hand.includes('cultist')) {
+          removeOne(p.hand, 'cultist'); p.inPlay.push('cultist');
+          t.actionsPlayed = (t.actionsPlayed || 0) + 1; // アクション権は消費しない（連鎖は無料）
+          state.pending = null;
+          log(state, `${p.name} は狂信者を連鎖して使った（アクション消費なし）。`);
+          applyEffect(state, 'cultist', pd.player);
+        } else { state.pending = null; }
+        return state;
+      }
+      case 'PILLAGE_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'pillage' || pd.stage !== 'react') return state;
+        reveal(state, pd.victim, state.players[pd.victim].hand.slice(), '略奪で手札公開');
+        state.pending = { type: 'pillage', stage: 'pick', player: pd.source, source: pd.source, victim: pd.victim, queue: pd.queue };
+        return state;
+      }
+      case 'PILLAGE_PICK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'pillage' || pd.stage !== 'pick') return state;
+        const v = state.players[pd.victim];
+        const card = action.card;
+        if (v.hand.indexOf(card) < 0) return state;
+        removeOne(v.hand, card); v.discard.push(card);
+        log(state, `${state.players[pd.source].name} は略奪で ${v.name} の「${C()[card].name}」を捨てさせた。`);
+        pillageEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+      case 'ROGUE_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'rogue' || pd.stage !== 'react') return state;
+        rogueReveal(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'ROGUE_PICK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'rogue' || pd.stage !== 'pick') return state;
+        const v = state.players[pd.victim];
+        const card = action.card;
+        if ((pd.trashable || []).indexOf(card) < 0) return state; // 公開された$3-6のみ
+        const rest = pd.revealed.slice(); removeOne(rest, card);
+        trashCard(state, pd.victim, card);
+        rest.forEach((c) => v.discard.push(c));
+        log(state, `${v.name} は盗賊で「${C()[card].name}」を廃棄した。`);
+        rogueEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+      case 'ROGUE_GAIN_FROM_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'rogue' || pd.stage !== 'gain_from_trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        const cc = card != null ? cardCost(state, card) : -1;
+        if (card == null || state.trash.indexOf(card) < 0 || cc < 3 || cc > 6 || potionCost(card) !== 0) return state; // 獲得は強制
+        removeOne(state.trash, card); p.discard.push(card);
+        reveal(state, pd.player, [card], '盗賊で廃棄置き場から獲得');
+        log(state, `${p.name} は盗賊で廃棄置き場の「${C()[card].name}」を獲得した。`);
+        state.pending = null;
+        return state;
+      }
+      case 'DISCARD_DOWN_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'discard_down') return state;
+        const p = state.players[pd.player];
+        const target = Math.min(pd.down, p.hand.length);
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (p.hand.length - cards.length !== target) return state;
+        const copy = p.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        cards.forEach((c) => { removeOne(p.hand, c); p.discard.push(c); });
+        log(state, `${p.name} は手札を ${cards.length}枚 捨てた。`);
+        advanceDiscardDown(state, pd);
+        return state;
+      }
+      case 'MERCENARY_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'mercenary' || pd.stage !== 'trash') return state;
+        const p = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length === 0) { state.pending = null; return state; } // 廃棄しない＝何も起きない
+        if (cards.length !== 2) return state; // ちょうど2枚のみ有効
+        const copy = p.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        cards.forEach((c) => { removeOne(p.hand, c); trashCard(state, pd.player, c); });
+        log(state, `${p.name} は傭兵で手札2枚を廃棄した。`);
+        // If you did：+2カード +$2、各相手が手札3枚まで捨てる
+        draw(state, pd.player, 2); t.coins += 2;
+        const others = [];
+        for (let k = 1; k < state.players.length; k++) { const idx = (pd.player + k) % state.players.length; if (state.players[idx].hand.length > 3 && !attackImmune(state, idx)) others.push(idx); }
+        discardDownEnter(state, pd.player, 3, others);
+        return state;
+      }
+      case 'URCHIN_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'urchin_trash') return state;
+        const p = state.players[pd.player];
+        if (action.trash && removeOne(p.inPlay, 'urchin')) {
+          trashCard(state, pd.player, 'urchin');
+          if (gain(state, pd.player, 'mercenary', 'discard')) log(state, `${p.name} は浮浪児を廃棄して傭兵を獲得した。`);
+        }
+        state.pending = null;
+        applyEffect(state, pd.deferred, pd.player); // 保留していたアタックの効果を解決
         return state;
       }
 
@@ -7085,6 +7344,8 @@
     'REBUILD_NAME', 'REBUILD_GAIN', 'COUNT_PART1', 'COUNT_DISCARD', 'COUNT_TOPDECK', 'COUNT_PART2',
     'DEATH_CART_RESOLVE', 'BAND_OF_MISFITS_PLAY', 'HERMIT_TRASH', 'HERMIT_GAIN',
     'PROCESSION_CHOOSE', 'PROCESSION_GAIN', 'COUNTERFEIT_PLAY',
+    'MARAUDER_REACT', 'CULTIST_REACT', 'CULTIST_CHAIN', 'PILLAGE_REACT', 'PILLAGE_PICK',
+    'ROGUE_REACT', 'ROGUE_PICK', 'ROGUE_GAIN_FROM_TRASH', 'DISCARD_DOWN_RESOLVE', 'MERCENARY_TRASH', 'URCHIN_TRASH',
     // 海辺（第二版）
     'WAREHOUSE_DISCARD', 'HAVEN_SETASIDE', 'TACTICIAN_RESOLVE', 'SALVAGER_TRASH',
     'LOOKOUT_TRASH', 'LOOKOUT_DISCARD', 'ISLAND_PICK', 'NATIVE_VILLAGE_RESOLVE', 'TIDE_POOLS_DISCARD',
