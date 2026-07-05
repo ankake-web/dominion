@@ -795,6 +795,7 @@
     pillage:       { onMoat: (s, pd) => pillageEnterVictim(s, pd.source, pd.queue) },
     rogue:         { onMoat: (s, pd) => rogueEnterVictim(s, pd.source, pd.queue) },
     discard_down:  { embedded: true, onMoat: (s, pd) => advanceDiscardDown(s, pd) },
+    knight:        { onMoat: (s, pd) => knightAttackEnter(s, pd.source, pd.sourceCard, pd.queue) },
   };
   // 被攻撃側の反応（堀／秘密の小部屋／外交官）を差し込める局面か。
   function isAttackReactPending(pd) {
@@ -970,15 +971,68 @@
       state.pending = { type: 'rogue', stage: 'pick', player: victim, source, victim, revealed, trashable, queue };
     }
   }
-  // 手札N枚まで捨てる汎用アタック（民兵型・embedded。浮浪児=4/傭兵=3）。
-  function discardDownEnter(state, source, down, victims) {
-    if (victims && victims.length) state.pending = { type: 'discard_down', player: victims[0], source, down, queue: victims.slice(1) };
-    else state.pending = null;
+  // 手札N枚まで捨てる汎用アタック（民兵型・embedded。浮浪児=4/傭兵=3/サー・マイケル=3）。
+  //   next='knight:<id>' を渡すと、全員の捨てが終わったあとに騎士アタックへ連鎖する（サー・マイケル用）。
+  function discardDownEnter(state, source, down, victims, next) {
+    if (victims && victims.length) state.pending = { type: 'discard_down', player: victims[0], source, down, queue: victims.slice(1), next: next || null };
+    else discardDownDone(state, source, next);
   }
   function advanceDiscardDown(state, pd) {
     const q = pd.queue || [];
-    if (q.length) state.pending = { type: 'discard_down', player: q[0], source: pd.source, down: pd.down, queue: q.slice(1) };
+    if (q.length) state.pending = { type: 'discard_down', player: q[0], source: pd.source, down: pd.down, queue: q.slice(1), next: pd.next || null };
+    else discardDownDone(state, pd.source, pd.next);
+  }
+  function discardDownDone(state, source, next) {
+    if (next && next.indexOf('knight:') === 0) startKnightAttack(state, source, next.slice('knight:'.length));
     else state.pending = null;
+  }
+
+  /* ---------- 暗黒時代：騎士の共通アタック（混合山） ----------
+     各相手が山札の上2枚を公開→$3-6の1枚を「本人が選んで」廃棄→残りを捨てる。
+     騎士が廃棄されたら、攻撃した騎士（sourceCard）も廃棄する。 */
+  function startKnightAttack(state, pi, sourceCard) {
+    const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+    knightAttackEnter(state, pi, sourceCard, q);
+  }
+  function knightAttackEnter(state, source, sourceCard, queue) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'knight', stage: 'react', player: victim, source, sourceCard, victim, queue: rest };
+    } else {
+      knightReveal(state, source, sourceCard, victim, rest);
+    }
+  }
+  function knightReveal(state, source, sourceCard, victim, queue) {
+    const v = state.players[victim];
+    const revealed = [];
+    for (let i = 0; i < 2; i++) { if (v.deck.length === 0) { if (v.discard.length === 0) break; reshuffleDeck(v); } if (v.deck.length === 0) break; revealed.push(v.deck.shift()); }
+    if (revealed.length) reveal(state, victim, revealed, '騎士で山札の上を公開');
+    const trashable = revealed.filter((c) => { const cc = cardCost(state, c); return cc >= 3 && cc <= 6 && potionCost(c) === 0; });
+    if (trashable.length === 0) {
+      revealed.forEach((c) => v.discard.push(c));
+      if (revealed.length) log(state, `${v.name} は公開した ${revealed.length}枚 を捨てた（騎士）。`);
+      knightAttackEnter(state, source, sourceCard, queue);
+    } else if (trashable.length === 1) {
+      knightDoTrash(state, source, sourceCard, victim, revealed, trashable[0], queue);
+    } else {
+      state.pending = { type: 'knight', stage: 'pick', player: victim, source, sourceCard, victim, revealed, trashable, queue };
+    }
+  }
+  function knightDoTrash(state, source, sourceCard, victim, revealed, card, queue) {
+    const v = state.players[victim];
+    const rest = revealed.slice(); removeOne(rest, card);
+    const wasKnight = DOM.isType(card, 'knight');
+    trashCard(state, victim, card); // 被害者の廃棄（城塞/封土/騎士の on-trash も発動）
+    rest.forEach((c) => v.discard.push(c));
+    log(state, `${v.name} は騎士で「${C()[card].name}」を廃棄した。`);
+    // 廃棄されたのが騎士なら、攻撃した騎士も廃棄（場にあれば。sir_vander なら on-trash で金貨）
+    if (wasKnight && removeOne(state.players[source].inPlay, sourceCard)) {
+      trashCard(state, source, sourceCard);
+      log(state, `${state.players[source].name} の「${C()[sourceCard].name}」も廃棄された（騎士同士）。`);
+    }
+    knightAttackEnter(state, source, sourceCard, queue);
   }
 
   /* ---------- 錬金術：使い魔（魔女と同型。各相手が呪いを獲得）---------- */
@@ -2482,7 +2536,27 @@
       case 'mercenary': // 手札からちょうど2枚廃棄してよい→+2カード +$2＋各相手が手札3枚まで捨てる
         if (p.hand.length >= 2) state.pending = { type: 'mercenary', stage: 'trash', player: pi };
         break;
-      // 騎士10種は後続ブロックで追加（混合山アタック）。
+      // 騎士10種（混合山アタック）＝共通アタックの前に各自の追加効果。
+      case 'dame_josephine': startKnightAttack(state, pi, 'dame_josephine'); break; // 2VPは vpOf 自動
+      case 'sir_vander':     startKnightAttack(state, pi, 'sir_vander'); break;     // on-trashで金貨（既存）
+      case 'dame_molly': t.actions += 2; startKnightAttack(state, pi, 'dame_molly'); break;
+      case 'dame_sylvia': t.coins += 2; startKnightAttack(state, pi, 'dame_sylvia'); break;
+      case 'sir_bailey': draw(state, pi, 1); t.actions += 1; startKnightAttack(state, pi, 'sir_bailey'); break;
+      case 'sir_destry': draw(state, pi, 2); startKnightAttack(state, pi, 'sir_destry'); break;
+      case 'sir_martin': t.buys += 2; startKnightAttack(state, pi, 'sir_martin'); break;
+      case 'dame_anna': // 手札から最大2枚を廃棄してよい→アタック
+        state.pending = { type: 'dame_anna_trash', player: pi };
+        break;
+      case 'dame_natalie': // コスト3以下を獲得してよい→アタック
+        if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) <= 3)) state.pending = { type: 'dame_natalie_gain', player: pi };
+        else startKnightAttack(state, pi, 'dame_natalie');
+        break;
+      case 'sir_michael': { // 各相手が手札3枚まで捨てる→（連鎖して）騎士アタック
+        const others = [];
+        for (let k = 1; k < state.players.length; k++) { const idx = (pi + k) % state.players.length; if (state.players[idx].hand.length > 3 && !attackImmune(state, idx)) others.push(idx); }
+        discardDownEnter(state, pi, 3, others, 'knight:sir_michael');
+        break;
+      }
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
       // --- バニラ系（即時のみ・非対話）---
@@ -5594,6 +5668,46 @@
         applyEffect(state, pd.deferred, pd.player); // 保留していたアタックの効果を解決
         return state;
       }
+      /* ===== 暗黒時代：騎士（混合山アタック）の選択解決 ===== */
+      case 'KNIGHT_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'knight' || pd.stage !== 'react') return state;
+        knightReveal(state, pd.source, pd.sourceCard, pd.victim, pd.queue);
+        return state;
+      }
+      case 'KNIGHT_PICK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'knight' || pd.stage !== 'pick') return state;
+        const card = action.card;
+        if ((pd.trashable || []).indexOf(card) < 0) return state; // 公開された$3-6のみ
+        knightDoTrash(state, pd.source, pd.sourceCard, pd.victim, pd.revealed, card, pd.queue);
+        return state;
+      }
+      case 'DAME_ANNA_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'dame_anna_trash') return state;
+        const p = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length > 2) return state; // 最大2枚
+        const copy = p.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        cards.forEach((c) => { removeOne(p.hand, c); trashCard(state, pd.player, c); });
+        if (cards.length) log(state, `${p.name} はデイム・アンナで ${cards.length}枚 を廃棄した。`);
+        startKnightAttack(state, pd.player, 'dame_anna');
+        return state;
+      }
+      case 'DAME_NATALIE_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'dame_natalie_gain') return state;
+        const card = action.card; // 任意（up to $3）。null なら獲得せずアタックへ。
+        if (card != null) {
+          if (NON_SUPPLY.has(card) || !C()[card] || cardCost(state, card) > 3 || (state.supply[card] || 0) <= 0) return state;
+          gain(state, pd.player, card, 'discard');
+          log(state, `${state.players[pd.player].name} はデイム・ナタリーで「${C()[card].name}」を獲得した。`);
+        }
+        startKnightAttack(state, pd.player, 'dame_natalie');
+        return state;
+      }
 
       /* ===== 拡張: 海辺（Seaside 第二版）の選択解決 ===== */
       case 'WAREHOUSE_DISCARD': {
@@ -7346,6 +7460,7 @@
     'PROCESSION_CHOOSE', 'PROCESSION_GAIN', 'COUNTERFEIT_PLAY',
     'MARAUDER_REACT', 'CULTIST_REACT', 'CULTIST_CHAIN', 'PILLAGE_REACT', 'PILLAGE_PICK',
     'ROGUE_REACT', 'ROGUE_PICK', 'ROGUE_GAIN_FROM_TRASH', 'DISCARD_DOWN_RESOLVE', 'MERCENARY_TRASH', 'URCHIN_TRASH',
+    'KNIGHT_REACT', 'KNIGHT_PICK', 'DAME_ANNA_TRASH', 'DAME_NATALIE_GAIN',
     // 海辺（第二版）
     'WAREHOUSE_DISCARD', 'HAVEN_SETASIDE', 'TACTICIAN_RESOLVE', 'SALVAGER_TRASH',
     'LOOKOUT_TRASH', 'LOOKOUT_DISCARD', 'ISLAND_PICK', 'NATIVE_VILLAGE_RESOLVE', 'TIDE_POOLS_DISCARD',

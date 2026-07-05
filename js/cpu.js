@@ -200,6 +200,8 @@
     if (has('ironmonger')) return 'ironmonger';           // +1カード+1アクション＋種別ボーナス
     if (has('sage')) return 'sage';                       // +1アクション（$3以上を手札へ）
     if (has('market_square')) return 'market_square';     // +1カード+1アクション+1購入
+    if (has('dame_molly')) return 'dame_molly';           // +2アクション＋騎士アタック
+    if (has('sir_bailey')) return 'sir_bailey';           // +1カード+1アクション＋騎士アタック
     if (has('urchin')) return 'urchin';                   // +1カード+1アクション＋手札削り（傭兵化トリガー）
     if (has('rats') && p.hand.some((c) => c !== 'rats' && isDead(c))) return 'rats'; // 圧縮対象があるとき
     // --- ターミナル（効果の大きい順）---
@@ -268,6 +270,8 @@
     if (has('marauder')) return 'marauder';                 // 戦利品＋廃墟配布
     if (has('pillage')) return 'pillage';                   // 廃棄→戦利品2枚＋手札を捨てさせる
     if (has('rogue')) return 'rogue';                       // +$2＋廃棄置き場回収 or 相手の$3-6廃棄
+    // 騎士（ターミナル種）＝手札にあれば使う（混合山アタック）
+    for (const kn of ['sir_destry', 'dame_sylvia', 'sir_martin', 'dame_natalie', 'sir_michael', 'dame_anna', 'dame_josephine', 'sir_vander']) { if (has(kn)) return kn; }
     // 傭兵＝手札に不要札が2枚以上あるとき（廃棄して+2カード+$2＋アタック）
     if (has('mercenary') && p.hand.filter((c) => trashValue(c) < 10).length >= 2) return 'mercenary';
     if (has('hunting_grounds')) return 'hunting_grounds';   // +4カード（強力）
@@ -1541,6 +1545,7 @@
         // stage 'pick'：被害者として価値の低い方を廃棄（良い方を残す）
         return { type: 'ROGUE_PICK', card: (pd.trashable || []).slice().sort((a, b) => keepValue(a) - keepValue(b))[0] };
       case 'discard_down': {
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; // 堀で無効化（民兵と同型・embedded反応窓）
         const target = Math.min(pd.down, p.hand.length);
         const toDiscard = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b)).slice(0, p.hand.length - target);
         return { type: 'DISCARD_DOWN_RESOLVE', cards: toDiscard };
@@ -1555,6 +1560,14 @@
         const junkOwned = owned(p, 'copper') + owned(p, 'estate') + owned(p, 'curse');
         return { type: 'URCHIN_TRASH', trash: junkOwned >= 4 };
       }
+      case 'knight':
+        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'KNIGHT_REACT' }; }
+        // stage 'pick'：被害者として価値の低い方を廃棄（騎士は価値が高い＝残す＝相手の騎士を巻き込まない安全策）
+        return { type: 'KNIGHT_PICK', card: (pd.trashable || []).slice().sort((a, b) => keepValue(a) - keepValue(b))[0] };
+      case 'dame_anna_trash':
+        return { type: 'DAME_ANNA_TRASH', cards: pickTrash(p.hand, 2) }; // 最大2枚の不要札
+      case 'dame_natalie_gain':
+        return { type: 'DAME_NATALIE_GAIN', card: bestGain(state, 3, { noVictory: true }) || null }; // 任意（≤$3の非勝利点）
 
       default:
         return { type: 'END_TURN' };
