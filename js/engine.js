@@ -408,18 +408,23 @@
     return true;
   }
 
-  // 「自分のカード」を廃棄置き場へ送る共通入口。錬金術・支配：支配中は被支配者（手番の
-  // active）が廃棄した自分のカードを脇に避け、ターン終了時に被支配者の捨て札へ戻す
-  // （支配では相手の良いカードを永久に廃棄できない＝公式どおり）。それ以外は通常どおり廃棄。
-  // ※アタックで「他人」のカードを廃棄する処理（詐欺師/破壊工作員/山賊）はこれを通さない。
-  function trashOwn(state, ownerIdx, card) {
+  // カードを廃棄置き場へ送る統一入口 trashCard(state, owner, card)。呼び出し側は事前に card を
+  // 元の場所（手札/場/デッキ/サプライ）から取り除いておく。誰の廃棄でも「持ち主 owner」に
+  // on-trash を発動する（城塞=手札へ戻る／ネズミ=+1カード／封土=銀貨3 等）。
+  // 戻り値 = そのカードが廃棄置き場に残ったか（城塞は false）。
+  // 支配(Possession)中に被支配者(active)が自分のカードを廃棄したときは廃棄置き場でなく脇
+  // （possessionTrash）へ退避し、ターン終了時に本人の捨て札へ戻す（相手の良カードを永久廃棄
+  // できない＝公式）。この場合 on-trash は発動しない（trashに入らないため）。
+  // ※アタックで「他人」のカードを廃棄する処理（詐欺師/破壊工作員/山賊等）も owner=被害者 で
+  //   本関数を通す（城塞が持ち主の手札へ戻る等のため）。
+  function trashCard(state, ownerIdx, card) {
     const t = state.turn;
     if (t && t.possessedBy != null && ownerIdx === t.active) {
       (t.possessionTrash = t.possessionTrash || []).push(card);
-    } else {
-      state.trash.push(card);
-      triggerOnTrash(state, ownerIdx, card); // 異郷：遊牧民の廃棄時 +2コイン 等
+      return true; // 支配中の退避＝trashに入らず on-trash も発動しないが処理は完了
     }
+    state.trash.push(card);
+    return triggerOnTrash(state, ownerIdx, card); // 城塞は手札へ戻り false／nomads等の副次効果も発動
   }
 
   // 条件に合う獲得可能なカードがサプライに1枚でもあるか
@@ -463,7 +468,7 @@
     if (cards.length !== want) return false;
     const copy = p.hand.slice();
     for (const c of cards) if (!removeOne(copy, c)) return false;
-    cards.forEach((c) => { removeOne(p.hand, c); state.trash.push(c); });
+    cards.forEach((c) => { removeOne(p.hand, c); trashCard(state, pIndex, c); });
     if (cards.length && note) log(state, `${p.name} は ${cards.length}枚 ${note}`);
     return true;
   }
@@ -581,7 +586,7 @@
       return;
     }
     const trashed = v.deck.shift();
-    state.trash.push(trashed);
+    trashCard(state, victim, trashed);
     log(state, `${v.name} は山札の上の「${C()[trashed].name}」を廃棄した。`);
     const cst = cardCost(state, trashed);
     if (anyGainable(state, (id) => cardCost(state, id) === cst)) {
@@ -619,7 +624,7 @@
     }
     setAside.forEach((c) => v.discard.push(c)); // $3未満の公開札は捨てる
     if (trashed) {
-      state.trash.push(trashed);
+      trashCard(state, victim, trashed);
       log(state, `${v.name} は山札の上から「${C()[trashed].name}」を廃棄した。`);
       const maxCost = Math.max(0, cardCost(state, trashed) - 2);
       state.pending = { type: 'saboteur', stage: 'gain', player: victim, source, victim, maxCost, queue };
@@ -951,7 +956,7 @@
     } else if (cands.length >= 1) {
       const trashed = cands[0];
       removeOne(revealed, trashed);
-      state.trash.push(trashed);
+      trashCard(state, victim, trashed);
       log(state, `${v.name} は「${C()[trashed].name}」を廃棄した（山賊）。`);
       revealed.forEach((c) => v.discard.push(c));
       banditEnterVictim(state, source, queue);
@@ -3099,7 +3104,7 @@
     const someoneElse = state.players.some((p, i) => i !== pIndex && (p.delayedEffects || []).some((e) => e.type === 'corsair'));
     if (!someoneElse) return;
     if (removeOne(state.players[pIndex].inPlay, card)) {
-      state.trash.push(card); t.corsairTrashed = true;
+      trashCard(state, pIndex, card); t.corsairTrashed = true;
       log(state, `${state.players[pIndex].name} は私掠船により「${C()[card].name}」を廃棄した。`);
     }
   }
@@ -3346,7 +3351,7 @@
         // 繁栄：造幣所を購入したとき、場の財宝をすべて廃棄する。
         if (card === 'mint') {
           const inPlayT = me.inPlay.filter((c) => DOM.isType(c, 'treasure'));
-          inPlayT.forEach((c) => { removeOne(me.inPlay, c); state.trash.push(c); });
+          inPlayT.forEach((c) => { removeOne(me.inPlay, c); trashCard(state, pi, c); });
           if (inPlayT.length) log(state, `${me.name} は造幣所の購入で場の財宝 ${inPlayT.length}枚 を廃棄した。`);
         }
         // ギルド：商人ギルドが場にある間、カードを購入するたびに財源(Coffers)を得る（場の枚数ぶん）。
@@ -3449,8 +3454,7 @@
         }
         const card = action.card;
         if (!DOM.isType(card, 'treasure') || p.hand.indexOf(card) < 0) return state;
-        removeOne(p.hand, card);
-        state.trash.push(card);
+        removeOne(p.hand, card); trashCard(state, pd.player, card);
         log(state, `${p.name} は「${C()[card].name}」を廃棄した。`);
         const mMax = cardCost(state, card) + 3;
         // 獲得できる財宝が無ければ選択待ちにせず終了（デッドロック回避）
@@ -3473,8 +3477,7 @@
         const p = state.players[pd.player];
         const card = action.card;
         if (p.hand.indexOf(card) < 0) return state;
-        removeOne(p.hand, card);
-        state.trash.push(card);
+        removeOne(p.hand, card); trashCard(state, pd.player, card);
         log(state, `${p.name} は「${C()[card].name}」を廃棄した。`);
         const rMax = cardCost(state, card) + 2;
         // 獲得できるカードが無ければ選択待ちにせず終了（デッドロック回避）
@@ -3776,7 +3779,7 @@
         // 選んだ財宝を廃棄、その他の公開札は犠牲者の捨て札へ
         const rest = pd.revealed.slice();
         const i = rest.indexOf(card); rest.splice(i, 1);
-        state.trash.push(card);
+        trashCard(state, pd.victim, card);
         rest.forEach((c) => v.discard.push(c));
         log(state, `${v.name} の「${C()[card].name}」を廃棄した（泥棒）。`);
         state.pending = { type: 'thief', stage: 'gain', player: pd.source, source: pd.source, victim: pd.victim, trashed: card, queue: pd.queue };
@@ -3807,7 +3810,7 @@
         if (!pd || pd.type !== 'moneylender') return state;
         const p = state.players[pd.player];
         if (action.trash && removeOne(p.hand, 'copper')) {
-          state.trash.push('copper');
+          trashCard(state, pd.player, 'copper');
           t.coins += 3;
           log(state, `${p.name} は銅貨を廃棄して +3 コイン（金貸し）。`);
         }
@@ -3835,7 +3838,7 @@
         const handCopy = p.hand.slice();
         for (const c of cards) if (!removeOne(handCopy, c)) return state; // 手札に無い指定は拒否
         let n = 0;
-        cards.forEach((c) => { if (removeOne(p.hand, c)) { state.trash.push(c); n++; } });
+        cards.forEach((c) => { if (removeOne(p.hand, c)) { trashCard(state, pd.player, c); n++; } });
         if (n) log(state, `${p.name} は手札 ${n}枚 を廃棄した（礼拝堂）。`);
         state.pending = null;
         return state;
@@ -3908,7 +3911,7 @@
         const card = action.card;
         if (card != null) {
           if (p.hand.indexOf(card) < 0) return state;
-          removeOne(p.hand, card); state.trash.push(card);
+          removeOne(p.hand, card); trashCard(state, pd.player, card);
           log(state, `${p.name} は「${C()[card].name}」を廃棄した。`);
         } else {
           log(state, `${p.name} は廃棄しなかった。`);
@@ -4007,8 +4010,7 @@
         const p = state.players[pd.player];
         const card = action.card;
         if (p.hand.indexOf(card) < 0) return state;
-        removeOne(p.hand, card);
-        state.trash.push(card);
+        removeOne(p.hand, card); trashCard(state, pd.player, card);
         log(state, `${p.name} は「${C()[card].name}」を廃棄した。`);
         const exact = cardCost(state, card) + 1;
         // ちょうど exact コストの獲得候補が無ければ獲得なしで終了（デッドロック回避）
@@ -4076,7 +4078,7 @@
         if (pd.cands.indexOf(card) < 0) return state;
         const rest = pd.revealed.slice();
         rest.splice(rest.indexOf(card), 1);
-        state.trash.push(card);
+        trashCard(state, pd.victim, card);
         rest.forEach((c) => v.discard.push(c));
         log(state, `${v.name} は「${C()[card].name}」を廃棄した（山賊）。`);
         banditEnterVictim(state, pd.source, pd.queue);
@@ -4093,7 +4095,7 @@
         const all = tr.concat(di, top).slice().sort();
         const want = pd.cards.slice().sort();
         if (all.length !== want.length || all.some((c, i) => c !== want[i])) return state; // 同じ多重集合のみ
-        tr.forEach((c) => state.trash.push(c));
+        tr.forEach((c) => trashCard(state, pd.player, c));
         di.forEach((c) => p.discard.push(c));
         for (let i = top.length - 1; i >= 0; i--) p.deck.unshift(top[i]); // top[0] が一番上
         if (tr.length) log(state, `${p.name} は ${tr.length}枚 廃棄した（衛兵）。`);
@@ -4254,8 +4256,7 @@
         const p = state.players[pd.player];
         const card = action.card;
         if (p.hand.indexOf(card) < 0) return state;
-        removeOne(p.hand, card);
-        state.trash.push(card);
+        removeOne(p.hand, card); trashCard(state, pd.player, card);
         log(state, `${p.name} は「${C()[card].name}」を廃棄した（身代わり）。`);
         const maxCost = cardCost(state, card) + 2;
         state.pending = anyGainable(state, (id) => cardCost(state, id) <= maxCost)
@@ -4358,8 +4359,7 @@
         const card = action.card;
         if (card == null) { governorEnterRemodel(state, pd.queue); return state; } // 廃棄しない
         if (p.hand.indexOf(card) < 0) return state;
-        removeOne(p.hand, card);
-        state.trash.push(card);
+        removeOne(p.hand, card); trashCard(state, pd.player, card);
         log(state, `${p.name} は「${C()[card].name}」を廃棄した（総督）。`);
         const exact = cardCost(state, card) + pd.delta;
         if (anyGainable(state, (id) => cardCost(state, id) === exact)) {
@@ -4390,8 +4390,7 @@
         const p = state.players[pd.player];
         const card = action.card;
         if (p.hand.indexOf(card) < 0) return state;
-        removeOne(p.hand, card);
-        state.trash.push(card);
+        removeOne(p.hand, card); trashCard(state, pd.player, card);
         log(state, `${p.name} は「${C()[card].name}」を廃棄した（取り壊し）。`);
         const c = cardCost(state, card);
         if (c >= 1) {
@@ -4528,7 +4527,7 @@
         if (action.card != null) {
           if (p.hand.indexOf(action.card) < 0) return state;
           removeOne(p.hand, action.card);
-          trashOwn(state, pd.player, action.card);
+          trashCard(state, pd.player, action.card);
           log(state, `${p.name} は「${C()[action.card].name}」を廃棄した（教会）。`);
         }
         popStartQueue(state); // 開始時キューの次へ（無ければ通常の手番へ）
@@ -4557,7 +4556,7 @@
         if (action.card == null) { state.pending = null; return state; } // 残り回数ぶんまとめて辞退
         if (p.hand.indexOf(action.card) < 0) return state;
         removeOne(p.hand, action.card);
-        trashOwn(state, pd.player, action.card);
+        trashCard(state, pd.player, action.card);
         log(state, `${p.name} は「${C()[action.card].name}」を廃棄した（サウナ）。`);
         pd.remaining = (pd.remaining || 1) - 1;
         if (pd.remaining <= 0 || p.hand.length === 0) state.pending = null; // 使い切り or 手札切れで終了
@@ -4622,7 +4621,7 @@
         if (card == null) { state.pending = null; return state; } // 廃棄しない（手札があるが任意ではないが安全に）
         if (p.hand.indexOf(card) < 0) return state;
         const gainCoins = cardCost(state, card);
-        removeOne(p.hand, card); state.trash.push(card);
+        removeOne(p.hand, card); trashCard(state, pd.player, card);
         t.coins += gainCoins;
         log(state, `${p.name} は「${C()[card].name}」を廃棄し +${gainCoins}コイン（引揚水夫）。`);
         state.pending = null;
@@ -4634,7 +4633,7 @@
         const card = action.card;
         if (pd.cards.indexOf(card) < 0) return state;
         const rest = pd.cards.slice(); removeOne(rest, card);
-        state.trash.push(card);
+        trashCard(state, pd.player, card);
         log(state, `${state.players[pd.player].name} は「${C()[card].name}」を廃棄した（見張り）。`);
         if (rest.length === 0) { state.pending = null; return state; }
         state.pending = { type: 'lookout', stage: 'discard', player: pd.player, cards: rest };
@@ -4764,7 +4763,7 @@
         const p = state.players[pd.player];
         const card = action.card;
         if (card != null && p.hand.indexOf(card) >= 0) {
-          removeOne(p.hand, card); state.trash.push(card);
+          removeOne(p.hand, card); trashCard(state, pd.player, card);
           log(state, `${p.name} は「${C()[card].name}」を廃棄した（船乗り）。`);
         }
         popStartQueue(state);
@@ -4811,7 +4810,7 @@
         const card = action.card;
         if (p.hand.indexOf(card) < 0) return state;
         removeOne(p.hand, card);
-        trashOwn(state, pd.player, card);
+        trashCard(state, pd.player, card);
         log(state, `${p.name} は「${C()[card].name}」を廃棄した（変成）。`);
         // 多重タイプは各該当ぶん獲得（例：大広間=アクション+勝利点→公領+金貨）。
         if (DOM.isType(card, 'action') && gain(state, pd.player, 'duchy', 'discard')) log(state, `${p.name} は公領を獲得した（変成）。`);
@@ -4888,7 +4887,7 @@
         const card = action.card;
         if (card == null || p.hand.indexOf(card) < 0) return state; // 手札があれば廃棄必須
         removeOne(p.hand, card);
-        trashOwn(state, pd.player, card);
+        trashCard(state, pd.player, card);
         const n = cardCost(state, card) + (potionCost(card) ? 2 : 0);
         draw(state, pd.player, n);
         log(state, `${p.name} は「${C()[card].name}」を廃棄して ${n}枚 引いた（徒弟）。`);
@@ -4949,7 +4948,7 @@
         const p = state.players[pd.player];
         const card = action.card;
         if (p.hand.indexOf(card) < 0) return state;
-        removeOne(p.hand, card); state.trash.push(card);
+        removeOne(p.hand, card); trashCard(state, pd.player, card);
         const add = Math.floor(cardCost(state, card) / 2);
         if (add) p.vpTokens = (p.vpTokens || 0) + add;
         log(state, `${p.name} は「${C()[card].name}」を廃棄し +${add}勝利点（司教）。`);
@@ -4965,7 +4964,7 @@
         const card = action.card; // null = 廃棄しない
         if (card != null) {
           if (v.hand.indexOf(card) < 0) return state;
-          removeOne(v.hand, card); state.trash.push(card);
+          removeOne(v.hand, card); trashCard(state, pd.player, card);
           log(state, `${v.name} は「${C()[card].name}」を廃棄した（司教）。`);
         }
         bishopOthersEnter(state, pd.queue);
@@ -5022,7 +5021,7 @@
         const p = state.players[pd.player];
         const card = action.card;
         if (p.hand.indexOf(card) < 0) return state;
-        removeOne(p.hand, card); state.trash.push(card);
+        removeOne(p.hand, card); trashCard(state, pd.player, card);
         const maxCost = cardCost(state, card) + 3;
         log(state, `${p.name} は「${C()[card].name}」を廃棄した（拡張）。`);
         if (anyGainable(state, (id) => cardCost(state, id) <= maxCost)) state.pending = { type: 'expand', stage: 'gain', player: pd.player, maxCost };
@@ -5048,7 +5047,7 @@
         for (const c of cards) if (!removeOne(copy, c)) return state;
         let total = 0;
         cards.forEach((c) => { total += cardCost(state, c); });
-        cards.forEach((c) => { removeOne(p.hand, c); state.trash.push(c); });
+        cards.forEach((c) => { removeOne(p.hand, c); trashCard(state, pd.player, c); });
         log(state, `${p.name} は溶鉱炉で ${cards.length}枚を廃棄（合計$${total}）。`);
         if (anyGainable(state, (id) => cardCost(state, id) === total)) state.pending = { type: 'forge', stage: 'gain', player: pd.player, exact: total };
         else { log(state, `${p.name} はちょうど$${total}のカードが無く、何も獲得しなかった（溶鉱炉）。`); state.pending = null; }
@@ -5110,7 +5109,7 @@
         const p = state.players[pd.player];
         const choice = action.choice; // 'trash' | 'topdeck' | 'keep'
         const zone = pd.dest === 'deck' ? p.deck : (pd.dest === 'hand' ? p.hand : p.discard);
-        if (choice === 'trash') { if (removeOne(zone, pd.card)) { state.trash.push(pd.card); log(state, `${p.name} は物見やぐらで「${C()[pd.card].name}」を廃棄した。`); } }
+        if (choice === 'trash') { if (removeOne(zone, pd.card)) { trashCard(state, pd.player, pd.card); log(state, `${p.name} は物見やぐらで「${C()[pd.card].name}」を廃棄した。`); } }
         else if (choice === 'topdeck') { if (removeOne(zone, pd.card)) { p.deck.unshift(pd.card); log(state, `${p.name} は物見やぐらで「${C()[pd.card].name}」を山札の上に置いた。`); } }
         state.pending = null;
         return state;
@@ -5194,7 +5193,7 @@
         const p = state.players[pd.player];
         const card = action.card;
         if (p.hand.indexOf(card) < 0 || !DOM.isType(card, 'treasure')) return state;
-        removeOne(p.hand, card); state.trash.push(card);
+        removeOne(p.hand, card); trashCard(state, pd.player, card);
         const add = new Set(p.inPlay.filter((c) => DOM.isType(c, 'treasure'))).size;
         if (add) p.vpTokens = (p.vpTokens || 0) + add;
         log(state, `${p.name} は投資で「${C()[card].name}」を廃棄し +${add}勝利点（場の財宝${add}種）。`);
@@ -5209,7 +5208,7 @@
         const choice = action.choice; // 'trash' | 'discard' | 'play' | 'keep'
         if (top !== pd.card) { state.pending = null; return state; } // 山札が変わっていたら何もしない
         state.pending = null;
-        if (choice === 'trash') { p.deck.shift(); state.trash.push(top); log(state, `${p.name} は水晶玉で「${C()[top].name}」を廃棄した。`); }
+        if (choice === 'trash') { p.deck.shift(); trashCard(state, pd.player, top); log(state, `${p.name} は水晶玉で「${C()[top].name}」を廃棄した。`); }
         else if (choice === 'discard') { p.deck.shift(); p.discard.push(top); log(state, `${p.name} は水晶玉で「${C()[top].name}」を捨てた。`); }
         else if (choice === 'play' && (DOM.isType(top, 'action') || DOM.isType(top, 'treasure'))) {
           p.deck.shift();
@@ -5276,7 +5275,7 @@
         if (!pd || pd.type !== 'remake' || pd.stage !== 'trash') return state;
         const p = state.players[pd.player];
         if (action.card == null || p.hand.indexOf(action.card) < 0) return state; // 廃棄は必須
-        removeOne(p.hand, action.card); state.trash.push(action.card);
+        removeOne(p.hand, action.card); trashCard(state, pd.player, action.card);
         log(state, `${p.name} は「${C()[action.card].name}」を廃棄した（リメイク）。`);
         const exact = cardCost(state, action.card) + 1;
         if (anyGainable(state, (id) => cardCost(state, id) === exact)) {
@@ -5489,7 +5488,7 @@
           log(state, `${pl.name} は医者の過払いで山札の上をそのままにした。`);
         } else {
           const c = pl.deck.shift();
-          if (choice === 'trash') { trashOwn(state, pd.player, c); log(state, `${pl.name} は医者の過払いで「${C()[c].name}」を廃棄した。`); }
+          if (choice === 'trash') { trashCard(state, pd.player, c); log(state, `${pl.name} は医者の過払いで「${C()[c].name}」を廃棄した。`); }
           else { pl.discard.push(c); log(state, `${pl.name} は医者の過払いで「${C()[c].name}」を捨てた。`); }
         }
         startDoctorOverpay(state, pd.player, pd.remaining - 1);
@@ -5516,7 +5515,7 @@
         const card = action.card;
         if (me.hand.indexOf(card) < 0) return state; // 廃棄は必須（手札に実在する札のみ）
         const cst = cardCost(state, card);
-        removeOne(me.hand, card); trashOwn(state, pi, card);
+        removeOne(me.hand, card); trashCard(state, pi, card);
         log(state, `${me.name} は石工で「${C()[card].name}」を廃棄した。`);
         if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) < cst)) {
           state.pending = { type: 'stonemason', stage: 'gain', player: pi, maxCost: cst, remaining: 2 };
@@ -5550,7 +5549,7 @@
         }
         if (look.length) reveal(state, pi, look, '医者で山札の上を公開');
         const rest = [];
-        look.forEach((c) => { if (c === named) { trashOwn(state, pi, c); } else rest.push(c); });
+        look.forEach((c) => { if (c === named) { trashCard(state, pi, c); } else rest.push(c); });
         const trashed = look.length - rest.length;
         if (trashed) log(state, `${me.name} は医者で「${C()[named].name}」を ${trashed}枚 廃棄した。`);
         if (rest.length >= 2) {
@@ -5609,7 +5608,7 @@
         if (card == null) { state.pending = null; return state; } // 廃棄しない＝何も起きない
         if (me.hand.indexOf(card) < 0 || !DOM.isType(card, 'treasure')) return state;
         const cst = cardCost(state, card);
-        removeOne(me.hand, card); trashOwn(state, pi, card);
+        removeOne(me.hand, card); trashCard(state, pi, card);
         log(state, `${me.name} は収税吏で「${C()[card].name}」を廃棄した。`);
         state.pending = { type: 'taxman', stage: 'gain', player: pi, trashedName: card, maxCost: cst + 3 };
         return state;
@@ -5649,7 +5648,7 @@
         if (card == null) { state.pending = null; return state; } // 廃棄しない
         if (me.hand.indexOf(card) < 0) return state;
         const cst = cardCost(state, card);
-        removeOne(me.hand, card); trashOwn(state, pi, card);
+        removeOne(me.hand, card); trashCard(state, pi, card);
         log(state, `${me.name} は肉屋で「${C()[card].name}」を廃棄した。`);
         state.pending = { type: 'butcher', stage: 'pay', player: pi, trashedCost: cst };
         return state;
@@ -5744,7 +5743,7 @@
         const pl = state.players[pd.player];
         const card = action.card;
         if (card == null || pl.hand.indexOf(card) < 0) return state; // 廃棄必須
-        removeOne(pl.hand, card); trashOwn(state, pd.player, card);
+        removeOne(pl.hand, card); trashCard(state, pd.player, card);
         log(state, `${pl.name} は「${C()[card].name}」を廃棄した（開発）。`);
         const cst = cardCost(state, card);
         developAdvance(state, pd.player, cst + 1, cst - 1, false, false);
@@ -5811,7 +5810,7 @@
         const card = action.card;
         if (card == null) { state.pending = null; return state; } // 廃棄しない（任意）
         if (pl.hand.indexOf(card) < 0 || DOM.isType(card, 'treasure')) return state; // 財宝でない札のみ
-        removeOne(pl.hand, card); trashOwn(state, pd.player, card);
+        removeOne(pl.hand, card); trashCard(state, pd.player, card);
         log(state, `${pl.name} は「${C()[card].name}」を廃棄した（何でも屋）。`);
         state.pending = null;
         return state;
@@ -5837,7 +5836,7 @@
         const card = action.card;
         if (card == null) { state.pending = null; return state; } // 廃棄しない＝効果なし
         if (pl.hand.indexOf(card) < 0 || !DOM.isType(card, 'treasure')) return state;
-        removeOne(pl.hand, card); trashOwn(state, pd.player, card);
+        removeOne(pl.hand, card); trashCard(state, pd.player, card);
         log(state, `${pl.name} は「${C()[card].name}」を廃棄した（香辛料商人）。`);
         state.pending = { type: 'spice_merchant', stage: 'choose', player: pd.player };
         return state;
@@ -5856,7 +5855,7 @@
         const pl = state.players[pd.player];
         const card = action.card;
         if (card == null || pl.hand.indexOf(card) < 0) return state; // 廃棄必須
-        removeOne(pl.hand, card); trashOwn(state, pd.player, card);
+        removeOne(pl.hand, card); trashCard(state, pd.player, card);
         const cst = cardCost(state, card);
         let g = 0; for (let i = 0; i < cst; i++) if (gain(state, pd.player, 'silver', 'discard')) g++;
         log(state, `${pl.name} は「${C()[card].name}」を廃棄し 銀貨 ${g}枚 を獲得した（交易商人）。`);
@@ -6015,7 +6014,7 @@
         if (cards.length > 2) return state; // 最大2枚
         const copy = pl.hand.slice();
         for (const c of cards) if (!removeOne(copy, c)) return state;
-        cards.forEach((c) => { removeOne(pl.hand, c); trashOwn(state, pd.player, c); });
+        cards.forEach((c) => { removeOne(pl.hand, c); trashCard(state, pd.player, c); });
         if (cards.length) log(state, `${pl.name} はスークの獲得で 手札 ${cards.length}枚 を廃棄した。`);
         state.pending = null;
         return state;
@@ -6142,7 +6141,7 @@
         const pl = state.players[pd.player];
         const card = action.card;
         if (card == null || pl.hand.indexOf(card) < 0) return state; // 廃棄必須（購入時）
-        removeOne(pl.hand, card); trashOwn(state, pd.player, card);
+        removeOne(pl.hand, card); trashCard(state, pd.player, card);
         const exact = cardCost(state, card) + 2;
         log(state, `${pl.name} は「${C()[card].name}」を廃棄した（農地）。`);
         if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) === exact)) {
@@ -6178,7 +6177,7 @@
         if (!pd || pd.type !== 'fools_gold_react') return state;
         const pl = state.players[pd.player];
         if (action.trash && pl.hand.includes('fools_gold')) {
-          removeOne(pl.hand, 'fools_gold'); trashOwn(state, pd.player, 'fools_gold');
+          removeOne(pl.hand, 'fools_gold'); trashCard(state, pd.player, 'fools_gold');
           gain(state, pd.player, 'gold', 'deck');
           log(state, `${pl.name} は愚者の黄金を廃棄し、金貨1枚を山札の上に獲得した。`);
         }
