@@ -344,6 +344,62 @@ console.log('=== 暗黒時代: 騎士（混合山アタック）===');
   ok(count(s.trash, 'market') === 0 && s.turn.coins === 2, '騎士: 堀で相手は完全免疫（廃棄されない）');
 }
 
+/* ============ 敵対レビュー確定バグの回帰 ============ */
+console.log('=== 暗黒時代: リアクション/命令/財宝の回帰（敵対レビュー修正）===');
+{
+  // 青空市場 on-trashリアクション：自分のカードが廃棄されたら手札の青空市場を捨てて金貨を獲得
+  let s = setup(['market_square', 'chapel', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel'], ['chapel', 'market_square', 'copper'], ['copper', 'copper']);
+  s = play(s, 'chapel');
+  s = reduce(s, { type: 'CHAPEL_RESOLVE', cards: ['copper'] });
+  s = drive(s);
+  ok(count(s.players[0].discard, 'market_square') === 1 && count(s.players[0].discard, 'gold') === 1, '青空市場: 廃棄に反応して捨て→金貨を獲得');
+
+  // 納屋 on-gainリアクション：勝利点を購入したら手札の納屋を廃棄できる
+  s = setup(['catacombs', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel', 'armory'], [], []);
+  s.players[0].hand = ['hovel']; s.turn.phase = 'buy'; s.turn.coins = 2; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'estate' });
+  s = drive(s);
+  ok(count(s.trash, 'hovel') === 1 && count(s.players[0].hand, 'hovel') === 0, '納屋: 勝利点獲得に反応して廃棄（圧縮）');
+
+  // 物乞い アタックリアクション：被弾時に捨てて銀貨2枚（免疫にはならない）
+  s = setup(['market_square', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel', 'armory'], ['militia'], ['copper'], { p1hand: ['beggar', 'copper', 'copper', 'copper', 'estate'] });
+  s = play(s, 'militia');
+  s = drive(s);
+  ok(count(s.players[1].discard, 'beggar') === 1 && count(s.players[1].discard, 'silver') + count(s.players[1].deck, 'silver') === 2, '物乞い: 被弾時に捨てて銀貨2枚（1枚は山札の上）');
+  ok(s.players[1].hand.length === 3, '物乞い: 免疫にはならず民兵の手札削りは受ける');
+
+  // はみだし者：騎士の混合山は対象に出さない（sir_martinが一番上でも）
+  s = mk(['band_of_misfits', 'knights', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel']);
+  s.knights.unshift('sir_martin'); s.knights = ['sir_martin'].concat(s.knights.filter((c, i) => c !== 'sir_martin' || i > 0)); // 先頭を sir_martin に
+  ok(!E.bandOfMisfitsTargets(s).includes('knights'), 'はみだし者: 騎士の山は対象外（無効果の死に選択肢を出さない）');
+
+  // 偽造通貨×偽造通貨：2回目の+1購入も付く（合計+2購入ぶん）
+  s = setup(['counterfeit', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel', 'armory'], [], []);
+  s.turn.phase = 'buy'; s.turn.coins = 0; s.turn.buys = 1;
+  s.players[0].hand = ['counterfeit', 'counterfeit'];
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'counterfeit' });
+  s = reduce(s, { type: 'COUNTERFEIT_PLAY', card: 'counterfeit' });
+  s = drive(s);
+  ok(s.turn.buys === 4, '偽造通貨×偽造通貨: +購入が正しく3つ（開始1＋外+1＋内1回目+1＋内2回目+1）');
+
+  // 傭兵：手札1枚でも廃棄選択できる（効果は不発）
+  s = setup(['urchin', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel', 'armory'], ['mercenary', 'copper'], ['gold', 'gold']);
+  s.supply.mercenary = 10;
+  s = play(s, 'mercenary'); // 手札は copper 1枚
+  s = reduce(s, { type: 'MERCENARY_TRASH', cards: ['copper'] });
+  ok(count(s.trash, 'copper') === 1 && s.turn.coins === 0 && s.players[0].hand.length === 0, '傭兵: 1枚だけ廃棄（効果は不発＝+2カード+$2なし）');
+
+  // はみだし者で使った死の荷車の「自身を廃棄」は不発（場の本物の死の荷車を巻き込まない）
+  s = setup(['band_of_misfits', 'death_cart', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel'], ['band_of_misfits', 'death_cart'], ['copper']);
+  s.turn.actions = 2;
+  s = play(s, 'death_cart');
+  s = reduce(s, { type: 'DEATH_CART_RESOLVE', mode: 'none' }); // 本物の死の荷車を場に残す
+  s = play(s, 'band_of_misfits');
+  s = reduce(s, { type: 'BAND_OF_MISFITS_PLAY', card: 'death_cart' });
+  s = reduce(s, { type: 'DEATH_CART_RESOLVE', mode: 'this' }); // 自身廃棄（はみだし者コピー）
+  ok(count(s.players[0].inPlay, 'death_cart') === 1 && count(s.trash, 'death_cart') === 0 && s.turn.coins === 0, 'はみだし者×死の荷車: 自身廃棄は不発（本物を巻き込まず+$5も出ない）');
+}
+
 /* ============ CPU通し・カード保存則 ============ */
 console.log('=== 暗黒時代: CPU通し・カード保存則 ===');
 {

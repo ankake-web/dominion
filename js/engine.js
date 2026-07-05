@@ -746,6 +746,7 @@
     return player.hand.includes('moat') || player.hand.includes('secret_chamber') ||
       player.hand.includes('horse_traders') || // 収穫祭：馬商人（脇に置いて次手番に+1カードで戻す。免疫にはならない）
       player.hand.includes('guard_dog') || // 異郷：番犬（相手のアタック時に手札から先に使ってよい。免疫にはならない）
+      player.hand.includes('beggar') || // 暗黒時代：物乞い（捨てて銀貨2枚を獲得。免疫にはならない）
       (player.hand.includes('diplomat') && player.hand.length >= 5);
   }
   // 秘密の小部屋のリアクションを差し込める「被攻撃側の反応ステップ」か。
@@ -984,6 +985,17 @@
     const q = pd.queue || [];
     if (q.length) state.pending = { type: 'discard_down', player: q[0], source: pd.source, down: pd.down, queue: q.slice(1), next: pd.next || null };
     else discardDownDone(state, pd.source, pd.next);
+  }
+  // 暗黒時代：浮浪児＝場に浮浪児がある状態で「別の」アタックをプレイしたとき、その解決前に
+  //   場の浮浪児を廃棄して傭兵を獲得してよい。true を返したら card の効果適用は URCHIN_TRASH 後に遅延する。
+  function maybeUrchinTrap(state, card, pi) {
+    const p = state.players[pi];
+    const priorUrchins = p.inPlay.filter((c) => c === 'urchin').length - (card === 'urchin' ? 1 : 0);
+    if (DOM.isType(card, 'attack') && priorUrchins > 0 && (state.supply.mercenary || 0) > 0) {
+      state.pending = { type: 'urchin_trash', player: pi, deferred: card };
+      return true;
+    }
+    return false;
   }
   function discardDownDone(state, source, next) {
     if (next && next.indexOf('knight:') === 0) startKnightAttack(state, source, next.slice('knight:'.length));
@@ -1804,7 +1816,7 @@
     return Object.keys(state.supply).filter((id) =>
       (state.supply[id] || 0) > 0 && !NON_SUPPLY.has(id) && C()[id] &&
       DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && !DOM.isType(id, 'command') &&
-      !C()[id].potion && cardCost(state, id) <= 4 &&
+      !C()[id].potion && cardCost(state, id) <= 4 && id !== 'knights' && // 騎士の混合山は対象外（applyEffect未定義。船長×騎士は出荷セットで同居しないが将来の混成に備え除外）
       !(id === 'avanto' && (state.supply.sauna || 0) > 0));
   }
   function anyCaptainTarget(state) { return captainTargets(state).length > 0; }
@@ -1816,7 +1828,7 @@
     return Object.keys(state.supply).filter((id) =>
       (state.supply[id] || 0) > 0 && !NON_SUPPLY.has(id) && C()[id] &&
       DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && !DOM.isType(id, 'command') &&
-      !C()[id].potion && cardCost(state, id) < mx &&
+      !C()[id].potion && cardCost(state, id) < mx && id !== 'knights' && // 騎士の混合山は対象外（applyEffect未定義＝無効果の死に選択肢になる。持続除外と同じ簡略化）
       !(id === 'avanto' && (state.supply.sauna || 0) > 0));
   }
 
@@ -2536,8 +2548,8 @@
         discardDownEnter(state, pi, 4, others);
         break;
       }
-      case 'mercenary': // 手札からちょうど2枚廃棄してよい→+2カード +$2＋各相手が手札3枚まで捨てる
-        if (p.hand.length >= 2) state.pending = { type: 'mercenary', stage: 'trash', player: pi };
+      case 'mercenary': // 手札からちょうど2枚廃棄してよい→+2カード +$2＋各相手が手札3枚まで捨てる（1枚しかなくても廃棄選択は可・効果は不発）
+        if (p.hand.length >= 1) state.pending = { type: 'mercenary', stage: 'trash', player: pi };
         break;
       // 騎士10種（混合山アタック）＝共通アタックの前に各自の追加効果。
       case 'dame_josephine': startKnightAttack(state, pi, 'dame_josephine'); break; // 2VPは vpOf 自動
@@ -3495,6 +3507,12 @@
     if (DOM.isType(cardId, 'treasure') && state._gainDepth === 1 && !state.pending) {
       pirateReactWindow(state, pIndex);
     }
+    // 暗黒時代：納屋（避難所・リアクション）＝勝利点カードを獲得したとき、手札の納屋を廃棄してよい（圧縮）。
+    //   主用途＝自分の手番に属州/公領/屋敷を購入したとき（トップレベル獲得・他の対話が無いとき）。
+    if (DOM.isType(cardId, 'victory') && state.turn && pIndex === state.turn.active &&
+        state._gainDepth === 1 && !state.pending && gp.hand.includes('hovel')) {
+      state.pending = { type: 'hovel_react', player: pIndex };
+    }
     state._gainDepth--;
   }
   /* ---------- 異郷：捨て札にしたとき／廃棄したときのフック ---------- */
@@ -3572,6 +3590,11 @@
     // 暗黒時代：狩場＝廃棄されたとき、公領1枚 or 屋敷3枚 を選んで獲得（対話＝onTrashQueue へ）。
     if (card === 'hunting_grounds') {
       (state.onTrashQueue = state.onTrashQueue || []).push({ type: 'hunting_grounds_trash', player: pIndex });
+    }
+    // 暗黒時代：青空市場（リアクション）＝自分のカードが廃棄されたとき、手札の青空市場を捨てて金貨を獲得してよい
+    //   （誰のターンでも・相手のアタックでの廃棄でも発動。1廃棄に複数枚反応可）。対話＝onTrashQueue へ。
+    if (p.hand.includes('market_square') && (state.supply.gold || 0) > 0) {
+      (state.onTrashQueue = state.onTrashQueue || []).push({ type: 'market_square_react', player: pIndex });
     }
     return true;
   }
@@ -3816,13 +3839,8 @@
         t.actions -= 1;
         t.actionsPlayed = (t.actionsPlayed || 0) + 1; // 共謀者の判定用（このターンに使ったアクション数）
         log(state, `${me.name} は「${C()[card].name}」を使った。`);
-        // 暗黒時代：浮浪児＝場に浮浪児がある状態で「別の」アタックをプレイしたとき、その解決前に
-        //   場の浮浪児を廃棄して傭兵を獲得してよい（傭兵山が空なら意味が無いので提示しない）。
-        const priorUrchins = me.inPlay.filter((c) => c === 'urchin').length - (card === 'urchin' ? 1 : 0);
-        if (DOM.isType(card, 'attack') && priorUrchins > 0 && (state.supply.mercenary || 0) > 0) {
-          state.pending = { type: 'urchin_trash', player: pi, deferred: card }; // 効果は URCHIN_TRASH 解決後に適用
-          return state;
-        }
+        // 暗黒時代：浮浪児＝別アタックのプレイ時に場の浮浪児を廃棄→傭兵。効果は URCHIN_TRASH 解決後に適用。
+        if (maybeUrchinTrap(state, card, pi)) return state;
         applyEffect(state, card, pi);
         return state;
       }
@@ -5464,7 +5482,9 @@
         if (!pd || pd.type !== 'death_cart') return state;
         const p = state.players[pd.player];
         if (action.mode === 'this') {
-          if (removeOne(p.inPlay, 'death_cart')) { trashCard(state, pd.player, 'death_cart'); t.coins += 5; log(state, `${p.name} は死の荷車を廃棄した（+$5）。`); }
+          // はみだし者でサプライに残したままプレイした死の荷車は「これ」が場に無い＝自身の廃棄は不発（+$0・lose-track）。
+          // 場に別の（本物の）死の荷車があってもそれは対象外＝fromCommand なら何もしない。
+          if (!pd.fromCommand && removeOne(p.inPlay, 'death_cart')) { trashCard(state, pd.player, 'death_cart'); t.coins += 5; log(state, `${p.name} は死の荷車を廃棄した（+$5）。`); }
         } else if (action.mode === 'hand') {
           const card = action.card;
           if (card == null || p.hand.indexOf(card) < 0 || !DOM.isType(card, 'action')) return state;
@@ -5485,6 +5505,8 @@
         t.actionsPlayed = (t.actionsPlayed || 0) + 1; // 使用に数えるがカードはサプライに残る
         log(state, `${state.players[pd.player].name} ははみだし者でサプライの「${C()[card].name}」を使った（サプライに残る）。`);
         applyEffect(state, card, pd.player);
+        // 死の荷車をサプライに残したままプレイした場合＝「これ」の自己廃棄は不発（fromCommand で印付け）。
+        if (card === 'death_cart' && state.pending && state.pending.type === 'death_cart') state.pending.fromCommand = true;
         return state;
       }
       case 'HERMIT_TRASH': {
@@ -5542,7 +5564,7 @@
         if (card != null && p.hand.indexOf(card) >= 0 && DOM.isType(card, 'treasure') && !DOM.isType(card, 'duration')) {
           playTreasureCard(state, pd.player, card); // 1回目（移動＋効果。戦利品は山へ戻る）
           const add = treasureReplayCoins(state, pd.player, card); // 2回目のコイン
-          if (card === 'collection') t.buys += 1; // 2回目の+1購入（安全な副次効果のみ）
+          if (card === 'collection' || card === 'counterfeit') t.buys += 1; // 2回目の+1購入（+購入を持つ財宝の安全な副次効果）
           log(state, `${p.name} は偽造通貨で「${C()[card].name}」を2回使った（+${add}コイン）。`);
           if (removeOne(p.inPlay, card)) { trashCard(state, pd.player, card); log(state, `${p.name} は偽造通貨で「${C()[card].name}」を廃棄した。`); }
           // 対象が自己移動していれば（戦利品が山へ戻る等）廃棄は不発（lose track）。
@@ -5573,7 +5595,8 @@
           t.actionsPlayed = (t.actionsPlayed || 0) + 1; // アクション権は消費しない（連鎖は無料）
           state.pending = null;
           log(state, `${p.name} は狂信者を連鎖して使った（アクション消費なし）。`);
-          applyEffect(state, 'cultist', pd.player);
+          // 浮浪児トリガー：連鎖した狂信者も「別アタックのプレイ」＝場の浮浪児を廃棄→傭兵の機会（効果は後で適用）。
+          if (!maybeUrchinTrap(state, 'cultist', pd.player)) applyEffect(state, 'cultist', pd.player);
         } else { state.pending = null; }
         return state;
       }
@@ -5647,11 +5670,12 @@
         const p = state.players[pd.player];
         const cards = Array.isArray(action.cards) ? action.cards : [];
         if (cards.length === 0) { state.pending = null; return state; } // 廃棄しない＝何も起きない
-        if (cards.length !== 2) return state; // ちょうど2枚のみ有効
+        if (cards.length > 2) return state; // 最大2枚
         const copy = p.hand.slice();
         for (const c of cards) if (!removeOne(copy, c)) return state;
         cards.forEach((c) => { removeOne(p.hand, c); trashCard(state, pd.player, c); });
-        log(state, `${p.name} は傭兵で手札2枚を廃棄した。`);
+        log(state, `${p.name} は傭兵で手札${cards.length}枚を廃棄した。`);
+        if (cards.length < 2) { state.pending = null; return state; } // ちょうど2枚でなければ「If you did」不成立＝効果なし
         // If you did：+2カード +$2、各相手が手札3枚まで捨てる
         draw(state, pd.player, 2); t.coins += 2;
         const others = [];
@@ -7168,6 +7192,45 @@
         log(state, `${pl.name} は番犬を先に使った（+2カード${extra ? '、さらに+2カード' : ''}）。`);
         return state; // pending 据え置き＝この後さらに堀公開/受けるを選べる
       }
+      case 'BEGGAR_REACT': {
+        // 暗黒時代：他プレイヤーがアタックを使ったとき、手札の物乞いを捨てて銀貨2枚を獲得（1枚は山札の上・免疫にはならない）。
+        const pd = state.pending;
+        if (!pd || !isAttackReactPending(pd)) return state;
+        const p = state.players[pd.player];
+        if (!removeOne(p.hand, 'beggar')) return state;
+        p.discard.push('beggar');
+        let g = 0;
+        if (gain(state, pd.player, 'silver', 'deck')) g++;      // 1枚目は山札の上
+        if (gain(state, pd.player, 'silver', 'discard')) g++;   // 2枚目は捨て札
+        log(state, `${p.name} は物乞いを捨てて銀貨${g}枚を獲得した（1枚は山札の上）。`);
+        return state; // pending 据え置き＝この後さらに堀公開/受けるを選べる
+      }
+      case 'MARKET_SQUARE_REACT': {
+        // 暗黒時代：青空市場（on-trashリアクション）＝手札の青空市場を捨てて金貨を獲得してよい。1廃棄に複数枚反応可。
+        const pd = state.pending;
+        if (!pd || pd.type !== 'market_square_react') return state;
+        const p = state.players[pd.player];
+        if (action.discard && removeOne(p.hand, 'market_square')) {
+          p.discard.push('market_square');
+          if (gain(state, pd.player, 'gold', 'discard')) log(state, `${p.name} は青空市場を捨てて金貨を獲得した。`);
+        }
+        // まだ手札に青空市場があり金貨も残っていれば、もう1枚反応できる
+        state.pending = (action.discard && p.hand.includes('market_square') && (state.supply.gold || 0) > 0)
+          ? { type: 'market_square_react', player: pd.player } : null;
+        return state;
+      }
+      case 'HOVEL_REACT': {
+        // 暗黒時代：納屋（避難所・on-gainリアクション）＝勝利点を獲得したとき、手札の納屋を廃棄してよい（圧縮）。
+        const pd = state.pending;
+        if (!pd || pd.type !== 'hovel_react') return state;
+        const p = state.players[pd.player];
+        if (action.trash && removeOne(p.hand, 'hovel')) {
+          trashCard(state, pd.player, 'hovel');
+          log(state, `${p.name} は納屋を廃棄した（勝利点獲得）。`);
+        }
+        state.pending = (action.trash && p.hand.includes('hovel')) ? { type: 'hovel_react', player: pd.player } : null;
+        return state;
+      }
       case 'BERSERKER_GAIN': {
         const pd = state.pending;
         if (!pd || pd.type !== 'berserker' || pd.stage !== 'gain') return state;
@@ -7464,6 +7527,7 @@
     'MARAUDER_REACT', 'CULTIST_REACT', 'CULTIST_CHAIN', 'PILLAGE_REACT', 'PILLAGE_PICK',
     'ROGUE_REACT', 'ROGUE_PICK', 'ROGUE_GAIN_FROM_TRASH', 'DISCARD_DOWN_RESOLVE', 'MERCENARY_TRASH', 'URCHIN_TRASH',
     'KNIGHT_REACT', 'KNIGHT_PICK', 'DAME_ANNA_TRASH', 'DAME_NATALIE_GAIN',
+    'BEGGAR_REACT', 'MARKET_SQUARE_REACT', 'HOVEL_REACT',
     // 海辺（第二版）
     'WAREHOUSE_DISCARD', 'HAVEN_SETASIDE', 'TACTICIAN_RESOLVE', 'SALVAGER_TRASH',
     'LOOKOUT_TRASH', 'LOOKOUT_DISCARD', 'ISLAND_PICK', 'NATIVE_VILLAGE_RESOLVE', 'TIDE_POOLS_DISCARD',

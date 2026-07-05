@@ -170,6 +170,25 @@ try {
   ok(modalOk() && byText('*', 'デイム・アンナ'), 'dame_anna_trash モーダル');
   showPend({ type: 'dame_natalie_gain', player: 0 });
   ok(modalOk() && byText('*', 'デイム・ナタリー'), 'dame_natalie_gain モーダル');
+
+  console.log('=== リアクション（青空市場/納屋/物乞い）pending モーダル ===');
+  showPend({ type: 'market_square_react', player: 0 });
+  ok(modalOk() && byText('*', '青空市場'), 'market_square_react モーダル');
+  showPend({ type: 'hovel_react', player: 0 });
+  ok(modalOk() && byText('*', '納屋'), 'hovel_react モーダル');
+  // 物乞いは reactOptions に出る（marauder の react 窓で beggar を持つ）
+  showPend({ type: 'marauder', stage: 'react', player: 0, source: 1, victim: 0, queue: [] }, (s) => { s.players[0].hand = ['beggar', 'copper']; });
+  ok(modalOk() && byText('button', '物乞い'), '物乞いリアクションが反応窓に出る');
+
+  console.log('=== 廃墟の山の盤面表示 ===');
+  {
+    const s = mk();
+    s.turn.phase = 'buy';
+    showAs(s, 0);
+    // K に cultist(Looter)を含むので state.ruins が存在→盤面に「廃墟の山」が出る
+    ok(Array.isArray(s.ruins) && s.ruins.length > 0, 'Looterありで state.ruins が用意される');
+    ok(!runtimeError && byText('.sup-title', '廃墟の山'), '盤面に廃墟の山セクションが描画される');
+  }
 } catch (e) {
   fail++;
   console.log('  ✗ EXCEPTION: ' + e.message + '\n' + (e.stack || '').split('\n').slice(0, 4).join('\n'));

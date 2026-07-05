@@ -243,6 +243,19 @@
     );
   }
 
+  // 暗黒時代：廃墟の山（混合山・購入不可）。一番上の実廃墟の絵/名前と残枚数を表示（クリック不可）。
+  function ruinsPileEl(state) {
+    const top = state.ruins[0];
+    const c = DOM.CARDS[top] || { name: '廃墟', cost: 0 };
+    const n = state.ruins.length;
+    return h('div', { class: 'pile has-art sm ' + typeClass(top) + (n <= 0 ? ' empty' : ''),
+      'aria-label': c.name + '（廃墟の山の一番上）、残り' + n + '枚' },
+      h('div', { class: 'pcost' }, 0),
+      h('div', { class: 'pname' }, c.name),
+      cardArt(top),
+      h('div', { class: 'pile-count' + (n <= 2 ? ' lo' : n <= 5 ? ' mid' : '') }, '残' + n));
+  }
+
   /* ---------- 共通操作 ---------- */
   function go(view) { UI.view = view; UI.sheet = null; UI.logModal = false; UI.revealView = null; render(); }
   function dispatch(action) { UI.sheet = null; UI.store.dispatch(action); }
@@ -845,12 +858,18 @@
     const treasureRow = (state.supply.platinum != null ? DOM.TREASURES.concat(['platinum']) : DOM.TREASURES)
       .concat(state.supply.potion != null ? ['potion'] : []);
     const victoryRow = (state.supply.colony != null ? DOM.VICTORY.concat(['colony']) : DOM.VICTORY).concat(['curse']);
+    // 暗黒時代：廃墟の山（Looterがある時のみ・購入不可＝獲得専用）。一番上の実廃墟と残枚数を表示する。
+    const ruinsPile = (Array.isArray(state.ruins) && state.ruins.length > 0)
+      ? h('div', { class: 'supply-section' }, h('div', { class: 'sup-title' }, '廃墟の山（獲得専用）'),
+          h('div', { class: 'supply-grid small' }, ruinsPileEl(state)))
+      : null;
     const supply = h('div', null,
       // 財宝・勝利点は基本カード。デスクトップでは横並びにして縦スペースを節約。
       h('div', { class: 'supply-basics' },
         supSection('財宝', treasureRow, 'small'),
         supSection('勝利点', victoryRow, 'small')),
-      supSection('王国カード（アクション）', kingdomByCost, 'big'));
+      supSection('王国カード（アクション）', kingdomByCost, 'big'),
+      ruinsPile);
 
     // 場（プレイ済み）＋持続カード（⏳付き・場に残る）＋王子の脇（👑・毎ターン開始時に使用）
     const inPlayChips = active.inPlay.map((id) => h('div', { class: 'chip-card ' + typeClass(id) + coinClass(id) }, DOM.CARDS[id].name));
@@ -1561,6 +1580,13 @@
     if (pd.type === 'knight' && pd.stage === 'pick') return modalOptions('騎士 — 廃棄するカード', '公開した2枚のうち、廃棄する1枚を選びます（騎士を廃棄すると相手の騎士も廃棄されます）。', (pd.trashable || []).map((c) => ({ label: DOM.CARDS[c].name, on: () => dispatch({ type: 'KNIGHT_PICK', card: c }) })));
     if (pd.type === 'dame_anna_trash') return modalMultiHand(p, 'デイム・アンナ — 廃棄', '手札から最大2枚を廃棄できます（0枚でもOK）。', (n) => '確定（' + n + '枚 廃棄）', true, (cards) => dispatch({ type: 'DAME_ANNA_TRASH', cards }), 2);
     if (pd.type === 'dame_natalie_gain') return modalGainSupply(state, 'デイム・ナタリー — 獲得（任意）', 'コスト3以下のカードを1枚獲得できます（しなくてもよい）。', (id) => effCost(state, id) <= 3, (id) => dispatch({ type: 'DAME_NATALIE_GAIN', card: id }), () => dispatch({ type: 'DAME_NATALIE_GAIN', card: null }), true);
+    // リアクション（青空市場＝廃棄時に金貨／納屋＝勝利点獲得時に廃棄）
+    if (pd.type === 'market_square_react') return modalOptions('青空市場 — リアクション', 'あなたのカードが廃棄されました。手札の青空市場を捨てて金貨1枚を獲得できます。', [
+      { label: '青空市場を捨てて金貨を獲得', cls: 'btn-primary', on: () => dispatch({ type: 'MARKET_SQUARE_REACT', discard: true }) },
+      { label: 'しない', on: () => dispatch({ type: 'MARKET_SQUARE_REACT', discard: false }) }]);
+    if (pd.type === 'hovel_react') return modalOptions('納屋 — リアクション', '勝利点カードを獲得しました。手札の納屋を廃棄できます（圧縮）。', [
+      { label: '納屋を廃棄する', cls: 'btn-primary', on: () => dispatch({ type: 'HOVEL_REACT', trash: true }) },
+      { label: 'しない', on: () => dispatch({ type: 'HOVEL_REACT', trash: false }) }]);
 
     return h('div');
   }
@@ -1577,6 +1603,7 @@
     if (canDiplomatReact(p, pd)) opts.push({ label: '🤝 外交官を公開（+2引いて3枚捨てる）', on: () => dispatch({ type: 'DIPLOMAT_REVEAL' }) });
     if (p.hand.includes('horse_traders')) opts.push({ label: '🐴 馬商人を脇に置く（次の手番に +1カードで戻る／攻撃は受ける）', on: () => dispatch({ type: 'HORSE_TRADERS_REACT' }) });
     if (p.hand.includes('guard_dog')) opts.push({ label: '🐕 番犬を先に使う（+2〜4カード／攻撃は受ける）', on: () => dispatch({ type: 'GUARD_DOG_REACT' }) });
+    if (p.hand.includes('beggar')) opts.push({ label: '🥺 物乞いを捨てて銀貨2枚を獲得（1枚は山札の上／攻撃は受ける）', on: () => dispatch({ type: 'BEGGAR_REACT' }) });
     opts.push({ label: 'そのまま受ける', on: () => dispatch(proceed) });
     return opts;
   }
@@ -1632,6 +1659,7 @@
     const footer = h('div', null,
       hasMoat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'MOAT_REVEAL' }) }, '🛡 堀を公開して無効化') : null,
       p.hand.includes('horse_traders') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'HORSE_TRADERS_REACT' }) }, '🐴 馬商人を脇に置く（次の手番に +1カードで戻る／攻撃は受ける）') : null,
+      p.hand.includes('beggar') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'BEGGAR_REACT' }) }, '🥺 物乞いを捨てて銀貨2枚を獲得（1枚は山札の上／攻撃は受ける）') : null,
       p.hand.includes('guard_dog') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'GUARD_DOG_REACT' }) }, '🐕 番犬を先に使う（+2〜4カード／攻撃は受ける）') : null,
       h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
         onclick: () => dispatch({ type: 'DISCARD_DOWN_RESOLVE', cards: UI.selection.map((i) => p.hand[i]) }) },
@@ -1645,11 +1673,11 @@
         onClick: () => { const i = UI.selection.indexOf(idx); if (i >= 0) UI.selection.splice(i, 1); else if (UI.selection.length < 2) UI.selection.push(idx); render(); } }));
     const k = UI.selection.length;
     const footer = h('div', null,
-      h('button', { class: 'btn btn-primary btn-block', disabled: k === 2 ? null : 'disabled', style: 'margin-bottom:8px',
+      h('button', { class: 'btn btn-primary btn-block', disabled: k >= 1 ? null : 'disabled', style: 'margin-bottom:8px',
         onclick: () => dispatch({ type: 'MERCENARY_TRASH', cards: UI.selection.map((i) => p.hand[i]) }) },
-        k === 2 ? '2枚廃棄（+2カード +$2＋アタック）' : '廃棄する2枚を選ぶ（あと ' + (2 - k) + '）'),
+        k === 2 ? '2枚廃棄（+2カード +$2＋アタック）' : (k === 1 ? '1枚だけ廃棄（効果は不発）' : '廃棄する2枚を選ぶ')),
       h('button', { class: 'btn btn-block', onclick: () => dispatch({ type: 'MERCENARY_TRASH', cards: [] }) }, '廃棄しない'));
-    return modalShell('傭兵 — 廃棄', '手札からちょうど2枚を廃棄すると +2カード +$2、各相手が手札3枚まで捨てます（しなくてもよい）。', chips, footer);
+    return modalShell('傭兵 — 廃棄', '手札からちょうど2枚を廃棄すると +2カード +$2、各相手が手札3枚まで捨てます（1枚だけの廃棄も可・その場合は効果なし・しなくてもよい）。', chips, footer);
   }
   // 手札から n 枚をタップ順に選ぶ（秘密の小部屋の戻し）。最初のタップが一番上。
   function modalSelectN(p, title, desc, n, confirmLabel, onConfirm) {
@@ -1717,6 +1745,7 @@
       hasSecret ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'SECRET_CHAMBER_REVEAL' }) }, '🔮 秘密の小部屋を公開（+2引いて2枚戻す）') : null,
       hasDiplomat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'DIPLOMAT_REVEAL' }) }, '🤝 外交官を公開（+2引いて3枚捨てる）') : null,
       p.hand.includes('horse_traders') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'HORSE_TRADERS_REACT' }) }, '🐴 馬商人を脇に置く（次の手番に +1カードで戻る／攻撃は受ける）') : null,
+      p.hand.includes('beggar') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'BEGGAR_REACT' }) }, '🥺 物乞いを捨てて銀貨2枚を獲得（1枚は山札の上／攻撃は受ける）') : null,
       h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
         onclick: () => dispatch({ type: 'MILITIA_RESOLVE', cards: UI.selection.map((i) => p.hand[i]) }) },
         remain === 0 ? '確定（捨てる）' : 'あと ' + remain + ' 枚 選ぶ'));
@@ -1882,6 +1911,7 @@
       hasSecret ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'SECRET_CHAMBER_REVEAL' }) }, '🔮 秘密の小部屋を公開（+2引いて2枚戻す）') : null,
       hasDiplomat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'DIPLOMAT_REVEAL' }) }, '🤝 外交官を公開（+2引いて3枚捨てる）') : null,
       p.hand.includes('horse_traders') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'HORSE_TRADERS_REACT' }) }, '🐴 馬商人を脇に置く（次の手番に +1カードで戻る／攻撃は受ける）') : null,
+      p.hand.includes('beggar') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'BEGGAR_REACT' }) }, '🥺 物乞いを捨てて銀貨2枚を獲得（1枚は山札の上／攻撃は受ける）') : null,
       h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
         onclick: () => dispatch({ type: 'TORTURER_RESOLVE', choice: 'discard', cards: UI.selection.map((i) => p.hand[i]) }) },
         remain === 0 ? '手札を捨てる（確定）' : '捨てる ' + remain + ' 枚 を選ぶ'),

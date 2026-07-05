@@ -691,6 +691,11 @@
         (pd.stage === 'react' || pd.type === 'militia' || pd.type === 'torturer' || pd.type === 'discard_down')) {
       return { type: 'GUARD_DOG_REACT' };
     }
+    // 暗黒時代：物乞い＝アタックの反応窓で手札から捨てて銀貨2枚を獲得（免疫にはならない・常に得。捨てると次回は通常判断）。
+    if (pd && p.hand && p.hand.includes('beggar') && sup(state, 'silver') > 0 &&
+        (pd.stage === 'react' || pd.type === 'militia' || pd.type === 'torturer' || pd.type === 'discard_down')) {
+      return { type: 'BEGGAR_REACT' };
+    }
     switch (pd.type) {
       case 'cellar':
         return { type: 'CELLAR_RESOLVE', cards: p.hand.filter((c) => isDead(c)) };
@@ -1568,6 +1573,10 @@
         return { type: 'DAME_ANNA_TRASH', cards: pickTrash(p.hand, 2) }; // 最大2枚の不要札
       case 'dame_natalie_gain':
         return { type: 'DAME_NATALIE_GAIN', card: bestGain(state, 3, { noVictory: true }) || null }; // 任意（≤$3の非勝利点）
+      case 'market_square_react':
+        return { type: 'MARKET_SQUARE_REACT', discard: true }; // 青空市場を捨てて金貨（MONEY方針＝常に得）
+      case 'hovel_react':
+        return { type: 'HOVEL_REACT', trash: true }; // 納屋を廃棄（純粋な圧縮＝常に得）
 
       default:
         return { type: 'END_TURN' };
