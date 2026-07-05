@@ -1,15 +1,37 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-05 / branch `main`（最新は `git log` で確認）。**`144b775` まで push済（本番＝新プロモ段階2・`sw.js` v34）**。その後に**未pushのWIPコミット多数＝暗黒時代 段階2 進行中（§0-8）**：研究＋カタログ現行化＋on-trash自動系に加え、今セッションで**trashCard統一＋基盤機構（混合山/非サプライ/避難所/initSupply/invariants）＋カード効果24/56枚まで完了**。**CARD_SET未昇格＝本番/実プレイへの影響なし**。push は都度ユーザー確認。
+最終更新: 2026-07-06 / branch `main`（最新は `git log` で確認）。**`144b775` まで push済（本番＝新プロモ段階2・`sw.js` v34）**。その後に**未pushコミット多数＝暗黒時代 段階2 が完成（§0-8）**：全56枚実プレイ化＋UI＋テスト＋**CARD_SET昇格（darkages固定/random-darkages）**＋webp9枚再生成（`sw.js` **v35**）＋多エージェント敵対レビュー10件修正まで完了。**push は未実施＝都度ユーザー確認**（未pushなので本番はまだ v34・新プロモ段階2のまま）。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
-**新セッションは まず `npm test` を実行し 27スイート・オールグリーン（exit 0・整合性3130件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
+**新セッションは まず `npm test` を実行し 29スイート・オールグリーン（exit 0・整合性3132件・暗黒時代70件＋UI57件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
 
 ---
 
-## 0-8. 段階2＝暗黒時代56枚 実装中（2026-07-05・**基盤機構完了＋カード効果24/56枚。残り＝カード効果32枚＋UI＋テスト＋昇格**）
+## 0-8. 段階2＝暗黒時代56枚 実装 **完了**（2026-07-06・全56枚実プレイ化＋UI＋テスト＋CARD_SET昇格＋敵対レビュー修正）
 
-### 現在地（今セッションで大きく前進。すべて未pushコミット・CARD_SET未昇格＝本番影響ゼロ）
+### 完了サマリ（2026-07-06。**すべて未pushコミット＝push は都度ユーザー確認。未pushなので本番はまだ v34**）
+- **カード効果56/56枚 実装完了**。前回までの24枚に加え、今セッションで残り32枚を Group A〜E で実装（各 engine reducer＋PLAYER_ACTIONS＋CPU decidePending＋UI viewPendingModal の4点セット）:
+  - **A（素直系）** junk_dealer/mystic/altar/bandit_camp/catacombs/hunting_grounds＋feodum VP。**on-trash対話キュー `state.onTrashQueue`** を新設（地下墓所/狩場/従者の獲得対話をアタック中の廃棄と競合させず reduce 末尾で1件ずつ消化）。
+  - **B（trash-to-gain）** graverobber/rebuild/count。
+  - **C（複雑）** band_of_misfits(命令)/death_cart(on-gain廃墟2)/hermit(狂人交換=buyPhaseGainedフラグ+END_TURN)/counterfeit(財宝2回)/procession(runReplaysにprocession2/procession_finishラベル)。
+  - **D（アタック）** marauder/cultist(連鎖)/pillage/rogue/urchin(→傭兵)/mercenary＋汎用 `discard_down`（民兵型embedded・浮浪児4/傭兵3/sir_michael3で共用）。
+  - **E（騎士10種）** 混合山アタック（上2枚公開→被害者が$3-6を選び廃棄→騎士なら攻撃騎士も相討ち=sourceCard）。dame_anna/natalie/sir_michael の前段対話・sir_martin($4)・sir_vander(相討ちで金貨)・dame_josephine(2VP)。
+- **【実バグ修正2件（副産物）】** (1)`reshuffleDeck` が山札を**置換**しており、山札の上N枚を見る系（旅の楽団/生存者/地下墓所）が残り<Nの非空山札で札を消失させる保存則バグ→**append方式**に修正（全プール混成fuzzで検出）。(2)CPUの `discard_down` に堀チェック漏れ→既存の汎用アタック免疫テストが捕捉→修正。
+- **UI**：全pending（既存24＋新32）のモーダル＋混合山（騎士＝一番上表示・廃墟＝獲得専用の山表示）。
+- **テスト新設**：`darkages.test.js`（70件・経路別on-trash＝城塞×礼拝堂/狂信者×死の荷車/封土×騎士 ほか＋敵対レビュー回帰8件）＋`darkages-ui.test.js`（57件）。`package.json` 登録。**全29スイート緑（整合性3132）**。
+- **CARD_SET昇格**：`DOM.KINGDOM_DARKAGES`＝公式「Grim Parade」（armory/band_of_misfits/catacombs/cultist/forager/fortress/knights/market_square/procession/hunting_grounds）＝`darkages` 固定セット＋`random-darkages`。**避難所は「王国が KINGDOM_DARKAGES と内容一致」で `createInitialState` が自動ON**（opts不要＝local/再戦/オンライン全経路で機能）。random系はOFF。invariants の出荷セット検証にも追加。
+- **敵対レビュー（多エージェント8次元→敵対的検証・確定10件/偽陽性0）→全10件修正**（コミット `587e747`）:
+  - **リアクション3種を新規実装**（§0-8決定4の既知TODO・出荷darkagesセットで到達）：青空市場(on-trash→金貨)・納屋(on-gain勝利点→廃棄)・物乞い(被弾時→銀貨2枚・免疫にはならない=horse_traders型)。
+  - はみだし者の対象から騎士の混合山 'knights' を除外（無効果の死に選択肢だった。captainTargetsも）／BoM×死の荷車の自身廃棄を不発化(fromCommand)／偽造通貨×偽造通貨の2回目+1購入を追加／傭兵の1枚廃棄を許可(効果不発)／浮浪児の狂信者連鎖トリガー(maybeUrchinTrap)。
+- **webp9枚再生成**（hermit/procession/pillage/death_cart/rats/counterfeit/marauder/cultist/band_of_misfits＝§0-8でカタログを現行エラッタに更新した分）→ `sw.js` v34→**v35**。death_cart/band_of_misfits を目視確認。
+- **CPUソーク**：出荷2セット（darkages/random-darkages・2〜4人・全難易度）**280戦 完走280/stuck0/保存則0/例外0**（納屋反応175回発火）。
+
+### 残タスク・許容簡略化（詳細は下の「決定事項」「詰まり」参照）
+- **push が未実施**＝完成→都度ユーザー確認の上で push（→本番 Pages/Render・sw.js v35 反映）。
+- **許容簡略化（意図的・再議論しない）**：浮浪児→傭兵の玉座/行進経由リプレイは未対応（狂信者連鎖のみ対応・低頻度＆任意得のみ）／on-trash対話キューと廃棄札の続きの獲得の順序は多少前後し得る／band_of_misfits・procession は持続カードを対象外（船長と同型）／納屋on-gainは自分の手番のトップレベル勝利点獲得のみ（相手ターン/入れ子獲得の稀な反応は未対応）。
+
+### （以下は実装中の設計メモ＝リファレンスとして保持。現在は上の「完了サマリ」が最新）
+### 旧・現在地（実装当時のメモ）
 - **完了①＝公式ルール研究**（成果物＝**`docs/research/darkages_rules.json`**＝55枚の現行英文/エラッタ/裁定/山構成、**`docs/research/darkages_catalog_diff.md`**＝差分レポート）。**実装前に該当カードを必ず読む**。
 - **完了②＝カタログ現行化**（cards.js/carddata.js/integrity.test.js。エラッタ6枚＋looter/command種別。整合性3130）。
 - **完了③＝triggerOnTrash 自動系6枚**（城塞=手札へ戻り戻り値false／ネズミ・草茂る屋敷=+1カード／封土=銀貨3／サー・ヴァンダー=金貨1／狂信者=+3カード。誰の廃棄でも持ち主に発動）。
@@ -249,15 +271,14 @@
 - **海辺の簡略化2点は本格実装済み**：封鎖の堀免疫窓・海賊の財宝獲得リアクション。on-gain対話は `!pending && _gainDepth===1` ゲートで安全側。
 
 ## 5. 未完了タスク（優先順。次セッションは 1. から）
-1. **段階2＝全カード実プレイ化（ユーザー決定・完全忠実）**。~~収穫祭13✅~~ ~~ギルド13✅~~ ~~異郷35✅~~ ~~新プロモ6✅~~ の次＝**暗黒時代を全56に完成**（段階2の最後の大物）。**着手済み＝§0-8（研究・カタログ現行化・on-trash自動系まで完了。次は trashCard統一関数＋基盤機構から続行）**。方針＝特殊山・全トリガー・on-trash系まで**機構ごと新設**（簡略化しない。ただし§0-8決定事項2の第3層＝lurker等は許容簡略化として明示除外）。
-   - **実装の設計図＝`docs/adding-cards.md`**（全機構の file:line ＋コピー元パターン＋落とし穴。§0-7 で分割山/「動かさず使用」/永続持続/startQueue安全網/シャッフル介入 も追記済み。**特殊山は §C**）。
-   - **着手順＝ ~~収穫祭~~✅ → ~~ギルド~~✅ → ~~異郷~~✅(§0-5) → ~~新プロモ~~✅(§0-7) → 暗黒時代完成**。効果+pending+CPU+UI+ATTACKS/PLAYER_ACTIONS+テスト → `npm test`緑 → コミット。**完成してから CARD_SET 昇格**（＝中途の暗黒時代がデプロイに出ない）。
-   - **✅完了済み段階2**：収穫祭(§0-2)／ギルド(§0-4)／異郷(§0-5)／新プロモ(§0-7)。**段階1（画像化・カタログ・GAIN_ORDER・webp）は暗黒時代含め全カード追加済み**(§0-3/§0-6)＝`DOM.POOLS.darkages`35種＋`knights`10＋`ruins`5＋`shelters`3＋`darkages_np`3。新種別 knight/ruins/shelter は表示ラベルのみ実装済（engineロジックは段階2で新設）。
-   - **暗黒時代の段階2で新設が要る機構**：**混合山**（廃墟Ruins/騎士Knights＝中身と順序が違う→`state.ruins`/`state.knights` を top-level id配列に・invariants tally に forEach追加・emptyPileCount/maskで対応・§C参照）／**避難所Shelters**（開始デッキ置換＝createInitialState の estate を条件で hovel/necropolis/overgrown_estate に）／**戦利品/狂人/傭兵**（非サプライ数値キー山＝§6「4系統除外チェックリスト」必須）／**on-trashフック**（要塞=廃棄で手札に戻る・墓暴き/胥吏 等・本人任意廃棄に限定＝異郷 triggerOnTrash を拡張）／略奪者marauder系の廃墟配布アタック／建て直し rebuild・伯爵 count 等の多段選択。
-   - **未着手の残り拡張（発売順・段階1すら未着手）**：夜想曲/ルネサンス/移動動物園/同盟/略奪/日の出づる国 は画像・カタログとも無し（§0-6）。冒険/帝国の段階2（実プレイ化）＝Reserve/酒場マット/トラベラー交換/旅トークン/負債経済/分割山/城/命令/勝利点トークン/集合 は別の大仕事＝暗黒時代の後。
-2. **錬金術アートの△3枚最終確認（任意）**：変成/薬草商/薬剤師。差し替えは `asset/art/<id>.png` →`node tools/build-cards.js`→該当webpデプロイ。
-3. （任意・CPU購入の残課題）B案は「拡張＋礼拝堂エンジン」で ENGINE/MONEY を切替済み。さらに踏み込むなら **MONEY王国での BM+呪いアタック（魔女等≤2枚）** や **王国個別のエンジン成立度スコアリング**が候補（現状でも総合71%なので優先度は低い）。
-4. （任意・過去メモ）絵文字→game-icons.net SVG 化、vanilla効果DSL 等。
+1. **暗黒時代 段階2 は完了（§0-8）。まず push 判断**：完成済み・未pushコミット多数。ユーザー確認の上で main に push → GitHub Pages（クライアント・sw.js v35）＋ Render 自動デプロイ。**push は都度確認（勝手に push しない）**。
+   - **✅段階2 完了済み拡張**：収穫祭(§0-2)／ギルド(§0-4)／異郷(§0-5)／新プロモ(§0-7)／**暗黒時代 全56枚(§0-8)**。基本・陰謀・海辺・錬金術・繁栄と合わせ、**縦型カードの実プレイ化は暗黒時代まで完了**。
+2. **段階2の残り＝発売順の未着手拡張**（着手前に `docs/adding-cards.md` を必読。特殊機構は §C）:
+   - **冒険(Adventures)/帝国(Empires) の段階2（実プレイ化）**＝段階1（画像・カタログ）は済み(§0-6)。新機構が多い大仕事＝Reserve/酒場マット・トラベラー交換・旅トークン・持続多数・負債(Debt)コスト経済・分割山・城の混合山・命令(overlord/crown)・勝利点トークン・集合(Gathering)。横型ランドスケープ（イベント/ランドマーク）は縦枠パイプライン未対応で段階1すら未着手。
+   - **発売順その先（段階1すら未着手＝画像・カタログとも無し）**：夜想曲/ルネサンス/移動動物園/同盟/略奪/日の出づる国。
+3. **錬金術アートの△3枚最終確認（任意）**：変成/薬草商/薬剤師。差し替えは `asset/art/<id>.png` →`node tools/build-cards.js`→該当webpデプロイ。
+4. （任意・CPU購入の残課題）B案は「拡張＋礼拝堂エンジン」で ENGINE/MONEY を切替済み（暗黒時代は MONEY 既定＝§0-5 と同方針）。さらに踏み込むなら **MONEY王国での BM+呪いアタック（魔女等≤2枚）** や **王国個別のエンジン成立度スコアリング**が候補（優先度低）。
+5. （任意・過去メモ）絵文字→game-icons.net SVG 化、vanilla効果DSL 等。
 
 ## 6. 詰まり・注意点・保留中の判断
 - **新カードを `DOM.CARDS` に足すと整合性テストが赤くなる**（GAIN_ORDER網羅＋POOL所属を要求）→ 孤立プール＋GAIN_ORDER追加で回避。実ゲーム化時は ATTACKS/PLAYER_ACTIONS/CPU decidePending/UI viewPendingModal も忘れず（抜けはCIで赤 or CPU無限ループ/人間詰み）。

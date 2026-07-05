@@ -1,36 +1,34 @@
-<!-- /handoff が自動生成（2026-07-05）。新セッションはこのファイルの指示に従う。手編集不要 -->
+<!-- /handoff が自動生成（2026-07-06）。新セッションはこのファイルの指示に従う。手編集不要 -->
 
 ウルトラコード（最大エフォート）で進めてください。
 
 スマホ向けドミニオン対戦Webアプリ（CPU戦・2〜4人ローカル・オンライン対戦）の実装を引き継ぎます。回答/UIは日本語。
-作業ディレクトリ: `c:\Users\b1242\claude\game\dominion` / branch: `main`（main直接作業運用。最新は `git log` で確認。**未pushのWIPコミットあり＝push はユーザー確認必須**）。
+作業ディレクトリ: `c:\Users\b1242\claude\game\dominion` / branch: `main`（main直接作業運用。最新は `git log` で確認。**未pushコミット多数＝push はユーザー確認必須**）。
 
 ## まずやること（着手前の健全性確認）
-1. `Set-Location 'C:\Users\b1242\claude\game\dominion'` して `npm test` → **27スイート・オールグリーン（exit 0）**・整合性 **3130件** を確認。
-2. `PROGRESS.md` の **§0-8（暗黒時代の現在地・決定事項・設計要点・次の一歩）** を読む。§5/§6 も。
-3. 実装するカードは都度 **`docs/research/darkages_rules.json`**（現行英文/エラッタ/裁定の正本）で裏取り。`docs/research/darkages_catalog_diff.md`・`docs/adding-cards.md`（特殊山は§C）も参照。
+1. `Set-Location 'C:\Users\b1242\claude\game\dominion'` して `npm test` → **29スイート・オールグリーン（exit 0）**・整合性 **3132件**・暗黒時代 **70件＋UI57件** を確認。
+2. `PROGRESS.md` の **§0-8（暗黒時代 段階2 完了サマリ・許容簡略化）** と **§5（次タスク）**、§6 を読む。設計図＝`docs/adding-cards.md`（特殊機構は §C）。
 
-## 今回のタスク（優先順1位）：段階2＝暗黒時代56枚の実プレイ化【続き・カード効果の残り32枚から】
-**済んでいるのは**（今セッション分＝未pushコミット）: (a)trashCard統一関数＋on-trash第2層配線 (b)基盤機構＝混合山（**騎士=supply.knights＋state.knights／廃墟=state.ruins配列のみ**）・非サプライ3種・避難所（opts.shelters）・initSupply条件節・invariants tally (c)カード効果24/56枚＝単純15＋対話9（engine reducer＋PLAYER_ACTIONS＋CPU decidePending の4点セット。**UIは未**）。
+## 現状：暗黒時代 段階2 ＝ 完成（全56枚 実プレイ化）
+- 前セッションで暗黒時代を全56枚実プレイ化＋UI＋テスト＋**CARD_SET昇格（`darkages` 固定=Grim Parade／`random-darkages`）**＋webp9枚再生成（`sw.js` v35）＋多エージェント敵対レビュー10件修正まで完了。**全29スイート緑・出荷2セット280戦ソーク クリーン**。詳細は PROGRESS §0-8。
+- **未pushコミット多数**（今回の暗黒時代作業＋前回の基盤）。**未pushなので本番はまだ v34・新プロモ段階2 のまま**。
 
-**残り＝カード効果32枚＋UI＋テスト＋昇格**。続きの順序（詳細は PROGRESS §0-8「次の一歩」）:
-1. **カード効果の残り32枚**：素直なpending（屑屋/秘術師/墓暴き/地下墓所/建て直し）→ アタック（略奪者/狂信者/略奪/傭兵/浮浪児/盗賊）→ **騎士10種**（混合山アタック）→ 複雑（伯爵/はみだし者=命令/隠遁者=交換/death_cart=on-gain廃墟/catacombs・hunting_groundsのon-trash対話/counterfeit/altar）。**各カード engine reducer＋PLAYER_ACTIONS＋CPU decidePending の4点セット必須**（UIは次段でまとめて）。各グループ末で `node test/invariants.test.js`（全プール混成fuzz）緑を確認。
-2. **UI**（ui.js `viewPendingModal` に新pending分岐＋混合山topの盤面表示）。
-3. **darkages.test.js / darkages-ui.test.js 新設**（経路別on-trashテスト必須＝城塞×礼拝堂/狂信者×死の荷車/封土×騎士）。
-4. **CARD_SET昇格**（DOM.CARD_SETS に darkages固定10種＋random-darkages。darkagesにだけ `opts.shelters=true` を渡す）→ 全テスト緑。
-5. 敵対レビューWorkflow→確定バグ修正→CPUソーク → **webp9枚再生成**（hermit/procession/pillage/death_cart/rats/counterfeit/marauder/cultist/band_of_misfits＝このPCのみ可）→ sw.js v34→v35 → PROGRESS更新 → コミット（**pushはユーザー確認**）。
+## 次にやること（優先順）
+1. **push 判断（最優先）**：暗黒時代は完成済み。**ユーザーに push してよいか確認**の上で main に push → GitHub Pages（sw.js v35）＋ Render 自動デプロイ。勝手に push しない。
+2. **段階2の残り拡張＝発売順**（着手前に `docs/adding-cards.md` 必読）：
+   - **冒険(Adventures)/帝国(Empires) の段階2（実プレイ化）**＝段階1（画像・カタログ）は済み(§0-6)。Reserve/酒場マット・トラベラー交換・旅トークン・負債コスト・分割山・城・命令・勝利点トークン・集合 など新機構が多い大仕事。
+   - その先（画像・カタログとも未着手）：夜想曲/ルネサンス/移動動物園/同盟/略奪/日の出づる国。
 
 ## 進め方（厳守）
 - **新pendingは engine reducer＋PLAYER_ACTIONS＋CPU decidePending＋UI viewPendingModal の4点セット必須**（漏れ＝CPU無限ループ/人間詰み/サーバ拒否/整合性赤）。「捨て→次へ」型reducerは前進前に `state.pending=null`。
-- **非サプライ獲得は engine拒否とCPU非提案を必ずセット**（CPU側は `NON_SUPPLY_SET`＝賞品＋spoils/madman/mercenary を汎用獲得から除外済み。新カードで獲得系を書くときも守る）。
-- **経路別on-trashテスト必須**（保存則fuzzは「城塞がtrashに残ったまま」を検知できない）。
-- substantiveなタスクは Workflow で多エージェント＋敵対的検証。使い捨てスクリプトは直下 `_*.tmp.js` で作り実行後必ず削除。
-- 1機構/1グループごとに fuzf・テスト緑→こまめにコミット。大きな決定は PROGRESS.md へ。作業の区切りで「今やったこと/次にやること」報告。容量が重くなったら /handoff を促す。
+- **非サプライ獲得は engine拒否とCPU非提案(`NON_SUPPLY_SET`)を必ずセット**。混合山の非対称（騎士=supply.knights＋state.knights／廃墟=state.ruinsのみ）は変えない。
+- substantiveなタスクは Workflow で多エージェント＋敵対的検証（前回もこれで確定バグ10件を検出・修正）。使い捨てスクリプトは直下 `_*.tmp.js` で作り実行後**必ず削除**（コミットに混ぜない）。
+- 1機構/1グループごとに `node test/invariants.test.js`（全プール混成fuzz）緑→こまめにコミット。大きな決定は PROGRESS.md へ。区切りで「今やったこと/次やること」報告。容量が重くなったら /handoff を促す。
+- **webp再生成はこのPCのみ可**（`CARDS_ONLY=<ids> node tools/build-cards.js`・入力 `asset/art/*.png` は gitignore）。client資産を変えたら `sw.js` VERSION を上げる（現在 **v35**）。
 
 ## 次セッションが知らないと事故る事項
-- **未pushコミット多数**（今セッションのtrashCard＋基盤＋カード効果24枚＝5コミット＋以前の2つ。`git log`/`git status -sb` で確認。push はユーザー確認必須）。作業ツリーは clean のはず。**CARD_SET未昇格なので本番/実プレイへの影響はゼロ**。
-- **混合山の非対称**＝騎士は `supply.knights`（数値）＋`state.knights`（配列）、**廃墟は `state.ruins`（配列）のみ**（`'ruins'`はカタログ非在＝supplyに持つとCPU/UIのsupply走査が `C()['ruins']` で落ちる）。この設計は変えない。新カードで廃墟を配るときは `gain(pi,'ruins')`、騎士は `gain(pi,'knights')`。
-- **squireのon-trash（アタック獲得）は `!state.pending` ガードの簡略実装**（複数on-trash同時競合は先着のみ＝許容簡略化。catacombs/hunting_groundsのon-trash対話はまだ未実装）。
-- **Read ツール出力の汚染を前セッションで観測**（実在しないコードが混入して見えた）。実装状態を断定する前に Grep / `Get-Content` / `git show` の生バイト確認で裏取りすること。
-- カタログ文言だけ現行化済み＝**webp画像の文字と9枚で不一致**（上記リスト）。昇格前に再生成必須（このPCのみ可）。
-- 避難所ON/OFF・on-trash方針・許容簡略化・経路別テスト方針は**決定済み（PROGRESS §0-8）＝再議論しない**。
+- **push 未実施**＝本番は暗黒時代を含まない（v34）。push 前に必ずユーザー確認。
+- **避難所は「王国が KINGDOM_DARKAGES と内容一致」で `createInitialState` が自動ON**（opts不要）。random-darkages はOFF。この判定は変えない。
+- **暗黒時代の許容簡略化（意図的・再議論しない・PROGRESS §0-8末）**：浮浪児→傭兵の玉座/行進経由リプレイ未対応（狂信者連鎖のみ）／on-trash対話キューの順序は多少前後し得る／BoM・行進は持続を対象外／納屋on-gainは自分手番のトップレベル勝利点獲得のみ。
+- **`reshuffleDeck` は「捨て札を既存山札の下にappend」方式**（前回、山札の上N枚を見る系の保存則バグを修正した）。この不変を壊さない。
+- **Read ツール出力の汚染に注意**（実在しないコードが混入して見えることがある）。実装状態を断定する前に Grep / `git show` の生確認で裏取り。
