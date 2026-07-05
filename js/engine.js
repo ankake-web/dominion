@@ -478,6 +478,10 @@
       (id) => (state.supply[id] || 0) > 0 && predicate(id)
     );
   }
+  // 暗黒時代：採集者＝廃棄置き場にある「異なる名前の財宝」1種につき +$1。
+  function foragerCoins(state) {
+    return new Set((state.trash || []).filter((c) => DOM.isType(c, 'treasure'))).size;
+  }
   // 繁栄：コスト/購入数/サプライ以外の「購入できない」追加制限。
   //   高級市場(grand_market)＝場に銅貨があるとき購入不可。CPU/UI もこれを参照して空振りを防ぐ。
   function canBuyCard(state, pi, id) {
@@ -2221,7 +2225,63 @@
       case 'ruined_village':
         t.actions += 1;
         break;
-      // survivors（山札上2枚を見て捨てる/戻す）・その他の対話/アタックカードは後続の実装ブロックで追加。
+      // --- 対話（pending）---
+      case 'survivors': {
+        // 山札の上2枚を見て、両方捨てるか、両方（好きな順で）山札の上に戻す。
+        if (p.deck.length < 2 && p.discard.length > 0) reshuffleDeck(p);
+        const look = p.deck.slice(0, 2);
+        if (look.length > 0) state.pending = { type: 'survivors', player: pi, cards: look.slice() };
+        break;
+      }
+      case 'rats': {
+        // +1カード +1アクション。ネズミを1枚獲得。手札のネズミ以外を1枚廃棄（全部ネズミなら公開して廃棄しない）。
+        draw(state, pi, 1); t.actions += 1;
+        gain(state, pi, 'rats', 'discard');
+        if (p.hand.some((c) => c !== 'rats')) state.pending = { type: 'rats_trash', player: pi };
+        else { reveal(state, pi, p.hand.slice(), 'ネズミ'); log(state, `${p.name} は手札が全てネズミで廃棄しなかった。`); }
+        break;
+      }
+      case 'armory': // コスト4以下を1枚、山札の上に獲得
+        if (anyGainable(state, (id) => cardCost(state, id) <= 4)) state.pending = { type: 'armory', player: pi };
+        break;
+      case 'forager':
+        // +1アクション +1購入。手札1枚廃棄（可能なら強制）→ 廃棄置き場の異なる財宝の種類ぶん +$1。
+        t.actions += 1; t.buys += 1;
+        if (p.hand.length > 0) state.pending = { type: 'forager', player: pi };
+        else { const add = foragerCoins(state); t.coins += add; log(state, `${p.name} は採集者（廃棄なし・+$${add}）。`); }
+        break;
+      case 'squire': // +$1、+2アクション / +2購入 / 銀貨獲得 を選ぶ（on-trashはアタック獲得）
+        t.coins += 1;
+        state.pending = { type: 'squire', player: pi };
+        break;
+      case 'storeroom': // +1購入。好きな枚数捨てて同数ドロー→さらに好きな枚数捨てて+$1ずつ
+        t.buys += 1;
+        state.pending = { type: 'storeroom', stage: 'discard1', player: pi };
+        break;
+      case 'scavenger': // +$2。山札を捨ててよい→捨て札から1枚を山札の上へ
+        t.coins += 2;
+        state.pending = { type: 'scavenger', stage: 'deck', player: pi };
+        break;
+      case 'ironmonger': {
+        // +1カード +1アクション。山札の一番上を公開→捨てる/戻すを選び、種別に応じたボーナス。
+        draw(state, pi, 1); t.actions += 1;
+        if (p.deck.length === 0 && p.discard.length > 0) reshuffleDeck(p);
+        if (p.deck.length > 0) state.pending = { type: 'ironmonger', player: pi, card: p.deck[0] };
+        break;
+      }
+      case 'wandering_minstrel': {
+        // +1カード +2アクション。山札の上3枚を公開し、アクションを好きな順で山札の上へ戻し、残りを捨てる。
+        draw(state, pi, 1); t.actions += 2;
+        while (p.deck.length < 3 && p.discard.length > 0) reshuffleDeck(p);
+        const look = p.deck.splice(0, Math.min(3, p.deck.length));
+        if (look.length) reveal(state, pi, look.slice(), '吟遊詩人');
+        const acts = look.filter((c) => DOM.isType(c, 'action'));
+        look.filter((c) => !DOM.isType(c, 'action')).forEach((c) => p.discard.push(c));
+        if (acts.length > 1) state.pending = { type: 'minstrel', player: pi, cards: acts };
+        else if (acts.length === 1) p.deck.unshift(acts[0]);
+        break;
+      }
+      // アタック/複雑（略奪者/狂信者/略奪/浮浪児/騎士/隠遁者/死の荷車/伯爵/建て直し 等）は後続ブロックで追加。
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
       // --- バニラ系（即時のみ・非対話）---
@@ -3215,6 +3275,10 @@
     if (card === 'sir_vander') { if (gain(state, pIndex, 'gold', 'discard')) log(state, `${p.name} はサー・ヴァンダーの廃棄で金貨1枚を獲得した。`); }
     // 暗黒時代：狂信者＝廃棄されたとき +3カード（持ち主が引く。相手のアタックで廃棄されても発動）。
     if (card === 'cultist') { draw(state, pIndex, 3); log(state, `${p.name} は狂信者の廃棄で +3カード。`); }
+    // 暗黒時代：従者＝廃棄されたときサプライのアタックカードを1枚獲得（対話。複数on-trash競合時は先着のみ＝許容簡略化）。
+    if (card === 'squire' && anyGainable(state, (id) => DOM.isType(id, 'attack') && !NON_SUPPLY.has(id))) {
+      if (!state.pending) state.pending = { type: 'squire_trash_gain', player: pIndex };
+    }
     return true;
   }
   // 異郷：値切り屋＝場にある間、カードを購入するたびに、そのコスト未満の勝利点でないカード1枚を獲得（枚数ぶん）。
@@ -4703,6 +4767,147 @@
         const v = action.value;
         if (!pl || (v !== 'top' && v !== 'mix' && v !== 'bottom')) return state;
         pl.stashPlacement = v;
+        return state;
+      }
+
+      /* ===== 拡張: 暗黒時代（Dark Ages）の選択解決 ===== */
+      case 'SURVIVORS_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'survivors') return state;
+        const p = state.players[pd.player];
+        const n = pd.cards.length;
+        if (action.choice === 'discard') {
+          for (let i = 0; i < n; i++) { const c = p.deck.shift(); if (c != null) p.discard.push(c); }
+          log(state, `${p.name} は生存者で上${n}枚を捨てた。`);
+        } else { // 両方を山札の上へ（順序 action.order を採用可・不正なら公開順）
+          const cur = [];
+          for (let i = 0; i < n; i++) { const c = p.deck.shift(); if (c != null) cur.push(c); }
+          let order = cur;
+          if (Array.isArray(action.order) && action.order.length === cur.length) {
+            const a = action.order.slice().sort(), b = cur.slice().sort();
+            if (a.every((x, i) => x === b[i])) order = action.order;
+          }
+          for (let i = order.length - 1; i >= 0; i--) p.deck.unshift(order[i]);
+          log(state, `${p.name} は生存者で上${n}枚を山札の上に戻した。`);
+        }
+        state.pending = null;
+        return state;
+      }
+      case 'RATS_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'rats_trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (card === 'rats' || p.hand.indexOf(card) < 0) return state; // ネズミ以外を廃棄（強制）
+        removeOne(p.hand, card); trashCard(state, pd.player, card);
+        log(state, `${p.name} はネズミで「${C()[card].name}」を廃棄した。`);
+        state.pending = null;
+        return state;
+      }
+      case 'ARMORY_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'armory') return state;
+        finishGain(state, pd, action.card, (id) => cardCost(state, id) <= 4, 'deck', '山札の上に獲得した（武器庫）。');
+        return state;
+      }
+      case 'FORAGER_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'forager') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (card == null || p.hand.indexOf(card) < 0) return state; // 廃棄は可能なら強制
+        removeOne(p.hand, card); trashCard(state, pd.player, card);
+        const add = foragerCoins(state);
+        t.coins += add;
+        log(state, `${p.name} は採集者で「${C()[card].name}」を廃棄し +$${add}（廃棄置き場の財宝${add}種）。`);
+        state.pending = null;
+        return state;
+      }
+      case 'SQUIRE_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'squire') return state;
+        const p = state.players[pd.player];
+        const c = action.choice;
+        if (c === 'actions') { t.actions += 2; }
+        else if (c === 'buys') { t.buys += 2; }
+        else if (c === 'silver') { if (gain(state, pd.player, 'silver', 'discard')) { /* log下 */ } }
+        else return state;
+        log(state, `${p.name} は従者で ${c === 'actions' ? '+2アクション' : c === 'buys' ? '+2購入' : '銀貨獲得'} を選んだ。`);
+        state.pending = null;
+        return state;
+      }
+      case 'SQUIRE_TRASH_GAIN': { // on-trash：サプライのアタックカードを1枚獲得
+        const pd = state.pending;
+        if (!pd || pd.type !== 'squire_trash_gain') return state;
+        finishGain(state, pd, action.card, (id) => DOM.isType(id, 'attack') && !NON_SUPPLY.has(id), 'discard', 'アタックカードを獲得した（従者）。');
+        return state;
+      }
+      case 'STOREROOM_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'storeroom') return state;
+        const p = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        const copy = p.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state; // 手札に無い指定は拒否
+        if (pd.stage === 'discard1') {
+          cards.forEach((c) => { removeOne(p.hand, c); p.discard.push(c); });
+          draw(state, pd.player, cards.length);
+          if (cards.length) log(state, `${p.name} は倉庫で${cards.length}枚捨てて${cards.length}枚引いた。`);
+          state.pending = { type: 'storeroom', stage: 'discard2', player: pd.player };
+        } else { // discard2：捨てた枚数ぶん +$1
+          cards.forEach((c) => { removeOne(p.hand, c); p.discard.push(c); });
+          if (cards.length) { t.coins += cards.length; log(state, `${p.name} は倉庫で${cards.length}枚捨てて +$${cards.length}。`); }
+          state.pending = null;
+        }
+        return state;
+      }
+      case 'SCAVENGER_DECK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'scavenger' || pd.stage !== 'deck') return state;
+        const p = state.players[pd.player];
+        if (action.discardDeck && p.deck.length > 0) {
+          p.discard.push(...p.deck); p.deck = [];
+          log(state, `${p.name} は清掃で山札を全て捨て札にした。`);
+        }
+        state.pending = p.discard.length > 0 ? { type: 'scavenger', stage: 'topdeck', player: pd.player } : null;
+        return state;
+      }
+      case 'SCAVENGER_TOPDECK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'scavenger' || pd.stage !== 'topdeck') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.discard.indexOf(card) < 0) return state;
+        removeOne(p.discard, card); p.deck.unshift(card);
+        log(state, `${p.name} は清掃で「${C()[card].name}」を山札の上に置いた。`);
+        state.pending = null;
+        return state;
+      }
+      case 'IRONMONGER_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ironmonger') return state;
+        const p = state.players[pd.player];
+        const top = p.deck[0];
+        if (top !== pd.card) { state.pending = null; return state; } // 山札が変わっていたら何もしない
+        reveal(state, pd.player, [top], '鉄物商');
+        if (action.discard) { p.deck.shift(); p.discard.push(top); log(state, `${p.name} は鉄物商で「${C()[top].name}」を捨てた。`); }
+        // 種別ボーナス（捨てても戻しても得る。複合種別は全て得る）
+        if (DOM.isType(top, 'action')) t.actions += 1;
+        if (DOM.isType(top, 'treasure')) t.coins += 1;
+        if (DOM.isType(top, 'victory')) draw(state, pd.player, 1);
+        state.pending = null;
+        return state;
+      }
+      case 'MINSTREL_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'minstrel') return state;
+        const p = state.players[pd.player];
+        const order = Array.isArray(action.order) ? action.order : pd.cards;
+        const a = order.slice().sort(), b = pd.cards.slice().sort();
+        if (a.length !== b.length || !a.every((x, i) => x === b[i])) return state; // 同じ多重集合のみ
+        for (let i = order.length - 1; i >= 0; i--) p.deck.unshift(order[i]);
+        log(state, `${p.name} は吟遊詩人でアクション${order.length}枚を山札の上に戻した。`);
+        state.pending = null;
         return state;
       }
 
@@ -6446,6 +6651,9 @@
     // 新プロモ（王子/船長/教会/サウナ/アヴァント/へそくり）
     'PRINCE_SETASIDE', 'PRINCE_PLAY', 'CAPTAIN_PLAY', 'CHURCH_SETASIDE', 'CHURCH_TRASH',
     'SAUNA_CHAIN', 'SAUNA_TRASH', 'STASH_SETTING',
+    // 暗黒時代（Dark Ages）
+    'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
+    'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',
     // 海辺（第二版）
     'WAREHOUSE_DISCARD', 'HAVEN_SETASIDE', 'TACTICIAN_RESOLVE', 'SALVAGER_TRASH',
     'LOOKOUT_TRASH', 'LOOKOUT_DISCARD', 'ISLAND_PICK', 'NATIVE_VILLAGE_RESOLVE', 'TIDE_POOLS_DISCARD',

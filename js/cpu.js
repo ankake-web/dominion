@@ -64,13 +64,16 @@
   // 収穫祭：賞品(Prize)は馬上槍試合でのみ獲得する非サプライ札＝汎用の獲得効果(bestGain/bestGainExact)は
   // 絶対に賞品を選ばない（豊穣の角等で$0賞品を不正獲得しない／賞品を拒否する reducer と噛み合って無限ループしない）。
   const PRIZE_SET = new Set(['bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed']);
+  // 暗黒時代：戦利品/狂人/傭兵も非サプライ＝汎用獲得(bestGain等)や獲得系pendingから除外する
+  //（engine の NON_SUPPLY 拒否と噛み合い、提案し続けて無限ループするのを防ぐ）。
+  const NON_SUPPLY_SET = new Set([...PRIZE_SET, 'spoils', 'madman', 'mercenary']);
   // 新プロモ：サウナ/アヴァント分割山＝上のサウナが残る間はアヴァントを獲得できない
   // （engine の gain/canBuyCard 拒否と必ずセット＝提案すると強制獲得と噛み合い無限ループ）。
   function splitBlocked(state, id) { return id === 'avanto' && sup(state, 'sauna') > 0; }
   function bestGain(state, maxCost, opts) {
     opts = opts || {};
     for (const id of GAIN_ORDER) {
-      if (PRIZE_SET.has(id)) continue;
+      if (NON_SUPPLY_SET.has(id)) continue;
       if (splitBlocked(state, id)) continue;
       if (opts.treasureOnly && !isTreasure(id)) continue;
       if (opts.noVictory && (isType(id, 'victory') || isType(id, 'curse'))) continue;
@@ -84,14 +87,14 @@
   function bestGainExact(state, exact, opts) {
     opts = opts || {};
     for (const id of GAIN_ORDER) {
-      if (PRIZE_SET.has(id)) continue;
+      if (NON_SUPPLY_SET.has(id)) continue;
       if (splitBlocked(state, id)) continue;
       if (opts.noVictory && (isType(id, 'victory') || isType(id, 'curse'))) continue;
       if (!C()[id]) continue;
       if (cost(state, id) === exact && sup(state, id) > 0) return id;
     }
     for (const id of Object.keys(state.supply)) {
-      if (PRIZE_SET.has(id)) continue;
+      if (NON_SUPPLY_SET.has(id)) continue;
       if (splitBlocked(state, id)) continue;
       if (opts.noVictory && (isType(id, 'victory') || isType(id, 'curse'))) continue;
       if (C()[id] && cost(state, id) === exact && sup(state, id) > 0) return id;
@@ -1178,7 +1181,7 @@
         else if (card === 'stonemason') {
           for (let x = max; x >= 1; x--) {
             if (Object.keys(state.supply).some((id) => C()[id] && isType(id, 'action') && !isType(id, 'victory') &&
-                !PRIZE_SET.has(id) && cost(state, id) === x && sup(state, id) > 0)) { amt = x; break; }
+                !NON_SUPPLY_SET.has(id) && cost(state, id) === x && sup(state, id) > 0)) { amt = x; break; }
           }
         } else if (card === 'herald') {
           const good = p.discard.filter((c) => keepValue(c) >= 60).length; // 良い札を山札の上へ
@@ -1189,7 +1192,7 @@
       case 'stonemason_overpay': {
         let g = null;
         for (const id of GAIN_ORDER) {
-          if (C()[id] && isType(id, 'action') && !PRIZE_SET.has(id) && cost(state, id) === pd.exact && sup(state, id) > 0) { g = id; break; }
+          if (C()[id] && isType(id, 'action') && !NON_SUPPLY_SET.has(id) && cost(state, id) === pd.exact && sup(state, id) > 0) { g = id; break; }
         }
         return { type: 'STONEMASON_OVERPAY_GAIN', card: g };
       }
@@ -1327,7 +1330,7 @@
         return { type: 'BERSERKER_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
       case 'wheelwright':
         if (pd.stage === 'discard') return { type: 'WHEELWRIGHT_DISCARD', card: p.hand.includes('estate') ? 'estate' : null };
-        { const g = GAIN_ORDER.find((id) => C()[id] && isType(id, 'action') && !PRIZE_SET.has(id) && cost(state, id) <= pd.maxCost && sup(state, id) > 0); return { type: 'WHEELWRIGHT_GAIN', card: g || null }; }
+        { const g = GAIN_ORDER.find((id) => C()[id] && isType(id, 'action') && !NON_SUPPLY_SET.has(id) && cost(state, id) <= pd.maxCost && sup(state, id) > 0); return { type: 'WHEELWRIGHT_GAIN', card: g || null }; }
       case 'witchs_hut': {
         if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'WITCHS_HUT_REACT' }; }
         const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => cost(state, a) - cost(state, b));
@@ -1354,6 +1357,35 @@
         const acts = p.inPlay.filter((c) => isType(c, 'action') && !isType(c, 'duration')).sort((a, b) => throneValue(b) - throneValue(a)).slice(0, pd.max || 0);
         return { type: 'SCHEME_CLEANUP', cards: acts };
       }
+
+      /* ===== 拡張: 暗黒時代（Dark Ages）===== */
+      case 'survivors': {
+        const good = (pd.cards || []).some((c) => cost(state, c) >= 3 || isType(c, 'action'));
+        return { type: 'SURVIVORS_RESOLVE', choice: good ? 'topdeck' : 'discard', order: (pd.cards || []).slice() };
+      }
+      case 'rats_trash': {
+        const cand = p.hand.filter((c) => c !== 'rats');
+        return { type: 'RATS_TRASH', card: pickTrash(cand, 1)[0] || cand[0] };
+      }
+      case 'armory':
+        return { type: 'ARMORY_GAIN', card: bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) };
+      case 'forager':
+        return { type: 'FORAGER_TRASH', card: pickTrash(p.hand, 1)[0] || p.hand[0] };
+      case 'squire':
+        return { type: 'SQUIRE_RESOLVE', choice: 'silver' };
+      case 'squire_trash_gain': {
+        const atk = GAIN_ORDER.find((id) => C()[id] && isType(id, 'attack') && !NON_SUPPLY_SET.has(id) && sup(state, id) > 0);
+        return { type: 'SQUIRE_TRASH_GAIN', card: atk || null };
+      }
+      case 'storeroom':
+        return { type: 'STOREROOM_DISCARD', cards: p.hand.filter((c) => isDead(c)) };
+      case 'scavenger':
+        if (pd.stage === 'deck') return { type: 'SCAVENGER_DECK', discardDeck: false };
+        return { type: 'SCAVENGER_TOPDECK', card: p.discard.slice().sort((a, b) => keepValue(b) - keepValue(a))[0] };
+      case 'ironmonger':
+        return { type: 'IRONMONGER_RESOLVE', discard: isDead(pd.card) };
+      case 'minstrel':
+        return { type: 'MINSTREL_RESOLVE', order: (pd.cards || []).slice() };
 
       default:
         return { type: 'END_TURN' };
