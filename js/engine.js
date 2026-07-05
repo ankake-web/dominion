@@ -198,9 +198,13 @@
     for (let i = 0; i < n; i++) { if (mode === 'top') p.deck.unshift('stash'); else p.deck.push('stash'); }
   }
   // 捨て札を山札にシャッフルする共通入口（全リデューサはこれを使う＝へそくりの配置を一元処理）。
+  // ※シャッフルした捨て札は既存の山札の「下」に足す（＝山札が空でない状態で呼んでも上の札を壊さない）。
+  //   通常のリシャッフルは山札が空のとき呼ぶので append でも replace でも同じだが、
+  //   「山札の上N枚を見る」系（旅の楽団/生存者/地下墓所）は残り<Nで非空のまま呼ぶため append 必須。
   function reshuffleDeck(p) {
-    p.deck = shuffle(p.discard);
+    const shuffled = shuffle(p.discard);
     p.discard.length = 0;
+    p.deck = p.deck.concat(shuffled);
     placeStash(p);
   }
 
@@ -2281,6 +2285,33 @@
         else if (acts.length === 1) p.deck.unshift(acts[0]);
         break;
       }
+      case 'junk_dealer': // +1カード +1アクション +$1、手札1枚を廃棄（可能なら強制）
+        draw(state, pi, 1); t.actions += 1; t.coins += 1;
+        if (p.hand.length > 0) state.pending = { type: 'junk_dealer', player: pi };
+        break;
+      case 'mystic': // +1アクション +$2、カード名を指定→山札の上を公開→当たれば手札へ
+        t.actions += 1; t.coins += 2;
+        if (p.deck.length === 0 && p.discard.length > 0) reshuffleDeck(p);
+        if (p.deck.length > 0) state.pending = { type: 'mystic', player: pi };
+        break;
+      case 'altar': // 手札1枚を廃棄（可能なら強制）→ コスト5以下を1枚獲得（廃棄の可否に関わらず）
+        state.pending = p.hand.length > 0
+          ? { type: 'altar', stage: 'trash', player: pi }
+          : (anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) <= 5) ? { type: 'altar', stage: 'gain', player: pi } : null);
+        break;
+      case 'bandit_camp': // +1カード +2アクション、戦利品を1枚獲得（非サプライ）
+        draw(state, pi, 1); t.actions += 2;
+        if (gain(state, pi, 'spoils', 'discard')) log(state, `${p.name} は山賊の宿営地で戦利品を獲得した。`);
+        break;
+      case 'hunting_grounds': // +4カード（on-trashは公領or屋敷3＝triggerOnTrash）
+        draw(state, pi, 4);
+        break;
+      case 'catacombs': { // 山札の上3枚を見て、手札に加える or 捨てて+3カード（on-trashは安い獲得）
+        if (p.deck.length < 3 && p.discard.length > 0) reshuffleDeck(p);
+        const look = p.deck.slice(0, 3);
+        if (look.length > 0) state.pending = { type: 'catacombs', player: pi, cards: look.slice() };
+        break;
+      }
       // アタック/複雑（略奪者/狂信者/略奪/浮浪児/騎士/隠遁者/死の荷車/伯爵/建て直し 等）は後続ブロックで追加。
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
@@ -2977,6 +3008,9 @@
     // 異郷：絹の道＝所持する勝利点カード4枚につき1勝利点（端数切り捨て・絹の道自身も数える・絹の道1枚ごと）
     const silkRoads = cards.filter((c) => c === 'silk_road').length;
     if (silkRoads) vp += silkRoads * Math.floor(cards.filter((c) => DOM.isType(c, 'victory')).length / 4);
+    // 暗黒時代：封土＝所持する銀貨3枚につき1勝利点（端数切り捨て・封土1枚ごと）
+    const feoda = cards.filter((c) => c === 'feodum').length;
+    if (feoda) vp += feoda * Math.floor(cards.filter((c) => c === 'silver').length / 3);
     // 繁栄：VPトークン（司教・記念碑・収集・投資で貯めた勝利点）を加算
     vp += p.vpTokens || 0;
     return vp;
@@ -3275,9 +3309,20 @@
     if (card === 'sir_vander') { if (gain(state, pIndex, 'gold', 'discard')) log(state, `${p.name} はサー・ヴァンダーの廃棄で金貨1枚を獲得した。`); }
     // 暗黒時代：狂信者＝廃棄されたとき +3カード（持ち主が引く。相手のアタックで廃棄されても発動）。
     if (card === 'cultist') { draw(state, pIndex, 3); log(state, `${p.name} は狂信者の廃棄で +3カード。`); }
-    // 暗黒時代：従者＝廃棄されたときサプライのアタックカードを1枚獲得（対話。複数on-trash競合時は先着のみ＝許容簡略化）。
+    // 暗黒時代：従者＝廃棄されたときサプライのアタックカードを1枚獲得（対話＝onTrashQueue へ）。
     if (card === 'squire' && anyGainable(state, (id) => DOM.isType(id, 'attack') && !NON_SUPPLY.has(id))) {
-      if (!state.pending) state.pending = { type: 'squire_trash_gain', player: pIndex };
+      (state.onTrashQueue = state.onTrashQueue || []).push({ type: 'squire_trash_gain', player: pIndex });
+    }
+    // 暗黒時代：地下墓所＝廃棄されたとき、これより安いカード1枚を獲得（対話＝onTrashQueue へ）。
+    if (card === 'catacombs') {
+      const under = cardCost(state, 'catacombs');
+      if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) < under)) {
+        (state.onTrashQueue = state.onTrashQueue || []).push({ type: 'catacombs_trash', player: pIndex, under });
+      }
+    }
+    // 暗黒時代：狩場＝廃棄されたとき、公領1枚 or 屋敷3枚 を選んで獲得（対話＝onTrashQueue へ）。
+    if (card === 'hunting_grounds') {
+      (state.onTrashQueue = state.onTrashQueue || []).push({ type: 'hunting_grounds_trash', player: pIndex });
     }
     return true;
   }
@@ -3451,6 +3496,14 @@
     if (!state.pending && !state.gameOver && state.turn && state.turn.startQueue && state.turn.startQueue.length) {
       popStartQueue(state);
       state = runReplays(state); // 念のため（開始時効果が replay を積むことは無いが無害）
+    }
+    // 暗黒時代：on-trash の「対話つき」効果（地下墓所＝安い獲得／狩場＝公領or屋敷3／従者＝アタック獲得）は
+    //   トリガー時点で別の pending（アタック処理中・廃棄札の続きの獲得等）が走っていることがあるため、
+    //   state.onTrashQueue に貯めておき、選択待ちが無くなったタイミングで1件ずつ pending 化する。
+    //   誰のターンでも card の持ち主(player)が選ぶ（actor が pending.player を返す）。
+    if (!state.pending && !state.gameOver && state.onTrashQueue && state.onTrashQueue.length) {
+      state.pending = state.onTrashQueue.shift();
+      state = runReplays(state);
     }
     return state;
   }
@@ -4907,6 +4960,89 @@
         if (a.length !== b.length || !a.every((x, i) => x === b[i])) return state; // 同じ多重集合のみ
         for (let i = order.length - 1; i >= 0; i--) p.deck.unshift(order[i]);
         log(state, `${p.name} は吟遊詩人でアクション${order.length}枚を山札の上に戻した。`);
+        state.pending = null;
+        return state;
+      }
+      case 'JUNK_DEALER_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'junk_dealer') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (card == null || p.hand.indexOf(card) < 0) return state; // 廃棄は可能なら強制
+        removeOne(p.hand, card); trashCard(state, pd.player, card);
+        log(state, `${p.name} は屑屋で「${C()[card].name}」を廃棄した。`);
+        state.pending = null;
+        return state;
+      }
+      case 'MYSTIC_NAME': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'mystic') return state;
+        const p = state.players[pd.player];
+        const named = action.card; // 指定したカード名（山札の中身を見ずに宣言）
+        if (p.deck.length === 0 && p.discard.length > 0) reshuffleDeck(p);
+        const top = p.deck[0];
+        if (top != null) {
+          reveal(state, pd.player, [top], '秘術師で山札の上を公開');
+          if (named === top) { p.deck.shift(); p.hand.push(top); log(state, `${p.name} は秘術師で「${C()[top].name}」を当てて手札に加えた。`); }
+          else log(state, `${p.name} は秘術師で「${C()[named] ? C()[named].name : named}」を指定したが外れた。`);
+        }
+        state.pending = null;
+        return state;
+      }
+      case 'ALTAR_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'altar' || pd.stage !== 'trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (card == null || p.hand.indexOf(card) < 0) return state; // 手札があれば廃棄は強制
+        removeOne(p.hand, card); trashCard(state, pd.player, card);
+        log(state, `${p.name} は祭壇で「${C()[card].name}」を廃棄した。`);
+        // 廃棄の可否に関わらず、この後コスト5以下を1枚獲得（獲得候補が無ければ辞退）。
+        // ※廃棄の on-trash が対話を onTrashQueue に積んでいても、祭壇の獲得を先に立てる（獲得後に reduce 末尾で消化）。
+        state.pending = anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) <= 5)
+          ? { type: 'altar', stage: 'gain', player: pd.player }
+          : null;
+        return state;
+      }
+      case 'ALTAR_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'altar' || pd.stage !== 'gain') return state;
+        finishGain(state, pd, action.card, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) <= 5, 'discard', '獲得した（祭壇）。');
+        return state;
+      }
+      case 'CATACOMBS_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'catacombs') return state;
+        const p = state.players[pd.player];
+        const n = pd.cards.length;
+        if (action.choice === 'hand') {
+          for (let i = 0; i < n; i++) { const c = p.deck.shift(); if (c != null) p.hand.push(c); }
+          log(state, `${p.name} は地下墓所で上${n}枚を手札に加えた。`);
+        } else { // 捨てて +3カード
+          for (let i = 0; i < n; i++) { const c = p.deck.shift(); if (c != null) p.discard.push(c); }
+          draw(state, pd.player, 3);
+          log(state, `${p.name} は地下墓所で上${n}枚を捨てて +3カード。`);
+        }
+        state.pending = null;
+        return state;
+      }
+      case 'CATACOMBS_TRASH_GAIN': { // on-trash：これより安いカード1枚を獲得（強制）
+        const pd = state.pending;
+        if (!pd || pd.type !== 'catacombs_trash') return state;
+        finishGain(state, pd, action.card, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) < pd.under, 'discard', '獲得した（地下墓所）。');
+        return state;
+      }
+      case 'HUNTING_GROUNDS_TRASH': { // on-trash：公領1枚 or 屋敷3枚
+        const pd = state.pending;
+        if (!pd || pd.type !== 'hunting_grounds_trash') return state;
+        const p = state.players[pd.player];
+        if (action.choice === 'estates') {
+          let g = 0; for (let i = 0; i < 3; i++) if (gain(state, pd.player, 'estate', 'discard')) g++;
+          log(state, `${p.name} は狩場で屋敷 ${g}枚 を獲得した。`);
+        } else { // duchy（既定）
+          if (gain(state, pd.player, 'duchy', 'discard')) log(state, `${p.name} は狩場で公領を獲得した。`);
+          else log(state, `${p.name} は狩場で公領を選んだが獲得できなかった。`);
+        }
         state.pending = null;
         return state;
       }
@@ -6603,7 +6739,8 @@
     // ※支配中に決定者(支配者)へ配信しないと、UIが未知id 'back' を描画して render 例外→操作不能になる。
     const secretSeer = (s.turn && s.turn.possessedBy != null && s.pending && s.pending.player === s.turn.active)
       ? s.turn.possessedBy : (s.pending ? s.pending.player : -1);
-    if (s.pending && (s.pending.type === 'sentry' || s.pending.type === 'lookout') && Array.isArray(s.pending.cards) && seat !== s.pending.player && seat !== secretSeer) {
+    if (s.pending && (s.pending.type === 'sentry' || s.pending.type === 'lookout' || s.pending.type === 'catacombs' || s.pending.type === 'survivors') && Array.isArray(s.pending.cards) && seat !== s.pending.player && seat !== secretSeer) {
+      // 暗黒時代：地下墓所/生存者の「山札の上N枚を見る」は私的（公開ではない）＝本人と支配者以外には伏せる。
       s.pending = Object.assign({}, s.pending, { cards: new Array(s.pending.cards.length).fill('back') });
     }
     if (s.pending && s.pending.type === 'crystal_ball' && s.pending.card != null && seat !== s.pending.player && seat !== secretSeer) {
@@ -6654,6 +6791,8 @@
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',
+    'JUNK_DEALER_TRASH', 'MYSTIC_NAME', 'ALTAR_TRASH', 'ALTAR_GAIN', 'CATACOMBS_RESOLVE', 'CATACOMBS_TRASH_GAIN',
+    'HUNTING_GROUNDS_TRASH',
     // 海辺（第二版）
     'WAREHOUSE_DISCARD', 'HAVEN_SETASIDE', 'TACTICIAN_RESOLVE', 'SALVAGER_TRASH',
     'LOOKOUT_TRASH', 'LOOKOUT_DISCARD', 'ISLAND_PICK', 'NATIVE_VILLAGE_RESOLVE', 'TIDE_POOLS_DISCARD',

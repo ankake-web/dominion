@@ -189,6 +189,18 @@
     if (has('scheme')) return 'scheme';                   // +1カード+1アクション（片付けで山札の上へ）
     if (has('trail')) return 'trail';                     // +1カード+1アクション
     if (has('wheelwright')) return 'wheelwright';         // +1カード+1アクション（捨てて格上げ獲得）
+    // 暗黒時代：非ターミナル（+アクション付き）
+    if (has('fortress')) return 'fortress';               // +1カード+2アクション（廃棄で手札に戻る）
+    if (has('necropolis')) return 'necropolis';           // +2アクション（避難所）
+    if (has('bandit_camp')) return 'bandit_camp';         // +1カード+2アクション＋戦利品
+    if (has('junk_dealer')) return 'junk_dealer';         // +1カード+1アクション+$1＋圧縮
+    if (has('mystic')) return 'mystic';                   // +1アクション+$2＋当てれば手札へ
+    if (has('vagrant')) return 'vagrant';                 // +1カード+1アクション
+    if (has('wandering_minstrel')) return 'wandering_minstrel'; // +1カード+2アクション
+    if (has('ironmonger')) return 'ironmonger';           // +1カード+1アクション＋種別ボーナス
+    if (has('sage')) return 'sage';                       // +1アクション（$3以上を手札へ）
+    if (has('market_square')) return 'market_square';     // +1カード+1アクション+1購入
+    if (has('rats') && p.hand.some((c) => c !== 'rats' && isDead(c))) return 'rats'; // 圧縮対象があるとき
     // --- ターミナル（効果の大きい順）---
     // 新プロモ：王子＝良い対象（$4以下の持続/命令以外）が手札にあるときだけ（毎ターン無料再生＝最優先）。
     if (has('prince') && bestPrinceTarget(state, p)) return 'prince';
@@ -250,6 +262,17 @@
     if (has('spice_merchant') && p.hand.includes('copper')) return 'spice_merchant'; // 銅貨を廃棄→ボーナス
     if (has('stables') && p.hand.includes('copper')) return 'stables';               // 銅貨を捨て→+3カード+1アクション
     if (has('develop') && p.hand.some((c) => c === 'estate' || c === 'copper' || isType(c, 'curse'))) return 'develop'; // 不要札を2枚に格上げ
+    // 暗黒時代：ターミナル（ドロー＞trash-to-gain）
+    if (has('hunting_grounds')) return 'hunting_grounds';   // +4カード（強力）
+    if (has('catacombs')) return 'catacombs';               // 上3枚を手札へ or 捨てて+3カード
+    if (has('altar') && p.hand.some((c) => isDead(c))) return 'altar'; // 不要札を廃棄→$5獲得（捨てる札があるとき）
+    if (has('storeroom')) return 'storeroom';               // +1購入（捨てて引き直し→捨ててコイン）
+    if (has('forager')) return 'forager';                   // +1アクション+1購入＋廃棄→コイン
+    if (has('scavenger')) return 'scavenger';               // +$2＋山札整理
+    if (has('armory')) return 'armory';                     // コスト4以下を山札の上に獲得
+    if (has('poor_house')) return 'poor_house';             // +$4（手札の財宝で減）
+    if (has('squire')) return 'squire';                     // +$1＋選択
+    if (has('beggar')) return 'beggar';                     // 銅貨3枚を手札に
     // 玉座の間: 2回使える別アクションが手札にあるときだけ（無駄打ち回避）
     if (has('throne_room') && p.hand.some((c) => isType(c, 'action') && c !== 'throne_room')) return 'throne_room';
     if (has('council_room')) return 'council_room'; // +4カード+1購入
@@ -1386,6 +1409,31 @@
         return { type: 'IRONMONGER_RESOLVE', discard: isDead(pd.card) };
       case 'minstrel':
         return { type: 'MINSTREL_RESOLVE', order: (pd.cards || []).slice() };
+      case 'junk_dealer':
+        return { type: 'JUNK_DEALER_TRASH', card: pickTrash(p.hand, 1)[0] || p.hand[0] };
+      case 'mystic': {
+        // 山札に見えない中身の最頻カードを指定して当てにいく（山札→捨て札の順で母集団）。
+        const pool = p.deck.concat(p.discard);
+        const counts = {}; pool.forEach((c) => { counts[c] = (counts[c] || 0) + 1; });
+        let best = pool[0] || 'copper';
+        for (const c in counts) if (counts[c] > (counts[best] || 0)) best = c;
+        return { type: 'MYSTIC_NAME', card: best };
+      }
+      case 'altar':
+        if (pd.stage === 'trash') return { type: 'ALTAR_TRASH', card: pickTrash(p.hand, 1)[0] || p.hand[0] };
+        return { type: 'ALTAR_GAIN', card: bestGain(state, 5, { noVictory: true }) || bestGain(state, 5) };
+      case 'catacombs': {
+        // 上3枚に良い札（$3以上/アクション/財宝）が2枚以上あれば手札へ、そうでなければ捨てて+3。
+        const look = pd.cards || [];
+        const good = look.filter((c) => cost(state, c) >= 3 || isType(c, 'action') || isTreasure(c)).length;
+        return { type: 'CATACOMBS_RESOLVE', choice: good >= 2 ? 'hand' : 'discard' };
+      }
+      case 'catacombs_trash': {
+        const m = (pd.under || 5) - 1;
+        return { type: 'CATACOMBS_TRASH_GAIN', card: bestGain(state, m, { noVictory: true }) || bestGain(state, m) };
+      }
+      case 'hunting_grounds_trash':
+        return { type: 'HUNTING_GROUNDS_TRASH', choice: sup(state, 'duchy') > 0 ? 'duchy' : 'estates' };
 
       default:
         return { type: 'END_TURN' };
