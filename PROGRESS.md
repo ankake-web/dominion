@@ -214,13 +214,12 @@
 - **海辺の簡略化2点は本格実装済み**：封鎖の堀免疫窓・海賊の財宝獲得リアクション。on-gain対話は `!pending && _gainDepth===1` ゲートで安全側。
 
 ## 5. 未完了タスク（優先順。次セッションは 1. から）
-1. **段階2＝全カード実プレイ化（ユーザー決定・完全忠実）**。~~収穫祭13✅~~ ~~ギルド13✅~~ の次＝**異郷35＋褒賞5＋暗黒時代を全56に完成＋新プロモ6**。方針＝特殊山・全トリガー・command系まで**機構ごと新設**（簡略化しない）。
-   - **実装の設計図＝`docs/adding-cards.md`**（全機構の file:line ＋コピー元パターン＋落とし穴。毎回これを見れば実装できる）。
-   - **着手順（新機構の少ない順）＝ ~~収穫祭~~✅ → ~~ギルド~~✅ → ~~異郷~~✅(§0-5) → 新プロモ → 暗黒時代完成**。1拡張ずつ 効果+pending+CPU+UI+ATTACKS/PLAYER_ACTIONS+テスト → `npm test`緑 → コミット。**各拡張は完成してから CARD_SET 昇格**（＝中途の暗黒時代がデプロイに出ない）。
-   - **✅収穫祭は完了（2026-07-04・§0-2）**。**✅段階1（画像化・カタログ）は残り全49枚[ギルド13＋暗黒時代残り36]完了（2026-07-04・§0-3・`651e3f6`）**。**✅ギルド13枚の段階2実プレイ化も完了（2026-07-04・§0-4）＝財源/過払い/アタック2種/公開/trash-to-gain を全て新設・出荷済み**。
-   - **✅異郷35枚 完了（2026-07-05・§0-5）**＝on-gain/on-discard/on-trash/on-buyフック・獲得置換(交易商人)・番犬リアクション・アタック6種・可変VP(絹の道)・コスト軽減(街道)・策謀のクリンナップ を全て新設。**次は新プロモ6**（次いで暗黒時代を全56に完成）。
-   - **新設が要る機構**：賞品Prizes山（収穫祭）／Bane（若き魔女）／可変VP fairgrounds/silk_road/feodum（vpOfに1ブロック）／持続 captain/church（armDuration+RESOLVER）／command procession/band_of_misfits/captain/trusty_steed（replayキュー）／王子prince（脇から毎ターン）／コイントークンCoffers（ギルド・per-player数値+COFFERS_SPEND）／overpay（ギルド）／廃墟Ruins・騎士Knights混合山＋戦利品/狂人/傭兵（暗黒時代・top-level配列/非サプライ）／避難所Shelters（開始デッキ置換）／on-trash・on-discardフック（暗黒時代・要塞/市場の広場等で新設、本人任意廃棄に限定）。
-   - **暗黒時代の残り**：段階1未追加の王国15枚（junk_dealer/bandit_camp/rebuild/catacombs/graverobber/count/band_of_misfits/mystic/rogue/pillage/cultist/knights/counterfeit/hunting_grounds/altar）＋廃墟5/避難所3/騎士10/戦利品/狂人/傭兵 のカタログ定義＆GAIN_ORDER＆（絵は後入れ）も要。**絵は後で挿入方針**＝定義とロジックを先に、webpは枠+文字で生成orアート後入れ。
+1. **段階2＝全カード実プレイ化（ユーザー決定・完全忠実）**。~~収穫祭13✅~~ ~~ギルド13✅~~ ~~異郷35✅~~ ~~新プロモ6✅~~ の次＝**暗黒時代を全56に完成**（段階2の最後の大物）。方針＝特殊山・全トリガー・on-trash系まで**機構ごと新設**（簡略化しない）。
+   - **実装の設計図＝`docs/adding-cards.md`**（全機構の file:line ＋コピー元パターン＋落とし穴。§0-7 で分割山/「動かさず使用」/永続持続/startQueue安全網/シャッフル介入 も追記済み。**特殊山は §C**）。
+   - **着手順＝ ~~収穫祭~~✅ → ~~ギルド~~✅ → ~~異郷~~✅(§0-5) → ~~新プロモ~~✅(§0-7) → 暗黒時代完成**。効果+pending+CPU+UI+ATTACKS/PLAYER_ACTIONS+テスト → `npm test`緑 → コミット。**完成してから CARD_SET 昇格**（＝中途の暗黒時代がデプロイに出ない）。
+   - **✅完了済み段階2**：収穫祭(§0-2)／ギルド(§0-4)／異郷(§0-5)／新プロモ(§0-7)。**段階1（画像化・カタログ・GAIN_ORDER・webp）は暗黒時代含め全カード追加済み**(§0-3/§0-6)＝`DOM.POOLS.darkages`35種＋`knights`10＋`ruins`5＋`shelters`3＋`darkages_np`3。新種別 knight/ruins/shelter は表示ラベルのみ実装済（engineロジックは段階2で新設）。
+   - **暗黒時代の段階2で新設が要る機構**：**混合山**（廃墟Ruins/騎士Knights＝中身と順序が違う→`state.ruins`/`state.knights` を top-level id配列に・invariants tally に forEach追加・emptyPileCount/maskで対応・§C参照）／**避難所Shelters**（開始デッキ置換＝createInitialState の estate を条件で hovel/necropolis/overgrown_estate に）／**戦利品/狂人/傭兵**（非サプライ数値キー山＝§6「4系統除外チェックリスト」必須）／**on-trashフック**（要塞=廃棄で手札に戻る・墓暴き/胥吏 等・本人任意廃棄に限定＝異郷 triggerOnTrash を拡張）／略奪者marauder系の廃墟配布アタック／建て直し rebuild・伯爵 count 等の多段選択。
+   - **未着手の残り拡張（発売順・段階1すら未着手）**：夜想曲/ルネサンス/移動動物園/同盟/略奪/日の出づる国 は画像・カタログとも無し（§0-6）。冒険/帝国の段階2（実プレイ化）＝Reserve/酒場マット/トラベラー交換/旅トークン/負債経済/分割山/城/命令/勝利点トークン/集合 は別の大仕事＝暗黒時代の後。
 2. **錬金術アートの△3枚最終確認（任意）**：変成/薬草商/薬剤師。差し替えは `asset/art/<id>.png` →`node tools/build-cards.js`→該当webpデプロイ。
 3. （任意・CPU購入の残課題）B案は「拡張＋礼拝堂エンジン」で ENGINE/MONEY を切替済み。さらに踏み込むなら **MONEY王国での BM+呪いアタック（魔女等≤2枚）** や **王国個別のエンジン成立度スコアリング**が候補（現状でも総合71%なので優先度は低い）。
 4. （任意・過去メモ）絵文字→game-icons.net SVG 化、vanilla効果DSL 等。
