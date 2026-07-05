@@ -265,6 +265,11 @@
     // 暗黒時代：ターミナル（ドロー＞trash-to-gain）
     if (has('hunting_grounds')) return 'hunting_grounds';   // +4カード（強力）
     if (has('catacombs')) return 'catacombs';               // 上3枚を手札へ or 捨てて+3カード
+    if (has('count')) return 'count';                       // +$3 or 公領獲得（前半で山札整理）
+    // 建て直し＝屋敷/公領を持っているとき（勝利点を格上げ）
+    if (has('rebuild') && (owned(p, 'estate') > 0 || owned(p, 'duchy') > 0)) return 'rebuild';
+    // 墓暴き＝廃棄置き場に$3-6があるか、手札にアクションがあるとき（不発の無駄打ち回避）
+    if (has('graverobber') && ((state.trash || []).some((c) => { const cc = cost(state, c); return cc >= 3 && cc <= 6 && (C()[c].potion || 0) === 0; }) || p.hand.some((c) => isType(c, 'action')))) return 'graverobber';
     if (has('altar') && p.hand.some((c) => isDead(c))) return 'altar'; // 不要札を廃棄→$5獲得（捨てる札があるとき）
     if (has('storeroom')) return 'storeroom';               // +1購入（捨てて引き直し→捨ててコイン）
     if (has('forager')) return 'forager';                   // +1アクション+1購入＋廃棄→コイン
@@ -1434,6 +1439,35 @@
       }
       case 'hunting_grounds_trash':
         return { type: 'HUNTING_GROUNDS_TRASH', choice: sup(state, 'duchy') > 0 ? 'duchy' : 'estates' };
+      case 'graverobber': {
+        const inRange = (c) => { const cc = cost(state, c); return cc >= 3 && cc <= 6 && (C()[c].potion || 0) === 0; };
+        if (pd.stage === 'choose') {
+          if ((state.trash || []).some(inRange)) return { type: 'GRAVEROBBER_MODE', mode: 'from_trash' };
+          if (p.hand.some((c) => isType(c, 'action'))) return { type: 'GRAVEROBBER_MODE', mode: 'trash_gain' };
+          return { type: 'GRAVEROBBER_MODE', mode: 'from_trash' }; // 不発でも終端
+        }
+        if (pd.stage === 'from_trash') {
+          const pick = (state.trash || []).filter(inRange).sort((a, b) => cost(state, b) - cost(state, a))[0];
+          return { type: 'GRAVEROBBER_FROM_TRASH', card: pick };
+        }
+        if (pd.stage === 'trash') {
+          const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => cost(state, a) - cost(state, b));
+          return { type: 'GRAVEROBBER_TRASH', card: acts[0] };
+        }
+        return { type: 'GRAVEROBBER_GAIN', card: bestGain(state, pd.maxCost) }; // stage 'gain'
+      }
+      case 'rebuild': {
+        if (pd.stage === 'name') return { type: 'REBUILD_NAME', card: 'province' }; // 属州を守り 屋敷/公領を格上げ
+        let g = null;
+        for (const id of GAIN_ORDER) { if (C()[id] && isType(id, 'victory') && !NON_SUPPLY_SET.has(id) && cost(state, id) <= pd.maxCost && sup(state, id) > 0) { g = id; break; } }
+        return { type: 'REBUILD_GAIN', card: g };
+      }
+      case 'count': {
+        if (pd.stage === 'part1') return { type: 'COUNT_PART1', mode: p.hand.length > 0 ? 'topdeck' : 'copper' };
+        if (pd.stage === 'topdeck') return { type: 'COUNT_TOPDECK', card: p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0] };
+        if (pd.stage === 'discard') return { type: 'COUNT_DISCARD', cards: p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b)).slice(0, pd.need) };
+        return { type: 'COUNT_PART2', mode: 'coins' }; // stage 'part2'
+      }
 
       default:
         return { type: 'END_TURN' };

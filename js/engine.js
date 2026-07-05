@@ -2312,7 +2312,17 @@
         if (look.length > 0) state.pending = { type: 'catacombs', player: pi, cards: look.slice() };
         break;
       }
-      // アタック/複雑（略奪者/狂信者/略奪/浮浪児/騎士/隠遁者/死の荷車/伯爵/建て直し 等）は後続ブロックで追加。
+      case 'graverobber': // 二択：廃棄置き場の$3-6を山札の上へ／手札のアクション廃棄→+$3まで獲得
+        state.pending = { type: 'graverobber', stage: 'choose', player: pi };
+        break;
+      case 'rebuild': // +1アクション。カード名を指定→指定以外の勝利点を廃棄→+$3まで高い勝利点を獲得
+        t.actions += 1;
+        state.pending = { type: 'rebuild', stage: 'name', player: pi };
+        break;
+      case 'count': // 独立2段階の三択（前半：2枚捨て/1枚山札上/銅貨獲得、後半：+$3/手札全廃棄/公領獲得）
+        state.pending = { type: 'count', stage: 'part1', player: pi };
+        break;
+      // アタック/複雑（略奪者/狂信者/略奪/浮浪児/騎士/隠遁者/死の荷車 等）は後続ブロックで追加。
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
       // --- バニラ系（即時のみ・非対話）---
@@ -5046,6 +5056,136 @@
         state.pending = null;
         return state;
       }
+      // 暗黒時代：$3〜$6 の判定（ポーション/負債コストは該当外）。廃棄置き場から数える。
+      case 'GRAVEROBBER_MODE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'graverobber' || pd.stage !== 'choose') return state;
+        const p = state.players[pd.player];
+        if (action.mode === 'from_trash') {
+          const has = (state.trash || []).some((c) => { const cc = cardCost(state, c); return cc >= 3 && cc <= 6 && potionCost(c) === 0; });
+          state.pending = has ? { type: 'graverobber', stage: 'from_trash', player: pd.player } : null; // 該当なし＝不発
+        } else if (action.mode === 'trash_gain') {
+          state.pending = p.hand.some((c) => DOM.isType(c, 'action')) ? { type: 'graverobber', stage: 'trash', player: pd.player } : null;
+        } else return state;
+        return state;
+      }
+      case 'GRAVEROBBER_FROM_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'graverobber' || pd.stage !== 'from_trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        const cc = card != null ? cardCost(state, card) : -1;
+        if (card == null || state.trash.indexOf(card) < 0 || cc < 3 || cc > 6 || potionCost(card) !== 0) return state;
+        removeOne(state.trash, card); p.deck.unshift(card);
+        reveal(state, pd.player, [card], '墓暴きで廃棄置き場から獲得'); // 何を取ったかは公開
+        log(state, `${p.name} は墓暴きで廃棄置き場の「${C()[card].name}」を山札の上に獲得した。`);
+        state.pending = null;
+        return state;
+      }
+      case 'GRAVEROBBER_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'graverobber' || pd.stage !== 'trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (card == null || p.hand.indexOf(card) < 0 || !DOM.isType(card, 'action')) return state;
+        removeOne(p.hand, card); trashCard(state, pd.player, card);
+        const mx = cardCost(state, card) + 3;
+        log(state, `${p.name} は墓暴きで「${C()[card].name}」を廃棄した。`);
+        state.pending = anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) <= mx)
+          ? { type: 'graverobber', stage: 'gain', player: pd.player, maxCost: mx }
+          : null;
+        return state;
+      }
+      case 'GRAVEROBBER_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'graverobber' || pd.stage !== 'gain') return state;
+        finishGain(state, pd, action.card, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) <= pd.maxCost, 'discard', '獲得した（墓暴き）。');
+        return state;
+      }
+      case 'REBUILD_NAME': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'rebuild' || pd.stage !== 'name') return state;
+        const p = state.players[pd.player];
+        const named = action.card; // 指定は任意のカード名（ゲーム外/非勝利点でもよい）
+        const revealed = []; let found = null;
+        while (true) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
+          if (p.deck.length === 0) break;
+          const c = p.deck.shift();
+          if (DOM.isType(c, 'victory') && c !== named) { found = c; break; }
+          revealed.push(c);
+        }
+        reveal(state, pd.player, revealed.concat(found ? [found] : []), '建て直し');
+        revealed.forEach((c) => p.discard.push(c)); // 残りを捨てる
+        if (found) {
+          trashCard(state, pd.player, found);
+          const fc = cardCost(state, found) + 3;
+          log(state, `${p.name} は建て直しで「${C()[found].name}」を廃棄した。`);
+          state.pending = anyGainable(state, (id) => !NON_SUPPLY.has(id) && DOM.isType(id, 'victory') && cardCost(state, id) <= fc)
+            ? { type: 'rebuild', stage: 'gain', player: pd.player, maxCost: fc }
+            : null;
+        } else {
+          log(state, `${p.name} は建て直しで対象の勝利点が見つからなかった。`);
+          state.pending = null;
+        }
+        return state;
+      }
+      case 'REBUILD_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'rebuild' || pd.stage !== 'gain') return state;
+        finishGain(state, pd, action.card, (id) => !NON_SUPPLY.has(id) && DOM.isType(id, 'victory') && cardCost(state, id) <= pd.maxCost, 'discard', '獲得した（建て直し）。');
+        return state;
+      }
+      case 'COUNT_PART1': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'count' || pd.stage !== 'part1') return state;
+        const p = state.players[pd.player];
+        const m = action.mode;
+        if (m === 'discard2') {
+          const need = Math.min(2, p.hand.length);
+          if (need > 0) { state.pending = { type: 'count', stage: 'discard', player: pd.player, need }; return state; }
+        } else if (m === 'topdeck') {
+          if (p.hand.length > 0) { state.pending = { type: 'count', stage: 'topdeck', player: pd.player }; return state; }
+        } else if (m === 'copper') {
+          if (gain(state, pd.player, 'copper', 'discard')) log(state, `${p.name} は伯爵で銅貨を獲得した。`);
+        } else return state;
+        state.pending = { type: 'count', stage: 'part2', player: pd.player }; // 前半が空振りでも後半へ
+        return state;
+      }
+      case 'COUNT_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'count' || pd.stage !== 'discard') return state;
+        if (!discardFromHand(state, pd.player, action.cards, pd.need, '捨てた（伯爵）。')) return state;
+        state.pending = { type: 'count', stage: 'part2', player: pd.player };
+        return state;
+      }
+      case 'COUNT_TOPDECK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'count' || pd.stage !== 'topdeck') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0) return state;
+        removeOne(p.hand, card); p.deck.unshift(card);
+        log(state, `${p.name} は伯爵で手札1枚を山札の上に置いた。`);
+        state.pending = { type: 'count', stage: 'part2', player: pd.player };
+        return state;
+      }
+      case 'COUNT_PART2': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'count' || pd.stage !== 'part2') return state;
+        const p = state.players[pd.player];
+        const m = action.mode;
+        if (m === 'coins') { t.coins += 3; log(state, `${p.name} は伯爵で +$3。`); }
+        else if (m === 'trashhand') {
+          const hand = p.hand.slice(); p.hand.length = 0;
+          hand.forEach((c) => trashCard(state, pd.player, c)); // 城塞は手札へ戻る／catacombs等の対話はキューへ
+          log(state, `${p.name} は伯爵で手札 ${hand.length}枚 を廃棄した。`);
+        } else if (m === 'duchy') {
+          if (gain(state, pd.player, 'duchy', 'discard')) log(state, `${p.name} は伯爵で公領を獲得した。`);
+        } else return state;
+        state.pending = null;
+        return state;
+      }
 
       /* ===== 拡張: 海辺（Seaside 第二版）の選択解決 ===== */
       case 'WAREHOUSE_DISCARD': {
@@ -6792,7 +6932,8 @@
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',
     'JUNK_DEALER_TRASH', 'MYSTIC_NAME', 'ALTAR_TRASH', 'ALTAR_GAIN', 'CATACOMBS_RESOLVE', 'CATACOMBS_TRASH_GAIN',
-    'HUNTING_GROUNDS_TRASH',
+    'HUNTING_GROUNDS_TRASH', 'GRAVEROBBER_MODE', 'GRAVEROBBER_FROM_TRASH', 'GRAVEROBBER_TRASH', 'GRAVEROBBER_GAIN',
+    'REBUILD_NAME', 'REBUILD_GAIN', 'COUNT_PART1', 'COUNT_DISCARD', 'COUNT_TOPDECK', 'COUNT_PART2',
     // 海辺（第二版）
     'WAREHOUSE_DISCARD', 'HAVEN_SETASIDE', 'TACTICIAN_RESOLVE', 'SALVAGER_TRASH',
     'LOOKOUT_TRASH', 'LOOKOUT_DISCARD', 'ISLAND_PICK', 'NATIVE_VILLAGE_RESOLVE', 'TIDE_POOLS_DISCARD',
