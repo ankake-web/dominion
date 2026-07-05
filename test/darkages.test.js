@@ -39,6 +39,19 @@ function tdiff(a, b) { const ks = new Set([...Object.keys(a), ...Object.keys(b)]
 
 const LOOTER_K = ['marauder', 'cultist', 'death_cart']; // 廃墟山を使うカード
 
+/* ============ CARD_SET 昇格 ============ */
+console.log('=== 暗黒時代: CARD_SET 昇格 ===');
+{
+  ok(DOM.CARD_SETS.some((x) => x.id === 'darkages' && x.kingdom.length === 10), 'darkages 固定セットが10種で存在');
+  ok(DOM.CARD_SETS.some((x) => x.id === 'random-darkages' && (x.randomFrom || []).indexOf('darkages') >= 0), 'random-darkages が存在');
+  ok(DOM.KINGDOM_DARKAGES.every((id) => DOM.POOLS.darkages.includes(id)) && DOM.KINGDOM_DARKAGES.length === 10, '固定10種は全て darkages プール内');
+  // 固定セット＝避難所ON・random系＝避難所OFF（王国内容で自動判定）
+  const sf = mk(DOM.kingdomForSet('darkages'));
+  ok(count([].concat(sf.players[0].deck, sf.players[0].hand), 'hovel') === 1 && count([].concat(sf.players[0].deck, sf.players[0].hand), 'estate') === 0, '暗黒時代セット: 避難所ON（納屋在・開始屋敷なし）');
+  const rf = mk(['squire', 'hermit', 'urchin', 'ironmonger', 'marauder', 'catacombs', 'counterfeit', 'cultist', 'graverobber', 'mystic']);
+  ok(count([].concat(rf.players[0].deck, rf.players[0].hand), 'estate') === 3, 'random系darkages王国: 避難所OFF（開始屋敷3枚）');
+}
+
 /* ============ 基盤機構 ============ */
 console.log('=== 暗黒時代: 基盤機構（混合山/非サプライ/避難所/封土VP）===');
 {

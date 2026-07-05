@@ -785,6 +785,10 @@
   //   on-buy(値切り屋/農地)・獲得置換(交易商人は混成で登場)・アタック(辺境伯)・財宝リアクション(愚者の黄金) を味わえる構成。
   DOM.KINGDOM_HINTERLANDS = ['crossroads', 'fools_gold', 'develop', 'oasis', 'tunnel',
                              'jack_of_all_trades', 'silk_road', 'haggler', 'margrave', 'border_village'];
+  // 暗黒時代 推奨10種＝公式「Grim Parade」（Dark Ages alone）。廃墟(狂信者=Looter)・騎士の混合山・
+  //   命令(はみだし者)・on-trash(城塞/地下墓所/狩場)・避難所(このセットは常に避難所使用) を味わえる構成。
+  DOM.KINGDOM_DARKAGES = ['armory', 'band_of_misfits', 'catacombs', 'cultist', 'forager',
+                          'fortress', 'knights', 'market_square', 'procession', 'hunting_grounds'];
   // 初版（第二版で廃止されたカードを含む懐かしのセット）
   DOM.KINGDOM_1E = ['cellar', 'chancellor', 'woodcutter', 'feast', 'militia',
                     'spy', 'thief', 'council_room', 'adventurer', 'market'];
@@ -870,6 +874,9 @@
     { id: 'cornucopia',      kind: 'standard', name: '収穫祭セット', kingdom: DOM.KINGDOM_CORNUCOPIA },
     { id: 'guilds',          kind: 'standard', name: 'ギルドセット', kingdom: DOM.KINGDOM_GUILDS },
     { id: 'hinterlands',     kind: 'standard', name: '異郷セット', kingdom: DOM.KINGDOM_HINTERLANDS },
+    // 暗黒時代セット（固定10種＝Grim Parade）。このセットのみ避難所を使用（createInitialState が
+    //   王国内容の一致で自動判定＝opts不要。random-darkages は避難所OFF）。
+    { id: 'darkages',        kind: 'standard', name: '暗黒時代セット', kingdom: DOM.KINGDOM_DARKAGES },
     // ---- おすすめ（テーマ別・固定10種）----
     { id: 'big-money',       kind: 'recommend', name: 'ビッグマネー', desc: 'お金を伸ばして属州を狙う王道',
       kingdom: ['chapel', 'moneylender', 'harbinger', 'throne_room', 'bureaucrat', 'poacher', 'market', 'mine', 'laboratory', 'sentry'] },
@@ -903,6 +910,7 @@
     { id: 'random-cornucopia', kind: 'random', name: '収穫祭から',   randomFrom: ['cornucopia'] },
     { id: 'random-guilds',   kind: 'random', name: 'ギルドから',     randomFrom: ['guilds'] },
     { id: 'random-hinterlands', kind: 'random', name: '異郷から',    randomFrom: ['hinterlands'] },
+    { id: 'random-darkages', kind: 'random', name: '暗黒時代から',   randomFrom: ['darkages'] },
     { id: 'random-intrigue', kind: 'random', name: '陰謀のみから',   randomFrom: ['intrigue'] },
     { id: 'random-basic',    kind: 'random', name: '基本のみから',   randomFrom: ['basic'] },
     { id: 'random-promo',    kind: 'random', name: 'プロモ込みから',  randomFrom: ['basic', 'intrigue', 'promo'] },

@@ -104,7 +104,7 @@ console.log('=== カード保存則: 全プール混成ランダム王国 ===');
 // C) 出荷セット（各セットを実際に組んで検証）
 console.log('=== カード保存則: 出荷セット（固定/ランダム各種） ===');
 {
-  const sets = ['basic', 'intrigue', 'seaside', 'alchemy', 'prosperity', 'cornucopia', 'guilds', 'hinterlands', 'promo2-pack', 'random', 'random-promo', 'random-seaside', 'random-alchemy', 'random-prosperity', 'random-cornucopia', 'random-guilds', 'random-hinterlands'];
+  const sets = ['basic', 'intrigue', 'seaside', 'alchemy', 'prosperity', 'cornucopia', 'guilds', 'hinterlands', 'darkages', 'promo2-pack', 'random', 'random-promo', 'random-seaside', 'random-alchemy', 'random-prosperity', 'random-cornucopia', 'random-guilds', 'random-hinterlands', 'random-darkages'];
   let allOk = true;
   for (const setId of sets) {
     for (let sd = 0; sd < 3; sd++) {

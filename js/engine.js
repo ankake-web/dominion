@@ -284,9 +284,12 @@
         ? { name: x, isCpu: false, level: 'normal' }
         : { name: x.name, isCpu: !!x.isCpu, level: x.level || 'normal' }
     );
-    // 暗黒時代：避難所(Shelters)使用時（固定 darkages セットのみ ON＝opts.shelters）、開始デッキの
-    // 屋敷3枚を 納屋/共同墓地/草茂る屋敷 に置換する。random系ではOFF（決定論的で公平＝決定事項）。
-    const useShelters = !!opts.shelters;
+    // 暗黒時代：避難所(Shelters)使用時、開始デッキの屋敷3枚を 納屋/共同墓地/草茂る屋敷 に置換する。
+    // 固定 darkages セット（＝王国が KINGDOM_DARKAGES と一致）のときのみ ON（決定事項）。opts.shelters でも上書き可。
+    // 王国内容で判定するので local/再戦/オンラインの全経路で自動的に効く（opts の引き回し不要）。
+    const isFixedDarkages = Array.isArray(DOM.KINGDOM_DARKAGES) && kingdom.length === DOM.KINGDOM_DARKAGES.length &&
+      DOM.KINGDOM_DARKAGES.every((id) => kingdom.indexOf(id) >= 0);
+    const useShelters = !!opts.shelters || isFixedDarkages;
     const players = cfgs.map((cfg, i) => {
       const start = [];
       for (let n = 0; n < 7; n++) start.push('copper');
