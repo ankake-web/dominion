@@ -232,8 +232,11 @@
     if (has('treasure_map') && p.hand.filter((c) => c === 'treasure_map').length >= 2) return 'treasure_map'; // 2枚揃いで金貨4枚
     if (has('tactician')) { const hc = p.hand.reduce((s, c) => s + (isTreasure(c) ? (C()[c].coin || 0) : 0), 0); if (hc <= 3 && p.hand.length > 1) return 'tactician'; }
     // 冒険：ターミナル
+    if (has('bridge_troll')) return 'bridge_troll';       // アタック＋全カード-$1＋今と次+1購入（持続）
+    if (has('giant')) return 'giant';                     // アタック（表で+$5＋各相手の山札上を廃棄/呪い）
     if (has('hireling')) return 'hireling';               // 永続 +1カード/ターン（早く出すほど得）
     if (has('gear')) return 'gear';                        // +2カード（脇置き持続）
+    if (has('ranger')) return 'ranger';                   // +1購入（旅トークン表で+5カード。裏なら次回に備える）
     if (has('amulet')) return 'amulet';                   // 3択（+$1／廃棄／銀貨獲得）×2ターン
     // 収穫祭：ターミナル（アタック・格上げ・賞品）
     if (has('jester')) return 'jester';                 // +2コイン＋アタック
@@ -1019,6 +1022,16 @@
         const order = p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b));
         return { type: 'AMULET_TRASH', card: order[0] };
       }
+      // 冒険：アタックを受ける側（堀があれば無効化、無ければそのまま受ける＝react のみ・効果は自動）。
+      case 'relic': // -1カードトークンは自動
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'RELIC_REACT' };
+      case 'giant': // 公開→廃棄/呪いは自動
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'GIANT_REACT' };
+      case 'bridge_troll': // -$1トークンは自動
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'BRIDGE_TROLL_REACT' };
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
       case 'warehouse':

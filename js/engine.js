@@ -72,6 +72,15 @@
     if (id === 'copper') return base + ((state.turn && state.turn.copperBonus) || 0);
     return base;
   }
+  // 冒険：-$1トークン（橋の下のトロル）は購入フェイズで最初に得る$1に食い込む。
+  //   END_ACTION_PHASE で minusCoin→coinPenalty に変換し、その後コインが増えるたび（財宝/財源）ここで相殺する。
+  //   コインは$0未満にならない（未消化ぶんは残るが毎ターン freshTurn でリセット）。
+  function applyCoinPenalty(state) {
+    const t = state.turn;
+    if (!t || !(t.coinPenalty > 0)) return;
+    const pay = Math.min(t.coinPenalty, t.coins);
+    t.coins -= pay; t.coinPenalty -= pay;
+  }
   // 財宝1枚を手札から場に出してコインを加算。「商人」の“このターン最初の銀貨で+1コイン（商人の数だけ）”もここで処理。
   // PLAY_TREASURE / PLAY_ALL_TREASURES / 闇市場 で共通利用。
   function playTreasureCard(state, pIndex, card) {
@@ -182,8 +191,16 @@
     if (card === 'cauldron') { t.buys += 1; }
     // 異郷：不正利得＝銅貨1枚を手札に獲得してよい（$1 は coin:1 で計上済）。獲得時の呪い配布は triggerOnGain。
     if (card === 'ill_gotten_gains') { state.pending = { type: 'igg_play', player: pIndex }; }
+    // 冒険：遺物＝財宝アタック。+$2（coin:2 で計上済み）＋他の各プレイヤーは -1カードトークンを受け取る（堀で防げる）。
+    if (card === 'relic') {
+      const q = [];
+      for (let k = 1; k < state.players.length; k++) q.push((pIndex + k) % state.players.length);
+      relicEnterVictim(state, pIndex, q);
+    }
     // 海辺：私掠船マーク中なら、このターン最初の銀貨/金貨は出した後に廃棄される（コインは入る）。
     corsairOnPlayTreasure(state, pIndex, card);
+    // 冒険：-$1トークンの相殺（購入フェイズでコインが増えたぶんに食い込む）。
+    applyCoinPenalty(state);
   }
 
   /* ---------- 乱数・シャッフル ---------- */
@@ -268,6 +285,8 @@
     return {
       active, phase: 'action', actions: 1, buys: 1, coins: 0, potions: 0, costReduction: 0,
       actionsPlayed: 0, copperBonus: 0, merchants: 0, silverPlayed: false,
+      coinPenalty: 0, // 冒険：-$1トークンの未消化ぶん（購入フェイズで最初に得る$1に食い込む。毎ターンリセット）
+
       gainedThisTurn: [], outpostUsed: false, isExtraTurn: !!isExtraTurn, startQueue: null,
       corsairTrashed: false, // 私掠船：このターンに最初の銀/金を廃棄済みか（被害者ごと）
       // 錬金術・支配：rotationSeat＝この手番が属する「通常の手番順の位置」（追加ターンでも回り順を崩さない）。
@@ -323,6 +342,10 @@
         coffers: 0,        // ギルド：財源（Coffers）トークン。購入フェイズに1枚=+1コインで使える。公開・VPには数えない。
         princes: [],       // プロモ：王子の脇に置いたカードid列（公開）。毎ターン開始時に脇のままプレイ。1要素=王子1枚が稼働中。
         stashPlacement: 'top', // プロモ：へそくり(Stash)のシャッフル時配置方針 'top'|'mix'|'bottom'（本人がいつでも変更可）。
+        // 冒険：トークン（すべて公開情報・スカラー＝maskStateFor でそのまま残る・JSONセーフ）。
+        journeyDown: false, // 旅トークンの向き（false=表向き／true=裏向き。山守/巨人が共有＝プレイのたびに裏返す）。
+        minusCard: false,   // -1カードトークン（遺物）：次に1枚以上引くドローで1枚少なく引く（draw() 冒頭で消化）。
+        minusCoin: false,   // -$1トークン（橋の下のトロル）：次の購入フェイズで最初の$1に食い込む（coinPenalty へ変換して消化）。
       };
     });
     // ギルド：パン屋（Baker）のセットアップ＝ゲーム開始時、各プレイヤーは財源1枚を得る。
@@ -420,6 +443,9 @@
   // pIndex のプレイヤーが n 枚引く（山切れで捨て札をシャッフル）
   function draw(state, pIndex, n) {
     const p = state.players[pIndex];
+    // 冒険：-1カードトークン（遺物）＝次にカードを1枚以上引くとき、1枚少なく引いてトークンを返す
+    //   （cleanup先引きに限らず、手番開始の持続ドロー/ドローアクション等どの引きでも「次の1回」に効く）。
+    if (p.minusCard && n > 0) { n -= 1; p.minusCard = false; log(state, `${p.name} は -1カードトークンで1枚少なく引く。`); }
     const drawn = [];
     for (let i = 0; i < n; i++) {
       if (p.deck.length === 0) {
@@ -805,6 +831,10 @@
     rogue:         { onMoat: (s, pd) => rogueEnterVictim(s, pd.source, pd.queue) },
     discard_down:  { embedded: true, onMoat: (s, pd) => advanceDiscardDown(s, pd) },
     knight:        { onMoat: (s, pd) => knightAttackEnter(s, pd.source, pd.sourceCard, pd.queue) },
+    // 冒険：遺物（-1カードトークン）・巨人（公開廃棄/呪い）・橋の下のトロル（-$1トークン）。
+    relic:         { onMoat: (s, pd) => relicEnterVictim(s, pd.source, pd.queue) },
+    giant:         { onMoat: (s, pd) => giantEnterVictim(s, pd.source, pd.queue) },
+    bridge_troll:  { onMoat: (s, pd) => bridgeTrollEnterVictim(s, pd.source, pd.queue) },
   };
   // 被攻撃側の反応（堀／秘密の小部屋／外交官）を差し込める局面か。
   function isAttackReactPending(pd) {
@@ -937,6 +967,64 @@
   function cultistAfter(state, source) {
     if (state.players[source].hand.includes('cultist')) state.pending = { type: 'cultist_chain', player: source };
     else state.pending = null;
+  }
+  /* ========== 冒険：アタック（遺物＝-1カードトークン／巨人＝公開廃棄or呪い／橋の下のトロル＝-$1トークン） ========== */
+  // 遺物：各相手が -1カードトークンを受け取る（略奪者型・非対話。堀で防げる）。
+  function relicEnterVictim(state, source, queue) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'relic', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      state.players[victim].minusCard = true;
+      log(state, `${state.players[victim].name} は -1カードトークンを受け取った（遺物）。`);
+      relicEnterVictim(state, source, rest);
+    }
+  }
+  // 橋の下のトロル：各相手が -$1トークンを受け取る（略奪者型・非対話。堀で防げる）。
+  function bridgeTrollEnterVictim(state, source, queue) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'bridge_troll', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      state.players[victim].minusCoin = true;
+      log(state, `${state.players[victim].name} は -$1トークンを受け取った（橋の下のトロル）。`);
+      bridgeTrollEnterVictim(state, source, rest);
+    }
+  }
+  // 巨人：各相手が山札の一番上を公開＝$3〜$6なら廃棄、そうでなければ捨てて呪いを獲得（略奪者型・自動解決）。
+  function giantEnterVictim(state, source, queue) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'giant', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      giantHit(state, victim);
+      giantEnterVictim(state, source, rest);
+    }
+  }
+  function giantHit(state, victim) {
+    const v = state.players[victim];
+    if (v.deck.length === 0 && v.discard.length > 0) reshuffleDeck(v);
+    if (v.deck.length === 0) { // 公開する札が無い→呪いだけ獲得
+      if ((state.supply.curse || 0) > 0) { gain(state, victim, 'curse', 'discard'); log(state, `${v.name} は山札が空なので呪いを獲得した（巨人）。`); }
+      return;
+    }
+    const top = v.deck[0];
+    reveal(state, victim, [top], '巨人で山札の上を公開');
+    const cc = cardCost(state, top);
+    if (cc >= 3 && cc <= 6) {
+      v.deck.shift(); trashCard(state, victim, top);
+      log(state, `${v.name} は「${C()[top].name}」を廃棄した（巨人）。`);
+    } else {
+      v.deck.shift(); v.discard.push(top);
+      log(state, `${v.name} は「${C()[top].name}」を捨てた（巨人）。`);
+      if ((state.supply.curse || 0) > 0) { gain(state, victim, 'curse', 'discard'); log(state, `${v.name} は呪いを獲得した（巨人）。`); }
+    }
   }
   // 略奪：手札5枚以上の各相手が手札を公開し、使用者が1枚選んで捨てさせる。
   function pillageEnterVictim(state, source, queue) {
@@ -3262,6 +3350,37 @@
         armDuration(state, pi, 'amulet');
         state.pending = { type: 'amulet', player: pi };
         break;
+      // 山守：+1購入。旅トークンを裏返す（表向きから始まる）。その後、表向きなら +5カード。
+      //   ＝先に裏返してから判定するので、初回プレイは裏になり+5なし、2回目は表になり+5（以後交互）。
+      case 'ranger':
+        t.buys += 1;
+        p.journeyDown = !p.journeyDown;
+        if (!p.journeyDown) { draw(state, pi, 5); log(state, `${p.name} は山守で旅トークンを表にして +5カード。`); }
+        else log(state, `${p.name} は山守で旅トークンを裏にした（+5カードは無し）。`);
+        break;
+      // 巨人：旅トークンを裏返す。裏向きになったら +$1。表向きなら +$5＋アタック
+      //   （他の各プレイヤーは山札の一番上を公開し、$3〜$6なら廃棄・そうでなければ捨てて呪いを獲得）。
+      case 'giant':
+        p.journeyDown = !p.journeyDown;
+        if (p.journeyDown) { t.coins += 1; log(state, `${p.name} は巨人で旅トークンを裏にして +$1。`); }
+        else {
+          t.coins += 5; log(state, `${p.name} は巨人で旅トークンを表にして +$5（アタック）。`);
+          const vics = [];
+          for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
+          giantEnterVictim(state, pi, vics);
+        }
+        break;
+      // 橋の下のトロル：他の各プレイヤーは -$1トークンを受け取る（アタック）。今と次のターン開始時にそれぞれ +1購入。
+      //   このターンと次のターン、カードのコストは$1安くなる（$0未満にはならない・持続）。
+      case 'bridge_troll': {
+        t.buys += 1;
+        t.costReduction = (t.costReduction || 0) + 1;
+        armDuration(state, pi, 'bridge_troll'); // 次の手番開始時：+1購入＋コスト軽減の継続
+        const vics = [];
+        for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
+        bridgeTrollEnterVictim(state, pi, vics);
+        break;
+      }
 
       default:
         break;
@@ -3459,6 +3578,11 @@
     },
     // 冒険：魔除け＝次の手番開始時も 3択（対話＝startQueueへ）。
     amulet: (s, pi) => { (s.turn.startQueue = s.turn.startQueue || []).push({ type: 'amulet', player: pi, viaStart: true }); },
+    // 冒険：橋の下のトロル＝次の手番開始時に +1購入、その手番もカードのコストは$1安い（アタックは初回のみ）。
+    bridge_troll: (s, pi) => {
+      s.turn.buys += 1; s.turn.costReduction = (s.turn.costReduction || 0) + 1;
+      log(s, `${s.players[pi].name} は橋の下のトロルの持続効果（+1購入・全カード$1安い）。`);
+    },
   };
 
   // 「獲得時」フック（サル＝右隣の獲得で+1カード／封鎖＝同名獲得で呪い）。gain から常に呼ばれる。
@@ -3794,6 +3918,7 @@
     // 前哨地：このプレイヤーの追加ターンか（手札3枚で同一プレイヤー続行）。
     const extra = !!p.outpostExtra;
     p.outpostExtra = false;
+    // 冒険：-1カードトークン（遺物）は draw() 内で「次のドロー」に効く（この先引きが次のドローなら1枚減）。
     draw(state, pi, extra ? 3 : 5);
     p.turns += 1;
 
@@ -3982,6 +4107,8 @@
         if (state.pending) return state;
         if (t.phase !== 'action') return state;
         t.phase = 'buy';
+        // 冒険：-$1トークンを消化（購入フェイズ開始時に食い込み分へ変換。財宝を出すとそのコインに食い込む）。
+        if (me.minusCoin) { t.coinPenalty = (t.coinPenalty || 0) + 1; me.minusCoin = false; log(state, `${me.name} は -$1トークンを支払う（このターンのコイン $1分）。`); applyCoinPenalty(state); }
         return state;
       }
       case 'END_TURN': {
@@ -5650,6 +5777,30 @@
         marauderEnterVictim(state, pd.source, pd.queue);
         return state;
       }
+      /* ===== 冒険：アタックの「そのまま受ける」解決（堀を公開しない被害者） ===== */
+      case 'RELIC_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'relic' || pd.stage !== 'react') return state;
+        state.players[pd.victim].minusCard = true;
+        log(state, `${state.players[pd.victim].name} は -1カードトークンを受け取った（遺物）。`);
+        relicEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+      case 'BRIDGE_TROLL_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'bridge_troll' || pd.stage !== 'react') return state;
+        state.players[pd.victim].minusCoin = true;
+        log(state, `${state.players[pd.victim].name} は -$1トークンを受け取った（橋の下のトロル）。`);
+        bridgeTrollEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+      case 'GIANT_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'giant' || pd.stage !== 'react') return state;
+        giantHit(state, pd.victim);
+        giantEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
       case 'CULTIST_REACT': {
         const pd = state.pending;
         if (!pd || pd.type !== 'cultist' || pd.stage !== 'react') return state;
@@ -6728,6 +6879,8 @@
         if (amount > (me.coffers || 0)) return state;
         me.coffers -= amount;
         t.coins += amount;
+        // 冒険：-$1トークンは「最初に得る$1」に食い込む＝財宝を出さず財源で賄うターンでも消化する。
+        applyCoinPenalty(state);
         log(state, `${me.name} は財源 ${amount}枚 を使った（+${amount}コイン）。`);
         return state;
       }
@@ -7639,6 +7792,7 @@
     'SAUNA_CHAIN', 'SAUNA_TRASH', 'STASH_SETTING',
     // 冒険（Adventures）
     'DUNGEON_DISCARD', 'GEAR_SETASIDE', 'AMULET_RESOLVE', 'AMULET_TRASH',
+    'RELIC_REACT', 'GIANT_REACT', 'BRIDGE_TROLL_REACT',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',

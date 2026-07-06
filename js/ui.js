@@ -889,6 +889,12 @@
     // 繁栄：勝利点トークン（司教・記念碑・収集・投資。終了時に得点へ加算）
     if (me.vpTokens) matRows.push(h('div', { class: 'mat-row' },
       h('span', { class: 'mat-label' }, '⭐ 勝利点トークン: ' + me.vpTokens + ' 点')));
+    // 冒険：トークン（旅＝山守/巨人が共有・-1カード＝遺物・-$1＝橋の下のトロル。すべて公開情報）。
+    const advTokens = [];
+    if (me.journeyDown) advTokens.push('🧭 旅トークン: 裏向き（次の山守で+5カード／次の巨人で+$1）');
+    if (me.minusCard) advTokens.push('🃏 -1カードトークン: 次に手札を1枚少なく引く');
+    if (me.minusCoin) advTokens.push('🪙 -$1トークン: 次の購入フェイズにコイン$1減');
+    advTokens.forEach((txt) => matRows.push(h('div', { class: 'mat-row' }, h('span', { class: 'mat-label' }, txt))));
     // 新プロモ：王子の脇（自分が手番でないときも自分の脇は常時見える。公開情報）
     if ((me.princes || []).length && me !== active) matRows.push(h('div', { class: 'mat-row' },
       h('span', { class: 'mat-label' }, '👑 王子の脇: '),
@@ -1568,6 +1574,9 @@
     if (pd.type === 'procession_gain') return modalGainSupply(state, '行進 — 獲得', 'ちょうどコスト $' + pd.exact + (pd.pot ? 'P' : '') + ' のアクションを1枚獲得します。', (id) => DOM.isType(id, 'action') && effCost(state, id) === pd.exact && (DOM.CARDS[id].potion || 0) === (pd.pot || 0), (id) => dispatch({ type: 'PROCESSION_GAIN', card: id }));
     if (pd.type === 'counterfeit') return modalSingleHand(p, '偽造通貨 — 2回使う財宝', '手札の非持続財宝1枚を選ぶと2回使い、それを廃棄します（使わなくてもよい）。', (id) => DOM.isType(id, 'treasure') && !DOM.isType(id, 'duration'), (card) => dispatch({ type: 'COUNTERFEIT_PLAY', card }), { label: '使わない', on: () => dispatch({ type: 'COUNTERFEIT_PLAY', card: null }) }, '2回使う');
     // --- Group D（アタック）---
+    if (pd.type === 'relic' && pd.stage === 'react') return modalOptions('遺物を受ける', '-1カードトークンを受け取ります（次に引く手札が1枚少なくなります）。', reactOptions(p, pd, { type: 'RELIC_REACT' }));
+    if (pd.type === 'giant' && pd.stage === 'react') return modalOptions('巨人を受ける', '山札の一番上を公開し、コスト$3〜$6なら廃棄、そうでなければ捨てて呪い1枚を獲得します。', reactOptions(p, pd, { type: 'GIANT_REACT' }));
+    if (pd.type === 'bridge_troll' && pd.stage === 'react') return modalOptions('橋の下のトロルを受ける', '-$1トークンを受け取ります（次の購入フェイズに使えるコインが$1減ります）。', reactOptions(p, pd, { type: 'BRIDGE_TROLL_REACT' }));
     if (pd.type === 'marauder' && pd.stage === 'react') return modalOptions('略奪者を受ける', '廃墟を1枚獲得します。', reactOptions(p, pd, { type: 'MARAUDER_REACT' }));
     if (pd.type === 'cultist' && pd.stage === 'react') return modalOptions('狂信者を受ける', '廃墟を1枚獲得します。', reactOptions(p, pd, { type: 'CULTIST_REACT' }));
     if (pd.type === 'cultist_chain') return modalOptions('狂信者 — 連鎖', '手札の狂信者を（アクションを消費せず）続けて使えます。', [

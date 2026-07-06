@@ -651,7 +651,7 @@
                  text: '次の自分のターンまで、他のプレイヤーがカードを購入した時、その手札を全て山札の上に置く。\n次のターン開始時：+3 カード。' },
     lost_city: { id: 'lost_city', name: '失われし都市', cost: 5, types: ['action'],
                  text: '+2 カード\n+2 アクション\nこれを獲得した時、他の各プレイヤーはカードを1枚引く。' },
-    relic: { id: 'relic', name: '遺物', cost: 5, types: ['treasure', 'attack'],
+    relic: { id: 'relic', name: '遺物', cost: 5, types: ['treasure', 'attack'], coin: 2,
                  text: '+$2\n他の各プレイヤーは -1 カードトークンを受け取る（次に引く手札が1枚少なくなる）。' },
     royal_carriage: { id: 'royal_carriage', name: '御料車', cost: 5, types: ['action', 'reserve'],
                  text: '+1 アクション\nこれを酒場マットに置く。\nアクションのプレイを終えた時、それがまだ場にあれば、これを呼び出してそのアクションを再度プレイしてよい。' },

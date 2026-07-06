@@ -1,15 +1,31 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-06 / branch `main`（最新は `git log` で確認）。**暗黒時代 段階2 は完成＆push済＝本番反映（§0-8・`sw.js` v35）**。**その後に未pushの WIP コミットあり＝冒険（Adventures）段階2 に着手中（§0-9・8/38枚）**。冒険は CARD_SET 未昇格＝通常プレイに出ない（fuzz でのみ実行され緑）ので main にあっても本番挙動は不変。以後の段階2作業も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
+最終更新: 2026-07-07 / branch `main`（最新は `git log` で確認）。**暗黒時代 段階2 は完成＆push済＝本番反映（§0-8・`sw.js` v35）**。**その後に未pushの WIP コミットあり＝冒険（Adventures）段階2 に着手中（§0-9・12/38枚＝Batch3=トークン系まで完了）**。冒険は CARD_SET 未昇格＝通常プレイに出ない（fuzz でのみ実行され緑）ので main にあっても本番挙動は不変。以後の段階2作業も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
 **新セッションは まず `npm test` を実行し 29スイート・オールグリーン（exit 0・整合性3132件・暗黒時代70件＋UI57件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
 
 ---
 
-## 0-9. 段階2＝冒険（Adventures）実プレイ化 **着手中（8/38枚）**（2026-07-06・WIP・未push）
+## 0-9. 段階2＝冒険（Adventures）実プレイ化 **着手中（12/38枚）**（2026-07-07・WIP・未push）
 
-**次セッションはこの節から続行**。着手前に `docs/adding-cards.md` と本節を必読。**未pushコミット（Batch1a/2/2b）**＝Adventures はまだ CARD_SET 未昇格＝**通常プレイに出ない**（fuzz でのみ実行され緑）。push は全カード完成→CARD_SET昇格→レビュー後に都度確認。
+**次セッションはこの節から続行**。着手前に `docs/adding-cards.md` と本節を必読。**未pushコミット（Batch1a/2/2b/3）**＝Adventures はまだ CARD_SET 未昇格＝**通常プレイに出ない**（fuzz でのみ実行され緑）。push は全カード完成→CARD_SET昇格→レビュー後に都度確認。
+
+### Batch3 完了（2026-07-07・トークン基盤＋トークン系4枚）
+- **トークン基盤3種**（すべてスカラー公開情報・`maskStateFor` の `Object.assign` でそのまま残る・JSONセーフ・旧スナップショット後方互換）：
+  - **旅トークン `p.journeyDown`**（false=表向き。山守/巨人が**共有**・プレイ毎に裏返す＝per-player）。
+  - **-1カードトークン `p.minusCard`**（遺物。単一boolean・非スタック）＝**`draw()` 冒頭にフック**して「次に1枚以上引くドロー」を1枚減らして返す（cleanup先引き限定でなく開始時持続ドロー等どの引きにも効く＝公式忠実。研究エージェントの指摘で cleanup限定案から変更）。
+  - **-$1トークン `p.minusCoin`**（橋の下のトロル。単一boolean・非スタック）＝`END_ACTION_PHASE` で `t.coinPenalty` に変換し、`applyCoinPenalty(state)` が**購入フェイズで最初に得る$1に食い込む**（財宝＝`playTreasureCard` 末尾／財源＝`COFFERS_SPEND`／行動フェイズ稼ぎ＝END_ACTION_PHASE時に相殺）。**$0未満にならない**（`max(0,...)` 相当）。素朴な「buy開始時に coins-1」は財宝ぶんに効かず**トークンを空振り消化する誤り**＝回避済み（研究＆敵対レビューで確認）。`freshTurn` に `coinPenalty:0`。
+- **4枚**（各 engine reducer＋PLAYER_ACTIONS＋CPU decidePending＋UI viewPendingModal＋新pendingの終端保証）：
+  - **山守ranger**($4)：+1購入・旅トークンを裏返してから判定（**flip-then-check**＝初回は+5なし・2回目に+5カード・以後交互）。
+  - **巨人giant**($5・アタック)：旅トークンを裏返す。裏で+$1／表で+$5＋アタック（各相手の山札上を公開＝$3-6は `trashCard` で廃棄[城塞/ネズミ等on-trash発火]・他は捨てて呪い。**山札空でも呪いを獲得**）。marauder型＝ATTACKS登録＋堀react窓（GIANT_REACT）。
+  - **遺物relic**($5・財宝アタック・`coin:2`)：+$2＋各相手に-1カードトークン。marauder型（RELIC_REACT）。`playTreasureCard` で発火＝PLAY_ALL_TREASURES は pending で停止し残り財宝は再発行で継続（charlatan と同型）。
+  - **橋の下のトロルbridge_troll**($5・持続アタック)：各相手に-$1トークン＋今と次+1購入＋**このターンと次ターン全カード$1安い**（`t.costReduction`。**コスト軽減はスタック**・-$1トークンは非スタック）。`DURATION_RESOLVERS.bridge_troll` が次手番開始時に +1購入＋costReduction を再付与（アタックは初回のみ）。玉座×トロルも seaside 持続の armDuration+cnt 機構でそのまま動く。
+- **CPU**：chooseAction に bridge_troll/giant/ranger（冒険ターミナル群）。decidePending に relic/giant/bridge_troll の react（堀→MOAT_REVEAL／無ければ X_REACT・効果は自動）。relic は財宝＝chooseAction不要。GAIN_ORDER は既に全id網羅。
+- **UI**：viewPendingModal に relic/giant/bridge_troll の react モーダル（reactOptions）。盤面に冒険トークンのバッジ表示（旅=裏向き時のみ・-1カード・-$1）。
+- **検証**：狙い撃ち60/60（flip-then-check・空山呪い・-$1が財宝/財源に食い込む・堀防御・持続の持ち越しとコスト軽減継続・旅トークン共有）／invariants全プール混成fuzz緑（exit0）／npm test 全29緑（整合性3132不変）／冒険中心120戦ソーク=膠着0・保存則0・例外0・トークン異常0。
+- **敵対レビュー（多エージェント5次元→敵対検証）＝確定バグ1件（偽陽性0）→修正済**：**-$1トークン×財源**＝財宝を出さず財源(Coffers)だけで賄うターンで `COFFERS_SPEND` が `applyCoinPenalty` を呼ばず、トークンが空振り（保存則は保つが ruling#3 逸脱・全プールfuzzで到達可）→ COFFERS_SPEND に `applyCoinPenalty(state)` を追加＋回帰テスト。
+- **許容簡略化**：-1カードトークンの「相手ターン中のリアクションドロー（隊商の護衛等）で先に消化される」厳密タイミングは未対応（隊商の護衛は未実装・研究でも relic への反応ドローはトークン付与前に解決＝影響なしと確認）。書庫の `p.deck.shift()` 直接ドローは draw() を通らないので -1カードが効かない（書庫は冒険外・稀）。
 
 ### この着手順の理由（重要）
 - **冒険/帝国は fuzz（invariants.test.js §B「全プール混成」）が引く**＝1枚実装した瞬間から「完全な4点セット（engine reducer＋PLAYER_ACTIONS＋CPU decidePending＋UI viewPendingModal）＋新pendingの終端保証＋新ゾーンの保存則tally配線」が必須。段階1の無効果カードのうち一部だけ効果化すると fuzz が壊れる。
@@ -22,12 +38,12 @@
 
 ### 重要な設計事実（次セッションが知らないと事故る）
 - **このエンジンの手番タイミング**＝`cleanupAndAdvance` は「自分の手番終了時に**自分の次の手札を先引き**（draw 5）」してから次プレイヤーへ回す。**持続の「手番開始時」効果（`resolveDurationStartEffects`）は手番が戻ってきた時に発火**し、先引き済みの手札に加算される（例：雇人は5枚先引き＋開始時+1＝6枚）。テストで「手番開始効果」を確認するときは END_TURN 1回では足りない（相手を回して自分の手番へ戻す）。
-- **-$1/-1カード/旅トークンは未実装**（Batch3で導入予定）。-$1は coins を負にできない＝`max(0,coins-1)`（invariants の負リソース検査に抵触しない）。適用タイミング：-$1=END_ACTION_PHASE（購入フェイズ開始）／-1カード=cleanup の次手札 draw を1減／旅=`p.journeyDown` 真偽（undefined=表）。
-- **財宝の実プレイ化には `coin:` が要る**（段階1カタログには無い）。`treasureCoins`=`C()[id].coin`。表示テキスト不変＝**webp再生成不要**。
+- **-$1/-1カード/旅トークンは Batch3 で実装済**（実装詳細は上の「Batch3 完了」節）。-$1は coins を負にできない＝`applyCoinPenalty`（`t.coinPenalty` を「最初に得る$1」に食い込ませる。素朴な「buy開始時に coins-1」は財宝ぶんに効かず空振り＝**採用しないこと**）。-1カードは `draw()` 冒頭フック（cleanup先引き限定ではない）。旅=`p.journeyDown`（false=表向き・山守/巨人が共有・flip-then-check）。
+- **財宝の実プレイ化には `coin:` が要る**（段階1カタログには無い）。`treasureCoins`=`C()[id].coin`。表示テキスト不変＝**webp再生成不要**。relic に `coin:2` 追加済（掘出物と同型）。
 
 ### 残り（次セッションの着手順）
-1. **Batch3＝トークン基盤＋トークン系カード**：旅トークン(`p.journeyDown`)・-$1トークン・-1カードトークン → **ranger山守**(旅・+1購入・表なら+5カード)／**giant巨人**(旅・裏で+$1・表で+$5＋各相手の山札上を廃棄/呪い＝アタック)／**relic遺物**(財宝アタック・各相手に-1カードトークン・`coin:2`要)／**bridge_troll橋の下のトロル**(持続アタック・各相手に-$1トークン・自分は今と次+1購入＆全カード-$1)。giant/relic/bridge_troll はアタック＝ATTACKS登録＋堀リアクション窓が要る（marauder/witch型）。
-2. **Batch4＝酒場マット/Reserve 基盤＋Reserveカード9枚**：新ゾーン `p.tavern[]`（公開＝islandMat型・allCards/tally/mask に配線／invariants の ZONES へ 'tavern' 追加が必須）＋汎用 CALL 機構（呼び出しタイミングがカード別＝coin_of_the_realm=アクションをプレイした時／guide・ratcatcher・transmogrify=手番開始時／duplicate=$6以下獲得時／royal_carriage=アクションのプレイ完了時／wine_merchant=購入フェイズ終了時／distant_lands=呼ばない＝VP専用）。**miser守銭奴**は酒場マットに銅貨を貯める別処理。royal_carriage は命令（再演）。
+1. ~~**Batch3＝トークン基盤＋トークン系カード**~~ ✅ **完了（2026-07-07）**＝ranger/giant/relic/bridge_troll＋旅/-1カード/-$1トークン。詳細は上の「Batch3 完了」節。
+2. **【次はここ】Batch4＝酒場マット/Reserve 基盤＋Reserveカード9枚**：新ゾーン `p.tavern[]`（公開＝islandMat型・allCards/tally/mask に配線／**invariants の ZONES へ 'tavern' 追加が必須**）＋汎用 CALL 機構（呼び出しタイミングがカード別＝coin_of_the_realm=アクションをプレイした時／guide・ratcatcher・transmogrify=手番開始時／duplicate=$6以下獲得時／royal_carriage=アクションのプレイ完了時／wine_merchant=購入フェイズ終了時／distant_lands=呼ばない＝VP専用）。**miser守銭奴**は酒場マットに銅貨を貯める別処理。royal_carriage は命令（再演）。
 3. **Batch5＝トラベラー**：page/peasant（サプライ）＋成長先8種（非サプライ山＝各5枚。`NON_SUPPLY`＋cpu `NON_SUPPLY_SET` に8id追加／initSupply で page・peasant があれば各成長先5枚を supply 数値キーで追加／canBuyCard 不可／emptyPileCount 除外）。「場から捨てる時に交換してよい」＝END_TURN/cleanup前のタイミング。champion/teacher/disciple/hero 等の効果。
 4. **Batch6＝複雑**：raze倒壊(廃棄→コスト分の山札上を見て1枚手札)／artificer工匠(捨て枚数=コストちょうどを山札上に獲得)／storyteller語り部(財宝を最大3枚プレイ→全コインで+カード)／messenger使者(最初の購入なら全員が同コピー獲得)。
 5. **Phase E**：`DOM.KINGDOM_ADVENTURES`固定10種＋`DOM.POOLS.adventures`昇格＋`DOM.CARD_SETS`に2行＋GAIN_ORDER再配置 → `adventures.test.js`/`adventures-ui.test.js` 新設（package.json登録）→ 多エージェント敵対レビュー→CPUソーク→webp（段階1で生成済み・カタログ変更が無ければ再生成不要／`coin:`追加は表示不変）→ `sw.js` v35→v36。
@@ -299,7 +315,7 @@
 - **海辺の簡略化2点は本格実装済み**：封鎖の堀免疫窓・海賊の財宝獲得リアクション。on-gain対話は `!pending && _gainDepth===1` ゲートで安全側。
 
 ## 5. 未完了タスク（優先順。次セッションは 1. から）
-1. **【最優先・進行中】冒険（Adventures）段階2 の続き（§0-9）**＝現在 8/38枚。**次は Batch3（トークン基盤＋ranger/giant/relic/bridge_troll）**。着手順・設計事実・落とし穴はすべて **§0-9** に記載（必読）。着手前に `docs/adding-cards.md` も参照。
+1. **【最優先・進行中】冒険（Adventures）段階2 の続き（§0-9）**＝現在 12/38枚（Batch3=トークン系まで完了）。**次は Batch4（酒場マット/Reserve 基盤＋Reserveカード9枚）**。着手順・設計事実・落とし穴はすべて **§0-9** に記載（必読）。着手前に `docs/adding-cards.md` も参照。
    - **✅段階2 完了済み拡張**：収穫祭(§0-2)／ギルド(§0-4)／異郷(§0-5)／新プロモ(§0-7)／**暗黒時代 全56枚(§0-8)**。基本・陰謀・海辺・錬金術・繁栄と合わせ、**縦型カードの実プレイ化は暗黒時代まで完了**。冒険が完了したら帝国へ。
 2. **段階2の残り＝発売順の未着手拡張**（着手前に `docs/adding-cards.md` を必読。特殊機構は §C）:
    - **冒険(Adventures)＝着手中(§0-9)。その後 帝国(Empires)**＝段階1（画像・カタログ）は済み(§0-6)。帝国の新機構＝負債(Debt)コスト経済・分割山・城の混合山・命令(overlord/crown)・勝利点トークン・集合(Gathering)。横型ランドスケープ（イベント/ランドマーク）は縦枠パイプライン未対応で段階1すら未着手。
