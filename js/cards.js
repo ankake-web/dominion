@@ -659,7 +659,7 @@
                  text: '+1 アクション\n手札から最大3枚の財宝をプレイする。\nその後、所持コイン$1につき +1 カード（所持コインは全て使い切る）。' },
     swamp_hag: { id: 'swamp_hag', name: '沼の妖婆', cost: 5, types: ['action', 'attack', 'duration'],
                  text: '次の自分のターンまで、他のプレイヤーがカードを購入した時、呪い1枚を獲得する。\n次のターン開始時：+$3。' },
-    treasure_trove: { id: 'treasure_trove', name: '掘出物', cost: 5, types: ['treasure'],
+    treasure_trove: { id: 'treasure_trove', name: '掘出物', cost: 5, types: ['treasure'], coin: 2,
                  text: '+$2\nこれをプレイした時、金貨1枚と銅貨1枚を獲得する。' },
     wine_merchant: { id: 'wine_merchant', name: 'ワイン商', cost: 5, types: ['action', 'reserve'],
                  text: '+1 購入\n+$4\nこれを酒場マットに置く。\n購入フェイズ終了時、未使用の$2以上が残っていれば、これを酒場マットから捨ててよい。' },

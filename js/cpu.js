@@ -204,6 +204,10 @@
     if (has('sir_bailey')) return 'sir_bailey';           // +1カード+1アクション＋騎士アタック
     if (has('urchin')) return 'urchin';                   // +1カード+1アクション＋手札削り（傭兵化トリガー）
     if (has('rats') && p.hand.some((c) => c !== 'rats' && isDead(c))) return 'rats'; // 圧縮対象があるとき
+    // 冒険：非ターミナル（+アクション付き）
+    if (has('lost_city')) return 'lost_city';             // +2カード+2アクション
+    if (has('port')) return 'port';                       // +1カード+2アクション
+    if (has('magpie')) return 'magpie';                   // +1カード+1アクション（山札の上を公開）
     // --- ターミナル（効果の大きい順）---
     // 新プロモ：王子＝良い対象（$4以下の持続/命令以外）が手札にあるときだけ（毎ターン無料再生＝最優先）。
     if (has('prince') && bestPrinceTarget(state, p)) return 'prince';

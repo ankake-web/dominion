@@ -145,6 +145,11 @@
       if (removeOne(p.inPlay, 'spoils')) state.supply.spoils = (state.supply.spoils || 0) + 1;
       log(state, `${p.name} は戦利品を使った（+$3）→山へ戻した。`);
     }
+    // 冒険：掘出物＝+$2（coin:2 で加算済み）。プレイしたとき金貨1枚と銅貨1枚を獲得。
+    if (card === 'treasure_trove') {
+      const g1 = gain(state, pIndex, 'gold', 'discard'), g2 = gain(state, pIndex, 'copper', 'discard');
+      if (g1 || g2) log(state, `${p.name} は掘出物で${g1 ? '金貨' : ''}${g1 && g2 ? '・' : ''}${g2 ? '銅貨' : ''}を獲得した。`);
+    }
     // ティアラ：+1購入。手札の財宝1枚を2回使ってよい（獲得時の山札上置きは triggerOnGain が処理）。
     if (card === 'tiara') {
       t.buys += 1;
@@ -3214,6 +3219,28 @@
         state.pending = { type: 'witchs_hut', stage: 'discard', player: pi };
         break;
 
+      /* ===== 拡張: 冒険（Adventures）段階2 ===== */
+      // 港町：+1カード +2アクション（購入時にもう1枚獲得＝BUY で処理）。
+      case 'port':
+        draw(state, pi, 1); t.actions += 2;
+        break;
+      // 失われし都市：+2カード +2アクション（獲得時に他の各プレイヤー+1カード＝triggerOnGain で処理）。
+      case 'lost_city':
+        draw(state, pi, 2); t.actions += 2;
+        break;
+      // カササギ：+1カード +1アクション。山札の上を公開＝財宝なら手札へ／アクションか勝利点ならカササギを獲得。
+      case 'magpie': {
+        draw(state, pi, 1); t.actions += 1;
+        if (p.deck.length === 0 && p.discard.length > 0) reshuffleDeck(p);
+        if (p.deck.length > 0) {
+          const top = p.deck[0];
+          reveal(state, pi, [top], 'カササギで山札の上を公開');
+          if (DOM.isType(top, 'treasure')) { p.deck.shift(); p.hand.push(top); log(state, `${p.name} は「${C()[top].name}」を手札に加えた（カササギ）。`); }
+          if (DOM.isType(top, 'action') || DOM.isType(top, 'victory')) { if (gain(state, pi, 'magpie', 'discard')) log(state, `${p.name} はカササギを1枚獲得した。`); }
+        }
+        break;
+      }
+
       default:
         break;
     }
@@ -3431,6 +3458,8 @@
     if (cardId === 'nomads' && state.turn && pIndex === state.turn.active) { state.turn.coins += 2; log(state, `${gp.name} は遊牧民の獲得で +2コイン。`); }
     // 暗黒時代：死の荷車＝獲得したとき廃墟を2枚獲得（山の一番上から。足りなければあるだけ・非サプライではない配布）。
     if (cardId === 'death_cart') { let g = 0; for (let i = 0; i < 2; i++) if (gain(state, pIndex, 'ruins', 'discard')) g++; if (g) log(state, `${gp.name} は死の荷車の獲得で廃墟 ${g}枚 を獲得した。`); }
+    // 冒険：失われし都市＝獲得したとき、他の各プレイヤーはカードを1枚引く（誰の獲得でも発動）。
+    if (cardId === 'lost_city') { for (let o = 0; o < n; o++) if (o !== pIndex) { const d = draw(state, o, 1); if (d.length) log(state, `${state.players[o].name} は失われし都市の獲得で +1カード。`); } }
     // 役人：獲得したとき、場のすべての財宝を山札の上に置く（置いた順＝そのまま／簡略に選択なし）。
     if (cardId === 'mandarin') { const tre = gp.inPlay.filter((c) => DOM.isType(c, 'treasure')); tre.forEach((c) => { removeOne(gp.inPlay, c); gp.deck.unshift(c); }); if (tre.length) log(state, `${gp.name} は役人で場の財宝 ${tre.length}枚 を山札の上に置いた。`); }
     // 大釜：自分の手番にアクションを獲得した回数を数え、3回目で（大釜が場にあれば）各相手が呪いを獲得。
@@ -3891,6 +3920,8 @@
           inPlayT.forEach((c) => { removeOne(me.inPlay, c); trashCard(state, pi, c); });
           if (inPlayT.length) log(state, `${me.name} は造幣所の購入で場の財宝 ${inPlayT.length}枚 を廃棄した。`);
         }
+        // 冒険：港町を購入したとき、もう1枚の港町を獲得する（獲得＝BUY再帰しないので二重購入にならない）。
+        if (card === 'port') { if (gain(state, pi, 'port', 'discard')) log(state, `${me.name} は港町の購入でもう1枚の港町を獲得した。`); }
         // ギルド：商人ギルドが場にある間、カードを購入するたびに財源(Coffers)を得る（場の枚数ぶん）。
         triggerMerchantGuild(state, pi);
         // ギルド：過払い（overpay）＝購入時に追加でコインを払える。残コインがあれば選択待ちを立てる。
