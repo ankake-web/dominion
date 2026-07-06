@@ -7,6 +7,34 @@
 
 ---
 
+## 0-9. 段階2＝冒険（Adventures）実プレイ化 **着手中（8/38枚）**（2026-07-06・WIP・未push）
+
+**次セッションはこの節から続行**。着手前に `docs/adding-cards.md` と本節を必読。**未pushコミット（Batch1a/2/2b）**＝Adventures はまだ CARD_SET 未昇格＝**通常プレイに出ない**（fuzz でのみ実行され緑）。push は全カード完成→CARD_SET昇格→レビュー後に都度確認。
+
+### この着手順の理由（重要）
+- **冒険/帝国は fuzz（invariants.test.js §B「全プール混成」）が引く**＝1枚実装した瞬間から「完全な4点セット（engine reducer＋PLAYER_ACTIONS＋CPU decidePending＋UI viewPendingModal）＋新pendingの終端保証＋新ゾーンの保存則tally配線」が必須。段階1の無効果カードのうち一部だけ効果化すると fuzz が壊れる。
+- そこで**新ゾーン不要・既存機構だけで足せるカードから**着手中（安全順）：単純→純粋な持続→（次）トークン→（次）酒場マット/Reserve→（次）トラベラー→複雑。
+
+### 完了（各バッチ＝fuzz緑＋狙い撃ちテスト＋全29スイート緑でコミット済み）
+- **Batch1a**（`9d60c22`）単純4枚：**港町port**(+1c+2act・on-buyでもう1枚＝BUY内)／**失われし都市lost_city**(+2c+2act・on-gainで他全P+1カード)／**カササギmagpie**(公開→財宝は手札・アクション/勝利点でカササギ獲得)／**掘出物treasure_trove**(財宝・`coin:2`追加・金貨+銅貨獲得)。
+- **Batch2**（`71d93f5`）純粋な持続3枚：**雇人hireling**(永続持続＝princes同型。`p.hirelings`稼働数を cleanup cnt に加算し durationCards に残す／resolveDurationStartEffects で各手番開始時+1カード)／**地下牢dungeon**(+1act・今と次の手番に+2カード→2枚捨て・次ぶんは startQueue)／**道具gear**(+2c・手札最大2枚を脇→次手番に戻す＝haven型)。
+- **Batch2b**（`5b094a3`）**魔除けamulet**(持続・今と次の手番にそれぞれ +$1／手札1枚廃棄／銀貨獲得 の3択。次ぶん startQueue=viaStart・trashは amulet_trash サブpending)。
+
+### 重要な設計事実（次セッションが知らないと事故る）
+- **このエンジンの手番タイミング**＝`cleanupAndAdvance` は「自分の手番終了時に**自分の次の手札を先引き**（draw 5）」してから次プレイヤーへ回す。**持続の「手番開始時」効果（`resolveDurationStartEffects`）は手番が戻ってきた時に発火**し、先引き済みの手札に加算される（例：雇人は5枚先引き＋開始時+1＝6枚）。テストで「手番開始効果」を確認するときは END_TURN 1回では足りない（相手を回して自分の手番へ戻す）。
+- **-$1/-1カード/旅トークンは未実装**（Batch3で導入予定）。-$1は coins を負にできない＝`max(0,coins-1)`（invariants の負リソース検査に抵触しない）。適用タイミング：-$1=END_ACTION_PHASE（購入フェイズ開始）／-1カード=cleanup の次手札 draw を1減／旅=`p.journeyDown` 真偽（undefined=表）。
+- **財宝の実プレイ化には `coin:` が要る**（段階1カタログには無い）。`treasureCoins`=`C()[id].coin`。表示テキスト不変＝**webp再生成不要**。
+
+### 残り（次セッションの着手順）
+1. **Batch3＝トークン基盤＋トークン系カード**：旅トークン(`p.journeyDown`)・-$1トークン・-1カードトークン → **ranger山守**(旅・+1購入・表なら+5カード)／**giant巨人**(旅・裏で+$1・表で+$5＋各相手の山札上を廃棄/呪い＝アタック)／**relic遺物**(財宝アタック・各相手に-1カードトークン・`coin:2`要)／**bridge_troll橋の下のトロル**(持続アタック・各相手に-$1トークン・自分は今と次+1購入＆全カード-$1)。giant/relic/bridge_troll はアタック＝ATTACKS登録＋堀リアクション窓が要る（marauder/witch型）。
+2. **Batch4＝酒場マット/Reserve 基盤＋Reserveカード9枚**：新ゾーン `p.tavern[]`（公開＝islandMat型・allCards/tally/mask に配線／invariants の ZONES へ 'tavern' 追加が必須）＋汎用 CALL 機構（呼び出しタイミングがカード別＝coin_of_the_realm=アクションをプレイした時／guide・ratcatcher・transmogrify=手番開始時／duplicate=$6以下獲得時／royal_carriage=アクションのプレイ完了時／wine_merchant=購入フェイズ終了時／distant_lands=呼ばない＝VP専用）。**miser守銭奴**は酒場マットに銅貨を貯める別処理。royal_carriage は命令（再演）。
+3. **Batch5＝トラベラー**：page/peasant（サプライ）＋成長先8種（非サプライ山＝各5枚。`NON_SUPPLY`＋cpu `NON_SUPPLY_SET` に8id追加／initSupply で page・peasant があれば各成長先5枚を supply 数値キーで追加／canBuyCard 不可／emptyPileCount 除外）。「場から捨てる時に交換してよい」＝END_TURN/cleanup前のタイミング。champion/teacher/disciple/hero 等の効果。
+4. **Batch6＝複雑**：raze倒壊(廃棄→コスト分の山札上を見て1枚手札)／artificer工匠(捨て枚数=コストちょうどを山札上に獲得)／storyteller語り部(財宝を最大3枚プレイ→全コインで+カード)／messenger使者(最初の購入なら全員が同コピー獲得)。
+5. **Phase E**：`DOM.KINGDOM_ADVENTURES`固定10種＋`DOM.POOLS.adventures`昇格＋`DOM.CARD_SETS`に2行＋GAIN_ORDER再配置 → `adventures.test.js`/`adventures-ui.test.js` 新設（package.json登録）→ 多エージェント敵対レビュー→CPUソーク→webp（段階1で生成済み・カタログ変更が無ければ再生成不要／`coin:`追加は表示不変）→ `sw.js` v35→v36。
+6. **その後＝帝国（Empires）段階2**（別の大仕事）：負債Debt経済／集合=VPトークン山（農民の市場/神殿/野生の狩り）／命令(overlord/crown)／分割山5組（サウナ/アヴァント機構流用）／城8（騎士の混合山流用・勝利点）／villa(手札に獲得しアクションフェイズに戻る)。
+
+---
+
 ## 0-8. 段階2＝暗黒時代56枚 実装 **完了**（2026-07-06・全56枚実プレイ化＋UI＋テスト＋CARD_SET昇格＋敵対レビュー修正）
 
 ### 完了サマリ（2026-07-06。**`8a6f430` まで push済＝本番 Pages/Render に反映済み（sw.js v35）**）
