@@ -1265,6 +1265,11 @@
     // 冒険：地下牢＝手札2枚を捨てる（今／次の手番）。道具＝手札から最大2枚を脇に置く（次の手番に戻る）。
     if (pd.type === 'dungeon_discard') return modalSelectN(p, '地下牢 — 手札を捨てる', '手札を2枚選んで捨てます。', Math.min(2, p.hand.length), '確定（捨てる）', (cards) => dispatch({ type: 'DUNGEON_DISCARD', cards }));
     if (pd.type === 'gear') return modalMultiHand(p, '道具 — 脇に置く', '手札から最大2枚を裏向きに脇に置きます（次の手番開始時に手札へ戻ります・0枚でもOK）。', (n) => '確定（' + n + '枚）', true, (cards) => dispatch({ type: 'GEAR_SETASIDE', cards }), 2);
+    if (pd.type === 'amulet') return modalOptions('魔除け — 1つ選ぶ', '今／次の手番開始時それぞれ選びます。', [
+      { label: '+$1', cls: 'btn-primary', on: () => dispatch({ type: 'AMULET_RESOLVE', mode: 'coin' }) },
+      { label: '手札1枚を廃棄', on: () => dispatch({ type: 'AMULET_RESOLVE', mode: 'trash' }) },
+      { label: '銀貨1枚を獲得', on: () => dispatch({ type: 'AMULET_RESOLVE', mode: 'silver' }) }]);
+    if (pd.type === 'amulet_trash') return modalSingleHand(p, '魔除け — 廃棄', '廃棄するカードを1枚選びます。', () => true, (card) => dispatch({ type: 'AMULET_TRASH', card }));
     if (pd.type === 'cutpurse' && pd.stage === 'react') return modalOptions('巾着切りを受ける', '銅貨1枚を捨てます（無ければ手札を公開）。', reactOptions(p, pd, { type: 'CUTPURSE_REACT' }));
     if (pd.type === 'sea_witch' && pd.stage === 'react') return modalOptions('海の魔女を受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'SEA_WITCH_REACT' }));
     if (pd.type === 'sea_witch_discard') return modalSelectN(p, '海の魔女 — 手札を捨てる', '手札を2枚選んで捨てます。', Math.min(2, p.hand.length), '確定（捨てる）', (cards) => dispatch({ type: 'SEA_WITCH_DISCARD', cards }));

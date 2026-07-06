@@ -3257,6 +3257,11 @@
         draw(state, pi, 2);
         if (p.hand.length > 0) state.pending = { type: 'gear', player: pi };
         break;
+      // 魔除け：今と次のターン開始時にそれぞれ、+$1／手札1枚を廃棄／銀貨1枚を獲得 から1つ選ぶ（持続）。
+      case 'amulet':
+        armDuration(state, pi, 'amulet');
+        state.pending = { type: 'amulet', player: pi };
+        break;
 
       default:
         break;
@@ -3452,6 +3457,8 @@
       back.forEach((c) => p.hand.push(c));
       if (back.length) log(s, `${p.name} は道具で脇に置いた ${back.length}枚 を手札に戻した。`);
     },
+    // 冒険：魔除け＝次の手番開始時も 3択（対話＝startQueueへ）。
+    amulet: (s, pi) => { (s.turn.startQueue = s.turn.startQueue || []).push({ type: 'amulet', player: pi, viaStart: true }); },
   };
 
   // 「獲得時」フック（サル＝右隣の獲得で+1カード／封鎖＝同名獲得で呪い）。gain から常に呼ばれる。
@@ -5832,6 +5839,32 @@
         if (pd.viaStart) popStartQueue(state); else state.pending = null;
         return state;
       }
+      /* ---- 冒険：魔除け＝今／次の手番に 3択（+$1／手札1枚廃棄／銀貨獲得） ---- */
+      case 'AMULET_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'amulet') return state;
+        const p = state.players[pd.player];
+        const mode = action.mode;
+        if (mode === 'coin') { t.coins += 1; log(state, `${p.name} は魔除けで +$1。`); }
+        else if (mode === 'silver') { if (gain(state, pd.player, 'silver', 'discard')) log(state, `${p.name} は魔除けで銀貨を獲得した。`); }
+        else if (mode === 'trash') {
+          if (p.hand.length > 0) { state.pending = { type: 'amulet_trash', player: pd.player, viaStart: pd.viaStart }; return state; }
+          log(state, `${p.name} は魔除けで廃棄する手札が無かった。`);
+        } else return state; // 不正モード＝状態不変
+        if (pd.viaStart) popStartQueue(state); else state.pending = null;
+        return state;
+      }
+      case 'AMULET_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'amulet_trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0) return state;
+        removeOne(p.hand, card); trashCard(state, pd.player, card);
+        log(state, `${p.name} は「${C()[card].name}」を廃棄した（魔除け）。`);
+        if (pd.viaStart) popStartQueue(state); else state.pending = null;
+        return state;
+      }
       /* ---- 冒険：道具＝手札から最大2枚を脇に置く（次の手番開始時に手札へ戻る） ---- */
       case 'GEAR_SETASIDE': {
         const pd = state.pending;
@@ -7605,7 +7638,7 @@
     'PRINCE_SETASIDE', 'PRINCE_PLAY', 'CAPTAIN_PLAY', 'CHURCH_SETASIDE', 'CHURCH_TRASH',
     'SAUNA_CHAIN', 'SAUNA_TRASH', 'STASH_SETTING',
     // 冒険（Adventures）
-    'DUNGEON_DISCARD', 'GEAR_SETASIDE',
+    'DUNGEON_DISCARD', 'GEAR_SETASIDE', 'AMULET_RESOLVE', 'AMULET_TRASH',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',

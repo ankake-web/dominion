@@ -234,6 +234,7 @@
     // 冒険：ターミナル
     if (has('hireling')) return 'hireling';               // 永続 +1カード/ターン（早く出すほど得）
     if (has('gear')) return 'gear';                        // +2カード（脇置き持続）
+    if (has('amulet')) return 'amulet';                   // 3択（+$1／廃棄／銀貨獲得）×2ターン
     // 収穫祭：ターミナル（アタック・格上げ・賞品）
     if (has('jester')) return 'jester';                 // +2コイン＋アタック
     if (has('young_witch')) return 'young_witch';       // +2カード＋全員に呪い
@@ -1009,6 +1010,15 @@
         return { type: 'DUNGEON_DISCARD', cards: pickDiscards(p.hand, Math.min(2, p.hand.length)) };
       case 'gear':
         return { type: 'GEAR_SETASIDE', cards: [] }; // 脇置きは戻ってくるだけ＝安全側で0枚（無駄置きしない）
+      case 'amulet': {
+        // 呪い/屋敷（属州未購入時）があれば廃棄、無ければ経済重視で銀貨を獲得。
+        if (p.hand.includes('curse') || (p.hand.includes('estate') && owned(p, 'province') === 0)) return { type: 'AMULET_RESOLVE', mode: 'trash' };
+        return { type: 'AMULET_RESOLVE', mode: 'silver' };
+      }
+      case 'amulet_trash': {
+        const order = p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b));
+        return { type: 'AMULET_TRASH', card: order[0] };
+      }
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
       case 'warehouse':
