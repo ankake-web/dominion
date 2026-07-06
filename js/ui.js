@@ -884,6 +884,10 @@
     if ((me.islandMat || []).length) matRows.push(h('div', { class: 'mat-row' },
       h('span', { class: 'mat-label' }, '🏝 島マット: '),
       me.islandMat.map((id) => h('span', { class: 'chip-card ' + typeClass(id) }, DOM.CARDS[id].name))));
+    // 冒険：酒場マット（Reserve カード・守銭奴の銅貨。呼び出しで場へ戻す。公開）
+    if ((me.tavern || []).length) matRows.push(h('div', { class: 'mat-row' },
+      h('span', { class: 'mat-label' }, '🍺 酒場マット: '),
+      me.tavern.map((id) => h('span', { class: 'chip-card ' + typeClass(id) }, DOM.CARDS[id].name))));
     if ((me.nativeVillageMat || []).length) matRows.push(h('div', { class: 'mat-row' },
       h('span', { class: 'mat-label' }, '🛖 原住民の村マット: ' + me.nativeVillageMat.length + '枚')));
     // 繁栄：勝利点トークン（司教・記念碑・収集・投資。終了時に得点へ加算）
@@ -1276,6 +1280,30 @@
       { label: '手札1枚を廃棄', on: () => dispatch({ type: 'AMULET_RESOLVE', mode: 'trash' }) },
       { label: '銀貨1枚を獲得', on: () => dispatch({ type: 'AMULET_RESOLVE', mode: 'silver' }) }]);
     if (pd.type === 'amulet_trash') return modalSingleHand(p, '魔除け — 廃棄', '廃棄するカードを1枚選びます。', () => true, (card) => dispatch({ type: 'AMULET_TRASH', card }));
+    // 冒険：酒場マット（Reserve）の呼び出し・守銭奴
+    if (pd.type === 'miser') {
+      const matCu = (p.tavern || []).filter((c) => c === 'copper').length;
+      const opts = [];
+      if (p.hand.includes('copper')) opts.push({ label: '手札の銅貨1枚を酒場マットに置く', cls: 'btn-primary', on: () => dispatch({ type: 'MISER_RESOLVE', mode: 'bank' }) });
+      opts.push({ label: '酒場マットの銅貨で +$' + matCu, on: () => dispatch({ type: 'MISER_RESOLVE', mode: 'coins' }) });
+      return modalOptions('守銭奴 — 1つ選ぶ', '手札の銅貨を貯める／貯めた銅貨1枚につき +$1。', opts);
+    }
+    if (pd.type === 'tavern_start') {
+      const mat = p.tavern || [];
+      const opts = [];
+      if (mat.includes('guide')) opts.push({ label: '案内人を呼ぶ（手札を全捨て5枚引く）', on: () => dispatch({ type: 'TAVERN_START_CALL', card: 'guide' }) });
+      if (mat.includes('ratcatcher')) opts.push({ label: '鼠取りを呼ぶ（手札1枚を廃棄）', on: () => dispatch({ type: 'TAVERN_START_CALL', card: 'ratcatcher' }) });
+      if (mat.includes('transmogrify')) opts.push({ label: '変容を呼ぶ（手札1枚を廃棄→格上げ獲得）', on: () => dispatch({ type: 'TAVERN_START_CALL', card: 'transmogrify' }) });
+      opts.push({ label: '呼び出さない', on: () => dispatch({ type: 'TAVERN_START_CALL', card: null }) });
+      return modalOptions('酒場マット — 呼び出し（ターン開始）', '呼び出す Reserve カードを選びます（呼び出したカードは場に出ます）。', opts);
+    }
+    if (pd.type === 'ratcatcher_trash') return modalSingleHand(p, '鼠取り — 廃棄', '手札から廃棄するカードを1枚選びます。', () => true, (card) => dispatch({ type: 'RATCATCHER_TRASH', card }));
+    if (pd.type === 'transmogrify_trash') return modalSingleHand(p, '変容 — 廃棄', '手札から廃棄するカードを1枚選びます（そのコスト+$1以下を手札に獲得）。', () => true, (card) => dispatch({ type: 'TRANSMOGRIFY_TRASH', card }));
+    if (pd.type === 'transmogrify_gain') return modalGainSupply(state, '変容 — 獲得', 'コスト ' + pd.maxCost + ' 以下のカードを1枚 手札に獲得します。',
+      (id) => effCost(state, id) <= pd.maxCost && potCost(id) <= (pd.pot || 0), (id) => dispatch({ type: 'TRANSMOGRIFY_GAIN', card: id }));
+    if (pd.type === 'wine_merchant') return modalOptions('ワイン商 — 捨てる？', '未使用の$2以上が残っています。ワイン商を酒場マットから捨てられます（捨てると再度購入して使えます）。', [
+      { label: '酒場マットから捨てる', cls: 'btn-primary', on: () => dispatch({ type: 'WINE_MERCHANT_DISCARD', discard: true }) },
+      { label: 'マットに残す', on: () => dispatch({ type: 'WINE_MERCHANT_DISCARD', discard: false }) }]);
     if (pd.type === 'cutpurse' && pd.stage === 'react') return modalOptions('巾着切りを受ける', '銅貨1枚を捨てます（無ければ手札を公開）。', reactOptions(p, pd, { type: 'CUTPURSE_REACT' }));
     if (pd.type === 'sea_witch' && pd.stage === 'react') return modalOptions('海の魔女を受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'SEA_WITCH_REACT' }));
     if (pd.type === 'sea_witch_discard') return modalSelectN(p, '海の魔女 — 手札を捨てる', '手札を2枚選んで捨てます。', Math.min(2, p.hand.length), '確定（捨てる）', (cards) => dispatch({ type: 'SEA_WITCH_DISCARD', cards }));

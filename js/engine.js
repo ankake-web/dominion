@@ -341,6 +341,7 @@
         vpTokens: 0,       // 繁栄：勝利点トークンの累計（司教・記念碑・収集・投資。公開・終了時に加算）
         coffers: 0,        // ギルド：財源（Coffers）トークン。購入フェイズに1枚=+1コインで使える。公開・VPには数えない。
         princes: [],       // プロモ：王子の脇に置いたカードid列（公開）。毎ターン開始時に脇のままプレイ。1要素=王子1枚が稼働中。
+        tavern: [],        // 冒険：酒場マット（Reserve カードと守銭奴の銅貨。公開＝islandMat型。呼び出しで場へ戻す）。
         stashPlacement: 'top', // プロモ：へそくり(Stash)のシャッフル時配置方針 'top'|'mix'|'bottom'（本人がいつでも変更可）。
         // 冒険：トークン（すべて公開情報・スカラー＝maskStateFor でそのまま残る・JSONセーフ）。
         journeyDown: false, // 旅トークンの向き（false=表向き／true=裏向き。山守/巨人が共有＝プレイのたびに裏返す）。
@@ -1025,6 +1026,22 @@
       log(state, `${v.name} は「${C()[top].name}」を捨てた（巨人）。`);
       if ((state.supply.curse || 0) > 0) { gain(state, victim, 'curse', 'discard'); log(state, `${v.name} は呪いを獲得した（巨人）。`); }
     }
+  }
+  /* ========== 冒険：酒場マット（Reserve）＝呼び出し機構 ========== */
+  // Reserve カードをプレイした直後、これを場（inPlay）から酒場マットへ置く。
+  function putOnTavern(state, pi, cardId) {
+    const p = state.players[pi];
+    removeOne(p.inPlay, cardId);
+    (p.tavern = p.tavern || []).push(cardId);
+    log(state, `${p.name} は「${C()[cardId].name}」を酒場マットに置いた。`);
+  }
+  // ターン開始時に呼び出せる Reserve（案内人/鼠取り/変容）。
+  const TAVERN_START_CALLS = ['guide', 'ratcatcher', 'transmogrify'];
+  // ターン開始の呼び出し窓：まだ呼べる Reserve が酒場マットにあれば再オファー、無ければ次の開始時効果へ。
+  function offerTavernStart(state, pi) {
+    const p = state.players[pi];
+    if ((p.tavern || []).some((c) => TAVERN_START_CALLS.includes(c))) state.pending = { type: 'tavern_start', player: pi };
+    else popStartQueue(state);
   }
   // 略奪：手札5枚以上の各相手が手札を公開し、使用者が1枚選んで捨てさせる。
   function pillageEnterVictim(state, source, queue) {
@@ -3381,6 +3398,35 @@
         bridgeTrollEnterVictim(state, pi, vics);
         break;
       }
+      // 冒険：Reserve（酒場マット）カード。プレイ時の効果の後、これを酒場マットへ置く。呼び出しは別タイミング。
+      // 鼠取り：+1カード +1アクション → マットへ（開始時に呼び出して手札1枚廃棄）。
+      case 'ratcatcher':
+        draw(state, pi, 1); t.actions += 1;
+        putOnTavern(state, pi, 'ratcatcher');
+        break;
+      // 案内人：+1カード +1アクション → マットへ（開始時に呼び出して手札を全捨て5枚引く）。
+      case 'guide':
+        draw(state, pi, 1); t.actions += 1;
+        putOnTavern(state, pi, 'guide');
+        break;
+      // 変容：+1アクション → マットへ（開始時に呼び出して手札1枚廃棄→コスト+$1以下を手札に獲得）。
+      case 'transmogrify':
+        t.actions += 1;
+        putOnTavern(state, pi, 'transmogrify');
+        break;
+      // 遠隔地：効果なし → マットへ（ゲーム終了時にマットにあれば4勝利点＝vpOf で判定）。
+      case 'distant_lands':
+        putOnTavern(state, pi, 'distant_lands');
+        break;
+      // ワイン商：+1購入 +$4 → マットへ（購入フェイズ終了時、$2以上残っていればマットから捨ててよい）。
+      case 'wine_merchant':
+        t.buys += 1; t.coins += 4;
+        putOnTavern(state, pi, 'wine_merchant');
+        break;
+      // 守銭奴：手札の銅貨1枚を酒場マットへ置く／酒場マットの銅貨1枚につき +$1 を選ぶ。
+      case 'miser':
+        state.pending = { type: 'miser', player: pi };
+        break;
 
       default:
         break;
@@ -3415,7 +3461,7 @@
     // 新プロモ：王子の脇に置いたカード（princes）も所有カード（ゲーム終了時はデッキに戻して数える＝公式）。
     return [].concat(p.deck, p.hand, p.discard, p.inPlay,
       p.durationCards || [], p.setAside || [], p.islandMat || [], p.nativeVillageMat || [],
-      p.princes || []);
+      p.princes || [], p.tavern || []); // 冒険：酒場マット（Reserve/守銭奴の銅貨。公開・所有カードに数える）
   }
   function vpOf(p) {
     const cards = allCards(p);
@@ -3438,6 +3484,9 @@
     // 暗黒時代：封土＝所持する銀貨3枚につき1勝利点（端数切り捨て・封土1枚ごと）
     const feoda = cards.filter((c) => c === 'feodum').length;
     if (feoda) vp += feoda * Math.floor(cards.filter((c) => c === 'silver').length / 3);
+    // 冒険：遠隔地＝ゲーム終了時に酒場マットにあれば1枚4勝利点（マット以外にあれば0点＝固定vpは持たせない）。
+    const distantOnMat = (p.tavern || []).filter((c) => c === 'distant_lands').length;
+    if (distantOnMat) vp += distantOnMat * 4;
     // 繁栄：VPトークン（司教・記念碑・収集・投資で貯めた勝利点）を加算
     vp += p.vpTokens || 0;
     return vp;
@@ -3510,6 +3559,8 @@
     // 繁栄：会計士＝手番開始時、手札の会計士を（アクションを消費せず）使ってよい。startQueue の最後に積む。
     const clerks = p.hand.filter((c) => c === 'clerk').length;
     for (let i = 0; i < clerks; i++) state.turn.startQueue.push({ type: 'clerk_start', player: pi });
+    // 冒険：ターン開始時に呼び出せる Reserve（案内人/鼠取り/変容）が酒場マットにあれば呼び出し窓を開く。
+    if ((p.tavern || []).some((c) => TAVERN_START_CALLS.includes(c))) state.turn.startQueue.push({ type: 'tavern_start', player: pi });
     popStartQueue(state); // 最初の対話 pending をセット（無ければ null）
   }
   // 各持続カードの「次の手番開始時」効果（カードidをキーに登録）。対話分は §手5/手6 で startQueue に積む。
@@ -3948,6 +3999,29 @@
     resolveDurationStartEffects(state, next);
   }
 
+  // 購入フェイズ終了の後処理（隠遁者交換→策謀のクリンナップ→片付け）。冒険：ワイン商の呼び出し窓を挟んでから呼ぶ。
+  function endBuyTail(state) {
+    const pi = state.turn.active;
+    const me = state.players[pi];
+    // 暗黒時代：隠遁者＝購入フェイズ中に1枚も獲得していなければ、場の隠遁者を狂人と交換する。
+    if (me.inPlay.includes('hermit') && !state.turn.buyPhaseGained) {
+      let ex = 0;
+      while (me.inPlay.includes('hermit') && (state.supply.madman || 0) > 0) {
+        removeOne(me.inPlay, 'hermit');
+        state.supply.hermit = (state.supply.hermit || 0) + 1;
+        state.supply.madman -= 1; me.discard.push('madman'); ex++;
+      }
+      if (ex) log(state, `${me.name} は購入フェイズで何も獲得しなかったので隠遁者 ${ex}枚 を狂人と交換した。`);
+    }
+    // 異郷：策謀＝クリンナップ開始時、場のアクション（非持続）を最大(このターンの策謀の数)枚 山札の上に置ける。
+    const schemes = state.turn.schemes || 0;
+    if (schemes > 0 && me.inPlay.some((c) => DOM.isType(c, 'action') && !DOM.isType(c, 'duration'))) {
+      state.pending = { type: 'scheme_cleanup', player: pi, max: schemes };
+      return;
+    }
+    cleanupAndAdvance(state);
+  }
+
   /* ============================================================
      reduce: 状態 + 操作 -> 新しい状態
      ============================================================ */
@@ -4114,24 +4188,12 @@
       case 'END_TURN': {
         if (state.pending) return state;
         if (t.phase !== 'buy') return state;
-        // 暗黒時代：隠遁者＝購入フェイズ中に1枚も獲得していなければ、場の隠遁者を狂人と交換する
-        //   （交換＝獲得ではない＝獲得フック不発。隠遁者は山へ戻し狂人を捨て札へ。狂人山が空なら不成立）。
-        if (me.inPlay.includes('hermit') && !t.buyPhaseGained) {
-          let ex = 0;
-          while (me.inPlay.includes('hermit') && (state.supply.madman || 0) > 0) {
-            removeOne(me.inPlay, 'hermit');
-            state.supply.hermit = (state.supply.hermit || 0) + 1; // 隠遁者は自分の山へ戻る
-            state.supply.madman -= 1; me.discard.push('madman'); ex++;
-          }
-          if (ex) log(state, `${me.name} は購入フェイズで何も獲得しなかったので隠遁者 ${ex}枚 を狂人と交換した。`);
-        }
-        // 異郷：策謀＝クリンナップ開始時、場のアクション（非持続）を最大(このターンの策謀の数)枚 山札の上に置ける。
-        const schemes = t.schemes || 0;
-        if (schemes > 0 && me.inPlay.some((c) => DOM.isType(c, 'action') && !DOM.isType(c, 'duration'))) {
-          state.pending = { type: 'scheme_cleanup', player: pi, max: schemes };
+        // 冒険：ワイン商＝購入フェイズ終了時、未使用$2以上が残っていれば酒場マットから捨ててよい（呼び出し窓）。
+        if (t.coins >= 2 && (me.tavern || []).includes('wine_merchant')) {
+          state.pending = { type: 'wine_merchant', player: pi };
           return state;
         }
-        cleanupAndAdvance(state);
+        endBuyTail(state);
         return state;
       }
 
@@ -6030,6 +6092,96 @@
         state.pending = null;
         return state;
       }
+      /* ---- 冒険：酒場マット（Reserve）の呼び出し ---- */
+      // 守銭奴：手札の銅貨1枚を酒場マットへ置く／酒場マットの銅貨1枚につき +$1。
+      case 'MISER_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'miser') return state;
+        const p = state.players[pd.player];
+        if (action.mode === 'bank') {
+          if (removeOne(p.hand, 'copper')) { (p.tavern = p.tavern || []).push('copper'); log(state, `${p.name} は守銭奴で銅貨1枚を酒場マットに置いた。`); }
+          else log(state, `${p.name} は守銭奴で置く銅貨が手札に無かった。`);
+        } else { // coins（既定）：マットの銅貨1枚につき +$1
+          const n = (p.tavern || []).filter((c) => c === 'copper').length;
+          t.coins += n; log(state, `${p.name} は守銭奴で酒場マットの銅貨 ${n}枚 → +$${n}。`);
+        }
+        state.pending = null;
+        return state;
+      }
+      // ターン開始の呼び出し窓：案内人/鼠取り/変容 を1枚呼び出す（card=null で呼び出さず次へ）。
+      case 'TAVERN_START_CALL': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'tavern_start') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (card == null) { popStartQueue(state); return state; } // 呼び出さない＝次の開始時効果へ
+        if (!TAVERN_START_CALLS.includes(card) || (p.tavern || []).indexOf(card) < 0) return state; // 不正
+        removeOne(p.tavern, card); p.inPlay.push(card); // マット→場（cleanup で捨て札へ）
+        t.actionsPlayed = (t.actionsPlayed || 0) + 1; // 呼び出しもプレイ（共謀者等の判定）
+        log(state, `${p.name} は酒場マットから「${C()[card].name}」を呼び出した。`);
+        if (card === 'guide') {
+          const n = p.hand.length; if (n) { p.discard.push(...p.hand); p.hand = []; }
+          draw(state, pd.player, 5);
+          log(state, `${p.name} は案内人で手札${n}枚を捨てて5枚引いた。`);
+          offerTavernStart(state, pd.player); // 続けて呼び出せるか
+        } else if (card === 'ratcatcher') {
+          if (p.hand.length > 0) state.pending = { type: 'ratcatcher_trash', player: pd.player };
+          else { log(state, `${p.name} は鼠取りで廃棄する手札が無かった。`); offerTavernStart(state, pd.player); }
+        } else if (card === 'transmogrify') {
+          if (p.hand.length > 0) state.pending = { type: 'transmogrify_trash', player: pd.player };
+          else { log(state, `${p.name} は変容で廃棄する手札が無かった。`); offerTavernStart(state, pd.player); }
+        }
+        return state;
+      }
+      case 'RATCATCHER_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ratcatcher_trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0) return state;
+        removeOne(p.hand, card); trashCard(state, pd.player, card);
+        log(state, `${p.name} は鼠取りで「${C()[card].name}」を廃棄した。`);
+        offerTavernStart(state, pd.player);
+        return state;
+      }
+      case 'TRANSMOGRIFY_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'transmogrify_trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0) return state;
+        const maxCost = cardCost(state, card) + 1, pot = potionCost(card);
+        removeOne(p.hand, card); trashCard(state, pd.player, card);
+        log(state, `${p.name} は変容で「${C()[card].name}」を廃棄した。`);
+        // そのコスト+$1以下のカード1枚を手札に獲得（強制。獲得先が無ければ呼び出し窓へ戻る）。
+        if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) <= maxCost && potionCost(id) <= pot))
+          state.pending = { type: 'transmogrify_gain', player: pd.player, maxCost, pot };
+        else offerTavernStart(state, pd.player);
+        return state;
+      }
+      case 'TRANSMOGRIFY_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'transmogrify_gain') return state;
+        // 手札に獲得（finishGain は pending を閉じるので、その後 呼び出し窓へ戻す）。
+        finishGain(state, pd, action.card, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) <= pd.maxCost && potionCost(id) <= pd.pot, 'hand', '獲得した（変容）。');
+        if (!state.pending) offerTavernStart(state, pd.player); // 獲得が成立して pending が閉じたら次の呼び出しへ
+        return state;
+      }
+      // ワイン商：購入フェイズ終了時、酒場マットから捨ててよい（$2以上残っているとき）。
+      case 'WINE_MERCHANT_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'wine_merchant') return state;
+        const p = state.players[pd.player];
+        state.pending = null;
+        if (action.discard && removeOne(p.tavern, 'wine_merchant')) {
+          p.discard.push('wine_merchant');
+          log(state, `${p.name} はワイン商を酒場マットから捨てた。`);
+          // まだ$2以上残り＆マットにワイン商があれば続けて捨ててよい。
+          if (t.coins >= 2 && (p.tavern || []).includes('wine_merchant')) { state.pending = { type: 'wine_merchant', player: pd.player }; return state; }
+        }
+        endBuyTail(state); // 呼び出し窓を抜けたら購入フェイズ終了の後処理へ
+        return state;
+      }
       case 'TACTICIAN_RESOLVE': {
         const pd = state.pending;
         if (!pd || pd.type !== 'tactician') return state;
@@ -7793,6 +7945,7 @@
     // 冒険（Adventures）
     'DUNGEON_DISCARD', 'GEAR_SETASIDE', 'AMULET_RESOLVE', 'AMULET_TRASH',
     'RELIC_REACT', 'GIANT_REACT', 'BRIDGE_TROLL_REACT',
+    'MISER_RESOLVE', 'TAVERN_START_CALL', 'RATCATCHER_TRASH', 'TRANSMOGRIFY_TRASH', 'TRANSMOGRIFY_GAIN', 'WINE_MERCHANT_DISCARD',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',

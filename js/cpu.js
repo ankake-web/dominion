@@ -209,6 +209,9 @@
     if (has('port')) return 'port';                       // +1カード+2アクション
     if (has('magpie')) return 'magpie';                   // +1カード+1アクション（山札の上を公開）
     if (has('dungeon')) return 'dungeon';                 // +1アクション（+2カード→2枚捨て・持続）
+    if (has('ratcatcher')) return 'ratcatcher';           // +1カード+1アクション（酒場マット・開始時に廃棄）
+    if (has('guide')) return 'guide';                     // +1カード+1アクション（酒場マット・開始時に引き直し）
+    if (has('transmogrify')) return 'transmogrify';       // +1アクション（酒場マット・開始時に格上げ）
     // --- ターミナル（効果の大きい順）---
     // 新プロモ：王子＝良い対象（$4以下の持続/命令以外）が手札にあるときだけ（毎ターン無料再生＝最優先）。
     if (has('prince') && bestPrinceTarget(state, p)) return 'prince';
@@ -235,9 +238,13 @@
     if (has('bridge_troll')) return 'bridge_troll';       // アタック＋全カード-$1＋今と次+1購入（持続）
     if (has('giant')) return 'giant';                     // アタック（表で+$5＋各相手の山札上を廃棄/呪い）
     if (has('hireling')) return 'hireling';               // 永続 +1カード/ターン（早く出すほど得）
+    if (has('wine_merchant')) return 'wine_merchant';     // +1購入+$4（酒場マット）
     if (has('gear')) return 'gear';                        // +2カード（脇置き持続）
     if (has('ranger')) return 'ranger';                   // +1購入（旅トークン表で+5カード。裏なら次回に備える）
     if (has('amulet')) return 'amulet';                   // 3択（+$1／廃棄／銀貨獲得）×2ターン
+    // 守銭奴＝手札に銅貨があれば貯め（デッキ圧縮）、無ければマットの銅貨を換金（貯めた銅貨0なら無駄なので打たない）。
+    if (has('miser') && (p.hand.includes('copper') || (p.tavern || []).some((c) => c === 'copper'))) return 'miser';
+    if (has('distant_lands')) return 'distant_lands';     // 酒場マットに置いて4勝利点（0点→4点）
     // 収穫祭：ターミナル（アタック・格上げ・賞品）
     if (has('jester')) return 'jester';                 // +2コイン＋アタック
     if (has('young_witch')) return 'young_witch';       // +2カード＋全員に呪い
@@ -1022,6 +1029,35 @@
         const order = p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b));
         return { type: 'AMULET_TRASH', card: order[0] };
       }
+      // 冒険：酒場マット（Reserve）の呼び出し・守銭奴。
+      case 'miser': {
+        // 手札に銅貨があれば貯める（圧縮＋守銭奴強化）、無ければマットの銅貨を換金。
+        if (p.hand.includes('copper')) return { type: 'MISER_RESOLVE', mode: 'bank' };
+        return { type: 'MISER_RESOLVE', mode: 'coins' };
+      }
+      case 'tavern_start': {
+        const mat = p.tavern || [];
+        const junk = p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0];
+        const hasJunk = junk != null && trashValue(junk) < 10; // 不要札（銅貨/屋敷/呪い等）があるか
+        if (mat.includes('ratcatcher') && hasJunk) return { type: 'TAVERN_START_CALL', card: 'ratcatcher' };
+        if (mat.includes('transmogrify') && hasJunk) return { type: 'TAVERN_START_CALL', card: 'transmogrify' };
+        // 案内人＝手札が弱い（財宝価値≤2かつアクション無し、または呪い持ち）ときだけ引き直す。
+        const handCoin = p.hand.reduce((s, c) => s + (isTreasure(c) ? (C()[c].coin || 0) : 0), 0);
+        const weak = p.hand.includes('curse') || (handCoin <= 2 && !p.hand.some((c) => isType(c, 'action')));
+        if (mat.includes('guide') && weak) return { type: 'TAVERN_START_CALL', card: 'guide' };
+        return { type: 'TAVERN_START_CALL', card: null }; // 呼び出さない
+      }
+      case 'ratcatcher_trash':
+        return { type: 'RATCATCHER_TRASH', card: p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0] };
+      case 'transmogrify_trash':
+        return { type: 'TRANSMOGRIFY_TRASH', card: p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0] };
+      case 'transmogrify_gain': {
+        let g = null;
+        for (const id of GAIN_ORDER) { if (C()[id] && !NON_SUPPLY_SET.has(id) && cost(state, id) <= pd.maxCost && (C()[id].potion || 0) <= pd.pot && sup(state, id) > 0) { g = id; break; } }
+        return { type: 'TRANSMOGRIFY_GAIN', card: g };
+      }
+      case 'wine_merchant':
+        return { type: 'WINE_MERCHANT_DISCARD', discard: true }; // マットから捨てて再利用（+$4を再演可能に）＝常に得
       // 冒険：アタックを受ける側（堀があれば無効化、無ければそのまま受ける＝react のみ・効果は自動）。
       case 'relic': // -1カードトークンは自動
         if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
