@@ -1262,6 +1262,9 @@
       { label: '山札の上1枚をマットに置く', cls: 'btn-primary', on: () => dispatch({ type: 'NATIVE_VILLAGE_RESOLVE', mode: 'set' }) },
       { label: 'マットの全カードを手札に加える（' + (p.nativeVillageMat || []).length + '枚）', on: () => dispatch({ type: 'NATIVE_VILLAGE_RESOLVE', mode: 'take' }) }]);
     if (pd.type === 'tide_pools_discard') return modalSelectN(p, '潮だまり — 手札を捨てる', '手札を2枚選んで捨てます。', Math.min(2, p.hand.length), '確定（捨てる）', (cards) => dispatch({ type: 'TIDE_POOLS_DISCARD', cards }));
+    // 冒険：地下牢＝手札2枚を捨てる（今／次の手番）。道具＝手札から最大2枚を脇に置く（次の手番に戻る）。
+    if (pd.type === 'dungeon_discard') return modalSelectN(p, '地下牢 — 手札を捨てる', '手札を2枚選んで捨てます。', Math.min(2, p.hand.length), '確定（捨てる）', (cards) => dispatch({ type: 'DUNGEON_DISCARD', cards }));
+    if (pd.type === 'gear') return modalMultiHand(p, '道具 — 脇に置く', '手札から最大2枚を裏向きに脇に置きます（次の手番開始時に手札へ戻ります・0枚でもOK）。', (n) => '確定（' + n + '枚）', true, (cards) => dispatch({ type: 'GEAR_SETASIDE', cards }), 2);
     if (pd.type === 'cutpurse' && pd.stage === 'react') return modalOptions('巾着切りを受ける', '銅貨1枚を捨てます（無ければ手札を公開）。', reactOptions(p, pd, { type: 'CUTPURSE_REACT' }));
     if (pd.type === 'sea_witch' && pd.stage === 'react') return modalOptions('海の魔女を受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'SEA_WITCH_REACT' }));
     if (pd.type === 'sea_witch_discard') return modalSelectN(p, '海の魔女 — 手札を捨てる', '手札を2枚選んで捨てます。', Math.min(2, p.hand.length), '確定（捨てる）', (cards) => dispatch({ type: 'SEA_WITCH_DISCARD', cards }));

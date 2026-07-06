@@ -208,6 +208,7 @@
     if (has('lost_city')) return 'lost_city';             // +2カード+2アクション
     if (has('port')) return 'port';                       // +1カード+2アクション
     if (has('magpie')) return 'magpie';                   // +1カード+1アクション（山札の上を公開）
+    if (has('dungeon')) return 'dungeon';                 // +1アクション（+2カード→2枚捨て・持続）
     // --- ターミナル（効果の大きい順）---
     // 新プロモ：王子＝良い対象（$4以下の持続/命令以外）が手札にあるときだけ（毎ターン無料再生＝最優先）。
     if (has('prince') && bestPrinceTarget(state, p)) return 'prince';
@@ -230,6 +231,9 @@
     if (has('salvager') && p.hand.length > 1) return 'salvager'; // 廃棄→コイン
     if (has('treasure_map') && p.hand.filter((c) => c === 'treasure_map').length >= 2) return 'treasure_map'; // 2枚揃いで金貨4枚
     if (has('tactician')) { const hc = p.hand.reduce((s, c) => s + (isTreasure(c) ? (C()[c].coin || 0) : 0), 0); if (hc <= 3 && p.hand.length > 1) return 'tactician'; }
+    // 冒険：ターミナル
+    if (has('hireling')) return 'hireling';               // 永続 +1カード/ターン（早く出すほど得）
+    if (has('gear')) return 'gear';                        // +2カード（脇置き持続）
     // 収穫祭：ターミナル（アタック・格上げ・賞品）
     if (has('jester')) return 'jester';                 // +2コイン＋アタック
     if (has('young_witch')) return 'young_witch';       // +2カード＋全員に呪い
@@ -999,6 +1003,12 @@
         for (const id of premium) { if (aff.includes(id)) { pick = id; break; } }
         return pick ? { type: 'BLACK_MARKET_BUY', card: pick } : { type: 'BLACK_MARKET_SKIP' };
       }
+
+      /* ===== 拡張: 冒険（Adventures）===== */
+      case 'dungeon_discard':
+        return { type: 'DUNGEON_DISCARD', cards: pickDiscards(p.hand, Math.min(2, p.hand.length)) };
+      case 'gear':
+        return { type: 'GEAR_SETASIDE', cards: [] }; // 脇置きは戻ってくるだけ＝安全側で0枚（無駄置きしない）
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
       case 'warehouse':

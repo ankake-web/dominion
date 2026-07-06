@@ -3240,6 +3240,23 @@
         }
         break;
       }
+      // 雇人：ゲーム終了までの自分の各ターン開始時 +1カード（永続持続。princes と同型で cnt に加算し場に残す）。
+      //   即時効果は無い（「各ターン開始時」＝次の手番から）。armDuration は使わず p.hirelings で稼働数を持つ。
+      case 'hireling':
+        p.hirelings = (p.hirelings || 0) + 1;
+        break;
+      // 地下牢：+1アクション。今と次のターン開始時にそれぞれ +2カードの後 手札2枚を捨てる。
+      case 'dungeon':
+        t.actions += 1;
+        draw(state, pi, 2);
+        armDuration(state, pi, 'dungeon');
+        if (p.hand.length > 0) state.pending = { type: 'dungeon_discard', player: pi };
+        break;
+      // 道具：+2カード。手札から最大2枚を裏向きに脇へ→次のターン開始時に手札へ戻す。
+      case 'gear':
+        draw(state, pi, 2);
+        if (p.hand.length > 0) state.pending = { type: 'gear', player: pi };
+        break;
 
       default:
         break;
@@ -3360,6 +3377,8 @@
       const r = DURATION_RESOLVERS[e.type];
       if (r) r(state, pi, e); // 非対話はここで適用、対話は state.turn.startQueue に積む
     }
+    // 冒険：雇人＝永続持続。稼働数ぶん、各ターン開始時に +1カード（非対話）。
+    if (p.hirelings) { for (let i = 0; i < p.hirelings; i++) draw(state, pi, 1); log(state, `${p.name} は雇人の持続効果（+${p.hirelings}カード）。`); }
     // 新プロモ：王子＝脇に置いたカードを毎ターン開始時に（脇に置いたまま）使用する（強制・アクション権不要）。
     (p.princes || []).forEach((card, i) => {
       state.turn.startQueue.push({ type: 'prince_play', player: pi, idx: i, card });
@@ -3420,6 +3439,18 @@
     },
     captain: (s, pi) => { // 新プロモ：次のターン開始時も、サプライのコスト4以下アクションを使う（対話＝startQueueへ）
       (s.turn.startQueue = s.turn.startQueue || []).push({ type: 'captain', player: pi });
+    },
+    // 冒険：地下牢＝次の手番も +2カードの後 手札2枚を捨てる（対話＝startQueueへ）。
+    dungeon: (s, pi) => {
+      draw(s, pi, 2); log(s, `${s.players[pi].name} は地下牢の持続効果（+2カード）。`);
+      if (s.players[pi].hand.length > 0) (s.turn.startQueue = s.turn.startQueue || []).push({ type: 'dungeon_discard', player: pi, viaStart: true });
+    },
+    // 冒険：道具＝脇に置いたカードを手札へ戻す（haven/blockade と同型）。
+    gear: (s, pi, e) => {
+      const p = s.players[pi];
+      const back = (e.stashed || []).filter((c) => removeOne(p.setAside, c));
+      back.forEach((c) => p.hand.push(c));
+      if (back.length) log(s, `${p.name} は道具で脇に置いた ${back.length}枚 を手札に戻した。`);
     },
   };
 
@@ -3724,6 +3755,8 @@
     // 新プロモ：王子＝カードを脇に置いた王子は（毎ターン開始時効果を持つ持続として）ゲーム終了まで
     // 場に残り続ける。稼働中の王子（princes の要素数）ぶんだけ物理カードを保持する。
     if ((p.princes || []).length) cnt.prince = (cnt.prince || 0) + p.princes.length;
+    // 冒険：雇人＝永続持続。稼働数ぶん物理カードを durationCards に残す（princes と同型）。
+    if (p.hirelings) cnt.hireling = (cnt.hireling || 0) + p.hirelings;
     const used = {}; const newDur = [];
     for (const c of (p.durationCards || [])) {
       if ((used[c] || 0) < (cnt[c] || 0)) { newDur.push(c); used[c] = (used[c] || 0) + 1; }
@@ -5789,6 +5822,30 @@
         state.pending = null;
         return state;
       }
+      /* ---- 冒険：地下牢＝手札2枚を捨てる（今／次の手番。次の手番ぶんは startQueue 経由） ---- */
+      case 'DUNGEON_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'dungeon_discard') return state;
+        const p = state.players[pd.player];
+        const want = Math.min(2, p.hand.length);
+        if (!discardFromHand(state, pd.player, action.cards, want, '捨てた（地下牢）。')) return state;
+        if (pd.viaStart) popStartQueue(state); else state.pending = null;
+        return state;
+      }
+      /* ---- 冒険：道具＝手札から最大2枚を脇に置く（次の手番開始時に手札へ戻る） ---- */
+      case 'GEAR_SETASIDE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'gear') return state;
+        const p = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards.slice(0, 2) : [];
+        const tmp = p.hand.slice();
+        for (const c of cards) { const i = tmp.indexOf(c); if (i < 0) return state; tmp.splice(i, 1); } // 全て手札にあること
+        cards.forEach((c) => { removeOne(p.hand, c); p.setAside.push(c); });
+        if (cards.length > 0) { armDuration(state, pd.player, 'gear', { stashed: cards.slice() }); log(state, `${p.name} は手札 ${cards.length}枚 を脇に置いた（道具。次の手番に戻す）。`); }
+        else log(state, `${p.name} は道具で脇に置かなかった。`);
+        state.pending = null;
+        return state;
+      }
       case 'TACTICIAN_RESOLVE': {
         const pd = state.pending;
         if (!pd || pd.type !== 'tactician') return state;
@@ -7547,6 +7604,8 @@
     // 新プロモ（王子/船長/教会/サウナ/アヴァント/へそくり）
     'PRINCE_SETASIDE', 'PRINCE_PLAY', 'CAPTAIN_PLAY', 'CHURCH_SETASIDE', 'CHURCH_TRASH',
     'SAUNA_CHAIN', 'SAUNA_TRASH', 'STASH_SETTING',
+    // 冒険（Adventures）
+    'DUNGEON_DISCARD', 'GEAR_SETASIDE',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',
