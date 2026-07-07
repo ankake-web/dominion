@@ -1575,7 +1575,7 @@
     if (pd.type === 'duchess_gain') return modalOptions('公爵夫人を獲得?', '公領を獲得しました。公爵夫人1枚を獲得できます。', [
       { label: '公爵夫人を獲得する', cls: 'btn-primary', on: () => dispatch({ type: 'DUCHESS_GAIN', gain: true }) },
       { label: '獲得しない', on: () => dispatch({ type: 'DUCHESS_GAIN', gain: false }) }]);
-    if (pd.type === 'farmland' && pd.stage === 'trash') return modalSingleHand(p, '農地 — 廃棄', '手札から1枚を廃棄し、ちょうど$2高いカードを獲得します。', () => true, (card) => dispatch({ type: 'FARMLAND_TRASH', card }), null, '廃棄する');
+    if (pd.type === 'farmland' && pd.stage === 'trash') return modalSingleHand(p, '農地 — 廃棄', '手札から1枚を廃棄し、ちょうど$2高いカードを獲得します。', () => true, (card) => dispatch({ type: 'FARMLAND_TRASH', card }), p.hand.length === 0 ? { label: '廃棄できるカードが無い（何もしない）', on: () => dispatch({ type: 'FARMLAND_TRASH', card: null }) } : null, '廃棄する');
     if (pd.type === 'farmland' && pd.stage === 'gain') return modalGainSupply(state, '農地 — 獲得', 'ちょうどコスト $' + pd.exactCost + ' のカードを1枚獲得します。', (id) => effCost(state, id) === pd.exactCost, (id) => dispatch({ type: 'FARMLAND_GAIN', card: id }));
     if (pd.type === 'haggler') return modalGainSupply(state, '値切り屋 — 獲得', 'コスト ' + pd.maxCost + ' 以下の、勝利点でないカードを1枚獲得します。', (id) => !DOM.isType(id, 'victory') && effCost(state, id) <= pd.maxCost, (id) => dispatch({ type: 'HAGGLER_GAIN', card: id }));
     if (pd.type === 'fools_gold_react') return modalOptions('愚者の黄金 — 反応', '相手が属州を獲得しました。手札の愚者の黄金を廃棄して金貨1枚を山札の上に獲得できます。', [

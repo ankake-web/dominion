@@ -854,9 +854,9 @@
     // 冒険：トラベラーのアタック（ウォリアー＝山札上を捨て$3/$4廃棄／兵士＝手札4枚以上で1枚捨て）。
     warrior:       { onMoat: (s, pd) => warriorEnterVictim(s, pd.source, pd.queue, pd.count) },
     soldier:       { onMoat: (s, pd) => soldierEnterVictim(s, pd.source, pd.queue) },
-    // 冒険：呪いの森/沼の妖婆＝相手の購入をフックする持続アタック（堀公開でこの持続から免疫）。
-    haunted_woods: { onMoat: (s, pd) => { markLingerImmune(s, pd.source, 'haunted_woods', pd.victim); lingerAttackEnter(s, pd.source, 'haunted_woods', pd.queue); } },
-    swamp_hag:     { onMoat: (s, pd) => { markLingerImmune(s, pd.source, 'swamp_hag', pd.victim); lingerAttackEnter(s, pd.source, 'swamp_hag', pd.queue); } },
+    // 冒険：呪いの森/沼の妖婆＝相手の購入をフックする持続アタック（堀公開でこの予約[rid]から免疫）。
+    haunted_woods: { onMoat: (s, pd) => { markLingerImmune(s, pd.source, 'haunted_woods', pd.victim, pd.rid); lingerAttackEnter(s, pd.source, 'haunted_woods', pd.queue, pd.rid); } },
+    swamp_hag:     { onMoat: (s, pd) => { markLingerImmune(s, pd.source, 'swamp_hag', pd.victim, pd.rid); lingerAttackEnter(s, pd.source, 'swamp_hag', pd.queue, pd.rid); } },
   };
   // 被攻撃側の反応（堀／秘密の小部屋／外交官）を差し込める局面か。
   function isAttackReactPending(pd) {
@@ -1458,18 +1458,19 @@
      プレイ時に即効果は無い（+3カード/+$3 は次の自分の手番）。次の自分の手番まで、他Pが購入するたびに発動。
      免疫は「プレイ時」に確定＝champion/灯台の受動免疫と、堀を公開した相手を予約(delayedEffects)の immune に記録し、
      BUY 側フック(applyLingerOnBuy)がその相手を飛ばす（封鎖と同型）。 */
-  function markLingerImmune(state, source, card, victim) {
-    (state.players[source].delayedEffects || []).forEach((e) => {
-      if (e.type === card) { e.immune = e.immune || []; if (!e.immune.includes(victim)) e.immune.push(victim); }
-    });
+  // 免疫は「この予約(rid)ひとつ」だけに付ける（玉座/王の宮廷で同型の予約が複数並ぶとき、堀を公開した窓の予約だけを免疫に）。
+  //   ＝封鎖が gained で予約を区別するのと同型。全予約を走査すると『受けた予約まで遡って免疫』になる過剰付与バグを防ぐ。
+  function markLingerImmune(state, source, card, victim, rid) {
+    const e = (state.players[source].delayedEffects || []).find((x) => x.type === card && x.rid === rid);
+    if (e) { e.immune = e.immune || []; if (!e.immune.includes(victim)) e.immune.push(victim); }
   }
-  function lingerAttackEnter(state, source, card, queue) {
+  function lingerAttackEnter(state, source, card, queue, rid) {
     queue = (queue || []).slice();
     while (queue.length) {
       const victim = queue[0];
-      if (attackImmune(state, victim)) { markLingerImmune(state, source, card, victim); queue.shift(); continue; }
+      if (attackImmune(state, victim)) { markLingerImmune(state, source, card, victim, rid); queue.shift(); continue; }
       if (hasReaction(state.players[victim])) {
-        state.pending = { type: card, stage: 'react', player: victim, source, victim, queue: queue.slice(1) };
+        state.pending = { type: card, stage: 'react', player: victim, source, victim, queue: queue.slice(1), rid };
         return;
       }
       queue.shift(); // 反応札なし＝即効果は無い（免疫も付かない）
@@ -3512,16 +3513,18 @@
         break;
       // 呪いの森：即効果なし。次の手番まで他Pの購入時に手札を全て山札の上へ（アタック持続）。次の手番開始時 +3カード。
       case 'haunted_woods': {
-        armDuration(state, pi, 'haunted_woods', { immune: [] });
+        const rid = (state._lingerSeq = (state._lingerSeq | 0) + 1); // 予約の一意id（玉座で複数並ぶときの免疫スコープ用）
+        armDuration(state, pi, 'haunted_woods', { immune: [], rid });
         const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
-        lingerAttackEnter(state, pi, 'haunted_woods', q);
+        lingerAttackEnter(state, pi, 'haunted_woods', q, rid);
         break;
       }
       // 沼の妖婆：即効果なし。次の手番まで他Pの購入時に呪い1枚を獲得させる（アタック持続）。次の手番開始時 +$3。
       case 'swamp_hag': {
-        armDuration(state, pi, 'swamp_hag', { immune: [] });
+        const rid = (state._lingerSeq = (state._lingerSeq | 0) + 1);
+        armDuration(state, pi, 'swamp_hag', { immune: [], rid });
         const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
-        lingerAttackEnter(state, pi, 'swamp_hag', q);
+        lingerAttackEnter(state, pi, 'swamp_hag', q, rid);
         break;
       }
       // 山守：+1購入。旅トークンを裏返す（表向きから始まる）。その後、表向きなら +5カード。
@@ -4452,7 +4455,8 @@
         if (card === 'noble_brigand' && !state.pending) nobleBrigandAttack(state, pi);
         // 異郷：値切り屋＝場にある間、購入のたびに そのコスト未満の勝利点でないカード1枚を獲得。
         maybeHagglerGains(state, pi, cost);
-        // 冒険：呪いの森/沼の妖婆＝他Pの持続がある間、購入のたびに手札を山札の上へ/呪い獲得。
+        // 冒険：呪いの森/沼の妖婆＝他Pの持続がある間、購入のたびに手札を山札の上へ/呪い獲得（購入した以上フックは必ず発動）。
+        //   農地の廃棄pendingが立ったまま呪いの森が手札を空にしても、FARMLAND_TRASH が空手札を終端処理する（詰まない）。
         applyLingerOnBuy(state, pi);
         return state;
       }
@@ -8070,7 +8074,7 @@
       case 'LINGER_REACT': {
         const pd = state.pending;
         if (!pd || (pd.type !== 'haunted_woods' && pd.type !== 'swamp_hag') || pd.stage !== 'react') return state;
-        lingerAttackEnter(state, pd.source, pd.type, pd.queue);
+        lingerAttackEnter(state, pd.source, pd.type, pd.queue, pd.rid);
         return state;
       }
       case 'BEGGAR_REACT': {
@@ -8219,6 +8223,9 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'farmland' || pd.stage !== 'trash') return state;
         const pl = state.players[pd.player];
+        // 手札が空なら廃棄できない＝何もせず解決（公式：手札が無ければ農地は何も廃棄しない）。
+        //   ※呪いの森で購入時に手札が山札の上へ流れた稀ケース(全プール混成fuzz)の終端保証＝デッドロック回避。
+        if (pl.hand.length === 0) { state.pending = null; return state; }
         const card = action.card;
         if (card == null || pl.hand.indexOf(card) < 0) return state; // 廃棄必須（購入時）
         removeOne(pl.hand, card); trashCard(state, pd.player, card);
