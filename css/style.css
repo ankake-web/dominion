@@ -625,6 +625,21 @@ html.modal-open, html.modal-open body { overflow: hidden; }
   border: 1px solid rgba(216, 180, 106, 0.45);
 }
 .pile.empty .pile-count { color: #e0a0a0; }
+/* 冒険：教師の山トークン（山の左下に小さく表示） */
+.pile-tokens {
+  position: absolute;
+  bottom: 3px;
+  left: 3px;
+  z-index: 2;
+  background: rgba(60, 30, 90, 0.9);
+  color: #f0e2ff;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 8px;
+  border: 1px solid rgba(190, 150, 255, 0.7);
+}
 /* 残りが少なくなったら残数の色で警告（残5以下=琥珀、残2以下=赤） */
 .pile-count.mid { color: #ffd36b; border-color: rgba(255, 200, 90, 0.7); }
 .pile-count.lo {

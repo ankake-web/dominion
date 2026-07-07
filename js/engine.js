@@ -354,6 +354,7 @@
         coffers: 0,        // ギルド：財源（Coffers）トークン。購入フェイズに1枚=+1コインで使える。公開・VPには数えない。
         princes: [],       // プロモ：王子の脇に置いたカードid列（公開）。毎ターン開始時に脇のままプレイ。1要素=王子1枚が稼働中。
         tavern: [],        // 冒険：酒場マット（Reserve カードと守銭奴の銅貨。公開＝islandMat型。呼び出しで場へ戻す）。
+        pileTokens: {},    // 冒険：教師の山トークン（{card|action|buy|coin: 山id}。各山1つまで・公開。その山のカードをプレイ時にボーナス）。
         stashPlacement: 'top', // プロモ：へそくり(Stash)のシャッフル時配置方針 'top'|'mix'|'bottom'（本人がいつでも変更可）。
         // 冒険：トークン（すべて公開情報・スカラー＝maskStateFor でそのまま残る・JSONセーフ）。
         journeyDown: false, // 旅トークンの向き（false=表向き／true=裏向き。山守/巨人が共有＝プレイのたびに裏返す）。
@@ -1091,12 +1092,42 @@
       log(state, `${p.name} は「${C()[cardId].name}」を酒場マットに置いた。`);
     }
   }
-  // ターン開始時に呼び出せる Reserve（案内人/鼠取り/変容）。
-  const TAVERN_START_CALLS = ['guide', 'ratcatcher', 'transmogrify'];
+  const TOKEN_LABEL = { card: 'カード', action: 'アクション', buy: '購入', coin: 'コイン' };
+  // 冒険：教師の山トークン＝プレイしたカードの山に自分のトークンがあれば、まずそのボーナスを得る。
+  function applyPileTokens(state, pi, card) {
+    const p = state.players[pi], toks = p.pileTokens || {}, t = state.turn;
+    Object.keys(toks).forEach((tk) => {
+      if (toks[tk] !== card) return;
+      if (tk === 'card') draw(state, pi, 1);
+      else if (tk === 'action') t.actions += 1;
+      else if (tk === 'buy') t.buys += 1;
+      else if (tk === 'coin') t.coins += 1;
+      log(state, `${p.name} は教師トークンで +1${TOKEN_LABEL[tk]}（${C()[card].name}）。`);
+    });
+  }
+  // ターン開始時に呼び出せる Reserve（案内人/鼠取り/変容／教師）。
+  const TAVERN_START_CALLS = ['guide', 'ratcatcher', 'transmogrify', 'teacher'];
+  // 冒険：教師の置き先＝「自分のトークンが無いアクションのサプライ山」。
+  //   非サプライ/騎士/分割山下段/勝利点専用等を除く。トークンは公開情報（各山1つまで）。
+  function validTeacherPiles(state, pi) {
+    const p = state.players[pi];
+    const mine = new Set(Object.values(p.pileTokens || {})); // 自分のトークンが既に乗っている山
+    return Object.keys(state.supply).filter((id) =>
+      (state.supply[id] || 0) > 0 && !NON_SUPPLY.has(id) && C()[id] && DOM.isType(id, 'action') &&
+      !mine.has(id) && id !== 'knights' && !(id === 'avanto' && (state.supply.sauna || 0) > 0));
+  }
+  // 教師を呼べるか＝酒場マットにあり、置ける山が1つ以上あるとき（置き先が無ければ呼んでも無意味なので窓を開かない）。
+  function teacherCallable(state, pi) {
+    return (state.players[pi].tavern || []).includes('teacher') && validTeacherPiles(state, pi).length > 0;
+  }
+  // ターン開始の呼び出し窓を開くべきか（案内人/鼠取り/変容＝マットにあれば／教師＝置き先があれば）。
+  function anyTavernStartCallable(state, pi) {
+    const p = state.players[pi];
+    return (p.tavern || []).some((c) => c === 'guide' || c === 'ratcatcher' || c === 'transmogrify') || teacherCallable(state, pi);
+  }
   // ターン開始の呼び出し窓：まだ呼べる Reserve が酒場マットにあれば再オファー、無ければ次の開始時効果へ。
   function offerTavernStart(state, pi) {
-    const p = state.players[pi];
-    if ((p.tavern || []).some((c) => TAVERN_START_CALLS.includes(c))) state.pending = { type: 'tavern_start', player: pi };
+    if (anyTavernStartCallable(state, pi)) state.pending = { type: 'tavern_start', player: pi };
     else popStartQueue(state);
   }
   // 略奪：手札5枚以上の各相手が手札を公開し、使用者が1枚選んで捨てさせる。
@@ -3548,6 +3579,10 @@
       case 'disciple':
         if (p.hand.some((c) => DOM.isType(c, 'action'))) state.pending = { type: 'disciple_play', player: pi };
         break;
+      // 教師（Reserve）：効果なし → 酒場マットへ。ターン開始時に呼び出してトークンをアクション山に置く。
+      case 'teacher':
+        putOnTavern(state, pi, 'teacher');
+        break;
 
       default:
         break;
@@ -3680,8 +3715,8 @@
     // 繁栄：会計士＝手番開始時、手札の会計士を（アクションを消費せず）使ってよい。startQueue の最後に積む。
     const clerks = p.hand.filter((c) => c === 'clerk').length;
     for (let i = 0; i < clerks; i++) state.turn.startQueue.push({ type: 'clerk_start', player: pi });
-    // 冒険：ターン開始時に呼び出せる Reserve（案内人/鼠取り/変容）が酒場マットにあれば呼び出し窓を開く。
-    if ((p.tavern || []).some((c) => TAVERN_START_CALLS.includes(c))) state.turn.startQueue.push({ type: 'tavern_start', player: pi });
+    // 冒険：ターン開始時に呼び出せる Reserve（案内人/鼠取り/変容／教師）が酒場マットにあれば呼び出し窓を開く。
+    if (anyTavernStartCallable(state, pi)) state.turn.startQueue.push({ type: 'tavern_start', player: pi });
     popStartQueue(state); // 最初の対話 pending をセット（無ければ null）
   }
   // 各持続カードの「次の手番開始時」効果（カードidをキーに登録）。対話分は §手5/手6 で startQueue に積む。
@@ -4269,6 +4304,9 @@
           const champs = me.inPlay.filter((c) => c === 'champion').length + (me.durationCards || []).filter((c) => c === 'champion').length - (card === 'champion' ? 1 : 0);
           if (champs > 0) { t.actions += champs; log(state, `${me.name} はチャンピオンで +${champs}アクション。`); }
         }
+        // 冒険：教師の山トークン＝この山のカードをプレイしたとき、まず該当ボーナスを得る（アクションの効果解決より前）。
+        //   ※玉座/王の宮廷/門下生の再演（applyEffect経由）は対象外＝champion と同じ許容簡略化。
+        applyPileTokens(state, pi, card);
         t.afterActionCard = card; // 冒険：法貨/御料車の「アクション解決直後」の呼び出し窓の対象
         log(state, `${me.name} は「${C()[card].name}」を使った。`);
         // 暗黒時代：浮浪児＝別アタックのプレイ時に場の浮浪児を廃棄→傭兵。効果は URCHIN_TRASH 解決後に適用。
@@ -6380,7 +6418,33 @@
         } else if (card === 'transmogrify') {
           if (p.hand.length > 0) state.pending = { type: 'transmogrify_trash', player: pd.player };
           else { log(state, `${p.name} は変容で廃棄する手札が無かった。`); offerTavernStart(state, pd.player); }
+        } else if (card === 'teacher') {
+          // 置ける山があればトークン種別→山 の順で選ぶ。無ければトークン移動なし（稀）。
+          if (validTeacherPiles(state, pd.player).length) state.pending = { type: 'teacher_call', stage: 'token', player: pd.player };
+          else { log(state, `${p.name} は教師でトークンを置ける山が無かった。`); offerTavernStart(state, pd.player); }
         }
+        return state;
+      }
+      // 冒険：教師＝移動するトークンの種別を選ぶ（+1カード/+1アクション/+1購入/+1コイン）。
+      case 'TEACHER_TOKEN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'teacher_call' || pd.stage !== 'token') return state;
+        const token = action.token;
+        if (['card', 'action', 'buy', 'coin'].indexOf(token) < 0) return state;
+        state.pending = { type: 'teacher_call', stage: 'pile', player: pd.player, token };
+        return state;
+      }
+      // 冒険：教師＝トークンを置くアクション山を選ぶ（自分のトークンが無い山）。
+      case 'TEACHER_PILE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'teacher_call' || pd.stage !== 'pile') return state;
+        const p = state.players[pd.player];
+        const pile = action.card;
+        if (validTeacherPiles(state, pd.player).indexOf(pile) < 0) return state; // 不正な山は再選択
+        p.pileTokens = p.pileTokens || {};
+        p.pileTokens[pd.token] = pile; // トークンを移動（元の山からは自動的に外れる＝各種別1つ）
+        log(state, `${p.name} は「${C()[pile].name}」の山に +1${TOKEN_LABEL[pd.token]}トークンを置いた（教師）。`);
+        offerTavernStart(state, pd.player); // 続けて呼び出せるか
         return state;
       }
       case 'RATCATCHER_TRASH': {
@@ -8237,8 +8301,9 @@
     'RELIC_REACT', 'GIANT_REACT', 'BRIDGE_TROLL_REACT',
     'MISER_RESOLVE', 'TAVERN_START_CALL', 'RATCATCHER_TRASH', 'TRANSMOGRIFY_TRASH', 'TRANSMOGRIFY_GAIN', 'WINE_MERCHANT_DISCARD',
     'AFTER_ACTION_CALL', 'DUPLICATE_CALL',
-    // 冒険：トラベラー（page/peasant＋成長先）
+    // 冒険：トラベラー（page/peasant＋成長先＋教師の山トークン）
     'WARRIOR_REACT', 'SOLDIER_REACT', 'SOLDIER_DISCARD', 'HERO_GAIN', 'FUGITIVE_DISCARD', 'DISCIPLE_PLAY', 'TRAVELLER_EXCHANGE_RESOLVE',
+    'TEACHER_TOKEN', 'TEACHER_PILE',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',
@@ -8300,6 +8365,7 @@
     canBuyCard,
     captainTargets, // 新プロモ：船長の対象（CPU/UIが同じ候補を参照＝engine拒否とCPU非提案のセット）
     bandOfMisfitsTargets, // 暗黒時代：はみだし者の対象（CPU/UIが同じ候補を参照）
+    validTeacherPiles, // 冒険：教師のトークン置き先（CPU/UIが同じ候補を参照）
     maskStateFor,
     PLAYER_ACTIONS,
     // 「誰が今操作すべきか」: 選択待ちならその人、なければ手番のプレイヤー

@@ -254,6 +254,7 @@
     if (has('miser') && (p.hand.includes('copper') || (p.tavern || []).some((c) => c === 'copper'))) return 'miser';
     if (has('duplicate')) return 'duplicate';             // 酒場マットに置いて $6以下の獲得をコピー
     if (has('distant_lands')) return 'distant_lands';     // 酒場マットに置いて4勝利点（0点→4点）
+    if (has('teacher')) return 'teacher';                 // 酒場マットに置いて開始時に山トークンを配置
     // 冒険：トラベラー（ターミナル）＝成長させるため使う
     if (has('warrior')) return 'warrior';                 // +2カード＋アタック（成長：→ヒーロー）
     if (has('soldier')) return 'soldier';                 // +$2＋アタック（成長：→脱走兵）
@@ -1060,7 +1061,21 @@
         const handCoin = p.hand.reduce((s, c) => s + (isTreasure(c) ? (C()[c].coin || 0) : 0), 0);
         const weak = p.hand.includes('curse') || (handCoin <= 2 && !p.hand.some((c) => isType(c, 'action')));
         if (mat.includes('guide') && weak) return { type: 'TAVERN_START_CALL', card: 'guide' };
+        // 教師＝置ける山があれば呼んでトークン配置（常に得）。
+        if (mat.includes('teacher') && DOM.engine.validTeacherPiles && DOM.engine.validTeacherPiles(state, pd.player).length) return { type: 'TAVERN_START_CALL', card: 'teacher' };
         return { type: 'TAVERN_START_CALL', card: null }; // 呼び出さない
+      }
+      case 'teacher_call': {
+        const piles = (DOM.engine.validTeacherPiles ? DOM.engine.validTeacherPiles(state, pd.player) : []);
+        if (pd.stage === 'token') {
+          // まだ置いていないトークンを優先（card→coin→action→buy の順）。全部置き済みなら card を移動。
+          const placed = new Set(Object.keys(p.pileTokens || {}));
+          const tk = ['card', 'coin', 'action', 'buy'].find((x) => !placed.has(x)) || 'card';
+          return { type: 'TEACHER_TOKEN', token: tk };
+        }
+        // pile：自分のトークンが無いアクション山のうち、最もコストの高い山（強いカードを想定）へ。
+        const pick = piles.slice().sort((a, b) => cost(state, b) - cost(state, a))[0];
+        return { type: 'TEACHER_PILE', card: pick };
       }
       case 'ratcatcher_trash':
         return { type: 'RATCATCHER_TRASH', card: p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0] };

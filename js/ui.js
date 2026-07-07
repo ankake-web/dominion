@@ -239,8 +239,20 @@
       h('div', { class: 'pname' }, c.name),
       cardArt(dispId),
       opts.recommended ? h('div', { class: 'rec-badge' }, 'おすすめ') : null,
+      pileTokenBadge(state, id),
       h('div', { class: 'pile-count' + (n <= 2 ? ' lo' : n <= 5 ? ' mid' : '') }, '残' + n)
     );
+  }
+  // 冒険：教師の山トークンを山に小さく表示（各プレイヤーのトークンは公開情報）。
+  function pileTokenBadge(state, id) {
+    const SYM = { card: '+1🃏', action: '+1▶', buy: '+1🛒', coin: '+1$' };
+    const chips = [];
+    (state.players || []).forEach((pl, pi) => {
+      const toks = pl.pileTokens || {};
+      Object.keys(toks).forEach((tk) => { if (toks[tk] === id) chips.push((state.players.length > 2 ? 'P' + (pi + 1) + ':' : '') + SYM[tk]); });
+    });
+    if (!chips.length) return null;
+    return h('div', { class: 'pile-tokens', title: '教師トークン' }, chips.join(' '));
   }
 
   // 暗黒時代：廃墟の山（混合山・購入不可）。一番上の実廃墟の絵/名前と残枚数を表示（クリック不可）。
@@ -1294,6 +1306,7 @@
       if (mat.includes('guide')) opts.push({ label: '案内人を呼ぶ（手札を全捨て5枚引く）', on: () => dispatch({ type: 'TAVERN_START_CALL', card: 'guide' }) });
       if (mat.includes('ratcatcher')) opts.push({ label: '鼠取りを呼ぶ（手札1枚を廃棄）', on: () => dispatch({ type: 'TAVERN_START_CALL', card: 'ratcatcher' }) });
       if (mat.includes('transmogrify')) opts.push({ label: '変容を呼ぶ（手札1枚を廃棄→格上げ獲得）', on: () => dispatch({ type: 'TAVERN_START_CALL', card: 'transmogrify' }) });
+      if (mat.includes('teacher') && DOM.engine.validTeacherPiles(state, pd.player).length) opts.push({ label: '教師を呼ぶ（アクション山にトークンを置く）', on: () => dispatch({ type: 'TAVERN_START_CALL', card: 'teacher' }) });
       opts.push({ label: '呼び出さない', on: () => dispatch({ type: 'TAVERN_START_CALL', card: null }) });
       return modalOptions('酒場マット — 呼び出し（ターン開始）', '呼び出す Reserve カードを選びます（呼び出したカードは場に出ます）。', opts);
     }
@@ -1329,6 +1342,17 @@
     if (pd.type === 'hero_gain') return modalGainSupply(state, 'ヒーロー — 財宝を獲得', '財宝カード1枚を獲得します。', (id) => DOM.isType(id, 'treasure'), (id) => dispatch({ type: 'HERO_GAIN', card: id }));
     if (pd.type === 'fugitive_discard') return modalSingleHand(p, '脱走兵 — 手札を1枚捨てる', '手札からカード1枚を選んで捨てます。', () => true, (card) => dispatch({ type: 'FUGITIVE_DISCARD', card }), null, '捨てる');
     if (pd.type === 'disciple_play') return modalSingleHand(p, '門下生 — 2回使うアクションを選ぶ', '手札のアクション1枚を選ぶと、それを2回使い、同じカード1枚を獲得します。', (id) => DOM.isType(id, 'action'), (card) => dispatch({ type: 'DISCIPLE_PLAY', card }), { label: '使わない', on: () => dispatch({ type: 'DISCIPLE_PLAY', card: null }) }, '2回使う');
+    if (pd.type === 'teacher_call' && pd.stage === 'token') {
+      const TL = { card: '+1 カード', action: '+1 アクション', buy: '+1 購入', coin: '+1 コイン' };
+      const tk = p.pileTokens || {};
+      const opts = ['card', 'action', 'buy', 'coin'].map((k) => ({ label: TL[k] + '（現在：' + (tk[k] ? DOM.CARDS[tk[k]].name : 'どこにも無い') + '）', on: () => dispatch({ type: 'TEACHER_TOKEN', token: k }) }));
+      return modalOptions('教師 — 移動するトークンを選ぶ', 'いずれかのトークンを、あなたのトークンが無いアクション山に移動します。', opts);
+    }
+    if (pd.type === 'teacher_call' && pd.stage === 'pile') {
+      const TL = { card: 'カード', action: 'アクション', buy: '購入', coin: 'コイン' };
+      const piles = DOM.engine.validTeacherPiles(state, pd.player);
+      return modalGainSupply(state, '教師 — トークンを置く山', '+1' + TL[pd.token] + 'トークンを置くアクション山を選びます（その山のカードをプレイするたびに +1' + TL[pd.token] + '）。', (id) => piles.includes(id), (id) => dispatch({ type: 'TEACHER_PILE', card: id }), null, false, '置く');
+    }
     if (pd.type === 'cutpurse' && pd.stage === 'react') return modalOptions('巾着切りを受ける', '銅貨1枚を捨てます（無ければ手札を公開）。', reactOptions(p, pd, { type: 'CUTPURSE_REACT' }));
     if (pd.type === 'sea_witch' && pd.stage === 'react') return modalOptions('海の魔女を受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'SEA_WITCH_REACT' }));
     if (pd.type === 'sea_witch_discard') return modalSelectN(p, '海の魔女 — 手札を捨てる', '手札を2枚選んで捨てます。', Math.min(2, p.hand.length), '確定（捨てる）', (cards) => dispatch({ type: 'SEA_WITCH_DISCARD', cards }));
