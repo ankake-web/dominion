@@ -1,15 +1,26 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-08 / branch `main`（最新は `git log` で確認）。**暗黒時代 段階2 は完成＆push済＝本番反映（§0-8・`sw.js` v35）**。**その後に未pushの WIP コミットあり＝冒険（Adventures）段階2 に着手中（§0-9・34/38枚＝Batch5=トラベラー全10枚＋Batch5c=純持続/アタック3枚[隊商の護衛/呪いの森/沼の妖婆]まで完了＋敵対レビュー修正）**。冒険は CARD_SET 未昇格＝通常プレイに出ない（fuzz でのみ実行され緑）ので main にあっても本番挙動は不変。以後の段階2作業も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
+最終更新: 2026-07-08 / branch `main`（最新は `git log` で確認）。**暗黒時代 段階2 は完成＆push済＝本番反映（§0-8・`sw.js` v35）**。**その後に未pushの WIP コミットあり＝冒険（Adventures）段階2＝全38枚のカード効果 実装完了（§0-9・Batch1a〜6＋各敵対レビュー修正）。残るは Phase E（CARD_SET昇格）のみ**。冒険は CARD_SET 未昇格＝通常プレイに出ない（fuzz でのみ実行され緑）ので main にあっても本番挙動は不変。以後の段階2作業も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
 **新セッションは まず `npm test` を実行し 29スイート・オールグリーン（exit 0・整合性3132件・暗黒時代70件＋UI57件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
 
 ---
 
-## 0-9. 段階2＝冒険（Adventures）実プレイ化 **着手中（34/38枚）**（2026-07-08・WIP・未push）
+## 0-9. 段階2＝冒険（Adventures）実プレイ化 **カード効果 全38枚 完了・残るは Phase E**（2026-07-08・WIP・未push）
 
-**次セッションはこの節から続行**。着手前に `docs/adding-cards.md` と本節を必読。**未pushコミット（Batch1a〜5c＋レビュー修正）**＝Adventures はまだ CARD_SET 未昇格＝**通常プレイに出ない**（fuzz でのみ実行され緑）。push は全カード完成→CARD_SET昇格→レビュー後に都度確認。
+**次セッションはこの節から続行＝Phase E（CARD_SET昇格）**。着手前に `docs/adding-cards.md` と本節を必読。**未pushコミット（Batch1a〜6＋各レビュー修正）**＝Adventures はまだ CARD_SET 未昇格＝**通常プレイに出ない**（fuzz でのみ実行され緑）。push は Phase E完了→レビュー後に都度確認。
+
+### Batch6 完了（2026-07-08・複雑系4枚）＝`0b9c9d7`＋`92bb666`(レビュー修正)＝**これで冒険 全38枚 実装完了**
+- **倒壊raze**($2)：+1アクション。これ（場のraze）か手札1枚を廃棄（強制・空手札でもraze自身を廃棄可）→廃棄カードの**現在コイン費用**分だけ山札の上を見て1枚を手札・残りを捨てる（`deck.shift` 直読み＝**-1カードトークンの影響を受けない**[公式ruling]）。玉座2回目で raze が場に無く手札も空なら pending を立てない。
+- **工匠artificer**($5)：+1カード+1アクション+$1。手札を好きな枚数捨て→捨てた枚数**ちょうどの現在コスト**のカード1枚を**山札の上に**獲得してよい（任意・0枚→$0可・`!NON_SUPPLY.has(id)` を両側[anyGainable/canGain]で除外＝Batch5の教訓）。
+- **語り部storyteller**($5・**2022エラッタ**)：+1アクション。手札から最大3枚の財宝をプレイ→**+1カード（基本）**＋所持コイン$1につき+1カード（既存＋財宝のコインを全て使い切る＝coins=0）。財宝が pending を立てる（遺物/法貨/掘出物/混成の水晶玉等）と中断→**reduce末尾の安全網 `t.storytellerResume` が解決後に残り財宝→変換を再開**。カタログ文を2022エラッタ（+1カード基本）に更新＝**Phase E で storyteller の webp 再生成が必要**（このPCのみ）。
+- **使者messenger**($4)：+1購入+$2＋山札を捨て札にしてよい（プレイ効果・`triggerOnDiscard` を通さない＝Tunnel不発[公式]）。**そのターン最初の購入（`t.buysMade===1`）で買った**とき$4以下1枚を獲得し他の各Pが手番順にコピーを獲得（在庫がある限り）。購入以外の獲得では発動しない。
+- 公式ルール研究（RGGルールブック逐語＋2022エラッタ）で裏取り＝storyteller の欠けていた基本+1ドロー／raze のコスト基準・玉座耐性・-1カードトークン無効を修正。新pending7種＋4点セット。UI: `modalMultiHand` に filter 追加（語り部の財宝限定選択）＋`t.buysMade` を freshTurn に追加。
+- **多エージェント敵対レビュー（4次元→敵対検証・空試験で再現）＝確定バグ1件（偽陽性0）→修正（`92bb666`）**：
+  - **[MED] 玉座/王の宮廷×語り部×割り込み財宝**：reduce末尾で runReplays（玉座の再演）が storytellerResume の再開より先に走り、1回目の語り部の財宝が pending を立てると、解決後に runReplays が2回目を先に発火→1回目の再開スキップ＋storytellerResume 上書きで**1回目の基本+1カード（王の宮廷なら最大2枚）＋残り財宝のコイン変換が失われる**（引き枚数誤り・保存則は保つ・CPU未到達＝人間操作限定）。→ **語り部の中断再開を runReplays より前で処理**（順次玉座＝1回目が完全解決してから2回目）。
+- **許容簡略化**：champion/teacher/caravan_guard のボーナスは玉座/王の宮廷/門下生の再演では発火しない（PLAY_ACTION のみ）。
+- **検証**：狙い撃ち32/32／invariants に「倒壊/工匠/語り部×遺物/使者×玉座/王の宮廷」の敵対王国追加＝全4緑／npm test 全29緑（整合性3132不変）／Batch6ソーク210戦=完走210・deadlock0・例外0・保存則0／throne×storyteller×水晶玉の回帰（基本+1×2＝正しいドロー）確認。
 
 ### Batch5c 完了（2026-07-08・純持続/アタック3枚）＝`b6424f6`＋`edbd8a4`(レビュー修正)
 - **新機構＝「相手の購入をフックする持続」`applyLingerOnBuy`**：各Pの `delayedEffects` に発動元の予約（type＝swamp_hag/haunted_woods, immune[], **一意 rid**）を張り、`BUY`／`BLACK_MARKET_BUY` 末尾で「購入者≠発動元」の有効予約を発火。**無条件発動**（購入した以上フックは必ず効く）。予約は次の自分の手番開始時に `DURATION_RESOLVERS` で消費され窓が閉じる。物理カードは cleanup の持続保持で durationCards に残り予約消費後に捨て札へ。
@@ -44,16 +55,16 @@
 - **許容簡略化（意図的・研究で公式挙動を確認済だが未対応）**：**champion の+1アクション／teacher の山トークンのボーナスは、玉座/王の宮廷/門下生の再演では発火しない**（`PLAY_ACTION` のみ・再演は `applyEffect` 経由）。公式は各再演で発火するが、冒険の固定出荷セットに玉座/王の宮廷は入らない見込み＝shipping影響ゼロ・保存則影響なし。
 - **検証**：狙い撃ち 5a=54/54・5b=15/15・レビュー修正 12/12／invariants に「page/peasant×玉座/王の宮廷」「page/peasant×upgrade/remake/forge/swindler」の敵対王国2つ追加＝全4緑／npm test 全29緑（整合性3132不変）／トラベラー中心ソーク 5a=250戦・5b=220戦（完走・stuck0・例外0・保存則0）。
 
-### 【重要】残り＝**4枚（Batch6）**（次セッションの着手順）
-1. **【次はここ】Batch6＝複雑4枚**（`docs/adding-cards.md` と本節必読）：
-   - **raze倒壊**($2)：+1アクション。これか手札1枚を廃棄→**廃棄したカードのコインコスト分だけ山札の上を見て、1枚を手札に加え残りを捨てる**（見る枚数＝廃棄カードのコスト。0コストなら見ない）。自己廃棄（これ自身）は inPlay から・手札廃棄は hand から。sentry/lookout 型の「山札の上N枚から1枚選ぶ」pending。
-   - **artificer工匠**($5)：+1カード+1アクション+$1。**手札を好きな枚数捨て→捨てた枚数ちょうどのコストのカード1枚を山札の上に獲得してよい**（任意・ちょうど＝`!NON_SUPPLY.has(id)` 必須／`dest:'deck'`）。捨て枚数を選ぶ→獲得の2段pending。
-   - **storyteller語り部**($5)：+1アクション。**手札から最大3枚の財宝をプレイ→その後 所持コイン$1につき+1カード（所持コインを全て使い切る）**。財宝プレイのpending（0〜3枚選択）→coins を draw に変換し coins=0。`playTreasureCard` を使う（コイン計上）。**財宝リアクション（法貨/relic 等）や -$1トークンとの相互作用に注意**。
-   - **messenger使者**($4)：+1購入+$2。自分の山札を捨て札にしてよい。**これがそのターン最初の購入なら、$4以下のカード1枚を獲得し他の各Pもそのコピーを獲得**（on-buy＝BUY reducer 内。「そのターン最初の購入か」は `t.gainedThisTurn`/購入回数で判定＝messenger を**買った**ときの判定。プレイ時の山札捨ては別）。※messenger のプレイ効果（+1購入+$2＋山札捨て）と購入時効果（最初の購入なら配布）は別物＝カード文を正確に。
-   - 各カード 4点セット（engine reducer＋PLAYER_ACTIONS＋CPU decidePending＋UI viewPendingModal）＋新pendingの終端保証。狙い撃ち→invariants緑→npm test全29緑→コミット→敵対レビュー。
-2. **Phase E**：`DOM.KINGDOM_ADVENTURES`固定10種＋`DOM.POOLS.adventures`昇格（**成長先8種を `POOLS.travellers` に分離して random-adventures の抽選母集団から外す**＝prizes と同型）＋`DOM.CARD_SETS`に2行＋GAIN_ORDER再配置 → `adventures.test.js`/`adventures-ui.test.js` 新設（package.json登録）→ 多エージェント敵対レビュー→CPUソーク→webp（段階1で生成済み・カタログ変更なし＝`coin:`追加は表示不変で再生成不要）→ **`sw.js` v35→v36**。
-   - **adventures.test.js に必ず入れる回帰テスト**：throne/KC/procession×Reserve の強制保存則／**page/peasant×upgrade/remake/forge で$4がトラベラー成長先のみ→獲得なし終了（デッドロック回帰防止）**／**swindler×page/peasant で成長先が被害者に渡らない**／champion 永続・免疫・アクション毎+1／teacher 山トークン／トラベラー交換の全系列／**呪いの森×農地で詰まない・沼の妖婆×過払いで呪い発動・免疫が反応順に依らない**。
-3. **その後＝帝国（Empires）段階2**（別の大仕事）：負債Debt経済／集合=VPトークン山／命令(overlord/crown)／分割山5組／城8／villa。
+### 【重要】残り＝**Phase E（CARD_SET昇格）のみ**（次セッションの着手順）
+冒険の**カード効果は全38枚 実装完了**。残るは「実サプライに出す」昇格作業のみ。`docs/adding-cards.md` §C（特殊山）と本節を必読。
+1. **昇格の配線**：
+   - **`DOM.KINGDOM_ADVENTURES` 固定10種**を新設（showcase＝トラベラー[page/peasant]・Reserve[酒場マット]・トークン・持続・アタックを味わえる構成。公式の固定10種は無いので自作＝他拡張と同方針）。
+   - **`DOM.POOLS.adventures` から成長先8種を `DOM.POOLS.travellers` に分離**（treasure_hunter/warrior/hero/champion/soldier/fugitive/disciple/teacher＝prizes と同型で random 抽選母集団から外す）。POOLS.adventures は王国30種（page/peasant 含む）に。
+   - **`DOM.CARD_SETS` に2行**（`adventures`固定10種＋`random-adventures`）。cpu `evaluateKingdom` は MONEY 既定でよい（§0-5 と同方針）。
+   - **GAIN_ORDER 再配置**（page/peasant/成長先/新カードを実強度順へ。整合性の「GAIN_ORDER=全カード」は既に満たすので移動のみ）。**invariants の出荷セット検証に adventures/random-adventures を追加**。
+2. **テスト新設**：`adventures.test.js`／`adventures-ui.test.js`（`package.json` 登録）。**必ず入れる回帰テスト**：throne/KC/procession×Reserve の強制保存則（putOnTavern 自己移動）／**page/peasant×upgrade/remake/forge で$4がトラベラー成長先のみ→獲得なし終了（デッドロック回帰）**／**swindler×page/peasant で成長先が被害者に渡らない**／champion 永続・免疫・アクション毎+1／teacher 山トークン／トラベラー交換の全系列／**呪いの森×農地で詰まない・沼の妖婆×過払いで呪い発動・免疫が反応順に依らない**／**玉座×語り部×水晶玉で基本+1×2（引き枚数）**／使者の初回配布。
+3. **多エージェント敵対レビュー → CPUソーク（出荷2セット・240戦級）→ webp**：**storyteller の webp を再生成必須**（カタログ文を2022エラッタに更新済み＝画像の文字が古い。`CARDS_ONLY=storyteller node tools/build-cards.js`・このPCのみ）。他37枚は段階1で生成済み・文言不変で再生成不要。→ **`sw.js` v35→v36** → PROGRESS更新 → **ユーザー確認の上で push**。
+4. **その後＝帝国（Empires）段階2**（別の大仕事）：負債Debt経済／集合=VPトークン山／命令(overlord/crown)／分割山5組／城8／villa。
 
 ### Batch3 完了（2026-07-07・トークン基盤＋トークン系4枚）
 - **トークン基盤3種**（すべてスカラー公開情報・`maskStateFor` の `Object.assign` でそのまま残る・JSONセーフ・旧スナップショット後方互換）：
@@ -99,7 +110,8 @@
 2. ~~**Batch4＝酒場マット/Reserve 基盤＋Reserveカード9枚**~~ ✅ **完了**＝守銭奴/遠隔地/鼠取り/案内人/変容/ワイン商/法貨/御料車/複製。
 3. ~~**Batch5＝トラベラー（page/peasant＋成長先8）**~~ ✅ **完了（2026-07-07）**＝上の「Batch5 完了」節が詳細。
 4. ~~**Batch5c＝純持続/アタック3枚（隊商の護衛/呪いの森/沼の妖婆）**~~ ✅ **完了（2026-07-08）**＝上の「Batch5c 完了」節が詳細。
-5. **【次はここ】＝Batch6 複雑4枚**（raze/artificer/storyteller/messenger）＝上の「【重要】残り＝4枚（Batch6）」節を参照 → Phase E → 帝国段階2。
+5. ~~**Batch6＝複雑4枚（倒壊/工匠/語り部/使者）**~~ ✅ **完了（2026-07-08）**＝上の「Batch6 完了」節が詳細。**これで冒険 全38枚のカード効果 実装完了**。
+6. **【次はここ】＝Phase E（CARD_SET昇格）**＝上の「【重要】残り＝Phase E」節を参照 → その後 帝国段階2。
 
 ---
 
