@@ -210,6 +210,7 @@
     if (has('lost_city')) return 'lost_city';             // +2カード+2アクション
     if (has('port')) return 'port';                       // +1カード+2アクション
     if (has('magpie')) return 'magpie';                   // +1カード+1アクション（山札の上を公開）
+    if (has('caravan_guard')) return 'caravan_guard';     // +1カード+1アクション（次手番+$1・持続・リアクション）
     if (has('dungeon')) return 'dungeon';                 // +1アクション（+2カード→2枚捨て・持続）
     if (has('ratcatcher')) return 'ratcatcher';           // +1カード+1アクション（酒場マット・開始時に廃棄）
     if (has('guide')) return 'guide';                     // +1カード+1アクション（酒場マット・開始時に引き直し）
@@ -243,6 +244,8 @@
     if (has('treasure_map') && p.hand.filter((c) => c === 'treasure_map').length >= 2) return 'treasure_map'; // 2枚揃いで金貨4枚
     if (has('tactician')) { const hc = p.hand.reduce((s, c) => s + (isTreasure(c) ? (C()[c].coin || 0) : 0), 0); if (hc <= 3 && p.hand.length > 1) return 'tactician'; }
     // 冒険：ターミナル
+    if (has('swamp_hag')) return 'swamp_hag';             // 持続アタック（相手の購入毎に呪い→次手番+$3）
+    if (has('haunted_woods')) return 'haunted_woods';     // 持続アタック（相手の購入で手札を山札上へ→次手番+3カード）
     if (has('bridge_troll')) return 'bridge_troll';       // アタック＋全カード-$1＋今と次+1購入（持続）
     if (has('giant')) return 'giant';                     // アタック（表で+$5＋各相手の山札上を廃棄/呪い）
     if (has('hireling')) return 'hireling';               // 永続 +1カード/ターン（早く出すほど得）
@@ -726,6 +729,11 @@
         (pd.stage === 'react' || pd.type === 'militia' || pd.type === 'torturer' || pd.type === 'discard_down')) {
       return { type: 'GUARD_DOG_REACT' };
     }
+    // 冒険：隊商の護衛＝アタックの反応窓で手札から先にプレイ（+1カード＋次手番+$1・常に得。使うと手札から消え次回は通常判断）。
+    if (pd && p.hand && p.hand.includes('caravan_guard') &&
+        (pd.stage === 'react' || pd.type === 'militia' || pd.type === 'torturer' || pd.type === 'discard_down')) {
+      return { type: 'CARAVAN_GUARD_REACT' };
+    }
     // 暗黒時代：物乞い＝アタックの反応窓で手札から捨てて銀貨2枚を獲得（免疫にはならない・常に得。捨てると次回は通常判断）。
     if (pd && p.hand && p.hand.includes('beggar') && sup(state, 'silver') > 0 &&
         (pd.stage === 'react' || pd.type === 'militia' || pd.type === 'torturer' || pd.type === 'discard_down')) {
@@ -1114,6 +1122,10 @@
       case 'bridge_troll': // -$1トークンは自動
         if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
         return { type: 'BRIDGE_TROLL_REACT' };
+      case 'haunted_woods': // 呪いの森：堀で免疫、無ければそのまま受ける（購入時に手札が山札の上へ）
+      case 'swamp_hag':     // 沼の妖婆：堀で免疫、無ければそのまま受ける（購入時に呪い獲得）
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'LINGER_REACT' };
       // 冒険：トラベラー（page/peasant＋成長先）
       case 'warrior': // 山札上を捨て$3/$4廃棄（自動）＝堀があれば無効化
         if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };

@@ -82,6 +82,7 @@ const ADVERSARIAL = [
   ['throne_room', 'kings_court', 'procession', 'ratcatcher', 'guide', 'transmogrify', 'royal_carriage', 'distant_lands', 'wine_merchant', 'duplicate'], // 冒険：玉座/王の宮廷/行進×Reserve（酒場マットへ移す自己移動＝マット複製の要注意ケース）
   ['page', 'peasant', 'throne_room', 'kings_court', 'witch', 'moat', 'militia', 'market', 'village', 'smithy'], // 冒険：トラベラー（成長先の非サプライ山・交換窓・champion永続/免疫・warrior/soldierアタック・玉座/王の宮廷×トラベラー）
   ['page', 'peasant', 'upgrade', 'remake', 'forge', 'swindler', 'witch', 'village', 'market', 'moat'], // 冒険：成長先(非サプライ)×ちょうどコスト獲得(改良/リメイク/溶鉱炉)・詐欺師の贈与＝NON_SUPPLY除外漏れのデッドロック/不正獲得の回帰防止
+  ['caravan_guard', 'haunted_woods', 'swamp_hag', 'throne_room', 'kings_court', 'witch', 'moat', 'militia', 'market', 'village'], // 冒険：相手の購入フック持続(呪いの森/沼の妖婆)＋隊商の護衛リアクション＋玉座/王の宮廷×これらの持続アタック
 ];
 {
   let allOk = true;

@@ -1654,6 +1654,8 @@
     if (pd.type === 'relic' && pd.stage === 'react') return modalOptions('遺物を受ける', '-1カードトークンを受け取ります（次に引く手札が1枚少なくなります）。', reactOptions(p, pd, { type: 'RELIC_REACT' }));
     if (pd.type === 'giant' && pd.stage === 'react') return modalOptions('巨人を受ける', '山札の一番上を公開し、コスト$3〜$6なら廃棄、そうでなければ捨てて呪い1枚を獲得します。', reactOptions(p, pd, { type: 'GIANT_REACT' }));
     if (pd.type === 'bridge_troll' && pd.stage === 'react') return modalOptions('橋の下のトロルを受ける', '-$1トークンを受け取ります（次の購入フェイズに使えるコインが$1減ります）。', reactOptions(p, pd, { type: 'BRIDGE_TROLL_REACT' }));
+    if (pd.type === 'haunted_woods' && pd.stage === 'react') return modalOptions('呪いの森を受ける', '相手の次の手番まで、あなたがカードを購入すると手札を全て山札の上に置きます（堀を公開すればこの持続から免疫）。', reactOptions(p, pd, { type: 'LINGER_REACT' }));
+    if (pd.type === 'swamp_hag' && pd.stage === 'react') return modalOptions('沼の妖婆を受ける', '相手の次の手番まで、あなたがカードを購入すると呪い1枚を獲得します（堀を公開すればこの持続から免疫）。', reactOptions(p, pd, { type: 'LINGER_REACT' }));
     if (pd.type === 'marauder' && pd.stage === 'react') return modalOptions('略奪者を受ける', '廃墟を1枚獲得します。', reactOptions(p, pd, { type: 'MARAUDER_REACT' }));
     if (pd.type === 'cultist' && pd.stage === 'react') return modalOptions('狂信者を受ける', '廃墟を1枚獲得します。', reactOptions(p, pd, { type: 'CULTIST_REACT' }));
     if (pd.type === 'cultist_chain') return modalOptions('狂信者 — 連鎖', '手札の狂信者を（アクションを消費せず）続けて使えます。', [
@@ -1697,6 +1699,7 @@
     if (canDiplomatReact(p, pd)) opts.push({ label: '🤝 外交官を公開（+2引いて3枚捨てる）', on: () => dispatch({ type: 'DIPLOMAT_REVEAL' }) });
     if (p.hand.includes('horse_traders')) opts.push({ label: '🐴 馬商人を脇に置く（次の手番に +1カードで戻る／攻撃は受ける）', on: () => dispatch({ type: 'HORSE_TRADERS_REACT' }) });
     if (p.hand.includes('guard_dog')) opts.push({ label: '🐕 番犬を先に使う（+2〜4カード／攻撃は受ける）', on: () => dispatch({ type: 'GUARD_DOG_REACT' }) });
+    if (p.hand.includes('caravan_guard')) opts.push({ label: '🛡 隊商の護衛を先にプレイ（+1カード／次手番+$1／攻撃は受ける）', on: () => dispatch({ type: 'CARAVAN_GUARD_REACT' }) });
     if (p.hand.includes('beggar')) opts.push({ label: '🥺 物乞いを捨てて銀貨2枚を獲得（1枚は山札の上／攻撃は受ける）', on: () => dispatch({ type: 'BEGGAR_REACT' }) });
     opts.push({ label: 'そのまま受ける', on: () => dispatch(proceed) });
     return opts;
@@ -1754,6 +1757,7 @@
       hasMoat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'MOAT_REVEAL' }) }, '🛡 堀を公開して無効化') : null,
       p.hand.includes('horse_traders') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'HORSE_TRADERS_REACT' }) }, '🐴 馬商人を脇に置く（次の手番に +1カードで戻る／攻撃は受ける）') : null,
       p.hand.includes('beggar') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'BEGGAR_REACT' }) }, '🥺 物乞いを捨てて銀貨2枚を獲得（1枚は山札の上／攻撃は受ける）') : null,
+      p.hand.includes('caravan_guard') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'CARAVAN_GUARD_REACT' }) }, '🛡 隊商の護衛を先にプレイ（+1カード／次手番+$1／攻撃は受ける）') : null,
       p.hand.includes('guard_dog') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'GUARD_DOG_REACT' }) }, '🐕 番犬を先に使う（+2〜4カード／攻撃は受ける）') : null,
       h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
         onclick: () => dispatch({ type: 'DISCARD_DOWN_RESOLVE', cards: UI.selection.map((i) => p.hand[i]) }) },
@@ -1840,6 +1844,7 @@
       hasDiplomat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'DIPLOMAT_REVEAL' }) }, '🤝 外交官を公開（+2引いて3枚捨てる）') : null,
       p.hand.includes('horse_traders') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'HORSE_TRADERS_REACT' }) }, '🐴 馬商人を脇に置く（次の手番に +1カードで戻る／攻撃は受ける）') : null,
       p.hand.includes('beggar') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'BEGGAR_REACT' }) }, '🥺 物乞いを捨てて銀貨2枚を獲得（1枚は山札の上／攻撃は受ける）') : null,
+      p.hand.includes('caravan_guard') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'CARAVAN_GUARD_REACT' }) }, '🛡 隊商の護衛を先にプレイ（+1カード／次手番+$1／攻撃は受ける）') : null,
       h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
         onclick: () => dispatch({ type: 'MILITIA_RESOLVE', cards: UI.selection.map((i) => p.hand[i]) }) },
         remain === 0 ? '確定（捨てる）' : 'あと ' + remain + ' 枚 選ぶ'));
@@ -2006,6 +2011,7 @@
       hasDiplomat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'DIPLOMAT_REVEAL' }) }, '🤝 外交官を公開（+2引いて3枚捨てる）') : null,
       p.hand.includes('horse_traders') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'HORSE_TRADERS_REACT' }) }, '🐴 馬商人を脇に置く（次の手番に +1カードで戻る／攻撃は受ける）') : null,
       p.hand.includes('beggar') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'BEGGAR_REACT' }) }, '🥺 物乞いを捨てて銀貨2枚を獲得（1枚は山札の上／攻撃は受ける）') : null,
+      p.hand.includes('caravan_guard') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'CARAVAN_GUARD_REACT' }) }, '🛡 隊商の護衛を先にプレイ（+1カード／次手番+$1／攻撃は受ける）') : null,
       h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
         onclick: () => dispatch({ type: 'TORTURER_RESOLVE', choice: 'discard', cards: UI.selection.map((i) => p.hand[i]) }) },
         remain === 0 ? '手札を捨てる（確定）' : '捨てる ' + remain + ' 枚 を選ぶ'),

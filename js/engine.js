@@ -792,6 +792,7 @@
     return player.hand.includes('moat') || player.hand.includes('secret_chamber') ||
       player.hand.includes('horse_traders') || // 収穫祭：馬商人（脇に置いて次手番に+1カードで戻す。免疫にはならない）
       player.hand.includes('guard_dog') || // 異郷：番犬（相手のアタック時に手札から先に使ってよい。免疫にはならない）
+      player.hand.includes('caravan_guard') || // 冒険：隊商の護衛（相手のアタック時に手札から先にプレイしてよい。免疫にはならない）
       player.hand.includes('beggar') || // 暗黒時代：物乞い（捨てて銀貨2枚を獲得。免疫にはならない）
       (player.hand.includes('diplomat') && player.hand.length >= 5);
   }
@@ -853,6 +854,9 @@
     // 冒険：トラベラーのアタック（ウォリアー＝山札上を捨て$3/$4廃棄／兵士＝手札4枚以上で1枚捨て）。
     warrior:       { onMoat: (s, pd) => warriorEnterVictim(s, pd.source, pd.queue, pd.count) },
     soldier:       { onMoat: (s, pd) => soldierEnterVictim(s, pd.source, pd.queue) },
+    // 冒険：呪いの森/沼の妖婆＝相手の購入をフックする持続アタック（堀公開でこの持続から免疫）。
+    haunted_woods: { onMoat: (s, pd) => { markLingerImmune(s, pd.source, 'haunted_woods', pd.victim); lingerAttackEnter(s, pd.source, 'haunted_woods', pd.queue); } },
+    swamp_hag:     { onMoat: (s, pd) => { markLingerImmune(s, pd.source, 'swamp_hag', pd.victim); lingerAttackEnter(s, pd.source, 'swamp_hag', pd.queue); } },
   };
   // 被攻撃側の反応（堀／秘密の小部屋／外交官）を差し込める局面か。
   function isAttackReactPending(pd) {
@@ -1449,6 +1453,50 @@
     const e = (state.players[source].delayedEffects || [])
       .find((x) => x.type === 'blockade' && x.gained === gained);
     if (e) { e.immune = e.immune || []; if (!e.immune.includes(victim)) e.immune.push(victim); }
+  }
+  /* ========== 冒険：呪いの森/沼の妖婆＝「相手の購入をフックする持続アタック」 ==========
+     プレイ時に即効果は無い（+3カード/+$3 は次の自分の手番）。次の自分の手番まで、他Pが購入するたびに発動。
+     免疫は「プレイ時」に確定＝champion/灯台の受動免疫と、堀を公開した相手を予約(delayedEffects)の immune に記録し、
+     BUY 側フック(applyLingerOnBuy)がその相手を飛ばす（封鎖と同型）。 */
+  function markLingerImmune(state, source, card, victim) {
+    (state.players[source].delayedEffects || []).forEach((e) => {
+      if (e.type === card) { e.immune = e.immune || []; if (!e.immune.includes(victim)) e.immune.push(victim); }
+    });
+  }
+  function lingerAttackEnter(state, source, card, queue) {
+    queue = (queue || []).slice();
+    while (queue.length) {
+      const victim = queue[0];
+      if (attackImmune(state, victim)) { markLingerImmune(state, source, card, victim); queue.shift(); continue; }
+      if (hasReaction(state.players[victim])) {
+        state.pending = { type: card, stage: 'react', player: victim, source, victim, queue: queue.slice(1) };
+        return;
+      }
+      queue.shift(); // 反応札なし＝即効果は無い（免疫も付かない）
+    }
+    state.pending = null;
+  }
+  // 購入時フック：buyer 以外のプレイヤーの有効な呪いの森/沼の妖婆の予約を発火（免疫でない buyer に）。
+  function applyLingerOnBuy(state, buyer) {
+    const n = state.players.length;
+    for (let o = 0; o < n; o++) {
+      if (o === buyer) continue;
+      const effs = state.players[o].delayedEffects || [];
+      // 沼の妖婆：予約1つにつき呪い1枚（玉座で2枚＝2回獲得）。
+      effs.forEach((e) => {
+        if (e.type === 'swamp_hag' && !(e.immune || []).includes(buyer) && (state.supply.curse || 0) > 0) {
+          if (gain(state, buyer, 'curse', 'discard')) log(state, `${state.players[buyer].name} は購入で呪い1枚を獲得した（沼の妖婆）。`);
+        }
+      });
+      // 呪いの森：有効な予約が1つでもあれば手札を全て山札の上へ（重複は無意味＝1回）。
+      const hw = effs.some((e) => e.type === 'haunted_woods' && !(e.immune || []).includes(buyer));
+      const bp = state.players[buyer];
+      if (hw && bp.hand.length) {
+        const hand = bp.hand.slice(); bp.hand = [];
+        for (let i = hand.length - 1; i >= 0; i--) bp.deck.unshift(hand[i]); // 手札の順のまま山札の上へ
+        log(state, `${bp.name} は購入で手札 ${hand.length}枚 を山札の上に置いた（呪いの森）。`);
+      }
+    }
   }
   function blockadeEnterVictim(state, source, queue, gained) {
     queue = (queue || []).slice();
@@ -3457,6 +3505,25 @@
         armDuration(state, pi, 'amulet');
         state.pending = { type: 'amulet', player: pi };
         break;
+      // 隊商の護衛：+1カード +1アクション。次の手番開始時 +$1（持続）。他Pのアタック時は手札から先にプレイできる（リアクション＝hasReaction/CARAVAN_GUARD_REACT）。
+      case 'caravan_guard':
+        draw(state, pi, 1); t.actions += 1;
+        armDuration(state, pi, 'caravan_guard');
+        break;
+      // 呪いの森：即効果なし。次の手番まで他Pの購入時に手札を全て山札の上へ（アタック持続）。次の手番開始時 +3カード。
+      case 'haunted_woods': {
+        armDuration(state, pi, 'haunted_woods', { immune: [] });
+        const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        lingerAttackEnter(state, pi, 'haunted_woods', q);
+        break;
+      }
+      // 沼の妖婆：即効果なし。次の手番まで他Pの購入時に呪い1枚を獲得させる（アタック持続）。次の手番開始時 +$3。
+      case 'swamp_hag': {
+        armDuration(state, pi, 'swamp_hag', { immune: [] });
+        const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        lingerAttackEnter(state, pi, 'swamp_hag', q);
+        break;
+      }
       // 山守：+1購入。旅トークンを裏返す（表向きから始まる）。その後、表向きなら +5カード。
       //   ＝先に裏返してから判定するので、初回プレイは裏になり+5なし、2回目は表になり+5（以後交互）。
       case 'ranger':
@@ -3794,6 +3861,12 @@
       s.turn.buys += 1; s.turn.costReduction = (s.turn.costReduction || 0) + 1;
       log(s, `${s.players[pi].name} は橋の下のトロルの持続効果（+1購入・全カード$1安い）。`);
     },
+    // 冒険：隊商の護衛＝次の手番開始時 +$1。
+    caravan_guard: (s, pi) => { s.turn.coins += 1; log(s, `${s.players[pi].name} は隊商の護衛の持続効果（+$1）。`); },
+    // 冒険：呪いの森＝次の手番開始時 +3カード（購入フックはこの予約が消えると自然に無効化）。
+    haunted_woods: (s, pi) => { draw(s, pi, 3); log(s, `${s.players[pi].name} は呪いの森の持続効果（+3カード）。`); },
+    // 冒険：沼の妖婆＝次の手番開始時 +$3。
+    swamp_hag: (s, pi) => { s.turn.coins += 3; log(s, `${s.players[pi].name} は沼の妖婆の持続効果（+$3）。`); },
   };
 
   // 「獲得時」フック（サル＝右隣の獲得で+1カード／封鎖＝同名獲得で呪い）。gain から常に呼ばれる。
@@ -4379,6 +4452,8 @@
         if (card === 'noble_brigand' && !state.pending) nobleBrigandAttack(state, pi);
         // 異郷：値切り屋＝場にある間、購入のたびに そのコスト未満の勝利点でないカード1枚を獲得。
         maybeHagglerGains(state, pi, cost);
+        // 冒険：呪いの森/沼の妖婆＝他Pの持続がある間、購入のたびに手札を山札の上へ/呪い獲得。
+        applyLingerOnBuy(state, pi);
         return state;
       }
 
@@ -5459,6 +5534,8 @@
         state.pending = null;
         // ギルド：闇市場でも過払い対象カード(名品/石工/医者/伝令官)を買えば過払いできる（promo込みセットで到達可）。
         maybeStartOverpay(state, pd.player, card);
+        // 冒険：呪いの森/沼の妖婆＝闇市場の購入でも「購入した」トリガーが発動する。
+        applyLingerOnBuy(state, pd.player);
         return state;
       }
       case 'BLACK_MARKET_SKIP': {
@@ -7976,6 +8053,26 @@
         log(state, `${pl.name} は番犬を先に使った（+2カード${extra ? '、さらに+2カード' : ''}）。`);
         return state; // pending 据え置き＝この後さらに堀公開/受けるを選べる
       }
+      case 'CARAVAN_GUARD_REACT': {
+        // 冒険：他プレイヤーがアタックを使ったとき、手札の隊商の護衛を先にプレイする（免疫にはならず、pending 据え置き）。
+        const pd = state.pending;
+        if (!pd || !isAttackReactPending(pd)) return state;
+        const pl = state.players[pd.player];
+        if (!removeOne(pl.hand, 'caravan_guard')) return state;
+        pl.inPlay.push('caravan_guard');
+        // +1カードは反応した本人が引く。+1アクションは「相手の手番」なので無意味＝現在ターン(攻撃側)には加えない（相手に手番を与えない）。
+        draw(state, pd.player, 1);
+        armDuration(state, pd.player, 'caravan_guard'); // 自分の次の手番開始時 +$1
+        log(state, `${pl.name} は隊商の護衛を先にプレイした（+1カード／次の手番に+$1）。`);
+        return state; // pending 据え置き＝この後さらに堀公開/受けるを選べる
+      }
+      // 冒険：呪いの森/沼の妖婆を堀を出さずに受ける（免疫は付かず・即効果は無い＝次の被害者へ）。
+      case 'LINGER_REACT': {
+        const pd = state.pending;
+        if (!pd || (pd.type !== 'haunted_woods' && pd.type !== 'swamp_hag') || pd.stage !== 'react') return state;
+        lingerAttackEnter(state, pd.source, pd.type, pd.queue);
+        return state;
+      }
       case 'BEGGAR_REACT': {
         // 暗黒時代：他プレイヤーがアタックを使ったとき、手札の物乞いを捨てて銀貨2枚を獲得（1枚は山札の上・免疫にはならない）。
         const pd = state.pending;
@@ -8308,6 +8405,8 @@
     // 冒険：トラベラー（page/peasant＋成長先＋教師の山トークン）
     'WARRIOR_REACT', 'SOLDIER_REACT', 'SOLDIER_DISCARD', 'HERO_GAIN', 'FUGITIVE_DISCARD', 'DISCIPLE_PLAY', 'TRAVELLER_EXCHANGE_RESOLVE',
     'TEACHER_TOKEN', 'TEACHER_PILE',
+    // 冒険：純持続/アタック（隊商の護衛リアクション／呪いの森・沼の妖婆）
+    'CARAVAN_GUARD_REACT', 'LINGER_REACT',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',
