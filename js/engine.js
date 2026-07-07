@@ -191,6 +191,8 @@
     if (card === 'cauldron') { t.buys += 1; }
     // 異郷：不正利得＝銅貨1枚を手札に獲得してよい（$1 は coin:1 で計上済）。獲得時の呪い配布は triggerOnGain。
     if (card === 'ill_gotten_gains') { state.pending = { type: 'igg_play', player: pIndex }; }
+    // 冒険：法貨＝+$1（coin:1 で計上済み）→ 酒場マットへ（アクション解決直後に呼び出して +2アクション）。
+    if (card === 'coin_of_the_realm') putOnTavern(state, pIndex, 'coin_of_the_realm');
     // 冒険：遺物＝財宝アタック。+$2（coin:2 で計上済み）＋他の各プレイヤーは -1カードトークンを受け取る（堀で防げる）。
     if (card === 'relic') {
       const q = [];
@@ -286,6 +288,7 @@
       active, phase: 'action', actions: 1, buys: 1, coins: 0, potions: 0, costReduction: 0,
       actionsPlayed: 0, copperBonus: 0, merchants: 0, silverPlayed: false,
       coinPenalty: 0, // 冒険：-$1トークンの未消化ぶん（購入フェイズで最初に得る$1に食い込む。毎ターンリセット）
+      afterActionCard: null, // 冒険：直前にプレイし解決したアクション（法貨/御料車の呼び出し窓の対象）
 
       gainedThisTurn: [], outpostUsed: false, isExtraTurn: !!isExtraTurn, startQueue: null,
       corsairTrashed: false, // 私掠船：このターンに最初の銀/金を廃棄済みか（被害者ごと）
@@ -3427,6 +3430,15 @@
       case 'miser':
         state.pending = { type: 'miser', player: pi };
         break;
+      // 御料車：+1アクション → マットへ（アクションのプレイ完了時、それがまだ場にあれば呼び出して再演）。
+      case 'royal_carriage':
+        t.actions += 1;
+        putOnTavern(state, pi, 'royal_carriage');
+        break;
+      // 複製：効果なし → マットへ（コスト$6以下のカードを獲得したとき呼び出してコピーを獲得）。
+      case 'duplicate':
+        putOnTavern(state, pi, 'duplicate');
+        break;
 
       default:
         break;
@@ -3755,6 +3767,11 @@
         state._gainDepth === 1 && !state.pending && gp.hand.includes('hovel')) {
       state.pending = { type: 'hovel_react', player: pIndex };
     }
+    // 冒険：複製＝$6以下のカードを獲得したとき、酒場マットの複製を呼び出してコピーを獲得してよい（自分の手番・トップレベル獲得のみ）。
+    if (state.turn && pIndex === state.turn.active && state._gainDepth === 1 && !state.pending &&
+        (gp.tavern || []).includes('duplicate') && cardCost(state, cardId) <= 6 && (state.supply[cardId] || 0) > 0) {
+      state.pending = { type: 'duplicate', player: pIndex, card: cardId };
+    }
     state._gainDepth--;
   }
   /* ---------- 異郷：捨て札にしたとき／廃棄したときのフック ---------- */
@@ -4045,6 +4062,15 @@
       state.pending = state.onTrashQueue.shift();
       state = runReplays(state);
     }
+    // 冒険：アクションを解決した直後の呼び出し窓（法貨＝+2アクション／御料車＝再演）。
+    //   afterActionCard が立っていて呼べる Reserve が酒場マットにあれば after_action pending を開く。
+    //   呼び出しは afterActionCard を保持したまま（再演/複数コール対応）、辞退か候補ゼロで消す。
+    if (!state.pending && !state.gameOver && state.turn && state.turn.afterActionCard && state.turn.phase === 'action') {
+      const pi2 = state.turn.active, p2 = state.players[pi2], ac = state.turn.afterActionCard;
+      const callable = (p2.tavern || []).some((c) => c === 'coin_of_the_realm' || (c === 'royal_carriage' && p2.inPlay.includes(ac)));
+      if (callable) state.pending = { type: 'after_action', player: pi2, card: ac };
+      else state.turn.afterActionCard = null;
+    }
     return state;
   }
   // 玉座の間の「2回目の適用」（および錬金術ゴーレムの2枚目）を、選択待ちが解消したタイミングで実行する。
@@ -4074,6 +4100,10 @@
       } else if (r.label === 'procession2') {
         state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
         log(state, `${state.players[r.player].name} は行進で「${C()[r.card].name}」をもう一度使った。`);
+      } else if (r.label === 'royal_carriage') {
+        // 冒険：御料車＝場のアクションを再演する（アクション権は消費しない・共謀者判定には数える）。
+        state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
+        log(state, `${state.players[r.player].name} は御料車で「${C()[r.card].name}」を再演した。`);
       } else {
         state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
         log(state, `${state.players[r.player].name} は玉座の間で「${C()[r.card].name}」をもう一度使った。`);
@@ -4106,6 +4136,7 @@
         me.inPlay.push(card);
         t.actions -= 1;
         t.actionsPlayed = (t.actionsPlayed || 0) + 1; // 共謀者の判定用（このターンに使ったアクション数）
+        t.afterActionCard = card; // 冒険：法貨/御料車の「アクション解決直後」の呼び出し窓の対象
         log(state, `${me.name} は「${C()[card].name}」を使った。`);
         // 暗黒時代：浮浪児＝別アタックのプレイ時に場の浮浪児を廃棄→傭兵。効果は URCHIN_TRASH 解決後に適用。
         if (maybeUrchinTrap(state, card, pi)) return state;
@@ -4181,6 +4212,7 @@
         if (state.pending) return state;
         if (t.phase !== 'action') return state;
         t.phase = 'buy';
+        t.afterActionCard = null; // 冒険：アクションフェイズを抜けたら法貨/御料車の呼び出し窓は閉じる
         // 冒険：-$1トークンを消化（購入フェイズ開始時に食い込み分へ変換。財宝を出すとそのコインに食い込む）。
         if (me.minusCoin) { t.coinPenalty = (t.coinPenalty || 0) + 1; me.minusCoin = false; log(state, `${me.name} は -$1トークンを支払う（このターンのコイン $1分）。`); applyCoinPenalty(state); }
         return state;
@@ -6182,6 +6214,46 @@
         endBuyTail(state); // 呼び出し窓を抜けたら購入フェイズ終了の後処理へ
         return state;
       }
+      // アクション解決直後の呼び出し窓：法貨（+2アクション）／御料車（場のアクションを再演）。
+      case 'AFTER_ACTION_CALL': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'after_action') return state;
+        const p = state.players[pd.player];
+        const card = action.card; // 'coin_of_the_realm' | 'royal_carriage' | null
+        if (card == null) { t.afterActionCard = null; state.pending = null; return state; } // 呼び出さない
+        if (card === 'coin_of_the_realm' && (p.tavern || []).includes('coin_of_the_realm')) {
+          removeOne(p.tavern, 'coin_of_the_realm'); p.inPlay.push('coin_of_the_realm');
+          t.actions += 2;
+          log(state, `${p.name} は法貨を呼び出した（+2アクション）。`);
+          state.pending = null; // afterActionCard は保持＝reduce末尾の窓が再オファー（別の法貨/御料車）
+          return state;
+        }
+        if (card === 'royal_carriage' && (p.tavern || []).includes('royal_carriage') && p.inPlay.includes(pd.card)) {
+          removeOne(p.tavern, 'royal_carriage'); p.inPlay.push('royal_carriage');
+          state.replay = state.replay || [];
+          state.replay.push({ player: pd.player, card: pd.card, label: 'royal_carriage' });
+          log(state, `${p.name} は御料車を呼び出して「${C()[pd.card].name}」を再演する。`);
+          state.pending = null; // runReplays が再演。afterActionCard 保持＝再演後に窓が再オファー
+          return state;
+        }
+        return state; // 不正な card は据え置き（再選択）
+      }
+      // 複製：$6以下のカードを獲得したとき、酒場マットの複製を呼び出してコピーを獲得してよい。
+      case 'DUPLICATE_CALL': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'duplicate') return state;
+        const p = state.players[pd.player];
+        if (action.call && (p.tavern || []).includes('duplicate') && (state.supply[pd.card] || 0) > 0) {
+          removeOne(p.tavern, 'duplicate'); p.inPlay.push('duplicate');
+          // pending を保持したままコピーを獲得＝入れ子の複製オファーを抑止（!state.pending ゲートが働く）。
+          gain(state, pd.player, pd.card, 'discard');
+          log(state, `${p.name} は複製を呼び出して「${C()[pd.card].name}」のコピーを獲得した。`);
+          // 別の複製がまだあり、コピー先も残っていれば同じカードに対して再オファー。
+          if ((p.tavern || []).includes('duplicate') && (state.supply[pd.card] || 0) > 0) return state; // pending 保持で再オファー
+        }
+        state.pending = null;
+        return state;
+      }
       case 'TACTICIAN_RESOLVE': {
         const pd = state.pending;
         if (!pd || pd.type !== 'tactician') return state;
@@ -7946,6 +8018,7 @@
     'DUNGEON_DISCARD', 'GEAR_SETASIDE', 'AMULET_RESOLVE', 'AMULET_TRASH',
     'RELIC_REACT', 'GIANT_REACT', 'BRIDGE_TROLL_REACT',
     'MISER_RESOLVE', 'TAVERN_START_CALL', 'RATCATCHER_TRASH', 'TRANSMOGRIFY_TRASH', 'TRANSMOGRIFY_GAIN', 'WINE_MERCHANT_DISCARD',
+    'AFTER_ACTION_CALL', 'DUPLICATE_CALL',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',

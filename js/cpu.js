@@ -212,6 +212,7 @@
     if (has('ratcatcher')) return 'ratcatcher';           // +1カード+1アクション（酒場マット・開始時に廃棄）
     if (has('guide')) return 'guide';                     // +1カード+1アクション（酒場マット・開始時に引き直し）
     if (has('transmogrify')) return 'transmogrify';       // +1アクション（酒場マット・開始時に格上げ）
+    if (has('royal_carriage')) return 'royal_carriage';   // +1アクション（酒場マット・アクション再演）
     // --- ターミナル（効果の大きい順）---
     // 新プロモ：王子＝良い対象（$4以下の持続/命令以外）が手札にあるときだけ（毎ターン無料再生＝最優先）。
     if (has('prince') && bestPrinceTarget(state, p)) return 'prince';
@@ -244,6 +245,7 @@
     if (has('amulet')) return 'amulet';                   // 3択（+$1／廃棄／銀貨獲得）×2ターン
     // 守銭奴＝手札に銅貨があれば貯め（デッキ圧縮）、無ければマットの銅貨を換金（貯めた銅貨0なら無駄なので打たない）。
     if (has('miser') && (p.hand.includes('copper') || (p.tavern || []).some((c) => c === 'copper'))) return 'miser';
+    if (has('duplicate')) return 'duplicate';             // 酒場マットに置いて $6以下の獲得をコピー
     if (has('distant_lands')) return 'distant_lands';     // 酒場マットに置いて4勝利点（0点→4点）
     // 収穫祭：ターミナル（アタック・格上げ・賞品）
     if (has('jester')) return 'jester';                 // +2コイン＋アタック
@@ -1058,6 +1060,22 @@
       }
       case 'wine_merchant':
         return { type: 'WINE_MERCHANT_DISCARD', discard: true }; // マットから捨てて再利用（+$4を再演可能に）＝常に得
+      case 'after_action': {
+        const mat = p.tavern || [];
+        // 御料車＝再演の価値が高いアクションを解決した直後なら再演（強力なドロー/アタック/経済）。
+        if (mat.includes('royal_carriage') && p.inPlay.includes(pd.card) && throneValue(pd.card) >= 3)
+          return { type: 'AFTER_ACTION_CALL', card: 'royal_carriage' };
+        // 法貨＝アクション権が尽きていて手札にまだアクションがあるなら +2アクション。
+        if (mat.includes('coin_of_the_realm') && state.turn.actions === 0 && p.hand.some((c) => isType(c, 'action')))
+          return { type: 'AFTER_ACTION_CALL', card: 'coin_of_the_realm' };
+        return { type: 'AFTER_ACTION_CALL', card: null }; // 呼び出さない
+      }
+      case 'duplicate': {
+        // コスト$4以上の非ジャンク（呪い/銅貨/屋敷/廃墟でない）を獲得したときだけコピー＝常に得。
+        const c = pd.card;
+        const worth = cost(state, c) >= 4 && c !== 'curse' && !isType(c, 'ruins');
+        return { type: 'DUPLICATE_CALL', call: worth };
+      }
       // 冒険：アタックを受ける側（堀があれば無効化、無ければそのまま受ける＝react のみ・効果は自動）。
       case 'relic': // -1カードトークンは自動
         if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };

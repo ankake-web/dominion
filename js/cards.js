@@ -605,7 +605,7 @@
     mercenary: { id: 'mercenary', name: '傭兵', cost: 0, types: ['action', 'attack'],
                  text: '手札からカード2枚を廃棄してよい。そうしたら、+2 カード、+2 コイン、他のプレイヤーは各自、手札が3枚になるように捨て札にする。' },
     /* ===== 冒険（Adventures）＝段階1（画像・カタログのみ。CARD_SETS 未参照＝実サプライに出ない）===== */
-    coin_of_the_realm: { id: 'coin_of_the_realm', name: '法貨', cost: 2, types: ['treasure', 'reserve'],
+    coin_of_the_realm: { id: 'coin_of_the_realm', name: '法貨', cost: 2, types: ['treasure', 'reserve'], coin: 1,
                  text: '+$1\nこれをプレイしたら酒場マットに置く。\nアクションを解決した直後、これを呼び出して +2 アクションできる。' },
     page: { id: 'page', name: '騎士見習い', cost: 2, types: ['action', 'traveller'],
                  text: '+1 カード\n+1 アクション\nこれを場から捨てる時、トレジャーハンターと交換してよい。' },

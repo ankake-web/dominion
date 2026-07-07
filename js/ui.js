@@ -1304,6 +1304,17 @@
     if (pd.type === 'wine_merchant') return modalOptions('ワイン商 — 捨てる？', '未使用の$2以上が残っています。ワイン商を酒場マットから捨てられます（捨てると再度購入して使えます）。', [
       { label: '酒場マットから捨てる', cls: 'btn-primary', on: () => dispatch({ type: 'WINE_MERCHANT_DISCARD', discard: true }) },
       { label: 'マットに残す', on: () => dispatch({ type: 'WINE_MERCHANT_DISCARD', discard: false }) }]);
+    if (pd.type === 'after_action') {
+      const mat = p.tavern || [];
+      const opts = [];
+      if (mat.includes('coin_of_the_realm')) opts.push({ label: '法貨を呼ぶ（+2アクション）', on: () => dispatch({ type: 'AFTER_ACTION_CALL', card: 'coin_of_the_realm' }) });
+      if (mat.includes('royal_carriage') && p.inPlay.includes(pd.card)) opts.push({ label: '御料車を呼ぶ（「' + DOM.CARDS[pd.card].name + '」を再演）', on: () => dispatch({ type: 'AFTER_ACTION_CALL', card: 'royal_carriage' }) });
+      opts.push({ label: '呼び出さない', on: () => dispatch({ type: 'AFTER_ACTION_CALL', card: null }) });
+      return modalOptions('酒場マット — 呼び出し（アクション解決直後）', '「' + DOM.CARDS[pd.card].name + '」を解決しました。呼び出す Reserve を選びます。', opts);
+    }
+    if (pd.type === 'duplicate') return modalOptions('複製 — コピーする？', '「' + DOM.CARDS[pd.card].name + '」を獲得しました。複製を呼び出して同じカードのコピーを獲得できます。', [
+      { label: '複製を呼んでコピーを獲得', cls: 'btn-primary', on: () => dispatch({ type: 'DUPLICATE_CALL', call: true }) },
+      { label: '呼び出さない', on: () => dispatch({ type: 'DUPLICATE_CALL', call: false }) }]);
     if (pd.type === 'cutpurse' && pd.stage === 'react') return modalOptions('巾着切りを受ける', '銅貨1枚を捨てます（無ければ手札を公開）。', reactOptions(p, pd, { type: 'CUTPURSE_REACT' }));
     if (pd.type === 'sea_witch' && pd.stage === 'react') return modalOptions('海の魔女を受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'SEA_WITCH_REACT' }));
     if (pd.type === 'sea_witch_discard') return modalSelectN(p, '海の魔女 — 手札を捨てる', '手札を2枚選んで捨てます。', Math.min(2, p.hand.length), '確定（捨てる）', (cards) => dispatch({ type: 'SEA_WITCH_DISCARD', cards }));
