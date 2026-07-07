@@ -66,7 +66,9 @@
   const PRIZE_SET = new Set(['bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed']);
   // 暗黒時代：戦利品/狂人/傭兵も非サプライ＝汎用獲得(bestGain等)や獲得系pendingから除外する
   //（engine の NON_SUPPLY 拒否と噛み合い、提案し続けて無限ループするのを防ぐ）。
-  const NON_SUPPLY_SET = new Set([...PRIZE_SET, 'spoils', 'madman', 'mercenary']);
+  // 冒険：トラベラーの成長先8種も非サプライ（page/peasant の交換でのみ得る）＝汎用獲得や獲得系pendingから除外。
+  const NON_SUPPLY_SET = new Set([...PRIZE_SET, 'spoils', 'madman', 'mercenary',
+    'treasure_hunter', 'warrior', 'hero', 'champion', 'soldier', 'fugitive', 'disciple', 'teacher']);
   // 新プロモ：サウナ/アヴァント分割山＝上のサウナが残る間はアヴァントを獲得できない
   // （engine の gain/canBuyCard 拒否と必ずセット＝提案すると強制獲得と噛み合い無限ループ）。
   function splitBlocked(state, id) { return id === 'avanto' && sup(state, 'sauna') > 0; }
@@ -213,6 +215,11 @@
     if (has('guide')) return 'guide';                     // +1カード+1アクション（酒場マット・開始時に引き直し）
     if (has('transmogrify')) return 'transmogrify';       // +1アクション（酒場マット・開始時に格上げ）
     if (has('royal_carriage')) return 'royal_carriage';   // +1アクション（酒場マット・アクション再演）
+    // 冒険：トラベラー（+アクション付き＝非ターミナル。成長させるため毎ターン使うのが基本）
+    if (has('champion')) return 'champion';               // +1アクション（永続＝アタック免疫＋アクション毎+1）＝最優先で場に出す
+    if (has('page')) return 'page';                       // +1カード+1アクション（成長：→トレジャーハンター）
+    if (has('treasure_hunter')) return 'treasure_hunter'; // +1アクション+$1（成長：→ウォリアー）
+    if (has('fugitive')) return 'fugitive';               // +2カード+1アクション（成長：→門下生）
     // --- ターミナル（効果の大きい順）---
     // 新プロモ：王子＝良い対象（$4以下の持続/命令以外）が手札にあるときだけ（毎ターン無料再生＝最優先）。
     if (has('prince') && bestPrinceTarget(state, p)) return 'prince';
@@ -247,6 +254,12 @@
     if (has('miser') && (p.hand.includes('copper') || (p.tavern || []).some((c) => c === 'copper'))) return 'miser';
     if (has('duplicate')) return 'duplicate';             // 酒場マットに置いて $6以下の獲得をコピー
     if (has('distant_lands')) return 'distant_lands';     // 酒場マットに置いて4勝利点（0点→4点）
+    // 冒険：トラベラー（ターミナル）＝成長させるため使う
+    if (has('warrior')) return 'warrior';                 // +2カード＋アタック（成長：→ヒーロー）
+    if (has('soldier')) return 'soldier';                 // +$2＋アタック（成長：→脱走兵）
+    if (has('hero')) return 'hero';                       // +$2＋財宝獲得（成長：→チャンピオン）
+    if (has('disciple') && p.hand.some((c) => isType(c, 'action') && c !== 'disciple')) return 'disciple'; // アクションを2度使い＋コピー獲得（成長：→教師）
+    if (has('peasant')) return 'peasant';                 // +1購入+$1（成長：→兵士）
     // 収穫祭：ターミナル（アタック・格上げ・賞品）
     if (has('jester')) return 'jester';                 // +2コイン＋アタック
     if (has('young_witch')) return 'young_witch';       // +2カード＋全員に呪い
@@ -1086,6 +1099,36 @@
       case 'bridge_troll': // -$1トークンは自動
         if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
         return { type: 'BRIDGE_TROLL_REACT' };
+      // 冒険：トラベラー（page/peasant＋成長先）
+      case 'warrior': // 山札上を捨て$3/$4廃棄（自動）＝堀があれば無効化
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'WARRIOR_REACT' };
+      case 'soldier': {
+        if (pd.stage === 'react') {
+          if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+          return { type: 'SOLDIER_REACT' };
+        }
+        // discard：最も手札に残す価値の低いカードを1枚捨てる。
+        return { type: 'SOLDIER_DISCARD', card: p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0] };
+      }
+      case 'fugitive_discard':
+        return { type: 'FUGITIVE_DISCARD', card: p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0] };
+      case 'hero_gain': {
+        let g = null;
+        for (const id of ['platinum', 'gold', 'silver', 'copper']) { if (sup(state, id) > 0) { g = id; break; } }
+        if (!g) for (const id of GAIN_ORDER) { if (C()[id] && isType(id, 'treasure') && !NON_SUPPLY_SET.has(id) && sup(state, id) > 0) { g = id; break; } }
+        return { type: 'HERO_GAIN', card: g };
+      }
+      case 'disciple_play': {
+        // 手札のアクション（門下生自身以外）を2度使い＋コピー獲得。最も再演価値の高いものを選ぶ。
+        const acts = p.hand.filter((c) => isType(c, 'action') && c !== 'disciple');
+        if (!acts.length) return { type: 'DISCIPLE_PLAY', card: null };
+        const best = acts.slice().sort((a, b) => throneValue(b) - throneValue(a))[0];
+        return { type: 'DISCIPLE_PLAY', card: best };
+      }
+      case 'traveller_exchange':
+        // 成長先は常により強い（→ヒーロー/チャンピオン/教師）＝常に交換して系列を進める。
+        return { type: 'TRAVELLER_EXCHANGE_RESOLVE', exchange: true };
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
       case 'warehouse':

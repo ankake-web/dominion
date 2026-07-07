@@ -13,7 +13,12 @@
 
   // 収穫祭：賞品（Prize）＝馬上槍試合の専用山。各1枚・購入不可・3山終了に数えない非サプライ。
   const PRIZES = ['bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed'];
-  const NON_SUPPLY = new Set([].concat(PRIZES, ['spoils', 'madman', 'mercenary'])); // supply の数値キーだが「山」としては数えない/買えないもの（賞品＋暗黒時代の戦利品/狂人/傭兵）
+  // 冒険：トラベラーの成長先8種は非サプライ（各5枚・page/peasant が場にあるときだけ登場・購入不可・交換でのみ得る）。
+  const TRAVELLER_GROWTH = ['treasure_hunter', 'warrior', 'hero', 'champion', 'soldier', 'fugitive', 'disciple', 'teacher'];
+  const NON_SUPPLY = new Set([].concat(PRIZES, ['spoils', 'madman', 'mercenary'], TRAVELLER_GROWTH)); // supply の数値キーだが「山」としては数えない/買えないもの（賞品＋暗黒時代の戦利品/狂人/傭兵＋冒険のトラベラー成長先）
+  // 冒険：トラベラーの成長系列（このカードを場から捨てる時、次の成長先と交換してよい）。champion/teacher は終端（次が無い）。
+  const TRAVELLER_NEXT = { page: 'treasure_hunter', treasure_hunter: 'warrior', warrior: 'hero', hero: 'champion',
+                           peasant: 'soldier', soldier: 'fugitive', fugitive: 'disciple', disciple: 'teacher' };
   // ギルド：過払い（overpay）できるカード＝購入時に追加でコインを払うと追加効果。BUY 後に overpay pending を立てる。
   const OVERPAY_CARDS = new Set(['stonemason', 'doctor', 'masterpiece', 'herald']);
   // 収穫祭：若き魔女の災いカード（Bane）を選ぶ。$2-3 の王国カードで、まだ場に無いものを1つ。
@@ -277,6 +282,10 @@
     if (kingdom.some((k) => ['bandit_camp', 'marauder', 'pillage'].includes(k))) supply.spoils = 15;
     if (kingdom.includes('hermit')) supply.madman = 10;
     if (kingdom.includes('urchin')) supply.mercenary = 10;
+    // 冒険：トラベラー＝page/peasant が王国にあれば、その成長先（非サプライ・各5枚）を supply の数値キーで加える。
+    //   購入不可（canBuyCard）・3山終了に数えない（emptyPileCount）・獲得は「場から捨てる時の交換」のみ。
+    if (kingdom.includes('page')) ['treasure_hunter', 'warrior', 'hero', 'champion'].forEach((id) => (supply[id] = 5));
+    if (kingdom.includes('peasant')) ['soldier', 'fugitive', 'disciple', 'teacher'].forEach((id) => (supply[id] = 5));
     return supply;
   }
 
@@ -839,6 +848,9 @@
     relic:         { onMoat: (s, pd) => relicEnterVictim(s, pd.source, pd.queue) },
     giant:         { onMoat: (s, pd) => giantEnterVictim(s, pd.source, pd.queue) },
     bridge_troll:  { onMoat: (s, pd) => bridgeTrollEnterVictim(s, pd.source, pd.queue) },
+    // 冒険：トラベラーのアタック（ウォリアー＝山札上を捨て$3/$4廃棄／兵士＝手札4枚以上で1枚捨て）。
+    warrior:       { onMoat: (s, pd) => warriorEnterVictim(s, pd.source, pd.queue, pd.count) },
+    soldier:       { onMoat: (s, pd) => soldierEnterVictim(s, pd.source, pd.queue) },
   };
   // 被攻撃側の反応（堀／秘密の小部屋／外交官）を差し込める局面か。
   function isAttackReactPending(pd) {
@@ -1030,6 +1042,44 @@
       if ((state.supply.curse || 0) > 0) { gain(state, victim, 'curse', 'discard'); log(state, `${v.name} は呪いを獲得した（巨人）。`); }
     }
   }
+  /* ========== 冒険：トラベラーのアタック（ウォリアー＝山札上を捨て$3/$4廃棄／兵士＝手札4枚以上で1枚捨て） ========== */
+  // ウォリアー：各相手は「場のトラベラー数(count)」回、山札の一番上を捨て、$3か$4なら廃棄する（略奪者型・堀リアクション窓あり）。
+  function warriorEnterVictim(state, source, queue, count) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    if (!queue.length || count <= 0) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'warrior', stage: 'react', player: victim, source, victim, queue: rest, count };
+    } else {
+      warriorHit(state, victim, count);
+      warriorEnterVictim(state, source, rest, count);
+    }
+  }
+  function warriorHit(state, victim, count) {
+    const v = state.players[victim];
+    for (let i = 0; i < count; i++) {
+      if (v.deck.length === 0 && v.discard.length > 0) reshuffleDeck(v);
+      if (v.deck.length === 0) break; // 捨てる札が無い
+      const top = v.deck.shift();
+      reveal(state, victim, [top], 'ウォリアーで山札の上を公開');
+      const cc = cardCost(state, top);
+      // 公開したカードは常に捨てるが、コストがちょうど$3か$4（ポーション費用を含まない）なら廃棄する。
+      if ((cc === 3 || cc === 4) && potionCost(top) === 0) { trashCard(state, victim, top); log(state, `${v.name} は「${C()[top].name}」を廃棄した（ウォリアー）。`); }
+      else { v.discard.push(top); log(state, `${v.name} は「${C()[top].name}」を捨てた（ウォリアー）。`); }
+    }
+  }
+  // 兵士：手札4枚以上の各相手はカード1枚を捨てる（本人が選ぶ・堀リアクション窓あり）。
+  function soldierEnterVictim(state, source, queue) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v) && state.players[v].hand.length >= 4);
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'soldier', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      state.pending = { type: 'soldier', stage: 'discard', player: victim, source, victim, queue: rest };
+    }
+  }
+
   /* ========== 冒険：酒場マット（Reserve）＝呼び出し機構 ========== */
   // Reserve カードをプレイした直後、これを場（inPlay）から酒場マットへ置く。
   //   玉座/王の宮廷/行進で複製プレイされると applyEffect が複数回走る＝2回目以降は場にもう無い。
@@ -3443,6 +3493,62 @@
         putOnTavern(state, pi, 'duplicate');
         break;
 
+      /* ========== 冒険：トラベラー（page/peasant＋成長先。場から捨てる時に次の成長先と交換） ========== */
+      // 騎士見習い：+1カード +1アクション（キャントリップ）。捨てる時にトレジャーハンターと交換可（交換は cleanup 窓）。
+      case 'page':
+        draw(state, pi, 1); t.actions += 1;
+        break;
+      // 農民：+1購入 +$1。捨てる時に兵士と交換可。
+      case 'peasant':
+        t.buys += 1; t.coins += 1;
+        break;
+      // トレジャーハンター：+1アクション +$1。右隣が直前の手番に獲得したカード1枚につき銀貨1枚を獲得。
+      case 'treasure_hunter': {
+        t.actions += 1; t.coins += 1;
+        const n = state.players.length, right = (pi - 1 + n) % n;
+        const cnt = (state.players[right].lastTurnGains || []).length;
+        let g = 0; for (let i = 0; i < cnt; i++) { if (gain(state, pi, 'silver', 'discard')) g++; }
+        if (g) log(state, `${p.name} はトレジャーハンターで銀貨${g}枚を獲得した（右隣の直前の獲得${cnt}枚）。`);
+        break;
+      }
+      // ウォリアー：+2カード。場のトラベラー（自身含む）1枚につき、他の各プレイヤーは山札の一番上を捨て、$3か$4なら廃棄（アタック）。
+      case 'warrior': {
+        draw(state, pi, 2);
+        const travs = p.inPlay.filter((c) => DOM.isType(c, 'traveller')).length; // このウォリアー自身も inPlay にあり traveller
+        const vics = []; for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
+        warriorEnterVictim(state, pi, vics, travs);
+        break;
+      }
+      // ヒーロー：+$2。財宝カード1枚を獲得する（強制）。
+      case 'hero':
+        t.coins += 2;
+        if (anyGainable(state, (id) => DOM.isType(id, 'treasure') && !NON_SUPPLY.has(id))) state.pending = { type: 'hero_gain', player: pi };
+        break;
+      // チャンピオン：+1アクション。永続持続＝ゲーム終了までアタック免疫（attackImmune）＋アクション使用ごとに+1アクション。
+      case 'champion':
+        t.actions += 1;
+        p.champions = (p.champions || 0) + 1;
+        log(state, `${p.name} はチャンピオンを場に出した（以後アタック免疫・アクション毎に+1アクション）。`);
+        break;
+      // 兵士：+$2。場の他のアタックカード1枚につき +$1。手札4枚以上の他の各プレイヤーはカード1枚を捨てる（アタック）。
+      case 'soldier': {
+        t.coins += 2;
+        const others = p.inPlay.filter((c) => DOM.isType(c, 'attack')).length - 1; // 自身を除く場のアタック
+        if (others > 0) { t.coins += others; log(state, `${p.name} は兵士で +$${others}（場の他のアタック${others}枚）。`); }
+        const vics = []; for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
+        soldierEnterVictim(state, pi, vics);
+        break;
+      }
+      // 脱走兵：+2カード +1アクション。カード1枚を捨てる。
+      case 'fugitive':
+        draw(state, pi, 2); t.actions += 1;
+        if (p.hand.length > 0) state.pending = { type: 'fugitive_discard', player: pi };
+        break;
+      // 門下生：手札のアクションカード1枚を2度使用してよい。それと同じカード1枚を獲得する。
+      case 'disciple':
+        if (p.hand.some((c) => DOM.isType(c, 'action'))) state.pending = { type: 'disciple_play', player: pi };
+        break;
+
       default:
         break;
     }
@@ -3904,7 +4010,9 @@
   // アタック無効化（灯台が場/持続にある被害者はアタックを受けない）。§手6で各アタックに配線。
   function attackImmune(state, victim) {
     const v = state.players[victim];
-    return v.inPlay.includes('lighthouse') || (v.durationCards || []).includes('lighthouse');
+    // 冒険：チャンピオン＝場にある間（永続持続）、他プレイヤーのアタックの影響を受けない。
+    return v.inPlay.includes('lighthouse') || (v.durationCards || []).includes('lighthouse')
+        || v.inPlay.includes('champion') || (v.durationCards || []).includes('champion');
   }
 
   /* ---------- クリーンアップ＆次の番へ ---------- */
@@ -3959,6 +4067,8 @@
     if ((p.princes || []).length) cnt.prince = (cnt.prince || 0) + p.princes.length;
     // 冒険：雇人＝永続持続。稼働数ぶん物理カードを durationCards に残す（princes と同型）。
     if (p.hirelings) cnt.hireling = (cnt.hireling || 0) + p.hirelings;
+    // 冒険：チャンピオン＝永続持続（ゲーム終了まで場に残る）。稼働数ぶん物理カードを durationCards に残す。
+    if (p.champions) cnt.champion = (cnt.champion || 0) + p.champions;
     const used = {}; const newDur = [];
     for (const c of (p.durationCards || [])) {
       if ((used[c] || 0) < (cnt[c] || 0)) { newDur.push(c); used[c] = (used[c] || 0) + 1; }
@@ -4033,6 +4143,20 @@
       }
       if (ex) log(state, `${me.name} は購入フェイズで何も獲得しなかったので隠遁者 ${ex}枚 を狂人と交換した。`);
     }
+    // 冒険：トラベラー交換窓＝場のトラベラーを、次の成長先（山が残っていれば）と交換してよい（対話）。
+    //   交換窓を全て消化した後で 策謀→片付け へ進む（endBuyTailSchemeOrCleanup）。
+    const travQ = travellerExchangeQueue(state, pi);
+    if (travQ.length) { state.pending = { type: 'traveller_exchange', player: pi, queue: travQ }; return; }
+    endBuyTailSchemeOrCleanup(state, pi);
+  }
+  // 冒険：場にあり「次の成長先の山が残っている」トラベラーの id 列（交換オファーの対象）。
+  function travellerExchangeQueue(state, pi) {
+    const p = state.players[pi];
+    return (p.inPlay || []).filter((c) => TRAVELLER_NEXT[c] && (state.supply[TRAVELLER_NEXT[c]] || 0) > 0);
+  }
+  // トラベラー交換窓の後（または交換窓が不要なとき）＝策謀のクリンナップ→片付け。
+  function endBuyTailSchemeOrCleanup(state, pi) {
+    const me = state.players[pi];
     // 異郷：策謀＝クリンナップ開始時、場のアクション（非持続）を最大(このターンの策謀の数)枚 山札の上に置ける。
     const schemes = state.turn.schemes || 0;
     if (schemes > 0 && me.inPlay.some((c) => DOM.isType(c, 'action') && !DOM.isType(c, 'duration'))) {
@@ -4139,6 +4263,12 @@
         me.inPlay.push(card);
         t.actions -= 1;
         t.actionsPlayed = (t.actionsPlayed || 0) + 1; // 共謀者の判定用（このターンに使ったアクション数）
+        // 冒険：チャンピオン＝場にある間、アクションを使うたびに +1アクション（このカード自身のプレイは除く）。
+        //   ※玉座/王の宮廷/門下生の再演（applyEffect経由・カードは動かない）は対象外＝許容簡略化。
+        {
+          const champs = me.inPlay.filter((c) => c === 'champion').length + (me.durationCards || []).filter((c) => c === 'champion').length - (card === 'champion' ? 1 : 0);
+          if (champs > 0) { t.actions += champs; log(state, `${me.name} はチャンピオンで +${champs}アクション。`); }
+        }
         t.afterActionCard = card; // 冒険：法貨/御料車の「アクション解決直後」の呼び出し窓の対象
         log(state, `${me.name} は「${C()[card].name}」を使った。`);
         // 暗黒時代：浮浪児＝別アタックのプレイ時に場の浮浪児を廃棄→傭兵。効果は URCHIN_TRASH 解決後に適用。
@@ -5896,6 +6026,91 @@
         if (!pd || pd.type !== 'giant' || pd.stage !== 'react') return state;
         giantHit(state, pd.victim);
         giantEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+      // 冒険：ウォリアー／兵士のアタックを受ける（堀を出さなかった＝そのまま受ける）。
+      case 'WARRIOR_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'warrior' || pd.stage !== 'react') return state;
+        warriorHit(state, pd.victim, pd.count);
+        warriorEnterVictim(state, pd.source, pd.queue, pd.count);
+        return state;
+      }
+      case 'SOLDIER_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'soldier' || pd.stage !== 'react') return state;
+        // 堀を出さなかった＝手札1枚を捨てるステップへ（手札4枚以上は EnterVictim で保証済み）。
+        state.pending = { type: 'soldier', stage: 'discard', player: pd.victim, source: pd.source, victim: pd.victim, queue: pd.queue };
+        return state;
+      }
+      case 'SOLDIER_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'soldier' || pd.stage !== 'discard') return state;
+        const v = state.players[pd.victim];
+        const card = action.card;
+        if (v.hand.indexOf(card) < 0) return state; // 手札に無い指定は拒否
+        removeOne(v.hand, card); v.discard.push(card);
+        log(state, `${v.name} は手札1枚を捨てた（兵士）。`);
+        soldierEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+      // 冒険：ヒーロー＝財宝カード1枚を獲得（強制）。
+      case 'HERO_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'hero_gain') return state;
+        finishGain(state, pd, action.card, (id) => DOM.isType(id, 'treasure') && !NON_SUPPLY.has(id), 'discard', '獲得した（ヒーロー）。');
+        return state;
+      }
+      // 冒険：脱走兵＝カード1枚を捨てる（強制・手札があるとき）。
+      case 'FUGITIVE_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'fugitive_discard') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0) return state;
+        removeOne(p.hand, card); p.discard.push(card);
+        log(state, `${p.name} はカード1枚を捨てた（脱走兵）。`);
+        state.pending = null;
+        return state;
+      }
+      // 冒険：門下生＝手札のアクション1枚を2度使用してよい。それと同じカード1枚を獲得する。
+      case 'DISCIPLE_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'disciple_play') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (card == null) { state.pending = null; return state; } // 使わない
+        if (p.hand.indexOf(card) < 0 || !DOM.isType(card, 'action')) return state;
+        removeOne(p.hand, card); p.inPlay.push(card);
+        t.actionsPlayed = (t.actionsPlayed || 0) + 1;
+        state.pending = null;
+        log(state, `${p.name} は門下生で「${C()[card].name}」を使った（1回目）。`);
+        applyEffect(state, card, pd.player);            // 1回目
+        state.replay = state.replay || [];
+        state.replay.push({ player: pd.player, card }); // 2回目は pending 解消後に runReplays が適用
+        // それと同じカード1枚を獲得（コピー。サプライに残っていれば。非サプライ札＝トラベラー等は獲得できない＝何も得ない）。
+        if (!NON_SUPPLY.has(card) && (state.supply[card] || 0) > 0 && gain(state, pd.player, card, 'discard')) log(state, `${p.name} は門下生で「${C()[card].name}」のコピーを獲得した。`);
+        return state;
+      }
+      // 冒険：トラベラー交換＝場から捨てる時、次の成長先と交換してよい（獲得ではない＝on-gain不発）。
+      case 'TRAVELLER_EXCHANGE_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'traveller_exchange') return state;
+        const p = state.players[pd.player];
+        const queue = pd.queue.slice();
+        const trav = queue.shift();          // 今回判定するトラベラー
+        const next = TRAVELLER_NEXT[trav];
+        if (action.exchange && next && (state.supply[next] || 0) > 0 && p.inPlay.includes(trav)) {
+          removeOne(p.inPlay, trav);
+          state.supply[trav] = (state.supply[trav] || 0) + 1; // トラベラーは自分の山へ返す
+          state.supply[next] -= 1;
+          p.discard.push(next);              // 交換で得たカードは捨て札へ（獲得ではない）
+          log(state, `${p.name} は「${C()[trav].name}」を「${C()[next].name}」と交換した。`);
+        }
+        // 交換しなかったトラベラーは場に残す（この後 cleanup で捨て札へ）。
+        if (queue.length) { state.pending = { type: 'traveller_exchange', player: pd.player, queue }; return state; }
+        state.pending = null;
+        endBuyTailSchemeOrCleanup(state, pd.player); // 交換窓の後、策謀→片付けへ
         return state;
       }
       case 'CULTIST_REACT': {
@@ -8022,6 +8237,8 @@
     'RELIC_REACT', 'GIANT_REACT', 'BRIDGE_TROLL_REACT',
     'MISER_RESOLVE', 'TAVERN_START_CALL', 'RATCATCHER_TRASH', 'TRANSMOGRIFY_TRASH', 'TRANSMOGRIFY_GAIN', 'WINE_MERCHANT_DISCARD',
     'AFTER_ACTION_CALL', 'DUPLICATE_CALL',
+    // 冒険：トラベラー（page/peasant＋成長先）
+    'WARRIOR_REACT', 'SOLDIER_REACT', 'SOLDIER_DISCARD', 'HERO_GAIN', 'FUGITIVE_DISCARD', 'DISCIPLE_PLAY', 'TRAVELLER_EXCHANGE_RESOLVE',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',

@@ -1315,6 +1315,20 @@
     if (pd.type === 'duplicate') return modalOptions('複製 — コピーする？', '「' + DOM.CARDS[pd.card].name + '」を獲得しました。複製を呼び出して同じカードのコピーを獲得できます。', [
       { label: '複製を呼んでコピーを獲得', cls: 'btn-primary', on: () => dispatch({ type: 'DUPLICATE_CALL', call: true }) },
       { label: '呼び出さない', on: () => dispatch({ type: 'DUPLICATE_CALL', call: false }) }]);
+    // 冒険：トラベラー（page/peasant＋成長先）
+    if (pd.type === 'traveller_exchange') {
+      const TN = { page: 'treasure_hunter', treasure_hunter: 'warrior', warrior: 'hero', hero: 'champion', peasant: 'soldier', soldier: 'fugitive', fugitive: 'disciple', disciple: 'teacher' };
+      const cur = pd.queue[0], nx = TN[cur];
+      return modalOptions('トラベラー — 交換する？', '場から捨てる「' + DOM.CARDS[cur].name + '」を「' + DOM.CARDS[nx].name + '」と交換できます（交換は獲得ではありません）。', [
+        { label: '「' + DOM.CARDS[nx].name + '」と交換する', cls: 'btn-primary', on: () => dispatch({ type: 'TRAVELLER_EXCHANGE_RESOLVE', exchange: true }) },
+        { label: '交換しない（そのまま捨てる）', on: () => dispatch({ type: 'TRAVELLER_EXCHANGE_RESOLVE', exchange: false }) }]);
+    }
+    if (pd.type === 'warrior' && pd.stage === 'react') return modalOptions('ウォリアーを受ける', '山札の一番上を捨て、コストが$3か$4なら廃棄します（場のトラベラー数だけ繰り返し）。', reactOptions(p, pd, { type: 'WARRIOR_REACT' }));
+    if (pd.type === 'soldier' && pd.stage === 'react') return modalOptions('兵士を受ける', '手札からカード1枚を捨てます。', reactOptions(p, pd, { type: 'SOLDIER_REACT' }));
+    if (pd.type === 'soldier' && pd.stage === 'discard') return modalSingleHand(p, '兵士 — 手札を1枚捨てる', '手札からカード1枚を選んで捨てます。', () => true, (card) => dispatch({ type: 'SOLDIER_DISCARD', card }), null, '捨てる');
+    if (pd.type === 'hero_gain') return modalGainSupply(state, 'ヒーロー — 財宝を獲得', '財宝カード1枚を獲得します。', (id) => DOM.isType(id, 'treasure'), (id) => dispatch({ type: 'HERO_GAIN', card: id }));
+    if (pd.type === 'fugitive_discard') return modalSingleHand(p, '脱走兵 — 手札を1枚捨てる', '手札からカード1枚を選んで捨てます。', () => true, (card) => dispatch({ type: 'FUGITIVE_DISCARD', card }), null, '捨てる');
+    if (pd.type === 'disciple_play') return modalSingleHand(p, '門下生 — 2回使うアクションを選ぶ', '手札のアクション1枚を選ぶと、それを2回使い、同じカード1枚を獲得します。', (id) => DOM.isType(id, 'action'), (card) => dispatch({ type: 'DISCIPLE_PLAY', card }), { label: '使わない', on: () => dispatch({ type: 'DISCIPLE_PLAY', card: null }) }, '2回使う');
     if (pd.type === 'cutpurse' && pd.stage === 'react') return modalOptions('巾着切りを受ける', '銅貨1枚を捨てます（無ければ手札を公開）。', reactOptions(p, pd, { type: 'CUTPURSE_REACT' }));
     if (pd.type === 'sea_witch' && pd.stage === 'react') return modalOptions('海の魔女を受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'SEA_WITCH_REACT' }));
     if (pd.type === 'sea_witch_discard') return modalSelectN(p, '海の魔女 — 手札を捨てる', '手札を2枚選んで捨てます。', Math.min(2, p.hand.length), '確定（捨てる）', (cards) => dispatch({ type: 'SEA_WITCH_DISCARD', cards }));
