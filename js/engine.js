@@ -698,7 +698,8 @@
     trashCard(state, victim, trashed);
     log(state, `${v.name} は山札の上の「${C()[trashed].name}」を廃棄した。`);
     const cst = cardCost(state, trashed);
-    if (anyGainable(state, (id) => cardCost(state, id) === cst)) {
+    // 非サプライ（賞品/トラベラー成長先/戦利品等）は贈与対象にしない（交換/専用機構でのみ得るカード）。
+    if (anyGainable(state, (id) => cardCost(state, id) === cst && !NON_SUPPLY.has(id))) {
       state.pending = { type: 'swindler', stage: 'gain', player: source, source, victim, cost: cst, queue };
     } else {
       swindlerEnterVictim(state, source, queue); // 同コストの獲得候補が無ければ獲得なしで次へ
@@ -1112,8 +1113,10 @@
   function validTeacherPiles(state, pi) {
     const p = state.players[pi];
     const mine = new Set(Object.values(p.pileTokens || {})); // 自分のトークンが既に乗っている山
+    // 公式：山が空でも「アクションのサプライ山」であればトークンを置ける（自分のデッキに残るコピーをプレイするとボーナス）。
+    //   ＝残枚数は問わない（Object.keys で存在するサプライ山キーのみを対象にする）。
     return Object.keys(state.supply).filter((id) =>
-      (state.supply[id] || 0) > 0 && !NON_SUPPLY.has(id) && C()[id] && DOM.isType(id, 'action') &&
+      state.supply[id] != null && !NON_SUPPLY.has(id) && C()[id] && DOM.isType(id, 'action') &&
       !mine.has(id) && id !== 'knights' && !(id === 'avanto' && (state.supply.sauna || 0) > 0));
   }
   // 教師を呼べるか＝酒場マットにあり、置ける山が1つ以上あるとき（置き先が無ければ呼んでも無意味なので窓を開かない）。
@@ -3564,7 +3567,8 @@
       // 兵士：+$2。場の他のアタックカード1枚につき +$1。手札4枚以上の他の各プレイヤーはカード1枚を捨てる（アタック）。
       case 'soldier': {
         t.coins += 2;
-        const others = p.inPlay.filter((c) => DOM.isType(c, 'attack')).length - 1; // 自身を除く場のアタック
+        // 自身を除く「場の他のアタックカード」＝ inPlay＋durationCards（持続アタック=橋の下のトロル等も場に残る）。
+        const others = p.inPlay.filter((c) => DOM.isType(c, 'attack')).length + (p.durationCards || []).filter((c) => DOM.isType(c, 'attack')).length - 1;
         if (others > 0) { t.coins += others; log(state, `${p.name} は兵士で +$${others}（場の他のアタック${others}枚）。`); }
         const vics = []; for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
         soldierEnterVictim(state, pi, vics);
@@ -4685,7 +4689,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'swindler' || pd.stage !== 'gain') return state;
         const card = action.card;
-        const canGain = (id) => !!C()[id] && cardCost(state, id) === pd.cost;
+        const canGain = (id) => !!C()[id] && cardCost(state, id) === pd.cost && !NON_SUPPLY.has(id);
         if (card == null || !canGain(card) || (state.supply[card] || 0) <= 0) return state; // 候補ありなら必ず選ぶ
         gain(state, pd.victim, card, 'discard');
         log(state, `${state.players[pd.victim].name} は「${C()[card].name}」を獲得した（詐欺師）。`);
@@ -5024,8 +5028,8 @@
         removeOne(p.hand, card); trashCard(state, pd.player, card);
         log(state, `${p.name} は「${C()[card].name}」を廃棄した。`);
         const exact = cardCost(state, card) + 1;
-        // ちょうど exact コストの獲得候補が無ければ獲得なしで終了（デッドロック回避）
-        state.pending = anyGainable(state, (id) => cardCost(state, id) === exact)
+        // ちょうど exact コストの獲得候補が無ければ獲得なしで終了（デッドロック回避）。非サプライ（トラベラー成長先等）は除外。
+        state.pending = anyGainable(state, (id) => cardCost(state, id) === exact && !NON_SUPPLY.has(id))
           ? { type: 'upgrade', stage: 'gain', player: pd.player, exactCost: exact }
           : null;
         if (!state.pending) log(state, `ちょうど ${exact} コストのカードが無く、獲得できなかった。`);
@@ -5034,7 +5038,7 @@
       case 'UPGRADE_GAIN': {
         const pd = state.pending;
         if (!pd || pd.type !== 'upgrade' || pd.stage !== 'gain') return state;
-        finishGain(state, pd, action.card, (id) => !!C()[id] && cardCost(state, id) === pd.exactCost, 'discard', '獲得した。');
+        finishGain(state, pd, action.card, (id) => !!C()[id] && cardCost(state, id) === pd.exactCost && !NON_SUPPLY.has(id), 'discard', '獲得した。');
         return state;
       }
 
@@ -5373,7 +5377,7 @@
         removeOne(p.hand, card); trashCard(state, pd.player, card);
         log(state, `${p.name} は「${C()[card].name}」を廃棄した（総督）。`);
         const exact = cardCost(state, card) + pd.delta;
-        if (anyGainable(state, (id) => cardCost(state, id) === exact)) {
+        if (anyGainable(state, (id) => cardCost(state, id) === exact && !NON_SUPPLY.has(id))) {
           state.pending = { type: 'governor_remodel', stage: 'gain', player: pd.player, exact, queue: pd.queue };
         } else {
           log(state, `ちょうど ${exact} コストのカードが無く、獲得できなかった（総督）。`);
@@ -5385,7 +5389,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'governor_remodel' || pd.stage !== 'gain') return state;
         const card = action.card;
-        const canGain = (id) => !!C()[id] && cardCost(state, id) === pd.exact;
+        const canGain = (id) => !!C()[id] && cardCost(state, id) === pd.exact && !NON_SUPPLY.has(id);
         if (card == null) { if (anyGainable(state, canGain)) return state; governorEnterRemodel(state, pd.queue); return state; }
         if (!canGain(card) || (state.supply[card] || 0) <= 0) return state;
         gain(state, pd.player, card, 'discard');
@@ -6987,7 +6991,7 @@
         cards.forEach((c) => { total += cardCost(state, c); });
         cards.forEach((c) => { removeOne(p.hand, c); trashCard(state, pd.player, c); });
         log(state, `${p.name} は溶鉱炉で ${cards.length}枚を廃棄（合計$${total}）。`);
-        if (anyGainable(state, (id) => cardCost(state, id) === total)) state.pending = { type: 'forge', stage: 'gain', player: pd.player, exact: total };
+        if (anyGainable(state, (id) => cardCost(state, id) === total && !NON_SUPPLY.has(id))) state.pending = { type: 'forge', stage: 'gain', player: pd.player, exact: total };
         else { log(state, `${p.name} はちょうど$${total}のカードが無く、何も獲得しなかった（溶鉱炉）。`); state.pending = null; }
         return state;
       }
@@ -6995,7 +6999,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'forge' || pd.stage !== 'gain') return state;
         const card = action.card;
-        if (!C()[card] || cardCost(state, card) !== pd.exact || (state.supply[card] || 0) <= 0) return state;
+        if (!C()[card] || cardCost(state, card) !== pd.exact || (state.supply[card] || 0) <= 0 || NON_SUPPLY.has(card)) return state;
         gain(state, pd.player, card, 'discard');
         log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した（溶鉱炉）。`);
         state.pending = null;
@@ -7216,7 +7220,7 @@
         removeOne(p.hand, action.card); trashCard(state, pd.player, action.card);
         log(state, `${p.name} は「${C()[action.card].name}」を廃棄した（リメイク）。`);
         const exact = cardCost(state, action.card) + 1;
-        if (anyGainable(state, (id) => cardCost(state, id) === exact)) {
+        if (anyGainable(state, (id) => cardCost(state, id) === exact && !NON_SUPPLY.has(id))) {
           state.pending = { type: 'remake', stage: 'gain', player: pd.player, iter: pd.iter, exactCost: exact };
         } else {
           remakeNext(state, pd.player, pd.iter);
@@ -7227,7 +7231,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'remake' || pd.stage !== 'gain') return state;
         const card = action.card;
-        if (card == null || cardCost(state, card) !== pd.exactCost || (state.supply[card] || 0) <= 0) return state;
+        if (card == null || cardCost(state, card) !== pd.exactCost || (state.supply[card] || 0) <= 0 || NON_SUPPLY.has(card)) return state;
         gain(state, pd.player, card, 'discard');
         log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した（リメイク）。`);
         remakeNext(state, pd.player, pd.iter);

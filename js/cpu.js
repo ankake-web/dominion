@@ -681,7 +681,7 @@
   }
   // 詐欺師で相手に与えるカード（相手の利得が最小＝呪い→弱い財宝/アクション。勝利点は点を与えるので避ける）。
   function pickSwindlerGift(state, cst) {
-    const cands = Object.keys(state.supply).filter((id) => C()[id] && cost(state, id) === cst && sup(state, id) > 0);
+    const cands = Object.keys(state.supply).filter((id) => C()[id] && cost(state, id) === cst && sup(state, id) > 0 && !NON_SUPPLY_SET.has(id));
     if (!cands.length) return null;
     const harm = (id) => isType(id, 'curse') ? -1 : (isType(id, 'victory') ? 100 : keepValue(id));
     cands.sort((a, b) => harm(a) - harm(b));
@@ -1073,8 +1073,8 @@
           const tk = ['card', 'coin', 'action', 'buy'].find((x) => !placed.has(x)) || 'card';
           return { type: 'TEACHER_TOKEN', token: tk };
         }
-        // pile：自分のトークンが無いアクション山のうち、最もコストの高い山（強いカードを想定）へ。
-        const pick = piles.slice().sort((a, b) => cost(state, b) - cost(state, a))[0];
+        // pile：自分のトークンが無いアクション山のうち、残っている山を優先し、最もコストの高い山（強いカード）へ。
+        const pick = piles.slice().sort((a, b) => (sup(state, b) > 0) - (sup(state, a) > 0) || cost(state, b) - cost(state, a))[0];
         return { type: 'TEACHER_PILE', card: pick };
       }
       case 'ratcatcher_trash':
