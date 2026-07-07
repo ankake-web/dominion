@@ -6,40 +6,29 @@
 作業ディレクトリ: c:\Users\b1242\claude\game\dominion / branch: main（main直接作業運用。最新は git log で確認）。
 
 ## まずやること
-1. Set-Location 'C:\Users\b1242\claude\game\dominion' して npm test → 31スイート・オールグリーン（exit 0・整合性3134件）を確認。
-2. PROGRESS.md の §0-9（冒険 段階2＝全38枚＋Phase E昇格 完了・push待ち。設計事実・落とし穴が全部ここ）と §5・§6 を読む。設計図＝docs/adding-cards.md。
+1. `Set-Location 'C:\Users\b1242\claude\game\dominion'` して `npm test` → **32スイート・オールグリーン（exit 0・整合性3134件・帝国39件）**を確認。
+2. `PROGRESS.md` の §0-10（帝国 段階2＝Batch E1 完了・次はE2）と §5・§6 を読む。**帝国の設計正本＝`docs/research/empires_rules.md`**（公式ルール裏取り＋6機構＋バッチ計画）。全体設計図＝`docs/adding-cards.md`。
 
-## 現状：冒険（Adventures）＝全38枚＋CARD_SET昇格 完了＝実プレイ可能・push待ち
-- Batch1a〜6 で冒険38枚すべてを実装＋Phase E で CARD_SET に昇格（「冒険セット」固定10種＋「冒険から」ランダム）。各バッチ fuzz緑＋狙い撃ち＋全31緑＋多エージェント敵対レビューでコミット済み（Batch5=確定バグ4件・5c=2件・6=1件・Phase E=UXバグ1件を検出→全修正）。sw.js v36。
-- **未pushコミット多数**（Batch1a〜6＋各レビュー修正＋Phase E）。冒険は昇格済みなのでローカルでは実プレイ可能だが、**まだ push していない＝本番挙動は不変**。
+## 現状：帝国（Empires）段階2に着手＝Batch E1＝負債(Debt)経済の基盤 完了（未push）
+- **負債スカラー `p.debt`**（購入ブロック／`REPAY_DEBT`返済／`gain()`で付与／capitalのon-discard負債＋残コイン即返済）＋**純負債4枚**（技術者/市街/王室の鍛冶屋/元手）を実装＋CPU＋UI。`sw.js` v37。
+- 「コストN以下/ちょうどN の獲得」は負債コストのカードを取れないルールを engine/CPU/UI に反映。多エージェント敵対レビュー（5次元）→確定バグ1件（闇市場×負債）修正済み。`test/empires.test.js`（39件）新設。
+- **冒険（Adventures）段階2は前回セッションで push 済み（HEAD が origin/main と一致＝本番反映済み・sw.js v36）**。その上に **Batch E1 のコミット（`wip(empires): … Batch E1`）が未push**。
 
-## 次に取り組むタスク（優先順1位）：冒険の push（ユーザー確認）
-- **まずユーザーに push してよいか確認**。OKなら `git push`（main）→ GitHub Pages（クライアント）＋ Render（サーバ）が自動デプロイ。sw.js v36 でキャッシュ更新。
-- push後は本番に「冒険セット」「冒険から」が出る。オンライン対戦サーバも同じ engine を使うので冒険が遊べる。
-- push は勝手にしない（このプロジェクトの鉄則＝完成→全テスト緑→都度ユーザー確認の上で push）。
-
-## その後：帝国（Empires）段階2（次の大仕事）
-- 段階1（画像・カタログ・GAIN_ORDER）は §0-6 で完了済み。段階2＝実プレイ化には新機構多数：
-  - **負債(Debt)コスト経済**（技術者/市街/大君主/王室の鍛冶屋＝コスト0+負債。購入時に負債を負い、以後のコインで返済するまで購入不可）。
-  - **集合(Gathering)＝VPトークン山**（農民の市場/神殿/野生の狩り）。
-  - **命令(overlord/crown)**＝はみだし者/玉座と同型の「別カードとして使う」。
-  - **分割山5組**（陣地/鹵獲品・パトリキ/エンポリウム・開拓者/騒がしい村・投石機/石・剣闘士/大金）＝サウナ/アヴァント機構を流用。
-  - **城8**（粗末→王城の序列混合山）＝騎士の混合山を流用・勝利点。
-  - **villa**（手札に獲得しアクションフェイズに戻る）。
-  - 横型ランドスケープ（イベント/ランドマーク）は縦枠パイプライン未対応で段階1すら未着手（別途）。
-- 着手前に `docs/adding-cards.md` を必読。冒険で確立した設計（酒場マット/交換/トークン/持続/相手の購入フック/複雑系の中断再開）が下敷きになる。
+## 次に取り組むタスク（優先順1位）：帝国 Batch E2（既存VPトークン＆単独カード 9枚）
+- 対象＝sacrifice（廃棄→種別別ボーナス・勝利点ならVPトークン2個）/chariot_race（コスト比較→+コイン+VP）/groundskeeper（場にある間 勝利点獲得毎にVP）/forum（+3カード+1ア-2捨て・on-buy+1購入）/legionary（アタック＝金貨公開で相手手札2枚に）/enchantress（持続アタック＝相手の最初のアクションを+1カード+1アクションに置換）/archive（3手番持続＝上3枚脇→毎手番1枚手札へ）/charm（財宝の二択＝獲得コピー）/villa（獲得で手札＋アクションフェイズ復帰）。
+- **プレイヤーVPトークン `p.vpTokens` は既存**（繁栄で実装済・vpOfに加算済）＝集合(山上VP)とは別。E2は既存VPトークンを使うだけ。個別裁定は `docs/research/empires_rules.md` §3 を着手時に必ず再確認（chariot_raceの同コスト扱い・enchantressの置換・villaのフェイズ復帰・archiveの複数手番持続 等）。
+- 以降の順：E3集合(山上VP＝farmers_market/temple/wild_hunt)→E4分割山5組(sauna/avanto流用)→E5城8(knights混合山流用)→E6命令(overlord/crown)→E7=CARD_SET昇格。
 
 ## 守るべき進め方・流儀
-- **新しく「ちょうどコスト/同コスト/相手に獲得させる」系の獲得を足す/触る時は必ず `!NON_SUPPLY.has(id)` を両側（anyGainable と canGain）に入れる**＝Batch5で除外漏れが HIGH デッドロック＋不正獲得を起こした。
-- **相手の購入/獲得をフックする効果・手札を動かす持続・玉座の再演は、on-buy/on-gain の選択待ち(pending)や runReplays の順序と衝突しないか必ず敵対検証**＝Batch5cで呪いの森×農地のデッドロック、Batch6で玉座×語り部の引き枚数取りこぼしが出た。
-- **新しい非サプライ数値キー山は「4系統除外チェックリスト」**（emptyPileCount/canBuyCard/blackMarket母集団/汎用獲得）＋UIの盤面表示＋onPileTapのcanBuyCardチェック（Phase Eで踏んだ）。
-- **1枚実装/変更ごとに**：狙い撃ち一時テスト（プロジェクト直下 `_*.tmp.js`＝.gitignore済・実行後**必ず削除**）→ `node test/invariants.test.js` 緑 → `npm test` 全31緑 → コミット。大きな決定は PROGRESS.md に追記。
-- **substantiveなタスクは Workflow で多エージェント＋敵対的検証**。**CONTEXT 文字列にバックティック（`）を入れない**＝テンプレートリテラルが途中で閉じてパースエラー。**ソークのデッドロック検出は pending の完全JSONを比較**（type/stageだけだと多段pendingを偽陽性で誤検出）。**git add -A の前に `_*.tmp.js` を確認**（レビューエージェントの実行中は検証用一時ファイルが生成される＝.gitignore で対策済みだが注意）。公式ルールが曖昧なら研究エージェントで wiki/RGGルールブック 裏取り。
-- client資産（js/css/webp等）を変えたら sw.js の VERSION を上げる（現在 v36）。回答は日本語・フランクに短く。
+- **新pendingは必ず4点セット**（engine reducer＋PLAYER_ACTIONS登録＋CPU decidePending＋UI viewPendingModal）＋終端保証。持続は armDuration/DURATION_RESOLVERS/startQueue安全網、命令は state.replay。
+- **新しく「≤$N/ちょうど$N/相手に獲得させる」系の獲得を足す/触るときは `!NON_SUPPLY.has(id)` と（帝国では）`!(C()[id].debt>0)` を engine述語と CPU bestGain の両側に入れる**（片側だけだと「engine拒否×CPU再提案＝無限ループ」）。
+- **1枚実装/変更ごとに**：狙い撃ち一時テスト（プロジェクト直下 `_*.tmp.js`＝.gitignore済・実行後**必ず削除**。cwdがずれるので実行前に Set-Location）→ `node test/invariants.test.js` 緑 → `npm test` 全32緑 → コミット。回帰は `test/empires.test.js` に足す。大きな決定は PROGRESS.md に追記。
+- **substantiveなタスクは Workflow で多エージェント＋敵対的検証**。CONTEXT文字列にバックティックを入れない（テンプレートリテラルが壊れる）。ソークのデッドロック検出は pending の完全JSONを比較。**レビューエージェントは同名 `_*.tmp.js` を作りうる**（自分の一時テストが上書きされ得る＝恒久テストは test/empires.test.js に置く）。公式ルールが曖昧なら研究エージェントで wiki/RGG 裏取り（wiki.dominionstrategy.com はボット保護でWebFetch不可＝WebSearch と ultraboardgames/fandom を使う）。
+- client資産（js/css/webp等）を変えたら `sw.js` の VERSION を上げる（現在 v37）。回答は日本語・フランクに短く。**push は勝手にしない＝完成→全テスト緑→都度ユーザー確認の上で**。
 
 ## 次セッションが知らないと事故る事項（必読）
-- **未pushコミット多数**。push は必ずユーザー確認。
-- **手番タイミングの罠**：cleanupAndAdvance が「自分の手番終了時に自分の次の手札を先引き(draw5)」してから次Pへ。持続の手番開始効果は手番が戻った時に発火。持続/先引きは山札が尽きると引ける枚数だけ。
-- **狙い撃ちテストで state を手で組むとき**：init tally は「手札/山札を上書きした後」に取る（上書き前に取ると元カードを失って保存則が偽陽性で落ちる）。
-- **Read出力の汚染に注意**：実在しないコード/コメントが Read 結果に混入して見えることがある。断定前に Grep・`git show`・`Get-Content` で裏取り。
-- 使い捨てスクリプトはシェルcwdがずれることがあるので実行前に `Set-Location 'C:\Users\b1242\claude\game\dominion'`。
+- **未pushコミットあり**（Batch E1＋この handoff）。push は必ずユーザー確認。帝国は CARD_SET 未昇格＝**本番挙動は不変**（負債カードはサプライに出ない）。
+- **意図的な据え置き（§0-10・§6）**：workshop等の汎用「≤$N獲得」reducer は負債カードを除外していない。どの出荷セットでも負債カードと汎用gainerは同居せず（mix-allセット無し）＋fuzzはCPU駆動でbestGainが負債カードを提案しないため到達不能。将来 mix-allモード時に共通ヘルパへ集約（ポーション費用問題と一緒に）。**再修正しなくてよい**。
+- **reduce は state を clone して新stateを返す**（破壊的でない）＝テストは必ず `s = reduce(s, a)` と再代入。狙い撃ちで state を手組みするとき init tally は「手札/山札を上書きした後」に取る。
+- **手番タイミングの罠**：cleanupAndAdvance が「自分の手番終了時に自分の次の手札を先引き(draw5)」してから次Pへ。持続の手番開始効果は手番が戻った時に発火。capital の負債は cleanup で発火（残コインから即返済）。
+- **Read出力の汚染に注意**：実在しないコード/コメントが混入して見えることがある。断定前に Grep・`git show`・`Get-Content` で裏取り。
