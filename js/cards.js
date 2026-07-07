@@ -704,7 +704,7 @@
                  text: '+2 アクション\n+1 購入\n+1 コイン\nこれを手札に加える。\n（獲得時: これを手札に加えて +1 アクション。購入フェイズ中なら、アクションフェイズに戻る）' },
     archive: { id: 'archive', name: '資料庫', cost: 5, types: ['action', 'duration'],
                  text: '+1 アクション\n山札の上から3枚を裏向きに脇へ置く。\n今回と次の2回の自分の手番開始時に、脇のカードを見て1枚を手札に加える。' },
-    capital: { id: 'capital', name: '元手', cost: 5, types: ['treasure'],
+    capital: { id: 'capital', name: '元手', cost: 5, types: ['treasure'], coin: 6,
                  text: '+6 コイン\n+1 購入\nこれを場から捨て札にするとき、負債6を得て、可能な限り返済する。' },
     charm: { id: 'charm', name: '御守り', cost: 5, types: ['treasure'],
                  text: '以下から1つを選ぶ:\n・+1 購入 と +2 コイン\n・このターン、次にカードを獲得したとき、それと同じコストで名前の異なるカードを1枚獲得してもよい。' },

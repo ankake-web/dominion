@@ -1,9 +1,31 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-08 / branch `main`（最新は `git log` で確認）。**暗黒時代 段階2 は完成＆push済＝本番反映（§0-8）**。**その後に未pushの WIP コミット多数＝冒険（Adventures）段階2＝全38枚 実プレイ化 完了＋Phase E（CARD_SET昇格）完了（§0-9・Batch1a〜6＋各敵対レビュー修正＋昇格）＝実プレイ可能。`sw.js` v36。push はユーザー確認待ち**。冒険を push すれば本番に「冒険セット」「冒険から」が出る（それまで本番挙動は不変）。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
+最終更新: 2026-07-08 / branch `main`（最新は `git log` で確認）。**冒険（Adventures）段階2＝全38枚＋Phase E昇格 は完成＆push済＝本番反映（§0-9。HEAD==origin/main で確認済み。`sw.js` v36）**。**その後に未pushの WIP コミット＝帝国（Empires）段階2 に着手＝Batch E1＝負債(Debt)経済の基盤＋純負債4枚（技術者/市街/王室の鍛冶屋/元手）実装＋敵対レビュー修正 完了（§0-10）。`sw.js` v37。push はユーザー確認待ち**。帝国はまだ CARD_SET 未昇格＝本番挙動は不変（負債カードはサプライに出ない）。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
-**新セッションは まず `npm test` を実行し 31スイート・オールグリーン（exit 0・整合性3134件・冒険44件＋UI40件・暗黒時代70件＋UI57件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
+**新セッションは まず `npm test` を実行し 32スイート・オールグリーン（exit 0・整合性3134件・帝国39件・冒険44件＋UI40件・暗黒時代70件＋UI57件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
+
+---
+
+## 0-10. 段階2＝帝国（Empires）実プレイ化 **着手・Batch E1＝負債経済の基盤 完了**（2026-07-08・WIP・未push）
+
+**帝国段階2に着手**。段階1（画像/カタログ/GAIN_ORDER）は §0-6 で完了済み。設計＝**`docs/research/empires_rules.md`**（公式ルール裏取り＋6機構＋バッチ計画）を必読。新機構6系統＝負債Debt／集合=山上VPトークン／命令overlord・crown／分割山5組／城8混合山／villa。横型ランドスケープ（イベント/ランドマーク）は対象外（縦枠パイプライン未対応）。
+
+### バッチ計画（安全順・`docs/research/empires_rules.md` §2）
+- **E1＝負債経済の基盤＋純負債4枚**（✅完了）／E2＝既存VPトークン＆単独カード（sacrifice/chariot_race/groundskeeper/forum/legionary/enchantress/archive/charm/villa）／E3＝集合（山上VP＝farmers_market/temple/wild_hunt）／E4＝分割山5組（sauna/avanto流用）／E5＝城8（knights混合山流用）／E6＝命令（overlord/crown）／E7＝Phase E＝CARD_SET昇格。
+
+### Batch E1 完了（負債(Debt)経済の基盤＋engineer/city_quarter/royal_blacksmith/capital）
+- **負債スカラー `p.debt`**（公開・VP無関係・ターンを跨いで残る＝freshTurn非対象・maskStateForで公開）。**負債コストのカードを購入/獲得すると `gain()` 末尾でその数だけ負債を負う**（購入も効果獲得も gain() 一元入口を通る）。**負債>0 の間は BUY を拒否**（購入ブロック）。返済＝新 action **`REPAY_DEBT`**（購入フェイズ・$1=負債1個・購入権消費なし・amount未指定で可能な限り）。
+- **カード効果**：engineer（≤$4を1枚獲得[強制]→自己廃棄してもう1枚[強制]。多段pending gain1/maytrash/gain2＋4点セット。玉座2回目は removeOne 失敗で自己廃棄不発＝保存則OK）／city_quarter（+2アクション＋手札のアクション枚数ぶん+カード）／royal_blacksmith（+5カード＋手札の銅貨を全捨て）／capital（財宝 coin:6＋1購入。**cleanupで場から捨てるとき負債6＋残コインで即返済**＝コイン使い切れば負債6残・使わなければ0）。
+- **重要ルール（裏取り済・`docs/research/empires_rules.md`）**：負債は「購入」だけをブロック（獲得は可・終了時減点なし）。**「コストN以下/ちょうどN の獲得」は負債コストのカードを取れない**（負債は追加コスト）＝engineer/messenger の canGain と CPU `bestGain`/`bestGainExact`・UIモーダルに負債除外を追加。
+- **CPU**：decide の購入フェイズで財宝後に debt>0 なら REPAY_DEBT（コイン0なら END_TURN＝非ループ）。chooseAction に city_quarter/royal_blacksmith/engineer。decidePending に engineer 全段。**UI**：負債バッジ（オレンジ）＋返済ボタン＋購入ボタンの負債>0無効化（buyableId/onPileTap 両方）＋viewPendingModal の engineer 3段＋黒市モーダルの負債ガード。`sw.js` v36→**v37**。
+- **多エージェント敵対レビュー（5次元→各自 node で再現検証）＝確定バグ1クラスタ（闇市場×負債）→修正**：
+  - **[MED] 闇市場(BLACK_MARKET_BUY)が負債を完全に無視**＝(1)負債>0でも購入可・(2)`discard.push` 直挿し（gain()非経由）で負債カードを買っても負債が付かない。黒市デッキ母集団は全POOLS（empires含む）＝promo-pack等で到達可。E1で負債カードが実効果を持ったため『働くカードを負債ゼロで不正入手』に。→ BLACK_MARKET_BUY に負債>0拒否＋負債カード購入時の負債付与、CPU黒市ハンドラに負債>0でSKIP＋負債カード除外、UI黒市に負債ガード。
+- **意図的な据え置き（非到達＝ポーション費用と同型）**：workshop/ironworks/armory/feast/altar/remodel等の**汎用「≤$N獲得」reducer の canGain は負債カードを除外していない**（engineer/messengerのみ除外）。**どの出荷 CARD_SET でも負債カードとこれらの汎用gainerは同居しない**（empires固定/random-empiresは empires のみ・mix-allセットは無し）＋**fuzzはCPU駆動で `bestGain` が負債カードを提案しない**ため到達不能。将来 mix-all モードを足すときに共通ヘルパ `costUpTo` へ集約して**ポーション費用問題と一緒に**対応する方針（§6）。
+- **検証**：狙い撃ち/回帰 `test/empires.test.js`（39件・package.json登録＝**32スイート目**）＝負債の購入ブロック/返済/gain付与・capitalのon-discardと即返済・engineerの多段と玉座耐性と負債除外・闇市場×負債の回帰・CPUソーク16戦（膠着/例外/保存則違反0）。`node test/invariants.test.js` 緑（全プール混成fuzzで帝国カードを引いても保存則OK）／**npm test 全32スイート緑（exit 0）**。
+
+### 【次にやること】Batch E2（既存VPトークン＆単独カード）
+- `docs/research/empires_rules.md` §2 の E2＝sacrifice（廃棄→種別別ボーナス・VPも）/chariot_race（コスト比較→VP）/groundskeeper（場にある間 勝利点獲得毎VP）/forum（+3カード-2捨て・on-buy+1購入）/legionary（アタック）/enchantress（持続アタック＝相手の最初のアクションを+1c+1aに置換）/archive（3手番持続・脇3枚→1枚ずつ）/charm（財宝の二択＝獲得コピー）/villa（獲得で手札＋アクションフェイズ復帰）。プレイヤーVPトークン `p.vpTokens` は既存（繁栄）。個別裁定は §3 を着手時に再確認。
 
 ---
 

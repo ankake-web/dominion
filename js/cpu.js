@@ -80,6 +80,7 @@
       if (opts.treasureOnly && !isTreasure(id)) continue;
       if (opts.noVictory && (isType(id, 'victory') || isType(id, 'curse'))) continue;
       if (!C()[id]) continue;
+      if ((C()[id].debt || 0) > 0) continue; // 帝国：負債コストのカードは「コインN以下を獲得」では取れない（負債は追加コスト）
       if (cost(state, id) <= maxCost && sup(state, id) > 0) return id;
     }
     return null;
@@ -93,12 +94,14 @@
       if (splitBlocked(state, id)) continue;
       if (opts.noVictory && (isType(id, 'victory') || isType(id, 'curse'))) continue;
       if (!C()[id]) continue;
+      if ((C()[id].debt || 0) > 0) continue; // 帝国：負債コストのカードは「ちょうどNコスト獲得」でも取れない
       if (cost(state, id) === exact && sup(state, id) > 0) return id;
     }
     for (const id of Object.keys(state.supply)) {
       if (NON_SUPPLY_SET.has(id)) continue;
       if (splitBlocked(state, id)) continue;
       if (opts.noVictory && (isType(id, 'victory') || isType(id, 'curse'))) continue;
+      if (C()[id] && (C()[id].debt || 0) > 0) continue; // 帝国：負債コストのカードは取れない
       if (C()[id] && cost(state, id) === exact && sup(state, id) > 0) return id;
     }
     return null;
@@ -206,6 +209,8 @@
     if (has('sir_bailey')) return 'sir_bailey';           // +1カード+1アクション＋騎士アタック
     if (has('urchin')) return 'urchin';                   // +1カード+1アクション＋手札削り（傭兵化トリガー）
     if (has('rats') && p.hand.some((c) => c !== 'rats' && isDead(c))) return 'rats'; // 圧縮対象があるとき
+    // 帝国：非ターミナル（+アクション付き）
+    if (has('city_quarter')) return 'city_quarter';       // +2アクション＋手札のアクション枚数ぶん+カード
     // 冒険：非ターミナル（+アクション付き）
     if (has('lost_city')) return 'lost_city';             // +2カード+2アクション
     if (has('port')) return 'port';                       // +1カード+2アクション
@@ -406,6 +411,9 @@
     if (has('watchtower') && p.hand.length < 6) return 'watchtower';
     // 秘密の小部屋: 手札に死に札(勝利点/呪い)があればコインに変える
     if (has('secret_chamber') && p.hand.some((c) => isDead(c))) return 'secret_chamber';
+    // 帝国：ターミナル
+    if (has('royal_blacksmith')) return 'royal_blacksmith'; // +5カード（手札の銅貨を捨てる）
+    if (has('engineer')) return 'engineer';                 // コスト4以下を獲得（自己廃棄でもう1枚）
     return null;
   }
 
@@ -1035,8 +1043,10 @@
 
       case 'black_market': {
         if (p.hand.some((c) => isTreasure(c))) return { type: 'BLACK_MARKET_PLAY_TREASURES' };
+        if ((p.debt || 0) > 0) return { type: 'BLACK_MARKET_SKIP' }; // 帝国：負債があると購入不可＝見送る（膠着回避）
         const coins = state.turn.coins;
-        const aff = pd.revealed.filter((id) => cost(state, id) <= coins && !isType(id, 'curse'));
+        // 負債カード（元手/技術者 等）は闇市場で買わない（余計な負債を負わない）。
+        const aff = pd.revealed.filter((id) => cost(state, id) <= coins && !isType(id, 'curse') && !((C()[id] && C()[id].debt) > 0));
         const premium = GAIN_ORDER.slice(0, GAIN_ORDER.indexOf('silver'));
         let pick = null;
         for (const id of premium) { if (aff.includes(id)) { pick = id; break; } }
@@ -1189,6 +1199,14 @@
         return { type: 'MESSENGER_PLAY', discard: false }; // 山札は捨てない（既知の山札上を保持）
       case 'messenger_gain':
         return { type: 'MESSENGER_GAIN', card: bestGain(state, 4) };
+
+      /* ===== 拡張: 帝国（Empires）Batch E1 ===== */
+      case 'engineer': {
+        if (pd.stage === 'gain1' || pd.stage === 'gain2')
+          return { type: 'ENGINEER_GAIN', card: bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) };
+        // maytrash：良い獲得先（$4以下・非勝利点）があれば技術者を廃棄してもう1枚獲得する（ダブル工房）。
+        return { type: 'ENGINEER_TRASH', trash: !!bestGain(state, 4, { noVictory: true }) };
+      }
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
       case 'warehouse':
@@ -1793,6 +1811,12 @@
     }
     // 購入フェーズ（支配中は被支配者の手札の財宝を出し、獲得は支配者が受け取る）
     if (subj.hand.some((c) => isTreasure(c))) return { type: 'PLAY_ALL_TREASURES' };
+    // 帝国：負債があるとカードを購入できない。財宝を出し切った後、コインで可能な限り返済する。
+    //   返済しきれない（コイン0）なら購入不可＝END_TURN（負債は次ターンに持ち越し。財宝を出せば返せる＝非ループ）。
+    if ((subj.debt || 0) > 0) {
+      if ((t.coins || 0) > 0) return { type: 'REPAY_DEBT', amount: Math.min(subj.debt, t.coins) };
+      return { type: 'END_TURN' };
+    }
     const level = (state.players[ctrl] && state.players[ctrl].cpuLevel) || 'normal';
     // ギルド：財源(Coffers)を使うか判断。財宝を出し切ったあと、財源を足すとより良い買いになるなら最小枚数だけ使う。
     const spend = coffersToSpend(state, subj, level);

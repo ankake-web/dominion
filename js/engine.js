@@ -204,6 +204,8 @@
       for (let k = 1; k < state.players.length; k++) q.push((pIndex + k) % state.players.length);
       relicEnterVictim(state, pIndex, q);
     }
+    // 帝国：元手＝+6コイン（coin:6 で計上済み）＋1購入。場から捨てるときの負債6は cleanupAndAdvance で処理。
+    if (card === 'capital') { t.buys += 1; }
     // 海辺：私掠船マーク中なら、このターン最初の銀貨/金貨は出した後に廃棄される（コインは入る）。
     corsairOnPlayTreasure(state, pIndex, card);
     // 冒険：-$1トークンの相殺（購入フェイズでコインが増えたぶんに食い込む）。
@@ -352,6 +354,7 @@
         lastTurnGains: [], // 直前の自分の手番に獲得したカードid（密輸人が右隣のこれを参照）
         vpTokens: 0,       // 繁栄：勝利点トークンの累計（司教・記念碑・収集・投資。公開・終了時に加算）
         coffers: 0,        // ギルド：財源（Coffers）トークン。購入フェイズに1枚=+1コインで使える。公開・VPには数えない。
+        debt: 0,           // 帝国：負債（Debt）トークン。負債があるとカードを購入できない。購入フェイズに$1=1個返済。公開・VPには数えない（ターンを跨いで残る＝freshTurn非対象）。
         princes: [],       // プロモ：王子の脇に置いたカードid列（公開）。毎ターン開始時に脇のままプレイ。1要素=王子1枚が稼働中。
         tavern: [],        // 冒険：酒場マット（Reserve カードと守銭奴の銅貨。公開＝islandMat型。呼び出しで場へ戻す）。
         pileTokens: {},    // 冒険：教師の山トークン（{card|action|buy|coin: 山id}。各山1つまで・公開。その山のカードをプレイ時にボーナス）。
@@ -487,6 +490,16 @@
     }
     const realId = isMixed ? state[cardId][0] : cardId;
     const t = state.turn;
+    // 帝国：負債コスト（debt）を持つカードは、購入でも効果での獲得でも、その数だけ負債トークンを負う。
+    //   gain() は全ての獲得の一元入口なので、ここで付与すれば購入/工房/密輸人/命令 等どの経路でも効く。
+    {
+      const dbt = (C()[realId] && C()[realId].debt) || 0;
+      if (dbt > 0) {
+        const gp = state.players[pIndex];
+        gp.debt = (gp.debt || 0) + dbt;
+        log(state, `${gp.name} は「${C()[realId].name}」で 負債${dbt} を負った。`);
+      }
+    }
     // 錬金術・支配：被支配者（手番のactive）が獲得するカードは脇に避け、ターン終了時に
     // 支配者の捨て札へ渡す（獲得先が手札/山札でも脇に置く＝公式のルーリング）。獲得フックも動かさない。
     if (t && t.possessedBy != null && pIndex === t.active) {
@@ -2103,6 +2116,30 @@
     const t = state.turn;
     const p = state.players[pi];
     switch (cardId) {
+      /* ===== 帝国（Empires）Batch E1：負債（Debt）カード ===== */
+      case 'engineer':
+        // コスト4以下を1枚獲得（強制）。その後これを廃棄してよく、廃棄したらもう1枚コスト4以下を獲得（強制）。
+        if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) <= 4 && !((C()[id] && C()[id].debt) > 0)))
+          state.pending = { type: 'engineer', stage: 'gain1', player: pi };
+        else
+          state.pending = { type: 'engineer', stage: 'maytrash', player: pi }; // 獲得先ゼロでも自己廃棄の選択は出す
+        break;
+      case 'city_quarter':
+        t.actions += 2;
+        { // 手札を公開し、公開したアクション1枚につき +1カード（city_quarter 自身は場に出ているので手札にない）。
+          const acts = p.hand.filter((c) => DOM.isType(c, 'action')).length;
+          if (acts > 0) draw(state, pi, acts);
+          log(state, `${p.name} は市街で手札を公開しアクション${acts}枚 → +${acts}カード。`);
+        }
+        break;
+      case 'royal_blacksmith':
+        draw(state, pi, 5);
+        { // 手札を公開し銅貨をすべて捨てる（強制・引いた後の手札から）。
+          let n = 0;
+          while (removeOne(p.hand, 'copper')) { p.discard.push('copper'); n++; }
+          if (n) log(state, `${p.name} は王室の鍛冶屋で手札を公開し銅貨${n}枚を捨てた。`);
+        }
+        break;
       case 'cellar':
         t.actions += 1;
         // 手札を好きな枚数捨て、同じだけ引く（選択待ち）
@@ -4235,6 +4272,17 @@
       if (DOM.isType(c, 'duration') && (used[c] || 0) < (cnt[c] || 0)) { newDur.push(c); used[c] = (used[c] || 0) + 1; }
       else restInPlay.push(c);
     }
+    // 帝国：元手（capital）＝場から捨てるとき、それ1枚につき負債6を負い、そのターンの残コインで可能な限り即返済。
+    //   （通常はコインを使い切っているので負債6が残り次の購入フェイズに持ち越す。玉座/冠で2回使っても物理1枚＝1回発火。）
+    {
+      const caps = restInPlay.filter((c) => c === 'capital').length;
+      if (caps > 0) {
+        p.debt = (p.debt || 0) + 6 * caps;
+        const r = Math.min(p.debt, state.turn.coins || 0);
+        if (r > 0) { p.debt -= r; state.turn.coins -= r; }
+        log(state, `${p.name} は元手を捨て 負債${6 * caps} を負った${r > 0 ? `（うち${r}を即返済）` : ''}。`);
+      }
+    }
     p.discard.push(...restInPlay, ...p.hand);
     p.durationCards = newDur;
     p.inPlay = [];
@@ -4473,6 +4521,7 @@
       case 'BUY': {
         if (state.pending) return state;
         if (t.phase !== 'buy') return state;
+        if ((me.debt || 0) > 0) return state; // 帝国：負債があるとカードを購入できない（先に REPAY_DEBT で返済する）
         const card = action.card;
         if (!C()[card]) return state; // 未知のカードIDは状態不変で拒否（throwしない）
         const cost = cardCost(state, card); // 「橋」等のコスト軽減を反映
@@ -4505,7 +4554,7 @@
           state.pending = { type: 'farmland', stage: 'trash', player: pi };
         }
         // 冒険：使者＝そのターン最初の購入なら $4以下1枚を獲得し他の各Pもコピーを獲得。
-        if (card === 'messenger' && t.buysMade === 1 && !state.pending && anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) <= 4)) {
+        if (card === 'messenger' && t.buysMade === 1 && !state.pending && anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) <= 4 && !((C()[id] && C()[id].debt) > 0))) {
           state.pending = { type: 'messenger_gain', player: pi };
         }
         // 異郷：高貴な山賊＝購入したときもアタック（プレイ時の+1コインは付かない）。
@@ -5581,12 +5630,18 @@
       case 'BLACK_MARKET_BUY': {
         const pd = state.pending;
         if (!pd || pd.type !== 'black_market' || pd.stage !== 'play') return state;
+        if ((state.players[pd.player].debt || 0) > 0) return state; // 帝国：負債があると闇市場でも購入できない（購入は購入）
         const card = action.card;
         if (pd.revealed.indexOf(card) < 0) return state;
         const cost = cardCost(state, card);
         if (cost > t.coins) return state; // 払えない
         t.coins -= cost; // 闇市場の購入は購入回数を消費しない
         state.players[pd.player].discard.push(card); // サプライ外のカードを獲得（捨て札へ）
+        // 帝国：負債コストのカード（元手/技術者/市街 等）を闇市場で買っても、その負債を負う（闇市場は gain() を通さないため個別に付与）。
+        {
+          const dbt = (C()[card] && C()[card].debt) || 0;
+          if (dbt > 0) { state.players[pd.player].debt = (state.players[pd.player].debt || 0) + dbt; log(state, `${state.players[pd.player].name} は「${C()[card].name}」で 負債${dbt} を負った。`); }
+        }
         log(state, `${state.players[pd.player].name} は闇市場で「${C()[card].name}」を購入した。`);
         applyHoardOnBuy(state, pd.player, card);
         triggerMerchantGuild(state, pd.player); // ギルド：闇市場の購入でも商人ギルドの財源が付く
@@ -7532,6 +7587,50 @@
         log(state, `${me.name} は財源 ${amount}枚 を使った（+${amount}コイン）。`);
         return state;
       }
+      // 帝国：負債（Debt）を返済する。購入フェイズに $1=1個。購入権は消費しない（購入の前でも後でも・交互でも可）。
+      case 'REPAY_DEBT': {
+        if (state.pending) return state;
+        if (t.phase !== 'buy') return state;
+        // amount 未指定なら可能な限り返済（min(負債, コイン)）。
+        const want = (action.amount == null) ? Infinity : (action.amount | 0);
+        const amount = Math.min(me.debt || 0, t.coins || 0, want);
+        if (amount <= 0) return state;
+        me.debt -= amount;
+        t.coins -= amount;
+        log(state, `${me.name} は 負債${amount} を返済した（残り負債 ${me.debt}）。`);
+        return state;
+      }
+      // 帝国：技術者＝コスト4以下を獲得（1枚目=強制／自己廃棄後の2枚目=強制）。
+      case 'ENGINEER_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'engineer' || (pd.stage !== 'gain1' && pd.stage !== 'gain2')) return state;
+        const canGain = (id) => !NON_SUPPLY.has(id) && cardCost(state, id) <= 4 && !((C()[id] && C()[id].debt) > 0);
+        if (pd.stage === 'gain1') {
+          if (!finishGain(state, pd, action.card, canGain, 'discard', '技術者で獲得した。')) return state;
+          // 1枚目の獲得完了 → 自己廃棄の任意選択（maytrash）へ。
+          state.pending = { type: 'engineer', stage: 'maytrash', player: pd.player };
+          return state;
+        }
+        finishGain(state, pd, action.card, canGain, 'discard', '技術者の廃棄でもう1枚獲得した。');
+        return state;
+      }
+      // 帝国：技術者を廃棄してよい（廃棄したらもう1枚コスト4以下を獲得）。
+      case 'ENGINEER_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'engineer' || pd.stage !== 'maytrash') return state;
+        const owner = state.players[pd.player];
+        if (action.trash) {
+          if (removeOne(owner.inPlay, 'engineer')) {
+            trashCard(state, pd.player, 'engineer');
+            log(state, `${owner.name} は技術者を廃棄した。`);
+            const canGain = (id) => !NON_SUPPLY.has(id) && cardCost(state, id) <= 4 && !((C()[id] && C()[id].debt) > 0);
+            if (anyGainable(state, canGain)) { state.pending = { type: 'engineer', stage: 'gain2', player: pd.player }; return state; }
+          }
+          // 場に技術者が無い（玉座2回目で既に廃棄済み等）or 追加獲得の候補ゼロ → 終了。
+        }
+        state.pending = null;
+        return state;
+      }
       // 過払い額を確定する（0でもよい）。カードごとの過払い効果へ分岐。
       case 'OVERPAY_RESOLVE': {
         const pd = state.pending;
@@ -8230,7 +8329,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'messenger_gain') return state;
         const card = action.card;
-        const canGain = (id) => !!C()[id] && !NON_SUPPLY.has(id) && cardCost(state, id) <= 4;
+        const canGain = (id) => !!C()[id] && !NON_SUPPLY.has(id) && cardCost(state, id) <= 4 && !(C()[id].debt > 0); // 帝国：負債コストのカードは「≤$4獲得」で取れない
         if (card == null) { if (anyGainable(state, canGain)) return state; state.pending = null; return state; } // 候補あれば必須
         if (!canGain(card) || (state.supply[card] || 0) <= 0) return state;
         gain(state, pd.player, card, 'discard');
@@ -8583,6 +8682,8 @@
     'CARAVAN_GUARD_REACT', 'LINGER_REACT',
     // 冒険：複雑系（倒壊/工匠/語り部/使者）
     'RAZE_TRASH', 'RAZE_LOOK', 'ARTIFICER_DISCARD', 'ARTIFICER_GAIN', 'STORYTELLER_PLAY', 'MESSENGER_PLAY', 'MESSENGER_GAIN',
+    // 帝国（Empires）Batch E1：負債経済
+    'REPAY_DEBT', 'ENGINEER_GAIN', 'ENGINEER_TRASH',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',

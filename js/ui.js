@@ -700,6 +700,8 @@
   // ギルド：財源(Coffers)を使う王国か（財源を付与するカードが王国にあれば財源バッジ/使用ボタンを出す）。
   const COFFERS_CARDS = ['candlestick_maker', 'plaza', 'baker', 'butcher', 'merchant_guild'];
   function usesCoffers(kingdom) { return (kingdom || []).some((id) => COFFERS_CARDS.includes(id)); }
+  // 帝国：負債(Debt)を使う王国か（負債コストのカード or capital があれば負債バッジ/返済ボタンを出す）。
+  function usesDebt(kingdom) { return (kingdom || []).some((id) => DOM.CARDS[id] && ((DOM.CARDS[id].debt || 0) > 0 || id === 'capital')); }
 
   /* ---------- 初心者モードの支援（案内・おすすめ買い物・カードのやさしい説明） ---------- */
   // 今のコインで買える中から、序盤に強い財宝＆勝ち筋を提案（盤面で黄色枠ハイライト）。
@@ -829,6 +831,10 @@
         // ギルド：財源(Coffers)を使う王国のときだけ COFFERS を表示（金色）。手番プレイヤーの財源を出す。
         usesCoffers(state.kingdom)
           ? h('div', { class: 'badge coffers', style: 'background:#b8860b' }, h('div', { class: 'v' }, active.coffers || 0), h('div', { class: 'k' }, '財源'))
+          : null,
+        // 帝国：負債(Debt)を使う王国 or 負債を持つときだけ 負債 を表示（オレンジ）。負債があると購入不可。
+        (usesDebt(state.kingdom) || (active.debt || 0) > 0)
+          ? h('div', { class: 'badge debt', style: 'background:#d2691e' }, h('div', { class: 'v' }, active.debt || 0), h('div', { class: 'k' }, '負債'))
           : null)
     );
 
@@ -856,6 +862,7 @@
 
     // サプライ（種類ごと）
     const buyableId = (id) => interactive && t.phase === 'buy' && !state.pending &&
+      (state.players[t.active].debt || 0) === 0 && // 帝国：負債があると購入不可
       (state.supply[id] || 0) > 0 && t.buys > 0 && affordable(state, id) && DOM.engine.canBuyCard(state, t.active, id); // コイン・ポーション・繁栄制約＋購入可否（非サプライ/高級市場/分割山下段を弾く）
     // 初心者モード：おすすめ購入の山を黄色枠でハイライト（購入フェーズ・自分の操作中のみ）。
     const recSet = (UI.beginner && interactive && t.phase === 'buy' && !state.pending) ? new Set(recommendedBuys(state)) : new Set();
@@ -1023,7 +1030,7 @@
     const t = state.turn;
     const cost = effCost(state, id);
     const pc = potCost(id); // 錬金術：ポーション費用（あれば）
-    const canBuy = interactive && !state.pending && t.phase === 'buy' && (state.supply[id] || 0) > 0 && t.buys > 0 && affordable(state, id) && DOM.engine.canBuyCard(state, t.active, id);
+    const canBuy = interactive && !state.pending && t.phase === 'buy' && (state.players[t.active].debt || 0) === 0 && (state.supply[id] || 0) > 0 && t.buys > 0 && affordable(state, id) && DOM.engine.canBuyCard(state, t.active, id);
     const label = '購入する（' + cost + 'コイン' + (pc ? '＋ポーション' + (pc > 1 ? pc : '') : '') + '）';
     if (canBuy) showSheet(id, { label, cls: 'btn-primary', on: () => dispatch({ type: 'BUY', card: id }) });
     else showSheet(id, null);
@@ -1066,8 +1073,14 @@
     const cofferBtn = (t.active === viewer && (state.players[viewer].coffers || 0) > 0)
       ? h('button', { class: 'btn btn-block', style: 'background:#b8860b;color:#fff', onclick: () => { UI.coffersOpen = true; UI.amount = null; render(); } }, '💰 財源を使う（' + state.players[viewer].coffers + '）')
       : null;
+    // 帝国：負債(Debt)を持っていれば「返済する」ボタン（購入フェイズ・$1=負債1個。負債0にしないと購入できない）。
+    const debtNow = state.players[viewer].debt || 0;
+    const repayBtn = (t.active === viewer && debtNow > 0 && t.coins > 0)
+      ? h('button', { class: 'btn btn-block', style: 'background:#d2691e;color:#fff', onclick: () => dispatch({ type: 'REPAY_DEBT', amount: Math.min(debtNow, t.coins) }) }, '🟠 負債を返済（' + Math.min(debtNow, t.coins) + '返済／残' + debtNow + '）')
+      : null;
     return h('div', { class: 'actions-bar' },
       h('button', { class: 'btn btn-block', disabled: hasTreasure ? null : 'disabled', onclick: () => dispatch({ type: 'PLAY_ALL_TREASURES' }) }, '財宝を全部出す'),
+      repayBtn,
       cofferBtn,
       stashBtn,
       h('button', { class: 'btn btn-primary btn-block', onclick: () => endTurnTap(state, viewer) }, 'ターンを終える'));
@@ -1154,6 +1167,14 @@
     if (pd.type === 'mining_village') return modalOptions('鉱山の村', '場のこのカードを廃棄すると +2 コインになります。', [
       { label: '廃棄して +2 コイン', cls: 'btn-primary', on: () => dispatch({ type: 'MINING_VILLAGE_RESOLVE', trash: true }) },
       { label: '廃棄しない', on: () => dispatch({ type: 'MINING_VILLAGE_RESOLVE', trash: false }) },
+    ]);
+    // 帝国：技術者＝コスト4以下を獲得（1枚目=強制／自己廃棄後の2枚目=強制）。
+    if (pd.type === 'engineer' && (pd.stage === 'gain1' || pd.stage === 'gain2'))
+      return modalGainSupply(state, '技術者 — 獲得', 'コスト4以下のカードを1枚獲得します。',
+        (id) => effCost(state, id) <= 4 && !(DOM.CARDS[id].debt > 0), (id) => dispatch({ type: 'ENGINEER_GAIN', card: id }));
+    if (pd.type === 'engineer' && pd.stage === 'maytrash') return modalOptions('技術者', 'この技術者を廃棄すると、もう1枚コスト4以下のカードを獲得できます。', [
+      { label: '廃棄してもう1枚獲得', cls: 'btn-primary', on: () => dispatch({ type: 'ENGINEER_TRASH', trash: true }) },
+      { label: '廃棄しない', on: () => dispatch({ type: 'ENGINEER_TRASH', trash: false }) },
     ]);
     if (pd.type === 'nobles') return modalOptions('貴族', '次から1つを選びます。', [
       { label: '+3 カード', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'cards' }) },
@@ -1977,9 +1998,10 @@
   function modalBlackMarket(state, pd, p) {
     const hasTreasure = p.hand.some((c) => DOM.CARDS[c].types.includes('treasure'));
     const coins = state.turn.coins;
+    const inDebt = (p.debt || 0) > 0; // 帝国：負債があると闇市場でも購入不可
     const chips = pd.revealed.length ? pd.revealed.map((id) => {
       const cst = effCost(state, id);
-      const can = cst <= coins;
+      const can = cst <= coins && !inDebt;
       return h('div', { class: 'pick-supply' },
         cardEl(id, { size: 'sm', extra: can ? 'selectable' : 'disabled', onClick: can ? () => openPickZoom(id, '購入する（$' + cst + '）', () => dispatch({ type: 'BLACK_MARKET_BUY', card: id })) : null }),
         h('div', { class: 'pick-remain' }, '$' + cst));
@@ -1987,7 +2009,7 @@
     const footer = h('div', null,
       hasTreasure ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'BLACK_MARKET_PLAY_TREASURES' }) }, '💰 手札の財宝を全て出す') : null,
       h('button', { class: 'btn btn-block', onclick: () => dispatch({ type: 'BLACK_MARKET_SKIP' }) }, '買わずに進む'));
-    return modalShell('闇市場（所持 ' + coins + ' コイン）', '財宝を出してから、公開3枚のうち1枚を購入できます（任意・1枚まで）。', chips, footer);
+    return modalShell('闇市場（所持 ' + coins + ' コイン）', inDebt ? '負債があるため購入できません（買わずに進んでください）。' : '財宝を出してから、公開3枚のうち1枚を購入できます（任意・1枚まで）。', chips, footer);
   }
   // 手札からちょうど n 枚を選んで廃棄
   function modalTrashHand(p, title, desc, n, onConfirm) {
