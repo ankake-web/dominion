@@ -4328,6 +4328,12 @@
   function reduce(state, action) {
     state = clone(state);
     state = applyAction(state, action);
+    // 冒険：語り部＝中断していた財宝プレイ→コイン変換を、玉座/王の宮廷の再演(runReplays)より先に完了させる。
+    //   （順次玉座の意味論＝1回目の語り部が基本+1カード＋コイン変換まで完全に解決してから2回目が始まる。
+    //    ここで解決しないと、割り込み財宝の解決後に runReplays が2回目を先に立て、1回目の基本ドローが失われる。）
+    if (!state.pending && !state.gameOver && state.turn && state.turn.storytellerResume) {
+      storytellerStep(state, state.turn.storytellerResume.player);
+    }
     state = runReplays(state);
     // 開始時キューの安全網：選択待ちが無いのに startQueue に項目が残っていたら次を進める。
     // （王子/船長がターン開始時にアタック等を使うと、そのアタック連鎖の終端は pending=null で
@@ -4345,7 +4351,7 @@
       state.pending = state.onTrashQueue.shift();
       state = runReplays(state);
     }
-    // 冒険：語り部＝財宝プレイが選択待ち（遺物のアタック等）で中断していたら、解決後にここで残り財宝→コイン変換を再開。
+    // 冒険：語り部の中断再開は runReplays より前（上）で処理済み。ここでは onTrashQueue 由来などで再度残っていれば拾う保険。
     if (!state.pending && !state.gameOver && state.turn && state.turn.storytellerResume) {
       storytellerStep(state, state.turn.storytellerResume.player);
       state = runReplays(state);
