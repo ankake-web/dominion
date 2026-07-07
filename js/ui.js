@@ -856,7 +856,7 @@
 
     // サプライ（種類ごと）
     const buyableId = (id) => interactive && t.phase === 'buy' && !state.pending &&
-      (state.supply[id] || 0) > 0 && t.buys > 0 && affordable(state, id); // コイン・ポーション・繁栄制約を満たす
+      (state.supply[id] || 0) > 0 && t.buys > 0 && affordable(state, id) && DOM.engine.canBuyCard(state, t.active, id); // コイン・ポーション・繁栄制約＋購入可否（非サプライ/高級市場/分割山下段を弾く）
     // 初心者モード：おすすめ購入の山を黄色枠でハイライト（購入フェーズ・自分の操作中のみ）。
     const recSet = (UI.beginner && interactive && t.phase === 'buy' && !state.pending) ? new Set(recommendedBuys(state)) : new Set();
     const supSection = (title, ids, size) =>
@@ -1023,7 +1023,7 @@
     const t = state.turn;
     const cost = effCost(state, id);
     const pc = potCost(id); // 錬金術：ポーション費用（あれば）
-    const canBuy = interactive && !state.pending && t.phase === 'buy' && (state.supply[id] || 0) > 0 && t.buys > 0 && affordable(state, id);
+    const canBuy = interactive && !state.pending && t.phase === 'buy' && (state.supply[id] || 0) > 0 && t.buys > 0 && affordable(state, id) && DOM.engine.canBuyCard(state, t.active, id);
     const label = '購入する（' + cost + 'コイン' + (pc ? '＋ポーション' + (pc > 1 ? pc : '') : '') + '）';
     if (canBuy) showSheet(id, { label, cls: 'btn-primary', on: () => dispatch({ type: 'BUY', card: id }) });
     else showSheet(id, null);
