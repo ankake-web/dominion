@@ -1,15 +1,28 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-07 / branch `main`（最新は `git log` で確認）。**暗黒時代 段階2 は完成＆push済＝本番反映（§0-8・`sw.js` v35）**。**その後に未pushの WIP コミットあり＝冒険（Adventures）段階2 に着手中（§0-9・31/38枚＝Batch5=トラベラー全10枚[page/peasant＋成長先8]まで完了＋敵対レビュー修正）**。冒険は CARD_SET 未昇格＝通常プレイに出ない（fuzz でのみ実行され緑）ので main にあっても本番挙動は不変。以後の段階2作業も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
+最終更新: 2026-07-08 / branch `main`（最新は `git log` で確認）。**暗黒時代 段階2 は完成＆push済＝本番反映（§0-8・`sw.js` v35）**。**その後に未pushの WIP コミットあり＝冒険（Adventures）段階2 に着手中（§0-9・34/38枚＝Batch5=トラベラー全10枚＋Batch5c=純持続/アタック3枚[隊商の護衛/呪いの森/沼の妖婆]まで完了＋敵対レビュー修正）**。冒険は CARD_SET 未昇格＝通常プレイに出ない（fuzz でのみ実行され緑）ので main にあっても本番挙動は不変。以後の段階2作業も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
 **新セッションは まず `npm test` を実行し 29スイート・オールグリーン（exit 0・整合性3132件・暗黒時代70件＋UI57件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
 
 ---
 
-## 0-9. 段階2＝冒険（Adventures）実プレイ化 **着手中（31/38枚）**（2026-07-07・WIP・未push）
+## 0-9. 段階2＝冒険（Adventures）実プレイ化 **着手中（34/38枚）**（2026-07-08・WIP・未push）
 
-**次セッションはこの節から続行**。着手前に `docs/adding-cards.md` と本節を必読。**未pushコミット（Batch1a/2/2b/3/4/5a/5b＋レビュー修正）**＝Adventures はまだ CARD_SET 未昇格＝**通常プレイに出ない**（fuzz でのみ実行され緑）。push は全カード完成→CARD_SET昇格→レビュー後に都度確認。
+**次セッションはこの節から続行**。着手前に `docs/adding-cards.md` と本節を必読。**未pushコミット（Batch1a〜5c＋レビュー修正）**＝Adventures はまだ CARD_SET 未昇格＝**通常プレイに出ない**（fuzz でのみ実行され緑）。push は全カード完成→CARD_SET昇格→レビュー後に都度確認。
+
+### Batch5c 完了（2026-07-08・純持続/アタック3枚）＝`b6424f6`＋`edbd8a4`(レビュー修正)
+- **新機構＝「相手の購入をフックする持続」`applyLingerOnBuy`**：各Pの `delayedEffects` に発動元の予約（type＝swamp_hag/haunted_woods, immune[], **一意 rid**）を張り、`BUY`／`BLACK_MARKET_BUY` 末尾で「購入者≠発動元」の有効予約を発火。**無条件発動**（購入した以上フックは必ず効く）。予約は次の自分の手番開始時に `DURATION_RESOLVERS` で消費され窓が閉じる。物理カードは cleanup の持続保持で durationCards に残り予約消費後に捨て札へ。
+- **沼の妖婆swamp_hag**（アタック持続）：即効果なし。次の自分の手番まで他Pの購入毎に呪い1枚（**予約1つにつき1枚**＝玉座で2枚）。次手番+$3。
+- **呪いの森haunted_woods**（アタック持続）：即効果なし。次の自分の手番まで他Pの購入で手札を全て山札の上へ（複数予約でも1回）。次手番+3カード。
+- **隊商の護衛caravan_guard**（持続＋リアクション）：+1カード+1アクション・次手番+$1。他Pのアタック時に手札から先にプレイしてよい（`hasReaction`＋`CARAVAN_GUARD_REACT`＝番犬/馬商人型・免疫にはならない）。**リアクションプレイ時の+1アクションは相手の手番なので加算しない**（相手に手番を与えない＝+1カードのみ効く）。相手の手番にプレイした caravan_guard は反応者の inPlay に残り、反応者の次の手番開始で+$1発火→その後の反応者の cleanup で捨て札へ（保存則OK）。
+- **免疫**：プレイ時に確定＝champion/灯台の受動免疫(`attackImmune`)と堀公開者を予約の immune[] に記録（`markLingerImmune` は**その予約[rid]1つだけ**＝封鎖の gained と同型）。購入フックが immune の購入者を飛ばす。
+- ATTACKS に haunted_woods/swamp_hag（onMoat＝免疫記録＋続行）＋新pending react（`LINGER_REACT`）。DURATION_RESOLVERS 3種。4点セット（CARAVAN_GUARD_REACT/LINGER_REACT＋PLAYER_ACTIONS＋CPU＋UI[reactOptions＋embedded窓3＋react モーダル]）。
+- **多エージェント敵対レビュー（4次元→敵対検証・全件 空試験で再現）＝確定バグ2件（偽陽性0）→修正（`edbd8a4`）**：
+  - **[HIGH] 呪いの森×農地のデッドロック＋素朴ガードの空振り**：購入フックが農地の廃棄pending成立後に手札を空にし FARMLAND_TRASH が解決不能→CPU無限ループ/人間詰み。素朴な `!state.pending` ガードは逆に「過払い/農地/高貴な山賊 購入時にフックを丸ごと免れる」空振りを生む。→ 根治：**FARMLAND_TRASH を手札空で終端**（公式：手札無しなら農地は何も廃棄しない）＋**applyLingerOnBuy を無条件化**＋UI農地に手札空スキップ。呪いの森×農地は農地が空振りするが詰まない（fuzz限定・許容簡略化）。
+  - **[LOW] 玉座/王の宮廷×沼の妖婆/呪いの森の免疫過剰付与**：markLingerImmune が同型の予約を全走査し、後から堀を公開すると『既に受けた予約』まで遡って免疫化＝反応順で結果が0/1に割れた。→ 予約に**一意 rid**を付与し、堀公開はその予約1つだけを免疫に（per-window モデル維持＝受け→受けなら呪い2枚）。
+- **許容簡略化**：champion/teacher/caravan_guard のボーナスは玉座/王の宮廷/門下生の再演では発火しない（PLAY_ACTION のみ）。呪いの森×農地の同時購入時は農地が空振り（fuzz限定＝出荷セットで両者は同居しない）。
+- **検証**：狙い撃ち28/28＋レビュー回帰17/17／invariants に「呪いの森/沼の妖婆/隊商の護衛×玉座/王の宮廷」の敵対王国追加＝全4緑／npm test 全29緑（整合性3132不変）／持続中心ソーク240戦＋混成ソーク180戦（呪いの森/沼の妖婆×農地/名品/watchtower/闇市場）＝完走・deadlock0・例外0・保存則0。
 
 ### Batch5 完了（2026-07-07・トラベラー全10枚）＝`7c790b9`(5a)＋`86ab97c`(5b)＋`7cda556`(レビュー修正)
 - **Batch5a（page/peasant＋成長先7枚）**：
@@ -31,12 +44,16 @@
 - **許容簡略化（意図的・研究で公式挙動を確認済だが未対応）**：**champion の+1アクション／teacher の山トークンのボーナスは、玉座/王の宮廷/門下生の再演では発火しない**（`PLAY_ACTION` のみ・再演は `applyEffect` 経由）。公式は各再演で発火するが、冒険の固定出荷セットに玉座/王の宮廷は入らない見込み＝shipping影響ゼロ・保存則影響なし。
 - **検証**：狙い撃ち 5a=54/54・5b=15/15・レビュー修正 12/12／invariants に「page/peasant×玉座/王の宮廷」「page/peasant×upgrade/remake/forge/swindler」の敵対王国2つ追加＝全4緑／npm test 全29緑（整合性3132不変）／トラベラー中心ソーク 5a=250戦・5b=220戦（完走・stuck0・例外0・保存則0）。
 
-### 【重要】残り＝**7枚**（次セッションの着手順）
-1. **【次はここ】caravan_guard / haunted_woods / swamp_hag の3枚**＝バッチ計画（旧「Batch6=4枚」）に**抜けていた純持続/アタック3枚**（現状は段階1＝効果なしの `default:break`）。**隊商の護衛caravan_guard**（+1c+1a・次ターン+$1・アタック時に手札からプレイできるリアクション＝`caravan_guard` の `hasReaction`＋react窓・堀と同型だが免疫にはならない＝馬商人/番犬型の「攻撃反応窓で先にプレイ」）／**呪いの森haunted_woods**（アタック持続＝次の自分の手番まで他Pの購入時に手札を全て山札の上へ・次ターン+3カード＝swamp_hag/私掠船と同型の「相手の購入をフックする持続」）／**沼の妖婆swamp_hag**（アタック持続＝次の自分の手番まで他Pの購入時に呪い獲得・次ターン+$3）。**相手の購入をフックする持続**は新機構＝`t` に「このターン誰かの購入で発動する予約」を持たせる（各プレイヤーの delayedEffects に窓を張り、BUY reducer 末尾で相手の窓を発火）。設計は §0-9「相手の購入フック」を新設して詰めること。
-2. **Batch6＝複雑4枚**：raze倒壊(廃棄→コスト分の山札上を見て1枚手札)／artificer工匠(捨て枚数=コストちょうどを山札上に獲得)／storyteller語り部(財宝を最大3枚プレイ→全コインで+カード)／messenger使者(最初の購入なら全員が同コピー獲得)。
-3. **Phase E**：`DOM.KINGDOM_ADVENTURES`固定10種＋`DOM.POOLS.adventures`昇格（**成長先8種を `POOLS.travellers` に分離して random-adventures の抽選母集団から外す**＝prizes と同型）＋`DOM.CARD_SETS`に2行＋GAIN_ORDER再配置 → `adventures.test.js`/`adventures-ui.test.js` 新設（package.json登録）→ 多エージェント敵対レビュー→CPUソーク→webp（段階1で生成済み・カタログ変更なし＝`coin:`追加は表示不変で再生成不要）→ **`sw.js` v35→v36**。
-   - **adventures.test.js に必ず入れる回帰テスト**：throne/KC/procession×Reserve の強制保存則／**page/peasant×upgrade/remake/forge で$4がトラベラー成長先のみ→獲得なし終了（デッドロック回帰防止）**／**swindler×page/peasant で成長先が被害者に渡らない**／champion 永続・免疫・アクション毎+1／teacher 山トークンのボーナス／トラベラー交換の全系列。
-4. **その後＝帝国（Empires）段階2**（別の大仕事）：負債Debt経済／集合=VPトークン山／命令(overlord/crown)／分割山5組／城8／villa。
+### 【重要】残り＝**4枚（Batch6）**（次セッションの着手順）
+1. **【次はここ】Batch6＝複雑4枚**（`docs/adding-cards.md` と本節必読）：
+   - **raze倒壊**($2)：+1アクション。これか手札1枚を廃棄→**廃棄したカードのコインコスト分だけ山札の上を見て、1枚を手札に加え残りを捨てる**（見る枚数＝廃棄カードのコスト。0コストなら見ない）。自己廃棄（これ自身）は inPlay から・手札廃棄は hand から。sentry/lookout 型の「山札の上N枚から1枚選ぶ」pending。
+   - **artificer工匠**($5)：+1カード+1アクション+$1。**手札を好きな枚数捨て→捨てた枚数ちょうどのコストのカード1枚を山札の上に獲得してよい**（任意・ちょうど＝`!NON_SUPPLY.has(id)` 必須／`dest:'deck'`）。捨て枚数を選ぶ→獲得の2段pending。
+   - **storyteller語り部**($5)：+1アクション。**手札から最大3枚の財宝をプレイ→その後 所持コイン$1につき+1カード（所持コインを全て使い切る）**。財宝プレイのpending（0〜3枚選択）→coins を draw に変換し coins=0。`playTreasureCard` を使う（コイン計上）。**財宝リアクション（法貨/relic 等）や -$1トークンとの相互作用に注意**。
+   - **messenger使者**($4)：+1購入+$2。自分の山札を捨て札にしてよい。**これがそのターン最初の購入なら、$4以下のカード1枚を獲得し他の各Pもそのコピーを獲得**（on-buy＝BUY reducer 内。「そのターン最初の購入か」は `t.gainedThisTurn`/購入回数で判定＝messenger を**買った**ときの判定。プレイ時の山札捨ては別）。※messenger のプレイ効果（+1購入+$2＋山札捨て）と購入時効果（最初の購入なら配布）は別物＝カード文を正確に。
+   - 各カード 4点セット（engine reducer＋PLAYER_ACTIONS＋CPU decidePending＋UI viewPendingModal）＋新pendingの終端保証。狙い撃ち→invariants緑→npm test全29緑→コミット→敵対レビュー。
+2. **Phase E**：`DOM.KINGDOM_ADVENTURES`固定10種＋`DOM.POOLS.adventures`昇格（**成長先8種を `POOLS.travellers` に分離して random-adventures の抽選母集団から外す**＝prizes と同型）＋`DOM.CARD_SETS`に2行＋GAIN_ORDER再配置 → `adventures.test.js`/`adventures-ui.test.js` 新設（package.json登録）→ 多エージェント敵対レビュー→CPUソーク→webp（段階1で生成済み・カタログ変更なし＝`coin:`追加は表示不変で再生成不要）→ **`sw.js` v35→v36**。
+   - **adventures.test.js に必ず入れる回帰テスト**：throne/KC/procession×Reserve の強制保存則／**page/peasant×upgrade/remake/forge で$4がトラベラー成長先のみ→獲得なし終了（デッドロック回帰防止）**／**swindler×page/peasant で成長先が被害者に渡らない**／champion 永続・免疫・アクション毎+1／teacher 山トークン／トラベラー交換の全系列／**呪いの森×農地で詰まない・沼の妖婆×過払いで呪い発動・免疫が反応順に依らない**。
+3. **その後＝帝国（Empires）段階2**（別の大仕事）：負債Debt経済／集合=VPトークン山／命令(overlord/crown)／分割山5組／城8／villa。
 
 ### Batch3 完了（2026-07-07・トークン基盤＋トークン系4枚）
 - **トークン基盤3種**（すべてスカラー公開情報・`maskStateFor` の `Object.assign` でそのまま残る・JSONセーフ・旧スナップショット後方互換）：
@@ -81,7 +98,8 @@
 1. ~~**Batch3＝トークン基盤＋トークン系カード**~~ ✅ **完了**＝ranger/giant/relic/bridge_troll＋旅/-1カード/-$1トークン。
 2. ~~**Batch4＝酒場マット/Reserve 基盤＋Reserveカード9枚**~~ ✅ **完了**＝守銭奴/遠隔地/鼠取り/案内人/変容/ワイン商/法貨/御料車/複製。
 3. ~~**Batch5＝トラベラー（page/peasant＋成長先8）**~~ ✅ **完了（2026-07-07）**＝上の「Batch5 完了」節が詳細。
-4. **【次はここ】＝残り7枚**＝上の「【重要】残り＝7枚」節を参照（caravan_guard/haunted_woods/swamp_hag の純持続/アタック3枚 → Batch6 複雑4枚 → Phase E → 帝国段階2）。
+4. ~~**Batch5c＝純持続/アタック3枚（隊商の護衛/呪いの森/沼の妖婆）**~~ ✅ **完了（2026-07-08）**＝上の「Batch5c 完了」節が詳細。
+5. **【次はここ】＝Batch6 複雑4枚**（raze/artificer/storyteller/messenger）＝上の「【重要】残り＝4枚（Batch6）」節を参照 → Phase E → 帝国段階2。
 
 ---
 
