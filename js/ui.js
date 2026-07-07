@@ -650,7 +650,8 @@
       (DOM.POOLS && DOM.POOLS.ruins) ? group('廃墟（暗黒時代）', byCost(DOM.POOLS.ruins)) : null,
       (DOM.POOLS && DOM.POOLS.shelters) ? group('避難所（暗黒時代）', byCost(DOM.POOLS.shelters)) : null,
       (DOM.POOLS && DOM.POOLS.darkages_np) ? group('非サプライ（戦利品・狂人・傭兵）', byCost(DOM.POOLS.darkages_np)) : null,
-      (DOM.POOLS && DOM.POOLS.adventures) ? group('王国カード（冒険・画像のみ）', byCost(DOM.POOLS.adventures)) : null,
+      (DOM.POOLS && DOM.POOLS.adventures) ? group('王国カード（冒険）', byCost(DOM.POOLS.adventures)) : null,
+      (DOM.POOLS && DOM.POOLS.travellers) ? group('トラベラー成長先（冒険・非サプライ）', byCost(DOM.POOLS.travellers)) : null,
       (DOM.POOLS && DOM.POOLS.empires) ? group('王国カード（帝国・画像のみ）', byCost(DOM.POOLS.empires)) : null,
       (DOM.POOLS && DOM.POOLS.promo) ? group('プロモカード', byCost(DOM.POOLS.promo)) : null,
       (DOM.POOLS && DOM.POOLS.basic1e) ? group('初版のみ（第二版で廃止）', byCost(
@@ -875,13 +876,22 @@
       ? h('div', { class: 'supply-section' }, h('div', { class: 'sup-title' }, '廃墟の山（獲得専用）'),
           h('div', { class: 'supply-grid small' }, ruinsPileEl(state)))
       : null;
+    // 非サプライの数値キー山（購入不可＝交換/専用獲得のみ）：冒険のトラベラー成長先・収穫祭の賞品・暗黒時代の戦利品/狂人/傭兵。
+    //   王国枠に無く供給されている（state.supply に在る）ものを表示して、残枚数を可視化する。
+    const nonSupplyIds = [].concat((DOM.POOLS && DOM.POOLS.travellers) || [], (DOM.POOLS && DOM.POOLS.prizes) || [], (DOM.POOLS && DOM.POOLS.darkages_np) || [])
+      .filter((id) => state.supply[id] != null);
+    const nonSupplyPile = nonSupplyIds.length
+      ? h('div', { class: 'supply-section' }, h('div', { class: 'sup-title' }, '非サプライ（交換・専用で獲得／購入不可）'),
+          h('div', { class: 'supply-grid small' }, nonSupplyIds.map((id) => pileEl(id, state, { size: 'sm', onClick: () => onPileTap(state, id, interactive) }))))
+      : null;
     const supply = h('div', null,
       // 財宝・勝利点は基本カード。デスクトップでは横並びにして縦スペースを節約。
       h('div', { class: 'supply-basics' },
         supSection('財宝', treasureRow, 'small'),
         supSection('勝利点', victoryRow, 'small')),
       supSection('王国カード（アクション）', kingdomByCost, 'big'),
-      ruinsPile);
+      ruinsPile,
+      nonSupplyPile);
 
     // 場（プレイ済み）＋持続カード（⏳付き・場に残る）＋王子の脇（👑・毎ターン開始時に使用）
     const inPlayChips = active.inPlay.map((id) => h('div', { class: 'chip-card ' + typeClass(id) + coinClass(id) }, DOM.CARDS[id].name));

@@ -789,6 +789,11 @@
   //   命令(はみだし者)・on-trash(城塞/地下墓所/狩場)・避難所(このセットは常に避難所使用) を味わえる構成。
   DOM.KINGDOM_DARKAGES = ['armory', 'band_of_misfits', 'catacombs', 'cultist', 'forager',
                           'fortress', 'knights', 'market_square', 'procession', 'hunting_grounds'];
+  // 冒険 推奨10種（自作＝公式の固定10種は無い）。トラベラー2系統(page→ウォリアー/チャンピオン・peasant→兵士/教師の山トークン)・
+  //   Reserve/酒場マット(案内人)・旅トークン(山守)・持続の3択(魔除け)・持続＋リアクション(隊商の護衛)・
+  //   相手の購入フック持続アタック(呪いの森)・強い村ドロー(失われし都市)・複雑系(工匠)・永続持続(雇人) を味わえる構成。
+  DOM.KINGDOM_ADVENTURES = ['page', 'peasant', 'guide', 'ranger', 'amulet',
+                            'caravan_guard', 'haunted_woods', 'lost_city', 'artificer', 'hireling'];
   // 初版（第二版で廃止されたカードを含む懐かしのセット）
   DOM.KINGDOM_1E = ['cellar', 'chancellor', 'woodcutter', 'feast', 'militia',
                     'spy', 'thief', 'council_room', 'adventurer', 'market'];
@@ -854,8 +859,11 @@
   DOM.POOLS.ruins = ['abandoned_mine', 'ruined_library', 'ruined_market', 'ruined_village', 'survivors'];       // 廃墟（特殊供給）
   DOM.POOLS.shelters = ['hovel', 'necropolis', 'overgrown_estate']; // 避難所（開始デッキ置換）
   DOM.POOLS.darkages_np = ['spoils', 'madman', 'mercenary']; // 戦利品/狂人/傭兵（非サプライ）
-  // 冒険（Adventures）＝段階1（画像・カタログのみ・CARD_SETS 未参照）。王国30＋トラベラー成長先8（非サプライ）。
-  DOM.POOLS.adventures = ['coin_of_the_realm', 'page', 'peasant', 'ratcatcher', 'raze', 'amulet', 'caravan_guard', 'dungeon', 'gear', 'guide', 'duplicate', 'magpie', 'messenger', 'miser', 'port', 'ranger', 'transmogrify', 'artificer', 'bridge_troll', 'distant_lands', 'giant', 'haunted_woods', 'lost_city', 'relic', 'royal_carriage', 'storyteller', 'swamp_hag', 'treasure_trove', 'wine_merchant', 'hireling', 'treasure_hunter', 'warrior', 'hero', 'champion', 'soldier', 'fugitive', 'disciple', 'teacher'];
+  // 冒険（Adventures）＝王国30種（抽選母集団。「冒険セット」固定10種と「冒険から」ランダムが参照。page/peasant はサプライ）。
+  DOM.POOLS.adventures = ['coin_of_the_realm', 'page', 'peasant', 'ratcatcher', 'raze', 'amulet', 'caravan_guard', 'dungeon', 'gear', 'guide', 'duplicate', 'magpie', 'messenger', 'miser', 'port', 'ranger', 'transmogrify', 'artificer', 'bridge_troll', 'distant_lands', 'giant', 'haunted_woods', 'lost_city', 'relic', 'royal_carriage', 'storyteller', 'swamp_hag', 'treasure_trove', 'wine_merchant', 'hireling'];
+  // 冒険：トラベラーの成長先8種＝非サプライ（page/peasant の交換でのみ得る・各5枚）。賞品(prizes)と同型で
+  //   ランダム抽選の母集団には入れない（POOLS.adventures から分離）。整合性テストの「全カードがどれかのプールに属す」は満たす。
+  DOM.POOLS.travellers = ['treasure_hunter', 'warrior', 'hero', 'champion', 'soldier', 'fugitive', 'disciple', 'teacher'];
   // 帝国（Empires）＝段階1。非分割18＋分割両面10＋城8。
   DOM.POOLS.empires = ['engineer', 'city_quarter', 'overlord', 'royal_blacksmith', 'farmers_market', 'chariot_race', 'enchantress', 'sacrifice', 'temple', 'villa', 'archive', 'capital', 'charm', 'forum', 'groundskeeper', 'legionary', 'wild_hunt', 'crown', 'encampment', 'plunder', 'patrician', 'emporium', 'settlers', 'bustling_village', 'catapult', 'rocks', 'gladiator', 'fortune', 'humble_castle', 'crumbling_castle', 'small_castle', 'haunted_castle', 'opulent_castle', 'sprawling_castle', 'grand_castle', 'kings_castle'];
   // 画面で選べるセット（id はサーバ検証・保存にも使う）。
@@ -877,6 +885,7 @@
     // 暗黒時代セット（固定10種＝Grim Parade）。このセットのみ避難所を使用（createInitialState が
     //   王国内容の一致で自動判定＝opts不要。random-darkages は避難所OFF）。
     { id: 'darkages',        kind: 'standard', name: '暗黒時代セット', kingdom: DOM.KINGDOM_DARKAGES },
+    { id: 'adventures',      kind: 'standard', name: '冒険セット', kingdom: DOM.KINGDOM_ADVENTURES },
     // ---- おすすめ（テーマ別・固定10種）----
     { id: 'big-money',       kind: 'recommend', name: 'ビッグマネー', desc: 'お金を伸ばして属州を狙う王道',
       kingdom: ['chapel', 'moneylender', 'harbinger', 'throne_room', 'bureaucrat', 'poacher', 'market', 'mine', 'laboratory', 'sentry'] },
@@ -911,6 +920,7 @@
     { id: 'random-guilds',   kind: 'random', name: 'ギルドから',     randomFrom: ['guilds'] },
     { id: 'random-hinterlands', kind: 'random', name: '異郷から',    randomFrom: ['hinterlands'] },
     { id: 'random-darkages', kind: 'random', name: '暗黒時代から',   randomFrom: ['darkages'] },
+    { id: 'random-adventures', kind: 'random', name: '冒険から',     randomFrom: ['adventures'] },
     { id: 'random-intrigue', kind: 'random', name: '陰謀のみから',   randomFrom: ['intrigue'] },
     { id: 'random-basic',    kind: 'random', name: '基本のみから',   randomFrom: ['basic'] },
     { id: 'random-promo',    kind: 'random', name: 'プロモ込みから',  randomFrom: ['basic', 'intrigue', 'promo'] },
