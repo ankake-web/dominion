@@ -1,15 +1,42 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-07 / branch `main`（最新は `git log` で確認）。**暗黒時代 段階2 は完成＆push済＝本番反映（§0-8・`sw.js` v35）**。**その後に未pushの WIP コミットあり＝冒険（Adventures）段階2 に着手中（§0-9・21/38枚＝Batch4=酒場マット/Reserve全9枚まで完了）**。冒険は CARD_SET 未昇格＝通常プレイに出ない（fuzz でのみ実行され緑）ので main にあっても本番挙動は不変。以後の段階2作業も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
+最終更新: 2026-07-07 / branch `main`（最新は `git log` で確認）。**暗黒時代 段階2 は完成＆push済＝本番反映（§0-8・`sw.js` v35）**。**その後に未pushの WIP コミットあり＝冒険（Adventures）段階2 に着手中（§0-9・31/38枚＝Batch5=トラベラー全10枚[page/peasant＋成長先8]まで完了＋敵対レビュー修正）**。冒険は CARD_SET 未昇格＝通常プレイに出ない（fuzz でのみ実行され緑）ので main にあっても本番挙動は不変。以後の段階2作業も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
 **新セッションは まず `npm test` を実行し 29スイート・オールグリーン（exit 0・整合性3132件・暗黒時代70件＋UI57件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
 
 ---
 
-## 0-9. 段階2＝冒険（Adventures）実プレイ化 **着手中（12/38枚）**（2026-07-07・WIP・未push）
+## 0-9. 段階2＝冒険（Adventures）実プレイ化 **着手中（31/38枚）**（2026-07-07・WIP・未push）
 
-**次セッションはこの節から続行**。着手前に `docs/adding-cards.md` と本節を必読。**未pushコミット（Batch1a/2/2b/3）**＝Adventures はまだ CARD_SET 未昇格＝**通常プレイに出ない**（fuzz でのみ実行され緑）。push は全カード完成→CARD_SET昇格→レビュー後に都度確認。
+**次セッションはこの節から続行**。着手前に `docs/adding-cards.md` と本節を必読。**未pushコミット（Batch1a/2/2b/3/4/5a/5b＋レビュー修正）**＝Adventures はまだ CARD_SET 未昇格＝**通常プレイに出ない**（fuzz でのみ実行され緑）。push は全カード完成→CARD_SET昇格→レビュー後に都度確認。
+
+### Batch5 完了（2026-07-07・トラベラー全10枚）＝`7c790b9`(5a)＋`86ab97c`(5b)＋`7cda556`(レビュー修正)
+- **Batch5a（page/peasant＋成長先7枚）**：
+  - **非サプライ山**：成長先8種（treasure_hunter/warrior/hero/champion/soldier/fugitive/disciple/teacher）を `NON_SUPPLY`／cpu `NON_SUPPLY_SET` に追加。`initSupply` が page あれば treasure_hunter/warrior/hero/champion を各5枚、peasant あれば soldier/fugitive/disciple/teacher を各5枚 supply に追加（**page/peasant のみサプライ・購入可**）。
+  - **トラベラー交換窓**：`endBuyTail` を `endBuyTailSchemeOrCleanup` に分割し、その手前に `traveller_exchange` pending を挟む。交換＝場のトラベラーを supply へ返し次の成長先を supply から取り**捨て札へ**（`TRAVELLER_NEXT` 系列。**獲得でも廃棄でもない**＝on-gain/on-trash不発・treasure_hunter に数えない・次の山が空なら不可）。`TRAVELLER_EXCHANGE_RESOLVE`。
+  - **champion＝永続持続**（hireling/prince型＝`p.champions` を cleanup の `cnt.champion` に加算し durationCards に残す）＋`attackImmune` に champion 条件追加＋`PLAY_ACTION` で**アクション使用毎に+1アクション**（自身のプレイは除外）。
+  - **カード効果7枚**：page(+1c+1a)／peasant(+1購入+$1)／treasure_hunter(+1a+$1・右隣[pi-1]の直前手番の獲得数だけ銀貨・多重度カウント)／warrior(+2c・場のトラベラー数[自身含む]だけ各相手の山札上を捨て**ちょうど$3/$4[非ポーション]なら廃棄**・アタック)／hero(+$2・財宝1枚を強制獲得)／soldier(+$2・場の他アタック[inPlay+durationCards・自身除く]毎+$1・**手札4枚以上の各相手が1枚捨て**・アタック)／fugitive(+2c+1a・1枚捨て)／disciple(手札のアクション1枚を2度使い＋そのコピーを獲得・**非サプライ札はコピー獲得せず**)。
+  - **新pending7種＋4点セット**：warrior/soldier react・soldier/fugitive discard・hero_gain・disciple_play・traveller_exchange。CPU decidePending 全分岐（交換は常に実施＝終端保証）＋UI viewPendingModal 全分岐。
+- **Batch5b（teacher＝Reserve＋山トークン）**：
+  - teacher プレイ→酒場マットへ。`TAVERN_START_CALLS` に teacher 追加＋呼び出し窓の開閉を `anyTavernStartCallable` に集約（teacher は置き先がある時のみ開く）。
+  - **山トークン新機構 `p.pileTokens = {card|action|buy|coin: 山id}`**（各種別1つ・各山1つまで・**公開情報＝非カードで保存則に無関係**・maskStateFor の Object.assign で残る）。呼び出し＝`teacher_call`（stage token→pile）でトークン1つを「自分のトークンが無いアクションのサプライ山」へ移動。**`validTeacherPiles(state,pi)`＝置き先候補**（非サプライ/騎士/分割山下段除外・**山が空でも可**＝公式）＝engine/CPU/UI で共有（公開API）。
+  - **ボーナス `applyPileTokens`**：その山のカードをプレイしたとき、**効果解決より前に** +1カード/アクション/購入/コイン（`PLAY_ACTION` 内）。UI：サプライ山に教師トークンのバッジ（`pileTokenBadge`＋`.pile-tokens` CSS）。
+- **公式ルール研究（wiki/RGG裏取り）で事前修正2点**：disciple のコピー獲得は非サプライ札を除外／warrior の廃棄は非ポーション$3/$4のみ。
+- **多エージェント敵対レビュー（6次元→敵対検証・全件 空試験で再現）＝確定バグ4件（偽陽性0）→全修正（`7cda556`）**：
+  - **[HIGH] exact-cost 強制獲得のCPUデッドロック**＝upgrade/remake/governor_remodel/forge が anyGainable/canGain で NON_SUPPLY を除外せず、ちょうど$Nの受け皿が成長先(warrior/fugitive=$4等)しか無いと CPU の bestGainExact が card:null を返し続け pending が閉じない無限ループ（$4は基本カードに受け皿が無く確実に嵌る）＋人間の不正獲得。両側述語に `!NON_SUPPLY.has(id)` 追加（farmland と同型）。
+  - **[MED] 詐欺師(swindler) の贈与**＝pickSwindlerGift＋swindlerTrash の anyGainable＋SWINDLER_GAIN の canGain が NON_SUPPLY 未除外で同コストの成長先(champion/teacher等)を被害者に贈与できた（**賞品Prizes にも波及する潜在バグ**）。3箇所そろえて除外。
+  - **[LOW] soldier の「+$1/他アタック」が durationCards を無視**＝inPlay＋durationCards の両方から数える。
+  - **[LOW] validTeacherPiles が空アクション山を不当に除外**＝公式は空の山にも置ける。残枚数条件を外す。
+- **許容簡略化（意図的・研究で公式挙動を確認済だが未対応）**：**champion の+1アクション／teacher の山トークンのボーナスは、玉座/王の宮廷/門下生の再演では発火しない**（`PLAY_ACTION` のみ・再演は `applyEffect` 経由）。公式は各再演で発火するが、冒険の固定出荷セットに玉座/王の宮廷は入らない見込み＝shipping影響ゼロ・保存則影響なし。
+- **検証**：狙い撃ち 5a=54/54・5b=15/15・レビュー修正 12/12／invariants に「page/peasant×玉座/王の宮廷」「page/peasant×upgrade/remake/forge/swindler」の敵対王国2つ追加＝全4緑／npm test 全29緑（整合性3132不変）／トラベラー中心ソーク 5a=250戦・5b=220戦（完走・stuck0・例外0・保存則0）。
+
+### 【重要】残り＝**7枚**（次セッションの着手順）
+1. **【次はここ】caravan_guard / haunted_woods / swamp_hag の3枚**＝バッチ計画（旧「Batch6=4枚」）に**抜けていた純持続/アタック3枚**（現状は段階1＝効果なしの `default:break`）。**隊商の護衛caravan_guard**（+1c+1a・次ターン+$1・アタック時に手札からプレイできるリアクション＝`caravan_guard` の `hasReaction`＋react窓・堀と同型だが免疫にはならない＝馬商人/番犬型の「攻撃反応窓で先にプレイ」）／**呪いの森haunted_woods**（アタック持続＝次の自分の手番まで他Pの購入時に手札を全て山札の上へ・次ターン+3カード＝swamp_hag/私掠船と同型の「相手の購入をフックする持続」）／**沼の妖婆swamp_hag**（アタック持続＝次の自分の手番まで他Pの購入時に呪い獲得・次ターン+$3）。**相手の購入をフックする持続**は新機構＝`t` に「このターン誰かの購入で発動する予約」を持たせる（各プレイヤーの delayedEffects に窓を張り、BUY reducer 末尾で相手の窓を発火）。設計は §0-9「相手の購入フック」を新設して詰めること。
+2. **Batch6＝複雑4枚**：raze倒壊(廃棄→コスト分の山札上を見て1枚手札)／artificer工匠(捨て枚数=コストちょうどを山札上に獲得)／storyteller語り部(財宝を最大3枚プレイ→全コインで+カード)／messenger使者(最初の購入なら全員が同コピー獲得)。
+3. **Phase E**：`DOM.KINGDOM_ADVENTURES`固定10種＋`DOM.POOLS.adventures`昇格（**成長先8種を `POOLS.travellers` に分離して random-adventures の抽選母集団から外す**＝prizes と同型）＋`DOM.CARD_SETS`に2行＋GAIN_ORDER再配置 → `adventures.test.js`/`adventures-ui.test.js` 新設（package.json登録）→ 多エージェント敵対レビュー→CPUソーク→webp（段階1で生成済み・カタログ変更なし＝`coin:`追加は表示不変で再生成不要）→ **`sw.js` v35→v36**。
+   - **adventures.test.js に必ず入れる回帰テスト**：throne/KC/procession×Reserve の強制保存則／**page/peasant×upgrade/remake/forge で$4がトラベラー成長先のみ→獲得なし終了（デッドロック回帰防止）**／**swindler×page/peasant で成長先が被害者に渡らない**／champion 永続・免疫・アクション毎+1／teacher 山トークンのボーナス／トラベラー交換の全系列。
+4. **その後＝帝国（Empires）段階2**（別の大仕事）：負債Debt経済／集合=VPトークン山／命令(overlord/crown)／分割山5組／城8／villa。
 
 ### Batch3 完了（2026-07-07・トークン基盤＋トークン系4枚）
 - **トークン基盤3種**（すべてスカラー公開情報・`maskStateFor` の `Object.assign` でそのまま残る・JSONセーフ・旧スナップショット後方互換）：
@@ -50,13 +77,11 @@
 - **-$1/-1カード/旅トークンは Batch3 で実装済**（実装詳細は上の「Batch3 完了」節）。-$1は coins を負にできない＝`applyCoinPenalty`（`t.coinPenalty` を「最初に得る$1」に食い込ませる。素朴な「buy開始時に coins-1」は財宝ぶんに効かず空振り＝**採用しないこと**）。-1カードは `draw()` 冒頭フック（cleanup先引き限定ではない）。旅=`p.journeyDown`（false=表向き・山守/巨人が共有・flip-then-check）。
 - **財宝の実プレイ化には `coin:` が要る**（段階1カタログには無い）。`treasureCoins`=`C()[id].coin`。表示テキスト不変＝**webp再生成不要**。relic に `coin:2` 追加済（掘出物と同型）。
 
-### 残り（次セッションの着手順）
-1. ~~**Batch3＝トークン基盤＋トークン系カード**~~ ✅ **完了（2026-07-07）**＝ranger/giant/relic/bridge_troll＋旅/-1カード/-$1トークン。詳細は上の「Batch3 完了」節。
-2. ~~**Batch4＝酒場マット/Reserve 基盤＋Reserveカード9枚**~~ ✅ **完了（2026-07-07）**＝守銭奴/遠隔地/鼠取り/案内人/変容/ワイン商/法貨/御料車/複製。詳細は上の「Batch4 完了」節。
-3. **【次はここ】Batch5＝トラベラー**：page/peasant（サプライ）＋成長先8種（非サプライ山＝各5枚。`NON_SUPPLY`＋cpu `NON_SUPPLY_SET` に8id追加／initSupply で page・peasant があれば各成長先5枚を supply 数値キーで追加／canBuyCard 不可／emptyPileCount 除外）。「場から捨てる時に交換してよい」＝END_TURN/cleanup前のタイミング。champion（永続持続＝hireling/prince同型・アタック免疫＋アクション毎+1アクション）/teacher（Reserve＝酒場マット・アクション山にトークン）/disciple/hero 等の効果。**teacher は Reserve＝Batch4の酒場マット機構を流用**。
-4. **Batch6＝複雑**：raze倒壊(廃棄→コスト分の山札上を見て1枚手札)／artificer工匠(捨て枚数=コストちょうどを山札上に獲得)／storyteller語り部(財宝を最大3枚プレイ→全コインで+カード)／messenger使者(最初の購入なら全員が同コピー獲得)。
-5. **Phase E**：`DOM.KINGDOM_ADVENTURES`固定10種＋`DOM.POOLS.adventures`昇格＋`DOM.CARD_SETS`に2行＋GAIN_ORDER再配置 → `adventures.test.js`/`adventures-ui.test.js` 新設（package.json登録）→ 多エージェント敵対レビュー→CPUソーク→webp（段階1で生成済み・カタログ変更が無ければ再生成不要／`coin:`追加は表示不変）→ `sw.js` v35→v36。
-6. **その後＝帝国（Empires）段階2**（別の大仕事）：負債Debt経済／集合=VPトークン山（農民の市場/神殿/野生の狩り）／命令(overlord/crown)／分割山5組（サウナ/アヴァント機構流用）／城8（騎士の混合山流用・勝利点）／villa(手札に獲得しアクションフェイズに戻る)。
+### バッチ進捗（着手順・完了状況）
+1. ~~**Batch3＝トークン基盤＋トークン系カード**~~ ✅ **完了**＝ranger/giant/relic/bridge_troll＋旅/-1カード/-$1トークン。
+2. ~~**Batch4＝酒場マット/Reserve 基盤＋Reserveカード9枚**~~ ✅ **完了**＝守銭奴/遠隔地/鼠取り/案内人/変容/ワイン商/法貨/御料車/複製。
+3. ~~**Batch5＝トラベラー（page/peasant＋成長先8）**~~ ✅ **完了（2026-07-07）**＝上の「Batch5 完了」節が詳細。
+4. **【次はここ】＝残り7枚**＝上の「【重要】残り＝7枚」節を参照（caravan_guard/haunted_woods/swamp_hag の純持続/アタック3枚 → Batch6 複雑4枚 → Phase E → 帝国段階2）。
 
 ---
 
