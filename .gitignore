@@ -9,3 +9,5 @@ asset/260313_assets/
 images/
 asset/art/
 asset/cards/*.png
+# 使い捨ての一時スクリプト（狙い撃ちテスト・ソーク・レビューエージェントの検証用）は追跡しない
+_*.tmp.js
