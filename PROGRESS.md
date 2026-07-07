@@ -1,6 +1,6 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-07 / branch `main`（最新は `git log` で確認）。**暗黒時代 段階2 は完成＆push済＝本番反映（§0-8・`sw.js` v35）**。**その後に未pushの WIP コミットあり＝冒険（Adventures）段階2 に着手中（§0-9・12/38枚＝Batch3=トークン系まで完了）**。冒険は CARD_SET 未昇格＝通常プレイに出ない（fuzz でのみ実行され緑）ので main にあっても本番挙動は不変。以後の段階2作業も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
+最終更新: 2026-07-07 / branch `main`（最新は `git log` で確認）。**暗黒時代 段階2 は完成＆push済＝本番反映（§0-8・`sw.js` v35）**。**その後に未pushの WIP コミットあり＝冒険（Adventures）段階2 に着手中（§0-9・21/38枚＝Batch4=酒場マット/Reserve全9枚まで完了）**。冒険は CARD_SET 未昇格＝通常プレイに出ない（fuzz でのみ実行され緑）ので main にあっても本番挙動は不変。以後の段階2作業も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
 **新セッションは まず `npm test` を実行し 29スイート・オールグリーン（exit 0・整合性3132件・暗黒時代70件＋UI57件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
@@ -27,6 +27,15 @@
 - **敵対レビュー（多エージェント5次元→敵対検証）＝確定バグ1件（偽陽性0）→修正済**：**-$1トークン×財源**＝財宝を出さず財源(Coffers)だけで賄うターンで `COFFERS_SPEND` が `applyCoinPenalty` を呼ばず、トークンが空振り（保存則は保つが ruling#3 逸脱・全プールfuzzで到達可）→ COFFERS_SPEND に `applyCoinPenalty(state)` を追加＋回帰テスト。
 - **許容簡略化**：-1カードトークンの「相手ターン中のリアクションドロー（隊商の護衛等）で先に消化される」厳密タイミングは未対応（隊商の護衛は未実装・研究でも relic への反応ドローはトークン付与前に解決＝影響なしと確認）。書庫の `p.deck.shift()` 直接ドローは draw() を通らないので -1カードが効かない（書庫は冒険外・稀）。
 
+### Batch4 完了（2026-07-07・酒場マット/Reserve 全9枚）＝`34aa8c4`(4a)＋`98e483b`(4b)＋レビュー修正
+- **酒場マット `p.tavern[]` ゾーン基盤**（公開＝islandMat型）：player初期化・`allCards`（VP/庭園/公爵に数える）・**invariants の ZONES に `'tavern'` 追加**・maskStateFor は Object.assign で公開のまま。cleanupAndAdvance はマットに触れない（呼び出しまで残る）。`putOnTavern()`＝Reserve をプレイ直後に場→マットへ移す共通入口（**island/祝宴と同じ自己移動ガード必須**＝下記バグ参照）。
+- **Batch4a（6枚・自己完結トリガー）**：守銭奴miser(手札の銅貨をマットへ／マットの銅貨1枚+$1・非Reserve)／遠隔地distant_lands(マット上で4VP＝`vpOf`専用clause・固定vpは持たせない)／鼠取りratcatcher・案内人guide・変容transmogrify(ターン開始コール＝`resolveDurationStartEffects`で`tavern_start`をstartQueueへ→`TAVERN_START_CALL`で1枚ずつ→効果→`offerTavernStart`で再オファー)／ワイン商wine_merchant(購入フェイズ終了コール＝END_TURNの後処理を`endBuyTail()`に抽出しその前に窓を挟む)。
+- **Batch4b（3枚・外部トリガー）**：法貨coin_of_the_realm(財宝・`coin:1`)／御料車royal_carriage(アクション再演＝`state.replay`にlabel:'royal_carriage')＝**アクション解決直後フック**（PLAY_ACTIONで`t.afterActionCard`を記録→reduce()末尾ネットが`after_action`窓→`AFTER_ACTION_CALL`が保持したまま再オファー・辞退/候補ゼロ/END_ACTION_PHASEでクリア）。複製duplicate＝**獲得時フック**（triggerOnGainの対話ゲート末尾・$6以下・自手番・トップレベル→`DUPLICATE_CALL`はpending保持でコピーgain＝入れ子オファー抑止→別の複製で再オファー）。
+- **新pending8種**（miser/tavern_start/ratcatcher_trash/transmogrify_trash/transmogrify_gain/wine_merchant/after_action/duplicate）＝すべて engine reducer＋PLAYER_ACTIONS＋CPU decidePending＋UI viewPendingModal＋終端保証（呼び出しでReserveが場へ移り消費＝有限）。
+- **敵対レビュー（多エージェント6次元→敵対検証）＝確定バグ1件[HIGH]（偽陽性0・空試験で再現確認）→修正済**：**`putOnTavern` が `removeOne(inPlay)` の成否を無視して push**＝玉座/王の宮廷/行進でReserveを複製プレイすると2回目の`applyEffect`で「場に無いのにマットへ push」→**マットに幻のカードが増殖（保存則違反）**。→ island/祝宴/宝の地図と同じ `if(removeOne(p.inPlay,cardId)){...push...}` ガードに修正。行進×Reserve は「マットへ移動＝lose track で廃棄不発・格上げは獲得」で公式どおり。invariants に玉座/王の宮廷/行進×Reserve の敵対王国を追加（CPU駆動＝ベストエフォート）。**Phase E の adventures.test.js で throne/KC/procession×Reserve の強制保存則テストを必ず入れること**（CPUが必ずしもReserveを玉座対象に選ばないため）。
+- **許容簡略化（意図的）**：(1)1獲得につき on-gain 対話は1つだけ（複製の窓は他の on-gain 対話が立たない獲得でのみ）(2)複製のコピー gain は「コピー自身の on-gain 対話」を抑止（pending保持のため。border_village等をコピーしても格下げ獲得の対話は出ない・自動on-gainは発火）(3)アクション解決直後の窓は**トップレベルの PLAY_ACTION のみ**（呼び出したReserveや玉座サブプレイでは開かない）。いずれも保存則OK・非ループ。
+- **検証**：狙い撃ち 4a=40/40・4b=34/34・回帰(玉座/KC/行進×Reserve)=17/17／invariants全プール混成fuzz緑／npm test 全29緑（整合性3132不変）／酒場マット中心ソーク 4a=135戦・4b=135戦・全機構混成200戦（膠着0/保存則0/例外0/tavern異常0）。
+
 ### この着手順の理由（重要）
 - **冒険/帝国は fuzz（invariants.test.js §B「全プール混成」）が引く**＝1枚実装した瞬間から「完全な4点セット（engine reducer＋PLAYER_ACTIONS＋CPU decidePending＋UI viewPendingModal）＋新pendingの終端保証＋新ゾーンの保存則tally配線」が必須。段階1の無効果カードのうち一部だけ効果化すると fuzz が壊れる。
 - そこで**新ゾーン不要・既存機構だけで足せるカードから**着手中（安全順）：単純→純粋な持続→（次）トークン→（次）酒場マット/Reserve→（次）トラベラー→複雑。
@@ -43,8 +52,8 @@
 
 ### 残り（次セッションの着手順）
 1. ~~**Batch3＝トークン基盤＋トークン系カード**~~ ✅ **完了（2026-07-07）**＝ranger/giant/relic/bridge_troll＋旅/-1カード/-$1トークン。詳細は上の「Batch3 完了」節。
-2. **【次はここ】Batch4＝酒場マット/Reserve 基盤＋Reserveカード9枚**：新ゾーン `p.tavern[]`（公開＝islandMat型・allCards/tally/mask に配線／**invariants の ZONES へ 'tavern' 追加が必須**）＋汎用 CALL 機構（呼び出しタイミングがカード別＝coin_of_the_realm=アクションをプレイした時／guide・ratcatcher・transmogrify=手番開始時／duplicate=$6以下獲得時／royal_carriage=アクションのプレイ完了時／wine_merchant=購入フェイズ終了時／distant_lands=呼ばない＝VP専用）。**miser守銭奴**は酒場マットに銅貨を貯める別処理。royal_carriage は命令（再演）。
-3. **Batch5＝トラベラー**：page/peasant（サプライ）＋成長先8種（非サプライ山＝各5枚。`NON_SUPPLY`＋cpu `NON_SUPPLY_SET` に8id追加／initSupply で page・peasant があれば各成長先5枚を supply 数値キーで追加／canBuyCard 不可／emptyPileCount 除外）。「場から捨てる時に交換してよい」＝END_TURN/cleanup前のタイミング。champion/teacher/disciple/hero 等の効果。
+2. ~~**Batch4＝酒場マット/Reserve 基盤＋Reserveカード9枚**~~ ✅ **完了（2026-07-07）**＝守銭奴/遠隔地/鼠取り/案内人/変容/ワイン商/法貨/御料車/複製。詳細は上の「Batch4 完了」節。
+3. **【次はここ】Batch5＝トラベラー**：page/peasant（サプライ）＋成長先8種（非サプライ山＝各5枚。`NON_SUPPLY`＋cpu `NON_SUPPLY_SET` に8id追加／initSupply で page・peasant があれば各成長先5枚を supply 数値キーで追加／canBuyCard 不可／emptyPileCount 除外）。「場から捨てる時に交換してよい」＝END_TURN/cleanup前のタイミング。champion（永続持続＝hireling/prince同型・アタック免疫＋アクション毎+1アクション）/teacher（Reserve＝酒場マット・アクション山にトークン）/disciple/hero 等の効果。**teacher は Reserve＝Batch4の酒場マット機構を流用**。
 4. **Batch6＝複雑**：raze倒壊(廃棄→コスト分の山札上を見て1枚手札)／artificer工匠(捨て枚数=コストちょうどを山札上に獲得)／storyteller語り部(財宝を最大3枚プレイ→全コインで+カード)／messenger使者(最初の購入なら全員が同コピー獲得)。
 5. **Phase E**：`DOM.KINGDOM_ADVENTURES`固定10種＋`DOM.POOLS.adventures`昇格＋`DOM.CARD_SETS`に2行＋GAIN_ORDER再配置 → `adventures.test.js`/`adventures-ui.test.js` 新設（package.json登録）→ 多エージェント敵対レビュー→CPUソーク→webp（段階1で生成済み・カタログ変更が無ければ再生成不要／`coin:`追加は表示不変）→ `sw.js` v35→v36。
 6. **その後＝帝国（Empires）段階2**（別の大仕事）：負債Debt経済／集合=VPトークン山（農民の市場/神殿/野生の狩り）／命令(overlord/crown)／分割山5組（サウナ/アヴァント機構流用）／城8（騎士の混合山流用・勝利点）／villa(手札に獲得しアクションフェイズに戻る)。
@@ -315,7 +324,7 @@
 - **海辺の簡略化2点は本格実装済み**：封鎖の堀免疫窓・海賊の財宝獲得リアクション。on-gain対話は `!pending && _gainDepth===1` ゲートで安全側。
 
 ## 5. 未完了タスク（優先順。次セッションは 1. から）
-1. **【最優先・進行中】冒険（Adventures）段階2 の続き（§0-9）**＝現在 12/38枚（Batch3=トークン系まで完了）。**次は Batch4（酒場マット/Reserve 基盤＋Reserveカード9枚）**。着手順・設計事実・落とし穴はすべて **§0-9** に記載（必読）。着手前に `docs/adding-cards.md` も参照。
+1. **【最優先・進行中】冒険（Adventures）段階2 の続き（§0-9）**＝現在 21/38枚（Batch4=酒場マット/Reserve全9枚まで完了）。**次は Batch5（トラベラー＝page/peasant＋成長先8種）**。着手順・設計事実・落とし穴はすべて **§0-9** に記載（必読）。着手前に `docs/adding-cards.md` も参照。
    - **✅段階2 完了済み拡張**：収穫祭(§0-2)／ギルド(§0-4)／異郷(§0-5)／新プロモ(§0-7)／**暗黒時代 全56枚(§0-8)**。基本・陰謀・海辺・錬金術・繁栄と合わせ、**縦型カードの実プレイ化は暗黒時代まで完了**。冒険が完了したら帝国へ。
 2. **段階2の残り＝発売順の未着手拡張**（着手前に `docs/adding-cards.md` を必読。特殊機構は §C）:
    - **冒険(Adventures)＝着手中(§0-9)。その後 帝国(Empires)**＝段階1（画像・カタログ）は済み(§0-6)。帝国の新機構＝負債(Debt)コスト経済・分割山・城の混合山・命令(overlord/crown)・勝利点トークン・集合(Gathering)。横型ランドスケープ（イベント/ランドマーク）は縦枠パイプライン未対応で段階1すら未着手。

@@ -1032,11 +1032,14 @@
   }
   /* ========== 冒険：酒場マット（Reserve）＝呼び出し機構 ========== */
   // Reserve カードをプレイした直後、これを場（inPlay）から酒場マットへ置く。
+  //   玉座/王の宮廷/行進で複製プレイされると applyEffect が複数回走る＝2回目以降は場にもう無い。
+  //   島/祝宴/宝の地図と同じ「自己移動ガード」で、場から取り除けたときだけマットへ置く（＝マットには1枚だけ）。
   function putOnTavern(state, pi, cardId) {
     const p = state.players[pi];
-    removeOne(p.inPlay, cardId);
-    (p.tavern = p.tavern || []).push(cardId);
-    log(state, `${p.name} は「${C()[cardId].name}」を酒場マットに置いた。`);
+    if (removeOne(p.inPlay, cardId)) {
+      (p.tavern = p.tavern || []).push(cardId);
+      log(state, `${p.name} は「${C()[cardId].name}」を酒場マットに置いた。`);
+    }
   }
   // ターン開始時に呼び出せる Reserve（案内人/鼠取り/変容）。
   const TAVERN_START_CALLS = ['guide', 'ratcatcher', 'transmogrify'];

@@ -79,6 +79,7 @@ const ADVERSARIAL = [
   ['black_market', 'investment', 'anvil', 'charlatan', 'crystal_ball', 'tiara', 'throne_room', 'witch', 'village', 'market'], // 闇市場＋「使ったとき」pending財宝＝保存則の要注意ケース
   ['throne_room', 'university', 'apprentice', 'golem', 'familiar', 'scrying_pool', 'transmute', 'herbalist', 'apothecary', 'vineyard'],
   ['throne_room', 'kings_court', 'treasure_map', 'feast', 'mining_village', 'wharf', 'market', 'remodel', 'mine', 'chapel'], // 玉座/王の宮廷×宝の地図/祝宴/鉱山の村（自己廃棄カードの複製＝保存則の要注意ケース）
+  ['throne_room', 'kings_court', 'procession', 'ratcatcher', 'guide', 'transmogrify', 'royal_carriage', 'distant_lands', 'wine_merchant', 'duplicate'], // 冒険：玉座/王の宮廷/行進×Reserve（酒場マットへ移す自己移動＝マット複製の要注意ケース）
 ];
 {
   let allOk = true;
