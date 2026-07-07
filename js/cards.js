@@ -656,7 +656,7 @@
     royal_carriage: { id: 'royal_carriage', name: '御料車', cost: 5, types: ['action', 'reserve'],
                  text: '+1 アクション\nこれを酒場マットに置く。\nアクションのプレイを終えた時、それがまだ場にあれば、これを呼び出してそのアクションを再度プレイしてよい。' },
     storyteller: { id: 'storyteller', name: '語り部', cost: 5, types: ['action'],
-                 text: '+1 アクション\n手札から最大3枚の財宝をプレイする。\nその後、所持コイン$1につき +1 カード（所持コインは全て使い切る）。' },
+                 text: '+1 アクション\n手札から最大3枚の財宝をプレイする。\nその後、+1 カード。さらに所持コイン$1につき +1 カード（所持コインは全て使い切る）。' },
     swamp_hag: { id: 'swamp_hag', name: '沼の妖婆', cost: 5, types: ['action', 'attack', 'duration'],
                  text: '次の自分のターンまで、他のプレイヤーがカードを購入した時、呪い1枚を獲得する。\n次のターン開始時：+$3。' },
     treasure_trove: { id: 'treasure_trove', name: '掘出物', cost: 5, types: ['treasure'], coin: 2,

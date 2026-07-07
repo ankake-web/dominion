@@ -1353,6 +1353,16 @@
       const piles = DOM.engine.validTeacherPiles(state, pd.player);
       return modalGainSupply(state, '教師 — トークンを置く山', '+1' + TL[pd.token] + 'トークンを置くアクション山を選びます（その山のカードをプレイするたびに +1' + TL[pd.token] + '）。', (id) => piles.includes(id), (id) => dispatch({ type: 'TEACHER_PILE', card: id }), null, false, '置く');
     }
+    // 冒険：複雑系（倒壊/工匠/語り部/使者）
+    if (pd.type === 'raze' && pd.stage === 'trash') return modalSingleHand(p, '倒壊 — 廃棄', 'これか手札1枚を廃棄します。廃棄したカードのコイン分だけ山札の上を見て1枚を手札に加えます。', () => true, (card) => dispatch({ type: 'RAZE_TRASH', card }), p.inPlay.includes('raze') ? { label: '倒壊自身を廃棄する（$2＝山札の上2枚を見る）', on: () => dispatch({ type: 'RAZE_TRASH', card: 'raze' }) } : null, '廃棄する');
+    if (pd.type === 'raze' && pd.stage === 'look') return modalPickList(state, '倒壊 — 手札に加える', '見たカードから1枚を手札に加えます（残りは捨て札）。', pd.cards, '手札に加える', (card) => dispatch({ type: 'RAZE_LOOK', card }));
+    if (pd.type === 'artificer' && pd.stage === 'discard') return modalMultiHand(p, '工匠 — 捨てる', '好きな枚数を捨て、捨てた枚数ちょうどのコストのカードを1枚 山札の上に獲得できます（0枚でもOK）。', (n) => '確定（' + n + '枚捨て）', true, (cards) => dispatch({ type: 'ARTIFICER_DISCARD', cards }));
+    if (pd.type === 'artificer' && pd.stage === 'gain') return modalGainSupply(state, '工匠 — 山札の上に獲得', 'ちょうどコスト $' + pd.exact + ' のカードを1枚、山札の上に獲得できます（しなくてもよい）。', (id) => effCost(state, id) === pd.exact, (id) => dispatch({ type: 'ARTIFICER_GAIN', card: id }), () => dispatch({ type: 'ARTIFICER_GAIN', card: null }), true);
+    if (pd.type === 'storyteller') return modalMultiHand(p, '語り部 — 財宝をプレイ', '手札から最大3枚の財宝を選んでプレイします。その後、+1カード＋所持コイン$1につき+1カード（コインは全て使い切ります）。', (n) => '確定（' + n + '枚プレイ）', true, (cards) => dispatch({ type: 'STORYTELLER_PLAY', cards }), 3, (id) => DOM.isType(id, 'treasure'));
+    if (pd.type === 'messenger_play') return modalOptions('使者 — 山札を捨てる？', '自分の山札を捨て札にできます（任意）。', [
+      { label: '山札を捨て札にする', on: () => dispatch({ type: 'MESSENGER_PLAY', discard: true }) },
+      { label: '捨てない', cls: 'btn-primary', on: () => dispatch({ type: 'MESSENGER_PLAY', discard: false }) }]);
+    if (pd.type === 'messenger_gain') return modalGainSupply(state, '使者 — 獲得（全員に配布）', 'コスト$4以下のカードを1枚獲得します。他の各プレイヤーもそのコピーを獲得します。', (id) => effCost(state, id) <= 4, (id) => dispatch({ type: 'MESSENGER_GAIN', card: id }));
     if (pd.type === 'cutpurse' && pd.stage === 'react') return modalOptions('巾着切りを受ける', '銅貨1枚を捨てます（無ければ手札を公開）。', reactOptions(p, pd, { type: 'CUTPURSE_REACT' }));
     if (pd.type === 'sea_witch' && pd.stage === 'react') return modalOptions('海の魔女を受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'SEA_WITCH_REACT' }));
     if (pd.type === 'sea_witch_discard') return modalSelectN(p, '海の魔女 — 手札を捨てる', '手札を2枚選んで捨てます。', Math.min(2, p.hand.length), '確定（捨てる）', (cards) => dispatch({ type: 'SEA_WITCH_DISCARD', cards }));
@@ -1810,8 +1820,8 @@
     return modalShell(title, desc, chips, footer);
   }
 
-  function modalMultiHand(p, title, desc, confirmLabel, allowZero, onConfirm, maxN) {
-    const chips = p.hand.map((id, idx) =>
+  function modalMultiHand(p, title, desc, confirmLabel, allowZero, onConfirm, maxN, filter) {
+    const chips = p.hand.map((id, idx) => ({ id, idx })).filter((x) => !filter || filter(x.id)).map(({ id, idx }) =>
       cardEl(id, {
         size: 'sm',
         extra: UI.selection.includes(idx) ? 'selected' : 'selectable',

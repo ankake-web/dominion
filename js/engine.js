@@ -295,7 +295,7 @@
     extra = extra || {};
     return {
       active, phase: 'action', actions: 1, buys: 1, coins: 0, potions: 0, costReduction: 0,
-      actionsPlayed: 0, copperBonus: 0, merchants: 0, silverPlayed: false,
+      actionsPlayed: 0, copperBonus: 0, merchants: 0, silverPlayed: false, buysMade: 0,
       coinPenalty: 0, // 冒険：-$1トークンの未消化ぶん（購入フェイズで最初に得る$1に食い込む。毎ターンリセット）
       afterActionCard: null, // 冒険：直前にプレイし解決したアクション（法貨/御料車の呼び出し窓の対象）
 
@@ -1498,6 +1498,24 @@
         log(state, `${bp.name} は購入で手札 ${hand.length}枚 を山札の上に置いた（呪いの森）。`);
       }
     }
+  }
+  // 冒険：語り部＝選んだ財宝を順にプレイし（pending を立てる財宝＝遺物/法貨等は中断→解決後に reduce 末尾が再開）、
+  //   全て出し終えたら所持コインを全てカードに変換する（+1カード/$1・コインを0に）。t.storytellerResume.queue が残財宝。
+  function storytellerStep(state, pi) {
+    const t = state.turn;
+    const r = t && t.storytellerResume;
+    if (!r || r.player !== pi) return;
+    while (r.queue.length) {
+      const c = r.queue.shift();
+      if (state.players[pi].hand.indexOf(c) < 0) continue; // 保険：既に手札に無い
+      playTreasureCard(state, pi, c);
+      if (state.pending) return; // 財宝が選択待ちを立てた＝中断（reduce 末尾の安全網が解決後に再開）
+    }
+    // 全て出し終えた → +1カード（2022エラッタの基本ドロー）＋所持コインを全てカードに変換（コインを使い切る）。
+    const coins = t.coins || 0;
+    t.storytellerResume = null;
+    draw(state, pi, 1 + coins); t.coins = 0;
+    log(state, `${state.players[pi].name} は語り部で +${1 + coins}カード（基本+1＋所持コイン$${coins}）。`);
   }
   function blockadeEnterVictim(state, source, queue, gained) {
     queue = (queue || []).slice();
@@ -3527,6 +3545,29 @@
         lingerAttackEnter(state, pi, 'swamp_hag', q, rid);
         break;
       }
+      /* ========== 冒険：複雑系（倒壊/工匠/語り部/使者） ========== */
+      // 倒壊raze：+1アクション。これか手札1枚を廃棄→廃棄カードのコイン分だけ山札の上を見て1枚を手札・残りを捨てる。
+      //   廃棄対象が無い（玉座2回目で raze が場に無く手札も空）ときは何もしない＝pending を立てない。
+      case 'raze':
+        t.actions += 1;
+        if (p.inPlay.includes('raze') || p.hand.length > 0) state.pending = { type: 'raze', stage: 'trash', player: pi };
+        break;
+      // 工匠artificer：+1カード +1アクション +$1。手札を好きな枚数捨て→捨てた枚数ちょうどのコストのカード1枚を山札の上に獲得してよい。
+      case 'artificer':
+        draw(state, pi, 1); t.actions += 1; t.coins += 1;
+        state.pending = { type: 'artificer', stage: 'discard', player: pi };
+        break;
+      // 語り部storyteller：+1アクション。手札から最大3枚の財宝をプレイ→その後 所持コイン$1につき+1カード（コインを全て使い切る）。
+      case 'storyteller':
+        t.actions += 1;
+        if (p.hand.some((c) => DOM.isType(c, 'treasure'))) state.pending = { type: 'storyteller', player: pi };
+        else { t.storytellerResume = { player: pi, queue: [] }; storytellerStep(state, pi); } // 財宝が無ければ即コイン→カード
+        break;
+      // 使者messenger：+1購入 +$2。自分の山札を捨て札にしてよい（購入時の配布は BUY 側）。
+      case 'messenger':
+        t.buys += 1; t.coins += 2;
+        if (p.deck.length > 0) state.pending = { type: 'messenger_play', player: pi };
+        break;
       // 山守：+1購入。旅トークンを裏返す（表向きから始まる）。その後、表向きなら +5カード。
       //   ＝先に裏返してから判定するので、初回プレイは裏になり+5なし、2回目は表になり+5（以後交互）。
       case 'ranger':
@@ -4304,6 +4345,11 @@
       state.pending = state.onTrashQueue.shift();
       state = runReplays(state);
     }
+    // 冒険：語り部＝財宝プレイが選択待ち（遺物のアタック等）で中断していたら、解決後にここで残り財宝→コイン変換を再開。
+    if (!state.pending && !state.gameOver && state.turn && state.turn.storytellerResume) {
+      storytellerStep(state, state.turn.storytellerResume.player);
+      state = runReplays(state);
+    }
     // 冒険：アクションを解決した直後の呼び出し窓（法貨＝+2アクション／御料車＝再演）。
     //   afterActionCard が立っていて呼べる Reserve が酒場マットにあれば after_action pending を開く。
     //   呼び出しは afterActionCard を保持したまま（再演/複数コール対応）、辞退か候補ゼロで消す。
@@ -4433,6 +4479,7 @@
         t.coins -= cost;
         t.potions = (t.potions || 0) - pot;
         t.buys -= 1;
+        t.buysMade = (t.buysMade || 0) + 1; // 冒険：使者の「そのターン最初の購入か」判定用（購入回数）
         gain(state, pi, card, 'discard');
         log(state, `${me.name} は「${C()[card].name}」を購入した。`);
         // 繁栄：造幣所を購入したとき、場の財宝をすべて廃棄する。
@@ -4450,6 +4497,10 @@
         // 異郷：農地＝購入したとき、手札1枚を廃棄し、ちょうど$2高いカード1枚を獲得。
         if (card === 'farmland' && me.hand.length > 0 && !state.pending) {
           state.pending = { type: 'farmland', stage: 'trash', player: pi };
+        }
+        // 冒険：使者＝そのターン最初の購入なら $4以下1枚を獲得し他の各Pもコピーを獲得。
+        if (card === 'messenger' && t.buysMade === 1 && !state.pending && anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) <= 4)) {
+          state.pending = { type: 'messenger_gain', player: pi };
         }
         // 異郷：高貴な山賊＝購入したときもアタック（プレイ時の+1コインは付かない）。
         if (card === 'noble_brigand' && !state.pending) nobleBrigandAttack(state, pi);
@@ -8077,6 +8128,116 @@
         lingerAttackEnter(state, pd.source, pd.type, pd.queue, pd.rid);
         return state;
       }
+      /* ========== 冒険：複雑系の選択解決 ========== */
+      // 倒壊：これ（場）か手札1枚を廃棄→そのコイン分だけ山札の上を見る。
+      case 'RAZE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'raze' || pd.stage !== 'trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        let trashed = null;
+        if (card === 'raze') { if (!removeOne(p.inPlay, 'raze')) return state; trashCard(state, pd.player, 'raze'); trashed = 'raze'; }
+        else { if (p.hand.indexOf(card) < 0) return state; removeOne(p.hand, card); trashCard(state, pd.player, card); trashed = card; }
+        const n = cardCost(state, trashed);
+        log(state, `${p.name} は「${C()[trashed].name}」を廃棄した（倒壊：山札の上${n}枚を見る）。`);
+        const look = [];
+        for (let i = 0; i < n; i++) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
+          if (p.deck.length === 0) break;
+          look.push(p.deck.shift());
+        }
+        if (look.length) state.pending = { type: 'raze', stage: 'look', player: pd.player, cards: look };
+        else state.pending = null; // 見る札が無い（コスト0廃棄/山札空）
+        return state;
+      }
+      // 倒壊：見た札から1枚を手札に加え、残りを捨てる。
+      case 'RAZE_LOOK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'raze' || pd.stage !== 'look') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (pd.cards.indexOf(card) < 0) return state;
+        const rest = pd.cards.slice(); removeOne(rest, card);
+        p.hand.push(card);
+        rest.forEach((c) => p.discard.push(c));
+        log(state, `${p.name} は倒壊で「${C()[card].name}」を手札に加え、残り${rest.length}枚を捨てた。`);
+        state.pending = null;
+        return state;
+      }
+      // 工匠：手札を好きな枚数捨て→捨てた枚数ちょうどのコストのカード1枚を山札の上に獲得してよい。
+      case 'ARTIFICER_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'artificer' || pd.stage !== 'discard') return state;
+        const p = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        const copy = p.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state; // 全て手札にあること
+        cards.forEach((c) => { removeOne(p.hand, c); p.discard.push(c); });
+        const n = cards.length;
+        if (n) log(state, `${p.name} は工匠で ${n}枚 捨てた。`);
+        // ちょうど n コストのカードを山札の上に獲得してよい（非サプライは除外）。
+        if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) === n))
+          state.pending = { type: 'artificer', stage: 'gain', player: pd.player, exact: n };
+        else state.pending = null;
+        return state;
+      }
+      case 'ARTIFICER_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'artificer' || pd.stage !== 'gain') return state;
+        const card = action.card;
+        if (card == null) { state.pending = null; return state; } // 獲得しない（任意）
+        if (!C()[card] || NON_SUPPLY.has(card) || cardCost(state, card) !== pd.exact || (state.supply[card] || 0) <= 0) return state;
+        gain(state, pd.player, card, 'deck'); // 山札の上に獲得
+        log(state, `${state.players[pd.player].name} は工匠で「${C()[card].name}」を山札の上に獲得した。`);
+        state.pending = null;
+        return state;
+      }
+      // 語り部：手札から最大3枚の財宝を選んでプレイ→所持コインを全てカードに変換。
+      case 'STORYTELLER_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'storyteller') return state;
+        const p = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length > 3) return state;
+        const copy = p.hand.slice();
+        for (const c of cards) { if (!DOM.isType(c, 'treasure') || !removeOne(copy, c)) return state; } // 全て手札の財宝・最大3枚
+        state.pending = null;
+        t.storytellerResume = { player: pd.player, queue: cards.slice() };
+        storytellerStep(state, pd.player);
+        return state;
+      }
+      // 使者：山札を捨て札にしてよい（プレイ効果）。
+      case 'MESSENGER_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'messenger_play') return state;
+        const p = state.players[pd.player];
+        if (action.discard && p.deck.length) {
+          const n = p.deck.length;
+          p.discard.push(...p.deck); p.deck = [];
+          log(state, `${p.name} は使者で山札 ${n}枚 を捨て札にした。`);
+        }
+        state.pending = null;
+        return state;
+      }
+      // 使者：そのターン最初の購入だったとき、$4以下1枚を獲得し他の各Pもコピーを獲得（購入時＝BUY から）。
+      case 'MESSENGER_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'messenger_gain') return state;
+        const card = action.card;
+        const canGain = (id) => !!C()[id] && !NON_SUPPLY.has(id) && cardCost(state, id) <= 4;
+        if (card == null) { if (anyGainable(state, canGain)) return state; state.pending = null; return state; } // 候補あれば必須
+        if (!canGain(card) || (state.supply[card] || 0) <= 0) return state;
+        gain(state, pd.player, card, 'discard');
+        log(state, `${state.players[pd.player].name} は使者で「${C()[card].name}」を獲得した。`);
+        // 他の各Pが手番順にコピーを獲得（在庫がある限り）。pending 保持中なので入れ子の獲得時対話は抑止。
+        const n = state.players.length;
+        for (let k = 1; k < n; k++) {
+          const o = (pd.player + k) % n;
+          if ((state.supply[card] || 0) > 0 && gain(state, o, card, 'discard')) log(state, `${state.players[o].name} は使者で「${C()[card].name}」のコピーを獲得した。`);
+        }
+        state.pending = null;
+        return state;
+      }
       case 'BEGGAR_REACT': {
         // 暗黒時代：他プレイヤーがアタックを使ったとき、手札の物乞いを捨てて銀貨2枚を獲得（1枚は山札の上・免疫にはならない）。
         const pd = state.pending;
@@ -8414,6 +8575,8 @@
     'TEACHER_TOKEN', 'TEACHER_PILE',
     // 冒険：純持続/アタック（隊商の護衛リアクション／呪いの森・沼の妖婆）
     'CARAVAN_GUARD_REACT', 'LINGER_REACT',
+    // 冒険：複雑系（倒壊/工匠/語り部/使者）
+    'RAZE_TRASH', 'RAZE_LOOK', 'ARTIFICER_DISCARD', 'ARTIFICER_GAIN', 'STORYTELLER_PLAY', 'MESSENGER_PLAY', 'MESSENGER_GAIN',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',

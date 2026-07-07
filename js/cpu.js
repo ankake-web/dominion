@@ -211,6 +211,9 @@
     if (has('port')) return 'port';                       // +1カード+2アクション
     if (has('magpie')) return 'magpie';                   // +1カード+1アクション（山札の上を公開）
     if (has('caravan_guard')) return 'caravan_guard';     // +1カード+1アクション（次手番+$1・持続・リアクション）
+    if (has('artificer')) return 'artificer';             // +1カード+1アクション+$1（捨て→格上げ山札上獲得）
+    if (has('raze') && (p.hand.some((c) => isDead(c)) || true)) return 'raze'; // +1アクション（これ/手札を廃棄→山札上を掘る）
+    if (has('storyteller') && t.coins === 0) return 'storyteller'; // +1アクション（coins0のときだけ＝MONEYでコインを消費しない安全キャントリップ）
     if (has('dungeon')) return 'dungeon';                 // +1アクション（+2カード→2枚捨て・持続）
     if (has('ratcatcher')) return 'ratcatcher';           // +1カード+1アクション（酒場マット・開始時に廃棄）
     if (has('guide')) return 'guide';                     // +1カード+1アクション（酒場マット・開始時に引き直し）
@@ -244,6 +247,7 @@
     if (has('treasure_map') && p.hand.filter((c) => c === 'treasure_map').length >= 2) return 'treasure_map'; // 2枚揃いで金貨4枚
     if (has('tactician')) { const hc = p.hand.reduce((s, c) => s + (isTreasure(c) ? (C()[c].coin || 0) : 0), 0); if (hc <= 3 && p.hand.length > 1) return 'tactician'; }
     // 冒険：ターミナル
+    if (has('messenger')) return 'messenger';             // +1購入+$2（最初の購入なら配布・山札捨て任意）
     if (has('swamp_hag')) return 'swamp_hag';             // 持続アタック（相手の購入毎に呪い→次手番+$3）
     if (has('haunted_woods')) return 'haunted_woods';     // 持続アタック（相手の購入で手札を山札上へ→次手番+3カード）
     if (has('bridge_troll')) return 'bridge_troll';       // アタック＋全カード-$1＋今と次+1購入（持続）
@@ -1156,6 +1160,35 @@
       case 'traveller_exchange':
         // 成長先は常により強い（→ヒーロー/チャンピオン/教師）＝常に交換して系列を進める。
         return { type: 'TRAVELLER_EXCHANGE_RESOLVE', exchange: true };
+      // 冒険：複雑系
+      case 'raze': {
+        if (pd.stage === 'trash') {
+          if (p.inPlay.includes('raze')) return { type: 'RAZE_TRASH', card: 'raze' }; // 自身を廃棄（thin＋2枚掘る）
+          return { type: 'RAZE_TRASH', card: p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0] }; // 玉座2回目等＝手札の最junk
+        }
+        // look：最も残す価値の高い1枚を手札へ
+        return { type: 'RAZE_LOOK', card: pd.cards.slice().sort((a, b) => keepValue(b) - keepValue(a))[0] };
+      }
+      case 'artificer': {
+        if (pd.stage === 'discard') {
+          // 不要札（呪い/銅貨/屋敷/廃墟）を捨てて、その枚数ちょうどのカードを山札上に獲得（枚数が良い獲得先になるとき）。
+          const junk = p.hand.filter((c) => isDead(c));
+          // 捨て枚数=nで良い獲得先($2以上の非勝利点)があるnを探す（最大 junk 枚数まで）。無ければ0枚捨て。
+          let best = 0;
+          for (let x = junk.length; x >= 1; x--) { if (x >= 2 && bestGainExact(state, x, { noVictory: true })) { best = x; break; } }
+          return { type: 'ARTIFICER_DISCARD', cards: junk.slice(0, best) };
+        }
+        // gain：ちょうど pd.exact の最良（$2以上のみ・$0/$1は獲得しない）
+        const g = pd.exact >= 2 ? (bestGainExact(state, pd.exact, { noVictory: true }) || bestGainExact(state, pd.exact)) : null;
+        return { type: 'ARTIFICER_GAIN', card: g };
+      }
+      case 'storyteller':
+        // MONEY方針：財宝をカードに変えるとコインを失う＝0枚プレイ（基本+1カードのみ引く安全策）。
+        return { type: 'STORYTELLER_PLAY', cards: [] };
+      case 'messenger_play':
+        return { type: 'MESSENGER_PLAY', discard: false }; // 山札は捨てない（既知の山札上を保持）
+      case 'messenger_gain':
+        return { type: 'MESSENGER_GAIN', card: bestGain(state, 4) };
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
       case 'warehouse':
