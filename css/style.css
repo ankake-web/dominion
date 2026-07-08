@@ -640,6 +640,21 @@ html.modal-open, html.modal-open body { overflow: hidden; }
   border-radius: 8px;
   border: 1px solid rgba(190, 150, 255, 0.7);
 }
+/* 帝国：集合（Gathering）＝サプライ山上の勝利点トークン（全員共有・公開）。山の右上に金色で表示。 */
+.pile-vp {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  z-index: 2;
+  background: rgba(120, 90, 20, 0.92);
+  color: #ffe9a8;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 210, 110, 0.8);
+}
 /* 残りが少なくなったら残数の色で警告（残5以下=琥珀、残2以下=赤） */
 .pile-count.mid { color: #ffd36b; border-color: rgba(255, 200, 90, 0.7); }
 .pile-count.lo {

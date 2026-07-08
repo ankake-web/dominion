@@ -420,6 +420,7 @@
       baneCard, // 収穫祭：若き魔女の災いカード（無ければ null）
       trash: [],
       blackMarket, // 闇市場デッキ（無ければ null）
+      pileVP: {}, // 帝国：集合（Gathering）＝サプライ山の上に置かれた勝利点トークン数 {[pileId]:個数}（公開・非カード＝保存則に無関係）。
       turn: freshTurn(startActive),
       pending: null, // 選択待ち {type, player, ...}
       logSeq: 1, // ログの通し番号（効果音などが「新しい行」を確実に検知するため）
@@ -2228,6 +2229,34 @@
         }
         break;
       }
+
+      /* ===== 帝国（Empires）Batch E3：集合（Gathering）＝サプライ山上のVPトークン ===== */
+      // 神殿：+1勝利点（本人）→ 手札から名前の異なる1〜3枚を廃棄（強制・手札があれば最低1枚）→ 神殿の山に勝利点1個。
+      //   （獲得時: 神殿の山上の勝利点をすべて得る＝triggerOnGain）。
+      case 'temple':
+        p.vpTokens = (p.vpTokens || 0) + 1;
+        log(state, `${p.name} は神殿で +1勝利点。`);
+        if (p.hand.length > 0) state.pending = { type: 'temple_trash', player: pi };
+        else { state.pileVP.temple = (state.pileVP.temple || 0) + 1; log(state, `${p.name} は神殿の山に勝利点トークン1個を置いた（計${state.pileVP.temple}個）。`); }
+        break;
+      // 農家の市場：+1購入。山のVPが4個以上なら全部得てこれを廃棄。そうでなければ山にVP+1、その後 山のVP1個につき+1コイン。
+      case 'farmers_market': {
+        t.buys += 1;
+        const cur = state.pileVP.farmers_market || 0;
+        if (cur >= 4) {
+          p.vpTokens = (p.vpTokens || 0) + cur; state.pileVP.farmers_market = 0;
+          if (removeOne(p.inPlay, 'farmers_market')) trashCard(state, pi, 'farmers_market');
+          log(state, `${p.name} は農家の市場で 山上の勝利点${cur}個 を得て これを廃棄した。`);
+        } else {
+          state.pileVP.farmers_market = cur + 1; t.coins += (cur + 1);
+          log(state, `${p.name} は農家の市場（山に勝利点1個→計${cur + 1}個・+$${cur + 1}）。`);
+        }
+        break;
+      }
+      // ワイルドハント：二択（+3カード＆山にVP+1／屋敷を獲得し 獲得したら山上のVPを全部得る）。
+      case 'wild_hunt':
+        state.pending = { type: 'wild_hunt', player: pi };
+        break;
       case 'cellar':
         t.actions += 1;
         // 手札を好きな枚数捨て、同じだけ引く（選択待ち）
@@ -4091,6 +4120,11 @@
     }
     // 帝国：公共広場（forum）＝獲得したとき +1購入（2022エラッタ＝「購入時」から「獲得時」に変更）。自分の手番でのみ意味がある。
     if (cardId === 'forum' && state.turn && pIndex === state.turn.active) { state.turn.buys += 1; log(state, `${gp.name} は公共広場の獲得で +1購入。`); }
+    // 帝国：神殿（集合）＝獲得したとき（誰の獲得でも・購入含む・非購入獲得も）、神殿の山上の勝利点トークンをすべて得る。
+    if (cardId === 'temple') {
+      const vp = (state.pileVP && state.pileVP.temple) || 0;
+      if (vp > 0) { gp.vpTokens = (gp.vpTokens || 0) + vp; state.pileVP.temple = 0; log(state, `${gp.name} は神殿の獲得で 山上の勝利点${vp}個 を得た。`); }
+    }
     // 役人：獲得したとき、場のすべての財宝を山札の上に置く（置いた順＝そのまま／簡略に選択なし）。
     if (cardId === 'mandarin') { const tre = gp.inPlay.filter((c) => DOM.isType(c, 'treasure')); tre.forEach((c) => { removeOne(gp.inPlay, c); gp.deck.unshift(c); }); if (tre.length) log(state, `${gp.name} は役人で場の財宝 ${tre.length}枚 を山札の上に置いた。`); }
     // 大釜：自分の手番にアクションを獲得した回数を数え、3回目で（大釜が場にあれば）各相手が呪いを獲得。
@@ -7814,6 +7848,43 @@
         state.pending = null; // 手番開始時の複数資料庫は reduce 末尾の startQueue 安全網が順に進める
         return state;
       }
+      // 神殿：手札から名前の異なる1〜3枚を廃棄（強制・手札があれば最低1枚）。その後 神殿の山に勝利点1個。
+      case 'TEMPLE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'temple_trash') return state;
+        const owner = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length < 1 || cards.length > 3) return state; // 手札があるとき廃棄は必須（1〜3枚）
+        if (new Set(cards).size !== cards.length) return state; // 名前がすべて異なる（同名の重複不可）
+        const copy = owner.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        cards.forEach((c) => { removeOne(owner.hand, c); trashCard(state, pd.player, c); });
+        log(state, `${owner.name} は神殿で ${cards.length}枚 を廃棄した。`);
+        state.pileVP.temple = (state.pileVP.temple || 0) + 1;
+        log(state, `${owner.name} は神殿の山に勝利点トークン1個を置いた（計${state.pileVP.temple}個）。`);
+        state.pending = null;
+        return state;
+      }
+      // ワイルドハント：二択（+3カード＆山にVP+1／屋敷を獲得し 獲得したら山上のVPを全部得る）。
+      case 'WILD_HUNT_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'wild_hunt') return state;
+        const owner = state.players[pd.player];
+        if (action.choice === 'estate') {
+          state.pending = null; // 先に閉じる（屋敷獲得の on-gain 対話が立つことがある）
+          if (gain(state, pd.player, 'estate', 'discard')) {
+            const vp = state.pileVP.wild_hunt || 0;
+            if (vp > 0) { owner.vpTokens = (owner.vpTokens || 0) + vp; state.pileVP.wild_hunt = 0; log(state, `${owner.name} はワイルドハントで屋敷を獲得し 山上の勝利点${vp}個 を得た。`); }
+            else log(state, `${owner.name} はワイルドハントで屋敷を獲得した（山上の勝利点なし）。`);
+          } else log(state, `${owner.name} はワイルドハント：屋敷の山が空で獲得できなかった。`);
+        } else {
+          draw(state, pd.player, 3);
+          state.pileVP.wild_hunt = (state.pileVP.wild_hunt || 0) + 1;
+          log(state, `${owner.name} はワイルドハント（+3カード・山に勝利点1個→計${state.pileVP.wild_hunt}個）。`);
+          state.pending = null;
+        }
+        return state;
+      }
       // 御守り（charm）のモード選択：A=+1購入+$2 ／ B=このターン次の獲得で同コスト別名を1枚獲得できる（積む）。
       case 'CHARM_MODE': {
         const pd = state.pending;
@@ -8920,6 +8991,8 @@
     'REPAY_DEBT', 'ENGINEER_GAIN', 'ENGINEER_TRASH',
     // 帝国（Empires）Batch E2
     'SACRIFICE_TRASH', 'FORUM_DISCARD', 'CHARM_MODE', 'CHARM_GAIN', 'LEGIONARY_REVEAL', 'ENCHANTRESS_REACT', 'ARCHIVE_PICK',
+    // 帝国（Empires）Batch E3：集合
+    'TEMPLE_TRASH', 'WILD_HUNT_RESOLVE',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',

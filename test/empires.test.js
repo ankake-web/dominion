@@ -342,14 +342,71 @@ console.log('=== 帝国E2: 敵対レビュー回帰 ===');
   ok(count(s.players[0].discard, 'forum') === 1 && s.turn.buys === 2, '闇市場×公共広場：獲得時+1購入');
 }
 
+/* ============================================================
+   Batch E3（集合＝サプライ山上のVPトークン：temple/farmers_market/wild_hunt）
+   ============================================================ */
+const KING3 = ['temple', 'farmers_market', 'wild_hunt', 'village', 'market', 'moat', 'smithy', 'cellar', 'workshop', 'militia'];
+function mk3(o, names) { return E.createInitialState(names || ['A', 'B'], KING3, Object.assign({ startActive: 0 }, o || {})); }
+
+console.log('=== 帝国E3: 神殿（+1VP・名前異なる1-3廃棄・山にVP・獲得時全取得）===');
+{
+  let s = mk3(); s.turn.phase = 'action'; s.turn.actions = 1; s.players[0].hand = ['temple', 'copper', 'estate', 'copper'];
+  const t0 = tally(s);
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'temple' });
+  ok(s.players[0].vpTokens === 1 && s.pending.type === 'temple_trash', '神殿：+1VP＋廃棄pending');
+  ok(reduce(s, { type: 'TEMPLE_TRASH', cards: ['copper', 'copper'] }).pending, '神殿：同名2枚は拒否');
+  ok(reduce(s, { type: 'TEMPLE_TRASH', cards: [] }).pending, '神殿：0枚は拒否（強制1枚）');
+  s = reduce(s, { type: 'TEMPLE_TRASH', cards: ['copper', 'estate'] });
+  ok(count(s.trash, 'copper') === 1 && count(s.trash, 'estate') === 1 && s.pileVP.temple === 1, '神殿：名前異なる2枚廃棄→山にVP1');
+  ok(tdiff(t0, tally(s)).length === 0, '神殿：保存則');
+}
+{ let s = mk3(); s.turn.phase = 'action'; s.turn.actions = 1; s.players[0].hand = ['temple'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'temple' });
+  ok(!s.pending && s.players[0].vpTokens === 1 && s.pileVP.temple === 1, '神殿：空手札でも+1VP・山にVP'); }
+{ let s = mk3(); s.turn.phase = 'buy'; s.turn.coins = 4; s.pileVP.temple = 3;
+  s = reduce(s, { type: 'BUY', card: 'temple' });
+  ok(s.players[0].vpTokens === 3 && s.pileVP.temple === 0, '神殿：購入（獲得時）で山上VP3を全取得'); }
+
+console.log('=== 帝国E3: 農家の市場（+1購入・累積・4以上で全取得廃棄）===');
+{ let s = mk3(); s.turn.phase = 'action'; s.turn.actions = 1; s.turn.buys = 1; s.players[0].hand = ['farmers_market'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'farmers_market' });
+  ok(s.pileVP.farmers_market === 1 && s.turn.coins === 1 && s.turn.buys === 2, '農家の市場：pile0→1・+$1・+1購入'); }
+{ let s = mk3(); s.turn.phase = 'action'; s.turn.actions = 1; s.turn.buys = 1; s.pileVP.farmers_market = 3; s.players[0].hand = ['farmers_market'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'farmers_market' });
+  ok(s.pileVP.farmers_market === 4 && s.turn.coins === 4, '農家の市場：pile3→4・+$4'); }
+{ let s = mk3(); s.turn.phase = 'action'; s.turn.actions = 1; s.turn.buys = 1; s.pileVP.farmers_market = 4; s.players[0].hand = ['farmers_market'];
+  const t0 = tally(s);
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'farmers_market' });
+  ok(s.players[0].vpTokens === 4 && s.pileVP.farmers_market === 0 && count(s.trash, 'farmers_market') === 1, '農家の市場：4以上で山VP4全取得＋これを廃棄');
+  ok(s.turn.coins === 0 && tdiff(t0, tally(s)).length === 0, '農家の市場：取得時コインなし・保存則'); }
+
+console.log('=== 帝国E3: ワイルドハント（二択）===');
+{ let s = mk3(); s.turn.phase = 'action'; s.turn.actions = 1; s.players[0].hand = ['wild_hunt']; s.players[0].deck = ['copper', 'copper', 'copper', 'estate'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'wild_hunt' });
+  s = reduce(s, { type: 'WILD_HUNT_RESOLVE', choice: 'cards' });
+  ok(s.players[0].hand.length === 3 && s.pileVP.wild_hunt === 1, 'ワイルドハント：+3カード・山にVP1'); }
+{ let s = mk3(); s.turn.phase = 'action'; s.turn.actions = 1; s.pileVP.wild_hunt = 5; s.players[0].hand = ['wild_hunt']; const t0 = tally(s);
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'wild_hunt' });
+  s = reduce(s, { type: 'WILD_HUNT_RESOLVE', choice: 'estate' });
+  ok(count(s.players[0].discard, 'estate') === 1 && s.players[0].vpTokens === 5 && s.pileVP.wild_hunt === 0, 'ワイルドハント：屋敷獲得＋山VP5全取得');
+  ok(tdiff(t0, tally(s)).length === 0, 'ワイルドハント：保存則'); }
+{ let s = mk3(); s.turn.phase = 'action'; s.turn.actions = 1; s.pileVP.wild_hunt = 5; s.supply.estate = 0; s.players[0].hand = ['wild_hunt'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'wild_hunt' });
+  s = reduce(s, { type: 'WILD_HUNT_RESOLVE', choice: 'estate' });
+  ok((s.players[0].vpTokens || 0) === 0 && s.pileVP.wild_hunt === 5 && !s.pending, 'ワイルドハント：屋敷空なら獲得もVPも無し'); }
+{ let s = mk3(); s.pileVP.temple = 3; s.pileVP.wild_hunt = 2;
+  const m1 = E.maskStateFor(s, 1);
+  ok(m1.pileVP.temple === 3 && m1.pileVP.wild_hunt === 2, '集合：山上VPは相手視点でも見える（公開）'); }
+
 /* ============ E2 CPU ソーク：E2カード入り王国で膠着/例外/保存則なし ============ */
 console.log('=== 帝国E2: CPU ソーク ===');
 {
   let stuck = 0, exc = 0, consErr = 0, games = 0;
-  const soakKings = [KING2,
+  const soakKings = [KING2, KING3,
     ['forum', 'legionary', 'enchantress', 'archive', 'villa', 'sacrifice', 'charm', 'gold', 'silver', 'market'],
-    ['engineer', 'city_quarter', 'royal_blacksmith', 'capital', 'forum', 'sacrifice', 'groundskeeper', 'villa', 'legionary', 'archive']];
-  for (let g = 0; g < 24; g++) {
+    ['engineer', 'city_quarter', 'royal_blacksmith', 'capital', 'forum', 'sacrifice', 'groundskeeper', 'villa', 'legionary', 'archive'],
+    ['temple', 'farmers_market', 'wild_hunt', 'sacrifice', 'villa', 'legionary', 'archive', 'groundskeeper', 'chariot_race', 'forum']];
+  for (let g = 0; g < 30; g++) {
     seed = 900 + g * 211;
     const K = soakKings[g % soakKings.length];
     const names = (g % 3 === 0) ? ['C0', 'C1', 'C2'] : ['C0', 'C1'];

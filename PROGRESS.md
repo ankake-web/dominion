@@ -1,9 +1,33 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-08 / branch `main`（最新は `git log` で確認）。**冒険（Adventures）段階2＝全38枚＋Phase E昇格 は完成＆push済＝本番反映（§0-9。`sw.js` v36）**。**その後 未pushの WIP＝帝国（Empires）段階2＝Batch E1（負債経済の基盤・§0-10）＋Batch E2（既存VPトークン＆単独カード9枚・§0-11）まで完了。`sw.js` v38。push はユーザー確認待ち**。帝国はまだ CARD_SET 未昇格＝本番挙動は不変（帝国カードはサプライに出ない）。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
+最終更新: 2026-07-08 / branch `main`（最新は `git log` で確認）。**冒険（Adventures）＋帝国 Batch E1（負債経済）＋E2（既存VPトークン&単独9枚）は push 済＝本番反映（§0-9〜0-11。`sw.js` v38）**。**その後 未pushの WIP＝帝国（Empires）Batch E3＝集合（Gathering・サプライ山上のVPトークン）＝temple/farmers_market/wild_hunt 完了（§0-12）。`sw.js` v39。push はユーザー確認待ち**。帝国はまだ CARD_SET 未昇格＝本番挙動は不変（帝国カードはサプライに出ない）。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
-**新セッションは まず `npm test` を実行し 32スイート・オールグリーン（exit 0・整合性3134件・帝国79件・冒険44件＋UI40件・暗黒時代70件＋UI57件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
+**新セッションは まず `npm test` を実行し 32スイート・オールグリーン（exit 0・整合性3134件・帝国95件・冒険44件＋UI40件・暗黒時代70件＋UI57件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
+
+---
+
+## 0-12. 段階2＝帝国（Empires）Batch E3＝集合（Gathering・サプライ山上VPトークン）3枚 **完了**（2026-07-08・WIP・未push）
+
+**Batch E3 完了**＝集合機構 `state.pileVP` ＋ temple/farmers_market/wild_hunt を4点セットで実装。設計正本＝`docs/research/empires_rules.md` §1-2/§3。`sw.js` v38→**v39**（js/css変更）。**カタログ/webp変更なし**（研究WFで全3枚のカタログ文＝公式一致を確認）。**帝国はまだ CARD_SET 未昇格＝本番挙動は不変**。次は E4（分割山5組・sauna/avanto流用）。
+
+### 新機構＝集合（Gathering）＝`state.pileVP`
+- **`state.pileVP = {[pileId]:個数}`**（トップレベル state・公開・**非カード＝保存則tallyに数えない**・createInitialState で `{}` 初期化・maskStateFor は clone でそのまま残る＝全員に見える）。サプライ山の上に置かれた勝利点トークン数＝**全プレイヤーで共有・累積**。UI＝山の右上に金色バッジ `⭐N`（`pileVpBadge`＋`.pile-vp` CSS）。プレイヤーVPトークン `p.vpTokens`（繁栄で既存・vpOfに加算済）へ移した時だけ得点になる。
+
+### 各カード（研究WFで公式裁定を裏取り・全カタログ一致）
+- **temple（神殿・$4）**：プレイ＝+1勝利点（本人）→**手札から名前の異なる1〜3枚を廃棄（強制・手札があれば最低1枚・同名重複不可）**→神殿の山にVP+1（`TEMPLE_TRASH`）。空手札なら廃棄0でも+1VP・山にVP。**獲得時（triggerOnGain・誰の獲得でも/購入含む/非購入獲得も）＝神殿の山上VPを全部自分の vpTokens へ**（山→0）。
+- **farmers_market（農家の市場・$3）**：+1購入。**山のVPが4個以上なら全部得てこれを廃棄**（コインなし・場から trash へ）。そうでなければ山にVP+1、その後**山のVP1個につき+1コイン（置いた後に数える）**＝空山から +$1/+$2/+$3/+$4、5回目（山=4）で4VP取得＋廃棄。**4以上判定は置く前**。
+- **wild_hunt（ワイルドハント・$5）**：二択（強制・`WILD_HUNT_RESOLVE`）。(a)+3カード＆山にVP+1。(b)屋敷1枚を獲得し、**獲得したら**山上VPを全部得る（屋敷山が空なら選べるが獲得もVPも無し＝合法だが無意味）。
+
+### 敵対レビュー（多エージェント5次元→node再現検証）＝確定バグ1件[MED]→修正
+- **[修正] temple_trash のUIソフトロック**：同一ターンに temple_trash が2回開く（玉座/王の宮廷/行進の再演・村＋神殿2枚）と、モーダルのリセットキー `pd.type+(pd.stage||'')` が `temple_trash` で不変のため `UI.selection` が持ち越される。1回目で廃棄して手札から消えた名前（幽霊選択）はチップが描画されず外す導線が無く、確定しても engine が `removeOne` 失敗で no-op 拒否→**人間が詰む**（engine は正しく拒否＝保存則OK・UI専用バグ）。**出荷帝国セット未昇格のため本番未到達**（Medium）。→ **temple_trash モーダル先頭で `UI.selection` を「現在の手札にある名前」だけに間引く**（幽霊選択を自己修復）。他4次元（rulings/保存則/CPU非ループ/cross-card＝玉座・闇市場・相手の神殿獲得）はクリーン（偽陽性0）。
+
+### 検証
+- 狙い撃ちテスト22/22（temple の同名拒否/0枚拒否・farmers_market の累積と4以上廃棄・wild_hunt の二択と屋敷空・獲得時全取得・マスク）。`test/empires.test.js` を **全95件**に拡張（E3裁定＋CPUソークを30戦[E3王国2種含む・2〜3人]に拡大＝膠着0/例外0/保存則0）。
+- **invariants**：pileVP は非カードなので tally 変更不要（全プール混成fuzzで temple/farmers_market/wild_hunt を引いても保存則OK）。**npm test 全32スイート緑（exit 0・整合性3134不変）**。
+
+### 【次にやること】Batch E4（分割山5組）
+- `docs/research/empires_rules.md` §1-3/§2 の分割山＝**sauna/avanto と同型**（`js/engine.js` の分割山ガード4系統：gain冒頭/canBuyCard/emptyPileCount ペアで1山/CPU splitBlocked）。5組＝encampment/plunder・patrician/emporium・settlers/bustling_village・catapult/rocks・gladiator/fortune。**上下でコストが違う**点だけ sauna/avanto（両$4）と異なる。fortune は負債(E1)＋剣闘士on-gain金貨、emporium は on-gain VP(場アクション5枚以上)、rocks は on-gain/trash銀貨、catapult はアタック。以降 E5城8→E6命令→E7=CARD_SET昇格。
 
 ---
 

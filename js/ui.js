@@ -240,8 +240,15 @@
       cardArt(dispId),
       opts.recommended ? h('div', { class: 'rec-badge' }, 'おすすめ') : null,
       pileTokenBadge(state, id),
+      pileVpBadge(state, id),
       h('div', { class: 'pile-count' + (n <= 2 ? ' lo' : n <= 5 ? ' mid' : '') }, '残' + n)
     );
+  }
+  // 帝国：集合（Gathering）＝サプライ山の上に置かれた勝利点トークン数を表示（公開・全員共有）。
+  function pileVpBadge(state, id) {
+    const n = (state.pileVP && state.pileVP[id]) || 0;
+    if (n <= 0) return null;
+    return h('div', { class: 'pile-vp', title: '山上の勝利点トークン' }, '⭐' + n);
   }
   // 冒険：教師の山トークンを山に小さく表示（各プレイヤーのトークンは公開情報）。
   function pileTokenBadge(state, id) {
@@ -1205,6 +1212,25 @@
       const chips = cards.map((id) => cardEl(id, { size: 'sm', extra: 'selectable', onClick: () => dispatch({ type: 'ARCHIVE_PICK', card: id }) }));
       return modalShell('資料庫 — 手札に加える', '脇に置いた ' + cards.length + ' 枚から1枚を選んで手札に加えます。', chips, null);
     }
+    // 帝国：神殿＝手札から名前の異なる1〜3枚を廃棄（強制）。名前ごとに1チップ表示。
+    if (pd.type === 'temple_trash') {
+      // 玉座/王の宮廷/行進や神殿2枚で temple_trash が同一ターンに連続すると _selKey が不変で選択が持ち越される。
+      // 前回廃棄して手札に無くなった名前（幽霊選択）は外す導線が無くソフトロックするため、手札に在る名前だけに間引く。
+      UI.selection = (UI.selection || []).filter((id) => p.hand.includes(id));
+      const names = [...new Set(p.hand)];
+      const chips = names.map((id) => cardEl(id, { size: 'sm', extra: UI.selection.includes(id) ? 'selected' : 'selectable', badge: UI.selection.includes(id) ? '廃' : null,
+        onClick: () => { const i = UI.selection.indexOf(id); if (i >= 0) UI.selection.splice(i, 1); else if (UI.selection.length < 3) UI.selection.push(id); render(); } }));
+      const k = UI.selection.length;
+      const footer = h('button', { class: 'btn btn-primary btn-block', disabled: (k >= 1 && k <= 3) ? null : 'disabled',
+        onclick: () => dispatch({ type: 'TEMPLE_TRASH', cards: UI.selection.slice() }) },
+        k === 0 ? '廃棄するカードを選ぶ（1〜3枚・名前は異なること）' : '確定（' + k + '枚 廃棄）');
+      return modalShell('神殿 — 廃棄', '手札から名前の異なるカードを1〜3枚 廃棄します（強制・その後 神殿の山に勝利点1個）。', chips, footer);
+    }
+    // 帝国：ワイルドハント＝二択。
+    if (pd.type === 'wild_hunt') return modalOptions('ワイルドハント', '次から1つを選びます。', [
+      { label: '+3 カード（この山に勝利点1個を置く）', cls: 'btn-primary', on: () => dispatch({ type: 'WILD_HUNT_RESOLVE', choice: 'cards' }) },
+      { label: '屋敷を1枚獲得（獲得したら この山上の勝利点をすべて得る）', on: () => dispatch({ type: 'WILD_HUNT_RESOLVE', choice: 'estate' }) },
+    ]);
     if (pd.type === 'nobles') return modalOptions('貴族', '次から1つを選びます。', [
       { label: '+3 カード', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'cards' }) },
       { label: '+2 アクション', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'actions' }) },

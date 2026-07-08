@@ -423,6 +423,11 @@
     if (has('sacrifice') && p.hand.some((c) => c !== 'sacrifice' && (c === 'copper' || c === 'estate' || c === 'curse' || isDead(c)))) return 'sacrifice';
     if (has('legionary')) return 'legionary';               // +$3＋アタック（金貨公開で相手手札2に）
     if (has('enchantress')) return 'enchantress';           // アタック持続（相手の最初のアクションを置換）＋次手番+2カード
+    // 帝国E3：集合
+    if (has('farmers_market')) return 'farmers_market';     // +1購入＋山VP/コイン
+    if (has('wild_hunt')) return 'wild_hunt';               // +3カード or 屋敷でVP回収
+    // 神殿：+1VP＋圧縮だが 1〜3枚の強制廃棄＝不要札があるときだけ使う（良カードを廃棄しない）。
+    if (has('temple') && p.hand.some((c) => c !== 'temple' && (c === 'copper' || c === 'estate' || c === 'curse' || isDead(c)))) return 'temple';
     return null;
   }
 
@@ -1255,6 +1260,23 @@
         const cards = (st && st.cards) || [];
         const pick = cards.slice().sort((a, b) => keepValue(b) - keepValue(a))[0] || null;
         return { type: 'ARCHIVE_PICK', card: pick };
+      }
+
+      /* ===== 拡張: 帝国（Empires）Batch E3：集合 ===== */
+      case 'temple_trash': {
+        // 名前の異なる不要札を最大3枚（強制で最低1枚）。curse/estate/copper 等を優先。
+        const seen = new Set(); const distinct = [];
+        p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b)).forEach((c) => { if (!seen.has(c)) { seen.add(c); distinct.push(c); } });
+        const junk = distinct.filter((c) => trashValue(c) < 10);
+        let pick = junk.slice(0, 3);
+        if (pick.length === 0) pick = distinct.slice(0, 1); // 手札があれば強制1枚（最も価値の低い）
+        return { type: 'TEMPLE_TRASH', cards: pick };
+      }
+      case 'wild_hunt': {
+        // 山上VPが十分たまり屋敷が残っていれば回収（VPを得る）。それ以外は +3カード。
+        const vp = (state.pileVP && state.pileVP.wild_hunt) || 0;
+        if (vp >= 3 && sup(state, 'estate') > 0) return { type: 'WILD_HUNT_RESOLVE', choice: 'estate' };
+        return { type: 'WILD_HUNT_RESOLVE', choice: 'cards' };
       }
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
