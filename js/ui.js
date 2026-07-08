@@ -1176,6 +1176,35 @@
       { label: '廃棄してもう1枚獲得', cls: 'btn-primary', on: () => dispatch({ type: 'ENGINEER_TRASH', trash: true }) },
       { label: '廃棄しない', on: () => dispatch({ type: 'ENGINEER_TRASH', trash: false }) },
     ]);
+    // 帝国：生贄＝手札1枚を廃棄（種別ごとにボーナス）。
+    if (pd.type === 'sacrifice' && pd.stage === 'trash') return modalSingleHand(p, '生贄 — 廃棄',
+      '手札から1枚を廃棄します。アクション=+2カード+2アクション／財宝=+$2／勝利点=+2勝利点（複数種別は全適用）。',
+      () => true, (id) => dispatch({ type: 'SACRIFICE_TRASH', card: id }), null, '廃棄');
+    // 帝国：公共広場＝手札をちょうど2枚（2枚未満なら全て）捨てる。
+    if (pd.type === 'forum') { const need = Math.min(2, p.hand.length); return modalSelectN(p, '公共広場 — 手札2枚を捨てる',
+      '手札から' + need + '枚を選んで捨てます。', need, '確定（捨てる）', (cards) => dispatch({ type: 'FORUM_DISCARD', cards })); }
+    // 帝国：御守り＝二択。
+    if (pd.type === 'charm_mode') return modalOptions('御守り', '次から1つを選びます。', [
+      { label: '+1 購入 と +$2', cls: 'btn-primary', on: () => dispatch({ type: 'CHARM_MODE', mode: 'coins' }) },
+      { label: '次にカードを獲得したとき、同コストで名前の異なるカードを1枚獲得してよい', on: () => dispatch({ type: 'CHARM_MODE', mode: 'gain' }) },
+    ]);
+    // 帝国：御守り（モードB）＝獲得したカードと同コストで名前の異なるカードを1枚獲得（任意）。
+    if (pd.type === 'charm_gain') return modalGainSupply(state, '御守り — 同コストで別名を獲得',
+      'コストが同じ（$・負債・ポーション一致）で名前の異なるカードを1枚獲得できます（しなくてもよい）。',
+      (id) => id !== pd.trig && effCost(state, id) === pd.coin && (DOM.CARDS[id].debt || 0) === pd.debt && (DOM.CARDS[id].potion || 0) === pd.pot,
+      (id) => dispatch({ type: 'CHARM_GAIN', card: id }), () => dispatch({ type: 'CHARM_GAIN', card: null }), true);
+    // 帝国：軍団兵＝手札の金貨を公開してアタックするか選ぶ（金貨は手札に残る）。
+    if (pd.type === 'legionary_reveal') return modalOptions('軍団兵 — 金貨を公開', '手札の金貨を公開すると、各相手は手札が2枚になるまで捨て、その後1枚引きます（金貨は手札に残ります）。', [
+      { label: '金貨を公開する（アタック）', cls: 'btn-primary', on: () => dispatch({ type: 'LEGIONARY_REVEAL', reveal: true }) },
+      { label: '公開しない', on: () => dispatch({ type: 'LEGIONARY_REVEAL', reveal: false }) },
+    ]);
+    // 帝国：資料庫＝脇に置いた3枚から1枚を選んで手札に加える（タップで選択）。
+    if (pd.type === 'archive_pick') {
+      const st = (p.archives || []).find((a) => a.id === pd.archiveId);
+      const cards = (st && st.cards) || [];
+      const chips = cards.map((id) => cardEl(id, { size: 'sm', extra: 'selectable', onClick: () => dispatch({ type: 'ARCHIVE_PICK', card: id }) }));
+      return modalShell('資料庫 — 手札に加える', '脇に置いた ' + cards.length + ' 枚から1枚を選んで手札に加えます。', chips, null);
+    }
     if (pd.type === 'nobles') return modalOptions('貴族', '次から1つを選びます。', [
       { label: '+3 カード', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'cards' }) },
       { label: '+2 アクション', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'actions' }) },
@@ -1697,6 +1726,7 @@
     if (pd.type === 'bridge_troll' && pd.stage === 'react') return modalOptions('橋の下のトロルを受ける', '-$1トークンを受け取ります（次の購入フェイズに使えるコインが$1減ります）。', reactOptions(p, pd, { type: 'BRIDGE_TROLL_REACT' }));
     if (pd.type === 'haunted_woods' && pd.stage === 'react') return modalOptions('呪いの森を受ける', '相手の次の手番まで、あなたがカードを購入すると手札を全て山札の上に置きます（堀を公開すればこの持続から免疫）。', reactOptions(p, pd, { type: 'LINGER_REACT' }));
     if (pd.type === 'swamp_hag' && pd.stage === 'react') return modalOptions('沼の妖婆を受ける', '相手の次の手番まで、あなたがカードを購入すると呪い1枚を獲得します（堀を公開すればこの持続から免疫）。', reactOptions(p, pd, { type: 'LINGER_REACT' }));
+    if (pd.type === 'enchantress' && pd.stage === 'react') return modalOptions('女魔術師を受ける', 'あなたの次の手番で最初にプレイするアクションは、記載の効果の代わりに +1カード +1アクション になります（堀を公開すれば無効化）。', reactOptions(p, pd, { type: 'ENCHANTRESS_REACT' }));
     if (pd.type === 'marauder' && pd.stage === 'react') return modalOptions('略奪者を受ける', '廃墟を1枚獲得します。', reactOptions(p, pd, { type: 'MARAUDER_REACT' }));
     if (pd.type === 'cultist' && pd.stage === 'react') return modalOptions('狂信者を受ける', '廃墟を1枚獲得します。', reactOptions(p, pd, { type: 'CULTIST_REACT' }));
     if (pd.type === 'cultist_chain') return modalOptions('狂信者 — 連鎖', '手札の狂信者を（アクションを消費せず）続けて使えます。', [

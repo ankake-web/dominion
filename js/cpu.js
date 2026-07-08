@@ -211,6 +211,11 @@
     if (has('rats') && p.hand.some((c) => c !== 'rats' && isDead(c))) return 'rats'; // 圧縮対象があるとき
     // 帝国：非ターミナル（+アクション付き）
     if (has('city_quarter')) return 'city_quarter';       // +2アクション＋手札のアクション枚数ぶん+カード
+    if (has('forum')) return 'forum';                     // +3カード+1アクション（手札2枚捨て）
+    if (has('groundskeeper')) return 'groundskeeper';     // +1カード+1アクション（勝利点獲得毎VP）
+    if (has('chariot_race')) return 'chariot_race';       // +1アクション（山札比較→+$1+VP）
+    if (has('villa')) return 'villa';                     // +2アクション+1購入+1コイン
+    if (has('archive')) return 'archive';                 // +1アクション（脇3枚→3手番かけ1枚ずつ手札・持続）
     // 冒険：非ターミナル（+アクション付き）
     if (has('lost_city')) return 'lost_city';             // +2カード+2アクション
     if (has('port')) return 'port';                       // +1カード+2アクション
@@ -414,6 +419,10 @@
     // 帝国：ターミナル
     if (has('royal_blacksmith')) return 'royal_blacksmith'; // +5カード（手札の銅貨を捨てる）
     if (has('engineer')) return 'engineer';                 // コスト4以下を獲得（自己廃棄でもう1枚）
+    // 生贄：廃棄する価値のある不要札（銅貨=+$2／屋敷=+2VP／呪い=圧縮／死に札）が手札にあるときだけ使う。
+    if (has('sacrifice') && p.hand.some((c) => c !== 'sacrifice' && (c === 'copper' || c === 'estate' || c === 'curse' || isDead(c)))) return 'sacrifice';
+    if (has('legionary')) return 'legionary';               // +$3＋アタック（金貨公開で相手手札2に）
+    if (has('enchantress')) return 'enchantress';           // アタック持続（相手の最初のアクションを置換）＋次手番+2カード
     return null;
   }
 
@@ -1206,6 +1215,46 @@
           return { type: 'ENGINEER_GAIN', card: bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) };
         // maytrash：良い獲得先（$4以下・非勝利点）があれば技術者を廃棄してもう1枚獲得する（ダブル工房）。
         return { type: 'ENGINEER_TRASH', trash: !!bestGain(state, 4, { noVictory: true }) };
+      }
+
+      /* ===== 拡張: 帝国（Empires）Batch E2 ===== */
+      case 'sacrifice': {
+        // 廃棄する不要札を価値順に選ぶ（屋敷=+2VP／銅貨=+$2／呪い=圧縮／その他 dead）。
+        // 生贄は必須廃棄（手札があれば必ず1枚）＝最後は生贄自身でも廃棄する（玉座/王の宮廷/行進で手札が生贄だけになった時に
+        //   card:null を返すと engine が拒否し pending が閉じず CPU 無限ループになる＝敵対レビュー確定バグの回避）。
+        const h = p.hand.filter((c) => c !== 'sacrifice');
+        const pick = h.find((c) => c === 'estate') || h.find((c) => c === 'copper') || h.find((c) => c === 'curse')
+          || h.slice().sort((a, b) => trashValue(a) - trashValue(b))[0] || p.hand[0] || null;
+        return { type: 'SACRIFICE_TRASH', card: pick };
+      }
+      case 'forum':
+        return { type: 'FORUM_DISCARD', cards: pickDiscards(p.hand, Math.min(2, p.hand.length)) };
+      case 'charm_mode':
+        // MONEY方針＝確実な +1購入 +$2 を選ぶ（モードBの獲得コピーは使わない＝許容簡略化）。
+        return { type: 'CHARM_MODE', mode: 'coins' };
+      case 'charm_gain': {
+        // モードBは通常選ばないが、万一立ったら同コスト・別名の最良カードを1枚（無ければ辞退＝count減少で終端）。
+        let pick = null;
+        for (const id of GAIN_ORDER) {
+          if (id === pd.trig || NON_SUPPLY_SET.has(id) || !C()[id]) continue;
+          if (sup(state, id) <= 0) continue;
+          if (cost(state, id) === pd.coin && (C()[id].debt || 0) === pd.debt && (C()[id].potion || 0) === pd.pot) { pick = id; break; }
+        }
+        return { type: 'CHARM_GAIN', card: pick };
+      }
+      case 'legionary_reveal':
+        // 金貨があれば常に公開（金貨は手札に残る＝ノーリスクでアタック）。
+        return { type: 'LEGIONARY_REVEAL', reveal: p.hand.includes('gold') };
+      case 'enchantress':
+        // 反応ステップ：堀があれば無効化、なければそのまま受ける（enchanted される）。
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'ENCHANTRESS_REACT' };
+      case 'archive_pick': {
+        // 脇の中から最も価値の高い札を先に手札へ（keepValue 高い順）。
+        const st = (p.archives || []).find((a) => a.id === pd.archiveId);
+        const cards = (st && st.cards) || [];
+        const pick = cards.slice().sort((a, b) => keepValue(b) - keepValue(a))[0] || null;
+        return { type: 'ARCHIVE_PICK', card: pick };
       }
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */

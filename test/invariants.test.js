@@ -31,11 +31,12 @@ function tally(s) {
   (s.ruins || []).forEach(add); (s.knights || []).forEach(add); // 暗黒時代：混合山の中身（実カードid配列）
   (s.trash || []).forEach(add); (s.blackMarket || []).forEach(add);
   s.players.forEach((p) => ZONES.forEach((z) => (p[z] || []).forEach(add)));
+  s.players.forEach((p) => (p.archives || []).forEach((a) => (a.cards || []).forEach(add))); // 帝国：資料庫の脇置き（{id,cards}）
   if (s.turn) { (s.turn.possessionGains || []).forEach(add); (s.turn.possessionTrash || []).forEach(add); }
   return t;
 }
 function diffTally(a, b) { const ks = new Set([...Object.keys(a), ...Object.keys(b)]); const d = []; ks.forEach((k) => { if ((a[k] || 0) !== (b[k] || 0)) d.push(k + ':' + (a[k] || 0) + '→' + (b[k] || 0)); }); return d; }
-function hasBack(s) { return s.players.some((p) => ZONES.some((z) => (p[z] || []).some((c) => c === 'back'))) || (s.trash || []).some((c) => c === 'back'); }
+function hasBack(s) { return s.players.some((p) => ZONES.some((z) => (p[z] || []).some((c) => c === 'back'))) || s.players.some((p) => (p.archives || []).some((a) => (a.cards || []).some((c) => c === 'back'))) || (s.trash || []).some((c) => c === 'back'); }
 
 // 1ゲームを最後まで進め、安定点ごとに全不変条件を検査。違反があれば false と詳細を返す。
 function runGame(kingdom, players) {

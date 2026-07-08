@@ -206,6 +206,8 @@
     }
     // 帝国：元手＝+6コイン（coin:6 で計上済み）＋1購入。場から捨てるときの負債6は cleanupAndAdvance で処理。
     if (card === 'capital') { t.buys += 1; }
+    // 帝国：御守り（charm）＝二択（A: +1購入+$2 ／ B: このターン次にカードを獲得したとき、同コストで名前の異なるカードを1枚獲得してよい）。
+    if (card === 'charm') { state.pending = { type: 'charm_mode', player: pIndex }; }
     // 海辺：私掠船マーク中なら、このターン最初の銀貨/金貨は出した後に廃棄される（コインは入る）。
     corsairOnPlayTreasure(state, pIndex, card);
     // 冒険：-$1トークンの相殺（購入フェイズでコインが増えたぶんに食い込む）。
@@ -349,6 +351,7 @@
         durationCards: [], // 場に残る持続カード（クリーンアップで捨てずに持ち越す。inPlay と同じく公開情報）
         delayedEffects: [], // 次の自分の手番開始時に解決する予約効果 {card, type, ...data}
         setAside: [],      // 伏せて脇に置く私的カード（停泊所/封鎖の獲得物など。相手には伏せる）
+        archives: [],      // 帝国：資料庫の脇置き（各要素 {id, cards:[...]}＝1つの資料庫の脇3枚。所有者のみ中身を見られる＝maskで伏せる。allCardsに数える）
         islandMat: [],     // 島マット（ゲームから外れるが所有者のVPに数える。公開）
         nativeVillageMat: [], // 原住民の村マット（手札に回収できる。秘密）
         lastTurnGains: [], // 直前の自分の手番に獲得したカードid（密輸人が右隣のこれを参照）
@@ -870,6 +873,8 @@
     // 冒険：呪いの森/沼の妖婆＝相手の購入をフックする持続アタック（堀公開でこの予約[rid]から免疫）。
     haunted_woods: { onMoat: (s, pd) => { markLingerImmune(s, pd.source, 'haunted_woods', pd.victim, pd.rid); lingerAttackEnter(s, pd.source, 'haunted_woods', pd.queue, pd.rid); } },
     swamp_hag:     { onMoat: (s, pd) => { markLingerImmune(s, pd.source, 'swamp_hag', pd.victim, pd.rid); lingerAttackEnter(s, pd.source, 'swamp_hag', pd.queue, pd.rid); } },
+    // 帝国：女魔術師（アタック持続）＝堀公開でこの相手は enchanted されず次へ。
+    enchantress:   { onMoat: (s, pd) => enchantressEnterVictim(s, pd.source, pd.queue) },
   };
   // 被攻撃側の反応（堀／秘密の小部屋／外交官）を差し込める局面か。
   function isAttackReactPending(pd) {
@@ -1194,13 +1199,13 @@
   }
   // 手札N枚まで捨てる汎用アタック（民兵型・embedded。浮浪児=4/傭兵=3/サー・マイケル=3）。
   //   next='knight:<id>' を渡すと、全員の捨てが終わったあとに騎士アタックへ連鎖する（サー・マイケル用）。
-  function discardDownEnter(state, source, down, victims, next) {
-    if (victims && victims.length) state.pending = { type: 'discard_down', player: victims[0], source, down, queue: victims.slice(1), next: next || null };
+  function discardDownEnter(state, source, down, victims, next, drawAfter) {
+    if (victims && victims.length) state.pending = { type: 'discard_down', player: victims[0], source, down, queue: victims.slice(1), next: next || null, drawAfter: drawAfter || 0 };
     else discardDownDone(state, source, next);
   }
   function advanceDiscardDown(state, pd) {
     const q = pd.queue || [];
-    if (q.length) state.pending = { type: 'discard_down', player: q[0], source: pd.source, down: pd.down, queue: q.slice(1), next: pd.next || null };
+    if (q.length) state.pending = { type: 'discard_down', player: q[0], source: pd.source, down: pd.down, queue: q.slice(1), next: pd.next || null, drawAfter: pd.drawAfter || 0 };
     else discardDownDone(state, pd.source, pd.next);
   }
   // 暗黒時代：浮浪児＝場に浮浪児がある状態で「別の」アタックをプレイしたとき、その解決前に
@@ -1487,6 +1492,22 @@
         return;
       }
       queue.shift(); // 反応札なし＝即効果は無い（免疫も付かない）
+    }
+    state.pending = null;
+  }
+  // 帝国：女魔術師（enchantress・アタック持続）＝免疫でない各相手に enchanted フラグを立てる
+  //   （その手番で最初にプレイするアクションが +1カード+1アクション に置換される）。堀で防げる。
+  function enchantressEnterVictim(state, source, queue) {
+    queue = (queue || []).slice();
+    while (queue.length) {
+      const victim = queue[0];
+      if (attackImmune(state, victim)) { queue.shift(); continue; } // 灯台/チャンピオン＝免疫（置換されない）
+      if (hasReaction(state.players[victim])) {
+        state.pending = { type: 'enchantress', stage: 'react', player: victim, source, victim, queue: queue.slice(1) };
+        return;
+      }
+      state.players[victim].enchanted = true;
+      queue.shift();
     }
     state.pending = null;
   }
@@ -2140,6 +2161,73 @@
           if (n) log(state, `${p.name} は王室の鍛冶屋で手札を公開し銅貨${n}枚を捨てた。`);
         }
         break;
+
+      /* ===== 帝国（Empires）Batch E2：既存VPトークン＆単独カード ===== */
+      // 公共広場：+3カード +1アクション → 手札2枚を捨てる（購入時の +1購入 は BUY 側）。
+      case 'forum':
+        draw(state, pi, 3); t.actions += 1;
+        if (p.hand.length > 0) state.pending = { type: 'forum', player: pi };
+        break;
+      // 生贄：手札1枚を廃棄→種別ごとにボーナス（アクション=+2カード+2アクション／財宝=+$2／勝利点=VPトークン2個。複数種別は全適用）。
+      case 'sacrifice':
+        if (p.hand.length > 0) state.pending = { type: 'sacrifice', stage: 'trash', player: pi };
+        break;
+      // 庭師：+1カード +1アクション（「場にある間、勝利点獲得毎にVPトークン1」は triggerOnGain で処理）。
+      case 'groundskeeper':
+        draw(state, pi, 1); t.actions += 1;
+        break;
+      // 戦車競走：+1アクション。自分の山札の上を公開して手札に加える。左隣も山札の上を公開する（公開のみ＝山札に残す）。
+      //   自分のカードのコストが左隣のより高ければ +$1 と VPトークン1個（同コスト/安いは無し・左隣が山札0枚ならこちらの勝ち）。
+      case 'chariot_race': {
+        t.actions += 1;
+        if (p.deck.length === 0 && p.discard.length > 0) reshuffleDeck(p);
+        let mine = null;
+        if (p.deck.length > 0) { mine = p.deck.shift(); reveal(state, pi, [mine], '戦車競走で山札の上を公開'); p.hand.push(mine); log(state, `${p.name} は戦車競走で「${C()[mine].name}」を公開し手札に加えた。`); }
+        const n = state.players.length, left = (pi + 1) % n, lp = state.players[left];
+        let theirs = null;
+        if (lp.deck.length === 0 && lp.discard.length > 0) reshuffleDeck(lp);
+        if (lp.deck.length > 0) { theirs = lp.deck[0]; reveal(state, left, [theirs], '戦車競走：左隣が山札の上を公開'); }
+        // 公式ルーリング（BGG/wiki 裏取り）：どちらかが公開できない（山札0枚）なら「コストが高い」に該当しない＝ボーナス無し。
+        //   同コスト（引き分け）も無し＝自分のカードが厳密に高いときだけ +$1 +VP。
+        if (mine != null && theirs != null && cardCost(state, mine) > cardCost(state, theirs)) {
+          t.coins += 1; p.vpTokens = (p.vpTokens || 0) + 1; log(state, `${p.name} は戦車競走で勝利（+$1 +1勝利点）。`);
+        }
+        break;
+      }
+      // ヴィラ：+2アクション +1購入 +1コイン（「これを手札に加える／購入フェイズ中ならアクションフェイズに戻る」は獲得時＝triggerOnGain）。
+      case 'villa':
+        t.actions += 2; t.buys += 1; t.coins += 1;
+        break;
+      // 軍団兵：+$3。手札の金貨1枚を公開してよい（アタック）。公開したら各相手は手札2枚まで捨て、その後1枚引く。
+      case 'legionary':
+        t.coins += 3;
+        if (p.hand.includes('gold')) state.pending = { type: 'legionary_reveal', player: pi };
+        break;
+      // 女魔術師：即時効果なし（アタック持続）。次の自分の手番まで、各相手がその手番で最初にプレイするアクションは
+      //   記載効果の代わりに +1カード+1アクション になる（enchanted フラグ）。次の自分の手番開始時 +2カード。堀で防げる。
+      case 'enchantress': {
+        armDuration(state, pi, 'enchantress');
+        const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        enchantressEnterVictim(state, pi, q);
+        break;
+      }
+      // 資料庫：+1アクション。山札の上から3枚を裏向きに脇へ置く。今回と次の2回の手番開始時に、脇から1枚を手札へ（持続）。
+      case 'archive': {
+        t.actions += 1;
+        const cards = [];
+        for (let i = 0; i < 3; i++) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
+          if (p.deck.length === 0) break;
+          cards.push(p.deck.shift());
+        }
+        if (cards.length > 0) {
+          const aid = (state._archiveSeq = (state._archiveSeq | 0) + 1);
+          (p.archives = p.archives || []).push({ id: aid, cards });
+          log(state, `${p.name} は資料庫で山札の上${cards.length}枚を脇に置いた。`);
+          state.pending = { type: 'archive_pick', player: pi, archiveId: aid }; // 今回のぶんを1枚 手札へ
+        }
+        break;
+      }
       case 'cellar':
         t.actions += 1;
         // 手札を好きな枚数捨て、同じだけ引く（選択待ち）
@@ -3769,7 +3857,8 @@
     // 新プロモ：王子の脇に置いたカード（princes）も所有カード（ゲーム終了時はデッキに戻して数える＝公式）。
     return [].concat(p.deck, p.hand, p.discard, p.inPlay,
       p.durationCards || [], p.setAside || [], p.islandMat || [], p.nativeVillageMat || [],
-      p.princes || [], p.tavern || []); // 冒険：酒場マット（Reserve/守銭奴の銅貨。公開・所有カードに数える）
+      p.princes || [], p.tavern || [], // 冒険：酒場マット（Reserve/守銭奴の銅貨。公開・所有カードに数える）
+      ...((p.archives || []).map((a) => a.cards || []))); // 帝国：資料庫の脇置き（所有カード＝VPに数える）
   }
   function vpOf(p) {
     const cards = allCards(p);
@@ -3864,6 +3953,8 @@
     (p.princes || []).forEach((card, i) => {
       state.turn.startQueue.push({ type: 'prince_play', player: pi, idx: i, card });
     });
+    // 帝国：資料庫＝脇にカードが残っている各資料庫につき、手番開始時に脇から1枚を手札へ（対話＝startQueueへ）。
+    (p.archives || []).forEach((a) => { if (a.cards && a.cards.length) state.turn.startQueue.push({ type: 'archive_pick', player: pi, archiveId: a.id }); });
     // 繁栄：会計士＝手番開始時、手札の会計士を（アクションを消費せず）使ってよい。startQueue の最後に積む。
     const clerks = p.hand.filter((c) => c === 'clerk').length;
     for (let i = 0; i < clerks; i++) state.turn.startQueue.push({ type: 'clerk_start', player: pi });
@@ -3948,6 +4039,8 @@
     haunted_woods: (s, pi) => { draw(s, pi, 3); log(s, `${s.players[pi].name} は呪いの森の持続効果（+3カード）。`); },
     // 冒険：沼の妖婆＝次の手番開始時 +$3。
     swamp_hag: (s, pi) => { s.turn.coins += 3; log(s, `${s.players[pi].name} は沼の妖婆の持続効果（+$3）。`); },
+    // 帝国：女魔術師＝次の自分の手番開始時 +2カード（相手のアクション置換フックはこの予約とは独立に enchanted で処理済み）。
+    enchantress: (s, pi) => { draw(s, pi, 2); log(s, `${s.players[pi].name} は女魔術師の持続効果（+2カード）。`); },
   };
 
   // 「獲得時」フック（サル＝右隣の獲得で+1カード／封鎖＝同名獲得で呪い）。gain から常に呼ばれる。
@@ -3987,6 +4080,17 @@
     if (cardId === 'death_cart') { let g = 0; for (let i = 0; i < 2; i++) if (gain(state, pIndex, 'ruins', 'discard')) g++; if (g) log(state, `${gp.name} は死の荷車の獲得で廃墟 ${g}枚 を獲得した。`); }
     // 冒険：失われし都市＝獲得したとき、他の各プレイヤーはカードを1枚引く（誰の獲得でも発動）。
     if (cardId === 'lost_city') { for (let o = 0; o < n; o++) if (o !== pIndex) { const d = draw(state, o, 1); if (d.length) log(state, `${state.players[o].name} は失われし都市の獲得で +1カード。`); } }
+    // 帝国：ヴィラ＝獲得したとき手札に加え、自分の手番なら +1アクション。自分の購入フェイズ中の獲得ならアクションフェイズに戻る（何度でも）。
+    if (cardId === 'villa') {
+      if (dest !== 'hand') { const z = dest === 'deck' ? gp.deck : gp.discard; if (removeOne(z, 'villa')) gp.hand.push('villa'); }
+      if (state.turn && pIndex === state.turn.active) {
+        state.turn.actions += 1;
+        if (state.turn.phase === 'buy') { state.turn.phase = 'action'; log(state, `${gp.name} はヴィラを獲得し手札に加え +1アクション（アクションフェイズに戻る）。`); }
+        else log(state, `${gp.name} はヴィラを獲得し手札に加え +1アクション。`);
+      }
+    }
+    // 帝国：公共広場（forum）＝獲得したとき +1購入（2022エラッタ＝「購入時」から「獲得時」に変更）。自分の手番でのみ意味がある。
+    if (cardId === 'forum' && state.turn && pIndex === state.turn.active) { state.turn.buys += 1; log(state, `${gp.name} は公共広場の獲得で +1購入。`); }
     // 役人：獲得したとき、場のすべての財宝を山札の上に置く（置いた順＝そのまま／簡略に選択なし）。
     if (cardId === 'mandarin') { const tre = gp.inPlay.filter((c) => DOM.isType(c, 'treasure')); tre.forEach((c) => { removeOne(gp.inPlay, c); gp.deck.unshift(c); }); if (tre.length) log(state, `${gp.name} は役人で場の財宝 ${tre.length}枚 を山札の上に置いた。`); }
     // 大釜：自分の手番にアクションを獲得した回数を数え、3回目で（大釜が場にあれば）各相手が呪いを獲得。
@@ -4004,6 +4108,11 @@
       for (let i = 0; i < hoards; i++) {
         if (gain(state, pIndex, 'gold', 'discard')) log(state, `${state.players[pIndex].name} は隠し財産で金貨を獲得した。`);
       }
+    }
+    // 帝国：庭師（groundskeeper）＝場にある庭師1枚につき、自分の手番に勝利点カードを獲得するたびVPトークン1個。
+    if (state.turn && pIndex === state.turn.active && DOM.isType(cardId, 'victory')) {
+      const gks = state.players[pIndex].inPlay.filter((c) => c === 'groundskeeper').length;
+      if (gks) { state.players[pIndex].vpTokens = (state.players[pIndex].vpTokens || 0) + gks; log(state, `${state.players[pIndex].name} は庭師で +${gks} 勝利点。`); }
     }
     // 繁栄：自分の手番にアクションカードを獲得 → 場の収集1枚につき +1勝利点（collection）。
     if (state.turn && pIndex === state.turn.active && DOM.isType(cardId, 'action')) {
@@ -4073,6 +4182,14 @@
     if (state.turn && pIndex === state.turn.active && state._gainDepth === 1 && !state.pending &&
         (gp.tavern || []).includes('duplicate') && cardCost(state, cardId) <= 6 && (state.supply[cardId] || 0) > 0) {
       state.pending = { type: 'duplicate', player: pIndex, card: cardId };
+    }
+    // 帝国：御守り（charm）のモードB＝このターン「次に」カードを獲得したとき、同コスト（$・負債・ポーション一致）で名前の異なるカードを1枚獲得してよい（積んだ枚数ぶん）。
+    if (state.turn && pIndex === state.turn.active && state._gainDepth === 1 && !state.pending && (state.turn.charmNextGain || 0) > 0) {
+      const cnt = state.turn.charmNextGain; state.turn.charmNextGain = 0; // 「次の獲得」で消費（対象が無くても消化）
+      const trigCoin = cardCost(state, cardId), trigDebt = (C()[cardId] && C()[cardId].debt) || 0, trigPot = potionCost(cardId);
+      const canGain = (id) => id !== cardId && !NON_SUPPLY.has(id) && (state.supply[id] || 0) > 0 &&
+        cardCost(state, id) === trigCoin && ((C()[id] && C()[id].debt) || 0) === trigDebt && potionCost(id) === trigPot;
+      if (anyGainable(state, canGain)) state.pending = { type: 'charm_gain', player: pIndex, coin: trigCoin, debt: trigDebt, pot: trigPot, trig: cardId, count: cnt };
     }
     state._gainDepth--;
   }
@@ -4214,6 +4331,8 @@
     state.reveals = {}; state.revealLatest = null; // 公開表示は手番をまたいで持ち越さない
     const pi = state.turn.active;
     const p = state.players[pi];
+    // 帝国：女魔術師の enchanted（「その手番で最初のアクションが置換」）は、その相手の手番が終われば消える。
+    p.enchanted = false;
     // 城壁のある村: クリーンアップ開始時、場のアクションが（自身を含め）2枚以下なら山札の上に戻せる。
     // 村を山札に戻すのはほぼ常に得なので自動で戻す。
     if (p.inPlay.includes('walled_village')) {
@@ -4262,6 +4381,8 @@
     if (p.hirelings) cnt.hireling = (cnt.hireling || 0) + p.hirelings;
     // 冒険：チャンピオン＝永続持続（ゲーム終了まで場に残る）。稼働数ぶん物理カードを durationCards に残す。
     if (p.champions) cnt.champion = (cnt.champion || 0) + p.champions;
+    // 帝国：資料庫＝脇にカードが残っている資料庫の数ぶん、物理カードを durationCards に残す（stashが尽きたら捨て札へ）。
+    if ((p.archives || []).length) cnt.archive = (cnt.archive || 0) + p.archives.length;
     const used = {}; const newDur = [];
     for (const c of (p.durationCards || [])) {
       if ((used[c] || 0) < (cnt[c] || 0)) { newDur.push(c); used[c] = (used[c] || 0) + 1; }
@@ -4489,6 +4610,15 @@
         applyPileTokens(state, pi, card);
         t.afterActionCard = card; // 冒険：法貨/御料車の「アクション解決直後」の呼び出し窓の対象
         log(state, `${me.name} は「${C()[card].name}」を使った。`);
+        // 帝国：女魔術師（enchantress）＝この手番で最初にプレイしたアクションは、記載効果の代わりに +1カード +1アクション。
+        //   （チャンピオン/教師トークンなどの「アクションをプレイしたとき」の外部トリガーは先に適用済み＝ラインより下の能力は機能する[公式]。
+        //    持続カードを置換した場合は持続予約を張らない＝そのターンに捨てられる[片付けで cnt=0]。）
+        if (me.enchanted) {
+          me.enchanted = false;
+          draw(state, pi, 1); t.actions += 1;
+          log(state, `${me.name} は女魔術師の効果で 記載効果の代わりに +1カード +1アクション。`);
+          return state;
+        }
         // 暗黒時代：浮浪児＝別アタックのプレイ時に場の浮浪児を廃棄→傭兵。効果は URCHIN_TRASH 解決後に適用。
         if (maybeUrchinTrap(state, card, pi)) return state;
         applyEffect(state, card, pi);
@@ -5648,6 +5778,10 @@
         const rest = pd.revealed.filter((c) => c !== card);
         state.blackMarket = (state.blackMarket || []).concat(rest); // 残りは底へ（過払い前に片付ける）
         state.pending = null;
+        // 帝国E2ほか：闇市場の獲得は gain()（サプライ外札のため）を通さないので、獲得時フックを明示的に発動する。
+        //   ヴィラ＝手札に加え+1アクション（購入フェイズ中はアクションフェイズに戻る）／公共広場＝+1購入／庭師＝勝利点獲得でVP／
+        //   御守り＝次の獲得コピー／その他の on-gain（キャッシュ/大使館/国境の村 等）も働く（従来の闇市場 on-gain 欠落も併せて解消）。
+        triggerOnGain(state, pd.player, card, 'discard');
         // ギルド：闇市場でも過払い対象カード(名品/石工/医者/伝令官)を買えば過払いできる（promo込みセットで到達可）。
         maybeStartOverpay(state, pd.player, card);
         // 冒険：呪いの森/沼の妖婆＝闇市場の購入でも「購入した」トリガーが発動する。
@@ -6430,6 +6564,8 @@
         for (const c of cards) if (!removeOne(copy, c)) return state;
         cards.forEach((c) => { removeOne(p.hand, c); p.discard.push(c); });
         log(state, `${p.name} は手札を ${cards.length}枚 捨てた。`);
+        // 帝国：軍団兵＝手札2枚まで捨てた各相手は、その後カードを1枚引く（drawAfter）。
+        if (pd.drawAfter) { draw(state, pd.player, pd.drawAfter); log(state, `${p.name} は +${pd.drawAfter}カード。`); }
         advanceDiscardDown(state, pd);
         return state;
       }
@@ -7631,6 +7767,94 @@
         state.pending = null;
         return state;
       }
+      /* ===== 帝国（Empires）Batch E2 ===== */
+      // 生贄：廃棄したカードの種別ごとにボーナス（複数種別は全適用）。手札があるとき廃棄は必須。
+      case 'SACRIFICE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'sacrifice' || pd.stage !== 'trash') return state;
+        const owner = state.players[pd.player];
+        const card = action.card;
+        if (card == null || owner.hand.indexOf(card) < 0) return state;
+        removeOne(owner.hand, card); trashCard(state, pd.player, card);
+        const bonus = [];
+        if (DOM.isType(card, 'action')) { draw(state, pd.player, 2); t.actions += 2; bonus.push('+2カード +2アクション'); }
+        if (DOM.isType(card, 'treasure')) { t.coins += 2; bonus.push('+$2'); }
+        if (DOM.isType(card, 'victory')) { owner.vpTokens = (owner.vpTokens || 0) + 2; bonus.push('+2勝利点'); }
+        log(state, `${owner.name} は生贄で「${C()[card].name}」を廃棄（${bonus.join(' ') || 'ボーナス無し'}）。`);
+        state.pending = null;
+        return state;
+      }
+      // 公共広場：+3カード+1アクションの後、手札をちょうど2枚（手札が2枚未満なら全て）捨てる。
+      case 'FORUM_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'forum') return state;
+        const owner = state.players[pd.player];
+        const need = Math.min(2, owner.hand.length);
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length !== need) return state;
+        const copy = owner.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        cards.forEach((c) => { removeOne(owner.hand, c); owner.discard.push(c); });
+        log(state, `${owner.name} は公共広場で手札${cards.length}枚を捨てた。`);
+        state.pending = null;
+        return state;
+      }
+      // 資料庫：脇の3枚（この資料庫の stash）から1枚を選んで手札へ（必須＝1枚）。空になった資料庫は除去。
+      case 'ARCHIVE_PICK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'archive_pick') return state;
+        const owner = state.players[pd.player];
+        const stash = (owner.archives || []).find((a) => a.id === pd.archiveId);
+        if (!stash) { state.pending = null; return state; } // 保険：見つからなければ終端
+        const card = action.card;
+        if (card == null || !stash.cards.includes(card)) return state; // 脇の1枚を必ず手札へ
+        removeOne(stash.cards, card); owner.hand.push(card);
+        log(state, `${owner.name} は資料庫で「${C()[card].name}」を手札に加えた。`);
+        if (stash.cards.length === 0) owner.archives = owner.archives.filter((a) => a.id !== pd.archiveId);
+        state.pending = null; // 手番開始時の複数資料庫は reduce 末尾の startQueue 安全網が順に進める
+        return state;
+      }
+      // 御守り（charm）のモード選択：A=+1購入+$2 ／ B=このターン次の獲得で同コスト別名を1枚獲得できる（積む）。
+      case 'CHARM_MODE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'charm_mode') return state;
+        if (action.mode === 'coins') { t.buys += 1; t.coins += 2; log(state, `${state.players[pd.player].name} は御守り（+1購入 +$2）。`); }
+        else { t.charmNextGain = (t.charmNextGain || 0) + 1; log(state, `${state.players[pd.player].name} は御守り（次の獲得で同コスト別名を1枚獲得）。`); }
+        state.pending = null;
+        return state;
+      }
+      // 軍団兵：手札の金貨を公開してよい。公開したら各相手は手札2枚まで捨て→1枚引く（アタック・drawAfter=1）。
+      case 'LEGIONARY_REVEAL': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'legionary_reveal') return state;
+        const owner = state.players[pd.player];
+        if (action.reveal && owner.hand.includes('gold')) {
+          reveal(state, pd.player, ['gold'], '軍団兵：金貨を公開');
+          log(state, `${owner.name} は軍団兵で金貨を公開した（各相手は手札2枚まで捨て→1枚引く）。`);
+          const vics = [];
+          for (let k = 1; k < state.players.length; k++) { const idx = (pd.player + k) % state.players.length; if (!attackImmune(state, idx)) vics.push(idx); }
+          state.pending = null;
+          discardDownEnter(state, pd.player, 2, vics, null, 1);
+        } else {
+          state.pending = null;
+        }
+        return state;
+      }
+      // 御守り（charm）のモードB＝獲得したカードと同コスト（$・負債・ポーション一致）で名前の異なるカード1枚を獲得してよい（任意・積んだ枚数ぶん）。
+      case 'CHARM_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'charm_gain') return state;
+        const owner = pd.player;
+        const canGain = (id) => id !== pd.trig && !NON_SUPPLY.has(id) && (state.supply[id] || 0) > 0 &&
+          cardCost(state, id) === pd.coin && ((C()[id] && C()[id].debt) || 0) === pd.debt && potionCost(id) === pd.pot;
+        const card = action.card; // null = 獲得しない（辞退＝機会1つを消費）
+        if (card != null && !canGain(card)) return state; // 無効な選択（同名/コスト不一致/在庫なし）は拒否＝pending維持
+        if (card != null) { gain(state, owner, card, 'discard'); log(state, `${state.players[owner].name} は御守りで「${C()[card].name}」を獲得した。`); }
+        const remaining = (pd.count || 1) - 1;
+        if (remaining > 0 && anyGainable(state, canGain)) { state.pending = { type: 'charm_gain', player: owner, coin: pd.coin, debt: pd.debt, pot: pd.pot, trig: pd.trig, count: remaining }; return state; }
+        state.pending = null;
+        return state;
+      }
       // 過払い額を確定する（0でもよい）。カードごとの過払い効果へ分岐。
       case 'OVERPAY_RESOLVE': {
         const pd = state.pending;
@@ -8233,6 +8457,14 @@
         lingerAttackEnter(state, pd.source, pd.type, pd.queue, pd.rid);
         return state;
       }
+      // 帝国：女魔術師のアタックを「そのまま受ける」＝この相手を enchanted にして次の相手へ。
+      case 'ENCHANTRESS_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'enchantress' || pd.stage !== 'react') return state;
+        state.players[pd.victim].enchanted = true;
+        enchantressEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
       /* ========== 冒険：複雑系の選択解決 ========== */
       // 倒壊：これ（場）か手札1枚を廃棄→そのコイン分だけ山札の上を見る。
       case 'RAZE_TRASH': {
@@ -8601,6 +8833,8 @@
         setAside: (p.setAside || []).map((c) => (c === 'stash' ? 'stash' : 'back')),
         nativeVillageMat: new Array((p.nativeVillageMat || []).length).fill('back'),
         delayedEffects: maskedDelayed,
+        // 帝国：資料庫の脇置きは所有者だけが中身を見られる＝相手には伏せる（枚数=idは残す）。
+        archives: (p.archives || []).map((a) => ({ id: a.id, cards: revealHand ? (a.cards || []).slice() : (a.cards || []).map(() => 'back') })),
         // inPlay / durationCards / islandMat / princes（王子の脇＝公開）は表向き＝そのまま
       });
     });
@@ -8684,6 +8918,8 @@
     'RAZE_TRASH', 'RAZE_LOOK', 'ARTIFICER_DISCARD', 'ARTIFICER_GAIN', 'STORYTELLER_PLAY', 'MESSENGER_PLAY', 'MESSENGER_GAIN',
     // 帝国（Empires）Batch E1：負債経済
     'REPAY_DEBT', 'ENGINEER_GAIN', 'ENGINEER_TRASH',
+    // 帝国（Empires）Batch E2
+    'SACRIFICE_TRASH', 'FORUM_DISCARD', 'CHARM_MODE', 'CHARM_GAIN', 'LEGIONARY_REVEAL', 'ENCHANTRESS_REACT', 'ARCHIVE_PICK',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',

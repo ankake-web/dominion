@@ -1,9 +1,44 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-08 / branch `main`（最新は `git log` で確認）。**冒険（Adventures）段階2＝全38枚＋Phase E昇格 は完成＆push済＝本番反映（§0-9。HEAD==origin/main で確認済み。`sw.js` v36）**。**その後に未pushの WIP コミット＝帝国（Empires）段階2 に着手＝Batch E1＝負債(Debt)経済の基盤＋純負債4枚（技術者/市街/王室の鍛冶屋/元手）実装＋敵対レビュー修正 完了（§0-10）。`sw.js` v37。push はユーザー確認待ち**。帝国はまだ CARD_SET 未昇格＝本番挙動は不変（負債カードはサプライに出ない）。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
+最終更新: 2026-07-08 / branch `main`（最新は `git log` で確認）。**冒険（Adventures）段階2＝全38枚＋Phase E昇格 は完成＆push済＝本番反映（§0-9。`sw.js` v36）**。**その後 未pushの WIP＝帝国（Empires）段階2＝Batch E1（負債経済の基盤・§0-10）＋Batch E2（既存VPトークン＆単独カード9枚・§0-11）まで完了。`sw.js` v38。push はユーザー確認待ち**。帝国はまだ CARD_SET 未昇格＝本番挙動は不変（帝国カードはサプライに出ない）。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
-**新セッションは まず `npm test` を実行し 32スイート・オールグリーン（exit 0・整合性3134件・帝国39件・冒険44件＋UI40件・暗黒時代70件＋UI57件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
+**新セッションは まず `npm test` を実行し 32スイート・オールグリーン（exit 0・整合性3134件・帝国79件・冒険44件＋UI40件・暗黒時代70件＋UI57件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
+
+---
+
+## 0-11. 段階2＝帝国（Empires）Batch E2＝既存VPトークン＆単独カード9枚 **完了**（2026-07-08・WIP・未push）
+
+**Batch E2 完了**＝forum/sacrifice/groundskeeper/chariot_race/villa/charm/legionary/enchantress/archive の9枚を4点セット（engine reducer＋PLAYER_ACTIONS＋CPU decidePending＋UI viewPendingModal）＋終端保証で実装。設計正本＝`docs/research/empires_rules.md` §3。`sw.js` v37→**v38**。**帝国はまだ CARD_SET 未昇格＝本番挙動は不変**。次は E3（集合＝山上VPトークン）。
+
+### 研究WF（9エージェント・web裏取り）でカタログ誤り2件を検出→修正（重要）
+- **villa（ヴィラ）**：カタログの**プレイ時**効果に「これを手札に加える」が誤って入っていた（公式は**獲得時**のみ。プレイ時に手札へ戻すと無限コンボ）。→ カタログ修正（プレイ＝+2アクション+1購入+1コインのみ）＋**webp再生成**。実装は on-gain（triggerOnGain）で「手札に加え+1アクション・購入フェイズ中ならアクションフェイズに戻る」。
+- **forum（公共広場）**：2022エラッタで「購入時+1購入」→**「獲得時+1購入」**に変更。→ カタログ「獲得時」に修正＋**webp再生成**、実装も on-gain（triggerOnGain）で+1購入。
+- **chariot_race（戦車競走）**：**左隣が山札0枚のときは勝ちにならない**（`empires_rules.md` §3の「左隣0枚＝こちらの勝ち」は誤り。BGGスレ等4ソースで確認）。→ 実装は「**両者が公開でき、かつ自分のコストが厳密に高い**」時だけ +$1+VP（同コスト・どちらか空は無し）。
+
+### 各カードの実装要点
+- **forum**：+3カード+1アクション→手札2枚捨て（FORUM_DISCARD）。on-buyでなく**on-gain**で+1購入。
+- **sacrifice**：手札1枚廃棄→**種別ごとに全適用**（アクション=+2カ+2ア／財宝=+$2／勝利点=VPトークン2）。空手札なら pending 無し。
+- **groundskeeper**：+1カ+1ア。**場にある物理枚数ぶん**、勝利点獲得毎にVPトークン（triggerOnGainの隠し財産と同型・自手番のみ）。
+- **chariot_race**：+1アクション。自分の山札上を公開して手札へ、左隣は公開のみ（山札に残す）。上記の厳密比較で +$1+VP。
+- **villa**：プレイ＝+2アクション+1購入+1コイン（手札に戻らない）。**獲得時**（triggerOnGain）＝手札に加え+1アクション、**自分の購入フェイズ中の獲得ならアクションフェイズに戻る**（`state.turn.phase='action'`）。engineer等での獲得やBUYどちらも同じ入口。
+- **charm**：財宝の二択（`charm_mode`）。A=+1購入+$2／B=`t.charmNextGain` を積み、このターン**次の獲得**でその獲得札と**同コスト（$・負債・ポーション一致）で名前の異なる**カード1枚を獲得（`charm_gain`・複数チャームは積む・無効な選択は拒否してpending維持）。
+- **legionary**：+$3。金貨公開の選択（`legionary_reveal`）→公開したら各相手が手札2枚まで捨て**その後1枚引く**。**`discard_down` に `drawAfter` を追加**（捨て後に+1引き・免疫でない全相手が対象＝手札≤2でも引く）。アタック（堀/灯台で全無効）。
+- **enchantress**：即時効果なしのアタック持続。免疫でない各相手に `p.enchanted` を立て、**その手番で最初にプレイするアクションを +1カード+1アクションに置換**（PLAY_ACTIONで消費・記載効果=アタックも抑止・チャンピオン/教師トークン等ライン下能力は先に適用済みで機能）。次の自分の手番開始時 +2カード（DURATION_RESOLVERS）。`enchanted` は相手の cleanup で消える。置換された持続は予約を張らずそのターン捨て。堀react（ENCHANTRESS_REACT/MOAT_REVEAL）。
+- **archive**：+1アクション。山札上3枚を裏で脇へ＝新ゾーン **`p.archives = [{id, cards}]`**（所有者のみ可視＝**maskStateForで相手にback**・**allCards/invariants tally/empires tally に加算**・cleanupは `p.archives.length` ぶん物理カードを保持）。今回と次の2手番開始時に1枚ずつ手札へ（`archive_pick`。手番開始ぶんは resolveDurationStartEffects→startQueue）。玉座で2脇（各id独立）。
+
+### 敵対レビュー（多エージェント6次元→node再現検証）＝確定バグ3種→修正2件＋据え置き1件
+- **[修正] 生贄×玉座/王の宮廷/行進でCPU無限ループ**：`sacrifice` を2回プレイし1回目で最後の非生贄札を廃棄→2回目が手札=['sacrifice']で開くと、CPU `decidePending` が生贄を除外して `card:null` を返し続ける（engineは手札>0で廃棄必須＝null拒否でpending不閉）。**全プールfuzz（玉座+生贄）／闇市場経由（出荷promoで到達可）**。→ CPU sacrifice に `|| p.hand[0]` フォールバック（手札があれば必ず非null＝最後は生贄自身を廃棄＝アクション種別で+2カ+2ア）。回帰テスト2件。
+- **[修正] 闇市場でvilla/forum等を獲得→on-gain効果が飛ぶ**：`BLACK_MARKET_BUY` はサプライ外札のため gain() 非経由で discard 直挿し＝**`triggerOnGain` を呼んでいなかった**（villaの手札化/+1ア/フェイズ復帰・forumの+1購入・庭師VP・御守り次獲得が消失）。→ BLACK_MARKET_BUY 末尾に `triggerOnGain(state, pd.player, card, 'discard')` を追加（**従来から闇市場に在った on-gain 欠落＝キャッシュ/大使館/国境の村等も併せて解消**・負債は従来どおり手動付与で二重にならない）。回帰テスト2件。
+- **[据え置き＝許容簡略化] enchantress×追加ターン**：outpost（前哨地）/possession（支配）で相手が追加ターンを取ると、`enchanted` が再付与されず追加ターンの最初のアクションが置換されない（過小適用）。**出荷帝国セットに追加ターン源は無く到達不能**（全プールfuzzでのみ seaside/alchemy と同居し得るが、保存則/非ループ/クラッシュは無し＝fuzz緑を維持）。champion/教師トークンの「玉座再演では発火しない」と同種の意図的簡略化。
+
+### 検証
+- **狙い撃ちテスト（各カード）＝合計140件超 全緑**（実行後に一時ファイル削除）。`test/empires.test.js` を **全79件**に拡張（E1=39＋E2＝カード裁定＋敵対レビュー回帰5件＋E2 CPUソーク24戦[2〜3人・E2重点王国3種・膠着0/例外0/保存則0]）。
+- **invariants**：tally/hasBack に `archives` ゾーンを追加（脇置きも保存則に数える）。全プール混成fuzz緑（exit0）。
+- **npm test 全32スイート緑（exit 0・整合性3134不変）**。
+
+### 【次にやること】Batch E3（集合＝サプライ山上のVPトークン）
+- `docs/research/empires_rules.md` §1-2 の集合機構＝新スカラー `state.pileVP = {[pileId]:個数}`（公開・非カード）＋temple/farmers_market/wild_hunt。§3 の個別裁定を着手時に再確認。以降 E4分割山5組（sauna/avanto流用）→E5城8（knights混合山流用）→E6命令(overlord/crown)→E7=CARD_SET昇格。
 
 ---
 
