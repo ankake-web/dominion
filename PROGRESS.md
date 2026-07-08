@@ -1,6 +1,6 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-08 / branch `main`（最新は `git log` で確認）。**冒険＋帝国 Batch E1（負債）＋E2（単独9枚）＋E3（集合）＋E4（分割山5組）は push 済＝本番反映（§0-9〜0-13。`sw.js` v40）**。**その後 未pushの WIP＝帝国（Empires）Batch E5＝城8（混合山・knights流用）完了（§0-14）。`sw.js` v41。push はユーザー確認待ち**。帝国はまだ CARD_SET 未昇格＝本番挙動は不変（帝国カードはサプライに出ない）。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
+最終更新: 2026-07-08 / branch `main`（最新は `git log` で確認）。**冒険＋帝国 Batch E1（負債）＋E2（単独9枚）＋E3（集合）＋E4（分割山5組）＋E5（城8）は push 済＝本番反映（§0-9〜0-14。`sw.js` v41。HEAD==origin/main で確認済み）**。帝国はまだ CARD_SET 未昇格＝本番挙動は不変（帝国カードはサプライに出ない）。**次はBatch E6（命令＝overlord/crown）＝帝国 最後の新機構**。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
 **新セッションは まず `npm test` を実行し 32スイート・オールグリーン（exit 0・整合性3144件・帝国140件・冒険44件＋UI40件・暗黒時代70件＋UI57件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
