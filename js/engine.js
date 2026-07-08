@@ -44,10 +44,12 @@
 
   // このターンのコスト軽減（「橋」など）を反映した実コスト
   function cardCost(state, id) {
-    // 暗黒時代：騎士の混合山は「山の一番上の実騎士」のコストで判断する（Sir Martin だけ$4等）。
+    // 混合山（騎士/城）は「山の一番上の実カード」のコストで判断する（騎士＝Sir Martinだけ$4／城＝一番上の最安城）。
     let base = (id === 'knights' && Array.isArray(state.knights) && state.knights.length)
       ? ((C()[state.knights[0]] && C()[state.knights[0]].cost) || 0)
-      : ((C()[id] && C()[id].cost) || 0);
+      : (id === 'castles' && Array.isArray(state.castles) && state.castles.length)
+        ? ((C()[state.castles[0]] && C()[state.castles[0]].cost) || 0)
+        : ((C()[id] && C()[id].cost) || 0);
     const t = state.turn;
     const active = t ? state.players[t.active] : null;
     // 繁栄：石切場が場にある間、アクションカードは1枚につき$2安い（$0未満にはならない）。
@@ -415,6 +417,16 @@
       ruins = shuffle(pool).slice(0, 10 * (players.length - 1));
     }
     if (kingdom.includes('knights')) knights = shuffle((DOM.POOLS.knights || []).slice());
+    // 帝国：城の混合山＝8種を昇順（安い順）に積む。2人＝各1（8枚）／3-4人＝Humble/Small/Opulent/Kings を各2（計12枚）。
+    //   一番上（最も安い城）だけ購入/獲得できる。state.castles = 実カードid配列、supply.castles = 残数（同期）。
+    let castles = null;
+    if (kingdom.includes('castles')) {
+      castles = [];
+      const dbl = players.length >= 3;
+      const DBL = new Set(['humble_castle', 'small_castle', 'opulent_castle', 'kings_castle']);
+      (DOM.POOLS.castles || []).forEach((id) => { castles.push(id); if (dbl && DBL.has(id)) castles.push(id); }); // 昇順維持・重複は隣接
+      supply.castles = castles.length; // 山キーの残数を実配列に同期（8 or 12）
+    }
 
     // 闇市場(Black Market)デッキ：使用中のサプライに無い王国カードを1枚ずつ集めてシャッフル。
     // 闇市場が王国に含まれるときだけ用意する。
@@ -422,8 +434,10 @@
     if (kingdom.indexOf('black_market') >= 0) {
       const universe = Array.from(new Set([].concat.apply([], Object.values(DOM.POOLS || {}))));
       const inSupply = (id) => Object.prototype.hasOwnProperty.call(supply, id);
+      // 混合山の「中身」（騎士/廃墟/城の実カード）は単体の王国カードではない＝闇市場デッキに入れない（山の一番上でのみ得る）。
+      const mixedContents = new Set([].concat(DOM.POOLS.knights || [], DOM.POOLS.ruins || [], DOM.POOLS.castles || []));
       // 収穫祭：賞品(NON_SUPPLY)は王国カードではない＝闇市場デッキに絶対に入れない（$0で買える不正防止）。
-      blackMarket = shuffle(universe.filter((id) => DOM.CARDS[id] && id !== 'black_market' && !NON_SUPPLY.has(id) && !inSupply(id)));
+      blackMarket = shuffle(universe.filter((id) => DOM.CARDS[id] && id !== 'black_market' && !NON_SUPPLY.has(id) && !inSupply(id) && !mixedContents.has(id)));
     }
 
     return {
@@ -433,6 +447,7 @@
       supply,
       ruins,    // 暗黒時代：廃墟の混合山（実カードid配列。無ければ null）。supply.ruins と長さ同期。
       knights,  // 暗黒時代：騎士の混合山（実カードid配列。無ければ null）。supply.knights と長さ同期。
+      castles,  // 帝国：城の混合山（実カードid配列・昇順。無ければ null）。supply.castles と長さ同期。
       baneCard, // 収穫祭：若き魔女の災いカード（無ければ null）
       trash: [],
       blackMarket, // 闇市場デッキ（無ければ null）
@@ -500,7 +515,7 @@
     // 暗黒時代：混合山（廃墟/騎士）は state[cardId]（実カード配列）の在庫で判定・供給する。
     //   'ruins'/'knights' を山の先頭の実カードid（'survivors'/'sir_martin'等）へ解決して獲得する。
     //   騎士は supply.knights（数値・王国枠）も同期させる。廃墟は supply キーを持たない（state.ruins のみ）。
-    const isMixed = (cardId === 'ruins' || cardId === 'knights');
+    const isMixed = (cardId === 'ruins' || cardId === 'knights' || cardId === 'castles');
     if (isMixed) {
       if (!Array.isArray(state[cardId]) || state[cardId].length === 0) return false;
     } else {
@@ -2367,6 +2382,16 @@
         if (p.hand.length > 0) state.pending = { type: 'gladiator', stage: 'reveal', player: pi };
         else gladiatorLeftMatch(state, pi, null); // 手札空＝公開できない→左隣もマッチ不可→ボーナス
         break;
+
+      /* ===== 帝国（Empires）Batch E5：城（混合山）のプレイ効果 ===== */
+      // 小さい城：これ（場）か手札の城1枚を廃棄→廃棄したら城1枚を獲得（山の一番上）。手札に城が無くても「これ」を廃棄できる。
+      case 'small_castle':
+        state.pending = { type: 'small_castle', player: pi };
+        break;
+      // 華やかな城：手札から任意の枚数の勝利点カードを公開して捨てる→1枚につき +$2（0枚でもよい）。
+      case 'opulent_castle':
+        if (p.hand.some((c) => DOM.isType(c, 'victory'))) state.pending = { type: 'opulent_castle', player: pi };
+        break;
       case 'cellar':
         t.actions += 1;
         // 手札を好きな枚数捨て、同じだけ引く（選択待ち）
@@ -4020,6 +4045,13 @@
     // 暗黒時代：封土＝所持する銀貨3枚につき1勝利点（端数切り捨て・封土1枚ごと）
     const feoda = cards.filter((c) => c === 'feodum').length;
     if (feoda) vp += feoda * Math.floor(cards.filter((c) => c === 'silver').length / 3);
+    // 帝国：粗末な城(humble)=所有する城1枚につき1点／王城(kings)=所有する城1枚につき2点（自身を含む全ての「城」種別カードを数える）。
+    const humbleC = cards.filter((c) => c === 'humble_castle').length;
+    const kingsC = cards.filter((c) => c === 'kings_castle').length;
+    if (humbleC || kingsC) {
+      const castleCount = cards.filter((c) => C()[c] && DOM.isType(c, 'castle')).length;
+      vp += humbleC * castleCount + kingsC * 2 * castleCount;
+    }
     // 冒険：遠隔地＝ゲーム終了時に酒場マットにあれば1枚4勝利点（マット以外にあれば0点＝固定vpは持たせない）。
     const distantOnMat = (p.tavern || []).filter((c) => c === 'distant_lands').length;
     if (distantOnMat) vp += distantOnMat * 4;
@@ -4248,6 +4280,36 @@
       let g = 0; for (let i = 0; i < glads; i++) if (gain(state, pIndex, 'gold', 'discard')) g++;
       if (g) log(state, `${gp.name} は大金の獲得で 剣闘士${glads}枚ぶん 金貨${g}枚を獲得した。`);
     }
+    /* ===== 帝国 Batch E5：城の獲得時/廃棄時の自動効果 ===== */
+    // 崩れた城（crumbling_castle）＝獲得または廃棄したとき +1勝利点トークン＋銀貨1枚（誰の獲得/廃棄でも）。廃棄時は triggerOnTrash。
+    if (cardId === 'crumbling_castle') {
+      gp.vpTokens = (gp.vpTokens || 0) + 1;
+      const gs = gain(state, pIndex, 'silver', 'discard');
+      log(state, `${gp.name} は崩れた城の獲得で +1勝利点${gs ? '＋銀貨1枚' : ''}。`);
+    }
+    // 壮大な城（grand_castle）＝獲得したとき手札を公開し、手札および場（inPlay+durationCards）の勝利点カード1枚につき +1勝利点（自身は捨て札で数えない）。
+    if (cardId === 'grand_castle') {
+      reveal(state, pIndex, gp.hand.slice(), '壮大な城：手札を公開');
+      const vics = gp.hand.filter((c) => DOM.isType(c, 'victory')).length
+        + gp.inPlay.filter((c) => DOM.isType(c, 'victory')).length
+        + (gp.durationCards || []).filter((c) => DOM.isType(c, 'victory')).length;
+      if (vics) { gp.vpTokens = (gp.vpTokens || 0) + vics; log(state, `${gp.name} は壮大な城の獲得で +${vics}勝利点（手札+場の勝利点${vics}枚）。`); }
+    }
+    // 幽霊城（haunted_castle）＝自分のターンに獲得したとき、金貨1枚を獲得（他Pの手札上げは下の pending 節で処理）。
+    if (cardId === 'haunted_castle' && state.turn && pIndex === state.turn.active) {
+      if (gain(state, pIndex, 'gold', 'discard')) log(state, `${gp.name} は幽霊城の獲得で金貨1枚を獲得した。`);
+    }
+    // 幽霊城＝各相手（手札5枚以上）は手札から2枚を山札の上へ（アタックではない＝堀では防げない）。
+    //   対話＝onGainQueue（remodel/工房等の *_GAIN 経由で獲得しても取りこぼさない・reduce末尾で発火）。
+    if (cardId === 'haunted_castle' && state.turn && pIndex === state.turn.active) {
+      const q = [];
+      for (let k = 1; k < n; k++) { const idx = (pIndex + k) % n; if (state.players[idx].hand.length >= 5) q.push(idx); }
+      if (q.length) (state.onGainQueue = state.onGainQueue || []).push({ type: 'haunted_topdeck', player: q[0], source: pIndex, queue: q.slice(1) });
+    }
+    // 広大な城（sprawling_castle）＝獲得したとき、公領1枚か屋敷3枚を獲得（獲得者の選択）。対話＝onGainQueue。
+    if (cardId === 'sprawling_castle') {
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'sprawling_castle', player: pIndex });
+    }
     // 役人：獲得したとき、場のすべての財宝を山札の上に置く（置いた順＝そのまま／簡略に選択なし）。
     if (cardId === 'mandarin') { const tre = gp.inPlay.filter((c) => DOM.isType(c, 'treasure')); tre.forEach((c) => { removeOne(gp.inPlay, c); gp.deck.unshift(c); }); if (tre.length) log(state, `${gp.name} は役人で場の財宝 ${tre.length}枚 を山札の上に置いた。`); }
     // 大釜：自分の手番にアクションを獲得した回数を数え、3回目で（大釜が場にあれば）各相手が呪いを獲得。
@@ -4428,6 +4490,12 @@
     }
     // 帝国：石（rocks）＝獲得または廃棄したとき銀貨1枚を獲得（購入フェイズ中なら山札の上・そうでなければ手札）。
     if (card === 'rocks') rocksGainSilver(state, pIndex);
+    // 帝国：崩れた城（crumbling_castle）＝獲得または廃棄したとき +1勝利点トークン＋銀貨1枚（獲得は triggerOnGain）。
+    if (card === 'crumbling_castle') {
+      p.vpTokens = (p.vpTokens || 0) + 1;
+      const gs = gain(state, pIndex, 'silver', 'discard');
+      log(state, `${p.name} は崩れた城の廃棄で +1勝利点${gs ? '＋銀貨1枚' : ''}。`);
+    }
     // 暗黒時代：青空市場（リアクション）＝自分のカードが廃棄されたとき、手札の青空市場を捨てて金貨を獲得してよい
     //   （誰のターンでも・相手のアタックでの廃棄でも発動。1廃棄に複数枚反応可）。対話＝onTrashQueue へ。
     if (p.hand.includes('market_square') && (state.supply.gold || 0) > 0) {
@@ -4685,6 +4753,12 @@
     //   誰のターンでも card の持ち主(player)が選ぶ（actor が pending.player を返す）。
     if (!state.pending && !state.gameOver && state.onTrashQueue && state.onTrashQueue.length) {
       state.pending = state.onTrashQueue.shift();
+      state = runReplays(state);
+    }
+    // 帝国：城の「獲得時の対話」（広大な城＝公領/屋敷3の選択／幽霊城＝相手の手札上げ）は、gainer 自身の pending 中に
+    //   獲得すると（remodel/工房等の *_GAIN 経由）その場で立てられないため onGainQueue に貯め、選択待ちが無くなったら 1件ずつ pending 化する。
+    if (!state.pending && !state.gameOver && state.onGainQueue && state.onGainQueue.length) {
+      state.pending = state.onGainQueue.shift();
       state = runReplays(state);
     }
     // 冒険：語り部の中断再開は runReplays より前（上）で処理済み。ここでは onTrashQueue 由来などで再度残っていれば拾う保険。
@@ -8104,6 +8178,73 @@
         }
         return state;
       }
+
+      /* ===== 帝国（Empires）Batch E5：城の選択解決 ===== */
+      // 小さい城：これ（場）か手札の城1枚を廃棄→廃棄したら城1枚を獲得。card='small_castle'（場）／手札の城id／null（手札の城枝で城なし＝空振り）。
+      case 'SMALL_CASTLE_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'small_castle') return state;
+        const owner = state.players[pd.player];
+        const card = action.card;
+        let trashed = false;
+        if (card === 'small_castle') {
+          if (removeOne(owner.inPlay, 'small_castle')) { trashCard(state, pd.player, 'small_castle'); trashed = true; log(state, `${owner.name} は小さい城（これ）を廃棄した。`); }
+        } else if (card != null && DOM.isType(card, 'castle') && owner.hand.includes(card)) {
+          removeOne(owner.hand, card); trashCard(state, pd.player, card); trashed = true; log(state, `${owner.name} は手札の「${C()[card].name}」を廃棄した（小さい城）。`);
+        }
+        // card == null ＝「手札の城」を選んだが城が無い→空振り（廃棄なし・獲得なし＝公式ルーリング）。
+        if (trashed && Array.isArray(state.castles) && state.castles.length > 0) {
+          if (gain(state, pd.player, 'castles', 'discard')) log(state, `${owner.name} は城1枚を獲得した（小さい城）。`);
+        }
+        state.pending = null;
+        return state;
+      }
+      // 華やかな城：手札の勝利点カードを任意枚数 公開して捨てる→1枚につき +$2。
+      case 'OPULENT_CASTLE_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'opulent_castle') return state;
+        const owner = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        const copy = owner.hand.slice();
+        for (const c of cards) { if (!DOM.isType(c, 'victory') || !removeOne(copy, c)) return state; } // 全て勝利点で手札にあること
+        if (cards.length) reveal(state, pd.player, cards, '華やかな城：勝利点を公開して捨てる');
+        cards.forEach((c) => { removeOne(owner.hand, c); owner.discard.push(c); });
+        t.coins += 2 * cards.length;
+        log(state, `${owner.name} は華やかな城で勝利点${cards.length}枚を捨てて +$${2 * cards.length}。`);
+        state.pending = null;
+        return state;
+      }
+      // 幽霊城：手札から2枚を山札の上へ（手番順に処理・アタックではない）。
+      case 'HAUNTED_TOPDECK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'haunted_topdeck') return state;
+        const owner = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        const need = Math.min(2, owner.hand.length);
+        if (cards.length !== need) return state;
+        const copy = owner.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        cards.forEach((c) => removeOne(owner.hand, c));
+        for (let i = cards.length - 1; i >= 0; i--) owner.deck.unshift(cards[i]); // 選んだ順で山札の上へ
+        log(state, `${owner.name} は幽霊城で手札${cards.length}枚を山札の上に置いた。`);
+        const q = pd.queue || [];
+        if (q.length) state.pending = { type: 'haunted_topdeck', player: q[0], source: pd.source, queue: q.slice(1) };
+        else state.pending = null;
+        return state;
+      }
+      // 広大な城：公領1枚か屋敷3枚を獲得。
+      case 'SPRAWLING_CASTLE_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'sprawling_castle') return state;
+        if (action.choice === 'estates') {
+          let g = 0; for (let i = 0; i < 3; i++) if (gain(state, pd.player, 'estate', 'discard')) g++;
+          log(state, `${state.players[pd.player].name} は広大な城で屋敷${g}枚を獲得した。`);
+        } else {
+          if (gain(state, pd.player, 'duchy', 'discard')) log(state, `${state.players[pd.player].name} は広大な城で公領1枚を獲得した。`);
+        }
+        state.pending = null;
+        return state;
+      }
       // 御守り（charm）のモード選択：A=+1購入+$2 ／ B=このターン次の獲得で同コスト別名を1枚獲得できる（積む）。
       case 'CHARM_MODE': {
         const pd = state.pending;
@@ -9214,6 +9355,8 @@
     'TEMPLE_TRASH', 'WILD_HUNT_RESOLVE',
     // 帝国（Empires）Batch E4：分割山
     'ENCAMPMENT_REVEAL', 'SETTLERS_RESOLVE', 'CATAPULT_TRASH', 'CATAPULT_REACT', 'GLADIATOR_REVEAL', 'GLADIATOR_MATCH',
+    // 帝国（Empires）Batch E5：城（混合山）
+    'SMALL_CASTLE_RESOLVE', 'OPULENT_CASTLE_DISCARD', 'HAUNTED_TOPDECK', 'SPRAWLING_CASTLE_CHOOSE',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',

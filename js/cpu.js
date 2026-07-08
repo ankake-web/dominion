@@ -59,7 +59,7 @@
     'junk_dealer', 'bandit_camp', 'rebuild', 'catacombs', 'graverobber', 'count', 'band_of_misfits', 'mystic', 'rogue', 'pillage', 'cultist', 'counterfeit', 'hunting_grounds', 'altar', 'knights', 'dame_anna', 'dame_josephine', 'dame_molly', 'dame_natalie', 'dame_sylvia', 'sir_bailey', 'sir_destry', 'sir_martin', 'sir_michael', 'sir_vander', 'abandoned_mine', 'ruined_library', 'ruined_market', 'ruined_village', 'survivors', 'hovel', 'necropolis', 'overgrown_estate', 'spoils', 'madman', 'mercenary',
     // 段階1追加（冒険＋帝国。CARD_SETS 未参照＝実際には獲得されないが GAIN_ORDER=全カードの整合性を満たす）
     'coin_of_the_realm', 'page', 'peasant', 'ratcatcher', 'raze', 'amulet', 'caravan_guard', 'dungeon', 'gear', 'guide', 'duplicate', 'magpie', 'messenger', 'miser', 'port', 'ranger', 'transmogrify', 'artificer', 'bridge_troll', 'distant_lands', 'giant', 'haunted_woods', 'lost_city', 'relic', 'royal_carriage', 'storyteller', 'swamp_hag', 'treasure_trove', 'wine_merchant', 'hireling', 'treasure_hunter', 'warrior', 'hero', 'champion', 'soldier', 'fugitive', 'disciple', 'teacher',
-    'engineer', 'city_quarter', 'overlord', 'royal_blacksmith', 'farmers_market', 'chariot_race', 'enchantress', 'sacrifice', 'temple', 'villa', 'archive', 'capital', 'charm', 'forum', 'groundskeeper', 'legionary', 'wild_hunt', 'crown', 'encampment', 'plunder', 'patrician', 'emporium', 'settlers', 'bustling_village', 'catapult', 'rocks', 'gladiator', 'fortune', 'humble_castle', 'crumbling_castle', 'small_castle', 'haunted_castle', 'opulent_castle', 'sprawling_castle', 'grand_castle', 'kings_castle',
+    'engineer', 'city_quarter', 'overlord', 'royal_blacksmith', 'farmers_market', 'chariot_race', 'enchantress', 'sacrifice', 'temple', 'villa', 'archive', 'capital', 'charm', 'forum', 'groundskeeper', 'legionary', 'wild_hunt', 'crown', 'encampment', 'plunder', 'patrician', 'emporium', 'settlers', 'bustling_village', 'catapult', 'rocks', 'gladiator', 'fortune', 'castles', 'humble_castle', 'crumbling_castle', 'small_castle', 'haunted_castle', 'opulent_castle', 'sprawling_castle', 'grand_castle', 'kings_castle',
     'copper', 'curse'];
   // 収穫祭：賞品(Prize)は馬上槍試合でのみ獲得する非サプライ札＝汎用の獲得効果(bestGain/bestGainExact)は
   // 絶対に賞品を選ばない（豊穣の角等で$0賞品を不正獲得しない／賞品を拒否する reducer と噛み合って無限ループしない）。
@@ -436,6 +436,8 @@
     // 帝国E4：剣闘士（+$2＋左隣非公開なら+$1・剣闘士廃棄）／投石機（+$1＋強制廃棄＝不要札があるときだけ）。
     if (has('gladiator')) return 'gladiator';
     if (has('catapult') && p.hand.some((c) => c !== 'catapult' && (c === 'copper' || c === 'estate' || c === 'curse' || isDead(c)))) return 'catapult';
+    // 帝国E5：華やかな城＝手札の勝利点カードを+$2/枚に換金（捨てるだけ＝VPは失わない）。手札に他の勝利点があるときだけ。
+    if (has('opulent_castle') && p.hand.some((c) => c !== 'opulent_castle' && isType(c, 'victory'))) return 'opulent_castle';
     return null;
   }
 
@@ -1307,6 +1309,22 @@
         const nonCopper = p.hand.find((c) => c !== 'copper');
         return { type: 'GLADIATOR_REVEAL', card: nonCopper || p.hand[0] };
       }
+
+      /* ===== 拡張: 帝国（Empires）Batch E5：城 ===== */
+      case 'small_castle':
+        // CPUは小さい城を積極プレイしない（VP温存）。万一立ったら空振り（廃棄せず＝2VP保持・終端）。
+        return { type: 'SMALL_CASTLE_RESOLVE', card: null };
+      case 'opulent_castle':
+        // 手札の勝利点カードを全て捨てて +$2/枚（捨てるだけ＝所有VPは失わない）。
+        return { type: 'OPULENT_CASTLE_DISCARD', cards: p.hand.filter((c) => isType(c, 'victory')) };
+      case 'haunted_topdeck': {
+        // 被害者：手札から2枚を山札の上へ（最も価値の低い2枚＝次手番の手札への影響を最小化）。
+        const two = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b)).slice(0, Math.min(2, p.hand.length));
+        return { type: 'HAUNTED_TOPDECK', cards: two };
+      }
+      case 'sprawling_castle':
+        // 公領（1枚3点・デッキ圧迫少）を優先。公領が無ければ屋敷3枚。
+        return { type: 'SPRAWLING_CASTLE_CHOOSE', choice: sup(state, 'duchy') > 0 ? 'duchy' : 'estates' };
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
       case 'warehouse':

@@ -25,10 +25,10 @@ const ZONES = ['deck', 'hand', 'discard', 'inPlay', 'durationCards', 'setAside',
 function tally(s) {
   const t = {}; const add = (id) => { if (id != null) t[id] = (t[id] || 0) + 1; };
   Object.keys(s.supply).forEach((id) => {
-    if (id === 'ruins' || id === 'knights') return; // 暗黒時代の混合山は実カードを state.ruins/knights で数える（下）
+    if (id === 'ruins' || id === 'knights' || id === 'castles') return; // 混合山は実カードを state.ruins/knights/castles で数える（下）
     const n = s.supply[id] | 0; for (let i = 0; i < n; i++) add(id);
   });
-  (s.ruins || []).forEach(add); (s.knights || []).forEach(add); // 暗黒時代：混合山の中身（実カードid配列）
+  (s.ruins || []).forEach(add); (s.knights || []).forEach(add); (s.castles || []).forEach(add); // 混合山の中身（廃墟/騎士/城）
   (s.trash || []).forEach(add); (s.blackMarket || []).forEach(add);
   s.players.forEach((p) => ZONES.forEach((z) => (p[z] || []).forEach(add)));
   s.players.forEach((p) => (p.archives || []).forEach((a) => (a.cards || []).forEach(add))); // 帝国：資料庫の脇置き（{id,cards}）

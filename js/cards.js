@@ -738,7 +738,7 @@
                  text: '+2 コイン\nあなたの手札からカード1枚を公開する。あなたの左隣のプレイヤーは手札から同じカードを公開してもよい。公開されなかった場合、+1 コイン、サプライから剣闘士1枚を廃棄する。' },
     fortune: { id: 'fortune', name: '大金', cost: 8, debt: 8, types: ['treasure'],
                  text: '+1 購入\nこのターンにまだ大金をプレイしていない場合、あなたのコインを2倍にする。\nこれを獲得したとき、あなたのプレイエリアにある剣闘士1枚につき金貨1枚を獲得する。' },
-    humble_castle: { id: 'humble_castle', name: '粗末な城', cost: 3, types: ['treasure', 'victory', 'castle'],
+    humble_castle: { id: 'humble_castle', name: '粗末な城', cost: 3, types: ['treasure', 'victory', 'castle'], coin: 1,
                  text: '＋1 コイン\n（勝利点：所有する城1枚につき1点）' },
     crumbling_castle: { id: 'crumbling_castle', name: '崩れた城', cost: 4, types: ['victory', 'castle'], vp: 1,
                  text: '1 勝利点\nこのカードを獲得または廃棄したとき、+1 勝利点トークンを得て、銀貨1枚を獲得する。' },
@@ -754,6 +754,10 @@
                  text: '5 勝利点\nこのカードを獲得したとき、手札を公開する。手札および場に出ている勝利点カード1枚につき +1 勝利点トークン。' },
     kings_castle: { id: 'kings_castle', name: '王城', cost: 10, types: ['victory', 'castle'],
                  text: '（勝利点：所有する城1枚につき2点）' },
+    // 帝国：城の混合山の「山キー」（騎士 knights と同型のプレースホルダ）。実カードは state.castles（8種を昇順に積む）。
+    //   一番上（最も安い城）だけ購入/獲得できる。cardCost('castles') は engine が先頭の実コストで解決する。
+    castles: { id: 'castles', name: '城', cost: 3, types: ['victory', 'castle'],
+                 text: '城の混合山（8種）。一番上（最も安い城）だけ購入/獲得できる。' },
   };
 
   /* ---------- 王国カードのセット ----------
@@ -864,8 +868,11 @@
   // 冒険：トラベラーの成長先8種＝非サプライ（page/peasant の交換でのみ得る・各5枚）。賞品(prizes)と同型で
   //   ランダム抽選の母集団には入れない（POOLS.adventures から分離）。整合性テストの「全カードがどれかのプールに属す」は満たす。
   DOM.POOLS.travellers = ['treasure_hunter', 'warrior', 'hero', 'champion', 'soldier', 'fugitive', 'disciple', 'teacher'];
-  // 帝国（Empires）＝段階1。非分割18＋分割両面10＋城8。
-  DOM.POOLS.empires = ['engineer', 'city_quarter', 'overlord', 'royal_blacksmith', 'farmers_market', 'chariot_race', 'enchantress', 'sacrifice', 'temple', 'villa', 'archive', 'capital', 'charm', 'forum', 'groundskeeper', 'legionary', 'wild_hunt', 'crown', 'encampment', 'plunder', 'patrician', 'emporium', 'settlers', 'bustling_village', 'catapult', 'rocks', 'gladiator', 'fortune', 'humble_castle', 'crumbling_castle', 'small_castle', 'haunted_castle', 'opulent_castle', 'sprawling_castle', 'grand_castle', 'kings_castle'];
+  // 帝国（Empires）＝段階1。非分割18＋分割両面10＋城（混合山1枠）。城の8種は POOLS.castles（混合山の中身・非選択）。
+  //   random-empires 等の抽選母集団には「城の山＝'castles'」を1枠として入れる（分割山の下段が normalize されるのと同型）。
+  DOM.POOLS.empires = ['engineer', 'city_quarter', 'overlord', 'royal_blacksmith', 'farmers_market', 'chariot_race', 'enchantress', 'sacrifice', 'temple', 'villa', 'archive', 'capital', 'charm', 'forum', 'groundskeeper', 'legionary', 'wild_hunt', 'crown', 'encampment', 'plunder', 'patrician', 'emporium', 'settlers', 'bustling_village', 'catapult', 'rocks', 'gladiator', 'fortune', 'castles'];
+  // 帝国：城の混合山の中身＝8種を昇順（安い順）に並べた正本。createInitialState が人数別に state.castles を積む。
+  DOM.POOLS.castles = ['humble_castle', 'crumbling_castle', 'small_castle', 'haunted_castle', 'opulent_castle', 'sprawling_castle', 'grand_castle', 'kings_castle'];
   // 画面で選べるセット（id はサーバ検証・保存にも使う）。
   //   kingdom 固定 … おすすめ10種をそのまま使う
   //   randomFrom  … 指定した拡張プールを合わせた中から毎回10種を抽選

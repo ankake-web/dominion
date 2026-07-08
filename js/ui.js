@@ -223,9 +223,10 @@
   // サプライの山。opts: {onClick, buyable, gainable, size}
   function pileEl(id, state, opts) {
     opts = opts || {};
-    // 暗黒時代：騎士は混合山＝一番上の実騎士（state.knights[0]）を表示する（購入対象は 'knights' のまま）。
+    // 混合山（騎士/城）は一番上の実カードを表示する（購入対象は 'knights'/'castles' のまま）。
     const isKnightPile = id === 'knights' && Array.isArray(state.knights) && state.knights.length > 0;
-    const dispId = isKnightPile ? state.knights[0] : id;
+    const isCastlePile = id === 'castles' && Array.isArray(state.castles) && state.castles.length > 0;
+    const dispId = isKnightPile ? state.knights[0] : (isCastlePile ? state.castles[0] : id);
     const c = DOM.CARDS[dispId] || DOM.CARDS[id];
     const n = state.supply[id] || 0;
     const ec = effCost(state, id);
@@ -233,7 +234,7 @@
       (n <= 0 ? ' empty' : '') + (opts.buyable ? ' buyable' : '') + (opts.gainable ? ' gainable' : '') +
       (opts.recommended ? ' recommended' : '') +
       (ec < c.cost ? ' discounted' : '');
-    const aria = c.name + (isKnightPile ? '（騎士の山の一番上）' : '') + '、コスト' + ec + (potCost(id) ? '＋ポーション' : '') + '、残り' + n + '枚' + (opts.recommended ? '、おすすめ' : '');
+    const aria = c.name + (isKnightPile ? '（騎士の山の一番上）' : isCastlePile ? '（城の山の一番上）' : '') + '、コスト' + ec + (potCost(id) ? '＋ポーション' : '') + '、残り' + n + '枚' + (opts.recommended ? '、おすすめ' : '');
     return h('div', a11yBtn({ class: cls, onclick: opts.onClick, 'data-pile': id }, opts.onClick, aria),
       h('div', { class: 'pcost' }, ec),
       h('div', { class: 'pname' }, c.name),
@@ -1261,6 +1262,26 @@
         { label: '同じカードを公開する', cls: 'btn-primary', on: () => dispatch({ type: 'GLADIATOR_MATCH', reveal: true }) },
         { label: '公開しない（相手が +$1＋剣闘士1枚廃棄）', on: () => dispatch({ type: 'GLADIATOR_MATCH', reveal: false }) },
       ]);
+    // 帝国E5：小さい城＝これ（場）か手札の城1枚を廃棄→城1枚を獲得。
+    if (pd.type === 'small_castle') {
+      const handCastles = [...new Set(p.hand.filter((c) => DOM.isType(c, 'castle')))];
+      const buttons = [h('button', { class: 'btn btn-primary btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'SMALL_CASTLE_RESOLVE', card: 'small_castle' }) }, '小さい城（これ）を廃棄 → 城1枚を獲得')];
+      handCastles.forEach((id) => buttons.push(h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'SMALL_CASTLE_RESOLVE', card: id }) }, '手札の「' + DOM.CARDS[id].name + '」を廃棄 → 城1枚を獲得')));
+      buttons.push(h('button', { class: 'btn btn-block', onclick: () => dispatch({ type: 'SMALL_CASTLE_RESOLVE', card: null }) }, '廃棄しない（城を獲得しない）'));
+      return modalShell('小さい城 — 廃棄', 'これ（場の小さい城）か手札の城1枚を廃棄すると、城1枚（山の一番上）を獲得します。', [], h('div', null, buttons));
+    }
+    // 帝国E5：華やかな城＝手札の勝利点カードを好きな枚数捨てて +$2/枚。
+    if (pd.type === 'opulent_castle') return modalMultiHand(p, '華やかな城 — 勝利点を捨てる',
+      '手札の勝利点カードを好きな枚数 公開して捨てます（1枚につき +$2・0枚でもよい）。',
+      (n) => '確定（' + n + '枚 捨てて +$' + (2 * n) + '）', true, (cards) => dispatch({ type: 'OPULENT_CASTLE_DISCARD', cards }), null, (id) => DOM.isType(id, 'victory'));
+    // 帝国E5：幽霊城＝手札2枚を山札の上へ（被害者）。
+    if (pd.type === 'haunted_topdeck') { const need = Math.min(2, p.hand.length); return modalSelectN(p, '幽霊城 — 手札2枚を山札の上へ',
+      '手札から' + need + '枚を選び、山札の上に置きます（最初にタップ＝一番上）。', need, '確定（山札の上へ）', (cards) => dispatch({ type: 'HAUNTED_TOPDECK', cards })); }
+    // 帝国E5：広大な城＝公領1枚か屋敷3枚を獲得。
+    if (pd.type === 'sprawling_castle') return modalOptions('広大な城 — 獲得', '公領1枚か屋敷3枚を獲得します。', [
+      { label: '公領1枚を獲得（3点・1枚）', cls: 'btn-primary', on: () => dispatch({ type: 'SPRAWLING_CASTLE_CHOOSE', choice: 'duchy' }) },
+      { label: '屋敷3枚を獲得（3点・3枚）', on: () => dispatch({ type: 'SPRAWLING_CASTLE_CHOOSE', choice: 'estates' }) },
+    ]);
     if (pd.type === 'nobles') return modalOptions('貴族', '次から1つを選びます。', [
       { label: '+3 カード', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'cards' }) },
       { label: '+2 アクション', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'actions' }) },

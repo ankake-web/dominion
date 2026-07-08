@@ -1,9 +1,36 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-08 / branch `main`（最新は `git log` で確認）。**冒険＋帝国 Batch E1（負債）＋E2（既存VPトークン&単独9枚）＋E3（集合）は push 済＝本番反映（§0-9〜0-12。`sw.js` v39）**。**その後 未pushの WIP＝帝国（Empires）Batch E4＝分割山5組（10枚）＋分割山機構の一般化 完了（§0-13）。`sw.js` v40。push はユーザー確認待ち**。帝国はまだ CARD_SET 未昇格＝本番挙動は不変（帝国カードはサプライに出ない）。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
+最終更新: 2026-07-08 / branch `main`（最新は `git log` で確認）。**冒険＋帝国 Batch E1（負債）＋E2（単独9枚）＋E3（集合）＋E4（分割山5組）は push 済＝本番反映（§0-9〜0-13。`sw.js` v40）**。**その後 未pushの WIP＝帝国（Empires）Batch E5＝城8（混合山・knights流用）完了（§0-14）。`sw.js` v41。push はユーザー確認待ち**。帝国はまだ CARD_SET 未昇格＝本番挙動は不変（帝国カードはサプライに出ない）。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
-**新セッションは まず `npm test` を実行し 32スイート・オールグリーン（exit 0・整合性3134件・帝国122件・冒険44件＋UI40件・暗黒時代70件＋UI57件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
+**新セッションは まず `npm test` を実行し 32スイート・オールグリーン（exit 0・整合性3144件・帝国140件・冒険44件＋UI40件・暗黒時代70件＋UI57件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
+
+---
+
+## 0-14. 段階2＝帝国（Empires）Batch E5＝城8（混合山・knights流用）**完了**（2026-07-08・WIP・未push）
+
+**Batch E5 完了**＝城8種を1つの混合山（`state.castles`）として実装。設計正本＝`docs/research/empires_rules.md` §1-4/§3。`sw.js` v40→**v41**。**カタログ/webp変更なし**（研究WFで全8枚のカタログ＝公式一致・humble/plunder/rocksに続き humble_castle に coin:1 のみ追加＝表示文不変）。**帝国はまだ CARD_SET 未昇格＝本番挙動は不変**。次は E6（命令＝overlord/crown）＝帝国の最後の新機構。
+
+### 城の混合山（`state.castles`＝knights 混合山流用）
+- **pile-id `castles`**（knights 同型のプレースホルダ card を cards.js に追加＝`DOM.CARDS.castles`＋`POOLS.empires` に 'castles'／8種は `POOLS.castles`＝混合山の中身[非選択・昇順]）。`state.castles`＝実カードid配列を**コスト昇順**に積む（index0＝最安＝一番上）。`supply.castles`＝残数（同期）。**一番上だけ購入/獲得**（gain の `isMixed` に castles 追加＝先頭を shift・cardCost('castles')＝先頭の実コスト）。
+- **人数別セットアップ**：2人＝各1（8枚）／3-4人＝**Humble/Small/Opulent/Kings を各2**（計12・昇順・重複隣接）＝createInitialState で構築。
+- **公開情報**（昇順で決定的）＝maskStateFor で伏せない。**invariants/empires tally は state.castles を数え supply.castles はスキップ**（二重計上防止）。**混合山の中身（騎士/廃墟/城）を闇市場デッキから除外**（単体流出防止＝§6の既知リークも同時解消）。
+- **可変VP（vpOf）**：粗末な城(humble)＝所有する城1枚につき1点／王城(kings)＝所有する城1枚につき2点（**自身を含む全ての「城」種別カードを数える**）。他6種は固定vp（crumbling1/small2/haunted2/opulent3/sprawling4/grand5）。
+
+### 各カード（研究WFで公式裁定を裏取り・全カタログ一致）
+- **粗末な城(humble・$3・財宝)**：+$1（coin:1）＋可変VP。**崩れた城(crumbling・$4)**：固定1VP＋**獲得または廃棄したとき +1勝利点トークン＋銀貨1枚**（triggerOnGain＋triggerOnTrash）。
+- **小さい城(small・$5・アクション)**：固定2VP。プレイ＝これ（場）か手札の城1枚を廃棄→廃棄したら城1枚（一番上）を獲得（手札の城枝で城なし＝空振り可）。**華やかな城(opulent・$7・アクション)**：固定3VP。プレイ＝手札の勝利点カードを任意枚数 公開して捨て、1枚につき+$2（捨てるだけ＝VP保持・0枚可）。
+- **幽霊城(haunted・$6)**：固定2VP。**自分のターンに獲得したとき 金貨1枚（自動）＋各相手（手札5枚以上）が手札2枚を山札の上へ**（非アタック＝堀不可）。**広大な城(sprawling・$8)**：固定4VP。獲得時 公領1枚か屋敷3枚を獲得（選択）。**壮大な城(grand・$9)**：固定5VP。獲得時 手札公開＋手札および場の勝利点1枚につき+1VP（自身は捨て札で数えない）。**王城(kings・$10)**：可変VP。
+
+### 敵対レビュー（多エージェント6次元→node再現検証）＝確定バグ1件[MED]→修正
+- **[修正] gainer（remodel/工房/拡張等の *_GAIN）経由で sprawling_castle/haunted_castle を獲得すると、獲得時効果が発火しない**：`finishGain` が gain() を呼ぶ時点で gainer 自身の pending が残っており、sprawling/haunted の on-gain が `!state.pending` ゲートで抑止される（BUY 経由は pending が null なので正常。crumbling/grand は自動効果でゲートなし＝無影響）。→ **新 `state.onGainQueue`（onTrashQueue 同型）を導入**＝sprawling/haunted の対話をキューに積み、reduce 末尾で選択待ちが空いたら発火（**border_village 等の意図的簡略化＝§6 の !pending on-gain対話ゲートは温存**）。他5次元クリーン（偽陽性0）。
+
+### 検証
+- 狙い撃ちテスト28/28（混合山の人数別/購入順/可変VP・全8枚・非アタックの堀不可・空振り・マスク）＋修正検証7/7。`test/empires.test.js` を **全140件**に拡張（E5裁定＋レビュー回帰＋CPUソークを42戦[E5城王国含む・全ゲーム完走で可変VP/混合山枯渇も検証]に拡大＝膠着0/例外0/保存則0）。
+- **integrity 3134→3144**（'castles' プレースホルダ card 追加ぶん）。invariants は state.castles を数え supply.castles をスキップ（混合山の保存則）。**npm test 全32スイート緑（exit 0・knights 回帰なし）**。
+
+### 【次にやること】Batch E6（命令＝overlord/crown）＝帝国 最後の新機構
+- `docs/research/empires_rules.md` §1-5：**overlord**（負債d8・band_of_misfits/captain 流用＝サプライのコスト5以下・非命令アクションを、サプライに残したまま使う）／**crown**（$5・action+treasure・玉座同型だが現在フェイズで対象種別が変わる＝アクションフェイズ→手札のアクション1枚を2回／購入フェイズ→手札の財宝1枚を2回）。その後 **E7＝Phase E＝CARD_SET昇格**（`DOM.KINGDOM_EMPIRES` 固定10種＋`empires`/`random-empires`）＝**ここで初めて本番に帝国が出る**。横型ランドスケープ（イベント/ランドマーク）は縦枠パイプライン未対応で対象外。
 
 ---
 
