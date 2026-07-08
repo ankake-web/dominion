@@ -720,7 +720,7 @@
                  text: 'アクションフェイズなら、手札のアクションカード1枚を2回プレイしてよい。\n購入フェイズなら、手札の財宝カード1枚を2回プレイしてよい。' },
     encampment: { id: 'encampment', name: '陣地', cost: 2, types: ['action'],
                  text: '+2 カード\n+2 アクション\n手札から金貨か鹵獲品を公開してもよい。公開しない場合、これを脇に置き、クリーンアップフェイズ開始時にサプライに戻す。' },
-    plunder: { id: 'plunder', name: '鹵獲品', cost: 5, types: ['treasure'],
+    plunder: { id: 'plunder', name: '鹵獲品', cost: 5, types: ['treasure'], coin: 2,
                  text: '+2 コイン\n+1 勝利点' },
     patrician: { id: 'patrician', name: 'パトリキ', cost: 2, types: ['action'],
                  text: '+1 カード\n+1 アクション\nあなたの山札の一番上のカードを公開する。それのコストが5コイン以上の場合、それを手札に加える。' },
@@ -732,7 +732,7 @@
                  text: '+1 カード\n+3 アクション\nあなたの捨て札置き場を見る。その中から開拓者1枚を公開して手札に加えてもよい。' },
     catapult: { id: 'catapult', name: '投石機', cost: 3, types: ['action', 'attack'],
                  text: '+1 コイン\n手札からカード1枚を廃棄する。それのコストが3コイン以上の場合、他のプレイヤー全員は呪いを1枚獲得する。それが財宝カードの場合、他のプレイヤー全員は手札が3枚になるまで捨て札にする。' },
-    rocks: { id: 'rocks', name: '石', cost: 4, types: ['treasure'],
+    rocks: { id: 'rocks', name: '石', cost: 4, types: ['treasure'], coin: 1,
                  text: '+1 コイン\nこれを獲得または廃棄したとき、銀貨を1枚獲得する。あなたの購入フェイズ中ならそれを山札の上に置き、そうでなければ手札に加える。' },
     gladiator: { id: 'gladiator', name: '剣闘士', cost: 3, types: ['action'],
                  text: '+2 コイン\nあなたの手札からカード1枚を公開する。あなたの左隣のプレイヤーは手札から同じカードを公開してもよい。公開されなかった場合、+1 コイン、サプライから剣闘士1枚を廃棄する。' },
@@ -926,12 +926,21 @@
     { id: 'random-promo',    kind: 'random', name: 'プロモ込みから',  randomFrom: ['basic', 'intrigue', 'promo'] },
     { id: 'random-1e',       kind: 'random', name: '初版から',        randomFrom: ['basic1e', 'intrigue1e'] },
   ];
+  // 分割山（Split pile）＝1つの山枠に「上段カード5枚＋下段カード5枚」。下段は上段が尽きるまで購入/獲得できない。
+  //   下段id → 上段id のマップ（唯一の正本）。engine.js（gain/canBuyCard/emptyPileCount 等）と cpu.js（splitBlocked）が参照。
+  //   プロモ：サウナ/アヴァント（両$4）／帝国：陣地-鹵獲品・パトリキ-エンポリウム・開拓者-騒がしい村・投石機-石・剣闘士-大金（上が安い）。
+  DOM.SPLIT_PILES = {
+    avanto: 'sauna',
+    plunder: 'encampment', emporium: 'patrician', bustling_village: 'settlers', rocks: 'catapult', fortune: 'gladiator',
+  };
   // プールから重複なく n 種を選ぶ（コスト順に並べて返す）
   DOM.randomKingdom = function (n, pool) {
     let src = (pool || DOM.KINGDOM_POOL).slice();
-    // プロモ：サウナ/アヴァントは1つの分割山（上5枚サウナ・下5枚アヴァント）。抽選ではサウナに
-    // 一本化して1山ぶんだけ枠を使う（sauna が選ばれたら createInitialState が avanto を自動追加する）。
-    if (src.includes('avanto')) { src = src.filter((id) => id !== 'avanto'); if (!src.includes('sauna')) src.push('sauna'); }
+    // 分割山は抽選で「上段（安い方）」に一本化して1山ぶんだけ枠を使う（上段が選ばれたら createInitialState が下段を自動追加する）。
+    Object.keys(DOM.SPLIT_PILES).forEach((bottom) => {
+      const top = DOM.SPLIT_PILES[bottom];
+      if (src.includes(bottom)) { src = src.filter((id) => id !== bottom); if (!src.includes(top)) src.push(top); }
+    });
     for (let i = src.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = src[i]; src[i] = src[j]; src[j] = t; }
     return src.slice(0, n || 10).sort((a, b) => DOM.CARDS[a].cost - DOM.CARDS[b].cost || a.localeCompare(b));
   };

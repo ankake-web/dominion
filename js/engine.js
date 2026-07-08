@@ -16,6 +16,11 @@
   // 冒険：トラベラーの成長先8種は非サプライ（各5枚・page/peasant が場にあるときだけ登場・購入不可・交換でのみ得る）。
   const TRAVELLER_GROWTH = ['treasure_hunter', 'warrior', 'hero', 'champion', 'soldier', 'fugitive', 'disciple', 'teacher'];
   const NON_SUPPLY = new Set([].concat(PRIZES, ['spoils', 'madman', 'mercenary'], TRAVELLER_GROWTH)); // supply の数値キーだが「山」としては数えない/買えないもの（賞品＋暗黒時代の戦利品/狂人/傭兵＋冒険のトラベラー成長先）
+  // 分割山（Split pile）：下段は上段が尽きるまで購入/獲得できない。正本は DOM.SPLIT_PILES（下段id→上段id）。
+  const SPLIT_TOP = DOM.SPLIT_PILES || {};              // 下段id → 上段id（例 avanto→sauna）
+  const SPLIT_BOTTOM = {}; Object.keys(SPLIT_TOP).forEach((b) => { SPLIT_BOTTOM[SPLIT_TOP[b]] = b; }); // 上段id → 下段id
+  // その id（下段）が「まだ上段が残っていて獲得/購入できない」か。
+  function splitLocked(state, id) { return !!(SPLIT_TOP[id] && (state.supply[SPLIT_TOP[id]] || 0) > 0); }
   // 冒険：トラベラーの成長系列（このカードを場から捨てる時、次の成長先と交換してよい）。champion/teacher は終端（次が無い）。
   const TRAVELLER_NEXT = { page: 'treasure_hunter', treasure_hunter: 'warrior', warrior: 'hero', hero: 'champion',
                            peasant: 'soldier', soldier: 'fugitive', fugitive: 'disciple', disciple: 'teacher' };
@@ -208,6 +213,14 @@
     if (card === 'capital') { t.buys += 1; }
     // 帝国：御守り（charm）＝二択（A: +1購入+$2 ／ B: このターン次にカードを獲得したとき、同コストで名前の異なるカードを1枚獲得してよい）。
     if (card === 'charm') { state.pending = { type: 'charm_mode', player: pIndex }; }
+    // 帝国：鹵獲品（plunder）＝+$2（coin:2 で計上済み）＋1勝利点トークン（プレイ毎）。
+    if (card === 'plunder') { p.vpTokens = (p.vpTokens || 0) + 1; log(state, `${p.name} は鹵獲品で +1勝利点。`); }
+    // 帝国：大金（fortune）＝+1購入。このターンまだ大金をプレイしていなければコインを2倍（獲得時の金貨は triggerOnGain）。
+    if (card === 'fortune') {
+      t.buys += 1;
+      if (!t.fortunePlayed) { t.coins = (t.coins || 0) * 2; t.fortunePlayed = true; log(state, `${p.name} は大金でコインを2倍にした（+1購入）。`); }
+      else log(state, `${p.name} は大金（+1購入・このターン2枚目以降はコイン2倍なし）。`);
+    }
     // 海辺：私掠船マーク中なら、このターン最初の銀貨/金貨は出した後に廃棄される（コインは入る）。
     corsairOnPlayTreasure(state, pIndex, card);
     // 冒険：-$1トークンの相殺（購入フェイズでコインが増えたぶんに食い込む）。
@@ -265,9 +278,9 @@
     // 収穫祭：馬上槍試合が場にあれば、賞品（Prize）5種を各1枚ずつ専用山として加える。
     //   賞品は非サプライ扱い＝購入できず（canBuyCard）・3山終了に数えない（emptyPileCount）。獲得は馬上槍試合のみ。
     if (kingdom.includes('tournament')) PRIZES.forEach((id) => (supply[id] = 1));
-    // プロモ：サウナ/アヴァントは10枚の分割山（上5枚サウナ・下5枚アヴァント）＝各5枚に上書き。
-    // アヴァントはサウナが尽きるまで購入/獲得できない（gain/canBuyCard がガード）。
-    if (kingdom.includes('sauna')) { supply.sauna = 5; supply.avanto = 5; }
+    // プロモ/帝国：分割山＝10枚（上段5枚＋下段5枚）＝各5枚に上書き。下段は上段が尽きるまで購入/獲得できない（gain/canBuyCard がガード）。
+    //   上段idが王国にあれば上下とも各5枚に（下段は createInitialState の相互補完で既に王国に居る）。
+    Object.keys(SPLIT_BOTTOM).forEach((top) => { if (kingdom.includes(top)) { supply[top] = 5; supply[SPLIT_BOTTOM[top]] = 5; } });
     // 錬金術：王国にポーション費用カードがあれば、ポーション山（公式は16枚）を共通サプライに加える。
     if (kingdom.some((k) => C()[k] && C()[k].potion)) supply.potion = 16;
     // 繁栄：王国に繁栄の王国カードがあれば、プラチナ貨（12枚）と植民地（勝利点と同枚数）を共通サプライに加える。
@@ -384,11 +397,14 @@
       baneCard = pickBane(kingdom);
       if (baneCard) kingdom.push(baneCard);
     }
-    // プロモ：サウナ/アヴァント＝1つの分割山（上5枚サウナ・下5枚アヴァント）。どちらかが王国に
-    // あれば両方をサプライに置く（emptyPileCount では1山として数える）。抽選はサウナに正規化済み
-    // （DOM.randomKingdom）だが、固定セットや外部指定に avanto 単独が来ても補正する。
-    if (kingdom.includes('avanto') && !kingdom.includes('sauna')) kingdom.push('sauna');
-    if (kingdom.includes('sauna') && !kingdom.includes('avanto')) kingdom.push('avanto');
+    // プロモ/帝国：分割山＝1つの山枠（上段5＋下段5）。上段/下段どちらかが王国にあれば両方をサプライに
+    // 置く（emptyPileCount では1山として数える）。抽選は上段に正規化済み（DOM.randomKingdom）だが、
+    // 固定セットや外部指定に下段単独が来ても補正する。
+    Object.keys(SPLIT_TOP).forEach((bottom) => {
+      const top = SPLIT_TOP[bottom];
+      if (kingdom.includes(bottom) && !kingdom.includes(top)) kingdom.push(top);
+      if (kingdom.includes(top) && !kingdom.includes(bottom)) kingdom.push(bottom);
+    });
     const supply = initSupply(players.length, kingdom);
     // 暗黒時代：混合山の中身（実カードid配列）。supply.ruins/knights（残枚数）と長さを同期させる。
     //   廃墟＝looterがあれば全50枚(5種×10)をシャッフルして (人数-1)×10 枚。騎士＝10種をシャッフルして1山。
@@ -490,7 +506,7 @@
     } else {
       if ((state.supply[cardId] || 0) <= 0) return false;
       // プロモ：サウナ/アヴァント分割山＝山の一番上のカードしか獲得できない（サウナが残る間アヴァントは不可）。
-      if (cardId === 'avanto' && (state.supply.sauna || 0) > 0) return false;
+      if (splitLocked(state, cardId)) return false; // 分割山：下段は上段が尽きるまで獲得できない
     }
     const realId = isMixed ? state[cardId][0] : cardId;
     const t = state.turn;
@@ -564,7 +580,7 @@
     if (id === 'grand_market' && state.players[pi].inPlay.includes('copper')) return false;
     if (id === 'ruins') return false; // 暗黒時代：廃墟は購入できない（略奪者アタック/獲得でのみ配られる）
     if (NON_SUPPLY.has(id)) return false; // 収穫祭：賞品は購入できない（馬上槍試合でのみ獲得）
-    if (id === 'avanto' && (state.supply.sauna || 0) > 0) return false; // プロモ：分割山の上（サウナ）が先
+    if (splitLocked(state, id)) return false; // 分割山：下段は上段が尽きるまで購入できない
     return true;
   }
 
@@ -603,7 +619,8 @@
   //   不正な card: pending据え置き（再選択）。呼び出し側は本関数の後に return state するだけ。
   function finishGain(state, pd, card, canGain, dest, note) {
     if (card == null) {
-      if (anyGainable(state, canGain)) return false; // 候補あり→獲得必須
+      // 分割山のロック中の下段は獲得不可＝「候補あり」から除外（さもないと gain 拒否×辞退拒否で pending が閉じずデッドロック）。
+      if (anyGainable(state, (id) => canGain(id) && !splitLocked(state, id))) return false; // 候補あり→獲得必須
       state.pending = null; return true;             // 候補なし→辞退
     }
     if (!canGain(card) || (state.supply[card] || 0) <= 0) return false;
@@ -645,7 +662,7 @@
       state.pending = null;
     } else if (card === 'stonemason') {
       // 石工：過払い額とちょうど同じコストのアクションカードを2枚獲得。
-      if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && DOM.isType(id, 'action') && cardCost(state, id) === amount)) {
+      if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && DOM.isType(id, 'action') && cardCost(state, id) === amount && !splitLocked(state, id))) {
         state.pending = { type: 'stonemason_overpay', player: pi, exact: amount, remaining: 2 };
       } else {
         log(state, `${p.name} は石工の過払い（$${amount}）で獲得できるアクションがなかった。`);
@@ -716,7 +733,7 @@
     log(state, `${v.name} は山札の上の「${C()[trashed].name}」を廃棄した。`);
     const cst = cardCost(state, trashed);
     // 非サプライ（賞品/トラベラー成長先/戦利品等）は贈与対象にしない（交換/専用機構でのみ得るカード）。
-    if (anyGainable(state, (id) => cardCost(state, id) === cst && !NON_SUPPLY.has(id))) {
+    if (anyGainable(state, (id) => cardCost(state, id) === cst && !NON_SUPPLY.has(id) && !splitLocked(state, id))) {
       state.pending = { type: 'swindler', stage: 'gain', player: source, source, victim, cost: cst, queue };
     } else {
       swindlerEnterVictim(state, source, queue); // 同コストの獲得候補が無ければ獲得なしで次へ
@@ -876,6 +893,8 @@
     swamp_hag:     { onMoat: (s, pd) => { markLingerImmune(s, pd.source, 'swamp_hag', pd.victim, pd.rid); lingerAttackEnter(s, pd.source, 'swamp_hag', pd.queue, pd.rid); } },
     // 帝国：女魔術師（アタック持続）＝堀公開でこの相手は enchanted されず次へ。
     enchantress:   { onMoat: (s, pd) => enchantressEnterVictim(s, pd.source, pd.queue) },
+    // 帝国：投石機（アタック）＝堀公開でこの相手は呪い/捨てを免れ次へ。
+    catapult:      { onMoat: (s, pd) => catapultEnterVictim(s, pd.source, pd.queue, pd.giveCurse, pd.treasureDiscard, pd.discardQ) },
   };
   // 被攻撃側の反応（堀／秘密の小部屋／外交官）を差し込める局面か。
   function isAttackReactPending(pd) {
@@ -1140,7 +1159,7 @@
     //   ＝残枚数は問わない（Object.keys で存在するサプライ山キーのみを対象にする）。
     return Object.keys(state.supply).filter((id) =>
       state.supply[id] != null && !NON_SUPPLY.has(id) && C()[id] && DOM.isType(id, 'action') &&
-      !mine.has(id) && id !== 'knights' && !(id === 'avanto' && (state.supply.sauna || 0) > 0));
+      !mine.has(id) && id !== 'knights' && !splitLocked(state, id));
   }
   // 教師を呼べるか＝酒場マットにあり、置ける山が1つ以上あるとき（置き先が無ければ呼んでも無意味なので窓を開かない）。
   function teacherCallable(state, pi) {
@@ -1512,6 +1531,57 @@
     }
     state.pending = null;
   }
+  /* ===== 帝国 Batch E4：分割山カードの共通ヘルパ ===== */
+  // 陣地：金貨/鹵獲品を公開しなかった陣地を場から脇へ（片付けで自分の分割山へ戻す）。玉座の2回目は場に無く不発（lose track）。
+  function encampmentSetAside(state, pi) {
+    const p = state.players[pi];
+    if (removeOne(p.inPlay, 'encampment')) {
+      p.setAside.push('encampment');
+      state.turn.encampmentReturn = (state.turn.encampmentReturn || 0) + 1;
+      log(state, `${p.name} は陣地を脇に置いた（片付けで分割山に戻る）。`);
+    }
+  }
+  // 投石機：廃棄カードの条件で 各相手に 呪い（コスト3以上）と 手札3枚まで捨て（財宝）を与える（アタック・堀で両方防げる）。
+  function catapultEnterVictim(state, source, queue, giveCurse, treasureDiscard, discardQ) {
+    discardQ = discardQ || [];
+    queue = (queue || []).slice();
+    while (queue.length) {
+      const victim = queue[0];
+      if (attackImmune(state, victim)) { queue.shift(); continue; }
+      if (hasReaction(state.players[victim])) {
+        state.pending = { type: 'catapult', stage: 'react', player: victim, source, victim, queue: queue.slice(1), giveCurse, treasureDiscard, discardQ };
+        return;
+      }
+      if (giveCurse && (state.supply.curse || 0) > 0 && gain(state, victim, 'curse', 'discard')) log(state, `${state.players[victim].name} は投石機で呪い1枚を獲得した。`);
+      if (treasureDiscard) discardQ.push(victim);
+      queue.shift();
+    }
+    // 全員の反応窓が済んだ → 財宝だったなら手札3枚まで捨てさせる（手札4枚以上のみ）。
+    const dd = treasureDiscard ? discardQ.filter((v) => state.players[v].hand.length > 3) : [];
+    if (dd.length) discardDownEnter(state, source, 3, dd);
+    else state.pending = null;
+  }
+  // 剣闘士：公開したカードを左隣が同名で公開できるか。公開できない/しなければ owner に +$1＋サプライから剣闘士1枚廃棄。
+  function gladiatorLeftMatch(state, source, card) {
+    const n = state.players.length, left = (source + 1) % n;
+    if (card != null && n > 1 && state.players[left].hand.includes(card)) {
+      state.pending = { type: 'gladiator', stage: 'match', player: left, source, card };
+      return;
+    }
+    gladiatorBonus(state, source);
+  }
+  function gladiatorBonus(state, source) {
+    state.turn.coins += 1;
+    if ((state.supply.gladiator || 0) > 0) { state.supply.gladiator -= 1; state.trash.push('gladiator'); log(state, `${state.players[source].name} は剣闘士で +$1、サプライから剣闘士1枚を廃棄した。`); }
+    else log(state, `${state.players[source].name} は剣闘士で +$1（サプライに剣闘士なし）。`);
+    state.pending = null;
+  }
+  // 石：獲得/廃棄したとき銀貨1枚を獲得（owner の購入フェイズ中なら山札の上、そうでなければ手札）。
+  function rocksGainSilver(state, pi) {
+    const t = state.turn;
+    const dest = (t && t.active === pi && t.phase === 'buy') ? 'deck' : 'hand';
+    if (gain(state, pi, 'silver', dest)) log(state, `${state.players[pi].name} は石で銀貨を${dest === 'deck' ? '山札の上に' : '手札に'}獲得した。`);
+  }
   // 購入時フック：buyer 以外のプレイヤーの有効な呪いの森/沼の妖婆の予約を発火（免疫でない buyer に）。
   function applyLingerOnBuy(state, buyer) {
     const n = state.players.length;
@@ -1845,7 +1915,7 @@
   }
   // 開発：ちょうど +1/-1 コストのカードを（獲得可能なものから）好きな順で山札の上へ。
   function developAdvance(state, pi, hi, lo, hiDone, loDone) {
-    const gainable = (c) => c >= 0 && anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) === c);
+    const gainable = (c) => c >= 0 && anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) === c && !splitLocked(state, id));
     const hiOk = !hiDone && gainable(hi);
     const loOk = !loDone && gainable(lo);
     if (!hiOk && !loOk) { state.pending = null; return; }
@@ -2119,7 +2189,7 @@
       (state.supply[id] || 0) > 0 && !NON_SUPPLY.has(id) && C()[id] &&
       DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && !DOM.isType(id, 'command') &&
       !C()[id].potion && cardCost(state, id) <= 4 && id !== 'knights' && // 騎士の混合山は対象外（applyEffect未定義。船長×騎士は出荷セットで同居しないが将来の混成に備え除外）
-      !(id === 'avanto' && (state.supply.sauna || 0) > 0));
+      !splitLocked(state, id));
   }
   function anyCaptainTarget(state) { return captainTargets(state).length > 0; }
   // 暗黒時代：はみだし者（命令）＝サプライにある「これより安い・非Command・非持続のアクション」を、
@@ -2131,7 +2201,7 @@
       (state.supply[id] || 0) > 0 && !NON_SUPPLY.has(id) && C()[id] &&
       DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && !DOM.isType(id, 'command') &&
       !C()[id].potion && cardCost(state, id) < mx && id !== 'knights' && // 騎士の混合山は対象外（applyEffect未定義＝無効果の死に選択肢になる。持続除外と同じ簡略化）
-      !(id === 'avanto' && (state.supply.sauna || 0) > 0));
+      !splitLocked(state, id));
   }
 
   function applyEffect(state, cardId, pi) {
@@ -2256,6 +2326,46 @@
       // ワイルドハント：二択（+3カード＆山にVP+1／屋敷を獲得し 獲得したら山上のVPを全部得る）。
       case 'wild_hunt':
         state.pending = { type: 'wild_hunt', player: pi };
+        break;
+
+      /* ===== 帝国（Empires）Batch E4：分割山5組 ===== */
+      // 陣地：+2カード+2アクション。手札から金貨か鹵獲品を公開してよい。公開しないなら脇へ→片付けで自分の分割山へ戻す。
+      case 'encampment':
+        draw(state, pi, 2); t.actions += 2;
+        if (p.hand.includes('gold') || p.hand.includes('plunder')) state.pending = { type: 'encampment_reveal', player: pi };
+        else encampmentSetAside(state, pi);
+        break;
+      // パトリキ：+1カード+1アクション。山札の一番上を公開（強制）＝コスト5以上なら手札へ、未満なら山札に残す。
+      case 'patrician':
+        draw(state, pi, 1); t.actions += 1;
+        if (p.deck.length === 0 && p.discard.length > 0) reshuffleDeck(p);
+        if (p.deck.length > 0) {
+          const top = p.deck[0];
+          reveal(state, pi, [top], 'パトリキ：山札の上を公開');
+          if (cardCost(state, top) >= 5) { p.deck.shift(); p.hand.push(top); log(state, `${p.name} はパトリキで「${C()[top].name}」を手札に加えた（$5以上）。`); }
+          else log(state, `${p.name} はパトリキで「${C()[top].name}」を公開（$5未満・山札に残す）。`);
+        }
+        break;
+      // 開拓者：+1カード+1アクション。捨て札から銅貨1枚を公開して手札に加えてよい（任意）。
+      case 'settlers':
+        draw(state, pi, 1); t.actions += 1;
+        if (p.discard.includes('copper')) state.pending = { type: 'settlers', player: pi };
+        break;
+      // 騒がしい村：+1カード+3アクション。捨て札から開拓者1枚を公開して手札に加えてよい（任意）。
+      case 'bustling_village':
+        draw(state, pi, 1); t.actions += 3;
+        if (p.discard.includes('settlers')) state.pending = { type: 'bustling_village', player: pi };
+        break;
+      // 投石機：+$1。手札1枚を廃棄（強制）＝コスト3以上なら他全Pが呪い、財宝なら他全Pが手札3枚まで捨て（両方満たせば両方・アタック）。
+      case 'catapult':
+        t.coins += 1;
+        if (p.hand.length > 0) state.pending = { type: 'catapult', stage: 'trash', player: pi };
+        break;
+      // 剣闘士：+$2。手札1枚を公開→左隣が同じカードを公開してよい。公開されなければ +$1＋サプライから剣闘士1枚を廃棄。
+      case 'gladiator':
+        t.coins += 2;
+        if (p.hand.length > 0) state.pending = { type: 'gladiator', stage: 'reveal', player: pi };
+        else gladiatorLeftMatch(state, pi, null); // 手札空＝公開できない→左隣もマッチ不可→ボーナス
         break;
       case 'cellar':
         t.actions += 1;
@@ -3861,11 +3971,11 @@
   /* ---------- ゲーム終了判定・得点 ---------- */
   function emptyPileCount(state) {
     // 賞品（Prize）は非サプライ＝空でも「3山終了」に数えない。
-    // サウナ/アヴァントは1つの分割山＝sauna 側で「両方尽きたら空」と数え、avanto キーは数えない。
+    // 分割山（サウナ/アヴァント・帝国5組）は1つの山＝上段側で「上下とも尽きたら空」と数え、下段キーは数えない。
     let n = Object.keys(state.supply).filter((k) => {
       if (NON_SUPPLY.has(k)) return false;
-      if (k === 'avanto') return false;
-      if (k === 'sauna') return (state.supply.sauna || 0) <= 0 && (state.supply.avanto || 0) <= 0;
+      if (SPLIT_TOP[k]) return false; // 分割山の下段は上段側で数える（重複しない）
+      if (SPLIT_BOTTOM[k]) return (state.supply[k] || 0) <= 0 && (state.supply[SPLIT_BOTTOM[k]] || 0) <= 0; // 分割山は上下とも尽きて空
       return state.supply[k] <= 0;
     }).length;
     // 暗黒時代：廃墟(Ruins)山はサプライだが supply の数値キーを持たない（state.ruins で管理）。空なら3山終了に数える。
@@ -4125,6 +4235,19 @@
       const vp = (state.pileVP && state.pileVP.temple) || 0;
       if (vp > 0) { gp.vpTokens = (gp.vpTokens || 0) + vp; state.pileVP.temple = 0; log(state, `${gp.name} は神殿の獲得で 山上の勝利点${vp}個 を得た。`); }
     }
+    // 帝国：エンポリウム（emporium・分割山下）＝獲得したとき、場（inPlay＋durationCards）にアクション5枚以上なら +2勝利点。
+    if (cardId === 'emporium') {
+      const acts = gp.inPlay.filter((c) => DOM.isType(c, 'action')).length + (gp.durationCards || []).filter((c) => DOM.isType(c, 'action')).length;
+      if (acts >= 5) { gp.vpTokens = (gp.vpTokens || 0) + 2; log(state, `${gp.name} はエンポリウムの獲得で +2勝利点（場のアクション${acts}枚）。`); }
+    }
+    // 帝国：石（rocks・分割山下）＝獲得したとき、銀貨1枚を獲得（購入フェイズ中なら山札の上・そうでなければ手札）。
+    if (cardId === 'rocks') rocksGainSilver(state, pIndex);
+    // 帝国：大金（fortune・分割山下）＝獲得したとき、場（inPlay＋durationCards）にある剣闘士1枚につき金貨1枚を獲得。
+    if (cardId === 'fortune') {
+      const glads = gp.inPlay.filter((c) => c === 'gladiator').length + (gp.durationCards || []).filter((c) => c === 'gladiator').length;
+      let g = 0; for (let i = 0; i < glads; i++) if (gain(state, pIndex, 'gold', 'discard')) g++;
+      if (g) log(state, `${gp.name} は大金の獲得で 剣闘士${glads}枚ぶん 金貨${g}枚を獲得した。`);
+    }
     // 役人：獲得したとき、場のすべての財宝を山札の上に置く（置いた順＝そのまま／簡略に選択なし）。
     if (cardId === 'mandarin') { const tre = gp.inPlay.filter((c) => DOM.isType(c, 'treasure')); tre.forEach((c) => { removeOne(gp.inPlay, c); gp.deck.unshift(c); }); if (tre.length) log(state, `${gp.name} は役人で場の財宝 ${tre.length}枚 を山札の上に置いた。`); }
     // 大釜：自分の手番にアクションを獲得した回数を数え、3回目で（大釜が場にあれば）各相手が呪いを獲得。
@@ -4221,7 +4344,7 @@
     if (state.turn && pIndex === state.turn.active && state._gainDepth === 1 && !state.pending && (state.turn.charmNextGain || 0) > 0) {
       const cnt = state.turn.charmNextGain; state.turn.charmNextGain = 0; // 「次の獲得」で消費（対象が無くても消化）
       const trigCoin = cardCost(state, cardId), trigDebt = (C()[cardId] && C()[cardId].debt) || 0, trigPot = potionCost(cardId);
-      const canGain = (id) => id !== cardId && !NON_SUPPLY.has(id) && (state.supply[id] || 0) > 0 &&
+      const canGain = (id) => id !== cardId && !NON_SUPPLY.has(id) && !splitLocked(state, id) && (state.supply[id] || 0) > 0 &&
         cardCost(state, id) === trigCoin && ((C()[id] && C()[id].debt) || 0) === trigDebt && potionCost(id) === trigPot;
       if (anyGainable(state, canGain)) state.pending = { type: 'charm_gain', player: pIndex, coin: trigCoin, debt: trigDebt, pot: trigPot, trig: cardId, count: cnt };
     }
@@ -4303,6 +4426,8 @@
     if (card === 'hunting_grounds') {
       (state.onTrashQueue = state.onTrashQueue || []).push({ type: 'hunting_grounds_trash', player: pIndex });
     }
+    // 帝国：石（rocks）＝獲得または廃棄したとき銀貨1枚を獲得（購入フェイズ中なら山札の上・そうでなければ手札）。
+    if (card === 'rocks') rocksGainSilver(state, pIndex);
     // 暗黒時代：青空市場（リアクション）＝自分のカードが廃棄されたとき、手札の青空市場を捨てて金貨を獲得してよい
     //   （誰のターンでも・相手のアタックでの廃棄でも発動。1廃棄に複数枚反応可）。対話＝onTrashQueue へ。
     if (p.hand.includes('market_square') && (state.supply.gold || 0) > 0) {
@@ -4367,6 +4492,14 @@
     const p = state.players[pi];
     // 帝国：女魔術師の enchanted（「その手番で最初のアクションが置換」）は、その相手の手番が終われば消える。
     p.enchanted = false;
+    // 帝国：陣地＝金貨/鹵獲品を公開しなかった陣地を脇から自分の分割山（サプライ）へ戻す（片付け開始時）。
+    //   分割山が場に無い（黒市場経由など supply.encampment 未定義）なら戻せず脇に残る＝所有カードとして数える。
+    {
+      const encReturn = state.turn.encampmentReturn || 0;
+      for (let i = 0; i < encReturn; i++) {
+        if (state.supply.encampment != null && removeOne(p.setAside, 'encampment')) state.supply.encampment += 1;
+      }
+    }
     // 城壁のある村: クリーンアップ開始時、場のアクションが（自身を含め）2枚以下なら山札の上に戻せる。
     // 村を山札に戻すのはほぼ常に得なので自動で戻す。
     if (p.inPlay.includes('walled_village')) {
@@ -4583,7 +4716,7 @@
         if (removeOne(p.inPlay, r.card)) { trashCard(state, r.player, r.card); log(state, `${p.name} は行進で「${C()[r.card].name}」を廃棄した。`); }
         else log(state, `${p.name} は行進で対象を廃棄できなかった（場に無い）。`);
         const mx = tc + 1;
-        if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && DOM.isType(id, 'action') && cardCost(state, id) === mx && potionCost(id) === tp)) {
+        if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && DOM.isType(id, 'action') && cardCost(state, id) === mx && potionCost(id) === tp && !splitLocked(state, id))) {
           state.pending = { type: 'procession_gain', player: r.player, exact: mx, pot: tp };
         }
         continue; // applyEffect は行わない（制御項目）。pending を立てたら while が停止する。
@@ -4672,9 +4805,9 @@
       case 'PLAY_ALL_TREASURES': {
         if (state.pending) return state;
         if (t.phase !== 'buy') return state;
-        // 商人の「最初の銀貨」を確実に最初に出すため、銀貨を先に出す
+        // 商人の「最初の銀貨」を確実に最初に出すため銀貨を先に、帝国：大金は最後に出す（コイン2倍を最大化）。
         const treasures = me.hand.filter((c) => DOM.isType(c, 'treasure'))
-          .sort((a, b) => (a === 'silver' ? -1 : 0) - (b === 'silver' ? -1 : 0));
+          .sort((a, b) => ((a === 'silver' ? -1 : 0) - (b === 'silver' ? -1 : 0)) || ((a === 'fortune' ? 1 : 0) - (b === 'fortune' ? 1 : 0)));
         // 繁栄：金床/投資/水晶玉/ティアラ/ペテン師(堀)は使ったとき選択が出る。pending が立ったら残りは止める。
         for (const card of treasures) { playTreasureCard(state, pi, card); if (state.pending) break; }
         if (treasures.length) log(state, `${me.name} は財宝を出した。`);
@@ -5038,7 +5171,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'swindler' || pd.stage !== 'gain') return state;
         const card = action.card;
-        const canGain = (id) => !!C()[id] && cardCost(state, id) === pd.cost && !NON_SUPPLY.has(id);
+        const canGain = (id) => !!C()[id] && cardCost(state, id) === pd.cost && !NON_SUPPLY.has(id) && !splitLocked(state, id);
         if (card == null || !canGain(card) || (state.supply[card] || 0) <= 0) return state; // 候補ありなら必ず選ぶ
         gain(state, pd.victim, card, 'discard');
         log(state, `${state.players[pd.victim].name} は「${C()[card].name}」を獲得した（詐欺師）。`);
@@ -5378,7 +5511,7 @@
         log(state, `${p.name} は「${C()[card].name}」を廃棄した。`);
         const exact = cardCost(state, card) + 1;
         // ちょうど exact コストの獲得候補が無ければ獲得なしで終了（デッドロック回避）。非サプライ（トラベラー成長先等）は除外。
-        state.pending = anyGainable(state, (id) => cardCost(state, id) === exact && !NON_SUPPLY.has(id))
+        state.pending = anyGainable(state, (id) => cardCost(state, id) === exact && !NON_SUPPLY.has(id) && !splitLocked(state, id))
           ? { type: 'upgrade', stage: 'gain', player: pd.player, exactCost: exact }
           : null;
         if (!state.pending) log(state, `ちょうど ${exact} コストのカードが無く、獲得できなかった。`);
@@ -5387,7 +5520,7 @@
       case 'UPGRADE_GAIN': {
         const pd = state.pending;
         if (!pd || pd.type !== 'upgrade' || pd.stage !== 'gain') return state;
-        finishGain(state, pd, action.card, (id) => !!C()[id] && cardCost(state, id) === pd.exactCost && !NON_SUPPLY.has(id), 'discard', '獲得した。');
+        finishGain(state, pd, action.card, (id) => !!C()[id] && cardCost(state, id) === pd.exactCost && !NON_SUPPLY.has(id) && !splitLocked(state, id), 'discard', '獲得した。');
         return state;
       }
 
@@ -5726,7 +5859,7 @@
         removeOne(p.hand, card); trashCard(state, pd.player, card);
         log(state, `${p.name} は「${C()[card].name}」を廃棄した（総督）。`);
         const exact = cardCost(state, card) + pd.delta;
-        if (anyGainable(state, (id) => cardCost(state, id) === exact && !NON_SUPPLY.has(id))) {
+        if (anyGainable(state, (id) => cardCost(state, id) === exact && !NON_SUPPLY.has(id) && !splitLocked(state, id))) {
           state.pending = { type: 'governor_remodel', stage: 'gain', player: pd.player, exact, queue: pd.queue };
         } else {
           log(state, `ちょうど ${exact} コストのカードが無く、獲得できなかった（総督）。`);
@@ -5738,7 +5871,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'governor_remodel' || pd.stage !== 'gain') return state;
         const card = action.card;
-        const canGain = (id) => !!C()[id] && cardCost(state, id) === pd.exact && !NON_SUPPLY.has(id);
+        const canGain = (id) => !!C()[id] && cardCost(state, id) === pd.exact && !NON_SUPPLY.has(id) && !splitLocked(state, id);
         if (card == null) { if (anyGainable(state, canGain)) return state; governorEnterRemodel(state, pd.queue); return state; }
         if (!canGain(card) || (state.supply[card] || 0) <= 0) return state;
         gain(state, pd.player, card, 'discard');
@@ -6380,7 +6513,7 @@
       case 'PROCESSION_GAIN': {
         const pd = state.pending;
         if (!pd || pd.type !== 'procession_gain') return state;
-        finishGain(state, pd, action.card, (id) => !NON_SUPPLY.has(id) && DOM.isType(id, 'action') && cardCost(state, id) === pd.exact && potionCost(id) === pd.pot, 'discard', '獲得した（行進）。');
+        finishGain(state, pd, action.card, (id) => !NON_SUPPLY.has(id) && DOM.isType(id, 'action') && cardCost(state, id) === pd.exact && potionCost(id) === pd.pot && !splitLocked(state, id), 'discard', '獲得した（行進）。');
         return state;
       }
       case 'COUNTERFEIT_PLAY': {
@@ -7354,7 +7487,7 @@
         cards.forEach((c) => { total += cardCost(state, c); });
         cards.forEach((c) => { removeOne(p.hand, c); trashCard(state, pd.player, c); });
         log(state, `${p.name} は溶鉱炉で ${cards.length}枚を廃棄（合計$${total}）。`);
-        if (anyGainable(state, (id) => cardCost(state, id) === total && !NON_SUPPLY.has(id))) state.pending = { type: 'forge', stage: 'gain', player: pd.player, exact: total };
+        if (anyGainable(state, (id) => cardCost(state, id) === total && !NON_SUPPLY.has(id) && !splitLocked(state, id))) state.pending = { type: 'forge', stage: 'gain', player: pd.player, exact: total };
         else { log(state, `${p.name} はちょうど$${total}のカードが無く、何も獲得しなかった（溶鉱炉）。`); state.pending = null; }
         return state;
       }
@@ -7583,7 +7716,7 @@
         removeOne(p.hand, action.card); trashCard(state, pd.player, action.card);
         log(state, `${p.name} は「${C()[action.card].name}」を廃棄した（リメイク）。`);
         const exact = cardCost(state, action.card) + 1;
-        if (anyGainable(state, (id) => cardCost(state, id) === exact && !NON_SUPPLY.has(id))) {
+        if (anyGainable(state, (id) => cardCost(state, id) === exact && !NON_SUPPLY.has(id) && !splitLocked(state, id))) {
           state.pending = { type: 'remake', stage: 'gain', player: pd.player, iter: pd.iter, exactCost: exact };
         } else {
           remakeNext(state, pd.player, pd.iter);
@@ -7594,7 +7727,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'remake' || pd.stage !== 'gain') return state;
         const card = action.card;
-        if (card == null || cardCost(state, card) !== pd.exactCost || (state.supply[card] || 0) <= 0 || NON_SUPPLY.has(card)) return state;
+        if (card == null || cardCost(state, card) !== pd.exactCost || (state.supply[card] || 0) <= 0 || NON_SUPPLY.has(card) || splitLocked(state, card)) return state;
         gain(state, pd.player, card, 'discard');
         log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した（リメイク）。`);
         remakeNext(state, pd.player, pd.iter);
@@ -7885,6 +8018,92 @@
         }
         return state;
       }
+
+      /* ===== 帝国（Empires）Batch E4：分割山カードの選択解決 ===== */
+      // 陣地：金貨か鹵獲品を公開して場に残す／公開しないなら脇へ（片付けで分割山へ戻す）。
+      case 'ENCAMPMENT_REVEAL': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'encampment_reveal') return state;
+        const owner = state.players[pd.player];
+        if (action.card === 'gold' || action.card === 'plunder') {
+          if (owner.hand.indexOf(action.card) < 0) return state; // 無効な公開
+          reveal(state, pd.player, [action.card], '陣地：公開');
+          log(state, `${owner.name} は陣地で「${C()[action.card].name}」を公開した（場に残す）。`);
+          state.pending = null;
+          return state;
+        }
+        // 公開しない → 脇へ
+        state.pending = null;
+        encampmentSetAside(state, pd.player);
+        return state;
+      }
+      // 開拓者/騒がしい村：捨て札から 銅貨/開拓者 1枚を公開して手札に加えてよい（任意）。
+      case 'SETTLERS_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || (pd.type !== 'settlers' && pd.type !== 'bustling_village')) return state;
+        const owner = state.players[pd.player];
+        const want = pd.type === 'settlers' ? 'copper' : 'settlers';
+        if (action.take && removeOne(owner.discard, want)) {
+          reveal(state, pd.player, [want], pd.type === 'settlers' ? '開拓者：捨て札から銅貨' : '騒がしい村：捨て札から開拓者');
+          owner.hand.push(want);
+          log(state, `${owner.name} は捨て札から「${C()[want].name}」を手札に加えた。`);
+        }
+        state.pending = null;
+        return state;
+      }
+      // 投石機：手札1枚を廃棄（強制）→コスト3以上なら呪い、財宝なら手札3枚まで捨て（両方満たせば両方・アタック）。
+      case 'CATAPULT_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'catapult' || pd.stage !== 'trash') return state;
+        const owner = state.players[pd.player];
+        const card = action.card;
+        if (card == null || owner.hand.indexOf(card) < 0) return state; // 手札があれば廃棄必須
+        const cc = cardCost(state, card), isTre = DOM.isType(card, 'treasure');
+        removeOne(owner.hand, card); trashCard(state, pd.player, card);
+        log(state, `${owner.name} は投石機で「${C()[card].name}」を廃棄した。`);
+        state.pending = null;
+        const vics = [];
+        for (let k = 1; k < state.players.length; k++) vics.push((pd.player + k) % state.players.length);
+        if (cc >= 3 || isTre) catapultEnterVictim(state, pd.player, vics, cc >= 3, isTre);
+        return state;
+      }
+      // 投石機：アタックを「そのまま受ける」＝この相手に呪い/捨てを適用して次へ。
+      case 'CATAPULT_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'catapult' || pd.stage !== 'react') return state;
+        const victim = pd.victim;
+        if (pd.giveCurse && (state.supply.curse || 0) > 0 && gain(state, victim, 'curse', 'discard')) log(state, `${state.players[victim].name} は投石機で呪い1枚を獲得した。`);
+        const dq = (pd.discardQ || []).slice(); if (pd.treasureDiscard) dq.push(victim);
+        catapultEnterVictim(state, pd.source, pd.queue, pd.giveCurse, pd.treasureDiscard, dq);
+        return state;
+      }
+      // 剣闘士：手札から1枚を公開→左隣が同名を公開できるか判定。
+      case 'GLADIATOR_REVEAL': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'gladiator' || pd.stage !== 'reveal') return state;
+        const owner = state.players[pd.player];
+        const card = action.card;
+        if (card == null || owner.hand.indexOf(card) < 0) return state;
+        reveal(state, pd.player, [card], '剣闘士：手札から公開');
+        log(state, `${owner.name} は剣闘士で「${C()[card].name}」を公開した。`);
+        state.pending = null;
+        gladiatorLeftMatch(state, pd.player, card);
+        return state;
+      }
+      // 剣闘士：左隣が同じカードを公開するか（公開しなければ owner に +$1＋サプライから剣闘士廃棄）。
+      case 'GLADIATOR_MATCH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'gladiator' || pd.stage !== 'match') return state;
+        const left = state.players[pd.player];
+        if (action.reveal && left.hand.includes(pd.card)) {
+          reveal(state, pd.player, [pd.card], '剣闘士：左隣が同じカードを公開');
+          log(state, `${left.name} は剣闘士で同じ「${C()[pd.card].name}」を公開した（ボーナスなし）。`);
+          state.pending = null;
+        } else {
+          gladiatorBonus(state, pd.source);
+        }
+        return state;
+      }
       // 御守り（charm）のモード選択：A=+1購入+$2 ／ B=このターン次の獲得で同コスト別名を1枚獲得できる（積む）。
       case 'CHARM_MODE': {
         const pd = state.pending;
@@ -7916,7 +8135,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'charm_gain') return state;
         const owner = pd.player;
-        const canGain = (id) => id !== pd.trig && !NON_SUPPLY.has(id) && (state.supply[id] || 0) > 0 &&
+        const canGain = (id) => id !== pd.trig && !NON_SUPPLY.has(id) && !splitLocked(state, id) && (state.supply[id] || 0) > 0 &&
           cardCost(state, id) === pd.coin && ((C()[id] && C()[id].debt) || 0) === pd.debt && potionCost(id) === pd.pot;
         const card = action.card; // null = 獲得しない（辞退＝機会1つを消費）
         if (card != null && !canGain(card)) return state; // 無効な選択（同名/コスト不一致/在庫なし）は拒否＝pending維持
@@ -7943,7 +8162,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'stonemason_overpay') return state;
         const card = action.card;
-        const canGain = (id) => !!C()[id] && !NON_SUPPLY.has(id) && DOM.isType(id, 'action') && cardCost(state, id) === pd.exact;
+        const canGain = (id) => !!C()[id] && !NON_SUPPLY.has(id) && DOM.isType(id, 'action') && cardCost(state, id) === pd.exact && !splitLocked(state, id);
         if (card == null || !canGain(card) || (state.supply[card] || 0) <= 0) return state; // 獲得は必須
         gain(state, pd.player, card, 'discard');
         log(state, `${state.players[pd.player].name} は石工の過払いで「${C()[card].name}」を獲得した。`);
@@ -8584,7 +8803,7 @@
         const n = cards.length;
         if (n) log(state, `${p.name} は工匠で ${n}枚 捨てた。`);
         // ちょうど n コストのカードを山札の上に獲得してよい（非サプライは除外）。
-        if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) === n))
+        if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) === n && !splitLocked(state, id)))
           state.pending = { type: 'artificer', stage: 'gain', player: pd.player, exact: n };
         else state.pending = null;
         return state;
@@ -8800,7 +9019,7 @@
         removeOne(pl.hand, card); trashCard(state, pd.player, card);
         const exact = cardCost(state, card) + 2;
         log(state, `${pl.name} は「${C()[card].name}」を廃棄した（農地）。`);
-        if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) === exact)) {
+        if (anyGainable(state, (id) => !NON_SUPPLY.has(id) && cardCost(state, id) === exact && !splitLocked(state, id))) {
           state.pending = { type: 'farmland', stage: 'gain', player: pd.player, exactCost: exact };
         } else {
           state.pending = null;
@@ -8810,7 +9029,7 @@
       case 'FARMLAND_GAIN': {
         const pd = state.pending;
         if (!pd || pd.type !== 'farmland' || pd.stage !== 'gain') return state;
-        finishGain(state, pd, action.card, (id) => !!C()[id] && !NON_SUPPLY.has(id) && cardCost(state, id) === pd.exactCost, 'discard', '獲得した（農地）。');
+        finishGain(state, pd, action.card, (id) => !!C()[id] && !NON_SUPPLY.has(id) && cardCost(state, id) === pd.exactCost && !splitLocked(state, id), 'discard', '獲得した（農地）。');
         return state;
       }
       case 'HAGGLER_GAIN': {
@@ -8993,6 +9212,8 @@
     'SACRIFICE_TRASH', 'FORUM_DISCARD', 'CHARM_MODE', 'CHARM_GAIN', 'LEGIONARY_REVEAL', 'ENCHANTRESS_REACT', 'ARCHIVE_PICK',
     // 帝国（Empires）Batch E3：集合
     'TEMPLE_TRASH', 'WILD_HUNT_RESOLVE',
+    // 帝国（Empires）Batch E4：分割山
+    'ENCAMPMENT_REVEAL', 'SETTLERS_RESOLVE', 'CATAPULT_TRASH', 'CATAPULT_REACT', 'GLADIATOR_REVEAL', 'GLADIATOR_MATCH',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',

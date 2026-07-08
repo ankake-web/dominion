@@ -1,9 +1,36 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-08 / branch `main`（最新は `git log` で確認）。**冒険（Adventures）＋帝国 Batch E1（負債経済）＋E2（既存VPトークン&単独9枚）は push 済＝本番反映（§0-9〜0-11。`sw.js` v38）**。**その後 未pushの WIP＝帝国（Empires）Batch E3＝集合（Gathering・サプライ山上のVPトークン）＝temple/farmers_market/wild_hunt 完了（§0-12）。`sw.js` v39。push はユーザー確認待ち**。帝国はまだ CARD_SET 未昇格＝本番挙動は不変（帝国カードはサプライに出ない）。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
+最終更新: 2026-07-08 / branch `main`（最新は `git log` で確認）。**冒険＋帝国 Batch E1（負債）＋E2（既存VPトークン&単独9枚）＋E3（集合）は push 済＝本番反映（§0-9〜0-12。`sw.js` v39）**。**その後 未pushの WIP＝帝国（Empires）Batch E4＝分割山5組（10枚）＋分割山機構の一般化 完了（§0-13）。`sw.js` v40。push はユーザー確認待ち**。帝国はまだ CARD_SET 未昇格＝本番挙動は不変（帝国カードはサプライに出ない）。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
-**新セッションは まず `npm test` を実行し 32スイート・オールグリーン（exit 0・整合性3134件・帝国95件・冒険44件＋UI40件・暗黒時代70件＋UI57件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
+**新セッションは まず `npm test` を実行し 32スイート・オールグリーン（exit 0・整合性3134件・帝国122件・冒険44件＋UI40件・暗黒時代70件＋UI57件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
+
+---
+
+## 0-13. 段階2＝帝国（Empires）Batch E4＝分割山5組（10枚）＋分割山機構の一般化 **完了**（2026-07-08・WIP・未push）
+
+**Batch E4 完了**＝分割山5組の10枚を4点セットで実装＋**分割山機構を sauna/avanto 専用から一般化**。設計正本＝`docs/research/empires_rules.md` §1-3/§3。`sw.js` v39→**v40**。**カタログ変更なし・webp再生成なし**（研究WFで全10枚のカタログ文＝公式一致を確認。plunder/rocks に `coin:` フィールドのみ追加＝表示文不変）。**帝国はまだ CARD_SET 未昇格＝本番挙動は不変**。次は E5（城8・knights混合山流用）。
+
+### 分割山機構を一般化（`DOM.SPLIT_PILES`）
+- **`DOM.SPLIT_PILES`（cards.js・下段id→上段id の唯一の正本）**＝`{avanto:sauna（プロモ・両$4）, plunder:encampment, emporium:patrician, bustling_village:settlers, rocks:catapult, fortune:gladiator}`（安い方が上）。engine.js に `SPLIT_TOP`（下→上）/`SPLIT_BOTTOM`（上→下）/`splitLocked(state,id)`（下段が上段残存中で獲得不可か）を定義。
+- **従来の sauna/avanto 専用ハードコードを全て一般化**：initSupply（各5+5）／createInitialState の相互補完（上下どちらかが王国にあれば両方置く）／gain() ガード／canBuyCard／validTeacherPiles／captainTargets／bandOfMisfitsTargets／emptyPileCount（分割山＝1山・上下とも0で空）／cpu.js `splitBlocked`／cards.js `randomKingdom`（下段→上段に正規化）。**sauna/avanto（promo2-pack）は回帰なし**（新プロモテスト緑）。
+
+### 各カード（研究WFで公式裁定を裏取り・全カタログ一致）
+- **陣地(encampment・$2上)**：+2カ+2ア。手札から金貨か鹵獲品を公開してよい→公開しないと脇へ→**片付け開始時に自分の分割山へ戻す**（`supply.encampment++`・捨て/廃棄ではない・玉座2回目は場に無く不発＝lose track・黒市経由で山が無ければ脇に残り所有カードとして数える）。**鹵獲品(plunder・$5下・財宝)**：+$2（coin:2）+1勝利点トークン/プレイ。
+- **パトリキ(patrician・$2上)**：+1カ+1ア（+1カードが先に山札上を引く）→**新しい山札上を公開しコスト5以上なら手札へ**（未満は残す）。**エンポリウム(emporium・$5下)**：+1カ+1ア+$1。**獲得時（任意経路）場のアクション5枚以上なら+2VP**（inPlay+durationCards）。
+- **開拓者(settlers・$2上)**：+1カ+1ア・捨て札から銅貨1枚を手札へ（任意）。**騒がしい村(bustling_village・$5下)**：+1カ+3ア・捨て札から開拓者1枚を手札へ（任意）。
+- **投石機(catapult・$3上・アタック)**：+$1・手札1枚廃棄（強制）→**コスト3以上なら他全Pが呪い／財宝なら他全Pが手札3枚まで捨て（両方満たせば両方）**・堀/灯台で全防御・空手札なら副効果なし。**石(rocks・$4下・財宝)**：+$1（coin:1）・**獲得または廃棄したとき銀貨1枚**（購入フェイズ中なら山札上・そうでなければ手札＝triggerOnGain＋triggerOnTrash）。
+- **剣闘士(gladiator・$3上・非アタック)**：+$2・手札1枚公開→左隣が同名を公開してよい→**公開されなければ+$1＋サプライから剣闘士1枚を廃棄**（分割山の上段が減る→尽きたら大金が見える）。**大金(fortune・$8+負債8・下・財宝)**：+1購入・**このターン初回の大金ならコイン2倍**（`t.fortunePlayed`・PLAY_ALL_TREASURESは大金を最後に出す）・**獲得時 場の剣闘士1枚につき金貨1枚**（負債は通常機構）。
+
+### 敵対レビュー（多エージェント6次元→node再現検証）＝確定バグ1件[MED]→修正
+- **[修正] exact-cost強制獲得が「ロック中の分割山下段を唯一の候補」として掴んで無限ループ/人間詰み**：gain()/canBuyCard は splitLocked を見るが、**「ちょうど$N獲得が必須か」を判定するゲート述語が splitLocked を除外していなかった**。**rocks は$4の分割山下段だが基本サプライに$4札が無い**ため、upgrade/remake（$3廃棄→ちょうど$4）や procession（$4アクション廃棄→ちょうど$5アクション＝emporium/bustling_village）で下段がロック中だと唯一候補になり、engineが拒否×ゲートは必須→pending不閉→CPU無限ループ/人間詰み。全プールfuzz（intrigue/dark ages×帝国）で到達可。→ **全ての exact-cost 強制獲得述語（upgrade/remake/procession/forge/farmland/governor/stonemason/swindler/develop/artificer/charm のゲート＋手動獲得）に `!splitLocked(state, id)` を追加**＋finishGain の辞退経路も splitLocked 除外（≤N/＜N は copper 等の基本札があり詰まないため対象外）。他5次元クリーン（偽陽性0）。
+
+### 検証
+- 狙い撃ちテスト41/41（分割山の初期化/購入ガード/sauna回帰・全10枚・アタック/堀・獲得時/廃棄時）＋修正検証7/7。`test/empires.test.js` を **全122件**に拡張（E4裁定＋レビュー回帰4件＋CPUソークを36戦[E4王国含む・2〜3人]に拡大＝膠着0/例外0/保存則0）。
+- **invariants**：分割山カードは通常カード（保存則はsupply/trash経由）＝tally変更不要。全プール混成fuzz緑（exit0・exact-cost×ロック下段のデッドロックも解消）。**npm test 全32スイート緑（exit 0・整合性3134不変・新プロモのsauna/avanto回帰OK）**。
+
+### 【次にやること】Batch E5（城8＝混合山）
+- `docs/research/empires_rules.md` §1-4 の城8＝**knights 混合山流用**（`state.castles` = top-level id配列・コスト昇順に積む・一番上だけ購入/獲得・`isMixed` 分岐に castles 追加・invariants tally に forEach・maskで先頭のみ・emptyPileCount）。**2人＝各1枚計8／3人以上＝計12（Humble/Small/Opulent/Kings 各2）**。可変VP（humble=城数×1／kings=城数×2）＋各on-gain（small=trash→城獲得・crumbling=獲得/廃棄で+1VP&銀貨・haunted=自手番獲得で金貨&他P手札上げ・sprawling=公領1or屋敷3・grand=手札公開VP・opulent=勝利点捨てて+2コイン/枚）。以降 E6命令(overlord/crown)→E7=CARD_SET昇格。
 
 ---
 

@@ -71,7 +71,7 @@
     'treasure_hunter', 'warrior', 'hero', 'champion', 'soldier', 'fugitive', 'disciple', 'teacher']);
   // 新プロモ：サウナ/アヴァント分割山＝上のサウナが残る間はアヴァントを獲得できない
   // （engine の gain/canBuyCard 拒否と必ずセット＝提案すると強制獲得と噛み合い無限ループ）。
-  function splitBlocked(state, id) { return id === 'avanto' && sup(state, 'sauna') > 0; }
+  function splitBlocked(state, id) { const top = (DOM.SPLIT_PILES || {})[id]; return !!(top && sup(state, top) > 0); }
   function bestGain(state, maxCost, opts) {
     opts = opts || {};
     for (const id of GAIN_ORDER) {
@@ -216,6 +216,11 @@
     if (has('chariot_race')) return 'chariot_race';       // +1アクション（山札比較→+$1+VP）
     if (has('villa')) return 'villa';                     // +2アクション+1購入+1コイン
     if (has('archive')) return 'archive';                 // +1アクション（脇3枚→3手番かけ1枚ずつ手札・持続）
+    // 帝国E4：分割山の非ターミナル（+アクション付き）
+    if (has('bustling_village')) return 'bustling_village'; // +1カード+3アクション（捨て札から開拓者）
+    if (has('encampment')) return 'encampment';           // +2カード+2アクション（金貨/鹵獲品公開で場に残す）
+    if (has('patrician')) return 'patrician';             // +1カード+1アクション（山札上$5以上を手札へ）
+    if (has('settlers')) return 'settlers';               // +1カード+1アクション（捨て札から銅貨）
     // 冒険：非ターミナル（+アクション付き）
     if (has('lost_city')) return 'lost_city';             // +2カード+2アクション
     if (has('port')) return 'port';                       // +1カード+2アクション
@@ -428,6 +433,9 @@
     if (has('wild_hunt')) return 'wild_hunt';               // +3カード or 屋敷でVP回収
     // 神殿：+1VP＋圧縮だが 1〜3枚の強制廃棄＝不要札があるときだけ使う（良カードを廃棄しない）。
     if (has('temple') && p.hand.some((c) => c !== 'temple' && (c === 'copper' || c === 'estate' || c === 'curse' || isDead(c)))) return 'temple';
+    // 帝国E4：剣闘士（+$2＋左隣非公開なら+$1・剣闘士廃棄）／投石機（+$1＋強制廃棄＝不要札があるときだけ）。
+    if (has('gladiator')) return 'gladiator';
+    if (has('catapult') && p.hand.some((c) => c !== 'catapult' && (c === 'copper' || c === 'estate' || c === 'curse' || isDead(c)))) return 'catapult';
     return null;
   }
 
@@ -1277,6 +1285,27 @@
         const vp = (state.pileVP && state.pileVP.wild_hunt) || 0;
         if (vp >= 3 && sup(state, 'estate') > 0) return { type: 'WILD_HUNT_RESOLVE', choice: 'estate' };
         return { type: 'WILD_HUNT_RESOLVE', choice: 'cards' };
+      }
+
+      /* ===== 拡張: 帝国（Empires）Batch E4：分割山 ===== */
+      case 'encampment_reveal':
+        // 金貨か鹵獲品を公開して陣地を場に残す（キャントリップ村として得）。どちらも無ければ pending は立たない。
+        return { type: 'ENCAMPMENT_REVEAL', card: p.hand.includes('gold') ? 'gold' : (p.hand.includes('plunder') ? 'plunder' : null) };
+      case 'settlers':
+      case 'bustling_village':
+        // 捨て札から 銅貨/開拓者 を手札へ（このターンの economy／無料アクション＝常に得）。
+        return { type: 'SETTLERS_RESOLVE', take: true };
+      case 'catapult': {
+        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'CATAPULT_REACT' }; }
+        // 廃棄（強制）＝最も価値の低い不要札。銅貨は財宝なので廃棄すると相手の手札も削れる（+圧縮）。
+        const junk = p.hand.filter((c) => c !== 'catapult').sort((a, b) => trashValue(a) - trashValue(b));
+        return { type: 'CATAPULT_TRASH', card: junk[0] || p.hand[0] || null };
+      }
+      case 'gladiator': {
+        if (pd.stage === 'match') return { type: 'GLADIATOR_MATCH', reveal: true }; // 左隣＝同名を公開してボーナスを消す（ノーコスト）
+        // reveal：左隣に持たれにくいカード（銅貨以外）を優先公開＝ボーナス(+$1・剣闘士廃棄)を得やすく。
+        const nonCopper = p.hand.find((c) => c !== 'copper');
+        return { type: 'GLADIATOR_REVEAL', card: nonCopper || p.hand[0] };
       }
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */

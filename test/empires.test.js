@@ -398,15 +398,136 @@ console.log('=== 帝国E3: ワイルドハント（二択）===');
   const m1 = E.maskStateFor(s, 1);
   ok(m1.pileVP.temple === 3 && m1.pileVP.wild_hunt === 2, '集合：山上VPは相手視点でも見える（公開）'); }
 
+/* ============================================================
+   Batch E4（分割山5組＝10枚）
+   ============================================================ */
+const KING4 = ['encampment', 'patrician', 'settlers', 'catapult', 'gladiator', 'village', 'market', 'smithy', 'moat', 'cellar'];
+function mk4(o, names) { return E.createInitialState(names || ['A', 'B'], KING4, Object.assign({ startActive: 0 }, o || {})); }
+
+console.log('=== 帝国E4: 分割山（初期化・購入ガード・sauna回帰）===');
+{
+  let s = mk4();
+  ok(s.supply.encampment === 5 && s.supply.plunder === 5 && s.supply.gladiator === 5 && s.supply.fortune === 5, '分割山：上5+下5');
+  s.turn.phase = 'buy'; s.turn.coins = 8; s.turn.buys = 3;
+  s = reduce(s, { type: 'BUY', card: 'plunder' });
+  ok(count(s.players[0].discard, 'plunder') === 0, '分割山：上が残る間は下(plunder)を買えない');
+  s.supply.encampment = 0; s.turn.coins = 8;
+  s = reduce(s, { type: 'BUY', card: 'plunder' });
+  ok(count(s.players[0].discard, 'plunder') === 1, '分割山：上が尽きたら下を買える');
+}
+{ let s = E.createInitialState(['A', 'B'], ['sauna', 'village', 'market', 'smithy', 'moat', 'cellar', 'militia', 'workshop', 'remodel', 'mine'], { startActive: 0 });
+  ok(s.supply.sauna === 5 && s.supply.avanto === 5, 'sauna/avanto：5+5（一般化しても回帰OK）'); }
+
+console.log('=== 帝国E4: encampment/plunder ===');
+{ let s = mk4(); s.turn.phase = 'action'; s.turn.actions = 1; s.players[0].hand = ['encampment']; s.players[0].deck = ['copper', 'copper', 'estate'];
+  const enc0 = s.supply.encampment; const t0 = tally(s);
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'encampment' });
+  ok(s.players[0].hand.length === 2 && s.turn.actions === 2 && count(s.players[0].setAside, 'encampment') === 1, '陣地：+2カ+2ア＋金貨/鹵獲品なし→脇へ');
+  s.turn.phase = 'buy'; s = reduce(s, { type: 'END_TURN' });
+  ok(s.supply.encampment === enc0 + 1 && count(s.players[0].setAside, 'encampment') === 0 && tdiff(t0, tally(s)).length === 0, '陣地：片付けで分割山に戻る・保存則'); }
+{ let s = mk4(); s.turn.phase = 'action'; s.turn.actions = 1; s.players[0].hand = ['encampment', 'gold']; s.players[0].deck = ['copper', 'copper'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'encampment' });
+  s = reduce(s, { type: 'ENCAMPMENT_REVEAL', card: 'gold' });
+  ok(count(s.players[0].inPlay, 'encampment') === 1, '陣地：金貨公開で場に残る'); }
+{ let s = mk4(); s.turn.phase = 'buy'; s.players[0].hand = ['plunder'];
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'plunder' });
+  ok(s.turn.coins === 2 && s.players[0].vpTokens === 1, '鹵獲品：+$2 +1勝利点'); }
+
+console.log('=== 帝国E4: patrician/emporium ===');
+{ let s = mk4(); s.turn.phase = 'action'; s.turn.actions = 1; s.players[0].hand = ['patrician']; s.players[0].deck = ['copper', 'gold'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'patrician' });
+  ok(count(s.players[0].hand, 'gold') === 1 && s.players[0].deck.length === 0, 'パトリキ：公開した$5以上を手札へ'); }
+{ let s = mk4(); s.turn.phase = 'action'; s.turn.actions = 1; s.players[0].hand = ['patrician']; s.players[0].deck = ['gold', 'copper'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'patrician' });
+  ok(s.players[0].deck[0] === 'copper', 'パトリキ：$5未満は山札に残す'); }
+{ let s = mk4(); s.turn.phase = 'buy'; s.turn.coins = 5; s.turn.buys = 1; s.supply.patrician = 0; s.players[0].inPlay = ['village', 'village', 'village', 'village', 'village'];
+  s = reduce(s, { type: 'BUY', card: 'emporium' });
+  ok(s.players[0].vpTokens === 2, 'エンポリウム：獲得時 場アクション5枚で+2VP'); }
+
+console.log('=== 帝国E4: settlers/bustling_village ===');
+{ let s = mk4(); s.turn.phase = 'action'; s.turn.actions = 1; s.players[0].hand = ['settlers']; s.players[0].deck = ['estate']; s.players[0].discard = ['copper', 'gold'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'settlers' });
+  s = reduce(s, { type: 'SETTLERS_RESOLVE', take: true });
+  ok(count(s.players[0].hand, 'copper') === 1, '開拓者：捨て札の銅貨を手札へ'); }
+{ let s = mk4(); s.turn.phase = 'action'; s.turn.actions = 1; s.players[0].hand = ['bustling_village']; s.players[0].deck = ['estate']; s.players[0].discard = ['settlers'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'bustling_village' });
+  ok(s.turn.actions === 3, '騒がしい村：+3アクション');
+  s = reduce(s, { type: 'SETTLERS_RESOLVE', take: true });
+  ok(count(s.players[0].hand, 'settlers') === 1, '騒がしい村：捨て札の開拓者を手札へ'); }
+
+console.log('=== 帝国E4: catapult/rocks ===');
+{ let s = mk4(); s.turn.phase = 'action'; s.turn.actions = 1; s.players[0].hand = ['catapult', 'gold'];
+  s.players[1].hand = ['copper', 'copper', 'copper', 'estate', 'estate']; const t0 = tally(s);
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'catapult' });
+  s = reduce(s, { type: 'CATAPULT_TRASH', card: 'gold' });
+  ok(count(s.players[1].discard, 'curse') === 1 && s.pending.type === 'discard_down', '投石機：$3以上財宝(gold)で呪い＋手札3まで捨て');
+  s = reduce(s, { type: 'DISCARD_DOWN_RESOLVE', cards: ['copper', 'copper'] });
+  ok(s.players[1].hand.length === 3 && tdiff(t0, tally(s)).length === 0, '投石機：手札3に・保存則'); }
+{ let s = mk4(); s.turn.phase = 'action'; s.turn.actions = 1; s.players[0].hand = ['catapult', 'gold']; s.players[1].hand = ['moat', 'copper', 'copper', 'copper', 'copper'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'catapult' });
+  s = reduce(s, { type: 'CATAPULT_TRASH', card: 'gold' });
+  s = reduce(s, { type: 'MOAT_REVEAL' });
+  ok(count(s.players[1].discard, 'curse') === 0 && s.players[1].hand.length === 5, '投石機：堀で無効化'); }
+{ let s = mk4(); s.turn.phase = 'buy'; s.turn.coins = 4; s.turn.buys = 1; s.supply.catapult = 0;
+  s = reduce(s, { type: 'BUY', card: 'rocks' });
+  ok(count(s.players[0].discard, 'rocks') === 1 && s.players[0].deck[0] === 'silver', '石：購入(獲得)で銀貨を山札の上に'); }
+
+console.log('=== 帝国E4: gladiator/fortune ===');
+{ let s = mk4(); s.turn.phase = 'action'; s.turn.actions = 1; s.players[0].hand = ['gladiator', 'gold']; s.players[1].hand = ['copper', 'copper']; const t0 = tally(s);
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'gladiator' });
+  s = reduce(s, { type: 'GLADIATOR_REVEAL', card: 'gold' });
+  ok(s.turn.coins === 3 && s.supply.gladiator === 4 && count(s.trash, 'gladiator') === 1 && tdiff(t0, tally(s)).length === 0, '剣闘士：左隣非公開→+$1＋サプライ剣闘士廃棄・保存則'); }
+{ let s = mk4(); s.turn.phase = 'action'; s.turn.actions = 1; s.players[0].hand = ['gladiator', 'estate']; s.players[1].hand = ['estate', 'copper'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'gladiator' });
+  s = reduce(s, { type: 'GLADIATOR_REVEAL', card: 'estate' });
+  s = reduce(s, { type: 'GLADIATOR_MATCH', reveal: true });
+  ok(s.turn.coins === 2 && s.supply.gladiator === 5, '剣闘士：左隣公開でボーナスなし'); }
+{ let s = mk4(); s.turn.phase = 'buy'; s.turn.coins = 3; s.turn.buys = 1; s.players[0].hand = ['fortune', 'fortune'];
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'fortune' });
+  ok(s.turn.coins === 6 && s.turn.buys === 2, '大金：コイン2倍(3→6)＋1購入');
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'fortune' });
+  ok(s.turn.coins === 6, '大金：2枚目はコイン2倍なし'); }
+{ let s = mk4(); s.turn.phase = 'buy'; s.turn.coins = 8; s.turn.buys = 1; s.supply.gladiator = 0; s.players[0].inPlay = ['gladiator', 'gladiator']; const t0 = tally(s);
+  s = reduce(s, { type: 'BUY', card: 'fortune' });
+  ok(count(s.players[0].discard, 'gold') === 2 && s.players[0].debt === 8 && tdiff(t0, tally(s)).length === 0, '大金：獲得時 剣闘士2枚→金貨2枚・負債8・保存則'); }
+
+console.log('=== 帝国E4: 敵対レビュー回帰（exact-cost強制獲得×ロック分割山下段）===');
+{ // upgrade で$3廃棄→ちょうど$4がロック中のrocksのみ→強制獲得pendingを立てない（デッドロック回避）
+  const K = ['catapult', 'upgrade', 'village', 'moat', 'cellar', 'market', 'festival', 'laboratory', 'woodcutter', 'chapel'];
+  let s = E.createInitialState(['P0', 'P1'], K, { startActive: 0 });
+  s.turn.phase = 'action'; s.turn.actions = 2; s.players[0].hand = ['upgrade', 'village', 'estate', 'copper', 'copper'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'upgrade' });
+  s = reduce(s, { type: 'UPGRADE_TRASH', card: 'village' });
+  ok(!(s.pending && s.pending.type === 'upgrade'), 'upgrade×rocks：$4がロック下段のみ→獲得pendingを立てない');
+  let g = 0; while (s.turn.active === 0 && s.turn.phase === 'action' && g++ < 40) { s = reduce(s, CPU.decide(s)); }
+  ok(g < 40, 'upgrade×rocks：CPUが膠着せず進行'); }
+{ // アンロック時は通常どおり獲得できる（回帰の裏返し）
+  const K = ['catapult', 'upgrade', 'village', 'moat', 'cellar', 'market', 'festival', 'laboratory', 'woodcutter', 'chapel'];
+  let s = E.createInitialState(['P0', 'P1'], K, { startActive: 0 });
+  s.supply.catapult = 0; s.turn.phase = 'action'; s.turn.actions = 2; s.players[0].hand = ['upgrade', 'village', 'estate', 'copper', 'copper'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'upgrade' });
+  s = reduce(s, { type: 'UPGRADE_TRASH', card: 'village' });
+  s = reduce(s, { type: 'UPGRADE_GAIN', card: 'rocks' });
+  ok(count(s.players[0].discard, 'rocks') === 1, 'upgrade×rocks：上段が空(アンロック)なら$4でrocksを獲得できる'); }
+{ // procession で$4アクション廃棄→ちょうど$5アクションがロックemporium/bustling_villageのみ→膠着しない
+  const K = ['patrician', 'settlers', 'village', 'moat', 'cellar', 'chapel', 'procession', 'remodel', 'woodcutter', 'militia'];
+  let s = E.createInitialState(['P0', 'P1'], K, { startActive: 0 });
+  s.turn.phase = 'action'; s.turn.actions = 3; s.players[0].hand = ['procession', 'remodel', 'estate', 'copper', 'copper'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'procession' });
+  s = reduce(s, { type: 'PROCESSION_CHOOSE', card: 'remodel' });
+  let g = 0; while (s.turn.active === 0 && s.pending && s.pending.player === 0 && g++ < 40) { s = reduce(s, CPU.decide(s)); }
+  ok(g < 40, 'procession×$5アクション：ロック下段のみでもCPUが膠着しない'); }
+
 /* ============ E2 CPU ソーク：E2カード入り王国で膠着/例外/保存則なし ============ */
 console.log('=== 帝国E2: CPU ソーク ===');
 {
   let stuck = 0, exc = 0, consErr = 0, games = 0;
-  const soakKings = [KING2, KING3,
+  const soakKings = [KING2, KING3, KING4,
     ['forum', 'legionary', 'enchantress', 'archive', 'villa', 'sacrifice', 'charm', 'gold', 'silver', 'market'],
     ['engineer', 'city_quarter', 'royal_blacksmith', 'capital', 'forum', 'sacrifice', 'groundskeeper', 'villa', 'legionary', 'archive'],
-    ['temple', 'farmers_market', 'wild_hunt', 'sacrifice', 'villa', 'legionary', 'archive', 'groundskeeper', 'chariot_race', 'forum']];
-  for (let g = 0; g < 30; g++) {
+    ['temple', 'farmers_market', 'wild_hunt', 'sacrifice', 'villa', 'legionary', 'archive', 'groundskeeper', 'chariot_race', 'forum'],
+    ['encampment', 'gladiator', 'catapult', 'settlers', 'patrician', 'sacrifice', 'temple', 'legionary', 'villa', 'forum']];
+  for (let g = 0; g < 36; g++) {
     seed = 900 + g * 211;
     const K = soakKings[g % soakKings.length];
     const names = (g % 3 === 0) ? ['C0', 'C1', 'C2'] : ['C0', 'C1'];

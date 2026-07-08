@@ -1231,6 +1231,36 @@
       { label: '+3 カード（この山に勝利点1個を置く）', cls: 'btn-primary', on: () => dispatch({ type: 'WILD_HUNT_RESOLVE', choice: 'cards' }) },
       { label: '屋敷を1枚獲得（獲得したら この山上の勝利点をすべて得る）', on: () => dispatch({ type: 'WILD_HUNT_RESOLVE', choice: 'estate' }) },
     ]);
+    // 帝国：陣地＝金貨か鹵獲品を公開して場に残す／公開しない（片付けで分割山に戻る）。
+    if (pd.type === 'encampment_reveal') {
+      const opts = [];
+      if (p.hand.includes('gold')) opts.push({ label: '金貨を公開（陣地を場に残す）', cls: 'btn-primary', on: () => dispatch({ type: 'ENCAMPMENT_REVEAL', card: 'gold' }) });
+      if (p.hand.includes('plunder')) opts.push({ label: '鹵獲品を公開（陣地を場に残す）', cls: 'btn-primary', on: () => dispatch({ type: 'ENCAMPMENT_REVEAL', card: 'plunder' }) });
+      opts.push({ label: '公開しない（陣地は片付けで分割山に戻る）', on: () => dispatch({ type: 'ENCAMPMENT_REVEAL', card: null }) });
+      return modalOptions('陣地 — 公開', '手札から金貨か鹵獲品を公開すると陣地は場に残ります。公開しないと片付けで分割山に戻ります。', opts);
+    }
+    // 帝国：開拓者/騒がしい村＝捨て札から 銅貨/開拓者 を手札に加えるか。
+    if (pd.type === 'settlers' || pd.type === 'bustling_village') {
+      const want = pd.type === 'settlers' ? 'copper' : 'settlers';
+      return modalOptions(pd.type === 'settlers' ? '開拓者' : '騒がしい村', '捨て札から「' + DOM.CARDS[want].name + '」1枚を手札に加えますか？', [
+        { label: '「' + DOM.CARDS[want].name + '」を手札に加える', cls: 'btn-primary', on: () => dispatch({ type: 'SETTLERS_RESOLVE', take: true }) },
+        { label: '加えない', on: () => dispatch({ type: 'SETTLERS_RESOLVE', take: false }) },
+      ]);
+    }
+    // 帝国：投石機＝手札1枚を廃棄（強制・アタック）。
+    if (pd.type === 'catapult' && pd.stage === 'trash') return modalSingleHand(p, '投石機 — 廃棄',
+      '手札から1枚を廃棄します。コスト3以上なら他の各プレイヤーは呪いを獲得、財宝なら手札3枚まで捨てます。',
+      () => true, (id) => dispatch({ type: 'CATAPULT_TRASH', card: id }), null, '廃棄');
+    if (pd.type === 'catapult' && pd.stage === 'react') return modalOptions('投石機を受ける', 'コスト3以上の廃棄なら呪い、財宝の廃棄なら手札3枚まで捨てます。', reactOptions(p, pd, { type: 'CATAPULT_REACT' }));
+    // 帝国：剣闘士＝手札1枚を公開（左隣が同名を公開しなければ +$1＋剣闘士廃棄）。
+    if (pd.type === 'gladiator' && pd.stage === 'reveal') return modalSingleHand(p, '剣闘士 — 公開',
+      '手札から1枚を公開します（左隣が同じカードを公開しなければ +$1、サプライから剣闘士1枚を廃棄）。',
+      () => true, (id) => dispatch({ type: 'GLADIATOR_REVEAL', card: id }), null, '公開');
+    if (pd.type === 'gladiator' && pd.stage === 'match') return modalOptions('剣闘士 — 左隣の対応',
+      '相手が公開した「' + DOM.CARDS[pd.card].name + '」と同じカードを手札から公開しますか？（公開すると相手はボーナスを得ません）', [
+        { label: '同じカードを公開する', cls: 'btn-primary', on: () => dispatch({ type: 'GLADIATOR_MATCH', reveal: true }) },
+        { label: '公開しない（相手が +$1＋剣闘士1枚廃棄）', on: () => dispatch({ type: 'GLADIATOR_MATCH', reveal: false }) },
+      ]);
     if (pd.type === 'nobles') return modalOptions('貴族', '次から1つを選びます。', [
       { label: '+3 カード', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'cards' }) },
       { label: '+2 アクション', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'actions' }) },
