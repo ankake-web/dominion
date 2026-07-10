@@ -987,5 +987,138 @@ console.log('=== 帝国E7: CPU ソーク（出荷セット）===');
   ok(consErr === 0, 'E7 出荷セット CPU 保存則違反0');
 }
 
+/* ============================================================================
+   E8：命令（Command）＝プレイした札は動かない（2019エラッタ・現行公式）
+     RGG Dark Ages(2022) ルールブック逐語：
+       "The played Action card stays in the Supply; if an effect tries to move it, such as
+        Death Cart trying to trash itself, it will fail to move it. If the card checks to see
+        if it was trashed ... that part will fail, but if it does not ... the rest of the
+        effect will still happen."
+     ＝自己移動（と「移動できたなら」で条件づいたボーナス）だけが失われ、残りの効果は解決する。
+        命令カード自身も身代わりに動かない（旧2016ルールとは逆）。
+   ============================================================================ */
+console.log('=== E8: 大君主（サプライに残したまま使用）＝対象の自己移動は失敗 ===');
+function mkK8(kingdom) { return E.createInitialState(['A', 'B'], kingdom, { startActive: 0 }); }
+function setup8(s, hand, inPlay) { const p = s.players[0]; p.hand = hand.slice(); if (inPlay) p.inPlay = inPlay.slice(); s.turn.phase = 'action'; s.turn.actions = 5; return s; }
+const K8 = (extra) => [extra, 'village', 'smithy', 'market', 'workshop', 'moat', 'cellar', 'militia', 'laboratory', 'overlord'];
+{ // 農家の市場：山上VPは取れる／どちらも廃棄されない（旧ルールでは大君主が廃棄されていた）
+  let s = mkK8(K8('farmers_market')); s.pileVP.farmers_market = 4; setup8(s, ['overlord']);
+  const t0 = tally(s), fm0 = s.supply.farmers_market;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'overlord' });
+  s = reduce(s, { type: 'OVERLORD_PLAY', card: 'farmers_market' });
+  ok(s.players[0].vpTokens === 4 && s.pileVP.farmers_market === 0, '大君主×農家の市場：山上VP4を取得（廃棄に条件づかない）');
+  ok(count(s.trash, 'farmers_market') === 0 && count(s.trash, 'overlord') === 0, '大君主×農家の市場：どちらも廃棄されない');
+  ok(count(s.players[0].inPlay, 'overlord') === 1 && s.supply.farmers_market === fm0, '大君主は場に残り、農家の市場はサプライに残る');
+  ok(s.turn.buys === 2, '+1購入は入る');
+  ok(s._cmd === undefined, '_cmd は state に残らない（同期で削除）');
+  ok(tdiff(t0, tally(s)).length === 0, '保存則（大君主×農家の市場）');
+}
+{ // 陣地：脇に置かれない（+2カード+2アクションは入る）＝旧ルールでは大君主が脇→大君主の山へ
+  let s = mkK8(K8('encampment')); setup8(s, ['overlord']);
+  const t0 = tally(s), enc0 = s.supply.encampment;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'overlord' });
+  s = reduce(s, { type: 'OVERLORD_PLAY', card: 'encampment' });
+  ok(!s.pending, '大君主×陣地：公開の選択は出ない（脇に置けないので無意味）');
+  ok(s.players[0].setAside.length === 0 && s.supply.encampment === enc0, '大君主×陣地：脇に置かれずサプライも減らない');
+  ok(s.players[0].hand.length === 2 && s.turn.actions === 6, '大君主×陣地：+2カード+2アクションは入る');
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  ok(s.supply.encampment === enc0, '片付けでもサプライの陣地は増えない');
+  ok(tdiff(t0, tally(s)).length === 0, '保存則（大君主×陣地）');
+}
+{ // 祝宴：廃棄は失敗するが「コスト5以下を獲得」は行う（非条件節）
+  let s = mkK8(K8('feast')); setup8(s, ['overlord']);
+  const t0 = tally(s);
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'overlord' });
+  s = reduce(s, { type: 'OVERLORD_PLAY', card: 'feast' });
+  ok(s.pending && s.pending.type === 'feast', '大君主×祝宴：獲得の選択は出る');
+  s = reduce(s, { type: 'FEAST_GAIN', card: 'market' });
+  ok(count(s.players[0].discard, 'market') === 1, '大君主×祝宴：市場を獲得');
+  ok(count(s.trash, 'feast') === 0 && count(s.trash, 'overlord') === 0, '大君主×祝宴：どちらも廃棄されない');
+  ok(tdiff(t0, tally(s)).length === 0, '保存則（大君主×祝宴）');
+}
+{ // 略奪（$5・「これを廃棄。したら…」）＝完全に不発
+  let s = mkK8(K8('pillage')); setup8(s, ['overlord']);
+  s.players[1].hand = ['copper', 'copper', 'copper', 'copper', 'copper'];
+  const t0 = tally(s);
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'overlord' });
+  s = reduce(s, { type: 'OVERLORD_PLAY', card: 'pillage' });
+  ok(count(s.trash, 'pillage') === 0 && count(s.trash, 'overlord') === 0, '大君主×略奪：どちらも廃棄されない');
+  ok(count(s.players[0].discard, 'spoils') === 0 && !s.pending, '大君主×略奪：戦利品もアタックも起きない（If you did が偽）');
+  ok(tdiff(t0, tally(s)).length === 0, '保存則（大君主×略奪）');
+}
+{ // 倒壊：「これ」は選べない・手札からのみ廃棄。場に本物の倒壊があっても誤爆しない
+  let s = mkK8(K8('raze')); setup8(s, ['overlord', 'estate'], ['raze']);
+  const t0 = tally(s);
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'overlord' });
+  s = reduce(s, { type: 'OVERLORD_PLAY', card: 'raze' });
+  ok(s.pending && s.pending.type === 'raze' && s.pending.self === false, '大君主×倒壊：pending.self=false');
+  const before = JSON.stringify(s);
+  s = reduce(s, { type: 'RAZE_TRASH', card: 'raze' });
+  ok(JSON.stringify(s) === before, '大君主×倒壊：「これを廃棄」は engine が拒否');
+  ok(CPU.decide(s, 0).card !== 'raze', '大君主×倒壊：CPU も「これ」を提案しない（engine拒否とセット）');
+  ok(count(s.players[0].inPlay, 'raze') === 1 && count(s.trash, 'raze') === 0, '大君主×倒壊：場の本物の倒壊を誤爆しない');
+  s = reduce(s, { type: 'RAZE_TRASH', card: 'estate' });
+  ok(count(s.trash, 'estate') === 1, '大君主×倒壊：手札の屋敷は廃棄できる');
+  { let g = 0; while (s.pending && g++ < 20) s = reduce(s, CPU.decide(s, 0)); }
+  ok(tdiff(t0, tally(s)).length === 0, '保存則（大君主×倒壊）');
+}
+{ // Reserve（ワイン商 $5）＝酒場マットに乗らない。on-play 効果は入る
+  let s = mkK8(K8('wine_merchant')); setup8(s, ['overlord']);
+  const t0 = tally(s), wm0 = s.supply.wine_merchant;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'overlord' });
+  s = reduce(s, { type: 'OVERLORD_PLAY', card: 'wine_merchant' });
+  ok((s.players[0].tavern || []).length === 0, '大君主×ワイン商：酒場マットに乗らない');
+  ok(s.turn.coins === 4 && s.turn.buys === 2, '大君主×ワイン商：+1購入 +$4 は入る');
+  ok(s.supply.wine_merchant === wm0 && count(s.players[0].inPlay, 'overlord') === 1, 'サプライに残り、大君主も場に残る');
+  ok(tdiff(t0, tally(s)).length === 0, '保存則（大君主×ワイン商）');
+}
+{ // 島：島自身は動かないが「手札から1枚」は場所が明示されているので島マットへ行く
+  let s = mkK8(K8('island')); setup8(s, ['overlord', 'estate']);
+  const t0 = tally(s), is0 = s.supply.island;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'overlord' });
+  s = reduce(s, { type: 'OVERLORD_PLAY', card: 'island' });
+  s = reduce(s, { type: 'ISLAND_PICK', card: 'estate' });
+  ok(count(s.players[0].islandMat, 'estate') === 1, '大君主×島：手札の屋敷は島マットへ');
+  ok(count(s.players[0].islandMat, 'island') === 0 && count(s.players[0].islandMat, 'overlord') === 0, '大君主×島：島も大君主も島マットに乗らない');
+  ok(s.supply.island === is0, 'サプライの島は減らない');
+  ok(tdiff(t0, tally(s)).length === 0, '保存則（大君主×島）');
+}
+{ // 宝の地図：「これ」を廃棄できない＝金貨も出ない（手札のコピーも巻き込まない）
+  let s = mkK8(K8('treasure_map')); setup8(s, ['overlord', 'treasure_map']);
+  const t0 = tally(s);
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'overlord' });
+  s = reduce(s, { type: 'OVERLORD_PLAY', card: 'treasure_map' });
+  ok(count(s.trash, 'treasure_map') === 0 && count(s.players[0].hand, 'treasure_map') === 1, '大君主×宝の地図：手札のコピーも廃棄されない');
+  ok(count(s.players[0].deck.slice(0, 4), 'gold') === 0, '大君主×宝の地図：金貨は出ない');
+  ok(tdiff(t0, tally(s)).length === 0, '保存則（大君主×宝の地図）');
+}
+{ // 玉座の間 × 大君主 × 祝宴：2回とも獲得し、大君主は場に残る（再演でも選び直さない）
+  let s = mkK8(['overlord', 'feast', 'throne_room', 'smithy', 'market', 'workshop', 'moat', 'cellar', 'militia', 'laboratory']);
+  setup8(s, ['throne_room', 'overlord']);
+  const t0 = tally(s);
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'throne_room' });
+  s = reduce(s, { type: 'THRONE_CHOOSE', card: 'overlord' });
+  s = reduce(s, { type: 'OVERLORD_PLAY', card: 'feast' });
+  s = reduce(s, { type: 'FEAST_GAIN', card: 'market' });
+  ok(s.pending && s.pending.type === 'feast', '玉座×大君主：2回目も祝宴（選び直しは無い）');
+  s = reduce(s, { type: 'FEAST_GAIN', card: 'silver' });
+  ok(count(s.players[0].discard, 'market') === 1 && count(s.players[0].discard, 'silver') === 1, '玉座×大君主×祝宴：2回とも獲得');
+  ok(count(s.trash, 'overlord') === 0 && count(s.players[0].inPlay, 'overlord') === 1, '玉座×大君主×祝宴：大君主は廃棄されず場に残る');
+  ok(tdiff(t0, tally(s)).length === 0, '保存則（玉座×大君主×祝宴）');
+}
+{ // 伝令官：applyEffect の内側で「本物のカード」をプレイする経路は命令の文脈に巻き込まれない
+  let s = mkK8(['overlord', 'herald', 'feast', 'smithy', 'market', 'workshop', 'moat', 'cellar', 'militia', 'laboratory']);
+  setup8(s, ['overlord']);
+  s.players[0].deck = ['copper', 'feast', 'copper', 'copper', 'copper', 'copper'];
+  const t0 = tally(s);
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'overlord' });
+  s = reduce(s, { type: 'OVERLORD_PLAY', card: 'herald' });
+  ok(s.pending && s.pending.type === 'feast', '大君主×伝令官：山札上の本物の祝宴がプレイされる');
+  s = reduce(s, { type: 'FEAST_GAIN', card: 'silver' });
+  ok(count(s.trash, 'feast') === 1, '内側の本物の祝宴は自身を廃棄する（_cmd.as で識別）');
+  ok(count(s.trash, 'overlord') === 0, '大君主は廃棄されない');
+  ok(tdiff(t0, tally(s)).length === 0, '保存則（大君主×伝令官×祝宴）');
+}
+
 console.log('\n' + (fail === 0 ? '✅ 帝国 全' + pass + '件 PASS' : '❌ 帝国 ' + fail + '件 FAIL / ' + pass + '件 PASS'));
 if (fail > 0) process.exit(1);

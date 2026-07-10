@@ -1165,11 +1165,14 @@
   // Reserve カードをプレイした直後、これを場（inPlay）から酒場マットへ置く。
   //   玉座/王の宮廷/行進で複製プレイされると applyEffect が複数回走る＝2回目以降は場にもう無い。
   //   島/祝宴/宝の地図と同じ「自己移動ガード」で、場から取り除けたときだけマットへ置く（＝マットには1枚だけ）。
+  //   命令（大君主/はみだし者/船長/王子）が動かさずに使った Reserve は場に無い＝マットに乗らない（公式・E8）。
   function putOnTavern(state, pi, cardId) {
     const p = state.players[pi];
-    if (removeOne(p.inPlay, cardId)) {
+    if (takeSelf(state, pi, cardId)) {
       (p.tavern = p.tavern || []).push(cardId);
       log(state, `${p.name} は「${C()[cardId].name}」を酒場マットに置いた。`);
+    } else if (playedByCommand(state, pi, cardId)) {
+      log(state, `${p.name} の「${C()[cardId].name}」は動かないので酒場マットに置かれない。`);
     }
   }
   const TOKEN_LABEL = { card: 'カード', action: 'アクション', buy: '購入', coin: 'コイン' };
@@ -1572,7 +1575,7 @@
   // 陣地：金貨/鹵獲品を公開しなかった陣地を場から脇へ（片付けで自分の分割山へ戻す）。玉座の2回目は場に無く不発（lose track）。
   function encampmentSetAside(state, pi) {
     const p = state.players[pi];
-    if (removeOne(p.inPlay, 'encampment')) {
+    if (takeSelf(state, pi, 'encampment')) {
       p.setAside.push('encampment');
       state.turn.encampmentReturn = (state.turn.encampmentReturn || 0) + 1;
       log(state, `${p.name} は陣地を脇に置いた（片付けで分割山に戻る）。`);
@@ -2261,11 +2264,60 @@
     const t = state.turn;
     const card = state._replaying && t.commandAs && t.commandAs[commandId];
     if (!card) return false;
-    log(state, `${state.players[pi].name} は${C()[commandId].name}で「${C()[card].name}」をもう一度使った（サプライに残る）。`);
-    applyEffect(state, card, pi);
-    // 死の荷車をサプライに残したままプレイした場合＝「これ」の自己廃棄は不発（fromCommand で印付け）。
-    if (card === 'death_cart' && state.pending && state.pending.type === 'death_cart') state.pending.fromCommand = true;
+    log(state, `${state.players[pi].name} は${C()[commandId].name}で「${C()[card].name}」をもう一度使った（動かさずに使用）。`);
+    playAsCommand(state, pi, commandId, card);
     return true;
+  }
+
+  /* ---------- 命令（Command）＝「プレイした札は動かない」ルール（2019エラッタ・現行） ----------
+     大君主／はみだし者／船長は **サプライに残したまま**、王子は **脇に置いたまま** カードをプレイする。
+     プレイされた札は「場(in play)」に居ないので、そのカードの
+       「これ(this)を廃棄する／脇に置く／自分の山へ戻す／酒場マット・島マットに置く」
+     という **自己移動は必ず失敗する**（lose track）。命令カード自身も身代わりに動かない。
+     ※初版(2016 Empires ルールブック)は逆で「命令カードがそのカードになり、身代わりに動く」だったが、
+       Donald X. の 2019エラッタで "play a card instead of becoming the card" に変更された。
+       RGG Dark Ages(2022) ルールブック逐語：
+         "The played Action card stays in the Supply; if an effect tries to move it, such as Death Cart
+          trying to trash itself, it will fail to move it. If the card checks to see if it was trashed,
+          like Death Cart does, that part will fail, but if it does not ... the rest of the effect will
+          still happen."
+     ＝ **移動そのもの（と「移動できたなら」で条件づけられたボーナス）だけが失われ、残りの効果は普通に解決する**。
+        例：祝宴＝廃棄は失敗するが「コスト5以下を獲得」は行う／島＝島自身は動かないが手札1枚は島マットへ／
+            死の荷車＝「これ」は廃棄できないが「手札のアクション」を廃棄すれば +$5／
+            農家の市場＝山上VPは取れるが自身は廃棄されない／鉱山の村＝+$2 は出ない。
+
+     実装：applyEffect(card) を呼ぶ間だけ state._cmd = { player, id, as } を立てる。
+       - `as`（今まさに命令が代理でプレイしているカード）で識別する。伝令官/家臣/水晶玉のように
+         applyEffect の内側で **別の本物のカード** をプレイする経路があり、そちらの「これ」は本物を指すため。
+       - 後から解決する選択待ち（死の荷車／倒壊）は pending に「これを廃棄できるか」を載せて持ち回る。 */
+  function playedByCommand(state, pi, cardId) {
+    const c = state._cmd;
+    return !!(c && c.player === pi && c.as === cardId);
+  }
+  // 「これ(this)」を場から取り除く。取り除けたら物理カードidを、取り除けなければ null（＝「If you did」が偽）。
+  //   命令カードがプレイした札は場に無いので必ず null。玉座の2回目（1回目で既に動いた）も null。
+  function takeSelf(state, pi, cardId) {
+    if (playedByCommand(state, pi, cardId)) return null;
+    return removeOne(state.players[pi].inPlay, cardId) ? cardId : null;
+  }
+  // 命令カードが代理で card をプレイする（applyEffect の間だけ _cmd を立てる）。
+  function playAsCommand(state, pi, commandId, card) {
+    const prev = state._cmd;
+    state._cmd = { player: pi, id: commandId, as: card };
+    try { applyEffect(state, card, pi); }
+    finally { if (prev) state._cmd = prev; else delete state._cmd; }
+  }
+  // 選択待ち（倒壊/死の荷車）で「これ（this）」を廃棄できるか。**engine・CPU・UI はこの述語だけを見る**
+  //   （片側だけ判定がずれると engine拒否×CPU再提案＝無限ループになる）。
+  //   ※後方互換：pending.self は v44 で新設。オンライン対戦のスナップショット（v43以前）を復元すると
+  //     self が欠落し undefined になるため、旧来の意味（場に本体があれば廃棄できる／
+  //     v43 の命令フラグ fromCommand が立っていれば廃棄できない）へフォールバックする。
+  function pendingSelf(state, pd, cardId) {
+    if (!pd) return false;
+    if (pd.self !== undefined) return !!pd.self;
+    if (pd.fromCommand) return false;
+    const p = state.players[pd.player];
+    return !!p && p.inPlay.includes(cardId);
   }
 
   function applyEffect(state, cardId, pi) {
@@ -2378,9 +2430,11 @@
         t.buys += 1;
         const cur = state.pileVP.farmers_market || 0;
         if (cur >= 4) {
+          // 勝利点の取得は廃棄に条件づかない（公式）。命令が動かさずに使った場合は廃棄だけが失敗する。
           p.vpTokens = (p.vpTokens || 0) + cur; state.pileVP.farmers_market = 0;
-          if (removeOne(p.inPlay, 'farmers_market')) trashCard(state, pi, 'farmers_market');
-          log(state, `${p.name} は農家の市場で 山上の勝利点${cur}個 を得て これを廃棄した。`);
+          const trashed = takeSelf(state, pi, 'farmers_market');
+          if (trashed) trashCard(state, pi, 'farmers_market');
+          log(state, `${p.name} は農家の市場で 山上の勝利点${cur}個 を得た${trashed ? '（これを廃棄）' : ''}。`);
         } else {
           state.pileVP.farmers_market = cur + 1; t.coins += (cur + 1);
           log(state, `${p.name} は農家の市場（山に勝利点1個→計${cur + 1}個・+$${cur + 1}）。`);
@@ -2394,10 +2448,14 @@
 
       /* ===== 帝国（Empires）Batch E4：分割山5組 ===== */
       // 陣地：+2カード+2アクション。手札から金貨か鹵獲品を公開してよい。公開しないなら脇へ→片付けで自分の分割山へ戻す。
+      //   命令が動かさずに使った陣地は「これを脇に置く」に失敗する＝公開してもしなくても同じなので選択を出さない（E8）。
       case 'encampment':
         draw(state, pi, 2); t.actions += 2;
-        if (p.hand.includes('gold') || p.hand.includes('plunder')) state.pending = { type: 'encampment_reveal', player: pi };
-        else encampmentSetAside(state, pi);
+        if (playedByCommand(state, pi, 'encampment')) {
+          log(state, `${p.name} の陣地はサプライに残ったまま（脇に置かれない）。`);
+        } else if (p.hand.includes('gold') || p.hand.includes('plunder')) {
+          state.pending = { type: 'encampment_reveal', player: pi };
+        } else encampmentSetAside(state, pi);
         break;
       // パトリキ：+1カード+1アクション。山札の一番上を公開（強制）＝コスト5以上なら手札へ、未満なら山札に残す。
       case 'patrician':
@@ -2560,8 +2618,11 @@
       case 'mining_village':
         draw(state, pi, 1);
         t.actions += 2;
-        // 場のこのカードを廃棄して +2 コイン（任意）
-        state.pending = { type: 'mining_village', player: pi };
+        // 場のこのカードを廃棄して +2 コイン（任意）。
+        //   命令が動かさずに使った鉱山の村は「これ」を廃棄できない＝+$2 も出ない（公式・E8）。
+        //   玉座の2回目（1回目で既に廃棄済み）も同様。どちらも死に選択肢なので pending を立てない。
+        if (!playedByCommand(state, pi, 'mining_village') && p.inPlay.includes('mining_village'))
+          state.pending = { type: 'mining_village', player: pi };
         break;
       case 'nobles':
         // +3 カード か +2 アクション を選ぶ
@@ -2697,8 +2758,8 @@
         for (let k = 1; k < state.players.length; k++) draw(state, (pi + k) % state.players.length, 1);
         break;
       case 'feast':
-        // 自身を廃棄（場にあれば）→ コスト5以下を獲得
-        if (removeOne(p.inPlay, 'feast')) { state.trash.push('feast'); log(state, `${p.name} は祝宴を廃棄した。`); }
+        // 自身を廃棄（場にあれば）→ コスト5以下を獲得。獲得は廃棄に条件づかない（命令経由なら廃棄だけが失敗する）。
+        if (takeSelf(state, pi, 'feast')) { state.trash.push('feast'); log(state, `${p.name} は祝宴を廃棄した。`); }
         if (anyGainable(state, (id) => cardCost(state, id) <= 5)) state.pending = { type: 'feast', player: pi };
         break;
       case 'adventurer': {
@@ -3001,9 +3062,9 @@
         break;
       }
       case 'madman': {
-        // +2アクション。狂人を山へ戻せたら、その時点の手札枚数ぶん +1カード。
+        // +2アクション。狂人を山へ戻せたら、その時点の手札枚数ぶん +1カード（王子で動かさずに使うと戻せない＝引けない）。
         t.actions += 2;
-        if (removeOne(p.inPlay, 'madman')) {
+        if (takeSelf(state, pi, 'madman')) {
           state.supply.madman = (state.supply.madman || 0) + 1; // 非サプライ山へ返却
           const n = p.hand.length;
           if (n) draw(state, pi, n);
@@ -3118,7 +3179,9 @@
         state.pending = { type: 'count', stage: 'part1', player: pi };
         break;
       case 'death_cart': // これ自身か手札のアクション1枚を廃棄してよい→廃棄したら+$5（on-gainは廃墟2枚）
-        state.pending = { type: 'death_cart', player: pi };
+        //   self＝「これ」を廃棄できるか。命令で動かさずに使った場合と、玉座の2回目（既に廃棄済み）は false。
+        //   「手札のアクションを廃棄して +$5」は場所が明示されているので命令経由でも可能（公式・E8）。
+        state.pending = { type: 'death_cart', player: pi, self: !playedByCommand(state, pi, 'death_cart') && p.inPlay.includes('death_cart') };
         break;
       case 'band_of_misfits': // 命令：サプライの「これより安い・非Command・非持続アクション」をサプライに残したまま使う
         // 玉座/王の宮廷/行進/御料車で再演されたときは「1回目に選んだカード」を必ずもう一度使う（公式ルーリング）。
@@ -3144,7 +3207,7 @@
         break;
       }
       case 'pillage': { // これを廃棄→戦利品2枚＋手札5枚以上の各相手が手札公開→使用者が1枚捨てさせる
-        if (!removeOne(p.inPlay, 'pillage')) break; // 場に無い（玉座2回目/はみだし者）＝If you did が偽
+        if (!takeSelf(state, pi, 'pillage')) break; // 場に無い（玉座2回目/命令で動かさずに使用）＝If you did が偽
         trashCard(state, pi, 'pillage');
         let g = 0; for (let i = 0; i < 2; i++) if (gain(state, pi, 'spoils', 'discard')) g++;
         if (g) log(state, `${p.name} は略奪で戦利品 ${g}枚 を獲得した。`);
@@ -3258,9 +3321,10 @@
       }
       case 'treasure_map': {
         // これ（場のtreasure_map 1枚）と手札のtreasure_map をもう1枚廃棄できれば金貨4枚を山札の上へ。
-        // 「これ」が場に無い（玉座の間/王の宮廷の2回目＝1回目で既に廃棄済み）ときは何もしない。
+        // 「これ」が場に無い（玉座の間/王の宮廷の2回目＝1回目で既に廃棄済み／命令で動かさずに使用）ときは何もしない。
         // ※無条件に trash へ push すると存在しないカードを生成してしまう（カード保存則違反）。
-        if (!removeOne(p.inPlay, 'treasure_map')) break;
+        // ※命令経由で「手札のコピーだけ空しく廃棄されるか」は公式裁定が取れていない＝廃棄しない側に倒す（§6）。
+        if (!takeSelf(state, pi, 'treasure_map')) break;
         state.trash.push('treasure_map');
         let trashedTwo = false;
         if (removeOne(p.hand, 'treasure_map')) { state.trash.push('treasure_map'); trashedTwo = true; }
@@ -3287,10 +3351,14 @@
       }
       case 'island':
         // 島自身を島マットへ（場のこのカードを取り除く）＋手札1枚を島マットへ。
-        // 王子で「動かさず使用」した場合は場に島が無い＝自身は移動しない（幻の複製を防ぐ＝treasure_map/祝宴と同型ガード）。
-        if (removeOne(p.inPlay, 'island')) p.islandMat.push('island');
-        if (p.hand.length > 0) state.pending = { type: 'island', player: pi };
-        else log(state, `${p.name} は島を島マットに置いた。`);
+        // 命令（王子/船長/大君主/はみだし者）で「動かさず使用」した場合、島自身は動かないが
+        //   「手札から1枚」は場所が明示されているので島マットへ行く（公式・E8）。
+        {
+          const moved = takeSelf(state, pi, 'island');
+          if (moved) p.islandMat.push('island');
+          if (p.hand.length > 0) state.pending = { type: 'island', player: pi };
+          else if (moved) log(state, `${p.name} は島を島マットに置いた。`);
+        }
         break;
       case 'native_village':
         t.actions += 2;
@@ -3903,10 +3971,13 @@
       /* ========== 冒険：複雑系（倒壊/工匠/語り部/使者） ========== */
       // 倒壊raze：+1アクション。これか手札1枚を廃棄→廃棄カードのコイン分だけ山札の上を見て1枚を手札・残りを捨てる。
       //   廃棄対象が無い（玉座2回目で raze が場に無く手札も空）ときは何もしない＝pending を立てない。
-      case 'raze':
+      //   self＝「これ」を廃棄できるか（命令で動かさずに使った場合は false＝手札からしか廃棄できない・公式）。
+      case 'raze': {
         t.actions += 1;
-        if (p.inPlay.includes('raze') || p.hand.length > 0) state.pending = { type: 'raze', stage: 'trash', player: pi };
+        const canSelf = !playedByCommand(state, pi, 'raze') && p.inPlay.includes('raze');
+        if (canSelf || p.hand.length > 0) state.pending = { type: 'raze', stage: 'trash', player: pi, self: canSelf };
         break;
+      }
       // 工匠artificer：+1カード +1アクション +$1。手札を好きな枚数捨て→捨てた枚数ちょうどのコストのカード1枚を山札の上に獲得してよい。
       case 'artificer':
         draw(state, pi, 1); t.actions += 1; t.coins += 1;
@@ -6154,7 +6225,7 @@
         if (card) {
           t.actionsPlayed = (t.actionsPlayed || 0) + 1; // アクションの使用に数える（共謀者等）。カードは場に出ない。
           log(state, `${p.name} は王子で「${C()[card].name}」を使った（脇に置いたまま）。`);
-          applyEffect(state, card, pd.player);
+          playAsCommand(state, pd.player, 'prince', card);
         }
         return state; // 残りの開始時キューは reduce の startQueue 安全網が進める
       }
@@ -6173,7 +6244,7 @@
         state.pending = null; // 先に閉じる（applyEffect が新たな選択待ちを立てることがある）
         t.actionsPlayed = (t.actionsPlayed || 0) + 1; // 使用に数えるが、カードはサプライに残る（場に出ない）
         log(state, `${state.players[pd.player].name} は船長でサプライの「${C()[card].name}」を使った（サプライに残る）。`);
-        applyEffect(state, card, pd.player);
+        playAsCommand(state, pd.player, 'captain', card);
         return state; // ターン開始時ぶんの後続は startQueue 安全網が進める
       }
       /* ---- 教会：手札から最大3枚を裏向きで脇に置く ---- */
@@ -6606,9 +6677,9 @@
         if (!pd || pd.type !== 'death_cart') return state;
         const p = state.players[pd.player];
         if (action.mode === 'this') {
-          // はみだし者でサプライに残したままプレイした死の荷車は「これ」が場に無い＝自身の廃棄は不発（+$0・lose-track）。
-          // 場に別の（本物の）死の荷車があってもそれは対象外＝fromCommand なら何もしない。
-          if (!pd.fromCommand && removeOne(p.inPlay, 'death_cart')) { trashCard(state, pd.player, 'death_cart'); t.coins += 5; log(state, `${p.name} は死の荷車を廃棄した（+$5）。`); }
+          // 命令（大君主/はみだし者/船長/王子）で動かさずにプレイした死の荷車は「これ」が場に無い＝自身の廃棄は不発（+$0・lose-track）。
+          // 場に別の（本物の）死の荷車があってもそれは対象外＝pd.self が false なら何もしない。
+          if (pendingSelf(state, pd, 'death_cart') && removeOne(p.inPlay, 'death_cart')) { trashCard(state, pd.player, 'death_cart'); t.coins += 5; log(state, `${p.name} は死の荷車を廃棄した（+$5）。`); }
         } else if (action.mode === 'hand') {
           const card = action.card;
           if (card == null || p.hand.indexOf(card) < 0 || !DOM.isType(card, 'action')) return state;
@@ -6629,9 +6700,7 @@
         t.actionsPlayed = (t.actionsPlayed || 0) + 1; // 使用に数えるがカードはサプライに残る
         rememberCommandAs(state, 'band_of_misfits', card); // 再演（玉座/行進等）では選び直さない
         log(state, `${state.players[pd.player].name} ははみだし者でサプライの「${C()[card].name}」を使った（サプライに残る）。`);
-        applyEffect(state, card, pd.player);
-        // 死の荷車をサプライに残したままプレイした場合＝「これ」の自己廃棄は不発（fromCommand で印付け）。
-        if (card === 'death_cart' && state.pending && state.pending.type === 'death_cart') state.pending.fromCommand = true;
+        playAsCommand(state, pd.player, 'band_of_misfits', card);
         return state;
       }
       case 'HERMIT_TRASH': {
@@ -8343,9 +8412,7 @@
         t.actionsPlayed = (t.actionsPlayed || 0) + 1; // 使用に数えるが、カードはサプライに残る（場に出ない）
         rememberCommandAs(state, 'overlord', card); // 再演（玉座/王の宮廷/冠等）では選び直さない
         log(state, `${state.players[pd.player].name} は大君主でサプライの「${C()[card].name}」を使った（サプライに残る）。`);
-        applyEffect(state, card, pd.player);
-        // 死の荷車をサプライに残したままプレイした場合＝「これ」の自己廃棄は不発（fromCommand で印付け）。
-        if (card === 'death_cart' && state.pending && state.pending.type === 'death_cart') state.pending.fromCommand = true;
+        playAsCommand(state, pd.player, 'overlord', card);
         return state;
       }
       // 冠：mode='action'＝手札のアクション1枚を選び玉座と同型で2回使う。
@@ -9037,7 +9104,7 @@
         const p = state.players[pd.player];
         const card = action.card;
         let trashed = null;
-        if (card === 'raze') { if (!removeOne(p.inPlay, 'raze')) return state; trashCard(state, pd.player, 'raze'); trashed = 'raze'; }
+        if (card === 'raze') { if (!pendingSelf(state, pd, 'raze') || !removeOne(p.inPlay, 'raze')) return state; trashCard(state, pd.player, 'raze'); trashed = 'raze'; }
         else { if (p.hand.indexOf(card) < 0) return state; removeOne(p.hand, card); trashCard(state, pd.player, card); trashed = card; }
         const n = cardCost(state, trashed);
         log(state, `${p.name} は「${C()[trashed].name}」を廃棄した（倒壊：山札の上${n}枚を見る）。`);
@@ -9554,6 +9621,7 @@
     captainTargets, // 新プロモ：船長の対象（CPU/UIが同じ候補を参照＝engine拒否とCPU非提案のセット）
     bandOfMisfitsTargets, // 暗黒時代：はみだし者の対象（CPU/UIが同じ候補を参照）
     overlordTargets, // 帝国：大君主の対象（CPU/UIが同じ候補を参照）
+    pendingSelf, // E8：倒壊/死の荷車の「これを廃棄できるか」（CPU/UIが同じ述語を参照＝engine拒否とCPU非提案のセット）
     validTeacherPiles, // 冒険：教師のトークン置き先（CPU/UIが同じ候補を参照）
     maskStateFor,
     PLAYER_ACTIONS,

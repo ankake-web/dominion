@@ -5,6 +5,8 @@
   const DOM = (window.DOM = window.DOM || {});
   const E = () => DOM.engine;
   const LEVEL_JP = { easy: '弱', normal: '普通', hard: '強' };
+  // E8：倒壊/死の荷車の「これ(this)を廃棄できるか」＝engine と同じ述語を見る（engine が拒否する選択肢を出さない）。
+  const pendingSelf = (state, pd, cardId) => (E() && E().pendingSelf ? E().pendingSelf(state, pd, cardId) : !!(pd && pd.self));
 
   /* ---------- ランダムな初期名（普通の短い名前） ---------- */
   // 「あなた／対戦相手」だと盛り下がるので入力欄の初期値をランダムに。称号はつけない。
@@ -1511,7 +1513,11 @@
       return modalGainSupply(state, '教師 — トークンを置く山', '+1' + TL[pd.token] + 'トークンを置くアクション山を選びます（その山のカードをプレイするたびに +1' + TL[pd.token] + '）。', (id) => piles.includes(id), (id) => dispatch({ type: 'TEACHER_PILE', card: id }), null, false, '置く');
     }
     // 冒険：複雑系（倒壊/工匠/語り部/使者）
-    if (pd.type === 'raze' && pd.stage === 'trash') return modalSingleHand(p, '倒壊 — 廃棄', 'これか手札1枚を廃棄します。廃棄したカードのコイン分だけ山札の上を見て1枚を手札に加えます。', () => true, (card) => dispatch({ type: 'RAZE_TRASH', card }), p.inPlay.includes('raze') ? { label: '倒壊自身を廃棄する（$2＝山札の上2枚を見る）', on: () => dispatch({ type: 'RAZE_TRASH', card: 'raze' }) } : null, '廃棄する');
+    // 「これ（倒壊自身）」を廃棄できるか＝engine の pendingSelf と同じ述語（命令で動かさずに使った場合は不可）。
+    if (pd.type === 'raze' && pd.stage === 'trash') {
+      const self = pendingSelf(state, pd, 'raze');
+      return modalSingleHand(p, '倒壊 — 廃棄', (self ? 'これか手札1枚' : '手札1枚') + 'を廃棄します。廃棄したカードのコイン分だけ山札の上を見て1枚を手札に加えます。', () => true, (card) => dispatch({ type: 'RAZE_TRASH', card }), self ? { label: '倒壊自身を廃棄する（$2＝山札の上2枚を見る）', on: () => dispatch({ type: 'RAZE_TRASH', card: 'raze' }) } : null, '廃棄する');
+    }
     if (pd.type === 'raze' && pd.stage === 'look') return modalPickList(state, '倒壊 — 手札に加える', '見たカードから1枚を手札に加えます（残りは捨て札）。', pd.cards, '手札に加える', (card) => dispatch({ type: 'RAZE_LOOK', card }));
     if (pd.type === 'artificer' && pd.stage === 'discard') return modalMultiHand(p, '工匠 — 捨てる', '好きな枚数を捨て、捨てた枚数ちょうどのコストのカードを1枚 山札の上に獲得できます（0枚でもOK）。', (n) => '確定（' + n + '枚捨て）', true, (cards) => dispatch({ type: 'ARTIFICER_DISCARD', cards }));
     if (pd.type === 'artificer' && pd.stage === 'gain') return modalGainSupply(state, '工匠 — 山札の上に獲得', 'ちょうどコスト $' + pd.exact + ' のカードを1枚、山札の上に獲得できます（しなくてもよい）。', (id) => effCost(state, id) === pd.exact, (id) => dispatch({ type: 'ARTIFICER_GAIN', card: id }), () => dispatch({ type: 'ARTIFICER_GAIN', card: null }), true);
@@ -1807,7 +1813,7 @@
       { label: '手札を全て廃棄', on: () => dispatch({ type: 'COUNT_PART2', mode: 'trashhand' }) },
       { label: '公領を獲得', on: () => dispatch({ type: 'COUNT_PART2', mode: 'duchy' }) }]);
     // --- Group C ---
-    if (pd.type === 'death_cart') return modalDeathCart(p);
+    if (pd.type === 'death_cart') return modalDeathCart(state, p, pd);
     if (pd.type === 'band_of_misfits') {
       const cands = (E() && E().bandOfMisfitsTargets) ? E().bandOfMisfitsTargets(state) : [];
       return modalGainSupply(state, 'はみだし者 — サプライのカードを使う', 'サプライにある「これより安い・非命令・非持続のアクション」を、サプライに残したまま使用します。', (id) => cands.includes(id), (id) => dispatch({ type: 'BAND_OF_MISFITS_PLAY', card: id }), () => dispatch({ type: 'BAND_OF_MISFITS_PLAY', card: null }), false, '使う');
@@ -1896,12 +1902,15 @@
     return modalShell('策謀 — 山札の上に置く', '最大 ' + max + ' 枚まで、場のアクションを山札の上に置けます（次のターンに引きます・0枚でもよい）。', chips, footer);
   }
   // 暗黒時代：死の荷車＝これ自身か手札のアクション1枚を廃棄→+$5（しなくてもよい）。
-  function modalDeathCart(p) {
+  // 「これ（死の荷車自身）」を廃棄できるか＝engine の pendingSelf と同じ述語（命令で動かさずに使った場合／玉座2回目は不可）。
+  function modalDeathCart(state, p, pd) {
+    const self = pendingSelf(state, pd, 'death_cart');
     const acts = [...new Set(p.hand.filter((id) => DOM.isType(id, 'action')))];
-    const buttons = [h('button', { class: 'btn btn-primary btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'DEATH_CART_RESOLVE', mode: 'this' }) }, '死の荷車自身を廃棄（+$5）')];
+    const buttons = [];
+    if (self) buttons.push(h('button', { class: 'btn btn-primary btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'DEATH_CART_RESOLVE', mode: 'this' }) }, '死の荷車自身を廃棄（+$5）'));
     acts.forEach((id) => buttons.push(h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'DEATH_CART_RESOLVE', mode: 'hand', card: id }) }, '「' + DOM.CARDS[id].name + '」を廃棄（+$5）')));
     buttons.push(h('button', { class: 'btn btn-block', onclick: () => dispatch({ type: 'DEATH_CART_RESOLVE', mode: 'none' }) }, '廃棄しない'));
-    return modalShell('死の荷車', 'これ自身か手札のアクション1枚を廃棄すると +$5（しなくてもよい）。', [], h('div', null, buttons));
+    return modalShell('死の荷車', (self ? 'これ自身か手札のアクション1枚' : '手札のアクション1枚') + 'を廃棄すると +$5（しなくてもよい）。', [], h('div', null, buttons));
   }
   // 暗黒時代：隠遁者＝手札か捨て札の非財宝を1枚廃棄できる（任意）。
   function modalHermitTrash(p) {

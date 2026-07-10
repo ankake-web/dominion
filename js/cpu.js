@@ -112,9 +112,22 @@
     return null;
   }
 
+  /* ---------- E8：倒壊/死の荷車の「これ(this)を廃棄できるか」＝engine と同じ述語を見る ---------- */
+  //   engine が拒否する選択を CPU が提案し続けると無限ループになるので、必ず engine.pendingSelf を参照する。
+  function pendingSelf(state, pd, cardId) {
+    const E = DOM.engine;
+    if (E && E.pendingSelf) return E.pendingSelf(state, pd, cardId);
+    if (!pd) return false;
+    if (pd.self !== undefined) return !!pd.self;
+    if (pd.fromCommand) return false; // v43以前のスナップショット互換
+    const p = state.players[pd.player];
+    return !!p && p.inPlay.includes(cardId);
+  }
+
   /* ---------- 新プロモ：王子の脇置き対象を選ぶ ---------- */
   // 対象＝持続/命令以外・負債/ポーション費用なし・コスト4以下のアクション（engine の princeEligible と同条件）。
-  // 自分をマット等へ動かして空振りする札（島/宝の地図）は毎ターン再生の価値が無いので選ばない。
+  // 自分をマット等へ動かして空振りする札（島/宝の地図）は毎ターン再生の価値が無いので選ばない
+  // （E8＝命令で動かさずに使うと自己移動は失敗する。島は手札1枚をマットに送れるが、CPUには扱いづらいので避ける）。
   const PRINCE_AVOID = new Set(['island', 'treasure_map']);
   function bestPrinceTarget(state, p) {
     const elig = p.hand.filter((c) =>
@@ -1253,8 +1266,10 @@
       // 冒険：複雑系
       case 'raze': {
         if (pd.stage === 'trash') {
-          if (p.inPlay.includes('raze')) return { type: 'RAZE_TRASH', card: 'raze' }; // 自身を廃棄（thin＋2枚掘る）
-          return { type: 'RAZE_TRASH', card: p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0] }; // 玉座2回目等＝手札の最junk
+          // 「これ」を廃棄できるか。命令（大君主/はみだし者/船長/王子）で動かさずに使った場合と
+          // 玉座の2回目は false＝engine が拒否するので、CPU も提案しない（engine拒否とCPU非提案はセット）。
+          if (pendingSelf(state, pd, 'raze')) return { type: 'RAZE_TRASH', card: 'raze' }; // 自身を廃棄（thin＋2枚掘る）
+          return { type: 'RAZE_TRASH', card: p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0] }; // 玉座2回目/命令経由＝手札の最junk
         }
         // look：最も残す価値の高い1枚を手札へ
         return { type: 'RAZE_LOOK', card: pd.cards.slice().sort((a, b) => keepValue(b) - keepValue(a))[0] };
@@ -1882,7 +1897,11 @@
       case 'death_cart': {
         const junk = p.hand.find((c) => isType(c, 'ruins')); // 廃墟を廃棄すれば+$5＋死の荷車を温存
         if (junk) return { type: 'DEATH_CART_RESOLVE', mode: 'hand', card: junk };
-        return { type: 'DEATH_CART_RESOLVE', mode: 'this' }; // 自身を廃棄して+$5
+        if (pendingSelf(state, pd, 'death_cart')) return { type: 'DEATH_CART_RESOLVE', mode: 'this' }; // 自身を廃棄して+$5
+        // 命令（はみだし者等）で動かさずに使った＝「これ」は廃棄できない。安い手札のアクションがあれば廃棄して+$5。
+        const act = p.hand.slice().filter((c) => isType(c, 'action')).sort((a, b) => trashValue(a) - trashValue(b))[0];
+        if (act != null && trashValue(act) <= 3) return { type: 'DEATH_CART_RESOLVE', mode: 'hand', card: act };
+        return { type: 'DEATH_CART_RESOLVE', mode: 'none' };
       }
       case 'band_of_misfits': {
         const cands = (DOM.engine && DOM.engine.bandOfMisfitsTargets) ? DOM.engine.bandOfMisfitsTargets(state) : [];

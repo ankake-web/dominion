@@ -89,6 +89,10 @@ const ADVERSARIAL = [
   ['crown', 'overlord', 'throne_room', 'kings_court', 'village', 'market', 'smithy', 'moat', 'militia', 'workshop'], // 帝国：命令(大君主)の再演は選び直さない×玉座/王の宮廷/冠のネスト
   ['tiara', 'crystal_ball', 'anvil', 'investment', 'charlatan', 'bank', 'collection', 'monument', 'village', 'market'], // 繁栄：ティアラの2回目が pending 財宝(水晶玉/金床/投資/ペテン師)の選択・アタックを取りこぼさない
   ['counterfeit', 'bandit_camp', 'marauder', 'band_of_misfits', 'procession', 'village', 'market', 'smithy', 'moat', 'militia'], // 暗黒時代：偽造通貨の2回プレイ→廃棄（戦利品の自己移動＝lose track）＋命令(はみだし者)×行進の再演
+  // E8：命令（大君主/はみだし者）× 自己移動札（祝宴/鉱山の村/宝の地図/島/倒壊/陣地/農家の市場）＝自己移動は失敗し命令カードも動かない
+  ['overlord', 'band_of_misfits', 'feast', 'mining_village', 'treasure_map', 'island', 'raze', 'encampment', 'farmers_market', 'throne_room'],
+  // E8：命令（船長/王子）× 自己移動札＋Reserve（酒場マットへの自己移動）＋玉座/王の宮廷のネスト
+  ['captain', 'prince', 'mining_village', 'ratcatcher', 'guide', 'duplicate', 'death_cart', 'raze', 'throne_room', 'kings_court'],
 ];
 {
   let allOk = true;

@@ -687,7 +687,7 @@
     city_quarter: { id: 'city_quarter', name: '市街', cost: 0, debt: 8, types: ['action'],
                  text: '+2 アクション\n手札を公開し、公開したアクションカード1枚につき +1 カード。' },
     overlord: { id: 'overlord', name: '大君主', cost: 0, debt: 8, types: ['action', 'command'],
-                 text: 'サプライにあるコスト5以下のアクションカード（命令カード以外）1枚を、そのカードとしてプレイする。\n（そのカードはサプライに残す）' },
+                 text: 'サプライにあるコスト5以下の、命令ではないアクションカード1枚を、サプライに残したまま使用する。' },
     royal_blacksmith: { id: 'royal_blacksmith', name: '王室の鍛冶屋', cost: 0, debt: 8, types: ['action'],
                  text: '+5 カード\n手札を公開し、銅貨をすべて捨てる。' },
     farmers_market: { id: 'farmers_market', name: '農家の市場', cost: 3, types: ['action'],

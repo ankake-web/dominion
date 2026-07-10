@@ -1,9 +1,60 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-10 / branch `main`（最新は `git log` で確認）。**帝国（Empires）は E7＝CARD_SET昇格まで完了＝縦型36枚すべて実プレイ可能。`15b605e` を push 済＝本番反映・実機確認済み**（§0-16。`sw.js` v43／Pages＝v43配信・`castles.webp` 200／Render＝WSで `kingdomSet=empires` を受理し 城8枚・分割山下段・負債・山上VP・相手手札マスク すべて正常）。E6 のティアラ/偽造通貨/はみだし者の実バグ修正、E7 のUI実バグ2件（拡張の固定セット8つが選べない／ランダム分類のボタンが画面外）も同時に本番反映済み。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
+最終更新: 2026-07-10 / branch `main`（最新は `git log` で確認）。**帝国（Empires）は E7＝CARD_SET昇格まで完了＝縦型36枚すべて実プレイ可能・push済（`15b605e`）**（§0-16）。**続く E8＝命令(Command)の忠実化（＝「命令がプレイした札は動かない」）を実装完了・未push**（§0-17。`sw.js` v43→**v44**・`asset/cards/overlord.webp` 再生成）。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
-**新セッションは まず `npm test` を実行し 33スイート・オールグリーン（exit 0・整合性3146件・帝国226件＋UI45件・冒険45件＋UI40件・暗黒時代79件＋UI57件・新プロモ142件＋UI22件・繁栄69件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
+**新セッションは まず `npm test` を実行し 33スイート・オールグリーン（exit 0・整合性3146件・帝国269件＋UI45件・冒険59件＋UI40件・暗黒時代87件＋UI57件・新プロモ165件＋UI22件・繁栄69件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
+
+---
+
+## 0-17. E8＝命令（Command）の忠実化＝**「命令がプレイした札は動かない」**（2026-07-10・**未push**）
+
+**⚠️ 前セッションの E8 計画は誤りだった（廃止済みの2016年ルールを実装しようとしていた）。実装前に多エージェント研究WFで一次資料を取り直し、方針を反転させた。**
+
+### 何が誤りだったか
+- §0-16・旧KICKOFF は「**公式2022では命令カードが身代わりに動く**（大君主×陣地＝大君主が脇→大君主の山へ／大君主×農家の市場＝大君主自身を廃棄／船長×鉱山の村＝船長を廃棄して+$2／王子×島＝王子が島マットへ）」と書いていた。
+- これは **RGG が今もホストしている 2016年版 Empires ルールブックPDF の記述**（"Overlord also gets the chosen card's cost, name, and types, until it leaves play. If you play Overlord as a card that moves itself somewhere ... Overlord will do that"）。**2019年エラッタで廃止済み**。
+- **現行（2019エラッタ・2021以降の刷）＝逆**。Donald X. Vaccarino の公式エラッタ：shapeshifter 4枚（band_of_misfits / overlord / inheritance / prince）は「**play a card instead of becoming the card**」に変更。カード文も `"... leaving it there."` になった。
+- **RGG Dark Ages(2022) ルールブックPDF の逐語**（検証エージェントが pdftotext で単語一致を確認）：
+  > "Command is a type that appears on cards like this; it has no meaning beyond stopping these cards from playing each other. ... **The played Action card stays in the Supply; if an effect tries to move it, such as Death Cart trying to trash itself, it will fail to move it.** If the card checks to see if it was trashed, like Death Cart does, that part will fail, but if it does not, like Acting Troupe, **the rest of the effect will still happen**. Since the played card is not in play, "while this is in play" abilities (such as Highway's) will not do anything."
+- **決定打**：我々のカタログ文は既に現行エラッタ側だった（大君主「そのカードはサプライに残す」／船長・王子「動かさずに使用する」）。旧ルールを実装すると自分のカード画像と矛盾する。→ ユーザー確認の上で **現行エラッタ準拠** に決定。
+
+### 実装（＝現行ルール。旧 no-op はほぼ正しかったが3種類の取りこぼしがあった）
+- **`state._cmd = { player, id, as }`** を、命令カードが代理で `applyEffect(card)` を呼ぶ間だけ立てる（新 `playAsCommand`。`finally` で削除＝state に残らない）。
+  - **`as` で「今まさに命令が代理でプレイしているカード」を識別する**のが要。`herald`（山札上の本物のアクションを同期プレイ）/`vassal`/`crystal_ball`/`berserker`(on-gain) のように **applyEffect の内側で別の本物のカードをプレイする経路**があり、そちらの「これ(this)」は本物を指すため。
+- **`playedByCommand(state,pi,cardId)`** ／ **`takeSelf(state,pi,cardId)`**（命令経由なら必ず `null`＝lose track。そうでなければ `removeOne(p.inPlay, cardId)`）。自己移動サイトを全部これに置換＝
+  `feast` / `island` / `treasure_map` / `pillage` / `farmers_market` / `madman` / `encampmentSetAside` / `putOnTavern`（Reserve 全部）。
+- **後から解決する選択待ちは pending に `self`（＝「これ」を廃棄できるか）を載せる**：`death_cart` / `raze`。`mining_village` と `encampment` は命令経由だと**選択自体が無意味なので pending を立てない**（死に選択肢を出さない）。旧 `pd.fromCommand` は廃止（大君主/はみだし者にしか付いておらず船長/王子で漏れていた）。
+- **OVERLORD_PLAY / BAND_OF_MISFITS_PLAY / CAPTAIN_PLAY / PRINCE_PLAY / replayCommandAs** をすべて `playAsCommand` 経由に統一。
+- **`DOM.engine.pendingSelf(state, pd, cardId)` を新設・公開**＝engine拒否・CPU非提案・UI表示が**同じ述語**を見る。後方互換（下記レビュー確定バグ）も内包。
+
+### これで直った実バグ（現行ルール基準・すべて回帰テスト付き）
+1. **【MED・出荷到達】「これ」が場の *同名の本物のコピー* を巻き込む**：船長/王子で `mining_village` を使うと、**場に出してある本物の鉱山の村が廃棄され +$2 が出た**（`random-promo` は captain と mining_village が同居）。同型で `raze`（場の本物の倒壊を廃棄）・`death_cart`（fromCommand が船長/王子に無い）・`encampment` も。
+2. **【MED】倒壊の死に選択肢**：命令経由の `raze` で「これを廃棄」を選ぶと engine が state 不変で拒否＝pending が閉じない。UI にボタンが出ており、CPU も条件次第で提案し得た。
+3. **【LOW・忠実性】取りこぼし**：`farmers_market` の「山上VPを取る」は廃棄に条件づかない（取れる）。`feast` の獲得も条件づかない（獲得できる）。`island` の「手札から1枚を島マットへ」は場所が明示されているので起きる。`death_cart` の「手札のアクションを廃棄して+$5」も起きる。← 現実装はいずれも正しく動くようになった。
+- **`empires` 固定セットの「大君主と自己移動札を同居させない」制約の根拠（永久VPループ）は旧ルール前提の誤診だった**。現行ルールでは大君主×農家の市場は「山上VPを取るが何も廃棄しない」＝強コンボだが合法・非ループ。固定セットは今回いじっていない（変更する必要は無い）。
+
+### 敵対レビュー（多エージェント6次元→各findingを node 再現で確定）＝**確定2件（偽陽性0・5次元クリーン）→修正済み**
+- **【MED】`pending.self` を新設したことによる後方互換バグ（オンライン永続化）**：`server/gameServer.js` は `state.pending` を含む全 state をそのまま Upstash に保存し、再デプロイ後 `restoreRoom` が**無変換で復元**する。v43 で作られた pending には `self` が無く、v44 が読むと `undefined`（falsy）＝「これを廃棄できない」に化ける。
+  - `raze`：**手札0枚の廃棄 pending が永久に閉じない**（CPU が無効 action を再送し続ける全体ソフトロック／人間は提出手段ゼロ）。
+  - `death_cart`：「自身を廃棄して+$5」が黙って消える。
+  - → **`pendingSelf` が旧来の意味へフォールバック**（`self` 欠落なら「場に本体があれば廃棄可」＋v43 の `fromCommand` も尊重）。engine/CPU/UI が同じ述語を見るので3面同時に直る。回帰テストを `adventures.test.js` に追加（JSON round-trip で v43 の pending 形状を再現）。
+- 他5次元（`_cmd` のスコープ・自己移動サイト・CPU ソーク・ルール忠実性・拡張間相互作用）は**クリーン**。
+
+### 意図的な据え置き（現行ルールとの差。E9 候補）
+- **大君主/はみだし者は持続カードもプレイできる**（現行カード文に "non-Duration" が無い）。実装は除外したまま。公式は「プレイした札が場を離れたであろうターンの片付けまで命令カードを場に残す」＝`armDuration(state,pi,命令id,{type:対象id})` で表現できる見込み。
+- **命令は混合山（騎士/城）の一番上もプレイできる**が除外したまま。
+- **チャンピオンの+1アクション／教師の山トークン／浮浪児のトラップ**は命令がプレイしたアクションで発火しない（`PLAY_ACTION` のみ＝既存の簡略化）。
+- **宝の地図**を命令でプレイした場合、手札のコピーも廃棄しない（公式裁定が取れず、廃棄しない側に倒した）。
+
+### 検証
+- `test/empires.test.js` **269件**（E8＝大君主×農家の市場/陣地/祝宴/略奪/倒壊/ワイン商/島/宝の地図・玉座×大君主×祝宴・大君主×伝令官の識別）／`test/promo2.test.js` **165件**（船長×鉱山の村の誤爆回帰・王子×島/鼠取り/鉱山の村/狂人）／`test/darkages.test.js` **87件**（はみだし者×死の荷車の self=false・手札ルート・CPU終端・×隠遁者）／`test/adventures.test.js` **59件**（`pendingSelf` の後方互換3件）。
+- `invariants` の敵対王国に **+2種**（命令4枚×自己移動札×Reserve×玉座/王の宮廷）。**npm test 全33スイート緑（exit 0・整合性3146不変・CPU序列 100/64/95 維持）**／`verify:e2e` 9/9（webp 346枚）／`verify:visual` 全幅はみ出し0。
+- カタログ：大君主の表示文を現行文言（「サプライにあるコスト5以下の、命令ではないアクションカード1枚を、サプライに残したまま使用する。」）に修正し **`overlord.webp` を再生成**（このPCのみ）。`sw.js` v43→**v44**。
+
+### 【次にやること】push（ユーザー確認）→ その後 横型ランドスケープ or E9
+- push すると本番に v44 が出る（**暗黒時代・新プロモ・帝国の挙動が変わる**＝はみだし者/船長/王子/大君主で自己移動札を使ったときの結果）。
+- その後の候補：**横型ランドスケープ**（帝国イベント13＋ランドマーク20／冒険イベント20＝縦枠パイプライン未対応で段階1すら未着手）／**E9＝命令が持続カードをプレイできるようにする**／CPU購入AIの拡張別チューニング。
 
 ---
 
@@ -47,9 +98,9 @@
 - Render（オンライン）：WS `/ws`（Origin 必須）で `setConfig kingdomSet=empires` を受理し、対戦開始で 城8枚（先頭=粗末な城）・分割山下段（騒がしい村/石 各5）・`p.debt`・`state.pileVP`・相手手札マスク がすべて正常。
   ※ **サーバは `DOM.CARD_SETS` から許可IDを導出**するので、新セットを足せば自動で受理される（サーバ側の変更不要）。Render の反映は push から数分かかる。
 
-### 【次にやること】E8 or 横型ランドスケープ
-- **E8（任意・忠実性）＝命令(Command)の「そのカードの名前/種別/コストを得て自分自身が動く」clause**。公式2022では 大君主を陣地としてプレイ→**大君主が脇に置かれ大君主の山に戻る**／農家の市場で山上4VP→**大君主自身が廃棄**／船長×鉱山の村→**船長を廃棄して+$2**／王子×島→**王子が島マットへ**。現実装は全て no-op（旧2016版の "leaving it there" 挙動）。`state.turn` に「いま何として使っているか」の物理カードidスタックを持ち、自己移動サイト（`removeOne(p.inPlay, X)`）を `commandSelf()` 経由にすれば通る。**pending 経由の自己移動（encampment_reveal / death_cart）は pending に phys を載せる必要がある**。
-- 公式では **大君主は持続カードもプレイできる**（場に残る）＝現実装は除外（船長/はみだし者と同じ簡略化）。E8 で一緒に検討。
+### 【次にやること】E8 → 完了（§0-17）
+- ~~E8＝命令(Command)の「自身が動く」clause~~ → **この節に書いていた「公式2022では命令カードが身代わりに動く」は 2016年初版ルールで、2019エラッタで廃止済みだった**。正しくは「命令がプレイした札は動かない／命令カード自身も動かない」。§0-17 で現行ルールに合わせて実装済み。
+- 公式では **大君主/はみだし者は持続カードもプレイできる**（命令カードが場に残る）＝現実装は除外（船長/王子は "non-Duration" が card text にあるので正しく除外）。E9 候補。
 
 ---
 
@@ -568,6 +619,12 @@
 - **デプロイ**：main に push → `.github/workflows/deploy.yml` が Pages 公開、サーバは Render 自動再デプロイ。**新しい配信フォルダは deploy.yml に追加**（忘れると本番404）。**client資産（js/css/webp等）を変えたら `sw.js` の VERSION を上げる**（現在 v26）。コミット者設定済み（Naoki Inoue）。
 
 ## 3. 完了したこと（サマリ。詳細は各コミットメッセージ＝git log が正）
+### 2026-07-10 E8＝命令(Command)の忠実化「プレイした札は動かない」（§0-17・未push）
+- **前セッションの E8 計画（＝命令カードが身代わりに動く）は廃止済みの2016年ルールだった**。研究WF＋敵対検証で 2019エラッタ／RGG Dark Ages(2022) PDF を逐語確認し方針を反転。カタログ文も既に現行側だった（大君主「サプライに残す」）。
+- 実バグ3種を修正：**船長/王子で使った鉱山の村・倒壊・死の荷車・陣地が、場にある同名の本物のコピーを誤って廃棄/脇置きしていた**（`random-promo` で到達）／命令経由の倒壊に engine が拒否する死に選択肢が出ていた／`farmers_market` の山上VP取得・`island` の手札1枚・`feast` の獲得 などの「移動に条件づかない効果」の扱いを明確化。
+- 敵対レビュー確定1クラスタ（2件）を修正：**`pending.self` 新設によるオンライン永続化スナップショットの後方互換バグ**（空手札の倒壊 pending が永久 livelock）→ `DOM.engine.pendingSelf` にフォールバックを内包。
+- `sw.js` v43→v44・`overlord.webp` 再生成。全33スイート緑（帝国269/暗黒時代87/新プロモ165/冒険59・整合性3146不変・CPU序列 100/64/95 維持）。
+
 ### 2026-07-10 帝国 Batch E6＝命令(overlord/crown)＋財宝再演の根治（§0-15・未push）
 - 帝国の新機構6系統すべて実装完了（残るは E7＝CARD_SET昇格のみ）。`sw.js` v41→v42。
 - 敵対レビュー確定9件を全修正。うち**出荷済み拡張の実バグ3件**＝ティアラ/偽造通貨の「2回目のアタックが飛ぶ」（繁栄・暗黒時代）／はみだし者×行進の「再演で選び直せる」（暗黒時代）／CPU `pickSwindlerGift` の分割山ロック無限ループ。
@@ -611,8 +668,8 @@
 - **海辺の簡略化2点は本格実装済み**：封鎖の堀免疫窓・海賊の財宝獲得リアクション。on-gain対話は `!pending && _gainDepth===1` ゲートで安全側。
 
 ## 5. 未完了タスク（優先順。次セッションは 1. から）
-1. **【最優先】E8（任意・忠実性）＝命令(Command)の「自身が動く」clause**（§0-16 末尾に設計メモ）。overlord/band_of_misfits/captain/prince の4枚が対象。これを入れれば `random-empires` の 大君主×農家の市場 の永久VPループも消え、固定セットの同居制約も外せる。
-   - **✅段階2 完了済み拡張**：収穫祭(§0-2)／ギルド(§0-4)／異郷(§0-5)／新プロモ(§0-7)／暗黒時代 全56枚(§0-8)／冒険 全38枚(§0-9)／**帝国 縦型36枚(§0-10〜0-16・CARD_SET昇格まで完了・push済)**。基本・陰謀・海辺・錬金術・繁栄と合わせ、**縦型カードの実プレイ化は帝国まで完了＝本番で遊べる**。
+1. **【最優先】push（ユーザー確認の上で）＝E8（§0-17・sw.js v44）を本番へ**。※**E8 は「命令カードが身代わりに動く」ではなく「命令がプレイした札は動かない（現行2019エラッタ）」で実装済み**。旧計画の記述は §0-17 で訂正済み。
+   - **✅段階2 完了済み拡張**：収穫祭(§0-2)／ギルド(§0-4)／異郷(§0-5)／新プロモ(§0-7)／暗黒時代 全56枚(§0-8)／冒険 全38枚(§0-9)／**帝国 縦型36枚(§0-10〜0-16・CARD_SET昇格まで完了・push済)**＋**E8＝命令の忠実化(§0-17・未push)**。基本・陰謀・海辺・錬金術・繁栄と合わせ、**縦型カードの実プレイ化は帝国まで完了＝本番で遊べる**。
 2. **段階2の残り＝発売順の未着手拡張**（着手前に `docs/adding-cards.md` を必読。特殊機構は §C）:
    - **帝国の横型ランドスケープ（イベント13＋ランドマーク20）＋冒険のイベント20**＝縦枠パイプライン未対応で段階1すら未着手（別途 横長枠の生成パイプラインが要る）。
    - **発売順その先（段階1すら未着手＝画像・カタログとも無し）**：夜想曲/ルネサンス/移動動物園/同盟/略奪/日の出づる国。
@@ -637,7 +694,11 @@
 - **Read ツール出力の汚染を観測（2026-07-05）**：実在しないコード/コメントが Read 結果に混入して見え、「基盤実装済み」と誤認しかけた（git diff / grep の生バイト確認で否定して復旧）。以後この作業では、実装状態を断定する前に **Grep・`Get-Content`・`git show` での裏取り**を併用すること。
 - **【E6で新設・以後の必読】「財宝を2回使う」は必ず `state.replay` の `'treasure_replay'` を使う**（§0-15）。`playTreasureCard` ＝移動＋`applyTreasureEffect`／`applyTreasureEffect` ＝**カードを動かさず効果だけ**。2回目を「コインだけ足す」で済ませると、pending を立てる財宝（御守り/水晶玉/金床/不正利得/豊穣の角）や +購入/+VP を持つ財宝（元手/大金/鹵獲品/収集/偽造通貨）の2回目が丸ごと消える＝**旧 `treasureReplayCoins` の轍**。**新しい財宝を足すときは `applyTreasureEffect` に書けば冠/ティアラ/偽造通貨の2回目が自動で正しくなる**。自己移動する財宝（投資/戦利品/法貨/私掠船の廃棄）は `removeOne` ガードで2回目に自然不発（lose track）＝**新規財宝で自己移動させるなら必ず `if (removeOne(...))` で包む**。
 - **【E6で新設】命令（Command）の再演は選び直さない**（公式）：`state.turn.commandAs[命令id]` に1回目の選択を記憶し、`runReplays` が立てる `state._replaying` を見て `replayCommandAs` が再利用する。**`_replaying` はゴーレムの2枚目では立てない**（別カードの新しいプレイ＝選び直せる）。新しい命令カードを足すときは `case` の先頭に `if (replayCommandAs(state, pi, '<id>')) break;` を、選択の reducer に `rememberCommandAs` を入れる。**船長（captain）は持続で「次のターンの開始時」が別のプレイ＝毎ターン選び直す**ので commandAs を使わない（意図的）。
-- **【E6の意図的な簡略化】大君主/はみだし者/船長/王子は「そのカードのコスト・名前・種別を得て、自己移動するときは自分が動く」clause を実装していない**（サプライに残したまま効果だけ使い、自己移動は no-op）。公式2022では 大君主×陣地＝大君主が脇置き→大君主の山へ／大君主×農家の市場(山上4VP)＝大君主を廃棄／船長×鉱山の村＝船長を廃棄して+$2／王子×島＝王子が島マットへ。**no-op のままだと「大君主→農家の市場」が永久VPループになる**ので、**出荷セット `empires` は大君主と自己移動札を同居させていない**（§0-16）。`random-empires` でのみ同居し得る（保存則・非ループは確認済）。忠実化は E8。
+- **【E8で確定・重要】命令（Command）＝「プレイした札は動かない」（2019エラッタ・現行）**。命令カード（大君主/はみだし者/船長/王子）はカードを**サプライ／王子の脇に残したままプレイする**ので、そのカードの「これ(this)を廃棄／脇に置く／山へ戻す／マットに置く」は**必ず失敗する。命令カード自身も身代わりに動かない**。**移動そのもの（と「移動できたなら」で条件づいたボーナス）だけが失われ、残りの効果は普通に解決する**（祝宴の獲得／島の「手札から1枚」／死の荷車の「手札のアクション」／農家の市場の山上VP取得 は起きる。鉱山の村の+$2・略奪の戦利品・宝の地図の金貨・狂人のドロー は起きない）。実装＝`state._cmd`＋`playedByCommand`／`takeSelf`／`playAsCommand`（§0-17）。
+  - **「そのカードの名前/種別/コストを得て身代わりに動く」のは 2016年初版ルール＝廃止済み**。RGG が旧 Empires PDF を今もホストしているので**そちらを読むと必ず間違える**。正本は RGG **Dark Ages(2022)** ルールブックPDF の Band of Misfits 項＋Donald X. の 2019エラッタ。
+  - **`empires` 固定セットが大君主と自己移動札（農家の市場/陣地）を同居させていない理由「永久VPループ」は旧ルール前提の誤診**。現行では合法・非ループなので、将来セットを組み替えても構わない。
+- **【E8で新設】`pending.self`（倒壊/死の荷車の「これを廃棄できるか」）は必ず `DOM.engine.pendingSelf(state, pd, cardId)` で読む**。engine拒否・CPU非提案・UI表示の3面が同じ述語を見ること（片側だけずれると即 CPU 無限ループ）。**pending に新フィールドを足したら、オンライン永続化スナップショット（`server/gameServer.js` が `state.pending` ごと保存・無変換復元）に無い場合のフォールバックを書くこと**＝E8 の敵対レビューで実際に踏んだ（旧 pending の `self` 欠落→falsy→空手札の倒壊が永久 livelock）。
+- **【E8で新設】命令の代理プレイは `applyEffect` の内側で「別の本物のカード」をプレイする経路と区別する**（`_cmd.as` で識別）。伝令官/家臣/水晶玉/狂戦士(on-gain) は applyEffect の内側で本物を場に出してプレイするので、そちらの「これ」は本物を指す。
 - **【E6の意図的な簡略化】玉座×大君主のネスト**で、玉座の2回目が「先に」走り対象不在で空振りすることがある（`state.replay` が単一FIFOのため＝玉座×玉座の既存挙動と同型）。**保存則・非ループ・クラッシュ無しを敵対レビューとfuzzで確認済み**＝再修正しなくてよい。
 - **【E7で新設】「コスト$N以下」の判定は `costIsPlainCoin(id)` を必ず併用する**（engine.js）。公式のコスト比較は coin/負債/ポーションを**成分ごと**に比べるので、負債コストやポーション費用を持つカードは「コスト$N以下」に含まれない（`$0+負債4` は "up to $5" ではない）。`princeEligible`/`captainTargets`/`overlordTargets`/`bandOfMisfitsTargets` と CPU の `bestGain`/`bestGainExact`/`bestPrinceTarget` は同じ除外を持つこと（片側だけだとCPU無限ループ）。
 - **【E7で新設】CPUで山のコストを見るときは必ず engine の `cardCost`（実コスト）を使う**。混合山（`knights`/`castles`）のプレースホルダは静的コストが実物とずれる（castles=$3だが一番上は最大$10）。`cpu.js` の `mixedTop(state,id)` が「一番上の実カード」を返す。
