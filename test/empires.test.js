@@ -896,5 +896,96 @@ console.log('=== 帝国E2: CPU ソーク ===');
   ok(consErr === 0, 'E2 CPU 保存則違反0');
 }
 
+/* ============ E7＝Phase E（CARD_SET昇格）============ */
+console.log('=== 帝国E7: 出荷セット（empires / random-empires）===');
+{
+  const EK = DOM.KINGDOM_EMPIRES;
+  ok(Array.isArray(EK) && EK.length === 10, 'DOM.KINGDOM_EMPIRES は10種');
+  ok(DOM.CARD_SETS.some((s) => s.id === 'empires' && s.kingdom === EK), 'CARD_SETS に empires（固定10種）');
+  ok(DOM.CARD_SETS.some((s) => s.id === 'random-empires'), 'CARD_SETS に random-empires');
+  ok(EK.every((id) => (DOM.POOLS.empires || []).includes(id)), '固定10種はすべて POOLS.empires に属す');
+  // 新機構6系統がひと通り入っている（showcase）
+  ok(EK.some((id) => (DOM.CARDS[id].debt || 0) > 0), '負債コストのカードを含む');
+  ok(EK.includes('temple') && EK.includes('wild_hunt'), '集合（山上VPトークン）を含む');
+  ok(EK.includes('castles'), '城の混合山を含む');
+  ok(EK.includes('overlord') && EK.includes('crown'), '命令（大君主）と冠を含む');
+  ok(EK.includes('villa'), 'ヴィラを含む');
+  ok(EK.filter((id) => Object.values(DOM.SPLIT_PILES).includes(id)).length === 2, '分割山の上段を2組含む');
+  // 大君主と「自己移動する札」は同居させない（命令の自身が動く clause は未実装＝§6の既知簡略化）
+  ok(!EK.includes('farmers_market') && !EK.includes('encampment'), '固定セットは大君主と自己移動札（農家の市場/陣地）を同居させない');
+
+  // 分割山の下段・城の中身が正しく用意される
+  const s2 = E.createInitialState(['A', 'B'], DOM.kingdomForSet('empires'), { startActive: 0 });
+  ok(s2.supply.settlers === 5 && s2.supply.bustling_village === 5, '分割山（開拓者/騒がしい村）が各5枚');
+  ok(s2.supply.catapult === 5 && s2.supply.rocks === 5, '分割山（投石機/石）が各5枚');
+  ok(s2.castles.length === 8 && s2.supply.castles === 8, '2人戦＝城8枚');
+  const s4 = E.createInitialState(['A', 'B', 'C', 'D'], DOM.kingdomForSet('empires'), { startActive: 0 });
+  ok(s4.castles.length === 12 && s4.supply.castles === 12, '4人戦＝城12枚');
+  ok(!s2.shelters, '帝国セットは避難所を使わない');
+
+  // random-empires：城は1枠・分割山は上段に正規化されて抽選される
+  let bad = 0;
+  for (let i = 0; i < 30; i++) {
+    const k = DOM.kingdomForSet('random-empires');
+    if (k.length !== 10 || new Set(k).size !== 10) bad++;
+    if (k.some((id) => DOM.SPLIT_PILES[id])) bad++;                     // 下段が直接選ばれない
+    if (k.some((id) => (DOM.POOLS.castles || []).includes(id))) bad++;  // 城8種は個別に選ばれない
+    if (k.some((id) => !(DOM.POOLS.empires || []).includes(id))) bad++;
+  }
+  ok(bad === 0, 'random-empires は 10種・下段/城の個別札を抽選しない（30回）');
+}
+
+/* 大君主は負債コストのカードを対象にできない（公式：$0+負債4 は「コスト$5以下」ではない）＝E7で初めて同居する */
+console.log('=== 帝国E7: 大君主 × 負債カード（公式のコスト比較）===');
+{
+  const K7 = DOM.kingdomForSet('empires');
+  const s = E.createInitialState(['A', 'B'], K7, { startActive: 0 });
+  const tg = E.overlordTargets(s);
+  ok(!tg.includes('engineer'), '大君主の対象に技術者（$0+負債4）が入らない');
+  ok(!tg.includes('overlord'), '大君主の対象に自分（命令）が入らない');
+  ok(!tg.includes('rocks') && !tg.includes('bustling_village'), '大君主の対象にロック中の分割山下段が入らない');
+  ok(!tg.includes('castles'), '大君主の対象に城の山（非アクション）が入らない');
+  ok(['settlers', 'catapult', 'temple', 'villa', 'forum', 'wild_hunt', 'crown'].every((id) => tg.includes(id)),
+    '大君主の対象＝$5以下・非負債・非命令・非持続のアクション7種');
+  // 手動で負債カードを選んでも engine が拒否して pending を維持する
+  let s2 = E.createInitialState(['A', 'B'], K7, { startActive: 0 });
+  s2.turn.phase = 'action'; s2.players[0].hand = ['overlord'];
+  s2 = reduce(s2, { type: 'PLAY_ACTION', card: 'overlord' });
+  ok(s2.pending && s2.pending.type === 'overlord', '大君主のpendingが立つ');
+  const s3 = reduce(s2, { type: 'OVERLORD_PLAY', card: 'engineer' });
+  ok(s3.pending && s3.pending.type === 'overlord' && !s3.players[0].debt, '技術者を選んでも no-op（pending維持・負債も付かない）');
+  const s4 = reduce(s2, { type: 'OVERLORD_PLAY', card: 'forum' });
+  ok(s4.pending && s4.pending.type === 'forum', '公共広場なら使える（+3カード→2枚捨てのpending）');
+  // 船長/はみだし者/王子も同じコスト比較（負債カードは対象外）
+  const sc = E.createInitialState(['A', 'B'], ['captain', 'engineer', 'village', 'moat', 'market', 'smithy', 'militia', 'cellar', 'workshop', 'remodel'], { startActive: 0 });
+  ok(!E.captainTargets(sc).includes('engineer'), '船長の対象にも負債カードが入らない');
+}
+
+/* Phase E: 出荷セットの CPU ソーク（2〜4人・全難易度・empires / random-empires） */
+console.log('=== 帝国E7: CPU ソーク（出荷セット）===');
+{
+  let stuck = 0, exc = 0, consErr = 0, games = 0;
+  const lv = ['easy', 'normal', 'hard'];
+  for (let g = 0; g < 36; g++) {
+    seed = 5000 + g * 149;
+    const setId = (g % 2) ? 'empires' : 'random-empires';
+    const K7 = DOM.kingdomForSet(setId);
+    const n = 2 + (g % 3);
+    const names = []; for (let i = 0; i < n; i++) names.push('C' + i);
+    let s = E.createInitialState(names, K7, { startActive: 0 });
+    s.players.forEach((p, i) => { p.cpuLevel = lv[(g + i) % 3]; });
+    const t0 = tally(s);
+    let guard = 0;
+    try { while (!s.gameOver && guard++ < 8000) { s = reduce(s, CPU.decide(s)); } }
+    catch (e) { exc++; console.log('  例外:', setId, e.message, e.stack ? e.stack.split('\n')[1] : ''); }
+    if (guard >= 8000) { stuck++; console.log('  膠着 seed', seed, setId, K7.join(',')); }
+    if (tdiff(t0, tally(s)).length) { consErr++; console.log('  保存則差分:', setId, tdiff(t0, tally(s)).join(',')); }
+    games++;
+  }
+  ok(stuck === 0, 'E7 出荷セット CPU 膠着0（/' + games + '）');
+  ok(exc === 0, 'E7 出荷セット CPU 例外0');
+  ok(consErr === 0, 'E7 出荷セット CPU 保存則違反0');
+}
+
 console.log('\n' + (fail === 0 ? '✅ 帝国 全' + pass + '件 PASS' : '❌ 帝国 ' + fail + '件 FAIL / ' + pass + '件 PASS'));
 if (fail > 0) process.exit(1);

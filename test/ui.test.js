@@ -294,6 +294,23 @@ try {
   clickText('.confirm-modal .btn', 'TOPに戻る');
   ok(UI.view === 'home' && $('.home h1'), 'TOPに戻った');
 
+  // 回帰: 出荷している CARD_SETS は必ずセット選択画面から選べること。
+  //   kind:'standard' の拡張セットを「拡張」分類に出し忘れると、海辺/帝国等の固定10種が
+  //   画面から到達できなくなる（実際に一度そうなっていた）。id ごとに描画して選択済み表示が出るか検証。
+  console.log('=== 全 CARD_SETS がセット選択画面から選べる ===');
+  {
+    const prev = UI.setup.kingdomSet;
+    const missing = [];
+    DOM.CARD_SETS.forEach((s) => {
+      UI.view = 'setup'; UI.setup.kingdomSet = s.id; DOM.render();
+      const label = s.kind === 'random' ? s.name.replace('から', '') : s.name;
+      const on = $all('.set-tile.on, .seg-btn.on').some((e) => e.textContent.includes(label));
+      if (!on && !(s.id === 'basic' || s.id === 'intrigue')) missing.push(s.id); // 基本/陰謀は分類タブそのもの
+    });
+    ok(missing.length === 0, 'すべてのセットがセット選択画面から選べる（未到達: ' + missing.join(',') + '）');
+    UI.setup.kingdomSet = prev; UI.view = 'home'; DOM.render();
+  }
+
   ok(runtimeError === null, '実行時エラーなし: ' + (runtimeError ? (runtimeError.stack || runtimeError) : ''));
 } catch (e) {
   fail++;

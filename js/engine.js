@@ -2203,29 +2203,35 @@
   }
 
   /* ---------- 新プロモ：王子/船長の対象判定 ---------- */
-  // 王子：手札から脇に置ける対象＝持続でも命令でもない、コスト4以下（ポーション費用なし）のアクション。
+  // 「コストN以下」の判定＝公式のコスト比較（RGG Empires ルールブック）：コスト（コイン・負債・ポーション）は
+  //   成分ごとに比較し、すべてが N 以下でなければ「N以下」ではない。よって負債コストやポーション費用を持つ
+  //   カードは「コスト$N以下」に含まれない（例：技術者 $0+負債4 は "up to $5" ではない）。
+  //   ＝王子/船長/はみだし者/大君主の対象、および「コストN以下を獲得」系（bestGain 等）で共通の除外条件。
+  function costIsPlainCoin(id) { return !((C()[id] || {}).potion || (C()[id] || {}).debt); }
+  // 王子：手札から脇に置ける対象＝持続でも命令でもない、コスト4以下（負債/ポーション費用なし）のアクション。
   // コストは判定時点の現在コスト（橋・街道等の軽減込み＝公式）。
   function princeEligible(state, id) {
     return DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && !DOM.isType(id, 'command') &&
-      !(C()[id] && C()[id].potion) && cardCost(state, id) <= 4;
+      C()[id] && costIsPlainCoin(id) && cardCost(state, id) <= 4;
   }
   // 船長：サプライで使える対象＝残数>0・非サプライ（賞品等）以外・持続/命令以外・
-  // コスト4以下（ポーション費用なし）のアクション。分割山は一番上のみ（アヴァントは$5なので自然に除外）。
+  // コスト4以下（負債/ポーション費用なし）のアクション。分割山は一番上のみ（アヴァントは$5なので自然に除外）。
   function captainTargets(state) {
     return Object.keys(state.supply).filter((id) =>
       (state.supply[id] || 0) > 0 && !NON_SUPPLY.has(id) && C()[id] &&
       DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && !DOM.isType(id, 'command') &&
-      !C()[id].potion && cardCost(state, id) <= 4 && id !== 'knights' && // 騎士の混合山は対象外（applyEffect未定義。船長×騎士は出荷セットで同居しないが将来の混成に備え除外）
+      costIsPlainCoin(id) && cardCost(state, id) <= 4 && id !== 'knights' && // 騎士の混合山は対象外（applyEffect未定義。船長×騎士は出荷セットで同居しないが将来の混成に備え除外）
       !splitLocked(state, id));
   }
   function anyCaptainTarget(state) { return captainTargets(state).length > 0; }
   // 帝国：大君主（命令）＝サプライにある「コスト5以下・非命令・非持続のアクション」を、
   //   そのカードとしてサプライに残したまま使う（船長/はみだし者と同型・上限=コスト5固定）。
+  //   負債コストのカード（技術者/市街/王室の鍛冶屋）は「コスト$5以下」ではない＝対象外（公式・costIsPlainCoin）。
   function overlordTargets(state) {
     return Object.keys(state.supply).filter((id) =>
       (state.supply[id] || 0) > 0 && !NON_SUPPLY.has(id) && C()[id] &&
       DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && !DOM.isType(id, 'command') &&
-      !C()[id].potion && cardCost(state, id) <= 5 && id !== 'knights' &&
+      costIsPlainCoin(id) && cardCost(state, id) <= 5 && id !== 'knights' &&
       !splitLocked(state, id));
   }
   function anyOverlordTarget(state) { return overlordTargets(state).length > 0; }
@@ -2237,7 +2243,7 @@
     return Object.keys(state.supply).filter((id) =>
       (state.supply[id] || 0) > 0 && !NON_SUPPLY.has(id) && C()[id] &&
       DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && !DOM.isType(id, 'command') &&
-      !C()[id].potion && cardCost(state, id) < mx && id !== 'knights' && // 騎士の混合山は対象外（applyEffect未定義＝無効果の死に選択肢になる。持続除外と同じ簡略化）
+      costIsPlainCoin(id) && cardCost(state, id) < mx && id !== 'knights' && // 騎士の混合山は対象外（applyEffect未定義＝無効果の死に選択肢になる。持続除外と同じ簡略化）
       !splitLocked(state, id));
   }
 

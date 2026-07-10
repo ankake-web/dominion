@@ -12,7 +12,12 @@
   const isTreasure = (id) => isType(id, 'treasure');
   const isDead = (id) => isType(id, 'victory') || isType(id, 'curse'); // 手札では死蔵
 
-  function allCards(p) { return [].concat(p.deck, p.hand, p.discard, p.inPlay, p.durationCards || [], p.setAside || [], p.islandMat || [], p.nativeVillageMat || []); }
+  // engine.allCards と同じゾーンを数える（王子の脇置き・酒場マット・資料庫の脇置きも所有カード＝VP/枚数に効く）。
+  function allCards(p) {
+    return [].concat(p.deck, p.hand, p.discard, p.inPlay, p.durationCards || [], p.setAside || [],
+      p.islandMat || [], p.nativeVillageMat || [], p.princes || [], p.tavern || [],
+      ...((p.archives || []).map((a) => a.cards || [])));
+  }
   function owned(p, id) { return allCards(p).filter((c) => c === id).length; }
   function sup(state, id) { return state.supply[id] || 0; }
   // 実コスト（「橋」等の軽減を反映）
@@ -108,13 +113,13 @@
   }
 
   /* ---------- 新プロモ：王子の脇置き対象を選ぶ ---------- */
-  // 対象＝持続/命令以外・ポーション費用なし・コスト4以下のアクション（engine の princeEligible と同条件）。
+  // 対象＝持続/命令以外・負債/ポーション費用なし・コスト4以下のアクション（engine の princeEligible と同条件）。
   // 自分をマット等へ動かして空振りする札（島/宝の地図）は毎ターン再生の価値が無いので選ばない。
   const PRINCE_AVOID = new Set(['island', 'treasure_map']);
   function bestPrinceTarget(state, p) {
     const elig = p.hand.filter((c) =>
       isType(c, 'action') && !isType(c, 'duration') && !isType(c, 'command') &&
-      !(C()[c] && C()[c].potion) && cost(state, c) <= 4 && !PRINCE_AVOID.has(c));
+      !(C()[c] && (C()[c].potion || C()[c].debt)) && cost(state, c) <= 4 && !PRINCE_AVOID.has(c));
     if (!elig.length) return null;
     for (const id of GAIN_ORDER) { if (elig.includes(id)) return id; } // 実強度順で最良
     return elig[0];
@@ -448,7 +453,12 @@
   /* ---------- 購入フェーズ：買うカードを選ぶ（難易度別） ---------- */
   function kingdomAffordable(state, coins) {
     const potions = (state.turn && state.turn.potions) || 0; // 錬金術：ポーション費用も満たすものだけ
-    return (state.kingdom || []).filter((id) => C()[id].cost <= coins && (C()[id].potion || 0) <= potions && sup(state, id) > 0);
+    // コストは engine の実コストで見る（橋等の軽減／混合山＝騎士・城は「一番上の実カードのコスト」）。
+    // 静的な C()[id].cost だと城の山（プレースホルダ$3）を$3で買えると誤認し、engine 拒否と噛み合って買いを空振りする。
+    return (state.kingdom || []).filter((id) =>
+      sup(state, id) > 0 && cost(state, id) <= coins && (C()[id].potion || 0) <= potions &&
+      !splitBlocked(state, id) &&
+      (!DOM.engine || !DOM.engine.canBuyCard || DOM.engine.canBuyCard(state, state.turn.active, id)));
   }
 
   /* ---------- 終局認識（強CPU用） ----------
@@ -470,8 +480,25 @@
     if (fairgrounds) vp += fairgrounds * 2 * Math.floor(new Set(cards).size / 5);
     const silkRoads = cards.filter((c) => c === 'silk_road').length; // 異郷：絹の道（勝利点カード4枚毎に1点）
     if (silkRoads) vp += silkRoads * Math.floor(cards.filter((c) => isType(c, 'victory')).length / 4);
+    const feoda = cards.filter((c) => c === 'feodum').length;        // 暗黒時代：封土（銀貨3枚毎に1点）
+    if (feoda) vp += feoda * Math.floor(cards.filter((c) => c === 'silver').length / 3);
+    // 帝国：粗末な城=所有する城1枚につき1点／王城=所有する城1枚につき2点（engine.vpOf と同等）。
+    const humbleC = cards.filter((c) => c === 'humble_castle').length;
+    const kingsC = cards.filter((c) => c === 'kings_castle').length;
+    if (humbleC || kingsC) {
+      const castleCount = cards.filter((c) => C()[c] && isType(c, 'castle')).length;
+      vp += humbleC * castleCount + kingsC * 2 * castleCount;
+    }
+    const distantLands = (p.tavern || []).filter((c) => c === 'distant_lands').length; // 冒険：酒場マット上でのみ4点
+    if (distantLands) vp += distantLands * 4;
     vp += p.vpTokens || 0; // 繁栄：VPトークン
     return vp;
+  }
+  // 混合山（暗黒時代=騎士／帝国=城）を買うと実際に手に入るのは「一番上の実カード」。それ以外は id のまま。
+  function mixedTop(state, id) {
+    if (id === 'castles' && Array.isArray(state.castles) && state.castles.length) return state.castles[0];
+    if (id === 'knights' && Array.isArray(state.knights) && state.knights.length) return state.knights[0];
+    return id;
   }
   function buyEndsGame(state, id) {
     const after = (k) => (state.supply[k] || 0) - (k === id ? 1 : 0);
@@ -485,7 +512,10 @@
     // 獲得する1枚を加えた仮デッキで再計算（庭園のデッキ増・公爵の動的得点も反映）
     const me = state.players[seat];
     const hypo = { deck: allCards(me).concat(id), hand: [], discard: [], inPlay: [], vpTokens: me.vpTokens || 0 };
-    const myVp = vpOfPlayer(hypo);
+    // 遠隔地（冒険）は「酒場マット上にあるときだけ4点」＝ゾーン依存の得点。hypo は全ゾーンを deck にまとめるので
+    // vpOfPlayer では 0 点になる。相手は実オブジェクト（tavern あり）で評価されるため、足さないと自分だけ過小評価になる。
+    // （hypo.tavern に入れ直すと allCards で二重に数えてしまう＝庭園/品評会/絹の道/城が狂う。ここで加算するのが正しい。）
+    const myVp = vpOfPlayer(hypo) + 4 * (me.tavern || []).filter((c) => c === 'distant_lands').length;
     const myTurns = me.turns + 1; // 今のターンはクリーンアップで+1される
     return state.players.every((p, i) => {
       if (i === seat) return true;
@@ -576,11 +606,16 @@
   function chooseBuyStrong(state, p, coins) {
     const seat = state.turn.active;
     // 1) 勝って終われる購入があれば最優先（得点→コストの高い順）
+    // コストは実コスト（軽減・混合山の一番上）で判定し、購入不可（分割山の下段/高級市場/非サプライ）は除く。
+    // 混合山（騎士/城）は実際に手に入るのは「一番上のカード」なので、得点計算もそのカードで行う。
     let winningEnd = null, bestKey = -Infinity;
     Object.keys(state.supply).forEach((id) => {
-      if (sup(state, id) <= 0 || C()[id].cost > coins || (C()[id].potion || 0) > (state.turn.potions || 0)) return; // 錬金術：ポーション費用も満たす
-      if (!buyEndsGame(state, id) || !winsIfEnds(state, seat, id)) return;
-      const key = (C()[id].vp || 0) * 100 + C()[id].cost;
+      if (sup(state, id) <= 0 || cost(state, id) > coins || (C()[id].potion || 0) > (state.turn.potions || 0)) return; // 錬金術：ポーション費用も満たす
+      if (splitBlocked(state, id)) return;
+      if (DOM.engine && DOM.engine.canBuyCard && !DOM.engine.canBuyCard(state, seat, id)) return;
+      const realId = mixedTop(state, id);
+      if (!buyEndsGame(state, id) || !winsIfEnds(state, seat, realId)) return;
+      const key = (C()[realId].vp || 0) * 100 + cost(state, id);
       if (key > bestKey) { bestKey = key; winningEnd = id; }
     });
     if (winningEnd) return winningEnd;

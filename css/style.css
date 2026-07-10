@@ -154,10 +154,15 @@ input.code-input {
   font-size: 30px;
   font-weight: 700;
 }
-/* 王国カードのセット選択（分類セグメント＋おすすめタイル） */
+/* 王国カードのセット選択（分類セグメント＋おすすめ/拡張タイル） */
 .set-picker { width: 100%; display: flex; flex-direction: column; gap: 8px; }
 .set-top-seg .seg-btn { font-size: 13px; padding: 9px 4px; }
 .set-sub { display: flex; flex-direction: column; gap: 6px; }
+/* 抽選元は数が多い（14種）。1行のセグメントだと overflow:hidden で後ろが隠れて選べなくなるので、
+   チップとして折り返す。 */
+.seg.seg-wrap { display: flex; flex-wrap: wrap; gap: 6px; border: none; overflow: visible; border-radius: 0; }
+.seg.seg-wrap .seg-btn { border: 1px solid var(--line); border-radius: 8px; font-size: 13px; padding: 8px 9px; min-height: 38px; min-width: 0; }
+.seg.seg-wrap .seg-btn + .seg-btn { border-left: 1px solid var(--line); }
 .set-tiles { display: flex; flex-direction: column; gap: 6px; }
 .set-tile {
   text-align: left; padding: 10px 12px; border-radius: 10px;

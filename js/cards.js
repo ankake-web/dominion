@@ -798,6 +798,14 @@
   //   相手の購入フック持続アタック(呪いの森)・強い村ドロー(失われし都市)・複雑系(工匠)・永続持続(雇人) を味わえる構成。
   DOM.KINGDOM_ADVENTURES = ['page', 'peasant', 'guide', 'ranger', 'amulet',
                             'caravan_guard', 'haunted_woods', 'lost_city', 'artificer', 'hireling'];
+  // 帝国 推奨10種（自作＝公式の固定10種は無い）。帝国の新機構6系統をひと通り味わえる構成：
+  //   負債(技術者=獲得系・大君主=命令)／集合＝山上VPトークン(神殿・ワイルドハント)／分割山2組(開拓者-騒がしい村・投石機-石)／
+  //   城の混合山(castles)／命令(大君主)＋フェイズで対象が変わる玉座(冠)／獲得で手札に入りアクションフェイズに戻る(ヴィラ)。
+  //   アタック＝投石機、on-gain＝公共広場(+1購入)/神殿(山上VP強奪)/石(銀貨)/城。
+  //   ※大君主と「自己移動する札（農家の市場＝自己廃棄・陣地＝自己脇置き）」は意図的に同居させない
+  //     （命令の「自身が動く」clause は未実装＝§6の既知簡略化。random-empires でのみ同居し得る）。
+  DOM.KINGDOM_EMPIRES = ['engineer', 'overlord', 'settlers', 'catapult', 'castles',
+                         'temple', 'villa', 'forum', 'wild_hunt', 'crown'];
   // 初版（第二版で廃止されたカードを含む懐かしのセット）
   DOM.KINGDOM_1E = ['cellar', 'chancellor', 'woodcutter', 'feast', 'militia',
                     'spy', 'thief', 'council_room', 'adventurer', 'market'];
@@ -879,20 +887,24 @@
   // 拡張を増やすときは POOLS に足し、ここに固定/ランダムのセットを追記するだけ。
   //   kind … UIの分類。standard=王国基本/陰謀基本、recommend=おすすめ（テーマ別）、random=ランダム。
   //   desc … おすすめタイルに出す一行説明。
+  //   ※ UI は kind:'standard' のうち basic/intrigue 以外を「拡張」タイルとして出す（desc が一行説明）。
   DOM.CARD_SETS = [
     // ---- 標準（第二版の王国基本・陰謀基本）----
     { id: 'basic',           kind: 'standard', name: '王国基本セット（第二版）', kingdom: DOM.KINGDOM },
     { id: 'intrigue',        kind: 'standard', name: '陰謀セット（第二版）', kingdom: DOM.KINGDOM_INTRIGUE },
-    { id: 'seaside',         kind: 'standard', name: '海辺セット（第二版）', kingdom: DOM.KINGDOM_SEASIDE },
-    { id: 'alchemy',         kind: 'standard', name: '錬金術セット（第二版）', kingdom: DOM.KINGDOM_ALCHEMY },
-    { id: 'prosperity',      kind: 'standard', name: '繁栄セット（第二版）', kingdom: DOM.KINGDOM_PROSPERITY },
-    { id: 'cornucopia',      kind: 'standard', name: '収穫祭セット', kingdom: DOM.KINGDOM_CORNUCOPIA },
-    { id: 'guilds',          kind: 'standard', name: 'ギルドセット', kingdom: DOM.KINGDOM_GUILDS },
-    { id: 'hinterlands',     kind: 'standard', name: '異郷セット', kingdom: DOM.KINGDOM_HINTERLANDS },
+    { id: 'seaside',         kind: 'standard', name: '海辺セット（第二版）', desc: '持続カード・マット・追加ターン', kingdom: DOM.KINGDOM_SEASIDE },
+    { id: 'alchemy',         kind: 'standard', name: '錬金術セット（第二版）', desc: 'ポーション経済・ブドウ園・支配', kingdom: DOM.KINGDOM_ALCHEMY },
+    { id: 'prosperity',      kind: 'standard', name: '繁栄セット（第二版）', desc: '勝利点トークン・植民地/プラチナ貨', kingdom: DOM.KINGDOM_PROSPERITY },
+    { id: 'cornucopia',      kind: 'standard', name: '収穫祭セット', desc: '賞品・災いカード・カードの多様性', kingdom: DOM.KINGDOM_CORNUCOPIA },
+    { id: 'guilds',          kind: 'standard', name: 'ギルドセット', desc: '財源（コイントークン）・過払い', kingdom: DOM.KINGDOM_GUILDS },
+    { id: 'hinterlands',     kind: 'standard', name: '異郷セット', desc: '獲得した瞬間に働くカード・可変勝利点', kingdom: DOM.KINGDOM_HINTERLANDS },
     // 暗黒時代セット（固定10種＝Grim Parade）。このセットのみ避難所を使用（createInitialState が
     //   王国内容の一致で自動判定＝opts不要。random-darkages は避難所OFF）。
-    { id: 'darkages',        kind: 'standard', name: '暗黒時代セット', kingdom: DOM.KINGDOM_DARKAGES },
-    { id: 'adventures',      kind: 'standard', name: '冒険セット', kingdom: DOM.KINGDOM_ADVENTURES },
+    { id: 'darkages',        kind: 'standard', name: '暗黒時代セット', desc: '廃墟・騎士の混合山・避難所・廃棄で得', kingdom: DOM.KINGDOM_DARKAGES },
+    { id: 'adventures',      kind: 'standard', name: '冒険セット', desc: 'トラベラー・酒場マット・各種トークン', kingdom: DOM.KINGDOM_ADVENTURES },
+    // 帝国セット（固定10種）。分割山（開拓者/騒がしい村・投石機/石）と城の混合山は createInitialState が
+    //   下段/山の中身を自動で用意する（王国枠は1山ぶん）。
+    { id: 'empires',         kind: 'standard', name: '帝国セット', desc: '負債・山上の勝利点・分割山・城・命令', kingdom: DOM.KINGDOM_EMPIRES },
     // ---- おすすめ（テーマ別・固定10種）----
     { id: 'big-money',       kind: 'recommend', name: 'ビッグマネー', desc: 'お金を伸ばして属州を狙う王道',
       kingdom: ['chapel', 'moneylender', 'harbinger', 'throne_room', 'bureaucrat', 'poacher', 'market', 'mine', 'laboratory', 'sentry'] },
@@ -928,6 +940,8 @@
     { id: 'random-hinterlands', kind: 'random', name: '異郷から',    randomFrom: ['hinterlands'] },
     { id: 'random-darkages', kind: 'random', name: '暗黒時代から',   randomFrom: ['darkages'] },
     { id: 'random-adventures', kind: 'random', name: '冒険から',     randomFrom: ['adventures'] },
+    // 帝国から＝POOLS.empires（29枠）。分割山の下段は randomKingdom が上段へ正規化し、城は 'castles' の1枠で抽選される。
+    { id: 'random-empires',  kind: 'random', name: '帝国から',     randomFrom: ['empires'] },
     { id: 'random-intrigue', kind: 'random', name: '陰謀のみから',   randomFrom: ['intrigue'] },
     { id: 'random-basic',    kind: 'random', name: '基本のみから',   randomFrom: ['basic'] },
     { id: 'random-promo',    kind: 'random', name: 'プロモ込みから',  randomFrom: ['basic', 'intrigue', 'promo'] },

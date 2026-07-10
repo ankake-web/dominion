@@ -284,6 +284,25 @@ console.log('=== 冒険: CPU通し・カード保存則（adventures/random-adve
   ok(allOk, 'CPU通し ' + games + '戦: 保存則OK＆全終局（adventures/random-adventures）');
 }
 
+/* 回帰（帝国E7の敵対レビュー由来）：強CPUの終局判定 winsIfEnds は酒場マット上の遠隔地(4点)を自分ぶんも数える。
+   hypo デッキは全ゾーンを deck にまとめるため、明示的に足さないと自分だけ過小評価になり
+   （相手は実オブジェクトで4点計上される＝非対称）、実際は勝てる「ゲームを閉じる購入」を見送ってしまう。 */
+console.log('=== 強CPU: 終局判定が酒場マットの遠隔地(4点)を自分ぶんも数える ===');
+{
+  const s = mk(DOM.KINGDOM_ADVENTURES);
+  s.turn.phase = 'buy'; s.turn.coins = 8; s.turn.buys = 1; s.turn.potions = 0;
+  s.supply.province = 1;                                   // 属州を買うとゲーム終了
+  s.players.forEach((p) => { p.cpuLevel = 'hard'; });
+  const me = s.players[0], op = s.players[1];
+  me.deck = ['copper', 'copper']; me.hand = []; me.discard = []; me.inPlay = [];
+  me.tavern = ['distant_lands', 'distant_lands'];          // マット上で 4点×2 = 8点
+  op.deck = ['estate', 'estate', 'estate', 'estate', 'estate', 'estate', 'estate', 'estate']; // 8点
+  op.hand = []; op.discard = []; op.inPlay = [];
+  const a = CPU.decide(s);
+  // 遠隔地を数えないと 自分6点(属州) < 相手8点 → 属州を避けて金貨を買う。数えれば 14点 > 8点 → 属州で勝って終わる。
+  ok(a && a.type === 'BUY' && a.card === 'province', '遠隔地8点を数えて 最後の属州で勝って終わる（実際: ' + JSON.stringify(a) + '）');
+}
+
 console.log('\n========================================');
 console.log('冒険テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

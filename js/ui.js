@@ -361,27 +361,36 @@
     const cur = byId(current) || byId('basic');
     const recommend = sets.filter((s) => s.kind === 'recommend');
     const randoms = sets.filter((s) => s.kind === 'random');
+    // 拡張の固定セット（海辺〜帝国）＝ kind:'standard' のうち 王国基本/陰謀 以外。
+    //   これを出さないと「海辺セット」「帝国セット」等の固定10種が画面から選べない。
+    const expansions = sets.filter((s) => s.kind === 'standard' && s.id !== 'basic' && s.id !== 'intrigue');
     // 現在のトップ分類
     let top = 'basic';
     if (cur.id === 'intrigue') top = 'intrigue';
+    else if (expansions.some((s) => s.id === cur.id)) top = 'expansion';
     else if (cur.kind === 'recommend') top = 'recommend';
     else if (cur.kind === 'random') top = 'random';
     // 分類を切り替えたときに飛ぶ既定ID
-    const defaults = { basic: 'basic', intrigue: 'intrigue', recommend: (recommend[0] || {}).id, random: 'random' };
+    const defaults = { basic: 'basic', intrigue: 'intrigue', expansion: (expansions[0] || {}).id,
+      recommend: (recommend[0] || {}).id, random: 'random' };
     const topSeg = segmented(
-      [{ value: 'basic', label: '王国基本' }, { value: 'intrigue', label: '陰謀' },
+      [{ value: 'basic', label: '王国基本' }, { value: 'intrigue', label: '陰謀' }, { value: 'expansion', label: '拡張' },
        { value: 'recommend', label: 'おすすめ' }, { value: 'random', label: 'ランダム' }],
-      top, (v) => { if (v !== top) onChange(defaults[v]); }, 'set-top-seg');
+      top, (v) => { if (v !== top && defaults[v]) onChange(defaults[v]); }, 'set-top-seg');
+
+    const tiles = (list) => h('div', { class: 'set-tiles' }, list.map((s) =>
+      h('button', { class: 'set-tile' + (s.id === current ? ' on' : ''), onclick: () => onChange(s.id) },
+        h('div', { class: 'set-tile-name' }, s.name),
+        h('div', { class: 'set-tile-desc' }, s.desc || ''))));
 
     let sub = null;
-    if (top === 'recommend') {
-      sub = h('div', { class: 'set-tiles' }, recommend.map((s) =>
-        h('button', { class: 'set-tile' + (s.id === current ? ' on' : ''), onclick: () => onChange(s.id) },
-          h('div', { class: 'set-tile-name' }, s.name),
-          h('div', { class: 'set-tile-desc' }, s.desc || ''))));
+    if (top === 'expansion') {
+      sub = tiles(expansions);
+    } else if (top === 'recommend') {
+      sub = tiles(recommend);
     } else if (top === 'random') {
       sub = h('div', { class: 'set-sub' },
-        segmented(randoms.map((s) => ({ value: s.id, label: s.name.replace('から', '') })), current, (v) => onChange(v)),
+        segmented(randoms.map((s) => ({ value: s.id, label: s.name.replace('から', '') })), current, (v) => onChange(v), 'seg-wrap'),
         h('p', { class: 'muted set-note' }, '毎回ランダムに10種を選びます。'));
     }
     // 固定セットは収録カード名をプレビュー
@@ -660,7 +669,8 @@
       (DOM.POOLS && DOM.POOLS.darkages_np) ? group('非サプライ（戦利品・狂人・傭兵）', byCost(DOM.POOLS.darkages_np)) : null,
       (DOM.POOLS && DOM.POOLS.adventures) ? group('王国カード（冒険）', byCost(DOM.POOLS.adventures)) : null,
       (DOM.POOLS && DOM.POOLS.travellers) ? group('トラベラー成長先（冒険・非サプライ）', byCost(DOM.POOLS.travellers)) : null,
-      (DOM.POOLS && DOM.POOLS.empires) ? group('王国カード（帝国・画像のみ）', byCost(DOM.POOLS.empires)) : null,
+      (DOM.POOLS && DOM.POOLS.empires) ? group('王国カード（帝国）', byCost(DOM.POOLS.empires)) : null,
+      (DOM.POOLS && DOM.POOLS.castles) ? group('城（帝国・混合山）', DOM.POOLS.castles.slice()) : null,
       (DOM.POOLS && DOM.POOLS.promo) ? group('プロモカード', byCost(DOM.POOLS.promo)) : null,
       (DOM.POOLS && DOM.POOLS.basic1e) ? group('初版のみ（第二版で廃止）', byCost(
         DOM.POOLS.basic1e.filter((id) => DOM.POOLS.basic.indexOf(id) < 0)
