@@ -988,11 +988,73 @@
     return ['copper', 'silver', 'gold', 'platinum', 'estate', 'duchy', 'province', 'colony', 'curse'].concat(kingdom);
   };
 
+  /* ============================================================
+     横型ランドスケープ（Landscape）＝イベント／ランドマーク
+     ------------------------------------------------------------
+     **サプライ山ではない**ので `DOM.CARDS` には入れない（＝整合性テストの
+     GAIN_ORDER網羅・POOL所属・3山終了・闇市場デッキ に一切混ざらない）。
+     1対局に 0〜2枚だけ使う（公式：Events と Landmarks の合算で最大2枚。
+     王国山は常に10のまま）。画像は `tools/build-landscape.js` が
+     `asset/cards/<id>.webp`（1152×768）に生成する。
+     正本の裁定＝docs/research/landscape_cards.md ／ landscape_gaps.md
+     ============================================================ */
+  // 帝国（Empires）ランドマーク 21種。買えない・場に出ない・得点ルールを変えるだけ。
+  //   text は「準備：」行を最後に置く（カード面の体裁）。
+  DOM.LANDSCAPES = {
+    aqueduct: { name: '水道橋', nameEn: 'Aqueduct', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: '財宝を獲得したとき、その山から勝利点トークン1個をこの上に移す。\n勝利点カードを獲得したとき、この上にあるすべての勝利点トークンを受け取る。\n準備：銀貨と金貨の山に勝利点トークンを8個ずつ置く。' },
+    arena: { name: '闘技場', nameEn: 'Arena', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: 'あなたの購入フェイズの開始時、アクションカード1枚を捨て札にしてもよい。そうした場合、ここから勝利点トークン2個を受け取る。\n準備：プレイヤー1人につき勝利点トークン6個をここに置く。' },
+    bandit_fort: { name: '山賊の砦', nameEn: 'Bandit Fort', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: '得点計算時、あなたが持っている銀貨と金貨1枚につき -2 勝利点。' },
+    basilica: { name: '公会堂', nameEn: 'Basilica', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: 'あなたの購入フェイズ中にカードを獲得したとき、コインが2以上残っていれば、ここから勝利点トークン2個を受け取る。\n準備：プレイヤー1人につき勝利点トークン6個をここに置く。' },
+    baths: { name: '浴場', nameEn: 'Baths', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: 'カードを1枚も獲得せずにターンを終えたとき、ここから勝利点トークン2個を受け取る。\n準備：プレイヤー1人につき勝利点トークン6個をここに置く。' },
+    battlefield: { name: '戦場', nameEn: 'Battlefield', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: '勝利点カードを獲得したとき、ここから勝利点トークン2個を受け取る。\n準備：プレイヤー1人につき勝利点トークン6個をここに置く。' },
+    colonnade: { name: '列柱', nameEn: 'Colonnade', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: 'あなたの購入フェイズ中にアクションカードを獲得したとき、同名のカードが場に出ていれば、ここから勝利点トークン2個を受け取る。\n準備：プレイヤー1人につき勝利点トークン6個をここに置く。' },
+    defiled_shrine: { name: '汚された神殿', nameEn: 'Defiled Shrine', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: 'アクションを獲得したとき、その山から勝利点トークン1個をこの上に移す。\nあなたの購入フェイズ中に呪いを獲得したとき、この上の勝利点トークンをすべて受け取る。\n準備：集合を持たない各アクションのサプライ山に勝利点トークンを2個ずつ置く。' },
+    fountain: { name: '噴水', nameEn: 'Fountain', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: '得点計算時、銅貨を10枚以上持っていれば 15 勝利点。' },
+    keep: { name: '砦', nameEn: 'Keep', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: '得点計算時、他のどのプレイヤーよりも多く持っている（同数なら全員が得る）名前の異なる財宝1種につき 5 勝利点。' },
+    labyrinth: { name: '迷宮', nameEn: 'Labyrinth', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: '自分のターン中に2枚目のカードを獲得したとき、ここから勝利点トークン2個を受け取る。\n準備：プレイヤー1人につき勝利点トークン6個をここに置く。' },
+    mountain_pass: { name: '峠', nameEn: 'Mountain Pass', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: 'いずれかのプレイヤーが最初に属州を獲得したとき、そのターンの後、各プレイヤーは1回ずつ、最大40負債まで競りを行う（獲得者で終わる）。\n最高額の入札者は +8 勝利点を得て、入札した額の負債を負う。' },
+    museum: { name: '博物館', nameEn: 'Museum', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: '得点計算時、あなたが持つ名前の異なるカード1種類につき 2 勝利点。' },
+    obelisk: { name: 'オベリスク', nameEn: 'Obelisk', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: '得点計算時、選ばれた山から得たカード1枚につき 2 勝利点。\n準備：アクションのサプライ山を無作為に1つ選ぶ。' },
+    orchard: { name: '果樹園', nameEn: 'Orchard', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: '得点計算時、3枚以上持っている名前の異なるアクションカード1種類につき 4 勝利点。' },
+    palace: { name: '宮殿', nameEn: 'Palace', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: '得点計算時、銅貨・銀貨・金貨のセット1組につき 3 勝利点。' },
+    tomb: { name: '墓標', nameEn: 'Tomb', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: 'カードを廃棄するたび、+1 勝利点。' },
+    tower: { name: '塔', nameEn: 'Tower', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: '得点計算時、空になったサプライ山に由来する、勝利点でないカード1枚につき 1 勝利点。' },
+    triumphal_arch: { name: '凱旋門', nameEn: 'Triumphal Arch', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: '得点計算時、あなたのカードのうち2番目に多いアクションカード（同数なら好きな方）1枚につき 3 勝利点。' },
+    wall: { name: '壁', nameEn: 'Wall', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: '得点計算時、最初の15枚を超えて持っているカード1枚につき -1 勝利点。' },
+    wolf_den: { name: '狼の巣', nameEn: 'Wolf Den', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
+      text: '得点計算時、ちょうど1枚だけ持っているカード1種類につき -3 勝利点。' },
+  };
+  // 帝国ランドマーク21種（抽選元）。イベントは未実装（docs/research/landscape_cards.md §2 にデータあり）。
+  DOM.LANDMARKS_EMPIRES = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'landmark');
+  // 「準備で山に勝利点トークンを置く」集合(Gathering)カード＝汚された神殿はこの山には置かない。
+  DOM.GATHERING_CARDS = ['temple', 'farmers_market', 'wild_hunt'];
+
   // 補助
   DOM.isType = function (cardId, t) {
     const c = DOM.CARDS[cardId];
     return c && c.types.indexOf(t) >= 0;
   };
+  DOM.isLandscape = function (id) { return !!(DOM.LANDSCAPES && DOM.LANDSCAPES[id]); };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = DOM;
 })();
