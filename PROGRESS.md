@@ -1,6 +1,6 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-10 / branch `main`（最新は `git log` で確認）。**帝国 Batch E1〜E5 は push 済＝本番反映。Batch E6（命令＝overlord/crown）＝帝国 最後の新機構 完了・未push（§0-15。`sw.js` v42）**。帝国はまだ CARD_SET 未昇格＝本番挙動は不変（帝国カードはサプライに出ない）。**次は E7＝Phase E＝CARD_SET昇格（ここで初めて本番に帝国が出る）**。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
+最終更新: 2026-07-10 / branch `main`（最新は `git log` で確認）。**帝国 Batch E1〜E5 は本番反映済。Batch E6（命令＝overlord/crown）＝帝国 最後の新機構 完了（§0-15。`sw.js` v42）＝これで帝国の縦型36枚は全カード効果＋新機構6系統すべて実装完了**。**未pushコミットが2件ある**（E6本体＋前回の handoff。`git log --oneline origin/main..HEAD` で確認）。帝国はまだ CARD_SET 未昇格＝**帝国カードはサプライに出ない**が、**E6 に含むティアラ/偽造通貨/はみだし者の実バグ修正は push すれば本番挙動に効く**（§0-15）。**次は E7＝Phase E＝CARD_SET昇格（ここで初めて本番に帝国が出る）**。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
 **新セッションは まず `npm test` を実行し 32スイート・オールグリーン（exit 0・整合性3144件・帝国197件・冒険44件＋UI40件・暗黒時代79件＋UI57件・新プロモ142件＋UI22件・繁栄69件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
@@ -522,6 +522,11 @@
 - **デプロイ**：main に push → `.github/workflows/deploy.yml` が Pages 公開、サーバは Render 自動再デプロイ。**新しい配信フォルダは deploy.yml に追加**（忘れると本番404）。**client資産（js/css/webp等）を変えたら `sw.js` の VERSION を上げる**（現在 v26）。コミット者設定済み（Naoki Inoue）。
 
 ## 3. 完了したこと（サマリ。詳細は各コミットメッセージ＝git log が正）
+### 2026-07-10 帝国 Batch E6＝命令(overlord/crown)＋財宝再演の根治（§0-15・未push）
+- 帝国の新機構6系統すべて実装完了（残るは E7＝CARD_SET昇格のみ）。`sw.js` v41→v42。
+- 敵対レビュー確定9件を全修正。うち**出荷済み拡張の実バグ3件**＝ティアラ/偽造通貨の「2回目のアタックが飛ぶ」（繁栄・暗黒時代）／はみだし者×行進の「再演で選び直せる」（暗黒時代）／CPU `pickSwindlerGift` の分割山ロック無限ループ。
+- テスト：empires 197件・darkages 79件・prosperity 69件・promo2 142件。invariants の敵対王国+4種。追加ソーク120戦クリーン。**全32スイート緑（整合性3144不変・CPU序列 100/64/95 維持）**。
+
 ### 2026-07-04 段階2の実装設計図を作成（`docs/adding-cards.md`）
 - 全カード実プレイ化（段階2）に向け、エンジンの全機構（効果/pending・on-gain等トリガー/リアクション・特殊山/セットアップ/トークン/CARD_SET昇格・持続/command/可変VP・テスト雛形）を多エージェント調査し、**file:line＋コピー元コード＋落とし穴**を `docs/adding-cards.md` に恒久化。段階2の作業計画は §5-1。
 
