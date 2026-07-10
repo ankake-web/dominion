@@ -438,6 +438,10 @@
     if (has('catapult') && p.hand.some((c) => c !== 'catapult' && (c === 'copper' || c === 'estate' || c === 'curse' || isDead(c)))) return 'catapult';
     // 帝国E5：華やかな城＝手札の勝利点カードを+$2/枚に換金（捨てるだけ＝VPは失わない）。手札に他の勝利点があるときだけ。
     if (has('opulent_castle') && p.hand.some((c) => c !== 'opulent_castle' && isType(c, 'victory'))) return 'opulent_castle';
+    // 帝国E6：大君主＝対象（サプライの$5以下・非命令・非持続アクション）があれば必ず使用（公式＝mayではない）。
+    if (has('overlord') && (DOM.engine && DOM.engine.overlordTargets ? DOM.engine.overlordTargets(state).length : 0)) return 'overlord';
+    // 帝国E6：冠＝アクションフェイズに2回使う価値のある別アクションが手札にあるときだけ（無駄打ち回避・玉座と同型）。
+    if (has('crown') && p.hand.some((c) => c !== 'crown' && isType(c, 'action'))) return 'crown';
     return null;
   }
 
@@ -720,7 +724,7 @@
   }
   // 詐欺師で相手に与えるカード（相手の利得が最小＝呪い→弱い財宝/アクション。勝利点は点を与えるので避ける）。
   function pickSwindlerGift(state, cst) {
-    const cands = Object.keys(state.supply).filter((id) => C()[id] && cost(state, id) === cst && sup(state, id) > 0 && !NON_SUPPLY_SET.has(id));
+    const cands = Object.keys(state.supply).filter((id) => C()[id] && cost(state, id) === cst && sup(state, id) > 0 && !NON_SUPPLY_SET.has(id) && !splitBlocked(state, id));
     if (!cands.length) return null;
     const harm = (id) => isType(id, 'curse') ? -1 : (isType(id, 'victory') ? 100 : keepValue(id));
     cands.sort((a, b) => harm(a) - harm(b));
@@ -1048,6 +1052,23 @@
         if (!cands.length) return { type: 'CAPTAIN_PLAY', card: null };
         for (const id of GAIN_ORDER) { if (cands.includes(id)) return { type: 'CAPTAIN_PLAY', card: id }; }
         return { type: 'CAPTAIN_PLAY', card: cands[0] }; // 終端保証（GAIN_ORDER 外でも必ず選ぶ）
+      }
+      case 'overlord': {
+        // 大君主：対象があれば必ず使用（公式＝mayではない）。GAIN_ORDER の実強度順で最良を選ぶ。
+        const cands = (DOM.engine && DOM.engine.overlordTargets) ? DOM.engine.overlordTargets(state) : [];
+        if (!cands.length) return { type: 'OVERLORD_PLAY', card: null };
+        for (const id of GAIN_ORDER) { if (cands.includes(id)) return { type: 'OVERLORD_PLAY', card: id }; }
+        return { type: 'OVERLORD_PLAY', card: cands[0] }; // 終端保証（GAIN_ORDER 外でも必ず選ぶ）
+      }
+      case 'crown': {
+        if (pd.mode === 'action') {
+          // 2回使う価値が高いアクションを選ぶ（玉座と同じ throneValue）。無ければ辞退。
+          const acts = p.hand.filter((c) => isType(c, 'action') && c !== 'crown').sort((a, b) => throneValue(b) - throneValue(a));
+          return { type: 'CROWN_CHOOSE', card: acts[0] || null };
+        }
+        // mode 'treasure'：最もコインの高い財宝を2回使う。無ければ辞退。
+        const tre = p.hand.filter((c) => isTreasure(c)).sort((a, b) => (C()[b].coin || 0) - (C()[a].coin || 0))[0];
+        return { type: 'CROWN_CHOOSE', card: tre || null };
       }
       case 'church':
         // 脇置きは0枚で確定（戻ってくるだけ＝CPUには利得が薄い）。次ターンの廃棄だけ活用する。

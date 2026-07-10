@@ -218,6 +218,40 @@ console.log('=== 暗黒時代: カード効果 A/B/C ===');
   s = reduce(s, { type: 'BAND_OF_MISFITS_PLAY', card: 'village' });
   ok(s.turn.actions === 2 && s.supply.village === vBefore && count(s.players[0].inPlay, 'village') === 0, 'band_of_misfits: 村をサプライに残したまま使用（+2アクション）');
 
+  // 【回帰】命令カードの再演では「1回目に選んだカード」を必ずもう一度使う（公式ルーリング）。
+  //   出荷 darkages セットは band_of_misfits と procession が同居する＝到達可能だった。
+  s = setup(['band_of_misfits', 'procession', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel'],
+    ['procession', 'band_of_misfits'], ['copper', 'copper', 'copper', 'copper']);
+  s = play(s, 'procession');
+  s = reduce(s, { type: 'PROCESSION_CHOOSE', card: 'band_of_misfits' });
+  ok(s.pending && s.pending.type === 'band_of_misfits', '行進×はみだし者：1回目の対象選択が出る');
+  const aBefore = s.turn.actions;
+  s = reduce(s, { type: 'BAND_OF_MISFITS_PLAY', card: 'village' });
+  ok(!s.pending || s.pending.type !== 'band_of_misfits', '行進の2回目は対象を選び直せない（同じ村を使う）');
+  ok(s.turn.actions === aBefore + 4, '村を2回使った（+2アクション×2）');
+  s = drive(s);
+
+  // 【回帰】玉座の間×はみだし者も同様（再演では同じカード）
+  s = setup(['band_of_misfits', 'throne_room', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel'],
+    ['throne_room', 'band_of_misfits'], ['copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper']);
+  s = play(s, 'throne_room');
+  s = reduce(s, { type: 'THRONE_CHOOSE', card: 'band_of_misfits' });
+  s = reduce(s, { type: 'BAND_OF_MISFITS_PLAY', card: 'smithy' });
+  ok(!s.pending, '玉座×はみだし者：2回目は選び直せない');
+  ok(s.players[0].hand.length === 6, '鍛冶屋を2回使った（+3カード×2）');
+
+  // 【回帰】偽造通貨の2回目は「効果を丸ごと」再適用する（+購入等の副次効果を落とさない）＋2回のプレイ後に廃棄。
+  s = setup(['counterfeit', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel', 'workshop'],
+    ['counterfeit', 'copper'], ['copper']);
+  s = reduce(s, { type: 'END_ACTION_PHASE' });
+  const buysB = s.turn.buys;
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'counterfeit' });
+  ok(s.pending && s.pending.type === 'counterfeit', '偽造通貨：2回使う財宝を選ぶ');
+  s = reduce(s, { type: 'COUNTERFEIT_PLAY', card: 'copper' });
+  ok(!s.pending && s.turn.coins === 3, '偽造通貨$1＋銅貨$1×2＝$3');
+  ok(s.turn.buys === buysB + 1, '偽造通貨の+1購入');
+  ok(count(s.trash, 'copper') === 1 && count(s.players[0].inPlay, 'copper') === 0, '2回使った後に銅貨を廃棄');
+
   // hermit 交換（購入フェイズで無獲得→狂人化）
   s = setup(['hermit', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel', 'workshop'], ['hermit'], ['copper', 'copper', 'copper', 'copper', 'copper']);
   s = play(s, 'hermit');

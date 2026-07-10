@@ -97,9 +97,17 @@
   // PLAY_TREASURE / PLAY_ALL_TREASURES / 闇市場 で共通利用。
   function playTreasureCard(state, pIndex, card) {
     const p = state.players[pIndex];
-    const t = state.turn;
     removeOne(p.hand, card);
     p.inPlay.push(card);
+    applyTreasureEffect(state, pIndex, card);
+  }
+  // 財宝の「使ったとき」効果だけを適用する（カードは動かさない）。
+  //   1回目＝playTreasureCard（手札→場に移してから呼ぶ）。2回目＝冠/ティアラ/偽造通貨の再演
+  //   （state.replay の 'treasure_replay' から runReplays が呼ぶ＝1回目の選択待ちが解決してから走る）。
+  //   自己移動する財宝（投資/戦利品/法貨/私掠船の廃棄）は removeOne ガードで2回目は自然に不発（lose track）。
+  function applyTreasureEffect(state, pIndex, card) {
+    const p = state.players[pIndex];
+    const t = state.turn;
     t.coins += treasureCoins(state, card);
     // 錬金術：ポーション（特殊財宝）＝コインではなく「ポーション」を1つ得る（ポーション費用の支払いに使う）。
     if (card === 'potion') { t.potions = (t.potions || 0) + 1; }
@@ -152,8 +160,9 @@
       state.pending = { type: 'anvil', stage: 'discard', player: pIndex };
     }
     // 投資：これを廃棄。+1コイン か 「財宝1枚を廃棄して場の財宝の種類ぶん +VP」を選ぶ。
+    //   2回目のプレイ（冠/ティアラの再演）では既に場を離れている＝廃棄は不発（lose track）だが選択は行う。
     if (card === 'investment') {
-      removeOne(p.inPlay, 'investment'); state.trash.push('investment');
+      if (removeOne(p.inPlay, 'investment')) state.trash.push('investment');
       state.pending = { type: 'investment', player: pIndex };
     }
     // 水晶玉：山札の上1枚を見て 廃棄／捨て札／（アクションか財宝なら）使う（コイン1は coin:1）。
@@ -162,9 +171,10 @@
       if (p.deck.length > 0) state.pending = { type: 'crystal_ball', player: pIndex, card: p.deck[0] };
     }
     // 暗黒時代：戦利品＝+$3（coin:3 で加算済み）。使ったら戦利品の山（非サプライ）へ戻す。
+    //   2回目のプレイ（冠/ティアラ/偽造通貨の再演）では既に山へ戻っている＝返却は不発（lose track・コインは入る）。
     if (card === 'spoils') {
-      if (removeOne(p.inPlay, 'spoils')) state.supply.spoils = (state.supply.spoils || 0) + 1;
-      log(state, `${p.name} は戦利品を使った（+$3）→山へ戻した。`);
+      if (removeOne(p.inPlay, 'spoils')) { state.supply.spoils = (state.supply.spoils || 0) + 1; log(state, `${p.name} は戦利品を使った（+$3）→山へ戻した。`); }
+      else log(state, `${p.name} は戦利品をもう一度使った（+$3）。`);
     }
     // 冒険：掘出物＝+$2（coin:2 で加算済み）。プレイしたとき金貨1枚と銅貨1枚を獲得。
     if (card === 'treasure_trove') {
@@ -223,10 +233,22 @@
       if (!t.fortunePlayed) { t.coins = (t.coins || 0) * 2; t.fortunePlayed = true; log(state, `${p.name} は大金でコインを2倍にした（+1購入）。`); }
       else log(state, `${p.name} は大金（+1購入・このターン2枚目以降はコイン2倍なし）。`);
     }
+    // 帝国：冠（crown）＝「現在のフェイズ」で対象種別が変わる（applyEffect の case 'crown' と共通の入口）。
+    if (card === 'crown') crownOpenPending(state, pIndex);
     // 海辺：私掠船マーク中なら、このターン最初の銀貨/金貨は出した後に廃棄される（コインは入る）。
     corsairOnPlayTreasure(state, pIndex, card);
     // 冒険：-$1トークンの相殺（購入フェイズでコインが増えたぶんに食い込む）。
     applyCoinPenalty(state);
+  }
+  // 帝国：冠（crown）＝「その時点のフェイズ」で対象種別が決まる（公式）。
+  //   アクションフェイズ＝手札のアクション1枚を2回／購入フェイズ＝手札の財宝1枚を2回（どちらも任意）。
+  //   アクションとして使う経路（PLAY_ACTION／大君主／玉座の再演／水晶玉）と、財宝として使う経路
+  //   （PLAY_TREASURE／語り部／闇市場／ティアラの再演）の両方から呼ばれるので、必ず phase を見る。
+  function crownOpenPending(state, pIndex) {
+    const p = state.players[pIndex];
+    const buyPhase = !!(state.turn && state.turn.phase === 'buy');
+    const kind = buyPhase ? 'treasure' : 'action';
+    if (p.hand.some((c) => DOM.isType(c, kind))) state.pending = { type: 'crown', mode: kind, player: pIndex };
   }
 
   /* ---------- 乱数・シャッフル ---------- */
@@ -2002,18 +2024,8 @@
     }
     state.pending = null;
   }
-  // 繁栄：ティアラ「財宝1枚を2回使う」の2回目＝コイン分を再適用（移動はしない）。
-  // 動的コイン(銀行/賢者の石)・ポーショントークンも2回目として正しく加算する。
-  function treasureReplayCoins(state, pi, card) {
-    const p = state.players[pi];
-    const t = state.turn;
-    if (card === 'bank') { const cnt = p.inPlay.filter((c) => DOM.isType(c, 'treasure')).length; t.coins += cnt; return cnt; }
-    if (card === 'philosophers_stone') { const add = Math.floor((p.deck.length + p.discard.length) / 5); t.coins += add; return add; }
-    if (card === 'potion') { t.potions = (t.potions || 0) + 1; return 0; } // ポーションは2回目もトークン+1
-    const add = treasureCoins(state, card);
-    t.coins += add;
-    return add;
-  }
+  // ※「財宝1枚を2回使う」（冠/ティアラ/偽造通貨）の2回目は state.replay の 'treasure_replay' が
+  //   applyTreasureEffect を呼ぶ＝カードを動かさず効果だけを完全に再適用する（旧 treasureReplayCoins を置換）。
 
   /* ---------- 総督（改築モード）：全員が順に「任意で廃棄→ちょうど+$Nを獲得」---------- */
   // queue 要素は { p: 席, delta: 自分=2/他=1 }。手札の無い人は飛ばす。
@@ -2207,6 +2219,16 @@
       !splitLocked(state, id));
   }
   function anyCaptainTarget(state) { return captainTargets(state).length > 0; }
+  // 帝国：大君主（命令）＝サプライにある「コスト5以下・非命令・非持続のアクション」を、
+  //   そのカードとしてサプライに残したまま使う（船長/はみだし者と同型・上限=コスト5固定）。
+  function overlordTargets(state) {
+    return Object.keys(state.supply).filter((id) =>
+      (state.supply[id] || 0) > 0 && !NON_SUPPLY.has(id) && C()[id] &&
+      DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && !DOM.isType(id, 'command') &&
+      !C()[id].potion && cardCost(state, id) <= 5 && id !== 'knights' &&
+      !splitLocked(state, id));
+  }
+  function anyOverlordTarget(state) { return overlordTargets(state).length > 0; }
   // 暗黒時代：はみだし者（命令）＝サプライにある「これより安い・非Command・非持続のアクション」を、
   //   サプライに残したまま使う。コスト比較ははみだし者の現在コスト（コスト軽減の影響あり）で動的判定。
   //   ※持続を対象にすると持続の追跡が要る（船長と同じ簡略化で除外）＝忠実性のわずかな簡略化。
@@ -2217,6 +2239,27 @@
       DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && !DOM.isType(id, 'command') &&
       !C()[id].potion && cardCost(state, id) < mx && id !== 'knights' && // 騎士の混合山は対象外（applyEffect未定義＝無効果の死に選択肢になる。持続除外と同じ簡略化）
       !splitLocked(state, id));
+  }
+
+  /* ---------- 命令（Command）の「再演では選び直さない」ルール ----------
+     公式：大君主/はみだし者を玉座の間等で複数回使っても、何として使うかを選ぶのは1回目だけで、
+     以降は同じカードとして使う。1回目の選択を state.turn.commandAs[命令id] に覚え、
+     runReplays 経由の再演（state._replaying）ではその記憶を使って選択待ちを開かない。
+     ※ ゴーレムの2枚目は「別のカードの新しいプレイ」なので _replaying を立てない（runReplays 側で除外）。 */
+  function rememberCommandAs(state, commandId, card) {
+    const t = state.turn;
+    (t.commandAs = t.commandAs || {})[commandId] = card;
+  }
+  // 再演中なら記憶したカードをそのまま使い true を返す（＝呼び出し側は選択待ちを開かない）。
+  function replayCommandAs(state, pi, commandId) {
+    const t = state.turn;
+    const card = state._replaying && t.commandAs && t.commandAs[commandId];
+    if (!card) return false;
+    log(state, `${state.players[pi].name} は${C()[commandId].name}で「${C()[card].name}」をもう一度使った（サプライに残る）。`);
+    applyEffect(state, card, pi);
+    // 死の荷車をサプライに残したままプレイした場合＝「これ」の自己廃棄は不発（fromCommand で印付け）。
+    if (card === 'death_cart' && state.pending && state.pending.type === 'death_cart') state.pending.fromCommand = true;
+    return true;
   }
 
   function applyEffect(state, cardId, pi) {
@@ -2392,6 +2435,21 @@
       case 'opulent_castle':
         if (p.hand.some((c) => DOM.isType(c, 'victory'))) state.pending = { type: 'opulent_castle', player: pi };
         break;
+
+      /* ===== 帝国（Empires）Batch E6：命令（overlord/crown） ===== */
+      // 大君主：サプライのコスト5以下・非命令アクション1枚を、そのカードとしてサプライに残したまま使う
+      //   （船長/はみだし者と同型・上限=コスト5固定。持続は対象外＝場に残らないと持続予約が宙に浮くため）。
+      //   玉座/王の宮廷/行進/御料車/冠で再演されたときは「1回目に選んだカード」を必ずもう一度使う（公式ルーリング）。
+      case 'overlord':
+        if (replayCommandAs(state, pi, 'overlord')) break;
+        if (anyOverlordTarget(state)) state.pending = { type: 'overlord', player: pi };
+        break;
+      // 冠：その時点のフェイズで対象種別が変わる（アクションフェイズ→手札のアクション1枚を2回／
+      //   購入フェイズ→手札の財宝1枚を2回）。財宝として使う経路も同じ crownOpenPending を通る。
+      case 'crown':
+        crownOpenPending(state, pi);
+        break;
+
       case 'cellar':
         t.actions += 1;
         // 手札を好きな枚数捨て、同じだけ引く（選択待ち）
@@ -3057,6 +3115,8 @@
         state.pending = { type: 'death_cart', player: pi };
         break;
       case 'band_of_misfits': // 命令：サプライの「これより安い・非Command・非持続アクション」をサプライに残したまま使う
+        // 玉座/王の宮廷/行進/御料車で再演されたときは「1回目に選んだカード」を必ずもう一度使う（公式ルーリング）。
+        if (replayCommandAs(state, pi, 'band_of_misfits')) break;
         if (bandOfMisfitsTargets(state).length) state.pending = { type: 'band_of_misfits', player: pi };
         break;
       case 'hermit': // 捨て札/手札の非財宝1枚を廃棄してよい→コスト3以下を獲得（購入フェイズ終了時に無獲得なら狂人と交換）
@@ -4795,6 +4855,21 @@
         }
         continue; // applyEffect は行わない（制御項目）。pending を立てたら while が停止する。
       }
+      if (r.label === 'treasure_replay') {
+        // 帝国：冠／繁栄：ティアラ／暗黒時代：偽造通貨＝「手札の財宝1枚を2回使う」の2回目。
+        //   カードは動かさず（既に場にある）効果だけをもう一度適用する。1回目が選択待ちを立てた場合は
+        //   それが解決してからここに来る（＝御守り/金床/水晶玉などの選択が2回とも正しく出る）。
+        log(state, `${state.players[r.player].name} は「${C()[r.card].name}」をもう一度使った。`);
+        applyTreasureEffect(state, r.player, r.card);
+        continue; // applyEffect（アクションの効果）は行わない
+      }
+      if (r.label === 'counterfeit_trash') {
+        // 暗黒時代：偽造通貨＝2回のプレイが終わった後、その財宝を場から廃棄する。
+        //   対象が自己移動していれば（戦利品が山へ戻る等）廃棄は不発（lose track）。
+        const p = state.players[r.player];
+        if (removeOne(p.inPlay, r.card)) { trashCard(state, r.player, r.card); log(state, `${p.name} は偽造通貨で「${C()[r.card].name}」を廃棄した。`); }
+        continue;
+      }
       if (r.label === 'golem') {
         // ゴーレムで見つけた2枚目：場に置いてから使う（クリーンアップで場から片付く）。
         // アクション権は消費しないが「使った」扱い＝共謀者等の「このターンに使ったアクション数」には数える。
@@ -4808,11 +4883,19 @@
         // 冒険：御料車＝場のアクションを再演する（アクション権は消費しない・共謀者判定には数える）。
         state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
         log(state, `${state.players[r.player].name} は御料車で「${C()[r.card].name}」を再演した。`);
+      } else if (r.label === 'crown') {
+        // 帝国：冠（アクションモード）＝玉座と同じくもう一度使う（アクション権は消費しない）。
+        state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
+        log(state, `${state.players[r.player].name} は冠で「${C()[r.card].name}」をもう一度使った。`);
       } else {
         state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
         log(state, `${state.players[r.player].name} は玉座の間で「${C()[r.card].name}」をもう一度使った。`);
       }
+      // 命令（大君主/はみだし者）の「再演では選び直さない」判定に使う。
+      //   ゴーレムの2枚目だけは「別カードの新しいプレイ」なので再演扱いにしない。
+      state._replaying = (r.label !== 'golem');
       applyEffect(state, r.card, r.player);
+      delete state._replaying;
     }
     return state;
   }
@@ -6538,6 +6621,7 @@
         if (cands.indexOf(card) < 0) return state;
         state.pending = null; // 先に閉じる（applyEffect が新たな選択待ちを立てることがある）
         t.actionsPlayed = (t.actionsPlayed || 0) + 1; // 使用に数えるがカードはサプライに残る
+        rememberCommandAs(state, 'band_of_misfits', card); // 再演（玉座/行進等）では選び直さない
         log(state, `${state.players[pd.player].name} ははみだし者でサプライの「${C()[card].name}」を使った（サプライに残る）。`);
         applyEffect(state, card, pd.player);
         // 死の荷車をサプライに残したままプレイした場合＝「これ」の自己廃棄は不発（fromCommand で印付け）。
@@ -6597,12 +6681,14 @@
         const card = action.card; // null = しない
         state.pending = null;
         if (card != null && p.hand.indexOf(card) >= 0 && DOM.isType(card, 'treasure') && !DOM.isType(card, 'duration')) {
+          // 冠/ティアラと同型：2回目は 'treasure_replay'、その後の廃棄は 'counterfeit_trash' として
+          //   state.replay に順に積む（行進の procession2/procession_finish と同じ形）。
+          //   これで1回目/2回目が立てる選択待ちが解決してから廃棄が走る。
+          log(state, `${p.name} は偽造通貨で「${C()[card].name}」を2回使う。`);
           playTreasureCard(state, pd.player, card); // 1回目（移動＋効果。戦利品は山へ戻る）
-          const add = treasureReplayCoins(state, pd.player, card); // 2回目のコイン
-          if (card === 'collection' || card === 'counterfeit') t.buys += 1; // 2回目の+1購入（+購入を持つ財宝の安全な副次効果）
-          log(state, `${p.name} は偽造通貨で「${C()[card].name}」を2回使った（+${add}コイン）。`);
-          if (removeOne(p.inPlay, card)) { trashCard(state, pd.player, card); log(state, `${p.name} は偽造通貨で「${C()[card].name}」を廃棄した。`); }
-          // 対象が自己移動していれば（戦利品が山へ戻る等）廃棄は不発（lose track）。
+          state.replay = state.replay || [];
+          state.replay.push({ player: pd.player, card, label: 'treasure_replay' });  // 2回目（効果のみ）
+          state.replay.push({ player: pd.player, card, label: 'counterfeit_trash' }); // 2回のプレイ後に廃棄
         }
         return state;
       }
@@ -7644,23 +7730,12 @@
         const card = action.card; // null = しない
         state.pending = null;
         if (card != null && p.hand.indexOf(card) >= 0 && DOM.isType(card, 'treasure')) {
-          playTreasureCard(state, pd.player, card); // 1回目（移動＋効果。ペテン師+堀などで pending が立つことがある）
-          // 2回目のコインは反応待ちに関係なく確定で入る（pending の有無で取りこぼさない）。
-          const add = treasureReplayCoins(state, pd.player, card);
-          // 2回目の「使ったとき」副次効果も適用する（pending を伴わない安全なものだけ）。
-          if (card === 'collection') state.turn.buys += 1; // 収集：+1購入
-          if (card === 'charlatan' && !state.pending) {    // ペテン師：各相手が銅貨1枚(2回目)。1回目が反応待ちでない時だけ。
-            const q = []; for (let k = 1; k < state.players.length; k++) q.push((pd.player + k) % state.players.length);
-            charlatanEnterVictim(state, pd.player, q);
-          }
-          // プロモ：サウナ＝銀貨を「使うたび」廃棄機会。ティアラの2回目は playTreasureCard を通らないので
-          // ここで手動加算する（1回目で立った sauna_trash に合算＝銀貨2回×サウナ使用回数ぶんの廃棄機会）。
-          if (card === 'silver' && (state.turn.saunaPlays || 0) > 0 && p.hand.length > 0) {
-            if (!state.pending) state.pending = { type: 'sauna_trash', player: pd.player, remaining: state.turn.saunaPlays };
-            else if (state.pending.type === 'sauna_trash' && state.pending.player === pd.player)
-              state.pending.remaining += state.turn.saunaPlays;
-          }
-          log(state, `${p.name} はティアラで「${C()[card].name}」をもう一度使った（+${add}コイン）。`);
+          // 冠と同型：2回目は state.replay に積み、1回目が立てた選択待ちが解決してから
+          //   runReplays が「効果だけ」もう一度適用する（2回目の選択・副次効果も正しく出る）。
+          log(state, `${p.name} はティアラで「${C()[card].name}」を2回使う。`);
+          playTreasureCard(state, pd.player, card); // 1回目（移動＋効果）
+          state.replay = state.replay || [];
+          state.replay.push({ player: pd.player, card, label: 'treasure_replay' }); // 2回目（効果のみ）
         }
         return state;
       }
@@ -8243,6 +8318,58 @@
           if (gain(state, pd.player, 'duchy', 'discard')) log(state, `${state.players[pd.player].name} は広大な城で公領1枚を獲得した。`);
         }
         state.pending = null;
+        return state;
+      }
+      /* ===== 帝国（Empires）Batch E6：命令（overlord/crown）の選択解決 ===== */
+      // 大君主：サプライのコスト5以下（非命令・非持続）のアクションを、サプライに残したまま使用（船長と同型）。
+      case 'OVERLORD_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'overlord') return state;
+        const cands = overlordTargets(state);
+        if (action.card == null) {
+          if (cands.length) return state; // 対象があるうちは使用必須（公式＝mayではない）
+          state.pending = null;
+          return state;
+        }
+        const card = action.card;
+        if (cands.indexOf(card) < 0) return state;
+        state.pending = null; // 先に閉じる（applyEffect が新たな選択待ちを立てることがある）
+        t.actionsPlayed = (t.actionsPlayed || 0) + 1; // 使用に数えるが、カードはサプライに残る（場に出ない）
+        rememberCommandAs(state, 'overlord', card); // 再演（玉座/王の宮廷/冠等）では選び直さない
+        log(state, `${state.players[pd.player].name} は大君主でサプライの「${C()[card].name}」を使った（サプライに残る）。`);
+        applyEffect(state, card, pd.player);
+        // 死の荷車をサプライに残したままプレイした場合＝「これ」の自己廃棄は不発（fromCommand で印付け）。
+        if (card === 'death_cart' && state.pending && state.pending.type === 'death_cart') state.pending.fromCommand = true;
+        return state;
+      }
+      // 冠：mode='action'＝手札のアクション1枚を選び玉座と同型で2回使う。
+      //     mode='treasure'＝手札の財宝1枚を選び2回使う（1回目 playTreasureCard・2回目は 'treasure_replay'）。
+      //     どちらも2回目は state.replay に積む＝1回目が立てた選択待ち（御守り/金床/水晶玉など）が
+      //     解決してから runReplays が適用する＝2回目の選択・副次効果も正しく発生する。
+      //     どちらも「してよい」＝action.card===null で辞退できる。
+      case 'CROWN_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'crown') return state;
+        const p2 = state.players[pd.player];
+        const card = action.card; // null = 使わない
+        state.pending = null;
+        if (pd.mode === 'action') {
+          if (card != null && p2.hand.indexOf(card) >= 0 && DOM.isType(card, 'action')) {
+            removeOne(p2.hand, card); p2.inPlay.push(card);
+            t.actionsPlayed = (t.actionsPlayed || 0) + 1;
+            log(state, `${p2.name} は冠で「${C()[card].name}」を使った（1回目）。`);
+            applyEffect(state, card, pd.player); // 1回目
+            state.replay = state.replay || [];
+            state.replay.push({ player: pd.player, card, label: 'crown' }); // 2回目は選択待ち解消後に runReplays が適用
+          }
+        } else { // mode === 'treasure'
+          if (card != null && p2.hand.indexOf(card) >= 0 && DOM.isType(card, 'treasure')) {
+            log(state, `${p2.name} は冠で「${C()[card].name}」を2回使う。`);
+            playTreasureCard(state, pd.player, card); // 1回目（移動＋効果）
+            state.replay = state.replay || [];
+            state.replay.push({ player: pd.player, card, label: 'treasure_replay' }); // 2回目（効果のみ）
+          }
+        }
         return state;
       }
       // 御守り（charm）のモード選択：A=+1購入+$2 ／ B=このターン次の獲得で同コスト別名を1枚獲得できる（積む）。
@@ -9357,6 +9484,8 @@
     'ENCAMPMENT_REVEAL', 'SETTLERS_RESOLVE', 'CATAPULT_TRASH', 'CATAPULT_REACT', 'GLADIATOR_REVEAL', 'GLADIATOR_MATCH',
     // 帝国（Empires）Batch E5：城（混合山）
     'SMALL_CASTLE_RESOLVE', 'OPULENT_CASTLE_DISCARD', 'HAUNTED_TOPDECK', 'SPRAWLING_CASTLE_CHOOSE',
+    // 帝国（Empires）Batch E6：命令（overlord/crown）
+    'OVERLORD_PLAY', 'CROWN_CHOOSE',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',
@@ -9418,6 +9547,7 @@
     canBuyCard,
     captainTargets, // 新プロモ：船長の対象（CPU/UIが同じ候補を参照＝engine拒否とCPU非提案のセット）
     bandOfMisfitsTargets, // 暗黒時代：はみだし者の対象（CPU/UIが同じ候補を参照）
+    overlordTargets, // 帝国：大君主の対象（CPU/UIが同じ候補を参照）
     validTeacherPiles, // 冒険：教師のトークン置き先（CPU/UIが同じ候補を参照）
     maskStateFor,
     PLAYER_ACTIONS,

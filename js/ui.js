@@ -1391,6 +1391,16 @@
         (id) => dispatch({ type: 'CAPTAIN_PLAY', card: id }),
         () => dispatch({ type: 'CAPTAIN_PLAY', card: null }), false, '使う');
     }
+    if (pd.type === 'overlord') {
+      const cands = (E() && E().overlordTargets) ? E().overlordTargets(state) : [];
+      return modalGainSupply(state, '大君主 — サプライのカードを使う',
+        'サプライにあるコスト5以下の（持続・命令以外の）アクション1枚を、サプライに残したまま使用します。',
+        (id) => cands.includes(id),
+        (id) => dispatch({ type: 'OVERLORD_PLAY', card: id }),
+        () => dispatch({ type: 'OVERLORD_PLAY', card: null }), false, '使う');
+    }
+    if (pd.type === 'crown' && pd.mode === 'action') return modalSingleHand(p, '冠 — 2回使うアクション', '手札のアクションカードを1枚選ぶと、それを2回使います（使わなくてもよい）。', (id) => DOM.isType(id, 'action'), (card) => dispatch({ type: 'CROWN_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'CROWN_CHOOSE', card: null }) }, '2回使う');
+    if (pd.type === 'crown' && pd.mode === 'treasure') return modalSingleHand(p, '冠 — 2回使う財宝', '手札の財宝カードを1枚選ぶと、それを2回使います（使わなくてもよい）。', (id) => DOM.isType(id, 'treasure'), (card) => dispatch({ type: 'CROWN_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'CROWN_CHOOSE', card: null }) }, '2回使う');
     if (pd.type === 'church') return modalMultiHand(p, '教会 — 脇に置く',
       '手札から最大3枚を裏向きで脇に置きます（次のあなたのターン開始時に手札へ戻り、その後1枚廃棄できます）。0枚でもOK。',
       (n) => '確定（' + n + '枚 置く）', true, (cards) => dispatch({ type: 'CHURCH_SETASIDE', cards }), 3);

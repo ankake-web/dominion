@@ -85,6 +85,10 @@ const ADVERSARIAL = [
   ['page', 'peasant', 'upgrade', 'remake', 'forge', 'swindler', 'witch', 'village', 'market', 'moat'], // 冒険：成長先(非サプライ)×ちょうどコスト獲得(改良/リメイク/溶鉱炉)・詐欺師の贈与＝NON_SUPPLY除外漏れのデッドロック/不正獲得の回帰防止
   ['caravan_guard', 'haunted_woods', 'swamp_hag', 'throne_room', 'kings_court', 'witch', 'moat', 'militia', 'market', 'village'], // 冒険：相手の購入フック持続(呪いの森/沼の妖婆)＋隊商の護衛リアクション＋玉座/王の宮廷×これらの持続アタック
   ['raze', 'artificer', 'storyteller', 'messenger', 'relic', 'throne_room', 'kings_court', 'moat', 'witch', 'market'], // 冒険：複雑系（倒壊/工匠/語り部×遺物の財宝アタック中断→再開/使者の配布）＋玉座/王の宮廷×倒壊/語り部
+  ['crown', 'charm', 'capital', 'plunder', 'encampment', 'fortune', 'gladiator', 'castles', 'overlord', 'village'], // 帝国：冠の「財宝を2回使う」×選択待ちを立てる財宝(御守り)・+購入/VPを持つ財宝(元手/大金/鹵獲品)＋負債＋分割山＋城の混合山
+  ['crown', 'overlord', 'throne_room', 'kings_court', 'village', 'market', 'smithy', 'moat', 'militia', 'workshop'], // 帝国：命令(大君主)の再演は選び直さない×玉座/王の宮廷/冠のネスト
+  ['tiara', 'crystal_ball', 'anvil', 'investment', 'charlatan', 'bank', 'collection', 'monument', 'village', 'market'], // 繁栄：ティアラの2回目が pending 財宝(水晶玉/金床/投資/ペテン師)の選択・アタックを取りこぼさない
+  ['counterfeit', 'bandit_camp', 'marauder', 'band_of_misfits', 'procession', 'village', 'market', 'smithy', 'moat', 'militia'], // 暗黒時代：偽造通貨の2回プレイ→廃棄（戦利品の自己移動＝lose track）＋命令(はみだし者)×行進の再演
 ];
 {
   let allOk = true;

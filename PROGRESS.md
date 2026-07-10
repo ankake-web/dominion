@@ -1,9 +1,49 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-08 / branch `main`（最新は `git log` で確認）。**冒険＋帝国 Batch E1（負債）＋E2（単独9枚）＋E3（集合）＋E4（分割山5組）＋E5（城8）は push 済＝本番反映（§0-9〜0-14。`sw.js` v41。HEAD==origin/main で確認済み）**。帝国はまだ CARD_SET 未昇格＝本番挙動は不変（帝国カードはサプライに出ない）。**次はBatch E6（命令＝overlord/crown）＝帝国 最後の新機構**。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
+最終更新: 2026-07-10 / branch `main`（最新は `git log` で確認）。**帝国 Batch E1〜E5 は push 済＝本番反映。Batch E6（命令＝overlord/crown）＝帝国 最後の新機構 完了・未push（§0-15。`sw.js` v42）**。帝国はまだ CARD_SET 未昇格＝本番挙動は不変（帝国カードはサプライに出ない）。**次は E7＝Phase E＝CARD_SET昇格（ここで初めて本番に帝国が出る）**。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
-**新セッションは まず `npm test` を実行し 32スイート・オールグリーン（exit 0・整合性3144件・帝国140件・冒険44件＋UI40件・暗黒時代70件＋UI57件・新プロモ141件＋UI22件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
+**新セッションは まず `npm test` を実行し 32スイート・オールグリーン（exit 0・整合性3144件・帝国197件・冒険44件＋UI40件・暗黒時代79件＋UI57件・新プロモ142件＋UI22件・繁栄69件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
+
+---
+
+## 0-15. 段階2＝帝国（Empires）Batch E6＝命令（overlord/crown）**完了**（2026-07-10・WIP・未push）
+
+**Batch E6 完了＝帝国の新機構6系統すべて実装済み**。設計正本＝`docs/research/empires_rules.md` §1-5。`sw.js` v41→**v42**。**カタログ/webp変更なし**。**帝国はまだ CARD_SET 未昇格＝本番挙動は不変**。次は **E7＝Phase E＝CARD_SET昇格**。
+
+### 実装（4点セット＝engine reducer＋PLAYER_ACTIONS＋CPU decidePending＋UI viewPendingModal）
+- **大君主（overlord・$0+負債8・命令）**：`overlordTargets(state)`（captainTargets 同型・上限コスト5固定・非命令/非持続/非ポーション/非NON_SUPPLY/非splitLocked/非knights）＋`OVERLORD_PLAY`。サプライに残したまま使用（場に出ない・獲得しない）。対象があるうちは使用必須。DOM.engine に `overlordTargets` を公開（engine/CPU/UI で同じ候補を参照）。
+- **冠（crown・$5・アクション＋財宝）**：新ヘルパ `crownOpenPending(state,pi)` が **その時点の `turn.phase`** を見てモードを決める（action＝手札のアクション1枚を2回／buy＝手札の財宝1枚を2回・どちらも任意）。`CROWN_CHOOSE` は玉座と同型で `state.replay` に2回目を積む。
+
+### 【重要】財宝の「2回使う」を根治（冠＝新規／ティアラ・偽造通貨＝既存バグも同時修正）
+- 旧実装は2回目を **`treasureReplayCoins`（コイン再計算＋3件の特例だけ）** で済ませており、**pending を立てる財宝・+購入/+VP を持つ財宝の2回目を丸ごと落としていた**。
+- **`playTreasureCard` を「移動」と「効果」に分離**し、新 **`applyTreasureEffect(state,pi,card)`**（＝カードを動かさず効果だけ適用）を新設。2回目は **`state.replay` の新ラベル `'treasure_replay'`** に積み、**1回目が立てた選択待ちが解決してから** `runReplays` が適用する（行進の procession2/procession_finish と同じ形）。偽造通貨の廃棄は新ラベル `'counterfeit_trash'` で2回のプレイ後に走る。`treasureReplayCoins` は削除。
+- 自己移動する財宝（**投資**＝`removeOne` ガードを追加／戦利品／法貨／私掠船の廃棄）は 2回目に removeOne が失敗して**自然に不発（lose track）**。
+- これで **冠×御守り（二択が2回出る）／元手・大金の+1購入×2／鹵獲品の+1VP×2／愚者の黄金の動的$4／掘出物の獲得×2／水晶玉・金床・不正利得・豊穣の角の2回目の選択** が正しく出る。
+- **副産物＝繁栄/暗黒時代の実バグ修正**：旧 `TIARA_PLAY`/`COUNTERFEIT_PLAY` は「1回目が反応待ち（相手の堀）なら2回目のアタックを丸ごと飛ばす」実装で、**3人戦で堀を持たない相手が銅貨を1枚しか受けなかった**（回帰テスト追加）。2回目のコイン計上タイミングも「1回目の完全解決後」に変わった（公式挙動・取りこぼしは無し）。
+
+### 【重要】命令（Command）の「再演では選び直さない」ルール（公式）
+- 公式：大君主/はみだし者を玉座の間等で複数回使っても、**何として使うかを選ぶのは1回目だけ**で以降は同じカード。
+- `state.turn.commandAs[命令id]` に1回目の選択を記憶（`rememberCommandAs`）。`runReplays` が `state._replaying` を立て、`applyEffect` の `case 'overlord'` / `case 'band_of_misfits'` が `replayCommandAs` で記憶を再利用して**選択待ちを開かない**。
+- **`_replaying` はゴーレムの2枚目では立てない**（＝「別カードの新しいプレイ」なので選び直せる）。
+- **副産物＝暗黒時代の実バグ修正**：出荷 `darkages` 固定セットは **band_of_misfits と procession が同居**＝行進/玉座の2回目で別カードを選べてしまっていた（回帰テスト追加）。
+
+### 敵対レビュー（多エージェント5次元→node再現検証）＝**確定9件（偽陽性0）→全件修正**
+- 冠の2回目が 御守り/元手/大金/鹵獲品/愚者の黄金 の効果を落とす（high×1・medium×3・low×1）→ 上記 `applyTreasureEffect` で根治。
+- 大君主が再演のたびに対象を選び直せる（medium）→ `commandAs` で根治（band_of_misfits も同時修正）。
+- 語り部（アクションフェイズに財宝を出す）経由の冠が財宝モードになる（low）→ `crownOpenPending` が `turn.phase` を見るよう統一。
+- UI：大君主モーダルの説明文が「持続除外」を書いていない（low）→ 船長モーダルと同文に修正。
+- **既存バグも1件発見・修正（CPU）**：`pickSwindlerGift`（詐欺師）に `!splitBlocked` が無く、**ロック中の分割山下段（鹵獲品等）を贈与候補に出し続けて engine 拒否と噛み合いCPU無限ループ**（全プール混成fuzzで到達）。兄弟の `bestGain`/`bestGainExact` は持っていた書き漏れ。
+
+### 検証
+- `test/empires.test.js` を **全197件**に拡張（E6の裁定＋敵対レビュー回帰3群＋CPUソーク24戦）。`test/darkages.test.js` 79件（命令再演×行進/玉座＋偽造通貨の回帰）／`test/prosperity.test.js` 69件（ティアラ×ペテン師の3人回帰）／`test/promo2.test.js` 142件。
+- **invariants の敵対王国に4つ追加**（冠×pending財宝×負債×分割山×城／命令の再演×玉座・王の宮廷／ティアラ×水晶玉・金床・投資・ペテン師／偽造通貨×戦利品×はみだし者×行進）。
+- 追加ソーク（財宝再演×命令再演の敵対王国10種×12シード＝**120戦**）＝完走120・膠着0・例外0・保存則0・負リソース0。
+- **npm test 全32スイート緑（exit 0・整合性3144不変・CPU序列 100/64/95 維持）**。
+
+### 【次にやること】E7＝Phase E＝CARD_SET昇格（**ここで初めて本番に帝国が出る**）
+- `DOM.KINGDOM_EMPIRES` 固定10種を選定＋`DOM.CARD_SETS` に `empires` / `random-empires` の2行。`POOLS.empires` から `castles`（混合山プレースホルダ）と分割山下段の扱いに注意（`randomKingdom` は下段→上段に正規化済み）。
+- `test/empires-ui.test.js`（UIスモーク）新設＋`invariants` の出荷セット検証に `empires`/`random-empires` 追加＋CPUソーク（2〜4人・全難易度）。横型ランドスケープ（イベント/ランドマーク）は縦枠パイプライン未対応で対象外。
 
 ---
 
@@ -520,10 +560,10 @@
 - **海辺の簡略化2点は本格実装済み**：封鎖の堀免疫窓・海賊の財宝獲得リアクション。on-gain対話は `!pending && _gainDepth===1` ゲートで安全側。
 
 ## 5. 未完了タスク（優先順。次セッションは 1. から）
-1. **【最優先】冒険（Adventures）の push（ユーザー確認）（§0-9）**＝冒険は**全38枚＋CARD_SET昇格まで完了＝実プレイ可能**（sw.js v36）。未pushコミット多数。**ユーザー確認の上で `git push`** すれば本番 Pages/Render に「冒険セット」「冒険から」が反映。
-   - **✅段階2 完了済み拡張**：収穫祭(§0-2)／ギルド(§0-4)／異郷(§0-5)／新プロモ(§0-7)／暗黒時代 全56枚(§0-8)／**冒険 全38枚(§0-9)**。基本・陰謀・海辺・錬金術・繁栄と合わせ、**縦型カードの実プレイ化は冒険まで完了**。次は帝国。
+1. **【最優先】帝国 E7＝Phase E＝CARD_SET昇格（§0-15）**＝帝国は**新機構6系統＋全カード効果 実装完了（Batch E1〜E6）**。まだ CARD_SET 未昇格＝本番挙動は不変。`DOM.KINGDOM_EMPIRES` 固定10種＋`empires`/`random-empires` を足し、`empires-ui.test.js` 新設＋CPUソーク→全テスト緑→**ユーザー確認の上で push**すれば本番に「帝国セット」が出る。**E6（未push）も同時に反映される**（`sw.js` v42）。
+   - **✅段階2 完了済み拡張**：収穫祭(§0-2)／ギルド(§0-4)／異郷(§0-5)／新プロモ(§0-7)／暗黒時代 全56枚(§0-8)／冒険 全38枚(§0-9)／**帝国 縦型36枚(§0-10〜0-15・CARD_SET昇格のみ残)**。基本・陰謀・海辺・錬金術・繁栄と合わせ、**縦型カードの実プレイ化は帝国まで完了**。
 2. **段階2の残り＝発売順の未着手拡張**（着手前に `docs/adding-cards.md` を必読。特殊機構は §C）:
-   - **帝国(Empires)＝次の大仕事**。段階1（画像・カタログ）は済み(§0-6)。帝国の新機構＝負債(Debt)コスト経済・分割山・城の混合山・命令(overlord/crown)・勝利点トークン・集合(Gathering)。横型ランドスケープ（イベント/ランドマーク）は縦枠パイプライン未対応で段階1すら未着手。
+   - **帝国の横型ランドスケープ（イベント13＋ランドマーク20）＋冒険のイベント20**＝縦枠パイプライン未対応で段階1すら未着手（別途 横長枠の生成パイプラインが要る）。
    - **発売順その先（段階1すら未着手＝画像・カタログとも無し）**：夜想曲/ルネサンス/移動動物園/同盟/略奪/日の出づる国。
 3. **錬金術アートの△3枚最終確認（任意）**：変成/薬草商/薬剤師。差し替えは `asset/art/<id>.png` →`node tools/build-cards.js`→該当webpデプロイ。
 4. （任意・CPU購入の残課題）B案は「拡張＋礼拝堂エンジン」で ENGINE/MONEY を切替済み（暗黒時代は MONEY 既定＝§0-5 と同方針）。さらに踏み込むなら **MONEY王国での BM+呪いアタック（魔女等≤2枚）** や **王国個別のエンジン成立度スコアリング**が候補（優先度低）。
@@ -544,3 +584,6 @@
 - **段階1で追加した暗黒時代の非サプライ札（戦利品/狂人/傭兵/騎士10種/廃墟5/避難所3）を段階2で実プレイ化する時は、上の「4系統除外チェックリスト」を必ず通す**。特殊山（廃墟＝混合順序山→top-level配列・invariants tally追加／騎士＝混合山／避難所＝開始デッキ置換）は `docs/adding-cards.md` §C に実装手順あり。新種別 knight/ruins/shelter は表示ラベルのみ実装済（engineロジックは段階2で新設）。
 - **暗黒時代 段階2 は WIP（§0-8 が正）**：カタログのみ現行エラッタに修正済み＝**カード一覧の文言と webp 画像の文字が9枚で不一致**（hermit/procession/pillage/death_cart/rats/counterfeit＋種別変更の marauder/cultist/band_of_misfits）。**CARD_SET昇格前に webp 再生成必須**（このPCで `CARDS_ONLY=<ids> node tools/build-cards.js`）。sw.js VERSION は完成時に v34→v35。
 - **Read ツール出力の汚染を観測（2026-07-05）**：実在しないコード/コメントが Read 結果に混入して見え、「基盤実装済み」と誤認しかけた（git diff / grep の生バイト確認で否定して復旧）。以後この作業では、実装状態を断定する前に **Grep・`Get-Content`・`git show` での裏取り**を併用すること。
+- **【E6で新設・以後の必読】「財宝を2回使う」は必ず `state.replay` の `'treasure_replay'` を使う**（§0-15）。`playTreasureCard` ＝移動＋`applyTreasureEffect`／`applyTreasureEffect` ＝**カードを動かさず効果だけ**。2回目を「コインだけ足す」で済ませると、pending を立てる財宝（御守り/水晶玉/金床/不正利得/豊穣の角）や +購入/+VP を持つ財宝（元手/大金/鹵獲品/収集/偽造通貨）の2回目が丸ごと消える＝**旧 `treasureReplayCoins` の轍**。**新しい財宝を足すときは `applyTreasureEffect` に書けば冠/ティアラ/偽造通貨の2回目が自動で正しくなる**。自己移動する財宝（投資/戦利品/法貨/私掠船の廃棄）は `removeOne` ガードで2回目に自然不発（lose track）＝**新規財宝で自己移動させるなら必ず `if (removeOne(...))` で包む**。
+- **【E6で新設】命令（Command）の再演は選び直さない**（公式）：`state.turn.commandAs[命令id]` に1回目の選択を記憶し、`runReplays` が立てる `state._replaying` を見て `replayCommandAs` が再利用する。**`_replaying` はゴーレムの2枚目では立てない**（別カードの新しいプレイ＝選び直せる）。新しい命令カードを足すときは `case` の先頭に `if (replayCommandAs(state, pi, '<id>')) break;` を、選択の reducer に `rememberCommandAs` を入れる。**船長（captain）は持続で「次のターンの開始時」が別のプレイ＝毎ターン選び直す**ので commandAs を使わない（意図的）。
+- **【E6の意図的な簡略化】大君主/はみだし者/船長は「そのカードのコスト・名前・種別を得る」clause を実装していない**（サプライに残したまま効果だけ使う）。玉座×大君主のネストで、玉座の2回目が「先に」走り対象不在で空振りすることがある（`state.replay` が単一FIFOのため＝玉座×玉座の既存挙動と同型）。**保存則・非ループ・クラッシュ無しを敵対レビューとfuzzで確認済み**＝再修正しなくてよい。
