@@ -1,6 +1,6 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-11 / branch `main`（最新は `git log` で確認）。**帝国（Empires）縦型36枚＋E8命令は push済（§0-16/0-17）。いまは §0-19＝横型ランドスケープ 第1弾＝帝国ランドマーク21種の engine 実装が完了（WIP・未push・`sw.js` v45）＝empires-landmarks セットで実プレイ可能**（得点11種＋トリガー8種＋新pending2種[闘技場/峠]＋CARD_SET昇格＋敵対レビュー6件修正）。**残り＝絵(webp)の回収のみ**（engineは完成）。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
+最終更新: 2026-07-11 / branch `main`（最新は `git log` で確認）。**帝国（Empires）縦型36枚＋E8命令は push済（§0-16/0-17）。いまは §0-19＝横型ランドスケープ 第1弾＝帝国ランドマーク21種の engine 実装＋絵(webp)21種の回収＋盤面/一覧の絵表示まで完了（WIP・未push・`sw.js` v46）＝empires-landmarks セットで実プレイ可能**（得点11種＋トリガー8種＋新pending2種[闘技場/峠]＋CARD_SET昇格＋敵対レビュー6件修正）。**残り＝push（ユーザー確認）のみ**。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
 **新セッションは まず `npm test` を実行し 34スイート・オールグリーン（exit 0・整合性3147件・不変条件5・帝国269件＋UI54件・ランドマーク80件・冒険59件＋UI40件・暗黒時代87件＋UI57件・新プロモ165件＋UI22件・繁栄69件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク＝9/9・webp346/0）／`npm run verify:visual`（320〜768pxはみ出し検査）。
@@ -30,7 +30,13 @@
 - `invariants` の出荷セット検証に **empires-landmarks（landmarks付き）** を追加＋新節「ランドマーク（全21種ペア＋全プール混成にランドマーク付与）」＝**landmarkVP/pileVP/landmarkStash は非カード＝保存則の tally に混ざらない**ことと、arena/mountain_pass の新pendingが CPU で終端することを確認（不変条件 4→**5件**）。
 - **npm test 全34スイート緑（exit 0・整合性3147・CPU序列 100/64/95 維持）**／`verify:e2e` 9/9（webp 346/0・例外なし）。
 
-### 【次にやること】絵(webp)の回収 → push（ユーザー確認）
+### ✅ 絵(webp)回収＋絵表示 完了（2026-07-11・追記）→ 次は push（ユーザー確認）
+- **絵の回収**：ユーザーが `images/` に21枚投入 → 3グループ×7をタイムスタンプで分割し、多エージェント視覚判別（各グループ別エージェント・全21候補から bijection）で**全21種を1対1確定（全 high confidence・`DOM.LANDMARKS_EMPIRES` と完全一致）** → `asset/art/<id>.png` 回収 → `node tools/build-landscape.js`（`CARDS_ONLY` で21種）で webp 生成。枠＋絵＋テキスト正常（峠/水道橋/狼の巣を目視確認）。
+- **絵の表示**：`js/ui.js` に横型専用の `landmarkMini`／拡大 `viewLandmarkZoom`／`openLandmarkZoom` を新設（横型は `DOM.CARDS` に無く `cardEl`/`viewSheet` が使えないので別経路）。**盤面ランドマーク帯にアートのサムネ＋タップ拡大オーバーレイ**（`.landmark-thumb`）、**カード一覧に「ランドマーク（帝国・横型）」群**（全21枚）。render にオーバーレイ hook＋scroll-lock。`sw.js` v45→**v46**。
+- **検証**：`test/empires-ui.test.js` を54→**60件**（サムネ／拡大／一覧の3経路）。**全34スイート緑（exit 0）**・`verify:e2e` 9/9（webp 346/0）・`verify:visual` 全幅はみ出し0・実ブラウザで拡大の `aqueduct.webp` が naturalWidth=1152 でロード確認・webp404ゼロ。一覧サムネは `loading=lazy`（遅延読込＝正常）。
+- **push**：**ユーザー確認の上で** `git push`（empires-landmarks が本番 Pages/Render に出る。サーバは `DOM.CARD_SETS`/`landmarksForSet` から自動受理）。ローカル commit は済（engine＝`c9f4863`／webp＋絵表示＝本追記のコミット）。
+
+### （旧）【次にやること】絵(webp)の回収 → push（ユーザー確認）
 1. **絵**：ユーザーがチャッピーでランドマーク21枚生成中（前セッションで3バッチの指示文を出した）。`C:\Users\b1242\Downloads` に来たら判別して `asset/art/<id>.png` に回収 → **`node tools/build-landscape.js`（縦型 build-cards.js とは別スクリプト）** で webp 生成 → 一覧/盤面の画像表示は今は名前＋説明文なので webp が無くても動くが、あれば `carddata`/`cards.html`/`ui.js` の別経路（`DOM.LANDSCAPES` 参照）で出す。`sw.js` は既に v45。※現時点で Downloads にあるのは 7/5 の旧・帝国縦カードバッチのみ＝ランドマークの絵は未着。
 2. **push**：webp 回収後（or engine だけでも）**ユーザー確認の上で** `git push`。empires-landmarks が本番 Pages/Render に出る（サーバは `DOM.CARD_SETS`/`landmarksForSet` から自動で受理）。
 

@@ -642,6 +642,33 @@
     return cardEl(id, { size: 'sm', onClick: () => showSheet(id, null) });
   }
 
+  // 横型ランドマークは DOM.CARDS に無い（DOM.LANDSCAPES が正本・cardEl/viewSheet は使えない）ので専用のミニ表示＋拡大を持つ。
+  function landmarkMini(id) {
+    const ls = (DOM.LANDSCAPES || {})[id] || { name: id };
+    return h('div', { class: 'landmark-mini', role: 'button', tabindex: '0',
+        style: 'cursor:pointer;text-align:center',
+        onclick: () => openLandmarkZoom(id),
+        onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLandmarkZoom(id); } } },
+      h('img', { src: 'asset/cards/' + id + '.webp', alt: ls.name, loading: 'lazy',
+        style: 'width:100%;border-radius:6px;display:block',
+        onerror: function () { this.style.display = 'none'; } }),
+      h('div', { style: 'font-size:12px;margin-top:3px' }, ls.name));
+  }
+  function openLandmarkZoom(id) { UI.lmZoom = id; render(); }
+  function viewLandmarkZoom() {
+    const id = UI.lmZoom;
+    const ls = (DOM.LANDSCAPES || {})[id] || { name: id, text: '' };
+    return h('div', { class: 'scrim', onclick: (e) => { if (e.target.classList.contains('scrim')) { UI.lmZoom = null; render(); } } },
+      h('div', { class: 'sheet', style: 'max-width:600px' },
+        h('button', { class: 'sheet-close', 'aria-label': '閉じる', onclick: () => { UI.lmZoom = null; render(); } }, '✕'),
+        h('img', { src: 'asset/cards/' + id + '.webp', alt: ls.name,
+          style: 'width:100%;border-radius:12px;display:block;margin:0 auto',
+          onerror: function () { this.style.display = 'none'; } }),
+        h('h3', { style: 'margin:12px 0 2px;color:var(--gold-bright)' }, '🏛 ' + ls.name),
+        h('div', { class: 'muted', style: 'font-size:12px;margin-bottom:8px' }, 'ランドマーク / Landmark'),
+        h('div', { style: 'white-space:pre-line;font-size:14px;line-height:1.55' }, ls.text || '')));
+  }
+
   function viewCardList() {
     const back = UI._listReturn || 'home';
     const group = (title, ids) => h('div', { class: 'list-group' },
@@ -673,6 +700,10 @@
       (DOM.POOLS && DOM.POOLS.travellers) ? group('トラベラー成長先（冒険・非サプライ）', byCost(DOM.POOLS.travellers)) : null,
       (DOM.POOLS && DOM.POOLS.empires) ? group('王国カード（帝国）', byCost(DOM.POOLS.empires)) : null,
       (DOM.POOLS && DOM.POOLS.castles) ? group('城（帝国・混合山）', DOM.POOLS.castles.slice()) : null,
+      (DOM.LANDMARKS_EMPIRES && DOM.LANDMARKS_EMPIRES.length) ? h('div', { class: 'list-group' },
+        h('div', { class: 'section-h' }, 'ランドマーク（帝国・横型）'),
+        h('div', { class: 'landmark-list-grid', style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px' },
+          DOM.LANDMARKS_EMPIRES.map((id) => landmarkMini(id)))) : null,
       (DOM.POOLS && DOM.POOLS.promo) ? group('プロモカード', byCost(DOM.POOLS.promo)) : null,
       (DOM.POOLS && DOM.POOLS.basic1e) ? group('初版のみ（第二版で廃止）', byCost(
         DOM.POOLS.basic1e.filter((id) => DOM.POOLS.basic.indexOf(id) < 0)
@@ -923,7 +954,13 @@
             if (rv != null) bits.push('残VP ' + rv);
             if (sv) bits.push('溜VP ' + sv);
             if (id === 'obelisk' && state.obeliskPile) bits.push('対象: ' + (DOM.CARDS[state.obeliskPile] ? DOM.CARDS[state.obeliskPile].name : state.obeliskPile));
-            return h('div', { class: 'mat-row', title: (ls.text || '') },
+            return h('div', { class: 'mat-row landmark-row', title: (ls.text || ''),
+                role: 'button', tabindex: '0', style: 'cursor:pointer',
+                onclick: () => openLandmarkZoom(id),
+                onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLandmarkZoom(id); } } },
+              h('img', { class: 'landmark-thumb', src: 'asset/cards/' + id + '.webp', alt: ls.name, loading: 'lazy',
+                style: 'height:40px;width:60px;object-fit:cover;border-radius:4px;flex:0 0 auto',
+                onerror: function () { this.style.display = 'none'; } }),
               h('span', { class: 'mat-label' }, '🏛 ' + ls.name + (bits.length ? '（' + bits.join(' / ') + '）' : '')),
               h('span', { class: 'muted', style: 'font-size:12px;margin-left:8px' }, (ls.text || '').replace(/\n/g, ' ')));
           })))
@@ -2768,6 +2805,7 @@
     syncSheet(); // カード説明は専用ホスト常駐（再描画でスクロール位置・画像を保つ）
     if (UI.logModal) app.appendChild(viewLogModal());
     if (UI.pickZoom) app.appendChild(viewPickZoom()); // 廃棄/獲得カードの拡大確認（最前面）
+    if (UI.lmZoom) app.appendChild(viewLandmarkZoom()); // 横型ランドマークの拡大
     if (UI.confirm) app.appendChild(viewConfirm());
     // 対戦中/ロビーで切断〜再接続中はオーバーレイで操作を一旦無効化
     if (UI.reconnecting && (UI.view === 'game' || UI.view === 'lobby')) app.appendChild(viewReconnectOverlay());
@@ -2775,7 +2813,7 @@
     const histEl = app.querySelector('.log-history');
     if (histEl) histEl.scrollTop = histEl.scrollHeight;
     // モーダル表示中は背面（盤面）のスクロールをロックする
-    const modalOpen = !!(UI.sheet || UI.revealView != null || UI.logModal || UI.pickZoom || UI.confirm);
+    const modalOpen = !!(UI.sheet || UI.revealView != null || UI.logModal || UI.pickZoom || UI.confirm || UI.lmZoom);
     document.documentElement.classList.toggle('modal-open', modalOpen);
     // モーダルを開いた瞬間の位置を記録し、閉じたら（同じ画面なら）その位置へ戻す＝先頭に飛ばない。
     if (modalOpen && !wasModalOpen) UI._pageScrollY = prevScroll;

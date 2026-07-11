@@ -198,6 +198,18 @@ try {
     // オベリスク対象の表示
     const s2 = mk({ landmarks: ['obelisk'] }); s2.turn.phase = 'buy'; showAs(s2, 0);
     ok(!runtimeError, 'オベリスクの盤面表示がエラー無く描画できる');
+    // ランドマークのアート表示（盤面サムネ・タップ拡大・カード一覧）
+    const s3 = mk({ landmarks: ['museum', 'arena'] }); s3.turn.phase = 'buy'; showAs(s3, 0);
+    ok($('.landmark-thumb') != null, '盤面ランドマーク帯にアートのサムネ画像が出る');
+    ok($('.landmark-thumb').getAttribute('src').indexOf('.webp') >= 0, 'サムネの src が webp を指す');
+    UI.lmZoom = 'museum'; runtimeError = null; DOM.render();
+    ok($('.scrim') != null && !runtimeError, 'ランドマークのタップ拡大オーバーレイが描画できる');
+    ok(doc.body.textContent.includes(DOM.LANDSCAPES.museum.name), '拡大に博物館の名前が出る');
+    UI.lmZoom = null;
+    runtimeError = null; UI.view = 'cardList'; DOM.render();
+    ok(!runtimeError && doc.body.textContent.includes('ランドマーク（帝国・横型）'), 'カード一覧にランドマーク群が出る');
+    ok($all('.landmark-mini img').length === DOM.LANDMARKS_EMPIRES.length, 'カード一覧に全ランドマークのアートが並ぶ');
+    UI.view = 'setup';
     // セット選択に empires-landmarks
     ok(DOM.CARD_SETS.some((x) => x.id === 'empires-landmarks'), 'CARD_SETS に empires-landmarks がある');
     runtimeError = null; UI.view = 'setup'; UI.setup.kingdomSet = 'empires-landmarks'; DOM.render();
