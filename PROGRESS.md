@@ -1,15 +1,15 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-11 / branch `main`（最新は `git log` で確認）。**帝国（Empires）縦型36枚＋E8命令は push済（§0-16/0-17）。いまは §0-19＝横型ランドスケープ 第1弾＝帝国ランドマーク21種の engine 実装＋絵(webp)21種＋盤面/一覧の絵表示まで完了し **push済（`13a4401`・2026-07-11・`sw.js` v46・本番 Pages に v46＋ランドマーク webp 200 反映確認済み／Render は push で自動再デプロイ）**＝empires-landmarks セットが本番で実プレイ可能**（得点11種＋トリガー8種＋新pending2種[闘技場/峠]＋CARD_SET昇格＋敵対レビュー6件修正）。**いま §0-20＝横型ランドスケープ第2弾＝帝国イベント13種に着手＝EV0（共通基盤 `BUY_EVENT`）＋EV1（簡単10種）完了・未push（`8caabc0`・全35スイート緑）。次は EV2（tax/donate/annex）→ EV3（CARD_SET `empires-events` 昇格＋CPU購入AI＋ソーク＋敵対レビュー→push）**。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
+最終更新: 2026-07-11 / branch `main`（最新は `git log` で確認）。**帝国（Empires）縦型36枚＋E8命令は push済（§0-16/0-17）。§0-19＝横型ランドスケープ第1弾＝帝国ランドマーク21種は push済（`13a4401`・`sw.js` v46・本番反映確認済）。**いま §0-20＝横型ランドスケープ第2弾＝帝国イベント13種を EV0〜EV3 まで **全完了・未push**（`39d3129`・`sw.js` v47・全35スイート緑）＝`empires-events` セット（帝国固定10＋イベント2抽選）が実プレイ可能。EV0基盤`BUY_EVENT`＋EV1簡単10種＋EV2重量3種(tax/donate/annex)＋EV3(CARD_SET昇格・CPU購入AI`bestEventBuy`・イベントwebp13種・敵対レビュー4観点で確定バグ3件修正)。**次にやること＝ユーザー確認の上で push**（`origin/main..main` に EV0〜EV3 の4コミット `8caabc0`/`1bd81ed`/`52f7e7f`/`39d3129`）。push すれば本番 Pages/Render に `empires-events` が出る（サーバは `DOM.CARD_SETS`/`eventsForSet` から自動受理）。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
-**新セッションは まず `npm test` を実行し 35スイート・オールグリーン（exit 0・整合性3147件・不変条件5・帝国269件＋UI68件・ランドマーク80件・帝国イベント34件（events）・冒険59件＋UI40件・暗黒時代87件＋UI57件・新プロモ165件＋UI22件・繁栄69件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
+**新セッションは まず `npm test` を実行し 35スイート・オールグリーン（exit 0・整合性3148件・不変条件6・帝国269件＋UI75件・ランドマーク80件・帝国イベント69件（events）・冒険59件＋UI40件・暗黒時代87件＋UI57件・新プロモ165件＋UI22件・繁栄69件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク＝9/9・webp346/0）／`npm run verify:visual`（320〜768pxはみ出し検査）。
 
 ---
 
-## 0-20. 横型ランドスケープ 第2弾＝**帝国イベント13種**（着手・2026-07-11）
+## 0-20. 横型ランドスケープ 第2弾＝**帝国イベント13種**（EV0〜EV3 全完了・未push・2026-07-11）
 
-ランドマーク（§0-19・push済）に続き、**帝国イベント13種**（ユーザー決定＝負債/VPトークン既実装で相性最高・帝国拡張の仕上げ）に着手。正本＝`docs/research/landscape_cards.md` §2/§3/§4＋`landscape_gaps.md`。ランドマークと違い**イベントは「買う」**＝新機構 `BUY_EVENT`（購入ディスパッチャ）＋CPUのイベント購入評価＋UIの購入ボタンが要る＝一段重い。
+ランドマーク（§0-19・push済）に続き、**帝国イベント13種**（ユーザー決定＝負債/VPトークン既実装で相性最高・帝国拡張の仕上げ）を **EV0〜EV3 まで全実装完了**。正本＝`docs/research/landscape_cards.md` §2/§3/§4＋`landscape_gaps.md`。ランドマークと違い**イベントは「買う」**＝新機構 `BUY_EVENT`（購入ディスパッチャ）＋CPUのイベント購入評価 `bestEventBuy`＋UIの購入ボタン。**残タスクは push（ユーザー確認）のみ**（`39d3129`・`sw.js` v47・全35スイート緑）。
 
 ### 確定した方針（研究＋PROGRESS §0-18 で裁定済み）
 - **13種**＝advance/annex/banquet/conquest/delve/dominate/donate/ritual/salt_the_earth/tax/triumph/wedding＋**windfall**（研究データに欠落＝$5・山札と捨て札が両方空なら金貨3枚／手札・場は判定外）。
@@ -25,10 +25,32 @@
 - **検証**：`test/events.test.js` 新設**34件**（BUY_EVENT基盤・各イベント裁定・新pending・CPU終端）を package.json 登録（**35スイート目**）。`test/empires-ui.test.js` 60→**68件**（イベント帯＋pendingモーダル）。**全35スイート緑（exit 0）**。
 - **注意**：イベントは「カード」でないのでコスト軽減（橋/街道）を受けず、購入時トリガー（商人ギルド/値切り屋/過払い）も発動しない。salt はサプライから直接廃棄（Tomb 発火のため `trashCard(state,pi,card)` を通す・保存則OK）。conquest/triumph の「今ターン獲得数」は `t.gainedThisTurn`（手番プレイヤーの獲得id列）で足りる。
 
-### 次にやること（この順）
-1. **EV2＝重量イベント（tax/donate/annex）**：tax＝新 `state.pileDebt`（全山準備+1・購入フェイズの獲得で山の負債を受取・自身は山選択で+2）／donate＝次ターン開始時にデッキ全掃討→任意廃棄→5枚引く（`DURATION_RESOLVERS`/`startQueue`・繊細タイミング）／annex＝捨て札5枚残し他を山札へ reshuffle＋公領（負債8）。
-2. **EV3＝CARD_SET昇格**（`empires-events`＝帝国固定10＋`eventsFrom:'empires'` で2抽選）＋UI picker＋**CPUのイベント購入評価（bestEventBuy）**＋CPUソーク＋敵対レビュー→ webp（任意・build-landscape.js は event スキン対応済み）→ push（ユーザー確認）。
-   - ※現状 CPU は**イベントを買わない**（pendingの解決だけ実装）＝EV3 で購入AIを足すまでソークでイベントは発火しない。
+### ✅ EV2＝重量イベント3種（完了・`52f7e7f`）
+- **tax**：新 `state.pileDebt`（山上の負債トークン・公開・非カード＝保存則対象外・`maskStateFor` で残る）。準備で各サプライ山に負債1（**分割山は1山＝上段キーにのみ1**・混合山 castles/knights は numeric キーに1・非サプライ除外）。**自分の購入フェイズにサプライから獲得したとき、その山の負債を全部受け取る**（`triggerOnGain` で `gainWasBuyPhase`＆手番プレイヤー・**購入フェイズの非購入獲得＝delve/conquest の銀貨等でも取る**・アクションフェイズ/他人ターンは取らない）。Tax購入で山1つに+2（`tax_pile` pending）。UI に山負債バッジ `.pile-debt`（🟠）。**山キーの正規化 `pileKeyOf`**（分割山下段→上段・混合山→numericキー）を READ(triggerOnGain)/WRITE(TAX_PILE) の両方で通す。
+- **donate**（負債8）：次の自分のターン開始時に「**最初に**」（持続効果より前）＝`resolveDurationStartEffects` 冒頭で `p.donateNext` を見て デッキ＋捨て札を全部手札に集約→`donate_trash` pending（任意枚数廃棄）→残りをシャッフルして5枚引く→**その後 `resolveDurationStartEffects` を再入**して通常の開始時効果を続行。
+- **annex**（負債8）：`annex_keep` pending＝捨て札から最大5枚を残し、残りを山札に混ぜてシャッフル→公領獲得（捨て札/公領が空でも実行）。
+- 新pending3種は4点セット完備。現行エラッタを研究エージェントで裏取り。`test/events.test.js` 34→69件。
+
+### ✅ EV3＝CARD_SET昇格（完了・`39d3129`・`sw.js` v47）
+- **CARD_SET `empires-events`**（帝国固定10＋`eventsFrom:'empires'` で2抽選・`kind:'standard'`）。ui(startLocal/restartLocal)・server(startGame)・NEW_GAME で events を landmarks と同型にサーバ権威で1度だけ確定・全席共有・再戦引き継ぎ。UI picker の「拡張」タイルに出る。
+- **CPU `bestEventBuy`**：カード買いと比較してイベントを買う。**返すのは affordable かつ 負債0 のみ**＝BUY_EVENT が拒否しない＝無限ループ防止。負債イベントは購入後 debt>0 の返済分岐で1ターン1回に有界。dominate/conquest/wedding/annex/triumph/salt/donate/delve を評価（ritual/banquet/windfall/tax は買わない）。
+- **敵対レビュー（多エージェント4観点＝ルール忠実性/保存則/CPU非ループ/UI・オンライン。各finding を node 再現）＝確定バグ3件→全修正・回帰テスト付き**：
+  1. **[med] salt_the_earth × 城の混合山**＝プレースホルダ 'castles' を trash に積み `state.castles` を減らさず保存則違反（invariants soak が捕捉）→ 一番上の実カードを廃棄（`state.castles.shift()`＋`supply.castles` 同期）。
+  2. **[low-fidelity] 分割山 × tax**＝上下段の両 supply キーに負債1ずつ乗る（公式は1山=1個）→ seeding で下段（`SPLIT_TOP[id]`）をスキップ＋`pileKeyOf` で下段→上段写像。
+  3. **[low] TAX_PILE reducer が下段選択を正規化せず負債が孤児化**（2観点が独立検出）→ `pileKeyOf` で正規化＋UI/CPU 候補から分割山下段を除外。
+- **CPUソーク**＝empires-events 40戦全完走・108回イベント購入（別レビューでは462戦 livelock 0・全8種発火）。invariants に empires-events soak（全13種ペア＋全部乗せ＋混成fuzz）で不変条件 5→6件。
+- **イベント webp 13種を生成**（枠＋文字・絵は未回収＝暗い板／`build-landscape.js` の event スキン）。カード一覧に「イベント（帝国・横型）」群を追加。`test/empires-ui.test.js` 68→75件。**全35スイート緑（exit 0・整合性3148・不変条件6・events 69・帝国UI 75）**・`verify:e2e` 9/9（webp 346/0）。
+
+### 【次にやること】push（ユーザー確認）→ その後の拡張
+- **push**：`origin/main..main` に EV0〜EV3 の4コミット（`8caabc0`/`1bd81ed`/`52f7e7f`/`39d3129`）。ユーザー確認の上で `git push`。本番 Pages に `empires-events`（`sw.js` v47）＋イベント webp が出る。Render は push で自動再デプロイ（サーバは `DOM.CARD_SETS`/`eventsForSet` から empires-events を自動受理）。
+- **その後の拡張候補**（着手前に `docs/adding-cards.md` 必読）：冒険のイベント20種（横型枠は §0-18 対応済・トークン中心・負債なし）／発売順の未着手拡張（夜想曲/ルネサンス/移動動物園/同盟/略奪/日の出づる国＝段階1すら未着手）。
+
+### 注意（次セッションが知らないと事故る・イベント固有）
+- **イベントは「カード」でない**＝コスト軽減（橋/街道）を受けず、購入時トリガー（商人ギルド/値切り屋/過払い）も発動しない。**負債>0 の間はカードもイベントも購入不可**。返済は購入権を消費しない。横型は `DOM.LANDSCAPES` が正本（`DOM.CARDS` に無い＝整合性テストに混ざらない）。
+- **徴税の山キーは `pileKeyOf` で正規化**（分割山下段→上段・混合山→numericキー）。**READ(triggerOnGain の tax ブロック)/WRITE(TAX_PILE reducer) の両方で通すこと**（片方だけだと負債が孤児化＝敵対レビューで踏んだ）。準備 seeding は分割山下段をスキップ（`!SPLIT_TOP[id]`）。
+- **`state.pileDebt`／`p.donateNext` は非カード＝保存則 tally に混ぜない**（`state.pileVP` と同型）。`triggerOnGain` の tax は `if (state.pileDebt && …)`、donate は `if (p.donateNext)`、`pileDebtBadge` は `(state.pileDebt && …)` で旧スナップショット（pre-EV2）でも壊れないようガード済み。
+- **donate は「次ターン開始時に最初に」**＝`resolveDurationStartEffects` 冒頭で処理し、`DONATE_TRASH` 末尾で同関数を再入して残りの開始時効果を続行する（持続ドローより donate が先＝公式）。
+- **salt はサプライから直接廃棄**するが `trashCard(state,pi,card)` を通す（Tomb 発火・保存則OK）。**城の混合山を salt する場合は一番上の実カードを廃棄**（プレースホルダ 'castles' を積まない）。
 
 ---
 
