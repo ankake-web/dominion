@@ -235,6 +235,18 @@ try {
     ok(modalOk(), '昇進：獲得モーダル');
     showPend({ type: 'ritual', player: 0 }, (x) => { x.events = ['ritual']; x.players[0].hand = ['gold']; });
     ok(modalOk(), '儀式：廃棄モーダル');
+    // EV2＝tax / donate / annex
+    {
+      const s2 = mk({ events: ['tax'] }); s2.turn.phase = 'buy';
+      showAs(s2, 0);
+      ok($('.pile-debt') != null, '徴税：サプライ山に負債トークンのバッジ（🟠）が出る');
+    }
+    showPend({ type: 'tax_pile', player: 0 }, (x) => { x.events = ['tax']; });
+    ok(modalOk(), '徴税：山選択モーダル');
+    showPend({ type: 'donate_trash', player: 0 }, (x) => { x.events = ['donate']; x.players[0].hand = ['copper', 'estate', 'silver', 'gold', 'curse']; });
+    ok(modalOk(), '寄付：廃棄モーダル');
+    showPend({ type: 'annex_keep', player: 0 }, (x) => { x.events = ['annex']; x.players[0].discard = ['copper', 'estate', 'silver', 'gold', 'curse', 'village']; });
+    ok(modalOk() && doc.body.textContent.includes('併合'), '併合：捨て札から残す選択モーダル');
   }
 } catch (e) {
   fail++;

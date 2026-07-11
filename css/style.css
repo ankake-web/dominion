@@ -660,6 +660,21 @@ html.modal-open, html.modal-open body { overflow: hidden; }
   border-radius: 8px;
   border: 1px solid rgba(255, 210, 110, 0.8);
 }
+/* 帝国：徴税（Tax）＝サプライ山上の負債トークン（全員共有・公開）。山の右下にオレンジで表示。 */
+.pile-debt {
+  position: absolute;
+  bottom: 3px;
+  right: 3px;
+  z-index: 2;
+  background: rgba(150, 80, 20, 0.92);
+  color: #ffd9a8;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 170, 90, 0.85);
+}
 /* 残りが少なくなったら残数の色で警告（残5以下=琥珀、残2以下=赤） */
 .pile-count.mid { color: #ffd36b; border-color: rgba(255, 200, 90, 0.7); }
 .pile-count.lo {

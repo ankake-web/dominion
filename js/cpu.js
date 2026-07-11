@@ -869,6 +869,30 @@
         || h.slice().sort((a, b) => (C()[a].cost || 0) - (C()[b].cost || 0))[0];
       return { type: 'RITUAL_TRASH', card: pick };
     }
+    if (pd.type === 'tax_pile') {
+      // サプライの山1つに負債2を置く（強制）。相手が買いそうな高コスト札（属州＞最高コスト）を狙う。
+      const cand = Object.keys(state.supply).filter((id) => C()[id] && !NON_SUPPLY_SET.has(id) && sup(state, id) > 0);
+      cand.sort((a, b) => (C()[b].cost || 0) - (C()[a].cost || 0));
+      const pick = (cand.indexOf('province') >= 0 ? 'province' : cand[0]) || null;
+      return { type: 'TAX_PILE', pile: pick };
+    }
+    if (pd.type === 'donate_trash') {
+      // 集めた手札から不要札を廃棄（呪い・屋敷は全部／余剰銅貨は経済を少し残して廃棄）。
+      const hand = p.hand;
+      const otherTreasure = hand.filter((c) => isTreasure(c) && c !== 'copper').length;
+      const keepCopper = otherTreasure >= 3 ? 0 : Math.max(0, 3 - otherTreasure);
+      const out = []; let kept = 0;
+      hand.forEach((c) => {
+        if (isType(c, 'curse') || c === 'estate') { out.push(c); return; }
+        if (c === 'copper') { if (kept < keepCopper) kept++; else out.push(c); }
+      });
+      return { type: 'DONATE_TRASH', cards: out };
+    }
+    if (pd.type === 'annex_keep') {
+      // 捨て札から不要札（trashValue≤2＝呪い/屋敷/銅貨）を最大5枚だけ捨て札に残し、良い札は山札に混ぜる。
+      const keep = p.discard.filter((c) => trashValue(c) <= 2).slice(0, 5);
+      return { type: 'ANNEX_KEEP', cards: keep };
+    }
     // 収穫祭：アタックの反応ステップで馬商人を持っていたら、まず脇に置く（次手番に+1カードで戻る＝常に得）。
     // 脇に置くと手札から消えるので、次回の呼び出しでは通常の判断（堀公開/受ける）に進む＝無限ループしない。
     // stage 'react' の各アタックに加え、embedded型（民兵/拷問人＝pending が反応窓を兼ねる）でも脇に置ける。

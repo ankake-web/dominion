@@ -50,6 +50,13 @@
      - state.obeliskPile：オベリスクで選ばれたアクション山id（得点計算で参照）。 */
   function hasLandmark(state, id) { return !!(state.landmarks && state.landmarks.indexOf(id) >= 0); }
   function hasEvent(state, id) { return !!(state.events && state.events.indexOf(id) >= 0); }
+  // 帝国：徴税＝獲得カードが属する「山キー」（混合山 castles/knights は実カードでなく山キーで負債を持つ）。
+  function pileKeyOf(state, cardId) {
+    if (state.supply && state.supply[cardId] != null) return cardId;
+    if (DOM.POOLS && (DOM.POOLS.castles || []).indexOf(cardId) >= 0) return 'castles';
+    if (DOM.POOLS && (DOM.POOLS.knights || []).indexOf(cardId) >= 0) return 'knights';
+    return cardId;
+  }
   // ランドマーク上のリザーブ landmarkVP[id] から per 個をプレイヤーの vpTokens へ移す（残りが per 未満なら残り全部）。移した個数を返す。
   function takeLandmarkVP(state, pIndex, id, per) {
     per = (per == null) ? 2 : per;
@@ -510,6 +517,14 @@
       });
     }
 
+    // 帝国：徴税（Tax）＝新 state.pileDebt（サプライ山の上に置かれた負債トークン {[pileId]:個数}・公開・非カード＝保存則対象外）。
+    //   採用時は準備で各サプライ山（非サプライ札は除く。混合山は castles/knights の numeric キーに置く）に負債1を置く。
+    //   購入フェイズの獲得でその山の負債を全部その獲得者が受け取る（triggerOnGain）。Tax購入で山1つに+2（tax_pile pending）。
+    const pileDebt = {};
+    if (events.indexOf('tax') >= 0) {
+      Object.keys(supply).forEach((id) => { if (!NON_SUPPLY.has(id)) pileDebt[id] = 1; });
+    }
+
     return {
       version: 0,
       kingdom,
@@ -522,6 +537,7 @@
       trash: [],
       blackMarket, // 闇市場デッキ（無ければ null）
       pileVP, // 帝国：集合（Gathering）＝サプライ山の上に置かれた勝利点トークン数 {[pileId]:個数}（公開・非カード＝保存則に無関係）。水道橋/汚された神殿の準備分もここ。
+      pileDebt, // 帝国：徴税（Tax）＝サプライ山の上に置かれた負債トークン数 {[pileId]:個数}（公開・非カード＝保存則に無関係）。
       landmarks,      // 帝国：使用中のランドマークid列（横型・公開・対局中不変）
       events,         // 帝国：使用中のイベントid列（横型・買う・公開・対局中不変）
       landmarkVP,     // 帝国：ランドマーク上の有限リザーブ {id:個数}（非カード＝保存則に無関係）
@@ -4366,6 +4382,16 @@
   }
   function resolveDurationStartEffects(state, pi) {
     const p = state.players[pi];
+    // 帝国：寄付（Donate）＝この手番開始時に「まず」（他の開始時効果より前に）デッキと捨て札を全部手札に集める。
+    //   → 任意枚数廃棄（donate_trash pending）→ 残りをシャッフルして5枚引く → その後で通常の開始時効果を続行（再入）。
+    if (p.donateNext) {
+      p.donateNext = false;
+      while (p.deck.length) p.hand.push(p.deck.pop());
+      while (p.discard.length) p.hand.push(p.discard.pop());
+      state.pending = { type: 'donate_trash', player: pi };
+      log(state, `${p.name} は寄付：山札と捨て札をすべて手札に集めた（好きな枚数を廃棄できる）。`);
+      return; // 残りの開始時効果は DONATE_TRASH の解決後に resolveDurationStartEffects を再入して処理する
+    }
     const entries = (p.delayedEffects || []);
     p.delayedEffects = [];
     state.turn.startQueue = [];
@@ -4496,6 +4522,16 @@
     }
     // ===== 異郷：獲得時の「自動」効果（対話不要＝pending を立てない。連鎖は _gainDepth ガードで安全）=====
     const gp = state.players[pIndex];
+    // 帝国：徴税（Tax）＝自分の購入フェイズにサプライから獲得したカードの山に負債があれば、その山の負債を全部受け取る。
+    //   （「獲得時点のフェイズ」で見る＝ヴィラの phase 変更に負けない。誰の獲得でも「その人の購入フェイズ」＝手番プレイヤーのみ。）
+    if (state.pileDebt && state.turn && pIndex === state.turn.active && gainWasBuyPhase) {
+      const pk = pileKeyOf(state, cardId);
+      const d = state.pileDebt[pk] || 0;
+      if (d > 0) {
+        gp.debt = (gp.debt || 0) + d; state.pileDebt[pk] = 0;
+        log(state, `${gp.name} は徴税：${(C()[pk] && C()[pk].name) || pk}の山の負債${d}個 を受け取った。`);
+      }
+    }
     // キャッシュ：獲得したとき銅貨2枚を獲得。
     if (cardId === 'cache') { let g = 0; for (let i = 0; i < 2; i++) if (gain(state, pIndex, 'copper', 'discard')) g++; log(state, `${gp.name} はキャッシュで銅貨 ${g}枚 を獲得した。`); }
     // 大使館：獲得したとき、他の各プレイヤーは銀貨1枚を獲得。
@@ -5057,7 +5093,26 @@
         if (gain(state, pi, 'curse', 'discard') && me.hand.length > 0) state.pending = { type: 'ritual', player: pi };
         break;
       }
-      // 重量イベント（EV2・後続バッチ）：tax / donate / annex は未実装
+      // 帝国：徴税＝サプライの山1つに負債トークンを2個置く（強制。準備で全山に1個ずつ・購入フェイズの獲得で受け取る）。
+      case 'tax': {
+        // 対象山があるうちは選択必須。全山が空という事はまず無いが、候補ゼロなら何もしない。
+        if (Object.keys(state.supply).some((sid) => !NON_SUPPLY.has(sid) && (state.supply[sid] || 0) > 0)) {
+          state.pending = { type: 'tax_pile', player: pi };
+        }
+        break;
+      }
+      // 帝国：寄付＝次の自分のターン開始時（他の開始時効果より前）にデッキ＋捨て札を全部手札に集め、任意枚数廃棄→残りをシャッフルして5枚引く。
+      case 'donate': {
+        me.donateNext = true;
+        log(state, `${me.name} は寄付を購入した（次の自分のターン開始時にデッキを掃討する）。`);
+        break;
+      }
+      // 帝国：併合＝捨て札から最大5枚を選んで捨て札に残し、残りを山札に混ぜてシャッフル。その後、公領1枚を獲得。
+      case 'annex': {
+        if (me.discard.length > 0) state.pending = { type: 'annex_keep', player: pi };
+        else gain(state, pi, 'duchy', 'discard'); // 捨て札が空でも公領は獲得する
+        break;
+      }
       default: break;
     }
   }
@@ -5440,6 +5495,51 @@
         if (!trashFromHand(state, pd.player, [c], 1, 'を儀式で廃棄した。')) return state;
         if (cost > 0) { rp.vpTokens = (rp.vpTokens || 0) + cost; log(state, `${rp.name} は儀式で +${cost}勝利点（廃棄カードのコスト）。`); }
         state.pending = null;
+        return state;
+      }
+      // 帝国：徴税＝サプライの山1つを選び、負債トークンを2個置く（強制）。
+      case 'TAX_PILE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'tax_pile') return state;
+        const id = action.pile;
+        if (!id || NON_SUPPLY.has(id) || (state.supply[id] || 0) <= 0) return state;
+        state.pileDebt = state.pileDebt || {};
+        state.pileDebt[id] = (state.pileDebt[id] || 0) + 2;
+        log(state, `${state.players[pd.player].name} は徴税：${(C()[id] && C()[id].name) || id}の山に負債トークンを2個置いた（計${state.pileDebt[id]}個）。`);
+        state.pending = null;
+        return state;
+      }
+      // 帝国：寄付＝集めた手札から好きな枚数を廃棄→残りをシャッフルして山札に戻し、5枚引く。その後 通常の開始時効果を続行。
+      case 'DONATE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'donate_trash') return state;
+        const dp = state.players[pd.player];
+        const toTrash = Array.isArray(action.cards) ? action.cards : [];
+        let tn = 0;
+        for (const c of toTrash) { if (removeOne(dp.hand, c)) { trashCard(state, pd.player, c); tn++; } }
+        while (dp.hand.length) dp.discard.push(dp.hand.pop()); // 残りを捨て札へ
+        reshuffleDeck(dp);                                     // シャッフルして山札に戻す（へそくり配置も一元処理）
+        state.pending = null;
+        draw(state, pd.player, 5);
+        log(state, `${dp.name} は寄付：${tn}枚 を廃棄し、山札をシャッフルして5枚引いた。`);
+        resolveDurationStartEffects(state, pd.player);         // 寄付の後で通常の開始時効果（持続ドロー/王子など）を続行
+        return state;
+      }
+      // 帝国：併合＝捨て札から最大5枚を選んで捨て札に残し、残りを山札に混ぜてシャッフル→公領1枚を獲得。
+      case 'ANNEX_KEEP': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'annex_keep') return state;
+        const ap = state.players[pd.player];
+        const keepReq = (Array.isArray(action.cards) ? action.cards : []).slice(0, 5);
+        const rest = ap.discard.slice();
+        const kept = [];
+        for (const c of keepReq) { const i = rest.indexOf(c); if (i >= 0) { kept.push(c); rest.splice(i, 1); } }
+        ap.discard = kept;                       // keep した分だけ捨て札に残す
+        ap.deck = shuffle(ap.deck.concat(rest)); // 残りを山札に混ぜてシャッフル
+        placeStash(ap);                          // へそくりの位置を一元処理
+        log(state, `${ap.name} は併合：捨て札${kept.length}枚 を残し、${rest.length}枚 を山札に混ぜてシャッフルした。`);
+        state.pending = null;
+        gain(state, pd.player, 'duchy', 'discard'); // その後 公領1枚を獲得
         return state;
       }
 
@@ -9950,6 +10050,7 @@
     'ARENA_RESOLVE', 'MOUNTAIN_PASS_BID',
     // 帝国：横型イベント（買う横型）
     'BUY_EVENT', 'SALT_TRASH', 'BANQUET_GAIN', 'ADVANCE_TRASH', 'ADVANCE_GAIN', 'RITUAL_TRASH',
+    'TAX_PILE', 'DONATE_TRASH', 'ANNEX_KEEP',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',

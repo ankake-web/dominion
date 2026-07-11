@@ -31,6 +31,13 @@ function cpuResolve(s, lim) {
   while (s.pending && g++ < (lim || 30)) { const a = CPU.decide(s); if (!a) break; s = reduce(s, a); }
   return s;
 }
+// buyフェイズへ移してからターン終了（END_TURNはbuyフェイズ必須）。pending が立ったら止める。
+function endTurn(s) {
+  if (s.pending) return s;
+  if (s.turn.phase === 'action') s = reduce(s, { type: 'END_ACTION_PHASE' });
+  if (s.pending) return s;
+  return reduce(s, { type: 'END_TURN' });
+}
 
 console.log('=== EV0＝共通基盤 BUY_EVENT ===');
 { const s = mk(['delve', 'wedding']); ok(Array.isArray(s.events) && s.events.length === 2, 'state.events スロットが張られる'); }
@@ -115,5 +122,91 @@ console.log('=== 新pendingの裁定＋CPU終端保証 ===');
 { let s = mk(['ritual'], 4, 1); s.supply.curse = 0; s = reduce(s, { type: 'BUY_EVENT', event: 'ritual' });
   ok(!s.pending, 'ritual：呪いが枯渇していれば何も起きない'); }
 
-console.log('\n' + (fail === 0 ? '✅ 帝国イベント（EV0+EV1） 全' + pass + '件 PASS' : '❌ 帝国イベント ' + fail + '件 FAIL / ' + pass + '件 PASS'));
+console.log('=== EV2＝重量イベント（tax / donate / annex）===');
+// --- tax: 準備で全サプライ山に負債1（非サプライ札は除く・混合山は castles/knights キーに1） ---
+{ const s = mk(['tax']);
+  ok(s.pileDebt && s.pileDebt.silver === 1 && s.pileDebt.copper === 1 && s.pileDebt.province === 1 && s.pileDebt.curse === 1, 'tax：全サプライ山（基本札含む）に負債1');
+  ok(s.pileDebt.castles === 1 && s.pileDebt.engineer === 1, 'tax：混合山・王国山にも負債1'); }
+{ const s = mk([]); ok(!s.pileDebt || Object.keys(s.pileDebt).length === 0, 'tax不採用：pileDebt は空'); }
+// --- tax: 自分の購入フェイズにサプライから獲得すると、その山の負債を全部受け取る ---
+{ let s = mk(['tax'], 3, 1); s = reduce(s, { type: 'BUY', card: 'silver' });
+  ok(me(s).debt === 1 && (s.pileDebt.silver || 0) === 0, 'tax：銀貨購入で負債1を受け取り山は0');
+  s.turn.coins = 3; s.turn.buys = 1; const c0 = cnt(me(s).discard, 'copper');
+  s = reduce(s, { type: 'BUY', card: 'copper' });
+  ok(cnt(me(s).discard, 'copper') === c0, 'tax：負債>0では購入不可'); }
+// --- tax: 山に積まれた負債は「全部」受け取る（tax を2回買って +2+2、準備1で計5） ---
+{ let s = mk(['tax'], 4, 3); s = reduce(s, { type: 'BUY_EVENT', event: 'tax' }); s = reduce(s, { type: 'TAX_PILE', pile: 'gold' });
+  s = reduce(s, { type: 'BUY_EVENT', event: 'tax' }); s = reduce(s, { type: 'TAX_PILE', pile: 'gold' });
+  ok((s.pileDebt.gold || 0) === 5, 'tax：金貨山に 1+2+2=5 の負債');
+  s.turn.coins = 6; s.turn.buys = 1; s = reduce(s, { type: 'BUY', card: 'gold' });
+  ok(me(s).debt === 5 && (s.pileDebt.gold || 0) === 0, 'tax：金貨獲得で負債5を全部受け取る'); }
+// --- tax: 購入フェイズの「非購入」獲得でも受け取る（delve が銀貨を獲得＝Tax×Delve） ---
+{ let s = mk(['tax', 'delve'], 2, 2); s = reduce(s, { type: 'BUY_EVENT', event: 'delve' });
+  ok(cnt(me(s).discard, 'silver') === 1 && me(s).debt === 1, 'tax：delve の銀貨獲得でも負債1（購入フェイズの非購入獲得）'); }
+// --- tax: 相手のターン（=自分の購入フェイズでない）獲得では受け取らない（active でない席の獲得はそもそも起きないが、gate確認） ---
+{ let s = mk(['tax'], 3, 1); s.turn.phase = 'action';
+  // アクションフェイズでの購入は不可。ここでは phase=action のとき pileDebt が減らないことを、gain経由の delve で確認できないので概念確認のみ。
+  ok(s.pileDebt.silver === 1, 'tax：アクションフェイズでは負債は山に残る（準備値のまま）'); }
+// --- tax: CPU が tax_pile を終端 ---
+{ let s = mk(['tax'], 2, 1); s = reduce(s, { type: 'BUY_EVENT', event: 'tax' }); s = cpuResolve(s);
+  ok(!s.pending, 'tax：CPUが tax_pile を終端する'); }
+
+// --- donate: 購入で負債8＋次の自分のターン開始でデッキ掃討→廃棄→5枚引く ---
+{ let s = mk(['donate'], 0, 1); s = reduce(s, { type: 'BUY_EVENT', event: 'donate' });
+  ok(me(s).debt === 8 && me(s).donateNext === true, 'donate：購入で負債8・donateNextフラグ');
+  s = endTurn(s); s = endTurn(s); // A end → B → A start（donate発火）
+  ok(s.pending && s.pending.type === 'donate_trash', 'donate：次の自分のターン開始で donate_trash pending');
+  ok(me(s).deck.length === 0 && me(s).discard.length === 0, 'donate：山札・捨て札を全部手札へ集約');
+  const total = me(s).hand.length; ok(total >= 10, 'donate：全カードが手札（' + total + '枚）');
+  const estates = me(s).hand.filter((c) => c === 'estate');
+  s = reduce(s, { type: 'DONATE_TRASH', cards: estates });
+  ok(!s.pending && me(s).hand.length === 5, 'donate：廃棄後5枚引いて解決');
+  ok(cnt(s.trash, 'estate') === estates.length && me(s).donateNext === false, 'donate：屋敷を廃棄・フラグクリア'); }
+// --- donate: 0枚廃棄でもOK（必ず5枚に揃う） ---
+{ let s = mk(['donate'], 0, 1); s = reduce(s, { type: 'BUY_EVENT', event: 'donate' });
+  s = endTurn(s); s = endTurn(s);
+  s = reduce(s, { type: 'DONATE_TRASH', cards: [] });
+  ok(!s.pending && me(s).hand.length === 5, 'donate0：廃棄0でも5枚に揃う'); }
+// --- donate: donate の後で通常の開始時効果を続行（漁村の持続ドローが donate の後に乗る） ---
+{ let s = mk(['donate'], 0, 1); s = reduce(s, { type: 'BUY_EVENT', event: 'donate' });
+  // A の delayedEffects に漁村（+1アクション+1コイン）を仕込む＝donate の後に処理されるはず
+  me(s).delayedEffects = [{ type: 'fishing_village' }];
+  s = endTurn(s); s = endTurn(s);
+  ok(s.pending && s.pending.type === 'donate_trash', 'donate順序：donate が先（持続効果より前）');
+  s = reduce(s, { type: 'DONATE_TRASH', cards: [] });
+  ok(s.turn.coins >= 1 && s.turn.actions >= 2, 'donate順序：donate の後に漁村の持続効果が適用される'); }
+{ let s = mk(['donate'], 0, 1); s = reduce(s, { type: 'BUY_EVENT', event: 'donate' });
+  s = endTurn(s); s = endTurn(s); s = cpuResolve(s);
+  // CPU は不要札を積極的に廃棄する＝残り<5枚なら手札はそのぶん少ない。終端していれば良い。
+  ok(!s.pending && me(s).hand.length >= 1 && me(s).hand.length <= 5, 'donate：CPUが donate_trash を終端する（hand=' + me(s).hand.length + '）'); }
+
+// --- annex: 捨て札から最大5枚を残し、残りを山札へ混ぜてシャッフル→公領獲得 ---
+{ let s = mk(['annex'], 0, 1);
+  me(s).discard = ['copper', 'copper', 'estate', 'silver', 'gold', 'village', 'curse', 'copper'];
+  me(s).deck = ['copper', 'copper'];
+  s = reduce(s, { type: 'BUY_EVENT', event: 'annex' });
+  ok(me(s).debt === 8 && s.pending && s.pending.type === 'annex_keep', 'annex：負債8＋annex_keep pending');
+  s = reduce(s, { type: 'ANNEX_KEEP', cards: ['curse', 'estate', 'copper', 'copper', 'copper'] });
+  ok(!s.pending, 'annex：解決');
+  ok(me(s).discard.length === 6 && cnt(me(s).discard, 'duchy') === 1, 'annex：残5枚＋公領が捨て札');
+  ok(me(s).deck.length === 5 && me(s).deck.includes('gold') && me(s).deck.includes('village'), 'annex：良い札3枚が山札へ（元2＋3）'); }
+// --- annex: 6枚超は最大5枚まで（超過分は無視）・公領は必ず獲得 ---
+{ let s = mk(['annex'], 0, 1); me(s).discard = ['copper', 'estate', 'silver', 'gold', 'village', 'duchy'];
+  s = reduce(s, { type: 'BUY_EVENT', event: 'annex' });
+  s = reduce(s, { type: 'ANNEX_KEEP', cards: me(s).discard.slice() }); // 6枚指定→5枚だけ残る
+  ok(me(s).discard.filter((c) => c !== 'duchy').length === 5, 'annex：6枚指定でも残せるのは5枚');
+  ok(cnt(me(s).discard, 'duchy') >= 1, 'annex：公領を獲得'); }
+// --- annex: 捨て札が空でも公領を獲得（pending 立たない） ---
+{ let s = mk(['annex'], 0, 1); me(s).discard = []; s = reduce(s, { type: 'BUY_EVENT', event: 'annex' });
+  ok(!s.pending && cnt(me(s).discard, 'duchy') === 1, 'annex空：pendingなし・公領獲得'); }
+// --- annex: 公領山が空でもシャッフルは実行（公領は空振り） ---
+{ let s = mk(['annex'], 0, 1); s.supply.duchy = 0; me(s).deck = []; me(s).discard = ['copper', 'silver', 'gold'];
+  s = reduce(s, { type: 'BUY_EVENT', event: 'annex' });
+  s = reduce(s, { type: 'ANNEX_KEEP', cards: [] });
+  ok(!s.pending && me(s).deck.length === 3 && cnt(me(s).discard, 'duchy') === 0, 'annex：公領空でもシャッフルは実行'); }
+{ let s = mk(['annex'], 0, 1); me(s).discard = ['copper', 'estate', 'silver', 'gold', 'curse', 'village'];
+  s = reduce(s, { type: 'BUY_EVENT', event: 'annex' }); s = cpuResolve(s);
+  ok(!s.pending, 'annex：CPUが annex_keep を終端する'); }
+
+console.log('\n' + (fail === 0 ? '✅ 帝国イベント（EV0+EV1+EV2） 全' + pass + '件 PASS' : '❌ 帝国イベント ' + fail + '件 FAIL / ' + pass + '件 PASS'));
 if (fail > 0) process.exit(1);

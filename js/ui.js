@@ -244,8 +244,15 @@
       opts.recommended ? h('div', { class: 'rec-badge' }, 'おすすめ') : null,
       pileTokenBadge(state, id),
       pileVpBadge(state, id),
+      pileDebtBadge(state, id),
       h('div', { class: 'pile-count' + (n <= 2 ? ' lo' : n <= 5 ? ' mid' : '') }, '残' + n)
     );
+  }
+  // 帝国：徴税（Tax）＝サプライ山の上に置かれた負債トークン数を表示（公開・全員共有）。購入フェイズの獲得で受け取る。
+  function pileDebtBadge(state, id) {
+    const n = (state.pileDebt && state.pileDebt[id]) || 0;
+    if (n <= 0) return null;
+    return h('div', { class: 'pile-debt', title: '山上の負債トークン（購入フェイズに獲得すると受け取る）' }, '🟠' + n);
   }
   // 帝国：集合（Gathering）＝サプライ山の上に置かれた勝利点トークン数を表示（公開・全員共有）。
   function pileVpBadge(state, id) {
@@ -1529,6 +1536,14 @@
       (id) => dispatch({ type: 'ADVANCE_GAIN', card: id }));
     if (pd.type === 'ritual') return modalSingleHand(p, '儀式 — 廃棄', '手札から1枚を廃棄します（その廃棄カードのコスト$1につき +1勝利点）。',
       () => true, (id) => dispatch({ type: 'RITUAL_TRASH', card: id }), null, '廃棄する');
+    if (pd.type === 'tax_pile') return modalGainSupply(state, '徴税 — 山を選ぶ', 'サプライの山を1つ選び、負債トークンを2個置きます（その山から次に購入フェイズで獲得したプレイヤーが、負債をすべて受け取ります）。',
+      () => true, (id) => dispatch({ type: 'TAX_PILE', pile: id }), null, null, '負債を置く');
+    if (pd.type === 'donate_trash') return modalMultiHand(p, '寄付 — 廃棄（任意）',
+      '山札と捨て札をすべて手札に集めました。好きな枚数を廃棄できます（残りをシャッフルして山札に戻し、5枚引きます）。0枚でもOK。',
+      (n) => '確定（' + n + '枚 廃棄）', true, (cards) => dispatch({ type: 'DONATE_TRASH', cards }), p.hand.length);
+    if (pd.type === 'annex_keep') return modalMultiCards(p.discard, '併合 — 捨て札に残す（最大5枚）',
+      '捨て札から最大5枚を選んで捨て札に残します（選ばなかった残りは山札に混ぜてシャッフルされます）。その後、公領1枚を獲得します。',
+      (n) => '確定（' + n + '枚 残す）', 5, (cards) => dispatch({ type: 'ANNEX_KEEP', cards }));
     if (pd.type === 'church') return modalMultiHand(p, '教会 — 脇に置く',
       '手札から最大3枚を裏向きで脇に置きます（次のあなたのターン開始時に手札へ戻り、その後1枚廃棄できます）。0枚でもOK。',
       (n) => '確定（' + n + '枚 置く）', true, (cards) => dispatch({ type: 'CHURCH_SETASIDE', cards }), 3);
@@ -2118,6 +2133,23 @@
     return modalShell(title, desc, chips,
       h('button', { class: 'btn btn-primary btn-block', disabled: (!allowZero && n === 0) ? 'disabled' : null,
         onclick: () => onConfirm(UI.selection.map((i) => p.hand[i])) }, confirmLabel(n)));
+  }
+  // 任意のカード配列（手札に限らない・併合の捨て札など）から最大 maxN 枚を選ぶ。onConfirm には選んだカードid配列を渡す。
+  function modalMultiCards(cards, title, desc, confirmLabel, maxN, onConfirm) {
+    const chips = cards.map((id, idx) =>
+      cardEl(id, {
+        size: 'sm',
+        extra: UI.selection.includes(idx) ? 'selected' : 'selectable',
+        onClick: () => {
+          const i = UI.selection.indexOf(idx);
+          if (i >= 0) UI.selection.splice(i, 1); else if (maxN == null || UI.selection.length < maxN) UI.selection.push(idx);
+          render();
+        },
+      }));
+    const body = chips.length ? chips : [h('p', { class: 'muted' }, 'カードがありません')];
+    return modalShell(title, desc, body,
+      h('button', { class: 'btn btn-primary btn-block',
+        onclick: () => onConfirm(UI.selection.map((i) => cards[i])) }, confirmLabel(UI.selection.length)));
   }
   function modalMilitia(p, need, hasMoat, hasSecret, hasDiplomat) {
     const chips = p.hand.map((id, idx) =>
