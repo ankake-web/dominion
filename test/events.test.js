@@ -87,6 +87,12 @@ console.log('=== 新pendingの裁定＋CPU終端保証 ===');
   ok(s.supply.estate === e0 - 1 && cnt(s.trash, 'estate') === 1 && !s.pending, 'salt：サプライ屋敷1枚廃棄で解決'); }
 { let s = mk(['salt_the_earth'], 4, 1); s = reduce(s, { type: 'BUY_EVENT', event: 'salt_the_earth' });
   s = cpuResolve(s); ok(!s.pending, 'salt：CPUが終端する'); }
+// salt × 城の混合山（castles）＝一番上の実カードを廃棄（プレースホルダ 'castles' を積む保存則違反の回帰）
+{ let s = mk(['salt_the_earth'], 4, 1); const topCastle = s.castles[0]; const before = s.castles.length;
+  s = reduce(s, { type: 'BUY_EVENT', event: 'salt_the_earth' });
+  s = reduce(s, { type: 'SALT_TRASH', card: 'castles' });
+  ok(s.castles.length === before - 1 && cnt(s.trash, topCastle) === 1 && s.supply.castles === s.castles.length && cnt(s.trash, 'castles') === 0 && !s.pending,
+    'salt×城：一番上の城を廃棄し state.castles と supply.castles を同期（プレースホルダは trash に積まない）'); }
 // banquet
 { let s = mk(['banquet'], 3, 1); s = reduce(s, { type: 'BUY_EVENT', event: 'banquet' });
   ok(cnt(me(s).discard, 'copper') === 2 && s.pending && s.pending.type === 'banquet', 'banquet：銅貨2＋獲得pending');
@@ -134,12 +140,28 @@ console.log('=== EV2＝重量イベント（tax / donate / annex）===');
   s.turn.coins = 3; s.turn.buys = 1; const c0 = cnt(me(s).discard, 'copper');
   s = reduce(s, { type: 'BUY', card: 'copper' });
   ok(cnt(me(s).discard, 'copper') === c0, 'tax：負債>0では購入不可'); }
+// --- tax: tax_pile で分割山の「下段」を指定しても上段キーに正規化して置く（負債の孤児化の回帰・敵対レビュー確定バグ） ---
+{ let s = mk(['tax'], 2, 1); s = reduce(s, { type: 'BUY_EVENT', event: 'tax' });
+  s = reduce(s, { type: 'TAX_PILE', pile: 'bustling_village' }); // 下段を指定
+  ok((s.pileDebt.settlers || 0) === 3 && (s.pileDebt.bustling_village || 0) === 0, 'tax：下段指定でも上段(settlers)キーに +2（準備1+2=3・下段は0）');
+  // 上段を空にして下段を獲得→上段キーの負債3を受け取る（孤児化しない）
+  s.supply.settlers = 0; s.turn.coins = 8; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'bustling_village' });
+  ok(me(s).debt === 3 && (s.pileDebt.settlers || 0) === 0, 'tax：下段獲得で上段キーの負債3を全部受け取る（取りこぼしなし）'); }
 // --- tax: 山に積まれた負債は「全部」受け取る（tax を2回買って +2+2、準備1で計5） ---
 { let s = mk(['tax'], 4, 3); s = reduce(s, { type: 'BUY_EVENT', event: 'tax' }); s = reduce(s, { type: 'TAX_PILE', pile: 'gold' });
   s = reduce(s, { type: 'BUY_EVENT', event: 'tax' }); s = reduce(s, { type: 'TAX_PILE', pile: 'gold' });
   ok((s.pileDebt.gold || 0) === 5, 'tax：金貨山に 1+2+2=5 の負債');
   s.turn.coins = 6; s.turn.buys = 1; s = reduce(s, { type: 'BUY', card: 'gold' });
   ok(me(s).debt === 5 && (s.pileDebt.gold || 0) === 0, 'tax：金貨獲得で負債5を全部受け取る'); }
+// --- tax: 分割山は1山＝上段キーに負債1のみ（下段は0）。下段を獲得すると上段キーの負債を受け取る ---
+{ const s = mk(['tax']);
+  ok(s.pileDebt.settlers === 1 && (s.pileDebt.bustling_village || 0) === 0, 'tax：分割山は上段(settlers)にだけ負債1（下段は0）');
+  ok(s.pileDebt.catapult === 1 && (s.pileDebt.rocks || 0) === 0, 'tax：分割山catapult(上)=1・rocks(下)=0'); }
+{ let s = mk(['tax'], 8, 5); s.supply.settlers = 0; // 上段を空にして下段(騒がしい村)を解放
+  s = reduce(s, { type: 'BUY', card: 'bustling_village' });
+  ok(cnt(me(s).discard, 'bustling_village') === 1 && me(s).debt === 1 && (s.pileDebt.settlers || 0) === 0,
+    'tax：下段(騒がしい村)を獲得すると上段(settlers)キーの負債を受け取る'); }
 // --- tax: 購入フェイズの「非購入」獲得でも受け取る（delve が銀貨を獲得＝Tax×Delve） ---
 { let s = mk(['tax', 'delve'], 2, 2); s = reduce(s, { type: 'BUY_EVENT', event: 'delve' });
   ok(cnt(me(s).discard, 'silver') === 1 && me(s).debt === 1, 'tax：delve の銀貨獲得でも負債1（購入フェイズの非購入獲得）'); }

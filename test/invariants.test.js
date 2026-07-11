@@ -39,8 +39,8 @@ function diffTally(a, b) { const ks = new Set([...Object.keys(a), ...Object.keys
 function hasBack(s) { return s.players.some((p) => ZONES.some((z) => (p[z] || []).some((c) => c === 'back'))) || s.players.some((p) => (p.archives || []).some((a) => (a.cards || []).some((c) => c === 'back'))) || (s.trash || []).some((c) => c === 'back'); }
 
 // 1ゲームを最後まで進め、安定点ごとに全不変条件を検査。違反があれば false と詳細を返す。
-function runGame(kingdom, players, landmarks) {
-  let s = E.createInitialState(players, kingdom, { startActive: 0, landmarks: landmarks || [] });
+function runGame(kingdom, players, landmarks, events) {
+  let s = E.createInitialState(players, kingdom, { startActive: 0, landmarks: landmarks || [], events: events || [] });
   const init = tally(s);
   const n = s.players.length;
   let step = 0;
@@ -58,6 +58,7 @@ function runGame(kingdom, players, landmarks) {
     if (Object.values(s.supply).some((v) => v < 0)) return { okp: false, why: 'supply負 step' + step };
     if (hasBack(s)) return { okp: false, why: 'back混入 step' + step };
     if (s.players.some((p) => (p.vpTokens || 0) < 0)) return { okp: false, why: 'vpTokens負 step' + step };
+    if (s.players.some((p) => (p.debt || 0) < 0)) return { okp: false, why: 'debt負 step' + step }; // 帝国：負債は非負
     // 性能：ログは上限で刈られ状態が肥大しない（毎reduceのclone がO(n^2)化するのを防ぐ不変条件）。
     if ((s.log || []).length > 250) return { okp: false, why: 'log肥大 step' + step + ' len=' + s.log.length };
   }
@@ -119,15 +120,16 @@ console.log('=== カード保存則: 全プール混成ランダム王国 ===');
 // C) 出荷セット（各セットを実際に組んで検証）
 console.log('=== カード保存則: 出荷セット（固定/ランダム各種） ===');
 {
-  const sets = ['basic', 'intrigue', 'seaside', 'alchemy', 'prosperity', 'cornucopia', 'guilds', 'hinterlands', 'darkages', 'adventures', 'empires', 'empires-landmarks', 'promo2-pack', 'random', 'random-promo', 'random-seaside', 'random-alchemy', 'random-prosperity', 'random-cornucopia', 'random-guilds', 'random-hinterlands', 'random-darkages', 'random-adventures', 'random-empires'];
+  const sets = ['basic', 'intrigue', 'seaside', 'alchemy', 'prosperity', 'cornucopia', 'guilds', 'hinterlands', 'darkages', 'adventures', 'empires', 'empires-landmarks', 'empires-events', 'promo2-pack', 'random', 'random-promo', 'random-seaside', 'random-alchemy', 'random-prosperity', 'random-cornucopia', 'random-guilds', 'random-hinterlands', 'random-darkages', 'random-adventures', 'random-empires'];
   let allOk = true;
   for (const setId of sets) {
     for (let sd = 0; sd < 3; sd++) {
       const k = DOM.kingdomForSet ? DOM.kingdomForSet(setId) : null;
       if (!k) continue;
       const lm = DOM.landmarksForSet ? DOM.landmarksForSet(setId) : []; // 帝国：empires-landmarks は横型ランドマーク2枚付き
-      const r = runGame(k, mkPlayers(2 + (sd % 3), sd), lm);
-      if (!r.okp) { allOk = false; console.log('    ' + setId + ' sd' + sd + ' [' + lm.join(',') + ']: ' + r.why); }
+      const ev = DOM.eventsForSet ? DOM.eventsForSet(setId) : [];       // 帝国：empires-events は横型イベント2枚付き
+      const r = runGame(k, mkPlayers(2 + (sd % 3), sd), lm, ev);
+      if (!r.okp) { allOk = false; console.log('    ' + setId + ' sd' + sd + ' [' + lm.join(',') + '][' + ev.join(',') + ']: ' + r.why); }
     }
   }
   ok(allOk, '出荷セット各種すべて保存則・不変条件を満たし終局');
@@ -157,6 +159,37 @@ console.log('=== カード保存則: ランドマーク（帝国・横型・全2
     if (!r.okp) { allOk = false; console.log('    LM-MIX' + g + ' [' + lm.join(',') + ']: ' + r.why); }
   }
   ok(allOk, 'ランドマーク各種すべて保存則・不変条件を満たし終局（VPトークンは非カード）');
+}
+
+// E2) 帝国：横型イベント（買う横型）。CPU が bestEventBuy で買い、新pending（tax_pile/donate_trash/annex_keep 等）が
+//    終端し、負債経済（pileDebt/donateNext は非カード＝保存則に無関係）でも保存則・終局が保たれることを確認する。
+console.log('=== カード保存則: 帝国イベント（買う横型・全13種）===');
+{
+  const EV_PAIRS = [
+    ['delve', 'wedding'], ['dominate', 'windfall'], ['conquest', 'triumph'],
+    ['salt_the_earth', 'banquet'], ['advance', 'ritual'], ['tax', 'donate'],
+    ['annex', 'delve'], ['tax', 'conquest'], ['donate', 'annex'],
+  ];
+  const K = DOM.KINGDOM_EMPIRES;
+  let allOk = true;
+  for (let i = 0; i < EV_PAIRS.length; i++) {
+    for (let sd = 0; sd < 3; sd++) {
+      const r = runGame(K, mkPlayers(2 + (sd % 3), sd), [], EV_PAIRS[i]);
+      if (!r.okp) { allOk = false; console.log('    EV ' + EV_PAIRS[i].join('+') + ' sd' + sd + ': ' + r.why); }
+    }
+  }
+  // 全13種を同時に付けて（CPUがどれを買っても）保存則・終局・非ループを確認。
+  for (let sd = 0; sd < 6; sd++) {
+    const r = runGame(K, mkPlayers(2 + (sd % 3), sd), [], DOM.EVENTS_EMPIRES.slice());
+    if (!r.okp) { allOk = false; console.log('    EV-ALL sd' + sd + ': ' + r.why); }
+  }
+  // 全プール混成王国にイベントを付けて fuzz（pileDebt/負債が保存則の tally に混ざらないことの確認）。
+  for (let g = 0; g < 12; g++) {
+    const ev = DOM.pickLandmarks(2, DOM.EVENTS_EMPIRES);
+    const r = runGame(randK(), mkPlayers(2 + (g % 3), g), [], ev);
+    if (!r.okp) { allOk = false; console.log('    EV-MIX' + g + ' [' + ev.join(',') + ']: ' + r.why); }
+  }
+  ok(allOk, '帝国イベント各種すべて保存則・不変条件を満たし終局（負債/pileDebt は非カード・新pendingが終端）');
 }
 
 // D) 支配(Possession)を強制して保存則検証（CPUは支配を買わないので手で発動させ、被支配ターンを操作させる）。

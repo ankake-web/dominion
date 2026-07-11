@@ -208,12 +208,17 @@ try {
     UI.lmZoom = null;
     runtimeError = null; UI.view = 'cardList'; DOM.render();
     ok(!runtimeError && doc.body.textContent.includes('ランドマーク（帝国・横型）'), 'カード一覧にランドマーク群が出る');
-    ok($all('.landmark-mini img').length === DOM.LANDMARKS_EMPIRES.length, 'カード一覧に全ランドマークのアートが並ぶ');
+    ok(doc.body.textContent.includes('イベント（帝国・横型・購入フェイズに買う）'), 'カード一覧にイベント群が出る');
+    // カード一覧の .landmark-mini は ランドマーク21＋イベント13 の両方に使う
+    ok($all('.landmark-mini img').length === DOM.LANDMARKS_EMPIRES.length + DOM.EVENTS_EMPIRES.length, 'カード一覧に全ランドマーク＋全イベントのアートが並ぶ');
     UI.view = 'setup';
-    // セット選択に empires-landmarks
+    // セット選択に empires-landmarks / empires-events
     ok(DOM.CARD_SETS.some((x) => x.id === 'empires-landmarks'), 'CARD_SETS に empires-landmarks がある');
+    ok(DOM.CARD_SETS.some((x) => x.id === 'empires-events'), 'CARD_SETS に empires-events がある');
     runtimeError = null; UI.view = 'setup'; UI.setup.kingdomSet = 'empires-landmarks'; DOM.render();
     ok(!runtimeError && doc.body.textContent.includes('帝国＋ランドマーク'), '「拡張」タイルに帝国＋ランドマークが出る');
+    runtimeError = null; UI.setup.kingdomSet = 'empires-events'; DOM.render();
+    ok(!runtimeError && doc.body.textContent.includes('帝国＋イベント'), '「拡張」タイルに帝国＋イベントが出る');
     UI.setup.kingdomSet = 'basic';
   }
 

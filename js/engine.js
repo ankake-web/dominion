@@ -50,8 +50,11 @@
      - state.obeliskPile：オベリスクで選ばれたアクション山id（得点計算で参照）。 */
   function hasLandmark(state, id) { return !!(state.landmarks && state.landmarks.indexOf(id) >= 0); }
   function hasEvent(state, id) { return !!(state.events && state.events.indexOf(id) >= 0); }
-  // 帝国：徴税＝獲得カードが属する「山キー」（混合山 castles/knights は実カードでなく山キーで負債を持つ）。
+  // 帝国：徴税＝獲得カードが属する「山キー」（負債は山に1個）。
+  //   分割山は1山＝負債を上段キーで一元管理（下段を獲得しても上段キーの負債を受け取る）。
+  //   混合山 castles/knights は実カードでなく山キーで負債を持つ。
   function pileKeyOf(state, cardId) {
+    if (SPLIT_TOP[cardId]) return SPLIT_TOP[cardId]; // 下段id → 上段id（分割山は負債1個を上段キーに）
     if (state.supply && state.supply[cardId] != null) return cardId;
     if (DOM.POOLS && (DOM.POOLS.castles || []).indexOf(cardId) >= 0) return 'castles';
     if (DOM.POOLS && (DOM.POOLS.knights || []).indexOf(cardId) >= 0) return 'knights';
@@ -522,7 +525,8 @@
     //   購入フェイズの獲得でその山の負債を全部その獲得者が受け取る（triggerOnGain）。Tax購入で山1つに+2（tax_pile pending）。
     const pileDebt = {};
     if (events.indexOf('tax') >= 0) {
-      Object.keys(supply).forEach((id) => { if (!NON_SUPPLY.has(id)) pileDebt[id] = 1; });
+      // 分割山は1山＝上段キーにだけ負債1（下段は SPLIT_TOP[id] を持つ＝スキップ）。混合山 castles/knights は各1山＝numericキーに1。
+      Object.keys(supply).forEach((id) => { if (!NON_SUPPLY.has(id) && !SPLIT_TOP[id]) pileDebt[id] = 1; });
     }
 
     return {
@@ -5316,7 +5320,7 @@
     switch (action.type) {
       /* ---- 新規ゲーム ---- */
       case 'NEW_GAME':
-        return createInitialState(action.players, action.kingdom, { startActive: action.startActive, landmarks: action.landmarks });
+        return createInitialState(action.players, action.kingdom, { startActive: action.startActive, landmarks: action.landmarks, events: action.events });
 
       /* ---- アクションカードを使う ---- */
       case 'PLAY_ACTION': {
@@ -5453,9 +5457,16 @@
         if (!pd || pd.type !== 'salt_the_earth') return state;
         const id = action.card;
         if (!id || (state.supply[id] || 0) <= 0 || !DOM.isType(id, 'victory')) return state;
-        state.supply[id] -= 1;
-        trashCard(state, pd.player, id);
-        log(state, `${state.players[pd.player].name} は塩まきでサプライの「${C()[id].name}」1枚を廃棄した。`);
+        // 城の混合山（castles）＝一番上の実カードを廃棄（gain と同型）。supply.castles は state.castles と同期させる。
+        let trashed = id;
+        if (id === 'castles' && Array.isArray(state.castles) && state.castles.length) {
+          trashed = state.castles.shift();
+          state.supply.castles = state.castles.length;
+        } else {
+          state.supply[id] -= 1;
+        }
+        trashCard(state, pd.player, trashed);
+        log(state, `${state.players[pd.player].name} は塩まきでサプライの「${C()[trashed].name}」1枚を廃棄した。`);
         state.pending = null;
         return state;
       }
@@ -5501,8 +5512,10 @@
       case 'TAX_PILE': {
         const pd = state.pending;
         if (!pd || pd.type !== 'tax_pile') return state;
-        const id = action.pile;
-        if (!id || NON_SUPPLY.has(id) || (state.supply[id] || 0) <= 0) return state;
+        const raw = action.pile;
+        if (!raw || NON_SUPPLY.has(raw) || (state.supply[raw] || 0) <= 0) return state;
+        // 分割山の下段を選んでも上段キーに正規化して置く（読み取り側 triggerOnGain の pileKeyOf と一致＝負債の孤児化を防ぐ）。
+        const id = pileKeyOf(state, raw);
         state.pileDebt = state.pileDebt || {};
         state.pileDebt[id] = (state.pileDebt[id] || 0) + 2;
         log(state, `${state.players[pd.player].name} は徴税：${(C()[id] && C()[id].name) || id}の山に負債トークンを2個置いた（計${state.pileDebt[id]}個）。`);

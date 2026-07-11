@@ -907,6 +907,8 @@
     { id: 'empires',         kind: 'standard', name: '帝国セット', desc: '負債・山上の勝利点・分割山・城・命令', kingdom: DOM.KINGDOM_EMPIRES },
     // 帝国＋ランドマーク（横型）。固定10王国に、帝国ランドマーク21種から2枚を無作為に付ける（得点ルールが変わる）。
     { id: 'empires-landmarks', kind: 'standard', name: '帝国＋ランドマーク', desc: '帝国10種＋ランドマーク2枚（得点や獲得の仕方が変わる横型）', kingdom: DOM.KINGDOM_EMPIRES, landmarksFrom: 'empires' },
+    // 帝国＋イベント（横型）。固定10王国に、帝国イベント13種から2枚を無作為に付ける（購入フェイズにコイン/負債で買う横型）。
+    { id: 'empires-events',  kind: 'standard', name: '帝国＋イベント', desc: '帝国10種＋イベント2枚（購入フェイズに買う横型・負債経済）', kingdom: DOM.KINGDOM_EMPIRES, eventsFrom: 'empires' },
     // ---- おすすめ（テーマ別・固定10種）----
     { id: 'big-money',       kind: 'recommend', name: 'ビッグマネー', desc: 'お金を伸ばして属州を狙う王道',
       kingdom: ['chapel', 'moneylender', 'harbinger', 'throne_room', 'bureaucrat', 'poacher', 'market', 'mine', 'laboratory', 'sentry'] },

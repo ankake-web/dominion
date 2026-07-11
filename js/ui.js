@@ -713,6 +713,10 @@
         h('div', { class: 'section-h' }, 'ランドマーク（帝国・横型）'),
         h('div', { class: 'landmark-list-grid', style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px' },
           DOM.LANDMARKS_EMPIRES.map((id) => landmarkMini(id)))) : null,
+      (DOM.EVENTS_EMPIRES && DOM.EVENTS_EMPIRES.length) ? h('div', { class: 'list-group' },
+        h('div', { class: 'section-h' }, 'イベント（帝国・横型・購入フェイズに買う）'),
+        h('div', { class: 'landmark-list-grid', style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px' },
+          DOM.EVENTS_EMPIRES.map((id) => landmarkMini(id)))) : null,
       (DOM.POOLS && DOM.POOLS.promo) ? group('プロモカード', byCost(DOM.POOLS.promo)) : null,
       (DOM.POOLS && DOM.POOLS.basic1e) ? group('初版のみ（第二版で廃止）', byCost(
         DOM.POOLS.basic1e.filter((id) => DOM.POOLS.basic.indexOf(id) < 0)
@@ -1537,7 +1541,7 @@
     if (pd.type === 'ritual') return modalSingleHand(p, '儀式 — 廃棄', '手札から1枚を廃棄します（その廃棄カードのコスト$1につき +1勝利点）。',
       () => true, (id) => dispatch({ type: 'RITUAL_TRASH', card: id }), null, '廃棄する');
     if (pd.type === 'tax_pile') return modalGainSupply(state, '徴税 — 山を選ぶ', 'サプライの山を1つ選び、負債トークンを2個置きます（その山から次に購入フェイズで獲得したプレイヤーが、負債をすべて受け取ります）。',
-      () => true, (id) => dispatch({ type: 'TAX_PILE', pile: id }), null, null, '負債を置く');
+      (id) => !(DOM.SPLIT_PILES && DOM.SPLIT_PILES[id]), (id) => dispatch({ type: 'TAX_PILE', pile: id }), null, null, '負債を置く');
     if (pd.type === 'donate_trash') return modalMultiHand(p, '寄付 — 廃棄（任意）',
       '山札と捨て札をすべて手札に集めました。好きな枚数を廃棄できます（残りをシャッフルして山札に戻し、5枚引きます）。0枚でもOK。',
       (n) => '確定（' + n + '枚 廃棄）', true, (cards) => dispatch({ type: 'DONATE_TRASH', cards }), p.hand.length);
@@ -2492,10 +2496,13 @@
     const kingdom = opts.kingdom || (DOM.kingdomForSet ? DOM.kingdomForSet(UI.setup.kingdomSet) : DOM.KINGDOM);
     // 帝国：横型ランドスケープ（ランドマーク）もこの場で確定して以後固定（empires-landmarks 等）。
     const landmarks = opts.landmarks || (DOM.landmarksForSet ? DOM.landmarksForSet(UI.setup.kingdomSet) : []);
+    // 帝国：横型イベント（買う横型）もこの場で確定して以後固定（empires-events 等）。
+    const events = opts.events || (DOM.eventsForSet ? DOM.eventsForSet(UI.setup.kingdomSet) : []);
     UI.lastConfigs = configs;
     UI.lastKingdom = kingdom;
     UI.lastLandmarks = landmarks;
-    const st = E().createInitialState(configs, kingdom, { landmarks });
+    UI.lastEvents = events;
+    const st = E().createInitialState(configs, kingdom, { landmarks, events });
     UI.mode = 'local'; UI.mySeat = null; UI.localViewer = firstHuman(st);
     UI.store = DOM.LocalStore(st);
     UI.store.subscribe(onStoreChange);
@@ -2503,9 +2510,9 @@
     render();
   }
   function restartLocal() {
-    const st = E().createInitialState(UI.lastConfigs, UI.lastKingdom, { landmarks: UI.lastLandmarks || [] });
+    const st = E().createInitialState(UI.lastConfigs, UI.lastKingdom, { landmarks: UI.lastLandmarks || [], events: UI.lastEvents || [] });
     UI.localViewer = firstHuman(st);
-    UI.store.dispatch({ type: 'NEW_GAME', players: UI.lastConfigs, kingdom: UI.lastKingdom, landmarks: UI.lastLandmarks || [] });
+    UI.store.dispatch({ type: 'NEW_GAME', players: UI.lastConfigs, kingdom: UI.lastKingdom, landmarks: UI.lastLandmarks || [], events: UI.lastEvents || [] });
   }
 
   /* ---------- オンライン（WebSocket / サーバ権威） ---------- */

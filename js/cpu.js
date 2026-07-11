@@ -761,6 +761,44 @@
     return null;
   }
 
+  // 帝国：横型イベント（買う横型）を買うか判断。買うイベントid（affordable・負債>0でない）か null を返す。
+  //   cardBuy＝この局面で chooseBuy が返す最善のカード買い（イベントと比較して置き換え/併用を決める）。
+  //   ※ 返すイベントは必ず「コスト≤coins・購入権>0・負債0・採用済み」＝BUY_EVENT が拒否しない（拒否すると無限ループ）。
+  //     負債コストのイベントを買うと debt>0 になり、次の decide は返済/END_TURN 分岐に入る＝1ターン1回で有界。
+  function bestEventBuy(state, p, level, cardBuy) {
+    const t = state.turn;
+    if (!state.events || !state.events.length) return null;
+    if (t.buys <= 0 || (p.debt || 0) > 0) return null;
+    const coins = t.coins;
+    const has = (id) => state.events.indexOf(id) >= 0;
+    const L = (id) => DOM.LANDSCAPES[id] || {};
+    const afford = (id) => (L(id).cost || 0) <= coins; // 負債は debt==0 の今なら負ってよい
+    // 勝利点を積みたい局面（属州が残り少ない or 既に空山がある＝終盤グリーニング）。
+    const empties = Object.keys(state.supply).filter((id) => (state.supply[id] || 0) === 0).length;
+    const wantVP = sup(state, 'province') <= 4 || empties >= 1;
+    const cardCst = cardBuy ? cost(state, cardBuy) : -1;
+    const junk = allCards(p).filter((c) => c === 'copper' || c === 'estate' || isType(c, 'curse')).length;
+
+    // 1) 制圧：属州+9VP（$14）。属州が残っていれば最優先＝属州単体買い（6VP）より破格。
+    if (has('dominate') && afford('dominate') && sup(state, 'province') > 0) return 'dominate';
+    // 2) 征服：銀貨2＋今ターン獲得銀貨ぶんVP（$6）。VP局面で、属州級の大きな買いに届かないなら（銀貨2＝2VP以上）。
+    if (has('conquest') && afford('conquest') && wantVP && !(cardBuy && isType(cardBuy, 'victory') && cardCst >= 6)) return 'conquest';
+    // 3) 結婚式：+1VP＋金貨（$4＋負債3）。金貨を買う局面なら置き換える（金貨＋1VP・負債3は次ターンに返済）。
+    if (has('wedding') && coins >= 4 && cardBuy === 'gold') return 'wedding';
+    // 4) 併合：公領＋捨て札を山札へ混ぜる（$0＋負債8）。VP局面で公領が欲しく、属州級の買いに届かないなら。
+    if (has('annex') && wantVP && sup(state, 'duchy') > 0 && !(cardBuy && cardCst >= 8)) return 'annex';
+    // 5) 凱旋：屋敷＋今ターン獲得ぶんVP（$0＋負債5）。VP局面で今ターン既に2枚以上獲得しているなら（VP効率）。
+    if (has('triumph') && wantVP && (t.gainedThisTurn || []).length >= 2) return 'triumph';
+    // 6) 大地への塩まき：+1VP＋サプライ勝利点1枚廃棄（$4）。VP局面で他に大きな買いが無いなら。
+    if (has('salt_the_earth') && afford('salt_the_earth') && wantVP && !(cardBuy && cardCst >= 5)) return 'salt_the_earth';
+    // 7) 寄付：デッキ掃討（$0＋負債8）。序盤にジャンクが多いとき一度だけ（負債8は以後のターンで返済＝有界）。
+    if (has('donate') && (p.turns || 0) <= 3 && junk >= 8 && (cardBuy == null || cardBuy === 'silver')) return 'donate';
+    // 8) 掘進：$2で銀貨＋購入維持。他に買うものが無い余りコインで銀貨を拾う。
+    if (has('delve') && coins >= 2 && cardBuy == null) return 'delve';
+    // ritual/banquet/windfall/tax は CPU は買わない（呪い/銅貨のジャンク付与・条件依存・妨害で価値が読みにくい＝skip）。
+    return null;
+  }
+
   /* ---------- 選択待ちの解決 ---------- */
   function pickDiscards(hand, need) {
     const sorted = hand.map((c, i) => ({ c, i, v: keepValue(c) })).sort((a, b) => a.v - b.v);
@@ -871,7 +909,8 @@
     }
     if (pd.type === 'tax_pile') {
       // サプライの山1つに負債2を置く（強制）。相手が買いそうな高コスト札（属州＞最高コスト）を狙う。
-      const cand = Object.keys(state.supply).filter((id) => C()[id] && !NON_SUPPLY_SET.has(id) && sup(state, id) > 0);
+      // 分割山は上段キーで一元管理するので下段は候補から除く（engine 側でも正規化されるが候補も揃える）。
+      const cand = Object.keys(state.supply).filter((id) => C()[id] && !NON_SUPPLY_SET.has(id) && sup(state, id) > 0 && !(DOM.SPLIT_PILES && DOM.SPLIT_PILES[id]));
       cand.sort((a, b) => (C()[b].cost || 0) - (C()[a].cost || 0));
       const pick = (cand.indexOf('province') >= 0 ? 'province' : cand[0]) || null;
       return { type: 'TAX_PILE', pile: pick };
@@ -2103,6 +2142,9 @@
     const spend = coffersToSpend(state, subj, level);
     if (spend > 0) return { type: 'COFFERS_SPEND', amount: spend };
     const b = chooseBuy(state, subj, level);
+    // 帝国：横型イベント（買う横型）を、カード買いと比較して買うか判断（採用時のみ・affordable かつ 負債0）。
+    const evBuy = bestEventBuy(state, subj, level, b);
+    if (evBuy) return { type: 'BUY_EVENT', event: evBuy };
     return b ? { type: 'BUY', card: b } : { type: 'END_TURN' };
   }
   // 財源を何枚使うか：現状の最善買いより価値の高い買いに届く最小の財源枚数を返す（届かなければ0＝温存）。
