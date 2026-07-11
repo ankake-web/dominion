@@ -49,6 +49,7 @@
      - state.pileVP：集合機構と共用（水道橋＝銀貨/金貨の山、汚された神殿＝各アクション山）。
      - state.obeliskPile：オベリスクで選ばれたアクション山id（得点計算で参照）。 */
   function hasLandmark(state, id) { return !!(state.landmarks && state.landmarks.indexOf(id) >= 0); }
+  function hasEvent(state, id) { return !!(state.events && state.events.indexOf(id) >= 0); }
   // ランドマーク上のリザーブ landmarkVP[id] から per 個をプレイヤーの vpTokens へ移す（残りが per 未満なら残り全部）。移した個数を返す。
   function takeLandmarkVP(state, pIndex, id, per) {
     per = (per == null) ? 2 : per;
@@ -483,7 +484,9 @@
     }
 
     // 帝国：横型ランドスケープ（ランドマーク）の準備。opts.landmarks で受け取る（DOM.LANDSCAPES にある id のみ）。
-    const landmarks = (opts.landmarks || []).filter((id) => DOM.LANDSCAPES && DOM.LANDSCAPES[id]);
+    const landmarks = (opts.landmarks || []).filter((id) => DOM.LANDSCAPES && DOM.LANDSCAPES[id] && DOM.LANDSCAPES[id].kind === 'landmark');
+    // 帝国：横型イベント（買う横型）。opts.events で受け取る（DOM.LANDSCAPES の kind==='event' のみ）。対局中不変・公開。
+    const events = (opts.events || []).filter((id) => DOM.LANDSCAPES && DOM.LANDSCAPES[id] && DOM.LANDSCAPES[id].kind === 'event');
     const landmarkVP = {};    // ランドマーク上の有限リザーブ（6×人数 等）
     const landmarkStash = {}; // 水道橋/汚された神殿が山→ランドマークへ移した一時VP
     const pileVP = {};        // 集合＋水道橋(銀貨/金貨の山)/汚された神殿(各アクション山)の「山上VP」
@@ -520,6 +523,7 @@
       blackMarket, // 闇市場デッキ（無ければ null）
       pileVP, // 帝国：集合（Gathering）＝サプライ山の上に置かれた勝利点トークン数 {[pileId]:個数}（公開・非カード＝保存則に無関係）。水道橋/汚された神殿の準備分もここ。
       landmarks,      // 帝国：使用中のランドマークid列（横型・公開・対局中不変）
+      events,         // 帝国：使用中のイベントid列（横型・買う・公開・対局中不変）
       landmarkVP,     // 帝国：ランドマーク上の有限リザーブ {id:個数}（非カード＝保存則に無関係）
       landmarkStash,  // 帝国：水道橋/汚された神殿がランドマークへ移した一時VP {id:個数}（非カード）
       obeliskPile,    // 帝国：オベリスクで選ばれたアクション山id（無ければ null）
@@ -4997,6 +5001,73 @@
   // 購入フェイズ終了の後処理（隠遁者交換→策謀のクリンナップ→片付け）。冒険：ワイン商の呼び出し窓を挟んでから呼ぶ。
   // 帝国：闘技場＝購入フェイズ開始時、手札のアクション1枚を捨ててよい（捨てたら +2勝利点）。1ターン1回だけ判定する
   //   （villa等でアクションフェイズに戻り再び購入フェイズに入っても再発火しない＝許容簡略化）。
+  /* ========== 帝国：横型イベント（買う横型・BUY_EVENT で発火） ==========
+     applyEventEffect(state, pi, id)＝購入したイベントの効果を適用する本体。
+     一部は選択待ち（pending）を立てる＝4点セット（reducer＋PLAYER_ACTIONS＋CPU＋UI）必須。
+     イベントは「カード」ではないので、コスト軽減（橋/街道）を受けず、購入時トリガー
+     （商人ギルド/値切り屋/過払い）も発動しない（BUY_EVENT 側で呼ばない）。 */
+  function anyVictorySupply(state) {
+    return Object.keys(state.supply).some((id) => (state.supply[id] || 0) > 0 && DOM.isType(id, 'victory'));
+  }
+  function applyEventEffect(state, pi, id) {
+    const me = state.players[pi];
+    const t = state.turn;
+    switch (id) {
+      case 'delve': { t.buys += 1; gain(state, pi, 'silver', 'discard'); break; }
+      case 'wedding': { me.vpTokens = (me.vpTokens || 0) + 1; log(state, `${me.name} は結婚式で +1勝利点。`); gain(state, pi, 'gold', 'discard'); break; }
+      case 'dominate': {
+        if (gain(state, pi, 'province', 'discard')) { me.vpTokens = (me.vpTokens || 0) + 9; log(state, `${me.name} は制圧で +9勝利点。`); }
+        break;
+      }
+      case 'windfall': {
+        if (me.deck.length === 0 && me.discard.length === 0) {
+          for (let k = 0; k < 3; k++) gain(state, pi, 'gold', 'discard');
+          log(state, `${me.name} は意外な授かり物で金貨3枚を獲得した。`);
+        }
+        break;
+      }
+      case 'conquest': {
+        gain(state, pi, 'silver', 'discard'); gain(state, pi, 'silver', 'discard');
+        const silvers = (t.gainedThisTurn || []).filter((c) => c === 'silver').length;
+        if (silvers > 0) { me.vpTokens = (me.vpTokens || 0) + silvers; log(state, `${me.name} は征服で +${silvers}勝利点（今ターン獲得の銀貨${silvers}枚）。`); }
+        break;
+      }
+      case 'triumph': {
+        if (gain(state, pi, 'estate', 'discard')) {
+          const n = (t.gainedThisTurn || []).length;
+          me.vpTokens = (me.vpTokens || 0) + n; log(state, `${me.name} は凱旋で +${n}勝利点（今ターン獲得${n}枚）。`);
+        }
+        break;
+      }
+      case 'salt_the_earth': {
+        me.vpTokens = (me.vpTokens || 0) + 1; log(state, `${me.name} は塩まきで +1勝利点。`);
+        if (anyVictorySupply(state)) state.pending = { type: 'salt_the_earth', player: pi };
+        break;
+      }
+      case 'banquet': {
+        gain(state, pi, 'copper', 'discard'); gain(state, pi, 'copper', 'discard');
+        if (anyGainable(state, (cid) => banquetCanGain(state, cid) && !splitLocked(state, cid))) state.pending = { type: 'banquet', player: pi };
+        break;
+      }
+      case 'advance': {
+        if (me.hand.some((c) => DOM.isType(c, 'action'))) state.pending = { type: 'advance', stage: 'trash', player: pi };
+        break;
+      }
+      case 'ritual': {
+        if (gain(state, pi, 'curse', 'discard') && me.hand.length > 0) state.pending = { type: 'ritual', player: pi };
+        break;
+      }
+      // 重量イベント（EV2・後続バッチ）：tax / donate / annex は未実装
+      default: break;
+    }
+  }
+  function banquetCanGain(state, cid) {
+    return !NON_SUPPLY.has(cid) && !splitLocked(state, cid) && costIsPlainCoin(cid) && cardCost(state, cid) <= 5 && !DOM.isType(cid, 'victory');
+  }
+  function advanceCanGain(state, cid) {
+    return !NON_SUPPLY.has(cid) && !splitLocked(state, cid) && costIsPlainCoin(cid) && cardCost(state, cid) <= 6 && DOM.isType(cid, 'action');
+  }
+
   function maybeArena(state, pi) {
     const t = state.turn;
     if (t.arenaFired) return;
@@ -5299,6 +5370,76 @@
         // 冒険：呪いの森/沼の妖婆＝他Pの持続がある間、購入のたびに手札を山札の上へ/呪い獲得（購入した以上フックは必ず発動）。
         //   農地の廃棄pendingが立ったまま呪いの森が手札を空にしても、FARMLAND_TRASH が空手札を終端処理する（詰まない）。
         applyLingerOnBuy(state, pi);
+        return state;
+      }
+
+      /* ---- 帝国：横型イベントの購入（BUY_EVENT）＝購入権1消費・イベント自体は獲得しない・同じイベントを複数回可 ---- */
+      case 'BUY_EVENT': {
+        if (state.pending) return state;
+        if (t.phase !== 'buy') return state;
+        if ((me.debt || 0) > 0) return state; // 負債があるとカードもイベントも購入できない
+        const id = action.event;
+        const ev = DOM.LANDSCAPES && DOM.LANDSCAPES[id];
+        if (!ev || ev.kind !== 'event') return state;   // イベントでない/未知
+        if (!hasEvent(state, id)) return state;         // この対局で採用されていない
+        const cost = ev.cost || 0, debt = ev.debt || 0;
+        if (t.buys <= 0) return state;                  // 購入権が必要
+        if (cost > t.coins) return state;               // コイン不足（イベントはコスト軽減を受けない）
+        t.coins -= cost;
+        t.buys -= 1;
+        if (debt > 0) me.debt = (me.debt || 0) + debt;  // 負債コストのイベントは負債を負う
+        log(state, `${me.name} はイベント「${ev.name}」を購入した。` + (debt ? `（負債+${debt}）` : ''));
+        applyEventEffect(state, pi, id);
+        return state;
+      }
+      // 帝国：塩まき＝サプライの勝利点カード1枚を廃棄（山を選ぶ・強制）。廃棄はサプライから直接（Tomb は発火）。
+      case 'SALT_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'salt_the_earth') return state;
+        const id = action.card;
+        if (!id || (state.supply[id] || 0) <= 0 || !DOM.isType(id, 'victory')) return state;
+        state.supply[id] -= 1;
+        trashCard(state, pd.player, id);
+        log(state, `${state.players[pd.player].name} は塩まきでサプライの「${C()[id].name}」1枚を廃棄した。`);
+        state.pending = null;
+        return state;
+      }
+      // 帝国：宴会＝$5以下の勝利点でないカード1枚を獲得（強制）。
+      case 'BANQUET_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'banquet') return state;
+        if (!finishGain(state, pd, action.card, (cid) => banquetCanGain(state, cid), 'discard', '宴会で獲得した。')) return state;
+        return state;
+      }
+      // 帝国：昇進＝手札のアクション1枚を廃棄してよい（may）→ 廃棄したら$6以下アクション獲得（強制）。
+      case 'ADVANCE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'advance' || pd.stage !== 'trash') return state;
+        if (action.card == null) { state.pending = null; return state; } // 辞退（may）
+        if (!DOM.isType(action.card, 'action') || !state.players[pd.player].hand.includes(action.card)) return state;
+        if (!trashFromHand(state, pd.player, [action.card], 1, 'を昇進で廃棄した。')) return state;
+        if (anyGainable(state, (cid) => advanceCanGain(state, cid) && !splitLocked(state, cid))) state.pending = { type: 'advance', stage: 'gain', player: pd.player };
+        else state.pending = null; // $6以下アクションの候補が無ければ終端
+        return state;
+      }
+      case 'ADVANCE_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'advance' || pd.stage !== 'gain') return state;
+        if (!finishGain(state, pd, action.card, (cid) => advanceCanGain(state, cid), 'discard', '昇進で獲得した。')) return state;
+        return state;
+      }
+      // 帝国：儀式＝手札1枚を廃棄（強制・手札があれば）→ そのコスト$1につき+1勝利点。
+      case 'RITUAL_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ritual') return state;
+        const rp = state.players[pd.player];
+        if (rp.hand.length === 0) { state.pending = null; return state; }
+        const c = action.card;
+        if (!c || !rp.hand.includes(c)) return state;
+        const cost = cardCost(state, c);
+        if (!trashFromHand(state, pd.player, [c], 1, 'を儀式で廃棄した。')) return state;
+        if (cost > 0) { rp.vpTokens = (rp.vpTokens || 0) + cost; log(state, `${rp.name} は儀式で +${cost}勝利点（廃棄カードのコスト）。`); }
+        state.pending = null;
         return state;
       }
 
@@ -9807,6 +9948,8 @@
     // 帝国（Empires）Batch E6：命令（overlord/crown）
     'OVERLORD_PLAY', 'CROWN_CHOOSE',
     'ARENA_RESOLVE', 'MOUNTAIN_PASS_BID',
+    // 帝国：横型イベント（買う横型）
+    'BUY_EVENT', 'SALT_TRASH', 'BANQUET_GAIN', 'ADVANCE_TRASH', 'ADVANCE_GAIN', 'RITUAL_TRASH',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',

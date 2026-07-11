@@ -664,8 +664,10 @@
         h('img', { src: 'asset/cards/' + id + '.webp', alt: ls.name,
           style: 'width:100%;border-radius:12px;display:block;margin:0 auto',
           onerror: function () { this.style.display = 'none'; } }),
-        h('h3', { style: 'margin:12px 0 2px;color:var(--gold-bright)' }, '🏛 ' + ls.name),
-        h('div', { class: 'muted', style: 'font-size:12px;margin-bottom:8px' }, 'ランドマーク / Landmark'),
+        h('h3', { style: 'margin:12px 0 2px;color:var(--gold-bright)' }, (ls.kind === 'event' ? '🎫 ' : '🏛 ') + ls.name),
+        h('div', { class: 'muted', style: 'font-size:12px;margin-bottom:8px' },
+          (ls.kind === 'event' ? 'イベント / Event' : 'ランドマーク / Landmark') +
+          (ls.kind === 'event' ? '（💰' + (ls.cost || 0) + (ls.debt ? ' 🟠' + ls.debt : '') + '）' : '')),
         h('div', { style: 'white-space:pre-line;font-size:14px;line-height:1.55' }, ls.text || '')));
   }
 
@@ -915,6 +917,12 @@
     const buyableId = (id) => interactive && t.phase === 'buy' && !state.pending &&
       (state.players[t.active].debt || 0) === 0 && // 帝国：負債があると購入不可
       (state.supply[id] || 0) > 0 && t.buys > 0 && affordable(state, id) && DOM.engine.canBuyCard(state, t.active, id); // コイン・ポーション・繁栄制約＋購入可否（非サプライ/高級市場/分割山下段を弾く）
+    // 帝国：横型イベントの購入可否（購入フェイズ・負債0・購入権あり・コインが足りる。イベントはコスト軽減を受けない）。
+    const buyableEvent = (id) => {
+      const ev = (DOM.LANDSCAPES || {})[id];
+      return !!ev && interactive && t.phase === 'buy' && !state.pending &&
+        (state.players[t.active].debt || 0) === 0 && t.buys > 0 && (ev.cost || 0) <= t.coins;
+    };
     // 初心者モード：おすすめ購入の山を黄色枠でハイライト（購入フェーズ・自分の操作中のみ）。
     const recSet = (UI.beginner && interactive && t.phase === 'buy' && !state.pending) ? new Set(recommendedBuys(state)) : new Set();
     const supSection = (title, ids, size) =>
@@ -965,8 +973,32 @@
               h('span', { class: 'muted', style: 'font-size:12px;margin-left:8px' }, (ls.text || '').replace(/\n/g, ' ')));
           })))
       : null;
+    // 帝国：横型イベント（買う横型）＝購入フェイズにコイン(＋負債)を払って買う・購入権を1消費・複数回可。
+    const eventBlock = (state.events && state.events.length)
+      ? h('div', { class: 'supply-section' },
+          h('div', { class: 'sup-title' }, 'イベント（横型・購入フェイズに買う）'),
+          h('div', { class: 'mats' }, state.events.map((id) => {
+            const ev = (DOM.LANDSCAPES || {})[id] || { name: id, text: '', cost: 0, debt: 0 };
+            const costStr = '💰' + (ev.cost || 0) + (ev.debt ? ' 🟠' + ev.debt : '');
+            const canBuy = buyableEvent(id);
+            return h('div', { class: 'mat-row event-row', title: (ev.text || '') },
+              h('img', { class: 'landmark-thumb', src: 'asset/cards/' + id + '.webp', alt: ev.name, loading: 'lazy',
+                style: 'height:40px;width:60px;object-fit:cover;border-radius:4px;flex:0 0 auto;cursor:pointer',
+                onclick: () => openLandmarkZoom(id),
+                onerror: function () { this.style.display = 'none'; } }),
+              h('span', { class: 'mat-label', role: 'button', tabindex: '0', style: 'cursor:pointer',
+                  onclick: () => openLandmarkZoom(id),
+                  onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLandmarkZoom(id); } } },
+                '🎫 ' + ev.name + '（' + costStr + '）'),
+              h('span', { class: 'muted', style: 'font-size:12px;margin-left:8px' }, (ev.text || '').replace(/\n/g, ' ')),
+              h('button', { class: 'btn btn-sm' + (canBuy ? ' btn-primary' : ''), style: 'margin-left:auto',
+                  disabled: canBuy ? null : 'disabled',
+                  onclick: canBuy ? () => dispatch({ type: 'BUY_EVENT', event: id }) : null }, '買う'));
+          })))
+      : null;
     const supply = h('div', null,
       landscapeBlock,
+      eventBlock,
       // 財宝・勝利点は基本カード。デスクトップでは横並びにして縦スペースを節約。
       h('div', { class: 'supply-basics' },
         supSection('財宝', treasureRow, 'small'),
@@ -1480,6 +1512,23 @@
         40, 0, (n) => (n > 0 ? n + ' 負債で入札する' : '入札しない（0）'),
         (n) => dispatch({ type: 'MOUNTAIN_PASS_BID', amount: n }));
     }
+    // 帝国：横型イベントの選択待ち
+    if (pd.type === 'salt_the_earth') return modalGainSupply(state, '大地への塩まき — 廃棄', 'サプライの勝利点カード1枚を選んで廃棄します（その山が1枚減ります）。',
+      (id) => DOM.CARDS[id] && DOM.CARDS[id].types.includes('victory'),
+      (id) => dispatch({ type: 'SALT_TRASH', card: id }), null, null, '廃棄する');
+    if (pd.type === 'banquet') return modalGainSupply(state, '宴会 — 獲得', 'コスト$5以下の、勝利点でないカード1枚を獲得します。',
+      (id) => effCost(state, id) <= 5 && !DOM.CARDS[id].types.includes('victory') && !DOM.CARDS[id].potion && !DOM.CARDS[id].debt,
+      (id) => dispatch({ type: 'BANQUET_GAIN', card: id }));
+    if (pd.type === 'advance' && pd.stage === 'trash') return modalSingleHand(p, '昇進 — 廃棄（任意）',
+      '手札のアクションカード1枚を廃棄できます（廃棄すると、$6以下のアクションカードを1枚獲得します）。',
+      (id) => DOM.CARDS[id].types.includes('action'),
+      (id) => dispatch({ type: 'ADVANCE_TRASH', card: id }),
+      { label: '廃棄しない', on: () => dispatch({ type: 'ADVANCE_TRASH', card: null }) });
+    if (pd.type === 'advance' && pd.stage === 'gain') return modalGainSupply(state, '昇進 — 獲得', 'コスト$6以下のアクションカード1枚を獲得します。',
+      (id) => effCost(state, id) <= 6 && DOM.CARDS[id].types.includes('action') && !DOM.CARDS[id].potion && !DOM.CARDS[id].debt,
+      (id) => dispatch({ type: 'ADVANCE_GAIN', card: id }));
+    if (pd.type === 'ritual') return modalSingleHand(p, '儀式 — 廃棄', '手札から1枚を廃棄します（その廃棄カードのコスト$1につき +1勝利点）。',
+      () => true, (id) => dispatch({ type: 'RITUAL_TRASH', card: id }), null, '廃棄する');
     if (pd.type === 'church') return modalMultiHand(p, '教会 — 脇に置く',
       '手札から最大3枚を裏向きで脇に置きます（次のあなたのターン開始時に手札へ戻り、その後1枚廃棄できます）。0枚でもOK。',
       (n) => '確定（' + n + '枚 置く）', true, (cards) => dispatch({ type: 'CHURCH_SETASIDE', cards }), 3);

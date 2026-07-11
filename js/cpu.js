@@ -112,6 +112,23 @@
     return null;
   }
 
+  // 帝国イベント（宴会/昇進）用：engine の canGain 述語と食い違わない「獲得候補」探し。
+  //   GAIN_ORDER（強さ順）→ supply の順で pred を満たす獲得可能札を返す（候補があるのに null で無限ループを防ぐ）。
+  const plainCoin = (id) => !(C()[id] && (C()[id].potion || C()[id].debt));
+  function firstGainable(state, pred) {
+    for (const id of GAIN_ORDER) {
+      if (NON_SUPPLY_SET.has(id) || splitBlocked(state, id)) continue;
+      if (!C()[id] || sup(state, id) <= 0) continue;
+      if (pred(id)) return id;
+    }
+    for (const id of Object.keys(state.supply)) {
+      if (NON_SUPPLY_SET.has(id) || splitBlocked(state, id)) continue;
+      if (!C()[id] || sup(state, id) <= 0) continue;
+      if (pred(id)) return id;
+    }
+    return null;
+  }
+
   /* ---------- E8：倒壊/死の荷車の「これ(this)を廃棄できるか」＝engine と同じ述語を見る ---------- */
   //   engine が拒否する選択を CPU が提案し続けると無限ループになるので、必ず engine.pendingSelf を参照する。
   function pendingSelf(state, pd, cardId) {
@@ -824,6 +841,33 @@
       const myValue = turns <= 4 ? 5 : turns <= 8 ? 3 : turns <= 12 ? 1 : 0;
       const bid = myValue > (pd.highest || 0) ? Math.min(40, myValue) : 0;
       return { type: 'MOUNTAIN_PASS_BID', amount: bid };
+    }
+    // 帝国：横型イベント（買う横型）の選択待ち。
+    if (pd.type === 'salt_the_earth') {
+      // サプライの勝利点山1つを廃棄（強制）。CPU＝最も安い勝利点（屋敷）を廃棄（自陣・終局への害が小さい）。
+      const cand = Object.keys(state.supply).filter((id) => sup(state, id) > 0 && isType(id, 'victory'))
+        .sort((a, b) => (C()[a].cost || 0) - (C()[b].cost || 0));
+      return { type: 'SALT_TRASH', card: cand[0] || null };
+    }
+    if (pd.type === 'banquet') {
+      return { type: 'BANQUET_GAIN', card: firstGainable(state, (id) => plainCoin(id) && cost(state, id) <= 5 && !isType(id, 'victory')) };
+    }
+    if (pd.type === 'advance') {
+      if (pd.stage === 'trash') {
+        // 手札のアクション1枚を廃棄してよい（may）。$6以下の最善アクションが「一番安い手札アクション」以上なら格上げ、無益なら辞退。
+        const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => (C()[a].cost || 0) - (C()[b].cost || 0));
+        const target = firstGainable(state, (id) => plainCoin(id) && cost(state, id) <= 6 && isType(id, 'action'));
+        if (acts.length && target && (C()[target].cost || 0) >= (C()[acts[0]].cost || 0)) return { type: 'ADVANCE_TRASH', card: acts[0] };
+        return { type: 'ADVANCE_TRASH', card: null };
+      }
+      return { type: 'ADVANCE_GAIN', card: firstGainable(state, (id) => plainCoin(id) && cost(state, id) <= 6 && isType(id, 'action')) };
+    }
+    if (pd.type === 'ritual') {
+      // 手札1枚を廃棄（強制・手札があれば）。屋敷（+2VP＆ジャンク除去）＞呪い＞銅貨を優先、無ければ最安札。
+      const h = p.hand;
+      const pick = (h.includes('estate') && 'estate') || (h.includes('curse') && 'curse') || (h.includes('copper') && 'copper')
+        || h.slice().sort((a, b) => (C()[a].cost || 0) - (C()[b].cost || 0))[0];
+      return { type: 'RITUAL_TRASH', card: pick };
     }
     // 収穫祭：アタックの反応ステップで馬商人を持っていたら、まず脇に置く（次手番に+1カードで戻る＝常に得）。
     // 脇に置くと手札から消えるので、次回の呼び出しでは通常の判断（堀公開/受ける）に進む＝無限ループしない。

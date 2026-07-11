@@ -992,6 +992,12 @@
     if (set && set.landmarksFrom === 'empires') return DOM.pickLandmarks(2, DOM.LANDMARKS_EMPIRES || []);
     return [];
   };
+  // セットID → 使用するイベントid列（横型・0〜2枚）。eventsFrom を持つセットのみ抽選する（pickLandmarks は汎用シャッフル選択）。
+  DOM.eventsForSet = function (setId) {
+    const set = DOM.CARD_SETS.find((s) => s.id === setId);
+    if (set && set.eventsFrom === 'empires') return DOM.pickLandmarks(2, DOM.EVENTS_EMPIRES || []);
+    return [];
+  };
 
   DOM.TREASURES = ['copper', 'silver', 'gold'];
   DOM.VICTORY   = ['estate', 'duchy', 'province'];
@@ -1057,9 +1063,39 @@
       text: '得点計算時、最初の15枚を超えて持っているカード1枚につき -1 勝利点。' },
     wolf_den: { name: '狼の巣', nameEn: 'Wolf Den', kind: 'landmark', expansion: 'empires', cost: 0, debt: 0,
       text: '得点計算時、ちょうど1枚だけ持っているカード1種類につき -3 勝利点。' },
+    // 帝国（Empires）イベント 13種（買う横型・cost=コイン／debt=負債）。カタログ文は現行エラッタ。
+    //   BUY_EVENT で購入＝購入権1消費・イベント自体は獲得しない・同じイベントを1ターンに複数回買える・負債>0では買えない。
+    advance: { name: '昇進', nameEn: 'Advance', kind: 'event', expansion: 'empires', cost: 0, debt: 0,
+      text: '手札のアクションカード1枚を廃棄してもよい。\nそうしたなら、コスト$6以下のアクションカード1枚を獲得する。' },
+    annex: { name: '併合', nameEn: 'Annex', kind: 'event', expansion: 'empires', cost: 0, debt: 8,
+      text: '捨て札置き場を見る。そこから最大5枚を選び、残りを山札に加えてシャッフルする。\n公領1枚を獲得する。' },
+    banquet: { name: '宴会', nameEn: 'Banquet', kind: 'event', expansion: 'empires', cost: 3, debt: 0,
+      text: '銅貨2枚と、コスト$5以下の勝利点でないカード1枚を獲得する。' },
+    conquest: { name: '征服', nameEn: 'Conquest', kind: 'event', expansion: 'empires', cost: 6, debt: 0,
+      text: '銀貨2枚を獲得する。このターンにあなたが獲得した銀貨1枚につき +1 勝利点。' },
+    delve: { name: '掘進', nameEn: 'Delve', kind: 'event', expansion: 'empires', cost: 2, debt: 0,
+      text: '＋購入1。銀貨1枚を獲得する。' },
+    dominate: { name: '制圧', nameEn: 'Dominate', kind: 'event', expansion: 'empires', cost: 14, debt: 0,
+      text: '属州1枚を獲得する。そうしたなら、+9 勝利点。' },
+    donate: { name: '寄付', nameEn: 'Donate', kind: 'event', expansion: 'empires', cost: 0, debt: 8,
+      text: 'あなたの次のターンの開始時、まず山札と捨て札置き場をすべて手札に加える。\nその中から好きな枚数を廃棄し、残りを山札に混ぜてシャッフルして5枚引く。' },
+    ritual: { name: '儀式', nameEn: 'Ritual', kind: 'event', expansion: 'empires', cost: 4, debt: 0,
+      text: '呪い1枚を獲得する。そうしたなら、手札から1枚を廃棄する。\nそのコスト $1 につき +1 勝利点。' },
+    salt_the_earth: { name: '大地への塩まき', nameEn: 'Salt the Earth', kind: 'event', expansion: 'empires', cost: 4, debt: 0,
+      text: '+1 勝利点。サプライの勝利点カード1枚を廃棄する。' },
+    tax: { name: '徴税', nameEn: 'Tax', kind: 'event', expansion: 'empires', cost: 2, debt: 0,
+      text: 'サプライの山1つに負債トークンを2個置く。\n準備：各サプライの山に負債トークンを1個ずつ置く。プレイヤーが自分の購入フェイズにカードを獲得したとき、その山の負債トークンをすべて受け取る。' },
+    triumph: { name: '凱旋', nameEn: 'Triumph', kind: 'event', expansion: 'empires', cost: 0, debt: 5,
+      text: '屋敷1枚を獲得する。そうしたなら、\nこのターンにあなたが獲得したカード1枚につき +1 勝利点。' },
+    wedding: { name: '結婚式', nameEn: 'Wedding', kind: 'event', expansion: 'empires', cost: 4, debt: 3,
+      text: '+1 勝利点。金貨1枚を獲得する。' },
+    windfall: { name: '意外な授かり物', nameEn: 'Windfall', kind: 'event', expansion: 'empires', cost: 5, debt: 0,
+      text: '山札と捨て札置き場が両方とも空の場合、金貨3枚を獲得する。' },
   };
   // 帝国ランドマーク21種（抽選元）。イベントは未実装（docs/research/landscape_cards.md §2 にデータあり）。
   DOM.LANDMARKS_EMPIRES = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'landmark');
+  // 帝国イベント13種（抽選元）。買う横型＝BUY_EVENT で発火。
+  DOM.EVENTS_EMPIRES = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'event' && DOM.LANDSCAPES[id].expansion === 'empires');
   // 「準備で山に勝利点トークンを置く」集合(Gathering)カード＝汚された神殿はこの山には置かない。
   DOM.GATHERING_CARDS = ['temple', 'farmers_market', 'wild_hunt'];
 

@@ -7,6 +7,31 @@
 
 ---
 
+## 0-20. 横型ランドスケープ 第2弾＝**帝国イベント13種**（着手・2026-07-11）
+
+ランドマーク（§0-19・push済）に続き、**帝国イベント13種**（ユーザー決定＝負債/VPトークン既実装で相性最高・帝国拡張の仕上げ）に着手。正本＝`docs/research/landscape_cards.md` §2/§3/§4＋`landscape_gaps.md`。ランドマークと違い**イベントは「買う」**＝新機構 `BUY_EVENT`（購入ディスパッチャ）＋CPUのイベント購入評価＋UIの購入ボタンが要る＝一段重い。
+
+### 確定した方針（研究＋PROGRESS §0-18 で裁定済み）
+- **13種**＝advance/annex/banquet/conquest/delve/dominate/donate/ritual/salt_the_earth/tax/triumph/wedding＋**windfall**（研究データに欠落＝$5・山札と捨て札が両方空なら金貨3枚／手札・場は判定外）。
+- **`BUY_EVENT`**：購入フェイズで発火・**購入権を1消費・イベント自体は獲得しない・同じイベントを1ターンに複数回買える**（Delve等）・負債コストは `p.debt += debt`。**負債>0 の間はカードもイベントも購入不可**（`BUY` と同じ拒否を入れる）。**返済は購入権を消費しない**（既存 `REPAY_DEBT`）。`PLAYER_ACTIONS` に登録必須。
+- **横型は `DOM.LANDSCAPES` が正本**（`DOM.CARDS` に入れない＝整合性テストに混ざらない）。イベントは `kind:'event'`・cost/debt あり。カタログ文は**現行エラッタ**（tax/basilica等の「購入時→購入フェイズの獲得時」）。
+- **進め方＝帝国方式**（効果をバッチ実装→**最後に CARD_SET `empires-events` 昇格**）。実装中は `state.events=[id]` を直接セットしてテスト。新pendingは4点セット＋終端保証。**「≤$N/相手に獲得」系は engine述語とCPU候補の両側に `!NON_SUPPLY`・`!splitLocked`・`costIsPlainCoin`**。
+- **カウンタ新設**（`freshTurn`）：Conquest＝今ターン獲得した銀貨数／Triumph＝今ターン獲得したカード数（`gain`/`triggerOnGain` でインクリメント・`actionsGainedThisTurn` と同型）。
+- **重量順**：T3/T4＝delve/wedding/dominate/windfall/salt_the_earth/banquet/conquest/triumph/advance/ritual（先）→ T1＝tax(`state.pileDebt`)/donate(次ターン全掃討)/annex(捨て札選択＋reshuffle)（後）。
+
+### 進捗
+- **✅ EV0＝共通基盤（完了・未push）**：13イベントを `DOM.LANDSCAPES`（`kind:'event'`）＋`DOM.EVENTS_EMPIRES`＋`DOM.eventsForSet`。engine に `state.events` スロット（landmarks 同型・clone で mask 保持）＋`hasEvent`＋**`BUY_EVENT` reducer**（購入権1消費・イベント自体は獲得しない・複数回可・負債>0拒否・コスト軽減を受けない・負債コストは `p.debt+=`）＋`applyEventEffect` ディスパッチャ。`PLAYER_ACTIONS` に登録。
+- **✅ EV1＝簡単イベント10種（完了・未push）**：delve/wedding/dominate/windfall/conquest/triumph（pending無し・カウンタは既存 `t.gainedThisTurn` を流用＝新カウンタ不要）＋salt_the_earth/banquet/advance/ritual（新pending4種＝4点セット完備：engine reducer[SALT_TRASH/BANQUET_GAIN/ADVANCE_TRASH/ADVANCE_GAIN/RITUAL_TRASH]＋PLAYER_ACTIONS＋CPU decidePending[終端保証]＋UI viewPendingModal）。CPU用 `firstGainable`/`plainCoin` を新設（engine の canGain と食い違わない獲得候補選び）。UI＝盤面イベント帯（買う横型・購入ボタン）＋拡大オーバーレイの種別/コスト表示。
+- **検証**：`test/events.test.js` 新設**34件**（BUY_EVENT基盤・各イベント裁定・新pending・CPU終端）を package.json 登録（**35スイート目**）。`test/empires-ui.test.js` 60→**68件**（イベント帯＋pendingモーダル）。**全35スイート緑（exit 0）**。
+- **注意**：イベントは「カード」でないのでコスト軽減（橋/街道）を受けず、購入時トリガー（商人ギルド/値切り屋/過払い）も発動しない。salt はサプライから直接廃棄（Tomb 発火のため `trashCard(state,pi,card)` を通す・保存則OK）。conquest/triumph の「今ターン獲得数」は `t.gainedThisTurn`（手番プレイヤーの獲得id列）で足りる。
+
+### 次にやること（この順）
+1. **EV2＝重量イベント（tax/donate/annex）**：tax＝新 `state.pileDebt`（全山準備+1・購入フェイズの獲得で山の負債を受取・自身は山選択で+2）／donate＝次ターン開始時にデッキ全掃討→任意廃棄→5枚引く（`DURATION_RESOLVERS`/`startQueue`・繊細タイミング）／annex＝捨て札5枚残し他を山札へ reshuffle＋公領（負債8）。
+2. **EV3＝CARD_SET昇格**（`empires-events`＝帝国固定10＋`eventsFrom:'empires'` で2抽選）＋UI picker＋**CPUのイベント購入評価（bestEventBuy）**＋CPUソーク＋敵対レビュー→ webp（任意・build-landscape.js は event スキン対応済み）→ push（ユーザー確認）。
+   - ※現状 CPU は**イベントを買わない**（pendingの解決だけ実装）＝EV3 で購入AIを足すまでソークでイベントは発火しない。
+
+---
+
 ## 0-19. 横型ランドスケープ 第1弾＝帝国ランドマーク21種の **engine 実装 完了**（2026-07-11・WIP・未push・`sw.js` v45）
 
 **§0-18 の土台（横型枠パイプライン・研究・カタログ21枚）の上に engine を全実装**。新セット `empires-landmarks`（帝国固定10王国＋ランドマーク2枚抽選）を足し、**ランドマークが実プレイに影響する**（得点・獲得/廃棄トリガーが変わる）。**カタログ/webp変更なし**（`DOM.LANDSCAPES` は §0-18 で追加済み）。**残タスクは webp 回収のみ**（engine は完成・絵が無くても盤面は名前＋説明文で成立）。

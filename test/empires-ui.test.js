@@ -216,6 +216,26 @@ try {
     ok(!runtimeError && doc.body.textContent.includes('帝国＋ランドマーク'), '「拡張」タイルに帝国＋ランドマークが出る');
     UI.setup.kingdomSet = 'basic';
   }
+
+  console.log('=== 帝国：横型イベント（買う横型）のUI ===');
+  {
+    const s = mk({ events: ['delve', 'wedding'] }); s.turn.phase = 'buy'; s.turn.coins = 8; s.turn.buys = 1;
+    showAs(s, 0);
+    ok(!runtimeError, 'イベント帯がエラー無く描画できる');
+    ok(doc.body.textContent.includes('イベント') && doc.body.textContent.includes(DOM.LANDSCAPES.delve.name), '盤面にイベント名（掘進）が出る');
+    ok(byText('button', '買う') != null, 'イベントに「買う」ボタンが出る');
+    // 各イベント pending のモーダル
+    showPend({ type: 'salt_the_earth', player: 0 }, (x) => { x.events = ['salt_the_earth']; });
+    ok(modalOk(), '塩まき：廃棄モーダル');
+    showPend({ type: 'banquet', player: 0 }, (x) => { x.events = ['banquet']; });
+    ok(modalOk(), '宴会：獲得モーダル');
+    showPend({ type: 'advance', stage: 'trash', player: 0 }, (x) => { x.events = ['advance']; x.players[0].hand = ['village', 'copper']; });
+    ok(modalOk(), '昇進：廃棄モーダル');
+    showPend({ type: 'advance', stage: 'gain', player: 0 }, (x) => { x.events = ['advance']; });
+    ok(modalOk(), '昇進：獲得モーダル');
+    showPend({ type: 'ritual', player: 0 }, (x) => { x.events = ['ritual']; x.players[0].hand = ['gold']; });
+    ok(modalOk(), '儀式：廃棄モーダル');
+  }
 } catch (e) {
   fail++;
   console.log('  ✗ 例外: ' + e.message + '\n' + (e.stack || '').split('\n').slice(1, 3).join('\n'));
