@@ -911,7 +911,25 @@
       ? h('div', { class: 'supply-section' }, h('div', { class: 'sup-title' }, '非サプライ（交換・専用で獲得／購入不可）'),
           h('div', { class: 'supply-grid small' }, nonSupplyIds.map((id) => pileEl(id, state, { size: 'sm', onClick: () => onPileTap(state, id, interactive) }))))
       : null;
+    // 帝国：横型ランドスケープ（ランドマーク）＝買わない・場に常設。得点/獲得ルールを変える。残VP/溜VP/対象を可視化。
+    const landscapeBlock = (state.landmarks && state.landmarks.length)
+      ? h('div', { class: 'supply-section' },
+          h('div', { class: 'sup-title' }, 'ランドマーク（横型・得点や獲得のルール）'),
+          h('div', { class: 'mats' }, state.landmarks.map((id) => {
+            const ls = (DOM.LANDSCAPES || {})[id] || { name: id, text: '' };
+            const bits = [];
+            const rv = state.landmarkVP && state.landmarkVP[id];
+            const sv = state.landmarkStash && state.landmarkStash[id];
+            if (rv != null) bits.push('残VP ' + rv);
+            if (sv) bits.push('溜VP ' + sv);
+            if (id === 'obelisk' && state.obeliskPile) bits.push('対象: ' + (DOM.CARDS[state.obeliskPile] ? DOM.CARDS[state.obeliskPile].name : state.obeliskPile));
+            return h('div', { class: 'mat-row', title: (ls.text || '') },
+              h('span', { class: 'mat-label' }, '🏛 ' + ls.name + (bits.length ? '（' + bits.join(' / ') + '）' : '')),
+              h('span', { class: 'muted', style: 'font-size:12px;margin-left:8px' }, (ls.text || '').replace(/\n/g, ' ')));
+          })))
+      : null;
     const supply = h('div', null,
+      landscapeBlock,
       // 財宝・勝利点は基本カード。デスクトップでは横並びにして縦スペースを節約。
       h('div', { class: 'supply-basics' },
         supSection('財宝', treasureRow, 'small'),
@@ -1413,6 +1431,18 @@
     }
     if (pd.type === 'crown' && pd.mode === 'action') return modalSingleHand(p, '冠 — 2回使うアクション', '手札のアクションカードを1枚選ぶと、それを2回使います（使わなくてもよい）。', (id) => DOM.isType(id, 'action'), (card) => dispatch({ type: 'CROWN_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'CROWN_CHOOSE', card: null }) }, '2回使う');
     if (pd.type === 'crown' && pd.mode === 'treasure') return modalSingleHand(p, '冠 — 2回使う財宝', '手札の財宝カードを1枚選ぶと、それを2回使います（使わなくてもよい）。', (id) => DOM.isType(id, 'treasure'), (card) => dispatch({ type: 'CROWN_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'CROWN_CHOOSE', card: null }) }, '2回使う');
+    /* ===== 帝国：横型ランドスケープ（ランドマーク＝闘技場・峠）===== */
+    if (pd.type === 'arena') return modalSingleHand(p, '闘技場', 'アクションカード1枚を捨ててもよい（捨てたら +2勝利点）。捨てても廃棄ではありません。',
+      (id) => DOM.CARDS[id].types.includes('action'),
+      (id) => dispatch({ type: 'ARENA_RESOLVE', card: id }),
+      { label: '捨てない', on: () => dispatch({ type: 'ARENA_RESOLVE', card: null }) }, '捨てる');
+    if (pd.type === 'mountain_pass_bid') {
+      const hi = pd.highest || 0;
+      const hiName = pd.highBidder != null ? state.players[pd.highBidder].name : 'なし';
+      return modalAmount('峠 — 競り', '最大40負債まで入札できます。最高額の入札者が +8勝利点と、入札した額の負債を得ます。現在の最高額：' + hi + '（' + hiName + '）。',
+        40, 0, (n) => (n > 0 ? n + ' 負債で入札する' : '入札しない（0）'),
+        (n) => dispatch({ type: 'MOUNTAIN_PASS_BID', amount: n }));
+    }
     if (pd.type === 'church') return modalMultiHand(p, '教会 — 脇に置く',
       '手札から最大3枚を裏向きで脇に置きます（次のあなたのターン開始時に手札へ戻り、その後1枚廃棄できます）。0枚でもOK。',
       (n) => '確定（' + n + '枚 置く）', true, (cards) => dispatch({ type: 'CHURCH_SETASIDE', cards }), 3);
@@ -2342,9 +2372,12 @@
     }
     // 使う王国カード（基本/陰謀/ランダム）。ランダムはこの場で10種を確定して以後固定。
     const kingdom = opts.kingdom || (DOM.kingdomForSet ? DOM.kingdomForSet(UI.setup.kingdomSet) : DOM.KINGDOM);
+    // 帝国：横型ランドスケープ（ランドマーク）もこの場で確定して以後固定（empires-landmarks 等）。
+    const landmarks = opts.landmarks || (DOM.landmarksForSet ? DOM.landmarksForSet(UI.setup.kingdomSet) : []);
     UI.lastConfigs = configs;
     UI.lastKingdom = kingdom;
-    const st = E().createInitialState(configs, kingdom);
+    UI.lastLandmarks = landmarks;
+    const st = E().createInitialState(configs, kingdom, { landmarks });
     UI.mode = 'local'; UI.mySeat = null; UI.localViewer = firstHuman(st);
     UI.store = DOM.LocalStore(st);
     UI.store.subscribe(onStoreChange);
@@ -2352,9 +2385,9 @@
     render();
   }
   function restartLocal() {
-    const st = E().createInitialState(UI.lastConfigs, UI.lastKingdom);
+    const st = E().createInitialState(UI.lastConfigs, UI.lastKingdom, { landmarks: UI.lastLandmarks || [] });
     UI.localViewer = firstHuman(st);
-    UI.store.dispatch({ type: 'NEW_GAME', players: UI.lastConfigs, kingdom: UI.lastKingdom });
+    UI.store.dispatch({ type: 'NEW_GAME', players: UI.lastConfigs, kingdom: UI.lastKingdom, landmarks: UI.lastLandmarks || [] });
   }
 
   /* ---------- オンライン（WebSocket / サーバ権威） ---------- */

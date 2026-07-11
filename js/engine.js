@@ -42,6 +42,26 @@
     return null;
   }
 
+  /* ---------- 帝国：横型ランドスケープ（ランドマーク）----------
+     state.landmarks=[id...] は対局中不変（公開・maskで残る）。得点ルール／獲得・廃棄トリガーを変える。
+     - state.landmarkVP={id:個数}：ランドマーク上の「有限リザーブ」（6×人数 等）。尽きたら以後得点できない。
+     - state.landmarkStash={aqueduct:n, defiled_shrine:n}：山→ランドマークへ移した一時VP（最後に本人へ）。
+     - state.pileVP：集合機構と共用（水道橋＝銀貨/金貨の山、汚された神殿＝各アクション山）。
+     - state.obeliskPile：オベリスクで選ばれたアクション山id（得点計算で参照）。 */
+  function hasLandmark(state, id) { return !!(state.landmarks && state.landmarks.indexOf(id) >= 0); }
+  // ランドマーク上のリザーブ landmarkVP[id] から per 個をプレイヤーの vpTokens へ移す（残りが per 未満なら残り全部）。移した個数を返す。
+  function takeLandmarkVP(state, pIndex, id, per) {
+    per = (per == null) ? 2 : per;
+    if (!state.landmarkVP) state.landmarkVP = {};
+    const have = state.landmarkVP[id] || 0;
+    const take = Math.min(per, have);
+    if (take <= 0) return 0;
+    state.landmarkVP[id] = have - take;
+    const p = state.players[pIndex];
+    p.vpTokens = (p.vpTokens || 0) + take;
+    return take;
+  }
+
   // このターンのコスト軽減（「橋」など）を反映した実コスト
   function cardCost(state, id) {
     // 混合山（騎士/城）は「山の一番上の実カード」のコストで判断する（騎士＝Sir Martinだけ$4／城＝一番上の最安城）。
@@ -462,6 +482,31 @@
       blackMarket = shuffle(universe.filter((id) => DOM.CARDS[id] && id !== 'black_market' && !NON_SUPPLY.has(id) && !inSupply(id) && !mixedContents.has(id)));
     }
 
+    // 帝国：横型ランドスケープ（ランドマーク）の準備。opts.landmarks で受け取る（DOM.LANDSCAPES にある id のみ）。
+    const landmarks = (opts.landmarks || []).filter((id) => DOM.LANDSCAPES && DOM.LANDSCAPES[id]);
+    const landmarkVP = {};    // ランドマーク上の有限リザーブ（6×人数 等）
+    const landmarkStash = {}; // 水道橋/汚された神殿が山→ランドマークへ移した一時VP
+    const pileVP = {};        // 集合＋水道橋(銀貨/金貨の山)/汚された神殿(各アクション山)の「山上VP」
+    let obeliskPile = null;
+    if (landmarks.length) {
+      const np = players.length;
+      const SIX = ['arena', 'basilica', 'baths', 'battlefield', 'colonnade', 'labyrinth']; // 各6×人数
+      const gathering = new Set(DOM.GATHERING_CARDS || []);
+      // 「集合を持たない、混合でない、素のアクションのサプライ山」か（汚された神殿/オベリスクの対象）。
+      const plainActionPile = (id) => DOM.isType(id, 'action') && !gathering.has(id) && !NON_SUPPLY.has(id) &&
+        !SPLIT_TOP[id] && id !== 'castles' && id !== 'knights' && id !== 'ruins';
+      landmarks.forEach((lm) => {
+        if (SIX.indexOf(lm) >= 0) landmarkVP[lm] = 6 * np;
+        else if (lm === 'aqueduct') { pileVP.silver = 8; pileVP.gold = 8; }
+        else if (lm === 'defiled_shrine') {
+          Object.keys(supply).forEach((id) => { if (plainActionPile(id)) pileVP[id] = (pileVP[id] || 0) + 2; });
+        } else if (lm === 'obelisk') {
+          const cand = kingdom.filter(plainActionPile);
+          if (cand.length) obeliskPile = cand[Math.floor(Math.random() * cand.length)];
+        }
+      });
+    }
+
     return {
       version: 0,
       kingdom,
@@ -473,7 +518,11 @@
       baneCard, // 収穫祭：若き魔女の災いカード（無ければ null）
       trash: [],
       blackMarket, // 闇市場デッキ（無ければ null）
-      pileVP: {}, // 帝国：集合（Gathering）＝サプライ山の上に置かれた勝利点トークン数 {[pileId]:個数}（公開・非カード＝保存則に無関係）。
+      pileVP, // 帝国：集合（Gathering）＝サプライ山の上に置かれた勝利点トークン数 {[pileId]:個数}（公開・非カード＝保存則に無関係）。水道橋/汚された神殿の準備分もここ。
+      landmarks,      // 帝国：使用中のランドマークid列（横型・公開・対局中不変）
+      landmarkVP,     // 帝国：ランドマーク上の有限リザーブ {id:個数}（非カード＝保存則に無関係）
+      landmarkStash,  // 帝国：水道橋/汚された神殿がランドマークへ移した一時VP {id:個数}（非カード）
+      obeliskPile,    // 帝国：オベリスクで選ばれたアクション山id（無ければ null）
       turn: freshTurn(startActive),
       pending: null, // 選択待ち {type, player, ...}
       logSeq: 1, // ログの通し番号（効果音などが「新しい行」を確実に検知するため）
@@ -598,6 +647,12 @@
       return true; // 支配中の退避＝trashに入らず on-trash も発動しないが処理は完了
     }
     state.trash.push(card);
+    // 帝国：墓標（Tomb）＝カードを廃棄するたび、廃棄した本人が +1勝利点（城塞が手札に戻る場合も廃棄自体は起きている＝発火）。
+    if (hasLandmark(state, 'tomb')) {
+      const oi = (ownerIdx != null && state.players[ownerIdx]) ? ownerIdx : (t ? t.active : 0);
+      state.players[oi].vpTokens = (state.players[oi].vpTokens || 0) + 1;
+      log(state, `${state.players[oi].name} は墓標で +1勝利点（廃棄）。`);
+    }
     return triggerOnTrash(state, ownerIdx, card); // 城塞は手札へ戻り false／nomads等の副次効果も発動
   }
 
@@ -4196,14 +4251,73 @@
     vp += p.vpTokens || 0;
     return vp;
   }
+  // 帝国：あるカードが「空になったサプライ山」に由来するか（塔の得点用）。
+  function isFromEmptySupplyPile(state, cardId) {
+    if (NON_SUPPLY.has(cardId)) return false; // 賞品/成長先/戦利品/狂人/傭兵 は非サプライ
+    // 混合山（廃墟/騎士/城）の中身は個別の supply キーを持たない＝集約キーで空判定
+    if ((DOM.POOLS.ruins || []).indexOf(cardId) >= 0) return Array.isArray(state.ruins) && state.ruins.length === 0;
+    if ((DOM.POOLS.knights || []).indexOf(cardId) >= 0) return (state.supply.knights || 0) <= 0;
+    if ((DOM.POOLS.castles || []).indexOf(cardId) >= 0) return (state.supply.castles || 0) <= 0;
+    if (!Object.prototype.hasOwnProperty.call(state.supply, cardId)) return false; // サプライに無い＝対象外
+    if (SPLIT_TOP[cardId]) return (state.supply[cardId] || 0) <= 0 && (state.supply[SPLIT_TOP[cardId]] || 0) <= 0; // 分割山下段
+    if (SPLIT_BOTTOM[cardId]) return (state.supply[cardId] || 0) <= 0 && (state.supply[SPLIT_BOTTOM[cardId]] || 0) <= 0; // 分割山上段
+    return (state.supply[cardId] || 0) <= 0;
+  }
+  // 帝国：得点計算専用ランドマーク11種の合計VP（seat のぶん）。得点は負になり得る＝下限クランプしない。
+  // ある seat のカード列 cards に対する得点計算専用ランドマーク11種の合計VP。
+  //   cards は「終局時の全所持カード列」（CPUは獲得後の仮デッキを渡す＝engine と完全一致の見積り）。
+  //   keep（全プレイヤー横断比較）は seat 以外を state.players から見るので、cards は seat 自身のぶんを渡すこと。
+  function landmarkScoreForCards(state, cards, seat) {
+    if (!state.landmarks || !state.landmarks.length) return 0;
+    const has = (id) => state.landmarks.indexOf(id) >= 0;
+    const cnt = (pred) => cards.filter(pred).length;
+    const names = {}; cards.forEach((c) => { names[c] = (names[c] || 0) + 1; });
+    let vp = 0;
+    if (has('bandit_fort')) vp += -2 * cnt((c) => c === 'silver' || c === 'gold');
+    if (has('fountain') && cnt((c) => c === 'copper') >= 10) vp += 15;
+    if (has('museum')) vp += 2 * Object.keys(names).length;
+    if (has('orchard')) Object.keys(names).forEach((c) => { if (DOM.isType(c, 'action') && names[c] >= 3) vp += 4; });
+    if (has('palace')) vp += 3 * Math.min(cnt((c) => c === 'copper'), cnt((c) => c === 'silver'), cnt((c) => c === 'gold'));
+    if (has('wall')) vp += -1 * Math.max(0, cards.length - 15);
+    if (has('wolf_den')) Object.keys(names).forEach((c) => { if (names[c] === 1) vp += -3; });
+    if (has('triumphal_arch')) {
+      const cs = Object.keys(names).filter((c) => DOM.isType(c, 'action')).map((c) => names[c]).sort((a, b) => b - a);
+      vp += 3 * (cs.length >= 2 ? cs[1] : 0);
+    }
+    // オベリスク：選ばれた山＝分割山なら「両半分」を同一山として数える（settlers⇔bustling_village 等）。
+    if (has('obelisk') && state.obeliskPile) {
+      const op = state.obeliskPile, sib = SPLIT_BOTTOM[op] || SPLIT_TOP[op];
+      vp += 2 * cnt((c) => c === op || (sib && c === sib));
+    }
+    if (has('tower')) cards.forEach((c) => { if (!DOM.isType(c, 'victory') && isFromEmptySupplyPile(state, c)) vp += 1; });
+    if (has('keep')) {
+      // 各財宝名について、他のどのプレイヤーよりも多く（同数含む）持っていれば +5。seat 自身は cards、他は state.players。
+      const treasureNames = new Set();
+      cards.forEach((c) => { if (DOM.isType(c, 'treasure')) treasureNames.add(c); });
+      state.players.forEach((pp, i) => { if (i !== seat) allCards(pp).forEach((c) => { if (DOM.isType(c, 'treasure')) treasureNames.add(c); }); });
+      treasureNames.forEach((tn) => {
+        const mine = names[tn] || 0;
+        if (mine === 0) return;
+        let maxOther = 0;
+        state.players.forEach((pp, i) => { if (i !== seat) maxOther = Math.max(maxOther, allCards(pp).filter((c) => c === tn).length); });
+        if (mine >= maxOther) vp += 5;
+      });
+    }
+    return vp;
+  }
+  // scoreGame 用の薄いラッパ：seat の全所持カードで採点する。
+  function landmarkScore(state, seat) {
+    return landmarkScoreForCards(state, allCards(state.players[seat]), seat);
+  }
   function scoreGame(state) {
-    const scores = state.players.map((p) => {
+    const scores = state.players.map((p, i) => {
       // 勝敗画面用の内訳（例: {province:2, duchy:1, estate:3, curse:1}）。
       // マスク配信後はクライアントから再計算できないため、ここで確定して持たせる。
       const vpCards = {};
       allCards(p).forEach((c) => { if (DOM.isType(c, 'victory') || DOM.isType(c, 'curse')) vpCards[c] = (vpCards[c] || 0) + 1; });
+      const lmVp = landmarkScore(state, i); // 帝国：ランドマーク得点（負にもなり得る）
       // deckSize は庭園の得点表示用（デッキ10枚につき1点）
-      return { name: p.name, vp: vpOf(p), turns: p.turns, vpCards, deckSize: allCards(p).length };
+      return { name: p.name, vp: vpOf(p) + lmVp, landmarkVp: lmVp, turns: p.turns, vpCards, deckSize: allCards(p).length };
     });
     // 勝者判定：勝利点が多い → 同点ならターン数が少ない
     let best = null;
@@ -4356,6 +4470,10 @@
     state._gainDepth = (state._gainDepth || 0) + 1;
     if (state._gainDepth > 6) { state._gainDepth--; return; } // 連鎖の暴走防止
     const n = state.players.length;
+    // 帝国：ランドマークの購入フェイズ判定は「獲得が起きた時点のフェイズ」で見る。
+    //   ヴィラの獲得時効果はこの関数の途中で phase を 'buy'→'action' に変えるので、それより前の値を捕まえておく
+    //   （さもないと購入フェイズ中のヴィラ獲得で公会堂/列柱/汚された神殿の呪い が発火しない＝過小得点）。
+    const gainWasBuyPhase = !!(state.turn && state.turn.phase === 'buy');
     for (let o = 0; o < n; o++) {
       const op = state.players[o];
       // サル：右隣（手番が自分の1つ前）の獲得ごとに +1カード
@@ -4393,7 +4511,9 @@
       if (dest !== 'hand') { const z = dest === 'deck' ? gp.deck : gp.discard; if (removeOne(z, 'villa')) gp.hand.push('villa'); }
       if (state.turn && pIndex === state.turn.active) {
         state.turn.actions += 1;
-        if (state.turn.phase === 'buy') { state.turn.phase = 'action'; log(state, `${gp.name} はヴィラを獲得し手札に加え +1アクション（アクションフェイズに戻る）。`); }
+        // 帝国：ヴィラで購入フェイズ→アクションフェイズに戻ると、次に購入フェイズへ入るとき闘技場が再度発動できる
+        //   （公式：闘技場は購入フェイズ開始のたびに発動）。arenaFired を解除して再武装する。
+        if (state.turn.phase === 'buy') { state.turn.phase = 'action'; state.turn.arenaFired = false; log(state, `${gp.name} はヴィラを獲得し手札に加え +1アクション（アクションフェイズに戻る）。`); }
         else log(state, `${gp.name} はヴィラを獲得し手札に加え +1アクション。`);
       }
     }
@@ -4546,6 +4666,54 @@
       const canGain = (id) => id !== cardId && !NON_SUPPLY.has(id) && !splitLocked(state, id) && (state.supply[id] || 0) > 0 &&
         cardCost(state, id) === trigCoin && ((C()[id] && C()[id].debt) || 0) === trigDebt && potionCost(id) === trigPot;
       if (anyGainable(state, canGain)) state.pending = { type: 'charm_gain', player: pIndex, coin: trigCoin, debt: trigDebt, pot: trigPot, trig: cardId, count: cnt };
+    }
+    /* ===== 帝国：横型ランドスケープ（ランドマーク）の獲得トリガー（VPトークンのみ＝pendingを立てない）===== */
+    if (state.landmarks && state.landmarks.length) {
+      const active = state.turn ? state.turn.active : -1;
+      const inBuy = gainWasBuyPhase; // ヴィラが phase を戻しても「獲得時点」の購入フェイズ判定を使う
+      // 戦場：勝利点カードを獲得したとき、ここから +2勝利点（誰の獲得でも本人へ）。
+      if (hasLandmark(state, 'battlefield') && DOM.isType(cardId, 'victory')) {
+        if (takeLandmarkVP(state, pIndex, 'battlefield', 2)) log(state, `${gp.name} は戦場で +2勝利点（勝利点カード獲得）。`);
+      }
+      // 迷宮：自分のターンに2枚目のカードを獲得したとき、+2勝利点。
+      if (hasLandmark(state, 'labyrinth') && pIndex === active && (state.turn.gainedThisTurn || []).length === 2) {
+        if (takeLandmarkVP(state, pIndex, 'labyrinth', 2)) log(state, `${gp.name} は迷宮で +2勝利点（このターン2枚目の獲得）。`);
+      }
+      // 公会堂：購入フェイズ中にカードを獲得したとき、コインが2以上残っていれば +2勝利点。
+      if (hasLandmark(state, 'basilica') && pIndex === active && inBuy && (state.turn.coins || 0) >= 2) {
+        if (takeLandmarkVP(state, pIndex, 'basilica', 2)) log(state, `${gp.name} は公会堂で +2勝利点（購入フェイズ・$${state.turn.coins}残）。`);
+      }
+      // 列柱：購入フェイズ中にアクションカードを獲得したとき、同名が場に出ていれば +2勝利点。
+      if (hasLandmark(state, 'colonnade') && pIndex === active && inBuy && DOM.isType(cardId, 'action') &&
+          (gp.inPlay.includes(cardId) || (gp.durationCards || []).includes(cardId))) {
+        if (takeLandmarkVP(state, pIndex, 'colonnade', 2)) log(state, `${gp.name} は列柱で +2勝利点（同名アクションが場に）。`);
+      }
+      // 水道橋：財宝を獲得→その山から1VPを水道橋へ移す（銀貨/金貨の山にのみVPがある）。勝利点カードを獲得→水道橋上の全VPを受け取る。
+      if (hasLandmark(state, 'aqueduct')) {
+        if (DOM.isType(cardId, 'treasure') && (state.pileVP[cardId] || 0) > 0) {
+          state.pileVP[cardId] -= 1; state.landmarkStash.aqueduct = (state.landmarkStash.aqueduct || 0) + 1;
+          log(state, `${gp.name} の獲得で ${C()[cardId].name}の山から勝利点1個が水道橋へ移った（計${state.landmarkStash.aqueduct}個）。`);
+        }
+        if (DOM.isType(cardId, 'victory')) {
+          const got = state.landmarkStash.aqueduct || 0;
+          if (got > 0) { gp.vpTokens = (gp.vpTokens || 0) + got; state.landmarkStash.aqueduct = 0; log(state, `${gp.name} は水道橋から +${got}勝利点（勝利点カード獲得）。`); }
+        }
+      }
+      // 汚された神殿：アクションを獲得→その山から1VPを汚された神殿へ移す。購入フェイズ中に呪いを獲得→神殿上の全VPを受け取る。
+      if (hasLandmark(state, 'defiled_shrine')) {
+        if (DOM.isType(cardId, 'action') && (state.pileVP[cardId] || 0) > 0) {
+          state.pileVP[cardId] -= 1; state.landmarkStash.defiled_shrine = (state.landmarkStash.defiled_shrine || 0) + 1;
+          log(state, `${gp.name} の獲得で ${C()[cardId].name}の山から勝利点1個が汚された神殿へ移った（計${state.landmarkStash.defiled_shrine}個）。`);
+        }
+        if (cardId === 'curse' && pIndex === active && inBuy) {
+          const got = state.landmarkStash.defiled_shrine || 0;
+          if (got > 0) { gp.vpTokens = (gp.vpTokens || 0) + got; state.landmarkStash.defiled_shrine = 0; log(state, `${gp.name} は汚された神殿から +${got}勝利点（購入フェイズに呪いを獲得）。`); }
+        }
+      }
+      // 峠：最初に属州が獲得されたとき（誰の獲得でも）、そのターンの後に競りを行う（1ゲーム1回・endBuyTail で起動）。
+      if (hasLandmark(state, 'mountain_pass') && cardId === 'province' && !state.mountainPassArmed && !state.mountainPassDone) {
+        state.mountainPassArmed = { gainer: pIndex };
+      }
     }
     state._gainDepth--;
   }
@@ -4827,9 +4995,25 @@
   }
 
   // 購入フェイズ終了の後処理（隠遁者交換→策謀のクリンナップ→片付け）。冒険：ワイン商の呼び出し窓を挟んでから呼ぶ。
+  // 帝国：闘技場＝購入フェイズ開始時、手札のアクション1枚を捨ててよい（捨てたら +2勝利点）。1ターン1回だけ判定する
+  //   （villa等でアクションフェイズに戻り再び購入フェイズに入っても再発火しない＝許容簡略化）。
+  function maybeArena(state, pi) {
+    const t = state.turn;
+    if (t.arenaFired) return;
+    t.arenaFired = true;
+    if (!hasLandmark(state, 'arena')) return;
+    if (((state.landmarkVP && state.landmarkVP.arena) || 0) < 2) return;
+    const me = state.players[pi];
+    if (!me.hand.some((c) => DOM.isType(c, 'action'))) return;
+    state.pending = { type: 'arena', player: pi };
+  }
   function endBuyTail(state) {
     const pi = state.turn.active;
     const me = state.players[pi];
+    // 帝国：浴場（Baths）＝このターンに1枚もカードを獲得せずに手番を終えたら、ここから +2勝利点（1ターン1回）。
+    if (hasLandmark(state, 'baths') && (state.turn.gainedThisTurn || []).length === 0) {
+      if (takeLandmarkVP(state, pi, 'baths', 2)) log(state, `${me.name} は浴場で +2勝利点（獲得なしで手番終了）。`);
+    }
     // 暗黒時代：隠遁者＝購入フェイズ中に1枚も獲得していなければ、場の隠遁者を狂人と交換する。
     if (me.inPlay.includes('hermit') && !state.turn.buyPhaseGained) {
       let ex = 0;
@@ -4840,11 +5024,31 @@
       }
       if (ex) log(state, `${me.name} は購入フェイズで何も獲得しなかったので隠遁者 ${ex}枚 を狂人と交換した。`);
     }
+    // 帝国：峠＝このターンに最初の属州が獲得されていたら、片付け前に全員の競りを行う（1ゲーム1回）。
+    //   競りが立ったら endBuyTailTravellers はその完了後（MOUNTAIN_PASS_BID）から呼ばれる。
+    if (startMountainPassBid(state, pi)) return;
+    endBuyTailTravellers(state, pi);
+  }
+  // 峠の競りの後（または不要なとき）＝トラベラー交換窓→策謀→片付け。
+  function endBuyTailTravellers(state, pi) {
     // 冒険：トラベラー交換窓＝場のトラベラーを、次の成長先（山が残っていれば）と交換してよい（対話）。
-    //   交換窓を全て消化した後で 策謀→片付け へ進む（endBuyTailSchemeOrCleanup）。
     const travQ = travellerExchangeQueue(state, pi);
     if (travQ.length) { state.pending = { type: 'traveller_exchange', player: pi, queue: travQ }; return; }
     endBuyTailSchemeOrCleanup(state, pi);
+  }
+  // 帝国：峠（Mountain Pass）＝最初の属州が獲得されたターンの後、全員が1回ずつ最大40負債で競る（獲得者で終わる）。
+  //   最高額の入札者が +8勝利点と同額の負債を得る。競りを開始したら true（呼び出し側は return する）。
+  function startMountainPassBid(state, pi) {
+    if (!hasLandmark(state, 'mountain_pass')) return false;
+    if (!state.mountainPassArmed || state.mountainPassDone) return false;
+    state.mountainPassDone = true;
+    const gainer = state.mountainPassArmed.gainer;
+    state.mountainPassArmed = null;
+    const n = state.players.length;
+    const order = []; for (let k = 1; k <= n; k++) order.push((gainer + k) % n); // 獲得者の左隣から始め、獲得者で終わる
+    state.pending = { type: 'mountain_pass_bid', player: order[0], order, idx: 0, bids: {}, highest: 0, highBidder: null };
+    log(state, `峠：最初の属州が獲得されたので、各プレイヤーが1回ずつ最大40負債で競りを行う。`);
+    return true;
   }
   // 冒険：場にあり「次の成長先の山が残っている」トラベラーの id 列（交換オファーの対象）。
   function travellerExchangeQueue(state, pi) {
@@ -4986,7 +5190,7 @@
     switch (action.type) {
       /* ---- 新規ゲーム ---- */
       case 'NEW_GAME':
-        return createInitialState(action.players, action.kingdom, { startActive: action.startActive });
+        return createInitialState(action.players, action.kingdom, { startActive: action.startActive, landmarks: action.landmarks });
 
       /* ---- アクションカードを使う ---- */
       case 'PLAY_ACTION': {
@@ -5106,6 +5310,8 @@
         t.afterActionCard = null; // 冒険：アクションフェイズを抜けたら法貨/御料車の呼び出し窓は閉じる
         // 冒険：-$1トークンを消化（購入フェイズ開始時に食い込み分へ変換。財宝を出すとそのコインに食い込む）。
         if (me.minusCoin) { t.coinPenalty = (t.coinPenalty || 0) + 1; me.minusCoin = false; log(state, `${me.name} は -$1トークンを支払う（このターンのコイン $1分）。`); applyCoinPenalty(state); }
+        // 帝国：闘技場＝購入フェイズ開始時、手札のアクション1枚を捨ててよい（捨てたら +2勝利点）。
+        maybeArena(state, pi);
         return state;
       }
       case 'END_TURN': {
@@ -5117,6 +5323,47 @@
           return state;
         }
         endBuyTail(state);
+        return state;
+      }
+
+      /* ---- 帝国：闘技場（Arena）＝購入フェイズ開始時にアクション1枚を捨てて +2勝利点 ---- */
+      case 'ARENA_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'arena') return state;
+        const p = state.players[pd.player];
+        if (action.card == null) { state.pending = null; return state; } // 捨てない
+        const card = action.card;
+        if (p.hand.indexOf(card) < 0 || !DOM.isType(card, 'action')) return state; // 不正な指定は据え置き
+        removeOne(p.hand, card); p.discard.push(card);
+        const got = takeLandmarkVP(state, pd.player, 'arena', 2);
+        log(state, `${p.name} は闘技場で「${C()[card].name}」を捨て +${got}勝利点。`);
+        state.pending = null;
+        return state;
+      }
+      /* ---- 帝国：峠（Mountain Pass）＝最初の属州獲得後の逐次入札 ---- */
+      case 'MOUNTAIN_PASS_BID': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'mountain_pass_bid') return state;
+        let amount = Math.floor(Number(action.amount) || 0);
+        if (amount < 0) amount = 0;
+        if (amount > 40) amount = 40;
+        pd.bids = pd.bids || {};
+        pd.bids[pd.player] = amount;
+        if (amount > (pd.highest || 0)) { pd.highest = amount; pd.highBidder = pd.player; } // 同額は先着（更新しない）
+        log(state, `${state.players[pd.player].name} は峠の競りで ${amount}負債 を入札した。`);
+        pd.idx = (pd.idx || 0) + 1;
+        if (pd.idx < pd.order.length) { pd.player = pd.order[pd.idx]; return state; } // 次の入札者へ
+        // 全員入札完了 → 最高額の入札者が +8勝利点＋同額の負債
+        if (pd.highBidder != null && pd.highest > 0) {
+          const w = state.players[pd.highBidder];
+          w.vpTokens = (w.vpTokens || 0) + 8;
+          w.debt = (w.debt || 0) + pd.highest;
+          log(state, `${w.name} は峠の競りに勝ち +8勝利点／負債${pd.highest} を得た。`);
+        } else {
+          log(state, `峠の競りは全員0で誰も勝たなかった。`);
+        }
+        state.pending = null;
+        endBuyTailTravellers(state, state.turn.active); // 競り後、通常の手番終了処理（トラベラー交換→策謀→片付け）へ
         return state;
       }
 
@@ -9559,6 +9806,7 @@
     'SMALL_CASTLE_RESOLVE', 'OPULENT_CASTLE_DISCARD', 'HAUNTED_TOPDECK', 'SPRAWLING_CASTLE_CHOOSE',
     // 帝国（Empires）Batch E6：命令（overlord/crown）
     'OVERLORD_PLAY', 'CROWN_CHOOSE',
+    'ARENA_RESOLVE', 'MOUNTAIN_PASS_BID',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',
@@ -9615,6 +9863,7 @@
     cardCost,
     vpOf,
     scoreGame,
+    landmarkScoreForCards, // 帝国：ランドマーク得点（CPUが仮デッキで engine と完全一致の見積りに使う）
     isGameOver,
     emptyPileCount,
     canBuyCard,

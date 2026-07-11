@@ -39,8 +39,8 @@ function diffTally(a, b) { const ks = new Set([...Object.keys(a), ...Object.keys
 function hasBack(s) { return s.players.some((p) => ZONES.some((z) => (p[z] || []).some((c) => c === 'back'))) || s.players.some((p) => (p.archives || []).some((a) => (a.cards || []).some((c) => c === 'back'))) || (s.trash || []).some((c) => c === 'back'); }
 
 // 1ゲームを最後まで進め、安定点ごとに全不変条件を検査。違反があれば false と詳細を返す。
-function runGame(kingdom, players) {
-  let s = E.createInitialState(players, kingdom, { startActive: 0 });
+function runGame(kingdom, players, landmarks) {
+  let s = E.createInitialState(players, kingdom, { startActive: 0, landmarks: landmarks || [] });
   const init = tally(s);
   const n = s.players.length;
   let step = 0;
@@ -119,17 +119,44 @@ console.log('=== カード保存則: 全プール混成ランダム王国 ===');
 // C) 出荷セット（各セットを実際に組んで検証）
 console.log('=== カード保存則: 出荷セット（固定/ランダム各種） ===');
 {
-  const sets = ['basic', 'intrigue', 'seaside', 'alchemy', 'prosperity', 'cornucopia', 'guilds', 'hinterlands', 'darkages', 'adventures', 'empires', 'promo2-pack', 'random', 'random-promo', 'random-seaside', 'random-alchemy', 'random-prosperity', 'random-cornucopia', 'random-guilds', 'random-hinterlands', 'random-darkages', 'random-adventures', 'random-empires'];
+  const sets = ['basic', 'intrigue', 'seaside', 'alchemy', 'prosperity', 'cornucopia', 'guilds', 'hinterlands', 'darkages', 'adventures', 'empires', 'empires-landmarks', 'promo2-pack', 'random', 'random-promo', 'random-seaside', 'random-alchemy', 'random-prosperity', 'random-cornucopia', 'random-guilds', 'random-hinterlands', 'random-darkages', 'random-adventures', 'random-empires'];
   let allOk = true;
   for (const setId of sets) {
     for (let sd = 0; sd < 3; sd++) {
       const k = DOM.kingdomForSet ? DOM.kingdomForSet(setId) : null;
       if (!k) continue;
-      const r = runGame(k, mkPlayers(2 + (sd % 3), sd));
-      if (!r.okp) { allOk = false; console.log('    ' + setId + ' sd' + sd + ': ' + r.why); }
+      const lm = DOM.landmarksForSet ? DOM.landmarksForSet(setId) : []; // 帝国：empires-landmarks は横型ランドマーク2枚付き
+      const r = runGame(k, mkPlayers(2 + (sd % 3), sd), lm);
+      if (!r.okp) { allOk = false; console.log('    ' + setId + ' sd' + sd + ' [' + lm.join(',') + ']: ' + r.why); }
     }
   }
   ok(allOk, '出荷セット各種すべて保存則・不変条件を満たし終局');
+}
+
+// E) 帝国：横型ランドスケープ（ランドマーク）。得点/獲得トリガーを変えるが VPトークンは非カード＝保存則に無関係。
+//    全21種を（ペアで）少なくとも1回ずつ通し、闘技場/峠の新pendingが CPU で終端することを確認する。
+console.log('=== カード保存則: ランドマーク（帝国・横型・全21種）===');
+{
+  const LM_PAIRS = [
+    ['arena', 'mountain_pass'], ['tomb', 'battlefield'], ['aqueduct', 'defiled_shrine'],
+    ['obelisk', 'keep'], ['tower', 'wall'], ['labyrinth', 'basilica'], ['colonnade', 'baths'],
+    ['museum', 'fountain'], ['orchard', 'palace'], ['wolf_den', 'triumphal_arch'], ['bandit_fort', 'mountain_pass'],
+  ];
+  const K = DOM.KINGDOM_EMPIRES;
+  let allOk = true;
+  for (let i = 0; i < LM_PAIRS.length; i++) {
+    for (let sd = 0; sd < 3; sd++) {
+      const r = runGame(K, mkPlayers(2 + (sd % 3), sd), LM_PAIRS[i]);
+      if (!r.okp) { allOk = false; console.log('    LM ' + LM_PAIRS[i].join('+') + ' sd' + sd + ': ' + r.why); }
+    }
+  }
+  // 全プール混成王国にランドマークを付けて fuzz（landmarkVP/pileVP が保存則の tally に混ざらないことの確認）。
+  for (let g = 0; g < 12; g++) {
+    const lm = DOM.pickLandmarks(2, DOM.LANDMARKS_EMPIRES);
+    const r = runGame(randK(), mkPlayers(2 + (g % 3), g), lm);
+    if (!r.okp) { allOk = false; console.log('    LM-MIX' + g + ' [' + lm.join(',') + ']: ' + r.why); }
+  }
+  ok(allOk, 'ランドマーク各種すべて保存則・不変条件を満たし終局（VPトークンは非カード）');
 }
 
 // D) 支配(Possession)を強制して保存則検証（CPUは支配を買わないので手で発動させ、被支配ターンを操作させる）。

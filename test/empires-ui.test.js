@@ -178,6 +178,32 @@ try {
     ok(!runtimeError && doc.body.textContent.includes('帝国'), '「ランダム」分類に帝国からが出る');
     UI.setup.kingdomSet = 'basic';
   }
+
+  console.log('=== 帝国：横型ランドスケープ（ランドマーク）のUI ===');
+  {
+    // 盤面にランドマーク帯（名前・残VP・溜VP・オベリスク対象）が出る
+    const s = mk({ landmarks: ['arena', 'aqueduct'] });
+    s.turn.phase = 'buy'; s.landmarkStash = { aqueduct: 2 };
+    showAs(s, 0);
+    ok(!runtimeError, '盤面にランドマーク帯がエラー無く描画できる');
+    ok(doc.body.textContent.includes('ランドマーク') && doc.body.textContent.includes(DOM.LANDSCAPES.arena.name), '盤面にランドマーク名（闘技場）が出る');
+    ok(doc.body.textContent.includes('残VP') || doc.body.textContent.includes('溜VP'), 'ランドマーク帯に残VP/溜VPが出る');
+    // 闘技場モーダル
+    showPend({ type: 'arena', player: 0 }, (x) => { x.landmarks = ['arena']; x.landmarkVP = { arena: 12 }; x.players[0].hand = ['engineer', 'copper']; });
+    ok(modalOk(), '闘技場：アクションを捨てるモーダル');
+    // 峠の入札モーダル
+    showPend({ type: 'mountain_pass_bid', player: 0, order: [1, 0], idx: 1, bids: { 1: 3 }, highest: 3, highBidder: 1 }, (x) => { x.landmarks = ['mountain_pass']; });
+    ok(modalOk(), '峠：入札の数量モーダル');
+    ok(doc.body.textContent.includes('競り') || doc.body.textContent.includes('入札'), '峠モーダルに競り/入札の文言が出る');
+    // オベリスク対象の表示
+    const s2 = mk({ landmarks: ['obelisk'] }); s2.turn.phase = 'buy'; showAs(s2, 0);
+    ok(!runtimeError, 'オベリスクの盤面表示がエラー無く描画できる');
+    // セット選択に empires-landmarks
+    ok(DOM.CARD_SETS.some((x) => x.id === 'empires-landmarks'), 'CARD_SETS に empires-landmarks がある');
+    runtimeError = null; UI.view = 'setup'; UI.setup.kingdomSet = 'empires-landmarks'; DOM.render();
+    ok(!runtimeError && doc.body.textContent.includes('帝国＋ランドマーク'), '「拡張」タイルに帝国＋ランドマークが出る');
+    UI.setup.kingdomSet = 'basic';
+  }
 } catch (e) {
   fail++;
   console.log('  ✗ 例外: ' + e.message + '\n' + (e.stack || '').split('\n').slice(1, 3).join('\n'));

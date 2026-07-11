@@ -905,6 +905,8 @@
     // 帝国セット（固定10種）。分割山（開拓者/騒がしい村・投石機/石）と城の混合山は createInitialState が
     //   下段/山の中身を自動で用意する（王国枠は1山ぶん）。
     { id: 'empires',         kind: 'standard', name: '帝国セット', desc: '負債・山上の勝利点・分割山・城・命令', kingdom: DOM.KINGDOM_EMPIRES },
+    // 帝国＋ランドマーク（横型）。固定10王国に、帝国ランドマーク21種から2枚を無作為に付ける（得点ルールが変わる）。
+    { id: 'empires-landmarks', kind: 'standard', name: '帝国＋ランドマーク', desc: '帝国10種＋ランドマーク2枚（得点や獲得の仕方が変わる横型）', kingdom: DOM.KINGDOM_EMPIRES, landmarksFrom: 'empires' },
     // ---- おすすめ（テーマ別・固定10種）----
     { id: 'big-money',       kind: 'recommend', name: 'ビッグマネー', desc: 'お金を伸ばして属州を狙う王道',
       kingdom: ['chapel', 'moneylender', 'harbinger', 'throne_room', 'bureaucrat', 'poacher', 'market', 'mine', 'laboratory', 'sentry'] },
@@ -977,6 +979,18 @@
     if (setId === 'random') return DOM.randomKingdom(10);
     if (setId === 'intrigue') return DOM.KINGDOM_INTRIGUE.slice();
     return DOM.KINGDOM.slice();
+  };
+  // プールから重複なく n 種のランドマーク（横型）を選ぶ（順不同）。
+  DOM.pickLandmarks = function (n, pool) {
+    const src = (pool || []).slice();
+    for (let i = src.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = src[i]; src[i] = src[j]; src[j] = t; }
+    return src.slice(0, n || 0);
+  };
+  // セットID → 使用するランドマークid列（横型・0〜2枚）。landmarksFrom を持つセットのみ抽選する。
+  DOM.landmarksForSet = function (setId) {
+    const set = DOM.CARD_SETS.find((s) => s.id === setId);
+    if (set && set.landmarksFrom === 'empires') return DOM.pickLandmarks(2, DOM.LANDMARKS_EMPIRES || []);
+    return [];
   };
 
   DOM.TREASURES = ['copper', 'silver', 'gold'];

@@ -1,9 +1,46 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-11 / branch `main`（最新は `git log` で確認）。**帝国（Empires）縦型36枚は実プレイ可能（§0-16）＋E8＝命令(Command)の忠実化も完了・push済（`52bba46`・§0-17）＝本番反映を実機確認済み**（`sw.js` v44）。**いまは §0-18＝横型ランドスケープ（第1弾＝帝国ランドマーク21種）に着手中**（横型枠パイプライン・研究・カタログ21枚まで完了・コミット済＝`4ef4ca8`／**engine は未着手＝ここが次の本丸**）。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
+最終更新: 2026-07-11 / branch `main`（最新は `git log` で確認）。**帝国（Empires）縦型36枚＋E8命令は push済（§0-16/0-17）。いまは §0-19＝横型ランドスケープ 第1弾＝帝国ランドマーク21種の engine 実装が完了（WIP・未push・`sw.js` v45）＝empires-landmarks セットで実プレイ可能**（得点11種＋トリガー8種＋新pending2種[闘技場/峠]＋CARD_SET昇格＋敵対レビュー6件修正）。**残り＝絵(webp)の回収のみ**（engineは完成）。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
-**新セッションは まず `npm test` を実行し 33スイート・オールグリーン（exit 0・整合性3146件・帝国269件＋UI45件・冒険59件＋UI40件・暗黒時代87件＋UI57件・新プロモ165件＋UI22件・繁栄69件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
-実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク）／`npm run verify:visual`（320〜768pxはみ出し検査）。
+**新セッションは まず `npm test` を実行し 34スイート・オールグリーン（exit 0・整合性3147件・不変条件5・帝国269件＋UI54件・ランドマーク80件・冒険59件＋UI40件・暗黒時代87件＋UI57件・新プロモ165件＋UI22件・繁栄69件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
+実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク＝9/9・webp346/0）／`npm run verify:visual`（320〜768pxはみ出し検査）。
+
+---
+
+## 0-19. 横型ランドスケープ 第1弾＝帝国ランドマーク21種の **engine 実装 完了**（2026-07-11・WIP・未push・`sw.js` v45）
+
+**§0-18 の土台（横型枠パイプライン・研究・カタログ21枚）の上に engine を全実装**。新セット `empires-landmarks`（帝国固定10王国＋ランドマーク2枚抽選）を足し、**ランドマークが実プレイに影響する**（得点・獲得/廃棄トリガーが変わる）。**カタログ/webp変更なし**（`DOM.LANDSCAPES` は §0-18 で追加済み）。**残タスクは webp 回収のみ**（engine は完成・絵が無くても盤面は名前＋説明文で成立）。
+
+### 実装（段0〜5）
+- **段0＝共通基盤**：`state.landmarks=[id]`（対局中不変・公開・maskで残る）／`state.landmarkVP={id:個数}`（ランドマーク上の**有限リザーブ**6×人数・非カード＝保存則tally対象外）／`state.landmarkStash`（水道橋/汚された神殿の一時VP）／`state.obeliskPile`。`createInitialState` で準備（6×人数のリザーブ・水道橋=銀貨/金貨山に`pileVP`8ずつ・汚された神殿=集合以外の素のアクション山に2ずつ・オベリスク=素のアクション山を無作為選択）。ヘルパ `hasLandmark`／`takeLandmarkVP(state,pi,id,per)`。`maskStateFor` は clone でこれらを公開のまま残す（変更不要）。
+- **段1＝得点計算専用11種**：`landmarkScoreForCards(state, cards, seat)` を新設し `scoreGame` から呼ぶ（**vpOf は state を持たないので scoreGame 側に加点**）。bandit_fort/fountain/keep/museum/orchard/palace/wall/wolf_den/tower/triumphal_arch/obelisk。**得点は負になり得る＝下限クランプ禁止**。keep=全員のデッキを同時比較（同数は各自+5）。tower=`isFromEmptySupplyPile`（分割山は上下とも空・混合山=廃墟/騎士/城は集約キー・非サプライ除外・勝利点除外）。obelisk=**分割山を選んだら両半分を数える**（敵対レビュー修正）。
+- **段2＝簡単トリガー8種**：tomb（`trashCard` の push 直後・廃棄した本人・支配退避では非発火・城塞が戻っても発火）／battlefield・labyrinth・basilica・colonnade・aqueduct・defiled_shrine（`triggerOnGain` 末尾のランドマークブロック）／baths（`endBuyTail` 冒頭・1ターン1回）。**購入フェイズ判定は「獲得時点」のフェイズ（`gainWasBuyPhase`）**＝ヴィラの phase 変更に負けない（敵対レビュー修正）。
+- **段3＝闘技場 arena（新pending・4点セット）**：`maybeArena`（END_ACTION_PHASE＝購入フェイズ開始・`t.arenaFired` で1ターン1回・ただし**ヴィラで購入→アクションに戻ると再武装**＝敵対レビュー修正）＋`ARENA_RESOLVE`（手札アクション1枚を**捨て札へ**[廃棄でない]→+2VP・任意）。CPU=購入フェイズの手札アクション（財宝兼を避け）を捨てる。UI=modalSingleHand。
+- **段4＝峠 mountain_pass（新pending・逐次入札）**：最初の属州獲得で `state.mountainPassArmed`→endBuyTail で `startMountainPassBid`（獲得者の左隣から始め獲得者が最後・最大40負債）。`MOUNTAIN_PASS_BID` が逐次に入札を集約し、最高額（同額は先着）が **+8VP＋同額の負債**。完了後 `endBuyTailTravellers` へ合流（baths/hermit の二重発火なし）。1ゲーム1回（`mountainPassDone`）。CPU=手番数で価値を見て正直入札（超えないなら0）。UI=modalAmount(0..40)。
+- **段5＝セット選択**：`DOM.landmarksForSet(setId)`／`DOM.pickLandmarks(n,pool)` を cards.js に新設。CARD_SET に **`empires-landmarks`**（`kind:'standard'`・`landmarksFrom:'empires'`）。NEW_GAME→`opts.landmarks`→`createInitialState`。ui.js の startLocal/restartLocal と server の startGame で landmarks をサーバ権威/ローカルで1度だけ確定して共有。**盤面にランドマーク帯**（名前・残VP・溜VP・オベリスク対象。`viewBoard` の `landscapeBlock`＝既存の supply-section/mats クラス再利用）。
+
+### 敵対レビュー（多エージェント6次元→各finding node再現で確定）＝**確定6件（偽陽性0）→全修正・回帰テスト付き**
+- **[medium] オベリスク×分割山の得点漏れ**（2次元で二重報告）：obeliskPile が settlers/catapult（分割山上段）のとき、同一山の相方（bustling_village/rocks）由来カードを数え落とし最終スコアが過小＝**勝者が変わり得る**。→ `landmarkScoreForCards` の obelisk 句で `SPLIT_BOTTOM[op]||SPLIT_TOP[op]` の相方も数える。
+- **[medium] ヴィラ獲得のフェイズ変更が公会堂/列柱を握りつぶす**：購入フェイズにヴィラを獲得すると villa の on-gain が phase を 'buy'→'action' に変え、その後のランドマークブロックの `inBuy` 判定が偽になり **basilica/colonnade/汚された神殿(呪い) が発火しない**（過小得点）。→ triggerOnGain 冒頭で `gainWasBuyPhase` を捕まえ、それを使う。
+- **[low] 闘技場がヴィラ再入場で再発火しない**：公式は購入フェイズ開始のたび。→ villa の action 復帰で `arenaFired=false` に再武装。
+- **[low] CPU の tower 近似が分割山/混合山で engine 実得点と乖離**／**[low] CPU が keep を完全省略**：→ CPU `winsIfEnds` を近似 `landmarkVpApprox` から **engine 公開の `landmarkScoreForCards` 呼び出し**に置換（オベリスク分割山・塔の空山写像・砦の全員比較を engine と完全一致で見積る）。`DOM.engine.landmarkScoreForCards` を公開。
+
+### 検証
+- `test/landmarks.test.js` **新設80件**（共通基盤・得点11種[負得点含む]・トリガー8種・闘技場/峠の全裁定・セット選択・後方互換[landmarksフィールド無しの旧スナップショット]・敵対レビュー回帰6件・CPUソーク[膠着0/例外0・峠pending到達・闘技場の強制終端]）を package.json 登録（**34スイート目**）。`test/empires-ui.test.js` を **45→54件**（ランドマーク盤面帯・闘技場/峠モーダル・オベリスク表示・empires-landmarks picker）。
+- `invariants` の出荷セット検証に **empires-landmarks（landmarks付き）** を追加＋新節「ランドマーク（全21種ペア＋全プール混成にランドマーク付与）」＝**landmarkVP/pileVP/landmarkStash は非カード＝保存則の tally に混ざらない**ことと、arena/mountain_pass の新pendingが CPU で終端することを確認（不変条件 4→**5件**）。
+- **npm test 全34スイート緑（exit 0・整合性3147・CPU序列 100/64/95 維持）**／`verify:e2e` 9/9（webp 346/0・例外なし）。
+
+### 【次にやること】絵(webp)の回収 → push（ユーザー確認）
+1. **絵**：ユーザーがチャッピーでランドマーク21枚生成中（前セッションで3バッチの指示文を出した）。`C:\Users\b1242\Downloads` に来たら判別して `asset/art/<id>.png` に回収 → **`node tools/build-landscape.js`（縦型 build-cards.js とは別スクリプト）** で webp 生成 → 一覧/盤面の画像表示は今は名前＋説明文なので webp が無くても動くが、あれば `carddata`/`cards.html`/`ui.js` の別経路（`DOM.LANDSCAPES` 参照）で出す。`sw.js` は既に v45。※現時点で Downloads にあるのは 7/5 の旧・帝国縦カードバッチのみ＝ランドマークの絵は未着。
+2. **push**：webp 回収後（or engine だけでも）**ユーザー確認の上で** `git push`。empires-landmarks が本番 Pages/Render に出る（サーバは `DOM.CARD_SETS`/`landmarksForSet` から自動で受理）。
+
+### 注意（次セッションが知らないと事故る）
+- **ランドマークのVPは3系統**：`state.landmarkVP`（ランドマーク上の有限リザーブ6×人数＝闘技場/公会堂/浴場/戦場/列柱/迷宮）／`state.pileVP`（山の上＝集合と共用・水道橋は銀貨/金貨山、汚された神殿は各アクション山）／`state.landmarkStash`（山→ランドマークへ移した一時VP＝水道橋/汚された神殿）。最終得点になるのは `p.vpTokens` に移った分だけ。
+- **得点は負になり得る**（山賊の砦/壁/狼の巣）＝`landmarkScoreForCards` で下限クランプ禁止。**新しいランドマーク得点を足すなら `landmarkScoreForCards` に書けば CPU の終局読みも自動で一致**（CPU は `DOM.engine.landmarkScoreForCards` を呼ぶ）。
+- **購入フェイズ依存のトリガー（basilica/colonnade/汚された神殿の呪い）は `gainWasBuyPhase`（獲得時点のフェイズ）を使う**＝ヴィラ等が途中で phase を変えても正しい。新しい「購入フェイズ限定」トリガーを足すときも同様に。
+- **新pendingは4点セット必須**（engine reducer＋PLAYER_ACTIONS＋CPU decidePending＋UI viewPendingModal）＋終端保証。arena/mountain_pass が該当済み。
+- **横型カードは `DOM.CARDS` に無い**ので整合性テスト（GAIN_ORDER網羅/POOL所属/3山終了/闇市場）に一切混ざらない。表示は `DOM.LANDSCAPES` を見る別経路。
+- **イベント13種は未実装**（`BUY_EVENT`＋CPU購入AI＋負債経済連動が要る＝別の大仕事）。ランドマークだけ先行。
 
 ---
 
@@ -706,10 +743,10 @@
 - **海辺の簡略化2点は本格実装済み**：封鎖の堀免疫窓・海賊の財宝獲得リアクション。on-gain対話は `!pending && _gainDepth===1` ゲートで安全側。
 
 ## 5. 未完了タスク（優先順。次セッションは 1. から）
-1. **【最優先】§0-18＝横型ランドスケープ 第1弾＝帝国ランドマーク21種の engine 実装**（§0-18「次にやること」の1〜6の順）。枠パイプライン・研究・カタログは完了済み。※E8 は完了・push済（§0-17）。
-   - **✅段階2 完了済み拡張**：収穫祭(§0-2)／ギルド(§0-4)／異郷(§0-5)／新プロモ(§0-7)／暗黒時代 全56枚(§0-8)／冒険 全38枚(§0-9)／**帝国 縦型36枚(§0-10〜0-16)**＋**E8＝命令の忠実化(§0-17)**。すべて push 済。基本・陰謀・海辺・錬金術・繁栄と合わせ、**縦型カードの実プレイ化は帝国まで完了＝本番で遊べる**。
+1. **【最優先】§0-19＝帝国ランドマーク21種の webp 回収 → push（ユーザー確認）**。engine は完成・全34スイート緑（§0-19）。**残りは絵だけ**：`C:\Users\b1242\Downloads` にランドマークの絵が来たら判別して `asset/art/<id>.png` に回収 → `node tools/build-landscape.js`（横型・別スクリプト）で webp 生成 → `sw.js` は既に v45 → **ユーザー確認の上で** `git push`（empires-landmarks が本番に出る）。※絵が無くても盤面は名前＋説明文で成立＝engine だけ先に push も可（ユーザー判断）。
+   - **✅段階2 完了済み拡張**：収穫祭(§0-2)／ギルド(§0-4)／異郷(§0-5)／新プロモ(§0-7)／暗黒時代 全56枚(§0-8)／冒険 全38枚(§0-9)／**帝国 縦型36枚(§0-10〜0-16)**＋**E8＝命令の忠実化(§0-17)**（すべて push 済）＋**帝国ランドマーク21種 engine(§0-19・未push)**。基本・陰謀・海辺・錬金術・繁栄と合わせ **縦型カードの実プレイ化は帝国まで完了＋ランドマーク21種も実プレイ可能**。
 2. **段階2の残り＝発売順の未着手拡張**（着手前に `docs/adding-cards.md` を必読。特殊機構は §C）:
-   - **帝国の横型ランドスケープ（イベント13＋ランドマーク20）＋冒険のイベント20**＝縦枠パイプライン未対応で段階1すら未着手（別途 横長枠の生成パイプラインが要る）。
+   - **帝国のイベント13＋冒険のイベント20**＝横型枠パイプラインは §0-18 で対応済み・カタログ研究も一部あり（`docs/research/landscape_cards.md`）だが engine 未着手。**イベントは `BUY_EVENT`＋CPU購入AI＋負債経済連動が要る**（ランドマークより重い）。
    - **発売順その先（段階1すら未着手＝画像・カタログとも無し）**：夜想曲/ルネサンス/移動動物園/同盟/略奪/日の出づる国。
 3. **錬金術アートの△3枚最終確認（任意）**：変成/薬草商/薬剤師。差し替えは `asset/art/<id>.png` →`node tools/build-cards.js`→該当webpデプロイ。
 4. （任意・CPU購入の残課題）B案は「拡張＋礼拝堂エンジン」で ENGINE/MONEY を切替済み（暗黒時代は MONEY 既定＝§0-5 と同方針）。さらに踏み込むなら **MONEY王国での BM+呪いアタック（魔女等≤2枚）** や **王国個別のエンジン成立度スコアリング**が候補（優先度低）。

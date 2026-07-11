@@ -202,12 +202,14 @@ function startGame(room) {
   if (configs.length < MIN_PLAYERS) return;
   // 王国カード（基本/陰謀/ランダム）。'random' はサーバ権威で1度だけ確定し全員で共有する。
   const kingdom = DOM.kingdomForSet ? DOM.kingdomForSet(room.kingdomSet || 'basic') : null;
+  // 帝国：横型ランドスケープ（ランドマーク）もサーバ権威で1度だけ確定して全員で共有する（empires-landmarks 等）。
+  const landmarks = DOM.landmarksForSet ? DOM.landmarksForSet(room.kingdomSet || 'basic') : [];
   // 手番順: テストは START_ACTIVE に整数(0)を注入して決定論化するので最優先。
   // 本番はホストのトグル（randomOrder）に従う：ランダム＝開始席をランダム化／上から順＝席0(ホスト)固定。
   const startActive = Number.isInteger(START_ACTIVE)
     ? START_ACTIVE
     : (room.randomOrder !== false ? 'random' : 0);
-  room.state = E.createInitialState(configs, kingdom, { startActive });
+  room.state = E.createInitialState(configs, kingdom, { startActive, landmarks });
   room.started = true;
   for (const m of room.members) {
     send(m.ws, { t: 'started', you: m.seat, state: E.maskStateFor(room.state, m.seat) });

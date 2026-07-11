@@ -520,6 +520,11 @@
     Object.keys(state.supply).forEach((k) => { if (after(k) <= 0) empty++; });
     return empty >= 3;
   }
+  // 帝国：ランドマーク得点は engine の正本 landmarkScoreForCards を仮デッキに当てて算出する
+  //   （オベリスクの分割山両半分・塔の空山写像・砦の全員比較を engine と完全一致で見積る）。
+  function landmarkVp(state, cards, seat) {
+    return (DOM.engine && DOM.engine.landmarkScoreForCards) ? DOM.engine.landmarkScoreForCards(state, cards, seat) : 0;
+  }
   // seat が id を獲得して即終了した場合に勝てる（同点の共同勝利を含む）か
   function winsIfEnds(state, seat, id) {
     // 獲得する1枚を加えた仮デッキで再計算（庭園のデッキ増・公爵の動的得点も反映）
@@ -528,11 +533,12 @@
     // 遠隔地（冒険）は「酒場マット上にあるときだけ4点」＝ゾーン依存の得点。hypo は全ゾーンを deck にまとめるので
     // vpOfPlayer では 0 点になる。相手は実オブジェクト（tavern あり）で評価されるため、足さないと自分だけ過小評価になる。
     // （hypo.tavern に入れ直すと allCards で二重に数えてしまう＝庭園/品評会/絹の道/城が狂う。ここで加算するのが正しい。）
-    const myVp = vpOfPlayer(hypo) + 4 * (me.tavern || []).filter((c) => c === 'distant_lands').length;
+    const myVp = vpOfPlayer(hypo) + 4 * (me.tavern || []).filter((c) => c === 'distant_lands').length
+      + landmarkVp(state, allCards(me).concat(id), seat); // 帝国：ランドマーク得点（engineと同一算出）
     const myTurns = me.turns + 1; // 今のターンはクリーンアップで+1される
     return state.players.every((p, i) => {
       if (i === seat) return true;
-      const v = vpOfPlayer(p);
+      const v = vpOfPlayer(p) + landmarkVp(state, allCards(p), i);
       if (v > myVp) return false;
       if (v === myVp && p.turns < myTurns) return false;
       return true;
@@ -805,6 +811,20 @@
   }
 
   function decidePending(state, pd, p) {
+    // 帝国：闘技場＝購入フェイズのアクションはこのターン使えず、捨てても捨て札に行くだけ（廃棄ではない＝再び引ける）＝ほぼ純粋な+2VP。
+    //   未使用の稼ぎ札になり得る財宝兼アクションは避け、無ければ捨てない。
+    if (pd.type === 'arena') {
+      const cand = p.hand.filter((c) => isType(c, 'action') && !isType(c, 'treasure')).sort((a, b) => (C()[a].cost || 0) - (C()[b].cost || 0));
+      return { type: 'ARENA_RESOLVE', card: cand[0] || null };
+    }
+    // 帝国：峠＝競り。序盤ほど +8VP の価値が大きい（負債は購入を遅らせるだけ＝失点ではない）。真の価値を正直に入札し、
+    //   現在の最高額を超えないなら 0（自分の価値を超えて負債を負わない）。
+    if (pd.type === 'mountain_pass_bid') {
+      const turns = p.turns || 0;
+      const myValue = turns <= 4 ? 5 : turns <= 8 ? 3 : turns <= 12 ? 1 : 0;
+      const bid = myValue > (pd.highest || 0) ? Math.min(40, myValue) : 0;
+      return { type: 'MOUNTAIN_PASS_BID', amount: bid };
+    }
     // 収穫祭：アタックの反応ステップで馬商人を持っていたら、まず脇に置く（次手番に+1カードで戻る＝常に得）。
     // 脇に置くと手札から消えるので、次回の呼び出しでは通常の判断（堀公開/受ける）に進む＝無限ループしない。
     // stage 'react' の各アタックに加え、embedded型（民兵/拷問人＝pending が反応窓を兼ねる）でも脇に置ける。
