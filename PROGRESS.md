@@ -1,15 +1,15 @@
 # 進捗（PROGRESS） — ドミニオン Webアプリ
 
-最終更新: 2026-07-11 / branch `main`（最新は `git log` で確認）。**帝国（Empires）縦型36枚＋E8命令は push済（§0-16/0-17）。§0-19＝横型ランドスケープ第1弾＝帝国ランドマーク21種は push済（`13a4401`・`sw.js` v46・本番反映確認済）。**いま §0-20＝横型ランドスケープ第2弾＝帝国イベント13種を EV0〜EV3 まで **全完了・未push**（`39d3129`・`sw.js` v47・全35スイート緑）＝`empires-events` セット（帝国固定10＋イベント2抽選）が実プレイ可能。EV0基盤`BUY_EVENT`＋EV1簡単10種＋EV2重量3種(tax/donate/annex)＋EV3(CARD_SET昇格・CPU購入AI`bestEventBuy`・イベントwebp13種・敵対レビュー4観点で確定バグ3件修正)。**次にやること＝ユーザー確認の上で push**（`origin/main..main` に EV0〜EV3 の4コミット `8caabc0`/`1bd81ed`/`52f7e7f`/`39d3129`）。push すれば本番 Pages/Render に `empires-events` が出る（サーバは `DOM.CARD_SETS`/`eventsForSet` から自動受理）。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
+最終更新: 2026-07-11 / branch `main`（最新は `git log` で確認）。**帝国（Empires）縦型36枚＋E8命令は push済（§0-16/0-17）。§0-19＝横型ランドスケープ第1弾＝帝国ランドマーク21種は push済（`13a4401`・`sw.js` v46・本番反映確認済）。**§0-20＝横型ランドスケープ第2弾＝帝国イベント13種は EV0〜EV3 まで **全完了・push済**（`d1a7b34`・2026-07-11・`sw.js` v47・本番 Pages に v47＋イベント webp 200＋`empires-events`/`BUY_EVENT`/`pileDebt` 反映を実機確認済／Render は push で自動再デプロイ）＝`empires-events` セット（帝国固定10＋イベント2抽選）が本番で実プレイ可能。EV0基盤`BUY_EVENT`＋EV1簡単10種＋EV2重量3種(tax/donate/annex)＋EV3(CARD_SET昇格・CPU購入AI`bestEventBuy`・イベントwebp13種・敵対レビュー4観点で確定バグ3件修正)。**次にやること＝次の拡張候補**（冒険のイベント20種／発売順の未着手拡張）。以後の拡張も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push（勝手に push しない）。
 公開: GitHub Pages https://ankake-web.github.io/dominion/ （クライアント）＋ Render（オンライン対戦サーバ）。
 **新セッションは まず `npm test` を実行し 35スイート・オールグリーン（exit 0・整合性3148件・不変条件6・帝国269件＋UI75件・ランドマーク80件・帝国イベント69件（events）・冒険59件＋UI40件・暗黒時代87件＋UI57件・新プロモ165件＋UI22件・繁栄69件・異郷83件＋UI44件・収穫祭107件・ギルド81件＋UI25件・CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着手すること。
 実ブラウザ検証（puppeteer・手動）: `npm run verify:e2e`（通しプレイスモーク＝9/9・webp346/0）／`npm run verify:visual`（320〜768pxはみ出し検査）。
 
 ---
 
-## 0-20. 横型ランドスケープ 第2弾＝**帝国イベント13種**（EV0〜EV3 全完了・未push・2026-07-11）
+## 0-20. 横型ランドスケープ 第2弾＝**帝国イベント13種**（EV0〜EV3 全完了・**push済**・2026-07-11）
 
-ランドマーク（§0-19・push済）に続き、**帝国イベント13種**（ユーザー決定＝負債/VPトークン既実装で相性最高・帝国拡張の仕上げ）を **EV0〜EV3 まで全実装完了**。正本＝`docs/research/landscape_cards.md` §2/§3/§4＋`landscape_gaps.md`。ランドマークと違い**イベントは「買う」**＝新機構 `BUY_EVENT`（購入ディスパッチャ）＋CPUのイベント購入評価 `bestEventBuy`＋UIの購入ボタン。**残タスクは push（ユーザー確認）のみ**（`39d3129`・`sw.js` v47・全35スイート緑）。
+ランドマーク（§0-19・push済）に続き、**帝国イベント13種**（ユーザー決定＝負債/VPトークン既実装で相性最高・帝国拡張の仕上げ）を **EV0〜EV3 まで全実装完了＝push済（`d1a7b34`・本番 v47 反映確認済）**。正本＝`docs/research/landscape_cards.md` §2/§3/§4＋`landscape_gaps.md`。ランドマークと違い**イベントは「買う」**＝新機構 `BUY_EVENT`（購入ディスパッチャ）＋CPUのイベント購入評価 `bestEventBuy`＋UIの購入ボタン。**これで帝国拡張（縦型36＋E8＋ランドマーク21＋イベント13）は完全に本番実プレイ可能**。
 
 ### 確定した方針（研究＋PROGRESS §0-18 で裁定済み）
 - **13種**＝advance/annex/banquet/conquest/delve/dominate/donate/ritual/salt_the_earth/tax/triumph/wedding＋**windfall**（研究データに欠落＝$5・山札と捨て札が両方空なら金貨3枚／手札・場は判定外）。
@@ -41,9 +41,13 @@
 - **CPUソーク**＝empires-events 40戦全完走・108回イベント購入（別レビューでは462戦 livelock 0・全8種発火）。invariants に empires-events soak（全13種ペア＋全部乗せ＋混成fuzz）で不変条件 5→6件。
 - **イベント webp 13種を生成**（枠＋文字・絵は未回収＝暗い板／`build-landscape.js` の event スキン）。カード一覧に「イベント（帝国・横型）」群を追加。`test/empires-ui.test.js` 68→75件。**全35スイート緑（exit 0・整合性3148・不変条件6・events 69・帝国UI 75）**・`verify:e2e` 9/9（webp 346/0）。
 
-### 【次にやること】push（ユーザー確認）→ その後の拡張
-- **push**：`origin/main..main` に EV0〜EV3 の4コミット（`8caabc0`/`1bd81ed`/`52f7e7f`/`39d3129`）。ユーザー確認の上で `git push`。本番 Pages に `empires-events`（`sw.js` v47）＋イベント webp が出る。Render は push で自動再デプロイ（サーバは `DOM.CARD_SETS`/`eventsForSet` から empires-events を自動受理）。
-- **その後の拡張候補**（着手前に `docs/adding-cards.md` 必読）：冒険のイベント20種（横型枠は §0-18 対応済・トークン中心・負債なし）／発売順の未着手拡張（夜想曲/ルネサンス/移動動物園/同盟/略奪/日の出づる国＝段階1すら未着手）。
+### push＝完了（2026-07-11・`3cbe91b..d1a7b34`）＝本番反映を実機確認済み
+- **GitHub Pages**：`sw.js` v47／`js/cards.js` に `empires-events`／`js/engine.js` に `BUY_EVENT`・`pileDebt`／イベント webp（`tax`/`donate`/`annex`/`delve`/`conquest` … すべて 200）を実機確認。Deploy ワークフロー success。
+- **Render（オンライン）**：push で自動再デプロイ（サーバは `DOM.CARD_SETS`/`eventsForSet` から `empires-events` を自動受理＝サーバ側コード変更は §0-20 の startGame 配線ぶんが再デプロイで反映）。
+
+### 【次にやること】次の拡張候補（着手前に `docs/adding-cards.md` 必読）
+- **冒険のイベント20種**（横型枠は §0-18 対応済・カタログ研究は `docs/research/landscape_cards.md`・トークン中心/負債なし＝相性は別）。BUY_EVENT 基盤は帝国イベントで完成済みなので流用できる。
+- **発売順の未着手拡張**（段階1すら未着手＝画像・カタログとも無し）：夜想曲/ルネサンス/移動動物園/同盟/略奪/日の出づる国。
 
 ### 注意（次セッションが知らないと事故る・イベント固有）
 - **イベントは「カード」でない**＝コスト軽減（橋/街道）を受けず、購入時トリガー（商人ギルド/値切り屋/過払い）も発動しない。**負債>0 の間はカードもイベントも購入不可**。返済は購入権を消費しない。横型は `DOM.LANDSCAPES` が正本（`DOM.CARDS` に無い＝整合性テストに混ざらない）。

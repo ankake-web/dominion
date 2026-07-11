@@ -9,15 +9,10 @@
 1. `Set-Location 'C:\Users\b1242\claude\game\dominion'` して `npm test` → **35スイート・オールグリーン（exit 0・整合性3148・不変条件6・帝国269＋UI75・ランドマーク80・帝国イベント69（events）・冒険59＋UI40・暗黒時代87＋UI57・新プロモ165＋UI22・繁栄69・異郷83＋UI44・収穫祭107・ギルド81＋UI25・CPU序列 強vs弱100/強vs普通64/普通vs弱95）** を確認。
 2. `PROGRESS.md` 先頭サマリ＋**§0-20（帝国イベント・EV0〜EV3 全完了・未push）**を読む。横型の設計正本＝`docs/research/landscape_cards.md`＋`landscape_gaps.md`。全体設計図＝`docs/adding-cards.md`。
 
-## 現状：横型ランドスケープ第2弾＝帝国イベント13種は **EV0〜EV3 全完了・未push**（`39d3129`・`sw.js` v47）
-`empires-events` セット（帝国固定10＋イベント2抽選）が実プレイ可能。EV0基盤`BUY_EVENT`＋EV1簡単10種＋EV2重量3種(tax/donate/annex)＋EV3(CARD_SET昇格・CPU購入AI`bestEventBuy`・イベントwebp13種・敵対レビュー4観点で確定バグ3件修正)。全35スイート緑・`verify:e2e` 9/9（webp346/0）。
+## 現状：横型ランドスケープ第2弾＝帝国イベント13種は **EV0〜EV3 全完了・push済**（`d1a7b34`・`sw.js` v47・本番反映確認済）
+`empires-events` セット（帝国固定10＋イベント2抽選）が本番で実プレイ可能。EV0基盤`BUY_EVENT`＋EV1簡単10種＋EV2重量3種(tax/donate/annex)＋EV3(CARD_SET昇格・CPU購入AI`bestEventBuy`・イベントwebp13種・敵対レビュー4観点で確定バグ3件修正)。全35スイート緑・`verify:e2e` 9/9（webp346/0）。**本番 Pages に v47＋イベント webp 200＋`empires-events`/`BUY_EVENT`/`pileDebt` 反映を実機確認済**。これで帝国拡張（縦型36＋E8＋ランドマーク21＋イベント13）は完全に本番実プレイ可能。
 
-## 次に取り組むタスク（優先順1位）：**push（ユーザー確認の上で）**
-- `origin/main..main` に **EV0〜EV3 の4コミット**（`8caabc0` EV0/EV1・`1bd81ed` handoff・`52f7e7f` EV2・`39d3129` EV3）が未push。**ユーザー確認の上で `git push`**。
-- push すれば本番 Pages に `empires-events`（`sw.js` v47）＋イベント webp13種が出る。Render は push で自動再デプロイ（サーバは `DOM.CARD_SETS`/`eventsForSet` から empires-events を自動受理）。
-- push 後は §0-19（ランドマーク）と同様に、本番 Pages で `sw.js` v47 とイベント webp（例 `tax.webp`）が 200 になるか実機確認するとよい。
-
-## その後の拡張候補（着手前に `docs/adding-cards.md` 必読）
+## 次に取り組むタスク（優先順1位）：**次の拡張候補**（着手前に `docs/adding-cards.md` 必読）
 - **冒険のイベント20種**（横型枠は §0-18 対応済・カタログ研究は `docs/research/landscape_cards.md`・トークン中心/負債なし）。
 - 発売順の未着手拡張（段階1すら未着手＝画像・カタログとも無し）：夜想曲/ルネサンス/移動動物園/同盟/略奪/日の出づる国。
 
@@ -30,6 +25,5 @@
 - client資産（js/css/webp等）を変えたら `sw.js` の VERSION を上げる（現在 v47）。回答は日本語・フランクに短く。**push は勝手にしない＝完成→全テスト緑→都度ユーザー確認の上で**。**セッションが重くなったら促さず自動で /handoff**（記憶 auto-handoff）。**Read出力の汚染に注意**：断定前に Grep・`git show`・`Get-Content` で裏取り。
 
 ## 直近で完了した大仕事（参考）
-- **§0-20 帝国イベント EV2＋EV3**（2026-07-11・未push・`52f7e7f`/`39d3129`）＝tax/donate/annex＋CARD_SET昇格＋CPU購入AI＋敵対レビュー確定バグ3件修正＋イベントwebp13種。
-- **§0-20 帝国イベント EV0/EV1**（2026-07-11・未push・`8caabc0`）＝BUY_EVENT 基盤＋簡単10種。
+- **§0-20 帝国イベント EV0〜EV3 全完了**（2026-07-11・push済・`d1a7b34`・本番 v47 実機確認）＝BUY_EVENT基盤＋簡単10種＋tax/donate/annex＋CARD_SET昇格＋CPU購入AI＋敵対レビュー確定バグ3件修正＋イベントwebp13種。
 - **§0-19 帝国ランドマーク21種＋絵**（2026-07-11・push済・本番 v46 実機確認）。
