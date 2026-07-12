@@ -135,7 +135,10 @@
       if (has('victory')) return 'アクション・リザーブ・勝利点'; // 遠隔地
       return 'アクション・リザーブ';
     }
-    if (has('command')) return 'アクション・命令';            // 大君主
+    if (has('command')) {
+      if (has('treasure')) return '財宝・命令';               // ルネサンス：王笏（2024エラッタで Command 追加）
+      return 'アクション・命令';                              // 大君主
+    }
     if (has('castle')) {
       if (has('treasure')) return '財宝・勝利点・城';         // 粗末な城
       if (has('action')) return 'アクション・勝利点・城';     // 小さい城/華やかな城
@@ -180,7 +183,10 @@
       if (has('victory')) return 'Action - Reserve - Victory';
       return 'Action - Reserve';
     }
-    if (has('command')) return 'Action - Command';
+    if (has('command')) {
+      if (has('treasure')) return 'Treasure - Command';   // Scepter
+      return 'Action - Command';
+    }
     if (has('castle')) {
       if (has('treasure')) return 'Treasure - Victory - Castle';
       if (has('action')) return 'Action - Victory - Castle';

@@ -50,6 +50,33 @@
      - state.obeliskPile：オベリスクで選ばれたアクション山id（得点計算で参照）。 */
   function hasLandmark(state, id) { return !!(state.landmarks && state.landmarks.indexOf(id) >= 0); }
   function hasEvent(state, id) { return !!(state.events && state.events.indexOf(id) >= 0); }
+  /* ---------- ルネサンス：横型プロジェクト（Project）----------
+     state.projects=[id...]＝この対局で採用しているプロジェクト（対局中不変・公開）。
+     p.projects=[id...]＝そのプレイヤーが「買った」プロジェクト（キューブを置いた＝以後ずっと効果が続く）。
+     - 各プレイヤーのキューブは2個＝**買えるのは最大2つ**・**同じプロジェクトは1回だけ**（イベントとの決定的な差）。
+     - 複数のプレイヤーが同じプロジェクトを買える（各自に独立して効く）。
+     - 効果は「そのプレイヤーが買っているか」で判定する＝必ず hasMyProject(state, pi, id) を見る（state.projects だけ見ないこと）。 */
+  function isProjectInPlay(state, id) { return !!(state.projects && state.projects.indexOf(id) >= 0); }
+  function hasMyProject(state, pi, id) {
+    const p = state.players[pi];
+    return !!(p && p.projects && p.projects.indexOf(id) >= 0 && isProjectInPlay(state, id));
+  }
+  const PROJECT_CUBES = 2; // 公式：各プレイヤーはキューブ2個＝プロジェクトは最大2つまで
+  // engine拒否・CPU非提案・UIボタン無効の3面が見る唯一の述語（片側だけずれると CPU 無限ループ）。
+  function canBuyProject(state, pi, id) {
+    const t = state.turn, p = state.players[pi];
+    const pr = DOM.LANDSCAPES && DOM.LANDSCAPES[id];
+    if (!pr || pr.kind !== 'project') return false;
+    if (!isProjectInPlay(state, id)) return false;
+    if (pi !== t.active) return false;                         // 買えるのは手番のプレイヤーだけ
+    if (t.phase !== 'buy') return false;
+    if ((p.debt || 0) > 0) return false;                       // 負債があるとカードもイベントもプロジェクトも買えない
+    if (t.buys <= 0) return false;                             // 購入権を1消費する
+    if ((pr.cost || 0) > t.coins) return false;                // プロジェクトはコスト軽減を受けない（定数コスト）
+    if ((p.projects || []).indexOf(id) >= 0) return false;     // 同じプロジェクトに2個目のキューブは置けない
+    if ((p.projects || []).length >= PROJECT_CUBES) return false; // キューブ切れ
+    return true;
+  }
   // 帝国：徴税＝獲得カードが属する「山キー」（負債は山に1個）。
   //   分割山は1山＝負債を上段キーで一元管理（下段を獲得しても上段キーの負債を受け取る）。
   //   混合山 castles/knights は実カードでなく山キーで負債を持つ。
@@ -446,6 +473,8 @@
         lastTurnGains: [], // 直前の自分の手番に獲得したカードid（密輸人が右隣のこれを参照）
         vpTokens: 0,       // 繁栄：勝利点トークンの累計（司教・記念碑・収集・投資。公開・終了時に加算）
         coffers: 0,        // ギルド：財源（Coffers）トークン。購入フェイズに1枚=+1コインで使える。公開・VPには数えない。
+        villagers: 0,      // ルネサンス：村人（Villagers）トークン。アクションフェイズに1個=+1アクションで使える。公開・VPには数えない（財源と同型・別枠）。
+        projects: [],      // ルネサンス：このプレイヤーが買ったプロジェクトid列（キューブ＝各自2個まで＝最大2つ・同じものは1回だけ）。公開。
         debt: 0,           // 帝国：負債（Debt）トークン。負債があるとカードを購入できない。購入フェイズに$1=1個返済。公開・VPには数えない（ターンを跨いで残る＝freshTurn非対象）。
         princes: [],       // プロモ：王子の脇に置いたカードid列（公開）。毎ターン開始時に脇のままプレイ。1要素=王子1枚が稼働中。
         tavern: [],        // 冒険：酒場マット（Reserve カードと守銭奴の銅貨。公開＝islandMat型。呼び出しで場へ戻す）。
@@ -554,6 +583,14 @@
       Object.keys(supply).forEach((id) => { if (!NON_SUPPLY.has(id) && !SPLIT_TOP[id]) pileDebt[id] = 1; });
     }
 
+    // ルネサンス：プロジェクト（買う横型）。opts.projects で受け取る（DOM.LANDSCAPES の kind==='project' のみ）。対局中不変・公開。
+    //   各プレイヤーはキューブ2個＝最大2つまで買える（p.projects）。同じプロジェクトを2回は買えない。複数人が同じものを買える。
+    const projects = (opts.projects || []).filter((id) => DOM.LANDSCAPES && DOM.LANDSCAPES[id] && DOM.LANDSCAPES[id].kind === 'project');
+    // ルネサンス：アーティファクト（非カード・1人しか持てない・奪い合う）。付与カード（旗手/国境警備隊/剣客/出納官）が
+    //   王国にあるときだけ盤面に出す。{[id]: 席番号|null}＝トップレベルの公開スカラーマップ（state.pileVP と同型＝保存則tally対象外）。
+    const artifacts = {};
+    (DOM.artifactsForKingdom ? DOM.artifactsForKingdom(kingdom) : []).forEach((id) => { artifacts[id] = null; });
+
     return {
       version: 0,
       kingdom,
@@ -569,6 +606,9 @@
       pileDebt, // 帝国：徴税（Tax）＝サプライ山の上に置かれた負債トークン数 {[pileId]:個数}（公開・非カード＝保存則に無関係）。
       landmarks,      // 帝国：使用中のランドマークid列（横型・公開・対局中不変）
       events,         // 帝国：使用中のイベントid列（横型・買う・公開・対局中不変）
+      projects,       // ルネサンス：使用中のプロジェクトid列（横型・買う・公開・対局中不変）
+      artifacts,      // ルネサンス：アーティファクトの現所有者 {[id]: 席番号|null}（非カード・公開。付与カードが王国に無ければ空）
+
       landmarkVP,     // 帝国：ランドマーク上の有限リザーブ {id:個数}（非カード＝保存則に無関係）
       landmarkStash,  // 帝国：水道橋/汚された神殿がランドマークへ移した一時VP {id:個数}（非カード）
       obeliskPile,    // 帝国：オベリスクで選ばれたアクション山id（無ければ null）
@@ -5545,7 +5585,7 @@
     switch (action.type) {
       /* ---- 新規ゲーム ---- */
       case 'NEW_GAME':
-        return createInitialState(action.players, action.kingdom, { startActive: action.startActive, landmarks: action.landmarks, events: action.events });
+        return createInitialState(action.players, action.kingdom, { startActive: action.startActive, landmarks: action.landmarks, events: action.events, projects: action.projects });
 
       /* ---- アクションカードを使う ---- */
       case 'PLAY_ACTION': {
@@ -5689,6 +5729,24 @@
         if (debt > 0) me.debt = (me.debt || 0) + debt;  // 負債コストのイベントは負債を負う
         log(state, `${me.name} はイベント「${ev.name}」を購入した。` + (debt ? `（負債+${debt}）` : ''));
         applyEventEffect(state, pi, id);
+        return state;
+      }
+
+      /* ---- ルネサンス：横型プロジェクトの購入（BUY_PROJECT）----
+         購入権1消費・コインを支払う・**カードは獲得しない**・キューブを置いて以後ずっと効果が続く。
+         1人2つまで／同じものは1回だけ（canBuyProject が正本）。イベント同様、購入時トリガー（商人ギルド/値切り屋/
+         公会堂 等）は発動しない＝「カードの購入」ではないため。コスト軽減（橋/街道/運河）も受けない。 */
+      case 'BUY_PROJECT': {
+        if (state.pending) return state;
+        const id = action.project;
+        if (!canBuyProject(state, pi, id)) return state;
+        const pr = DOM.LANDSCAPES[id];
+        t.coins -= (pr.cost || 0);
+        t.buys -= 1;
+        t.treasuresLocked = true; // 公式：何かを買った後は、そのターンもう財宝を出せない
+        t.buysMade = (t.buysMade || 0) + 1; // 冒険：使者の「そのターン最初に買ったもの」に数える
+        (me.projects = me.projects || []).push(id);
+        log(state, `${me.name} はプロジェクト「${pr.name}」を購入した。`);
         return state;
       }
 
@@ -9101,6 +9159,20 @@
         log(state, `${me.name} は財源 ${amount}枚 を使った（+${amount}コイン）。`);
         return state;
       }
+      /* ルネサンス：村人（Villagers）を使う。**アクションフェイズ中**にいつでも・好きな個数＝1個で +1アクション。
+         財源（購入フェイズ・+$1）と同じトークンだが別枠＝混ぜて使えない。アクション権0でも使える
+         （このエンジンは END_ACTION_PHASE が明示 action ＝アクション権0で自動終了しない）。 */
+      case 'SPEND_VILLAGER': {
+        if (state.pending) return state;
+        if (t.phase !== 'action') return state;
+        const amount = action.amount | 0;
+        if (amount <= 0) return state;
+        if (amount > (me.villagers || 0)) return state;
+        me.villagers -= amount;
+        t.actions += amount;
+        log(state, `${me.name} は村人 ${amount}人 を使った（+${amount}アクション）。`);
+        return state;
+      }
       // 帝国：負債（Debt）を返済する。購入フェイズに $1=1個。購入権は消費しない（購入の前でも後でも・交互でも可）。
       case 'REPAY_DEBT': {
         if (state.pending) return state;
@@ -10562,6 +10634,8 @@
     'ALMS_GAIN', 'QUEST_MODE', 'QUEST_DISCARD', 'SAVE_SETASIDE', 'SCOUTING_DISCARD', 'SCOUTING_ORDER',
     'BONFIRE_TRASH', 'BALL_GAIN', 'SEAWAY_GAIN', 'TRADE_TRASH', 'PILGRIMAGE_GAIN', 'EVENT_TOKEN_PILE',
     'PLAN_TRASH', 'TRAVELLING_FAIR_TOPDECK', 'INHERITANCE_SET',
+    // ルネサンス（Renaissance）：村人（アクションフェイズ）／プロジェクト（買う横型・1人2つまで）
+    'SPEND_VILLAGER', 'BUY_PROJECT',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',
@@ -10632,6 +10706,8 @@
     inheritedEstate,   // 冒険：相続＝この屋敷はアクションとしてプレイできるか（engine/CPU/UI が同じ述語）
     pilgrimageChoices, // 冒険：巡礼で獲得できる「場にある名前の異なるカード」
     canBuyEvent,       // 冒険：1ターン1回／1ゲーム1回のイベントを今買えるか（engine拒否とCPU/UI非提案のセット）
+    canBuyProject,     // ルネサンス：このプロジェクトを今買えるか（1人2つまで／同じものは1回だけ。engine拒否とCPU/UI非提案のセット）
+    hasMyProject,      // ルネサンス：そのプレイヤーがそのプロジェクトを買っているか（効果判定の正本）
     maskStateFor,
     PLAYER_ACTIONS,
     // 「誰が今操作すべきか」: 選択待ちならその人、なければ手番のプレイヤー

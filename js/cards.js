@@ -758,6 +758,63 @@
     //   一番上（最も安い城）だけ購入/獲得できる。cardCost('castles') は engine が先頭の実コストで解決する。
     castles: { id: 'castles', name: '城', cost: 3, types: ['victory', 'castle'],
                  text: '城の混合山（8種）。一番上（最も安い城）だけ購入/獲得できる。' },
+
+    /* ---------- ルネサンス（Renaissance）王国25種 ----------
+       新機構＝村人(Villagers＝p.villagers・アクションフェイズに +1アクション)／
+       アーティファクト(state.artifacts＝1人しか持てない・奪い合う非カード)／
+       プロジェクト(横型＝DOM.LANDSCAPES の kind:'project')。財源(Coffers)はギルドの既存機構を流用。
+       負債・ポーション・夜フェイズ・分割山・混合山は無い。テキストは現行（エラッタ後）。
+       正本＝docs/research/renaissance_rules.md */
+    border_guard: { id: 'border_guard', name: '国境警備隊', cost: 2, types: ['action'],
+                 text: '+1 アクション\n山札の上から2枚を公開する。1枚を手札に加え、残りを捨て札にする。\n両方ともアクションカードの場合、ランタンか角笛を受け取る。' },
+    ducat: { id: 'ducat', name: 'ドゥカート金貨', cost: 2, types: ['treasure'], coin: 0,
+                 text: '+1 財源\n+1 購入\n————\nこれを獲得したとき、手札の銅貨1枚を廃棄してもよい。' },
+    lackeys: { id: 'lackeys', name: '追従者', cost: 2, types: ['action'],
+                 text: '+2 カード\n————\nこれを獲得したとき、+2 村人。' },
+    acting_troupe: { id: 'acting_troupe', name: '劇団', cost: 3, types: ['action'],
+                 text: '+4 村人\nこれを廃棄する。' },
+    cargo_ship: { id: 'cargo_ship', name: '貨物船', cost: 3, types: ['action', 'duration'],
+                 text: '+2 コイン\nこのターン中1回、あなたがカード1枚を獲得したとき、それを表向きでこの上に置いてもよい。\n次のあなたの手番開始時、それを手札に加える。' },
+    experiment: { id: 'experiment', name: '実験', cost: 3, types: ['action'],
+                 text: '+2 カード\n+1 アクション\nこれをその山に戻す。\n————\nこれを獲得したとき、実験をもう1枚獲得する（この2枚目では誘発しない）。' },
+    improve: { id: 'improve', name: '増築', cost: 3, types: ['action'],
+                 text: '+2 コイン\nクリーンアップフェイズ開始時、このターンに場から捨て札にするアクションカード1枚を廃棄してもよい。\nそうしたら、それよりちょうど1コイン高いカード1枚を獲得する。' },
+    flag_bearer: { id: 'flag_bearer', name: '旗手', cost: 4, types: ['action'],
+                 text: '+2 コイン\n————\nこれを獲得または廃棄したとき、旗を受け取る。' },
+    hideout: { id: 'hideout', name: '根城', cost: 4, types: ['action'],
+                 text: '+1 カード\n+2 アクション\n手札1枚を廃棄する。それが勝利点カードの場合、呪い1枚を獲得する。' },
+    inventor: { id: 'inventor', name: '発明家', cost: 4, types: ['action'],
+                 text: 'コスト4コイン以下のカード1枚を獲得する。\nその後このターン、すべてのカードのコストが1コイン安くなる（0未満にはならない）。' },
+    mountain_village: { id: 'mountain_village', name: '山村', cost: 4, types: ['action'],
+                 text: '+2 アクション\n捨て札置き場をすべて見て、その中から1枚を手札に加える。\nそれができない場合、+1 カード。' },
+    patron: { id: 'patron', name: 'パトロン', cost: 4, types: ['action', 'reaction'],
+                 text: '+1 村人\n+2 コイン\n————\nアクションフェイズ中に、何らかの効果によりあなたがこれを公開したとき、+1 財源。' },
+    priest: { id: 'priest', name: '司祭', cost: 4, types: ['action'],
+                 text: '+2 コイン\n手札1枚を廃棄する。\nこのターンの残りの間、あなたがカード1枚を廃棄するたびに +2 コイン。' },
+    research: { id: 'research', name: '研究', cost: 4, types: ['action', 'duration'],
+                 text: '+1 アクション\n手札1枚を廃棄する。そのコスト1コインにつき1枚を、山札の上から裏向きでこの上に置く。\n次のあなたの手番開始時、それらを手札に加える。' },
+    silk_merchant: { id: 'silk_merchant', name: '絹商人', cost: 4, types: ['action'],
+                 text: '+2 カード\n+1 購入\n————\nこれを獲得または廃棄したとき、+1 財源、+1 村人。' },
+    old_witch: { id: 'old_witch', name: '老魔女', cost: 5, types: ['action', 'attack'],
+                 text: '+3 カード\n他のプレイヤーは各自、呪い1枚を獲得する。\nその後、他のプレイヤーは各自、手札の呪い1枚を廃棄してもよい。' },
+    recruiter: { id: 'recruiter', name: '徴募官', cost: 5, types: ['action'],
+                 text: '+2 カード\n手札1枚を廃棄する。そのコスト1コインにつき +1 村人。' },
+    scepter: { id: 'scepter', name: '王笏', cost: 5, types: ['treasure', 'command'], coin: 0,
+                 text: '以下から1つを選ぶ:\n・+2 コイン\n・このターンにあなたが使用し場に残っている、命令でないアクションカード1枚を、再度使用する。' },
+    scholar: { id: 'scholar', name: '学者', cost: 5, types: ['action'],
+                 text: '手札をすべて捨て札にする。\n+7 カード' },
+    sculptor: { id: 'sculptor', name: '彫刻家', cost: 5, types: ['action'],
+                 text: 'コスト4コイン以下のカード1枚を獲得し、手札に加える。\nそれが財宝カードの場合、+1 村人。' },
+    seer: { id: 'seer', name: '先見者', cost: 5, types: ['action'],
+                 text: '+1 カード\n+1 アクション\n山札の上から3枚を公開する。コストが2〜4コインのカードを手札に加える。\n残りを好きな順番で山札の上に戻す。' },
+    spices: { id: 'spices', name: '香辛料', cost: 5, types: ['treasure'], coin: 2,
+                 text: '+2 コイン\n+1 購入\n————\nこれを獲得したとき、+2 財源。' },
+    swashbuckler: { id: 'swashbuckler', name: '剣客', cost: 5, types: ['action'],
+                 text: '+3 カード\n捨て札置き場にカードがある場合、+1 財源。\nその後、財源を4個以上持っている場合、宝箱を受け取る。' },
+    treasurer: { id: 'treasurer', name: '出納官', cost: 5, types: ['action'],
+                 text: '+3 コイン\n以下から1つを選ぶ:\n・手札の財宝カード1枚を廃棄する\n・廃棄置き場から財宝カード1枚を獲得し、手札に加える\n・鍵を受け取る' },
+    villain: { id: 'villain', name: '悪党', cost: 5, types: ['action', 'attack'],
+                 text: '+2 財源\n手札が5枚以上の他のプレイヤーは各自、手札からコスト2コイン以上のカード1枚を捨て札にする\n（できない場合、手札を公開する）。' },
   };
 
   /* ---------- 王国カードのセット ----------
@@ -881,6 +938,11 @@
   DOM.POOLS.empires = ['engineer', 'city_quarter', 'overlord', 'royal_blacksmith', 'farmers_market', 'chariot_race', 'enchantress', 'sacrifice', 'temple', 'villa', 'archive', 'capital', 'charm', 'forum', 'groundskeeper', 'legionary', 'wild_hunt', 'crown', 'encampment', 'plunder', 'patrician', 'emporium', 'settlers', 'bustling_village', 'catapult', 'rocks', 'gladiator', 'fortune', 'castles'];
   // 帝国：城の混合山の中身＝8種を昇順（安い順）に並べた正本。createInitialState が人数別に state.castles を積む。
   DOM.POOLS.castles = ['humble_castle', 'crumbling_castle', 'small_castle', 'haunted_castle', 'opulent_castle', 'sprawling_castle', 'grand_castle', 'kings_castle'];
+  // ルネサンス（Renaissance）＝王国25種（抽選母集団）。特殊山（分割山/混合山/非サプライ）は無い＝25種すべてが普通のサプライ山。
+  //   プロジェクト20種とアーティファクト5種は「カードではない横型」＝DOM.LANDSCAPES 側（POOLS には入れない）。
+  DOM.POOLS.renaissance = ['border_guard', 'ducat', 'lackeys', 'acting_troupe', 'cargo_ship', 'experiment', 'improve',
+                           'flag_bearer', 'hideout', 'inventor', 'mountain_village', 'patron', 'priest', 'research', 'silk_merchant',
+                           'old_witch', 'recruiter', 'scepter', 'scholar', 'sculptor', 'seer', 'spices', 'swashbuckler', 'treasurer', 'villain'];
   // 画面で選べるセット（id はサーバ検証・保存にも使う）。
   //   kingdom 固定 … おすすめ10種をそのまま使う
   //   randomFrom  … 指定した拡張プールを合わせた中から毎回10種を抽選
@@ -1006,6 +1068,16 @@
   DOM.eventsForSet = function (setId) {
     const set = DOM.CARD_SETS.find((s) => s.id === setId);
     if (set && set.eventsFrom) return DOM.pickLandmarks(2, DOM.eventPoolFor(set.eventsFrom));
+    return [];
+  };
+  // セットID → 使用するプロジェクトid列（横型・0〜2枚）。projectsFrom（拡張id）を持つセットのみ抽選する。
+  DOM.projectPoolFor = function (expansion) {
+    if (expansion === 'renaissance') return DOM.PROJECTS_RENAISSANCE || [];
+    return [];
+  };
+  DOM.projectsForSet = function (setId) {
+    const set = DOM.CARD_SETS.find((s) => s.id === setId);
+    if (set && set.projectsFrom) return DOM.pickLandmarks(2, DOM.projectPoolFor(set.projectsFrom));
     return [];
   };
 
@@ -1144,6 +1216,66 @@
       text: 'ゲーム中に1回：サプライから、命令でないコスト$4以下のアクションカード1枚を脇に置き、\nあなたの屋敷トークンをその上に置く。\n（あなたのターン中、あなたの屋敷は「屋敷トークンの置かれたカードを、\nそこに置いたまま使用する」能力を持つ命令アクションにもなる。）' },
     pathfinding: { name: '誘導', nameEn: 'Pathfinding', kind: 'event', expansion: 'adventures', cost: 8, debt: 0,
       text: 'あなたの+1カードトークンを、アクションのサプライ山1つに移す。\n（その山のカードをプレイするたび、まず +1カード。）' },
+
+    /* ---- ルネサンス（Renaissance）プロジェクト 20種（買う横型・コインのみ）。カタログ文は現行エラッタ。
+       BUY_PROJECT で購入＝購入権1消費・カードは獲得しない・**1人につき2つまで**・**同じものを2回は買えない**・
+       複数のプレイヤーが同じプロジェクトを買える・コスト軽減を受けない・購入時トリガーも誘発しない。
+       正本＝docs/research/renaissance_rules.md §3 ---- */
+    cathedral: { name: '大聖堂', nameEn: 'Cathedral', kind: 'project', expansion: 'renaissance', cost: 3, debt: 0,
+      text: 'あなたのターンの開始時、手札1枚を廃棄する。' },
+    city_gate: { name: '城門', nameEn: 'City Gate', kind: 'project', expansion: 'renaissance', cost: 3, debt: 0,
+      text: 'あなたのターンの開始時、+1 カード。\nその後、手札1枚を山札の上に置く。' },
+    pageant: { name: '野外劇', nameEn: 'Pageant', kind: 'project', expansion: 'renaissance', cost: 3, debt: 0,
+      text: 'あなたの購入フェイズの終了時、1コインを支払ってもよい。\nそうしたら、+1 財源。' },
+    sewers: { name: '下水道', nameEn: 'Sewers', kind: 'project', expansion: 'renaissance', cost: 3, debt: 0,
+      text: 'あなたがこの効果以外でカードを廃棄するたび、\n追加で手札1枚を廃棄してもよい。' },
+    star_chart: { name: '星図', nameEn: 'Star Chart', kind: 'project', expansion: 'renaissance', cost: 3, debt: 0,
+      text: 'あなたがシャッフルするとき、シャッフルするカードから1枚を選び、\nシャッフルした束の一番上に置いてもよい。' },
+    exploration: { name: '探査', nameEn: 'Exploration', kind: 'project', expansion: 'renaissance', cost: 4, debt: 0,
+      text: 'あなたの購入フェイズの終了時、その購入フェイズにカードを1枚も獲得していない場合、\n+1 財源、+1 村人。' },
+    fair: { name: '縁日', nameEn: 'Fair', kind: 'project', expansion: 'renaissance', cost: 4, debt: 0,
+      text: 'あなたのターンの開始時、+1 購入。' },
+    silos: { name: 'サイロ', nameEn: 'Silos', kind: 'project', expansion: 'renaissance', cost: 4, debt: 0,
+      text: 'あなたのターンの開始時、好きな枚数の銅貨を公開して捨て札にする。\nその後、捨て札にした枚数だけカードを引く。' },
+    sinister_plot: { name: '悪巧み', nameEn: 'Sinister Plot', kind: 'project', expansion: 'renaissance', cost: 4, debt: 0,
+      text: 'あなたのターンの開始時、この上にトークンを1個置く。または、\nこの上のあなたのトークンをすべて取り除き、取り除いた1個につき +1 カード。' },
+    academy: { name: '学園', nameEn: 'Academy', kind: 'project', expansion: 'renaissance', cost: 5, debt: 0,
+      text: 'あなたがアクションカードを獲得したとき、+1 村人。' },
+    capitalism: { name: '資本主義', nameEn: 'Capitalism', kind: 'project', expansion: 'renaissance', cost: 5, debt: 0,
+      text: 'あなたのターン中、テキストに「+○ コイン」を含むアクションカードは、財宝カードでもある。' },
+    fleet: { name: '艦隊', nameEn: 'Fleet', kind: 'project', expansion: 'renaissance', cost: 5, debt: 0,
+      text: 'ゲームの終了後、これを持つプレイヤーは全員、追加の1ターンを行う。' },
+    guildhall: { name: 'ギルド集会所', nameEn: 'Guildhall', kind: 'project', expansion: 'renaissance', cost: 5, debt: 0,
+      text: 'あなたが財宝カードを獲得したとき、+1 財源。' },
+    piazza: { name: 'ピアッツァ', nameEn: 'Piazza', kind: 'project', expansion: 'renaissance', cost: 5, debt: 0,
+      text: 'あなたのターンの開始時、山札の一番上のカードを公開する。\nそれがアクションカードの場合、それを使用する。' },
+    road_network: { name: '道路網', nameEn: 'Road Network', kind: 'project', expansion: 'renaissance', cost: 5, debt: 0,
+      text: '他のプレイヤーが勝利点カードを獲得したとき、+1 カード。' },
+    barracks: { name: '兵舎', nameEn: 'Barracks', kind: 'project', expansion: 'renaissance', cost: 6, debt: 0,
+      text: 'あなたのターンの開始時、+1 アクション。' },
+    crop_rotation: { name: '輪作', nameEn: 'Crop Rotation', kind: 'project', expansion: 'renaissance', cost: 6, debt: 0,
+      text: 'あなたのターンの開始時、手札の勝利点カード1枚を捨て札にしてもよい。\nそうしたら、+2 カード。' },
+    innovation: { name: '技術革新', nameEn: 'Innovation', kind: 'project', expansion: 'renaissance', cost: 6, debt: 0,
+      text: 'あなたの各ターンに1回、アクションカードを獲得したとき、それを使用してもよい。' },
+    canal: { name: '運河', nameEn: 'Canal', kind: 'project', expansion: 'renaissance', cost: 7, debt: 0,
+      text: 'あなたのターン中、すべてのカードのコストが1コイン安くなる（0未満にはならない）。' },
+    citadel: { name: '山砦', nameEn: 'Citadel', kind: 'project', expansion: 'renaissance', cost: 8, debt: 0,
+      text: 'あなたのターン中に最初にアクションカードを使用したとき、その後それを再演する。' },
+
+    /* ---- ルネサンス アーティファクト 5種（横型・**カードではない**）。
+       買えない・獲得しない・場に出ない・得点にも3山終了にも無関係。**同時に持てるのは1人だけ**（取ると相手から奪う）。
+       state.artifacts = { flag: 席番号|null, ... }（トップレベルの公開スカラー＝保存則 tally に数えない）。
+       王国に付与カード（旗手／国境警備隊／剣客／出納官）があるときだけ盤面に出る。 ---- */
+    flag: { name: '旗', nameEn: 'Flag', kind: 'artifact', expansion: 'renaissance', cost: 0, debt: 0, grantedBy: ['flag_bearer'],
+      text: 'あなたが手札を引くとき、+1 カード。' },
+    horn: { name: '角笛', nameEn: 'Horn', kind: 'artifact', expansion: 'renaissance', cost: 0, debt: 0, grantedBy: ['border_guard'],
+      text: '各ターンに1度、あなたが場から国境警備隊1枚を捨て札にするとき、\n代わりに山札の上に置いてもよい。' },
+    key: { name: '鍵', nameEn: 'Key', kind: 'artifact', expansion: 'renaissance', cost: 0, debt: 0, grantedBy: ['treasurer'],
+      text: 'あなたのターンの開始時、+1 コイン。' },
+    lantern: { name: 'ランタン', nameEn: 'Lantern', kind: 'artifact', expansion: 'renaissance', cost: 0, debt: 0, grantedBy: ['border_guard'],
+      text: 'あなたが使用する国境警備隊は、カードを3枚公開して2枚を捨て札にする。\n（角笛を受け取るには、3枚すべてがアクションカードである必要がある。）' },
+    treasure_chest: { name: '宝箱', nameEn: 'Treasure Chest', kind: 'artifact', expansion: 'renaissance', cost: 0, debt: 0, grantedBy: ['swashbuckler'],
+      text: 'あなたの購入フェイズの開始時、金貨1枚を獲得する。' },
   };
   // 帝国ランドマーク21種（抽選元）。イベントは未実装（docs/research/landscape_cards.md §2 にデータあり）。
   DOM.LANDMARKS_EMPIRES = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'landmark');
@@ -1151,6 +1283,15 @@
   DOM.EVENTS_EMPIRES = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'event' && DOM.LANDSCAPES[id].expansion === 'empires');
   // 冒険イベント20種（抽選元）。負債は無し＝コインのみ。トークン中心。
   DOM.EVENTS_ADVENTURES = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'event' && DOM.LANDSCAPES[id].expansion === 'adventures');
+  // ルネサンス プロジェクト20種（抽選元）。買う横型＝BUY_PROJECT で発火（1人2つまで・同じものは1回だけ）。
+  DOM.PROJECTS_RENAISSANCE = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'project' && DOM.LANDSCAPES[id].expansion === 'renaissance');
+  // ルネサンス アーティファクト5種（抽選しない＝付与カードが王国にあれば自動で盤面に出る）。
+  DOM.ARTIFACTS_RENAISSANCE = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'artifact');
+  // 王国 → その対局で使うアーティファクトid列（付与カードが1枚でもあれば置く）。engine.createInitialState が参照。
+  DOM.artifactsForKingdom = function (kingdom) {
+    const k = kingdom || [];
+    return DOM.ARTIFACTS_RENAISSANCE.filter((id) => (DOM.LANDSCAPES[id].grantedBy || []).some((c) => k.includes(c)));
+  };
   // 「準備で山に勝利点トークンを置く」集合(Gathering)カード＝汚された神殿はこの山には置かない。
   DOM.GATHERING_CARDS = ['temple', 'farmers_market', 'wild_hunt'];
 

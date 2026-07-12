@@ -56,6 +56,10 @@
     'monument', 'workers_village', 'watchtower', 'tiara', 'quarry', 'investment', 'anvil', 'clerk',
     // ギルド（実プレイ＝段階2）＝強さ/コストの目安順。供給があるときだけ効く（bestEngineBuy/bestGain が参照）。
     'soothsayer', 'taxman', 'butcher', 'merchant_guild', 'journeyman', 'baker', 'herald', 'advisor', 'plaza', 'doctor', 'candlestick_maker', 'stonemason', 'masterpiece',
+    // ルネサンス（実プレイ＝段階2）＝強さ/コストの目安順。供給があるときだけ効く（bestEngineBuy/bestGain が参照）。
+    'old_witch', 'scholar', 'swashbuckler', 'recruiter', 'treasurer', 'seer', 'sculptor', 'villain', 'scepter', 'spices',
+    'research', 'silk_merchant', 'patron', 'priest', 'inventor', 'mountain_village', 'hideout', 'flag_bearer',
+    'cargo_ship', 'improve', 'experiment', 'acting_troupe', 'lackeys', 'ducat', 'border_guard',
     'pawn', 'lurker', 'moat', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke',
     // 追加拡張（収穫祭/異郷/暗黒時代）＝孤立プールで実サプライに出ないため並び順はCPU挙動に無影響
     // （新プロモ6種は実プレイ化済み＝上の実強度順の位置に配置済み）

@@ -209,9 +209,11 @@ try {
     runtimeError = null; UI.view = 'cardList'; DOM.render();
     ok(!runtimeError && doc.body.textContent.includes('ランドマーク（帝国・横型）'), 'カード一覧にランドマーク群が出る');
     ok(doc.body.textContent.includes('イベント（帝国・横型・購入フェイズに買う）'), 'カード一覧にイベント群が出る');
-    // カード一覧の .landmark-mini は 横型すべて（ランドマーク21＋帝国イベント13＋冒険イベント20）に使う
-    ok($all('.landmark-mini img').length === DOM.LANDMARKS_EMPIRES.length + DOM.EVENTS_EMPIRES.length + (DOM.EVENTS_ADVENTURES || []).length,
-      'カード一覧に全ランドマーク＋全イベント（帝国・冒険）のアートが並ぶ');
+    // カード一覧の .landmark-mini は 横型すべて（ランドマーク21＋帝国イベント13＋冒険イベント20＋
+    //   ルネサンスのプロジェクト20＋アーティファクト5）に使う
+    ok($all('.landmark-mini img').length === DOM.LANDMARKS_EMPIRES.length + DOM.EVENTS_EMPIRES.length +
+      (DOM.EVENTS_ADVENTURES || []).length + (DOM.PROJECTS_RENAISSANCE || []).length + (DOM.ARTIFACTS_RENAISSANCE || []).length,
+      'カード一覧に全ランドマーク＋全イベント＋プロジェクト/アーティファクトのアートが並ぶ');
     UI.view = 'setup';
     // セット選択に empires-landmarks / empires-events
     ok(DOM.CARD_SETS.some((x) => x.id === 'empires-landmarks'), 'CARD_SETS に empires-landmarks がある');

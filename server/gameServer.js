@@ -206,12 +206,14 @@ function startGame(room) {
   const landmarks = DOM.landmarksForSet ? DOM.landmarksForSet(room.kingdomSet || 'basic') : [];
   // 帝国：横型イベント（買う横型）もサーバ権威で1度だけ確定して全員で共有する（empires-events 等）。
   const events = DOM.eventsForSet ? DOM.eventsForSet(room.kingdomSet || 'basic') : [];
+  // ルネサンス：横型プロジェクト（買う横型）もサーバ権威で1度だけ確定して全員で共有する（renaissance-projects 等）。
+  const projects = DOM.projectsForSet ? DOM.projectsForSet(room.kingdomSet || 'basic') : [];
   // 手番順: テストは START_ACTIVE に整数(0)を注入して決定論化するので最優先。
   // 本番はホストのトグル（randomOrder）に従う：ランダム＝開始席をランダム化／上から順＝席0(ホスト)固定。
   const startActive = Number.isInteger(START_ACTIVE)
     ? START_ACTIVE
     : (room.randomOrder !== false ? 'random' : 0);
-  room.state = E.createInitialState(configs, kingdom, { startActive, landmarks, events });
+  room.state = E.createInitialState(configs, kingdom, { startActive, landmarks, events, projects });
   room.started = true;
   for (const m of room.members) {
     send(m.ws, { t: 'started', you: m.seat, state: E.maskStateFor(room.state, m.seat) });

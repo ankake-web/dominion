@@ -56,10 +56,18 @@ function findMaster(dir) {
 }
 
 const GOLD_RAMP = { sh: [120, 82, 18], mid: [212, 165, 55], hi: [255, 238, 170] };
-// 横型2種のスキン（本家：イベント＝茶褐色／ランドマーク＝深い青緑）。トリムは金で統一。
+// 横型4種のスキン（本家：イベント＝茶褐色／ランドマーク＝深い青緑／プロジェクト＝赤茶／アーティファクト＝灰青）。
+// トリムは金で統一。コスト円を描くのは「買う横型」＝イベント／プロジェクトだけ（WITH_COIN）。
 const SKIN = {
-  event:    { base: [122, 84, 40] },
-  landmark: { base: [26, 96, 92] },
+  event:      { base: [122, 84, 40] },
+  landmark:   { base: [26, 96, 92] },
+  project:    { base: [150, 62, 46] },
+  artifact:   { base: [72, 84, 104] },
+};
+const WITH_COIN = { event: true, project: true, landmark: false, artifact: false };
+const KIND_LABEL = {
+  event: 'イベント / Event', landmark: 'ランドマーク / Landmark',
+  project: 'プロジェクト / Project', artifact: 'アーティファクト / Artifact',
 };
 
 const W = 1536, H = 1024;             // 合成解像度（縦型 1024×1536 の 90度相当）
@@ -276,8 +284,8 @@ const LAY = {
       ctx.restore();
     }
 
-    // コスト（イベントのみ）。負債のみのイベント（貢献/婚礼など）は六角トークンを中央に。
-    if (card.kind === 'event') {
+    // コスト（買う横型＝イベント／プロジェクトのみ）。負債のみのイベント（貢献/婚礼など）は六角トークンを中央に。
+    if (card.withCoin) {
       const CC = LAY.coin;
       const cR = 67 * (CC.r / 106);
       const dk = (i, f) => Math.max(0, Math.min(255, Math.round((discBase[i]||0)*f)));
@@ -310,7 +318,7 @@ const LAY = {
     }
 
     // 名前（バナー内・自動縮小）
-    const B = card.kind === 'event' ? LAY.banner : LAY.bannerFull;
+    const B = card.withCoin ? LAY.banner : LAY.bannerFull;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     let nfs = 96;
     for (; nfs >= 34; nfs -= 2) {
@@ -323,7 +331,7 @@ const LAY = {
     outlined(card.name, B.x + B.w/2 + Math.round(nfs*0.06), B.y + B.h/2 + 2, '#f6f1e6', 7, 'rgba(28,18,8,0.9)');
 
     // 種別（日英併記）
-    const tlabel = (card.kind === 'event' ? 'イベント / Event' : 'ランドマーク / Landmark');
+    const tlabel = card.tlabel;
     let tfs = 40;
     for (; tfs >= 16; tfs -= 2) {
       ctx.font = '600 ' + tfs + 'px ' + FF_JP; ctx.letterSpacing = '0px';
@@ -369,14 +377,12 @@ const LAY = {
     return o.toDataURL('image/webp', 0.84);
   }`;
 
-  // 横型 master（コインあり＝イベント／コインなし＝ランドマーク）を作り、スキンごとに recolor
-  const masters = {
-    event: await page.evaluate(eval('(' + buildMasterFn + ')'), masterURI, W, H, LAY, true),
-    landmark: await page.evaluate(eval('(' + buildMasterFn + ')'), masterURI, W, H, LAY, false),
-  };
+  // 横型 master（コインあり＝イベント/プロジェクト／コインなし＝ランドマーク/アーティファクト）を作り、スキンごとに recolor
+  const masterCoin = await page.evaluate(eval('(' + buildMasterFn + ')'), masterURI, W, H, LAY, true);
+  const masterPlain = await page.evaluate(eval('(' + buildMasterFn + ')'), masterURI, W, H, LAY, false);
   const frameCache = {};
   for (const k of Object.keys(SKIN)) {
-    frameCache[k] = await page.evaluate(eval('(' + recolorFn + ')'), masters[k], W, H, SKIN[k].base, GOLD_RAMP);
+    frameCache[k] = await page.evaluate(eval('(' + recolorFn + ')'), WITH_COIN[k] ? masterCoin : masterPlain, W, H, SKIN[k].base, GOLD_RAMP);
     console.log('recolored landscape skin: ' + k);
   }
 
@@ -392,7 +398,8 @@ const LAY = {
     const artPath = path.join(ROOT, 'asset/art', c.id + '.png');
     const artURI = fs.existsSync(artPath) ? du(artPath) : null;
     const webp = await page.evaluate(eval('(' + compositeFn + ')'), frameCache[c.kind], artURI,
-      { id: c.id, name: c.name, kind: c.kind, cost: c.cost || 0, debt: c.debt || 0, text: c.text },
+      { id: c.id, name: c.name, kind: c.kind, cost: c.cost || 0, debt: c.debt || 0, text: c.text,
+        withCoin: !!WITH_COIN[c.kind], tlabel: KIND_LABEL[c.kind] || c.kind },
       W, H, OW, OH, LAY, FF_JP, FF_NUM, SKIN[c.kind].base);
     fs.writeFileSync(path.join(OUTDIR, c.id + '.webp'), Buffer.from(webp.split(',')[1], 'base64'));
     done++;

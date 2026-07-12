@@ -651,6 +651,12 @@
     return cardEl(id, { size: 'sm', onClick: () => showSheet(id, null) });
   }
 
+  // 横型（ランドマーク／イベント／プロジェクト／アーティファクト）の種別アイコンとラベル。
+  const LS_ICON = { landmark: '🏛 ', event: '🎫 ', project: '🏗 ', artifact: '🗝 ' };
+  const LS_KIND_LABEL = {
+    landmark: 'ランドマーク / Landmark', event: 'イベント / Event',
+    project: 'プロジェクト / Project', artifact: 'アーティファクト / Artifact',
+  };
   // 横型ランドマークは DOM.CARDS に無い（DOM.LANDSCAPES が正本・cardEl/viewSheet は使えない）ので専用のミニ表示＋拡大を持つ。
   function landmarkMini(id) {
     const ls = (DOM.LANDSCAPES || {})[id] || { name: id };
@@ -673,10 +679,11 @@
         h('img', { src: 'asset/cards/' + id + '.webp', alt: ls.name,
           style: 'width:100%;border-radius:12px;display:block;margin:0 auto',
           onerror: function () { this.style.display = 'none'; } }),
-        h('h3', { style: 'margin:12px 0 2px;color:var(--gold-bright)' }, (ls.kind === 'event' ? '🎫 ' : '🏛 ') + ls.name),
+        h('h3', { style: 'margin:12px 0 2px;color:var(--gold-bright)' }, (LS_ICON[ls.kind] || '🏛 ') + ls.name),
         h('div', { class: 'muted', style: 'font-size:12px;margin-bottom:8px' },
-          (ls.kind === 'event' ? 'イベント / Event' : 'ランドマーク / Landmark') +
-          (ls.kind === 'event' ? '（💰' + (ls.cost || 0) + (ls.debt ? ' 🟠' + ls.debt : '') + '）' : '')),
+          (LS_KIND_LABEL[ls.kind] || 'ランドマーク / Landmark') +
+          // コストを持つ横型（イベント/プロジェクト）だけコストを出す。アーティファクトは買えない＝コスト無し。
+          ((ls.kind === 'event' || ls.kind === 'project') ? '（💰' + (ls.cost || 0) + (ls.debt ? ' 🟠' + ls.debt : '') + '）' : '')),
         h('div', { style: 'white-space:pre-line;font-size:14px;line-height:1.55' }, ls.text || '')));
   }
 
@@ -711,6 +718,7 @@
       (DOM.POOLS && DOM.POOLS.travellers) ? group('トラベラー成長先（冒険・非サプライ）', byCost(DOM.POOLS.travellers)) : null,
       (DOM.POOLS && DOM.POOLS.empires) ? group('王国カード（帝国）', byCost(DOM.POOLS.empires)) : null,
       (DOM.POOLS && DOM.POOLS.castles) ? group('城（帝国・混合山）', DOM.POOLS.castles.slice()) : null,
+      (DOM.POOLS && DOM.POOLS.renaissance) ? group('王国カード（ルネサンス）', byCost(DOM.POOLS.renaissance)) : null,
       (DOM.LANDMARKS_EMPIRES && DOM.LANDMARKS_EMPIRES.length) ? h('div', { class: 'list-group' },
         h('div', { class: 'section-h' }, 'ランドマーク（帝国・横型）'),
         h('div', { class: 'landmark-list-grid', style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px' },
@@ -723,6 +731,14 @@
         h('div', { class: 'section-h' }, 'イベント（冒険・横型・購入フェイズに買う）'),
         h('div', { class: 'landmark-list-grid', style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px' },
           DOM.EVENTS_ADVENTURES.map((id) => landmarkMini(id)))) : null,
+      (DOM.PROJECTS_RENAISSANCE && DOM.PROJECTS_RENAISSANCE.length) ? h('div', { class: 'list-group' },
+        h('div', { class: 'section-h' }, 'プロジェクト（ルネサンス・横型・1人2つまで）'),
+        h('div', { class: 'landmark-list-grid', style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px' },
+          DOM.PROJECTS_RENAISSANCE.map((id) => landmarkMini(id)))) : null,
+      (DOM.ARTIFACTS_RENAISSANCE && DOM.ARTIFACTS_RENAISSANCE.length) ? h('div', { class: 'list-group' },
+        h('div', { class: 'section-h' }, 'アーティファクト（ルネサンス・横型・1人だけが持てる）'),
+        h('div', { class: 'landmark-list-grid', style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px' },
+          DOM.ARTIFACTS_RENAISSANCE.map((id) => landmarkMini(id)))) : null,
       (DOM.POOLS && DOM.POOLS.promo) ? group('プロモカード', byCost(DOM.POOLS.promo)) : null,
       (DOM.POOLS && DOM.POOLS.basic1e) ? group('初版のみ（第二版で廃止）', byCost(
         DOM.POOLS.basic1e.filter((id) => DOM.POOLS.basic.indexOf(id) < 0)
@@ -763,13 +779,31 @@
     } else if (UI.coffersOpen) {
       UI.coffersOpen = false; // 条件を満たさなくなったら閉じる（フェイズ移行など）
     }
+    // ルネサンス：村人を使うオーバーレイ（pending ではない。アクションフェイズ・自分の操作中のみ）。
+    if (interactive && UI.villagersOpen && !state.pending && state.turn.phase === 'action' && state.turn.active === viewer) {
+      frag.appendChild(modalVillagerSpend(state, viewer));
+    } else if (UI.villagersOpen) {
+      UI.villagersOpen = false; // 条件を満たさなくなったら閉じる（購入フェイズへ移行など）
+    }
     return frag;
   }
 
   function phaseLabel(ph) { return ph === 'action' ? 'アクション フェーズ' : '購入 フェーズ'; }
-  // ギルド：財源(Coffers)を使う王国か（財源を付与するカードが王国にあれば財源バッジ/使用ボタンを出す）。
-  const COFFERS_CARDS = ['candlestick_maker', 'plaza', 'baker', 'butcher', 'merchant_guild'];
-  function usesCoffers(kingdom) { return (kingdom || []).some((id) => COFFERS_CARDS.includes(id)); }
+  // ギルド／ルネサンス：財源(Coffers)を使う王国か（財源を付与するカード/プロジェクトがあればバッジ/使用ボタンを出す）。
+  const COFFERS_CARDS = ['candlestick_maker', 'plaza', 'baker', 'butcher', 'merchant_guild',
+    'ducat', 'spices', 'patron', 'silk_merchant', 'swashbuckler', 'villain'];
+  const COFFERS_PROJECTS = ['pageant', 'exploration', 'guildhall'];
+  function usesCoffers(kingdom, projects) {
+    return (kingdom || []).some((id) => COFFERS_CARDS.includes(id)) ||
+      (projects || []).some((id) => COFFERS_PROJECTS.includes(id));
+  }
+  // ルネサンス：村人(Villagers)を使う王国か（村人を付与するカード/プロジェクトがあればバッジ/使用ボタンを出す）。
+  const VILLAGER_CARDS = ['lackeys', 'acting_troupe', 'patron', 'recruiter', 'silk_merchant', 'sculptor'];
+  const VILLAGER_PROJECTS = ['academy', 'exploration'];
+  function usesVillagers(kingdom, projects) {
+    return (kingdom || []).some((id) => VILLAGER_CARDS.includes(id)) ||
+      (projects || []).some((id) => VILLAGER_PROJECTS.includes(id));
+  }
   // 帝国：負債(Debt)を使う王国か（負債コストのカード or capital があれば負債バッジ/返済ボタンを出す）。
   function usesDebt(kingdom) { return (kingdom || []).some((id) => DOM.CARDS[id] && ((DOM.CARDS[id].debt || 0) > 0 || id === 'capital')); }
 
@@ -899,8 +933,12 @@
           ? h('div', { class: 'badge potion', style: 'background:#6b3fa0' }, h('div', { class: 'v' }, t.potions || 0), h('div', { class: 'k' }, 'POTION'))
           : null,
         // ギルド：財源(Coffers)を使う王国のときだけ COFFERS を表示（金色）。手番プレイヤーの財源を出す。
-        usesCoffers(state.kingdom)
+        usesCoffers(state.kingdom, state.projects)
           ? h('div', { class: 'badge coffers', style: 'background:#b8860b' }, h('div', { class: 'v' }, active.coffers || 0), h('div', { class: 'k' }, '財源'))
+          : null,
+        // ルネサンス：村人(Villagers)を使う王国のときだけ 村人 を表示（緑）。アクションフェイズに1個=+1アクション。
+        usesVillagers(state.kingdom, state.projects)
+          ? h('div', { class: 'badge villagers', style: 'background:#3f8f5a' }, h('div', { class: 'v' }, active.villagers || 0), h('div', { class: 'k' }, '村人'))
           : null,
         // 帝国：負債(Debt)を使う王国 or 負債を持つときだけ 負債 を表示（オレンジ）。負債があると購入不可。
         (usesDebt(state.kingdom) || (active.debt || 0) > 0)
@@ -1015,9 +1053,59 @@
                   onclick: canBuy ? () => dispatch({ type: 'BUY_EVENT', event: id }) : null }, '買う'));
           })))
       : null;
+    // ルネサンス：横型プロジェクト（買う横型）＝購入フェイズにコインを払って買う・購入権1消費・**1人2つまで**・
+    //   同じものは1回だけ・以後ずっと効果が続く（キューブ●で誰が買ったかを表示）。engine の canBuyProject が正本。
+    const buyableProject = (id) => interactive && !state.pending &&
+      !!(DOM.engine.canBuyProject && DOM.engine.canBuyProject(state, t.active, id));
+    const projectBlock = (state.projects && state.projects.length)
+      ? h('div', { class: 'supply-section' },
+          h('div', { class: 'sup-title' }, 'プロジェクト（横型・購入フェイズに買う／1人2つまで）'),
+          h('div', { class: 'mats' }, state.projects.map((id) => {
+            const pr = (DOM.LANDSCAPES || {})[id] || { name: id, text: '', cost: 0 };
+            const owners = state.players.filter((p) => (p.projects || []).indexOf(id) >= 0);
+            const cubes = owners.length ? owners.map((p) => '●' + p.name).join(' ') : '';
+            const canBuy = buyableProject(id);
+            return h('div', { class: 'mat-row project-row', title: (pr.text || '') },
+              h('img', { class: 'landmark-thumb', src: 'asset/cards/' + id + '.webp', alt: pr.name, loading: 'lazy',
+                style: 'height:40px;width:60px;object-fit:cover;border-radius:4px;flex:0 0 auto;cursor:pointer',
+                onclick: () => openLandmarkZoom(id),
+                onerror: function () { this.style.display = 'none'; } }),
+              h('span', { class: 'mat-label', role: 'button', tabindex: '0', style: 'cursor:pointer',
+                  onclick: () => openLandmarkZoom(id),
+                  onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLandmarkZoom(id); } } },
+                '🏗 ' + pr.name + '（💰' + (pr.cost || 0) + '）' + (cubes ? ' ' + cubes : '')),
+              h('span', { class: 'muted', style: 'font-size:12px;margin-left:8px' }, (pr.text || '').replace(/\n/g, ' ')),
+              h('button', { class: 'btn btn-sm' + (canBuy ? ' btn-primary' : ''), style: 'margin-left:auto',
+                  disabled: canBuy ? null : 'disabled',
+                  onclick: canBuy ? () => dispatch({ type: 'BUY_PROJECT', project: id }) : null }, '買う'));
+          })))
+      : null;
+    // ルネサンス：アーティファクト（非カード）＝買えない・1人しか持てない・条件を満たすと相手から奪う。
+    const artifactIds = Object.keys(state.artifacts || {});
+    const artifactBlock = artifactIds.length
+      ? h('div', { class: 'supply-section' },
+          h('div', { class: 'sup-title' }, 'アーティファクト（横型・1人だけが持てる／奪い合う）'),
+          h('div', { class: 'mats' }, artifactIds.map((id) => {
+            const af = (DOM.LANDSCAPES || {})[id] || { name: id, text: '' };
+            const owner = state.artifacts[id];
+            const who = owner == null ? '（誰も持っていない）' : state.players[owner].name + ' が所持';
+            return h('div', { class: 'mat-row artifact-row' + (owner === viewer ? ' mine' : ''), title: (af.text || '') },
+              h('img', { class: 'landmark-thumb', src: 'asset/cards/' + id + '.webp', alt: af.name, loading: 'lazy',
+                style: 'height:40px;width:60px;object-fit:cover;border-radius:4px;flex:0 0 auto;cursor:pointer',
+                onclick: () => openLandmarkZoom(id),
+                onerror: function () { this.style.display = 'none'; } }),
+              h('span', { class: 'mat-label', role: 'button', tabindex: '0', style: 'cursor:pointer',
+                  onclick: () => openLandmarkZoom(id),
+                  onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLandmarkZoom(id); } } },
+                '🗝 ' + af.name + '：' + who),
+              h('span', { class: 'muted', style: 'font-size:12px;margin-left:8px' }, (af.text || '').replace(/\n/g, ' ')));
+          })))
+      : null;
     const supply = h('div', null,
       landscapeBlock,
       eventBlock,
+      projectBlock,
+      artifactBlock,
       // 財宝・勝利点は基本カード。デスクトップでは横並びにして縦スペースを節約。
       h('div', { class: 'supply-basics' },
         supSection('財宝', treasureRow, 'small'),
@@ -1196,7 +1284,13 @@
         '🧧 へそくり配置: ' + label[cur] + '（タップで変更）');
     })();
     if (t.phase === 'action') {
+      // ルネサンス：村人(Villagers)を持っていれば「村人を使う」ボタン（アクションフェイズ・1個=+1アクション）。
+      const villagerBtn = (t.active === viewer && (state.players[viewer].villagers || 0) > 0)
+        ? h('button', { class: 'btn btn-block', style: 'background:#3f8f5a;color:#fff', onclick: () => { UI.villagersOpen = true; UI.amount = null; render(); } },
+            '🧑 村人を使う（' + state.players[viewer].villagers + '）')
+        : null;
       return h('div', { class: 'actions-bar' },
+        villagerBtn,
         stashBtn,
         h('button', { class: 'btn btn-primary btn-block', onclick: () => endActionPhase(state, viewer) }, '購入フェーズへ ▶'));
     }
@@ -1226,6 +1320,13 @@
     return modalAmount('財源を使う', '財源を1枚使うごとに +1コイン になります（現在 ' + state.turn.coins + ' コイン）。', coffers, 0,
       (n) => (n > 0 ? '財源を ' + n + '枚 使う（+' + n + 'コイン）' : '使わない'),
       (n) => { UI.coffersOpen = false; if (n > 0) dispatch({ type: 'COFFERS_SPEND', amount: n }); else render(); });
+  }
+  // ルネサンス：村人を何人使うか選ぶ（アクションフェイズの任意タイミング。1人=+1アクション）。pending ではない独立オーバーレイ。
+  function modalVillagerSpend(state, viewer) {
+    const villagers = state.players[viewer].villagers || 0;
+    return modalAmount('村人を使う', '村人を1人使うごとに +1アクション になります（現在 ' + state.turn.actions + ' アクション）。', villagers, 0,
+      (n) => (n > 0 ? '村人を ' + n + '人 使う（+' + n + 'アクション）' : '使わない'),
+      (n) => { UI.villagersOpen = false; if (n > 0) dispatch({ type: 'SPEND_VILLAGER', amount: n }); else render(); });
   }
 
   // 買い忘れ防止: 財宝を出していない／2コイン以上残して購入権があるときは確認を挟む
@@ -2602,11 +2703,14 @@
     const landmarks = opts.landmarks || (DOM.landmarksForSet ? DOM.landmarksForSet(UI.setup.kingdomSet) : []);
     // 帝国：横型イベント（買う横型）もこの場で確定して以後固定（empires-events 等）。
     const events = opts.events || (DOM.eventsForSet ? DOM.eventsForSet(UI.setup.kingdomSet) : []);
+    // ルネサンス：横型プロジェクト（買う横型）もこの場で確定して以後固定（renaissance-projects 等）。
+    const projects = opts.projects || (DOM.projectsForSet ? DOM.projectsForSet(UI.setup.kingdomSet) : []);
     UI.lastConfigs = configs;
     UI.lastKingdom = kingdom;
     UI.lastLandmarks = landmarks;
     UI.lastEvents = events;
-    const st = E().createInitialState(configs, kingdom, { landmarks, events });
+    UI.lastProjects = projects;
+    const st = E().createInitialState(configs, kingdom, { landmarks, events, projects });
     UI.mode = 'local'; UI.mySeat = null; UI.localViewer = firstHuman(st);
     UI.store = DOM.LocalStore(st);
     UI.store.subscribe(onStoreChange);
@@ -2614,9 +2718,9 @@
     render();
   }
   function restartLocal() {
-    const st = E().createInitialState(UI.lastConfigs, UI.lastKingdom, { landmarks: UI.lastLandmarks || [], events: UI.lastEvents || [] });
+    const st = E().createInitialState(UI.lastConfigs, UI.lastKingdom, { landmarks: UI.lastLandmarks || [], events: UI.lastEvents || [], projects: UI.lastProjects || [] });
     UI.localViewer = firstHuman(st);
-    UI.store.dispatch({ type: 'NEW_GAME', players: UI.lastConfigs, kingdom: UI.lastKingdom, landmarks: UI.lastLandmarks || [], events: UI.lastEvents || [] });
+    UI.store.dispatch({ type: 'NEW_GAME', players: UI.lastConfigs, kingdom: UI.lastKingdom, landmarks: UI.lastLandmarks || [], events: UI.lastEvents || [], projects: UI.lastProjects || [] });
   }
 
   /* ---------- オンライン（WebSocket / サーバ権威） ---------- */
