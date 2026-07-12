@@ -2229,6 +2229,38 @@
     if (pd.type === 'villain_discard') return modalSingleHand(p, '悪党 — 捨てる',
       '手札からコスト$2以上のカード1枚を選んで捨てます（強制）。',
       (id) => effCost(state, id) >= 2, (card) => dispatch({ type: 'VILLAIN_DISCARD', card }), null, '捨てる');
+    /* --- R4：持続・クリンナップ・再演 --- */
+    if (pd.type === 'research_trash') return modalSingleHand(p, '研究 — 廃棄',
+      '手札から1枚を廃棄します（強制）。そのカードのコイン費用$1につき1枚、山札の上から裏向きで脇に置き、次のあなたの手番開始時に手札へ加えます。',
+      () => true, (card) => dispatch({ type: 'RESEARCH_TRASH', card }), null, '廃棄する');
+    if (pd.type === 'cargo_ship_setaside') return modalOptions('貨物船 — 脇に置く？',
+      '獲得した「' + DOM.CARDS[pd.card].name + '」を表向きで脇に置けます（次のあなたの手番開始時に手札へ加わります）。', [
+        { label: '脇に置く（次の手番に手札へ）', cls: 'btn-primary', on: () => dispatch({ type: 'CARGO_SHIP_SETASIDE', set: true }) },
+        { label: '置かない', on: () => dispatch({ type: 'CARGO_SHIP_SETASIDE', set: false }) }]);
+    if (pd.type === 'improve' && pd.stage === 'trash') {
+      const targets = (DOM.engine.improveTargets ? DOM.engine.improveTargets(state, pd.player) : []);
+      return modalPickList(state, '増築 — 場のアクションを廃棄（任意）',
+        'このターン場から捨て札にするアクションカード1枚を廃棄できます。廃棄したら、ちょうど$1高いカードを1枚獲得します。',
+        targets, '廃棄する', (id) => dispatch({ type: 'IMPROVE_TRASH', card: id }),
+        { label: '廃棄しない', on: () => dispatch({ type: 'IMPROVE_TRASH', card: null }) });
+    }
+    if (pd.type === 'improve' && pd.stage === 'gain') return modalGainSupply(state, '増築 — 獲得',
+      '廃棄したカードよりちょうど$1高いカードを1枚獲得します。',
+      (id) => effCost(state, id) === pd.exact && (DOM.CARDS[id].potion || 0) === pd.pot && (DOM.CARDS[id].debt || 0) === pd.dbt,
+      (id) => dispatch({ type: 'IMPROVE_GAIN', card: id }));
+    if (pd.type === 'scepter' && pd.stage === 'choose') {
+      const cand = (DOM.engine.scepterTargets ? DOM.engine.scepterTargets(state, pd.player) : []);
+      return modalOptions('王笏', '次から1つを選びます（実行できない選択肢も選べます）。', [
+        { label: '+2 コイン', cls: 'btn-primary', on: () => dispatch({ type: 'SCEPTER_CHOOSE', mode: 'coins' }) },
+        { label: '場のアクションを再度使用する' + (cand.length ? '（' + cand.length + '種）' : '（対象なし）'),
+          on: () => dispatch({ type: 'SCEPTER_CHOOSE', mode: 'replay' }) }]);
+    }
+    if (pd.type === 'scepter' && pd.stage === 'replay') {
+      const cand = (DOM.engine.scepterTargets ? DOM.engine.scepterTargets(state, pd.player) : []);
+      return modalPickList(state, '王笏 — 再度使用する',
+        'このターンに使用し、場に出たままの（命令でない）アクションカード1枚を、もう一度使用します。',
+        cand, '再度使用する', (id) => dispatch({ type: 'SCEPTER_REPLAY', card: id }));
+    }
     /* --- R3：アーティファクト絡み --- */
     if (pd.type === 'ducat_trash') return modalOptions('ドゥカート金貨 — 銅貨を廃棄',
       'ドゥカート金貨を獲得しました。手札の銅貨1枚を廃棄できます（任意・デッキ圧縮）。', [

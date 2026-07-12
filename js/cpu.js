@@ -280,6 +280,7 @@
     if (has('fugitive')) return 'fugitive';               // +2カード+1アクション（成長：→門下生）
     // ルネサンス：非ターミナル（+アクション付き）
     if (has('border_guard')) return 'border_guard';       // +1アクション（山札上2〜3枚から1枚を手札へ＋アーティファクト）
+    if (has('research')) return 'research';               // +1アクション（廃棄→コストぶん脇置き→次手番に手札へ）
     if (has('hideout')) return 'hideout';                 // +1カード+2アクション（手札1枚を廃棄＝圧縮。勝利点を廃棄すると呪い）
     if (has('mountain_village')) return 'mountain_village'; // +2アクション（捨て札から1枚回収）
     if (has('seer')) return 'seer';                       // +1カード+1アクション（山札上3枚から$2〜$4を手札へ）
@@ -381,6 +382,8 @@
     if (has('treasurer')) return 'treasurer';             // +3コイン＋3択（廃棄置き場から財宝回収／鍵）
     if (has('flag_bearer')) return 'flag_bearer';         // +2コイン（獲得/廃棄で旗＝毎ターン+1カード）
     if (has('patron')) return 'patron';                   // +1村人+2コイン（村人でアクション権を補える）
+    if (has('cargo_ship')) return 'cargo_ship';           // +2コイン（このターンの獲得1枚を次の手札へ・持続）
+    if (has('improve')) return 'improve';                 // +2コイン（クリンナップで場のアクションを格上げ）
     if (has('scholar')) return 'scholar';                 // 手札を捨てて +7カード
     if (has('recruiter')) return 'recruiter';             // +2カード＋廃棄して村人（圧縮＋村人）
     if (has('sculptor')) return 'sculptor';               // $4以下を手札に獲得（財宝なら+1村人）
@@ -2325,6 +2328,42 @@
         const cand = p.hand.filter((c) => cost(state, c) >= 2);
         const pick = cand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0] || null;
         return { type: 'VILLAIN_DISCARD', card: pick };
+      }
+      /* --- R4：持続・クリンナップ・再演 --- */
+      case 'research_trash': {
+        // 手札1枚を廃棄（強制）。コイン費用ぶん山札の上を脇に置く＝**高コストほど得**だが良い札を失う。
+        // 不要札（呪い/屋敷/銅貨）の中で最も高コストなものを廃棄し、無ければ最も不要な札。
+        const junky = p.hand.filter((c) => trashValue(c) < 10);
+        const pick = junky.sort((a, b) => cost(state, b) - cost(state, a))[0] || pickTrash(p.hand, 1)[0] || p.hand[0] || null;
+        return { type: 'RESEARCH_TRASH', card: pick };
+      }
+      case 'cargo_ship_setaside': {
+        // 獲得したカードを脇に置く＝次の手番の手札が濃くなる。良い札（銀貨以上）なら置く。
+        const good = keepValue(pd.card) >= keepValue('silver');
+        return { type: 'CARGO_SHIP_SETASIDE', set: good };
+      }
+      case 'improve': {
+        if (pd.stage === 'gain') {
+          return { type: 'IMPROVE_GAIN', card: bestGainExact(state, pd.exact, { noVictory: true }) || bestGainExact(state, pd.exact) };
+        }
+        // クリンナップ開始時：ちょうど+$1の獲得先があり、格上げが得になる場のアクションを廃棄する。
+        const targets = (DOM.engine.improveTargets ? DOM.engine.improveTargets(state, pd.player) : [])
+          .filter((c) => bestGainExact(state, cost(state, c) + 1, { noVictory: true }));
+        if (!targets.length) return { type: 'IMPROVE_TRASH', card: null };
+        // 最も価値の低いアクションを格上げする（増築自身は最後の手段）
+        const pick = targets.slice().sort((a, b) => keepValue(a) - keepValue(b))[0];
+        return { type: 'IMPROVE_TRASH', card: pick };
+      }
+      case 'scepter': {
+        if (pd.stage === 'replay') {
+          const cand = (DOM.engine.scepterTargets ? DOM.engine.scepterTargets(state, pd.player) : []);
+          return { type: 'SCEPTER_REPLAY', card: cand.slice().sort((a, b) => keepValue(b) - keepValue(a))[0] || null };
+        }
+        // 購入フェイズなので再演してもアクションは使えない＝コインを稼ぐ札が場にあるときだけ再演する。
+        const cand = (DOM.engine.scepterTargets ? DOM.engine.scepterTargets(state, pd.player) : []);
+        const coinCards = cand.filter((c) => /\+\d+\s*コイン/.test((C()[c] || {}).text || ''));
+        if (coinCards.length) return { type: 'SCEPTER_CHOOSE', mode: 'replay' };
+        return { type: 'SCEPTER_CHOOSE', mode: 'coins' };
       }
       /* --- R3：アーティファクト絡み --- */
       case 'ducat_trash': {

@@ -608,5 +608,182 @@ console.log('=== CPU：R3 の全 pending が終端する ===');
   s = cpuResolve(s, 10);
   ok(!s.pending, 'CPU が ducat_trash を終端できる'); }
 
+/* ============================================================
+   R4＝持続・クリンナップ・再演（貨物船／研究／増築／王笏）
+   ============================================================ */
+const KING_R4 = ['cargo_ship', 'research', 'improve', 'scepter', 'village', 'smithy', 'market', 'militia', 'moat', 'laboratory'];
+function act4() { return act(KING_R4); }
+// 片付けの先引きでリシャッフルが起きると「捨て札にあるか」を見られないので、所有枚数（全ゾーン）で数える
+function own(s, seat, id) {
+  const p = s.players[seat];
+  return [].concat(p.deck, p.hand, p.discard, p.inPlay, p.durationCards || [], p.setAside || [], p.cargo || [])
+    .filter((c) => c === id).length;
+}
+
+console.log('=== 貨物船（cargo_ship）===');
+{ let s = act4(); me(s).hand = ['cargo_ship'];
+  s = play(s, 'cargo_ship');
+  ok(s.turn.coins === 2 && s.turn.cargoCharges === 1, '+2コイン＋このターン1回の権利');
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 3;
+  s = reduce(s, { type: 'BUY', card: 'silver' });
+  ok(s.pending && s.pending.type === 'cargo_ship_setaside' && s.pending.card === 'silver', '獲得したとき脇に置ける');
+  s = reduce(s, { type: 'CARGO_SHIP_SETASIDE', set: true });
+  ok(me(s).cargo.join() === 'silver' && cnt(me(s).discard, 'silver') === 0, '表向きで脇へ');
+  s = endTurn(s); // 相手へ
+  ok(s.players[0].durationCards.includes('cargo_ship'), '脇に置いたので持続として場に残る');
+  s = endTurn(s); // 自分に戻る
+  ok(s.players[0].hand.includes('silver') && s.players[0].cargo.length === 0, '次の手番開始時に手札へ'); }
+{ let s = act4(); me(s).hand = ['cargo_ship'];
+  me(s).deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s = play(s, 'cargo_ship');
+  s = endTurn(s);
+  ok(!s.players[0].durationCards.includes('cargo_ship') && cnt(s.players[0].discard, 'cargo_ship') === 1,
+    '1枚も脇に置かなければ持続として残らず捨て札になる'); }
+{ let s = act4(); me(s).hand = ['cargo_ship'];
+  s = play(s, 'cargo_ship');
+  s.turn.phase = 'buy'; s.turn.buys = 2; s.turn.coins = 6;
+  s = reduce(s, { type: 'BUY', card: 'copper' });
+  s = reduce(s, { type: 'CARGO_SHIP_SETASIDE', set: false }); // 1枚目は見送る
+  ok(s.turn.cargoCharges === 1, '見送っても権利は残る（最初の獲得である必要はない）');
+  s = reduce(s, { type: 'BUY', card: 'gold' });
+  s = reduce(s, { type: 'CARGO_SHIP_SETASIDE', set: true });
+  ok(me(s).cargo.join() === 'gold' && s.turn.cargoCharges === 0, '2枚目の獲得を脇に置けた'); }
+{ // マスク：貨物船の脇置きは表向き＝相手にも見える
+  let s = act4(); me(s).cargo = ['gold'];
+  const v = E.maskStateFor(s, 1);
+  ok(v.players[0].cargo.join() === 'gold', '貨物船の脇置きは公開情報'); }
+
+console.log('=== 研究（research）===');
+{ let s = act4(); me(s).hand = ['research', 'silver'];
+  me(s).deck = ['copper', 'estate', 'gold', 'copper'];
+  s = play(s, 'research');
+  ok(s.turn.actions === 1 && s.pending && s.pending.type === 'research_trash', '+1アクション＋廃棄（強制）');
+  s = reduce(s, { type: 'RESEARCH_TRASH', card: 'silver' });
+  ok(cnt(s.trash, 'silver') === 1, '銀貨を廃棄');
+  ok(me(s).setAside.length === 3, 'コイン費用$3＝山札の上から3枚を脇へ');
+  ok(me(s).deck.length === 1, '山札から3枚抜けた');
+  s = endTurn(s); s = endTurn(s);
+  ok(s.players[0].hand.filter((c) => c === 'copper' || c === 'estate' || c === 'gold').length >= 3,
+    '次の手番開始時に脇の3枚が手札へ'); }
+{ let s = act4(); me(s).hand = ['research', 'copper'];
+  me(s).deck = ['gold', 'gold', 'gold', 'gold', 'gold', 'gold'];
+  s = play(s, 'research');
+  s = reduce(s, { type: 'RESEARCH_TRASH', card: 'copper' });
+  ok(me(s).setAside.length === 0, '銅貨（$0）＝脇置き0枚');
+  s = endTurn(s);
+  ok(cnt(s.players[0].discard, 'research') === 1 && !s.players[0].durationCards.includes('research'),
+    '脇置き0枚なら持続として場に残らず捨て札になる'); }
+{ let s = act4(); me(s).hand = ['research']; me(s).deck = ['gold'];
+  s = play(s, 'research');
+  ok(!s.pending, '手札0枚なら pending を立てない（終端保証）'); }
+{ // 裏向き＝相手にはマスクされる
+  let s = act4(); me(s).hand = ['research', 'silver']; me(s).deck = ['gold', 'gold', 'gold'];
+  s = play(s, 'research');
+  s = reduce(s, { type: 'RESEARCH_TRASH', card: 'silver' });
+  const v = E.maskStateFor(s, 1);
+  ok(v.players[0].setAside.every((c) => c === 'back'), '研究の脇置きは裏向き＝相手にはマスクされる'); }
+
+console.log('=== 増築（improve）===');
+{ let s = act4(); me(s).hand = ['improve', 'village']; s.turn.actions = 2;
+  s = play(s, 'improve');
+  ok(s.turn.coins === 2, '+2コイン');
+  s = play(s, 'village');
+  s.turn.phase = 'buy';
+  s = reduce(s, { type: 'END_TURN' });
+  ok(s.pending && s.pending.type === 'improve' && s.pending.stage === 'trash', 'クリンナップ開始時に廃棄の選択');
+  s = reduce(s, { type: 'IMPROVE_TRASH', card: 'village' });
+  ok(cnt(s.trash, 'village') === 1 && s.pending.stage === 'gain', '$3の村を廃棄→ちょうど$4を獲得');
+  ok(s.pending.exact === 4, 'ちょうど+$1');
+  s = reduce(s, { type: 'IMPROVE_GAIN', card: 'militia' });
+  ok(own(s, 0, 'militia') === 1, '$4を獲得');
+  ok(s.turn.active === 1, '獲得のあと片付けが進む'); }
+{ let s = act4(); me(s).hand = ['improve'];
+  s = play(s, 'improve');
+  s.turn.phase = 'buy';
+  s = reduce(s, { type: 'END_TURN' });
+  ok(s.pending && s.pending.type === 'improve', '増築自身も対象になる');
+  s = reduce(s, { type: 'IMPROVE_TRASH', card: null });
+  ok(!s.pending && s.turn.active === 1, '辞退できる'); }
+{ let s = act4(); me(s).hand = ['improve', 'moat']; s.turn.actions = 2;
+  s = play(s, 'improve'); s = play(s, 'moat');
+  s.turn.phase = 'buy';
+  s = reduce(s, { type: 'END_TURN' });
+  s = reduce(s, { type: 'IMPROVE_TRASH', card: 'moat' });
+  ok(s.pending && s.pending.exact === 3, '堀($2)→ちょうど$3'); }
+{ // 持続（このターン場に残り続ける貨物船）は対象外
+  let s = act4(); me(s).hand = ['improve', 'cargo_ship']; s.turn.actions = 2;
+  s = play(s, 'improve'); s = play(s, 'cargo_ship');
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 3;
+  s = reduce(s, { type: 'BUY', card: 'silver' });
+  s = reduce(s, { type: 'CARGO_SHIP_SETASIDE', set: true }); // 脇に置いた＝持続として残る
+  s = reduce(s, { type: 'END_TURN' });
+  const tg = E.improveTargets(s, 0);
+  ok(tg.indexOf('cargo_ship') < 0, '場に残る持続は「このターン捨て札にする」に含まれない');
+  ok(tg.indexOf('improve') >= 0, '増築自身は対象'); }
+{ // 城塞を廃棄＝手札に戻るが廃棄は成立＝$5を獲得できる
+  let s = act4(); withSupply(s, ['fortress', 'laboratory']);
+  me(s).hand = ['improve', 'fortress']; s.turn.actions = 2;
+  s = play(s, 'improve'); s = play(s, 'fortress');
+  s.turn.phase = 'buy';
+  s = reduce(s, { type: 'END_TURN' });
+  s = reduce(s, { type: 'IMPROVE_TRASH', card: 'fortress' });
+  ok(s.pending && s.pending.exact === 5, '城塞($4)→ちょうど$5');
+  s = reduce(s, { type: 'IMPROVE_GAIN', card: 'laboratory' });
+  ok(own(s, 0, 'laboratory') === 1, '$5を獲得（城塞は手札に戻るが廃棄は成立）');
+  ok(own(s, 0, 'fortress') === 1 && cnt(s.trash, 'fortress') === 0, '城塞は廃棄置き場に残らず手札に戻る'); }
+
+console.log('=== 王笏（scepter）===');
+{ let s = act4(); s.turn.phase = 'buy'; me(s).hand = ['scepter'];
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'scepter' });
+  ok(s.pending && s.pending.type === 'scepter' && s.pending.stage === 'choose', '二択');
+  s = reduce(s, { type: 'SCEPTER_CHOOSE', mode: 'coins' });
+  ok(s.turn.coins === 2 && !s.pending, '+2コイン'); }
+{ let s = act4(); me(s).hand = ['market', 'scepter']; s.turn.actions = 1;
+  s = play(s, 'market'); // 場に市場（+1カード+1アクション+1購入+1コイン）
+  s.turn.phase = 'buy';
+  const c0 = s.turn.coins, b0 = s.turn.buys;
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'scepter' });
+  s = reduce(s, { type: 'SCEPTER_CHOOSE', mode: 'replay' });
+  ok(s.pending && s.pending.stage === 'replay', '再演の対象を選ぶ');
+  s = reduce(s, { type: 'SCEPTER_REPLAY', card: 'market' });
+  ok(s.turn.coins === c0 + 1 && s.turn.buys === b0 + 1, '市場をもう一度使用した（+1コイン+1購入）'); }
+{ let s = act4(); s.turn.phase = 'buy'; me(s).hand = ['scepter'];
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'scepter' });
+  s = reduce(s, { type: 'SCEPTER_CHOOSE', mode: 'replay' });
+  ok(!s.pending && s.turn.coins === 0, '対象が無くても「再度使用」を選べる（何も起きない＝engineは拒否しない）'); }
+{ let s = act4(); withSupply(s, ['band_of_misfits']);
+  me(s).inPlay = ['band_of_misfits']; s.turn.phase = 'buy'; me(s).hand = ['scepter'];
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'scepter' });
+  const cand = E.scepterTargets(s, 0);
+  ok(cand.indexOf('band_of_misfits') < 0, '命令カード（はみだし者）は再演できない（2024エラッタ）');
+  s = reduce(s, { type: 'SCEPTER_CHOOSE', mode: 'coins' }); }
+{ let s = act4(); me(s).inPlay = ['scepter']; s.turn.phase = 'buy';
+  const cand = E.scepterTargets(s, 0);
+  ok(cand.indexOf('scepter') < 0, '王笏（財宝）は再演対象にならない'); }
+
+console.log('=== CPU：R4 の全 pending が終端する ===');
+{
+  const PENDS = ['research', 'cargo_ship'];
+  PENDS.forEach((card) => {
+    let s = act4();
+    me(s).hand = [card, 'copper', 'estate'];
+    me(s).deck = ['silver', 'gold', 'copper', 'estate', 'copper'];
+    s = play(s, card);
+    s = cpuResolve(s, 40);
+    ok(!s.pending, 'CPU が ' + card + ' の選択待ちを終端できる');
+  });
+}
+{ let s = act4(); me(s).hand = ['improve', 'village']; s.turn.actions = 2;
+  s = play(s, 'improve'); s = play(s, 'village');
+  s.turn.phase = 'buy';
+  s = reduce(s, { type: 'END_TURN' });
+  s = cpuResolve(s, 40);
+  ok(!s.pending, 'CPU が増築のクリンナップ窓を終端できる'); }
+{ let s = act4(); me(s).hand = ['market', 'scepter']; s.turn.actions = 1;
+  s = play(s, 'market'); s.turn.phase = 'buy';
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'scepter' });
+  s = cpuResolve(s, 40);
+  ok(!s.pending, 'CPU が王笏の選択待ちを終端できる'); }
+
 console.log('\n=== ' + pass + ' 成功 / ' + fail + ' 失敗 ===');
 if (fail > 0) process.exit(1);

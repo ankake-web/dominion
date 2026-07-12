@@ -244,6 +244,13 @@
       p.coffers = (p.coffers || 0) + 1; t.buys += 1;
       log(state, `${p.name} はドゥカート金貨を使った（+1財源 +1購入）。`);
     }
+    /* 王笏（財宝・命令。2024エラッタで Command 種別を獲得）＝二択：
+         「+2コイン」／「このターンに使用し**場に出たまま**の、**命令ではない**アクション1枚を再度使用する」。
+       遂行できない選択肢も選べる（対象が無くても第2案を選べて何も起きない）＝engine は拒否しない。
+       ※pending を立てる財宝なので、冠/ティアラ/偽造通貨の2回使用は applyTreasureEffect＋'treasure_replay' で正しく2回出る。 */
+    if (card === 'scepter') {
+      state.pending = { type: 'scepter', stage: 'choose', player: pIndex };
+    }
     // ペテン師：他のプレイヤーは各自 銅貨1枚を獲得（アタック）。コイン3は coin:3 で加算済み。
     if (card === 'charlatan') {
       const q = [];
@@ -434,7 +441,8 @@
       actionsPlayed: 0, copperBonus: 0, merchants: 0, silverPlayed: false, buysMade: 0,
       coinPenalty: 0, // 冒険：-$1トークンの未消化ぶん（購入フェイズで最初に得る$1に食い込む。毎ターンリセット）
       priestCount: 0, // ルネサンス：司祭＝このターン有効な司祭の数（廃棄1枚につき +2コイン × この数）
-      cargoShips: [], // ルネサンス：貨物船＝このターン「獲得したカードを脇に置ける」残り回数ぶんの場の貨物船id（R4で使用）
+      cargoCharges: 0, // ルネサンス：貨物船＝このターン「獲得したカードを脇に置ける」残り回数（貨物船1枚につき1回）
+      improveLeft: null, // ルネサンス：増築＝クリンナップ開始時に残っている増築の回数（null=未初期化）
       afterActionCard: null, // 冒険：直前にプレイし解決したアクション（法貨/御料車の呼び出し窓の対象）
       // 冒険：横型イベント用のターン状態。
       eventsBought: [],   // このターンに購入したイベントid列（施し/借入/保存/巡礼＝1ターン1回の判定）
@@ -500,6 +508,7 @@
         coffers: 0,        // ギルド：財源（Coffers）トークン。購入フェイズに1枚=+1コインで使える。公開・VPには数えない。
         villagers: 0,      // ルネサンス：村人（Villagers）トークン。アクションフェイズに1個=+1アクションで使える。公開・VPには数えない（財源と同型・別枠）。
         projects: [],      // ルネサンス：このプレイヤーが買ったプロジェクトid列（キューブ＝各自2個まで＝最大2つ・同じものは1回だけ）。公開。
+        cargo: [],         // ルネサンス：貨物船の脇置き（**表向き＝公開**。次の手番開始時に手札へ。allCards/保存則tally に数える）。
         debt: 0,           // 帝国：負債（Debt）トークン。負債があるとカードを購入できない。購入フェイズに$1=1個返済。公開・VPには数えない（ターンを跨いで残る＝freshTurn非対象）。
         princes: [],       // プロモ：王子の脇に置いたカードid列（公開）。毎ターン開始時に脇のままプレイ。1要素=王子1枚が稼働中。
         tavern: [],        // 冒険：酒場マット（Reserve カードと守銭奴の銅貨。公開＝islandMat型。呼び出しで場へ戻す）。
@@ -1287,6 +1296,22 @@
   // 発明家／彫刻家の「コスト$4以下」＝コイン成分のみ（負債/ポーション費用のカードは含まない・非サプライ/分割山下段は除く）。
   function inventorGainable(state, id) {
     return !NON_SUPPLY.has(id) && !splitLocked(state, id) && costIsPlainCoin(id) && cardCost(state, id) <= 4;
+  }
+  /* 王笏（scepter）の再演対象＝「このターンにあなたが使用し、**場に出たまま**の、**命令ではない**アクションカード」。
+     - 場（inPlay）にあるアクション＝このターン使用したもの（前ターンの持続は durationCards にあり対象外）。
+     - 命令（大君主/はみだし者/船長/王子）は 2024エラッタで対象外。**相続で命令になった屋敷**も対象外。
+     - 島マット/自己廃棄/リザーブ/脇置き で場を離れた札は inPlay に無い＝自然に対象外（公式どおり）。
+     engine拒否・CPU非提案・UI表示が同じ述語を見る（公開API）。 */
+  function scepterTargets(state, pi) {
+    const p = state.players[pi];
+    const seen = {};
+    return p.inPlay.filter((c) => {
+      if (!DOM.isType(c, 'action')) return false;
+      if (DOM.isType(c, 'command')) return false;
+      if (inheritedEstate(p, c)) return false; // 相続の屋敷は命令
+      if (seen[c]) return false; seen[c] = true; // 表示・選択は名前ごとに1つ
+      return true;
+    });
   }
 
   /* ========== 暗黒時代：アタック各種（廃墟配布/手札公開/山札上2枚廃棄/手札削り） ========== */
@@ -2881,6 +2906,26 @@
         else if (rest.length === 1) p.deck.unshift(rest[0]);
         break;
       }
+      /* ===== ルネサンス R4：持続・クリンナップ・再演 ===== */
+      // 貨物船（持続）：+2コイン。このターン中1回、カードを獲得したとき、それを表向きで脇（この上）に置いてよい。
+      //   次の自分の手番開始時に手札へ。**1枚も脇に置かなければ持続として場に残らずクリンナップで捨て札**
+      //   （＝脇に置いたときだけ armDuration する）。玉座で複数回使えば「このターン1回」の権利が回数ぶん。
+      case 'cargo_ship':
+        t.coins += 2;
+        t.cargoCharges = (t.cargoCharges || 0) + 1;
+        log(state, `${p.name} は貨物船を使った（+2コイン。このターンの獲得1枚を脇に置ける）。`);
+        break;
+      // 研究（持続）：+1アクション。手札1枚を廃棄し、そのコイン費用1につき1枚を山札の上から**裏向きで**脇へ。
+      //   次の自分の手番開始時にそれらを手札へ。**銅貨（$0）を廃棄すると脇置き0枚＝持続として場に残らない**。
+      case 'research':
+        t.actions += 1;
+        if (p.hand.length > 0) state.pending = { type: 'research_trash', player: pi };
+        break;
+      // 増築：+2コイン。クリンナップ開始時の廃棄→格上げ獲得は endBuyTailSchemeOrCleanup の窓で処理する。
+      case 'improve':
+        t.coins += 2;
+        break;
+
       /* ===== ルネサンス R3：アーティファクトが絡む王国4枚 ===== */
       // 国境警備隊：+1アクション。山札の上2枚（**ランタン所持なら3枚**）を公開し、1枚を手札へ・残りを捨て札へ。
       //   公開したカードが**すべてアクション**なら、ランタンか角笛を受け取る
@@ -4586,6 +4631,7 @@
       p.durationCards || [], p.setAside || [], p.islandMat || [], p.nativeVillageMat || [],
       p.princes || [], p.tavern || [], // 冒険：酒場マット（Reserve/守銭奴の銅貨。公開・所有カードに数える）
       p.inherited || [],  // 冒険：相続の脇置き（獲得ではないが「得点計算時は自分のデッキに含める」＝公式）
+      p.cargo || [],      // ルネサンス：貨物船の脇置き（表向き＝公開。所有カード＝VPに数える）
       ...((p.archives || []).map((a) => a.cards || []))); // 帝国：資料庫の脇置き（所有カード＝VPに数える）
   }
   function vpOf(p) {
@@ -4778,6 +4824,23 @@
       const p = s.players[pi];
       if (e.stashed && removeOne(p.setAside, e.stashed)) { p.hand.push(e.stashed); log(s, `${p.name} は停泊所で脇に置いたカードを手札に戻した。`); }
     },
+    // ルネサンス：貨物船＝表向きで脇（p.cargo）に置いたカードを手札へ（貨物船1枚につき1枚）。
+    cargo_ship: (s, pi) => {
+      const p = s.players[pi];
+      if ((p.cargo || []).length) {
+        const c = p.cargo.shift();
+        p.hand.push(c);
+        log(s, `${p.name} は貨物船で脇に置いた「${C()[c].name}」を手札に加えた。`);
+      }
+    },
+    // ルネサンス：研究＝裏向きで脇（setAside）に置いたカードをすべて手札へ。
+    research: (s, pi, e) => {
+      const p = s.players[pi];
+      const list = (e.stashed || []).slice();
+      let n = 0;
+      list.forEach((c) => { if (removeOne(p.setAside, c)) { p.hand.push(c); n++; } });
+      if (n) log(s, `${p.name} は研究で脇に置いた ${n}枚 を手札に加えた。`);
+    },
     tactician: (s, pi) => { draw(s, pi, 5); s.turn.buys += 1; s.turn.actions += 1; log(s, `${s.players[pi].name} は策士の持続効果（+5カード +1購入 +1アクション）。`); },
     tide_pools: (s, pi) => { // 次手番開始時に手札2枚を捨てる（対話＝startQueueへ）
       if (s.players[pi].hand.length > 0) (s.turn.startQueue = s.turn.startQueue || []).push({ type: 'tide_pools_discard', player: pi });
@@ -4917,6 +4980,11 @@
     //   対話＝onGainQueue（工房/改築等の *_GAIN 経由の獲得でも取りこぼさない）。
     if (cardId === 'ducat' && gp.hand.includes('copper')) {
       (state.onGainQueue = state.onGainQueue || []).push({ type: 'ducat_trash', player: pIndex });
+    }
+    // 貨物船：このターン中1回（貨物船1枚につき1回）、獲得したカードを表向きで脇に置いてよい（任意）。
+    //   獲得先が置換されたカード（手札に獲得/山札の上に獲得）も、その場所から脇に置ける。
+    if (state.turn && pIndex === state.turn.active && (state.turn.cargoCharges || 0) > 0) {
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'cargo_ship_setaside', player: pIndex, card: cardId, dest: dest || 'discard' });
     }
     // 遊牧民：獲得したとき +2コイン（自分の手番のときのみ意味がある）。廃棄時の+2は triggerOnTrash。
     if (cardId === 'nomads' && state.turn && pIndex === state.turn.active) { state.turn.coins += 2; log(state, `${gp.name} は遊牧民の獲得で +2コイン。`); }
@@ -5765,8 +5833,37 @@
     return (p.inPlay || []).filter((c) => TRAVELLER_NEXT[c] && (state.supply[TRAVELLER_NEXT[c]] || 0) > 0);
   }
   // トラベラー交換窓の後（または交換窓が不要なとき）＝策謀のクリンナップ→片付け。
+  /* ルネサンス：増築（Improve）＝**クリンナップフェイズの開始時**、このターンに場から捨て札にするアクション
+     カード1枚を廃棄してよい。そうしたら、ちょうど$1高いカード1枚を獲得する（廃棄したら獲得は強制）。
+     - 対象＝「このターン場から捨て札になるアクション」＝場（inPlay）＋前ターンからの持続（durationCards）のうち、
+       **予約が残っていて場に残り続けるもの以外**。増築自身も対象。
+     - 場から直接 廃棄置き場へ行く＝「（場から）捨てたとき」の効果は発動しない（トラベラー交換/封土の銀貨 等）。
+       「廃棄されたとき」の効果は発動する（城塞は手札に戻る＝廃棄して$5を獲得できる）。 */
+  function stayingCounts(state, pi) {
+    const p = state.players[pi];
+    const cnt = {};
+    (p.delayedEffects || []).forEach((e) => { cnt[e.card] = (cnt[e.card] || 0) + 1; });
+    if ((p.princes || []).length) cnt.prince = (cnt.prince || 0) + p.princes.length;
+    if (p.hirelings) cnt.hireling = (cnt.hireling || 0) + p.hirelings;
+    if (p.champions) cnt.champion = (cnt.champion || 0) + p.champions;
+    if ((p.archives || []).length) cnt.archive = (cnt.archive || 0) + p.archives.length;
+    return cnt;
+  }
+  function improveTargets(state, pi) {
+    const p = state.players[pi];
+    const stay = stayingCounts(state, pi);
+    const byId = {};
+    [].concat(p.inPlay, p.durationCards || []).forEach((c) => { byId[c] = (byId[c] || 0) + 1; });
+    return Object.keys(byId).filter((id) => DOM.isType(id, 'action') && (byId[id] - (stay[id] || 0)) > 0);
+  }
   function endBuyTailSchemeOrCleanup(state, pi) {
     const me = state.players[pi];
+    // ルネサンス：増築（クリンナップ開始時の廃棄→ちょうど+$1の獲得）。場の増築1枚につき1回。
+    if (state.turn.improveLeft == null) state.turn.improveLeft = me.inPlay.filter((c) => c === 'improve').length;
+    if (state.turn.improveLeft > 0 && improveTargets(state, pi).length) {
+      state.pending = { type: 'improve', stage: 'trash', player: pi };
+      return;
+    }
     // 異郷：策謀＝クリンナップ開始時、場のアクション（非持続）を最大(このターンの策謀の数)枚 山札の上に置ける。
     const schemes = state.turn.schemes || 0;
     if (schemes > 0 && me.inPlay.some((c) => DOM.isType(c, 'action') && !DOM.isType(c, 'duration'))) {
@@ -9620,6 +9717,116 @@
         villainApply(state, pd.source, pd.victim, pd.queue);
         return state;
       }
+      /* ---- ルネサンス R4：持続・クリンナップ・再演 ---- */
+      // 研究：手札1枚を廃棄し、そのコイン費用1につき1枚を山札の上から裏向きで脇へ（強制）。
+      case 'RESEARCH_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'research_trash') return state;
+        const pl = state.players[pd.player];
+        if (!pl.hand.length) { state.pending = null; return state; } // 終端保証
+        const card = action.card;
+        if (!card || pl.hand.indexOf(card) < 0) return state;
+        const n = cardCost(state, card); // 廃棄時点のコイン費用（コスト軽減が乗る／ポーション・負債は数えない）
+        if (!trashFromHand(state, pd.player, [card], 1, `廃棄した（研究）。`)) return state;
+        const aside = [];
+        for (let i = 0; i < n; i++) {
+          if (pl.deck.length === 0) { if (pl.discard.length === 0) break; reshuffleDeck(pl); }
+          aside.push(pl.deck.shift());
+        }
+        state.pending = null;
+        if (aside.length) {
+          aside.forEach((c) => pl.setAside.push(c)); // 裏向き＝相手にはマスクされる
+          armDuration(state, pd.player, 'research', { stashed: aside.slice() });
+          log(state, `${pl.name} は研究で ${aside.length}枚 を裏向きで脇に置いた（次の手番開始時に手札へ）。`);
+        } else {
+          log(state, `${pl.name} は研究：脇に置くカードが0枚（持続として場に残らない）。`);
+        }
+        return state;
+      }
+      // 貨物船：獲得したカードを表向きで脇に置いてよい（このターン中1回・貨物船1枚につき1回）。
+      case 'CARGO_SHIP_SETASIDE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'cargo_ship_setaside') return state;
+        const pl = state.players[pd.player];
+        if (action.set) {
+          const z = pd.dest === 'hand' ? pl.hand : (pd.dest === 'deck' ? pl.deck : pl.discard);
+          if (removeOne(z, pd.card)) {
+            pl.cargo.push(pd.card);
+            armDuration(state, pd.player, 'cargo_ship'); // 脇に置いたときだけ持続になる（置かなければ捨て札）
+            t.cargoCharges = Math.max(0, (t.cargoCharges || 0) - 1);
+            log(state, `${pl.name} は貨物船で「${C()[pd.card].name}」を脇に置いた（次の手番開始時に手札へ）。`);
+          }
+        }
+        state.pending = null;
+        return state;
+      }
+      // 増築：クリンナップ開始時、このターン場から捨て札にするアクション1枚を廃棄してよい（任意）。
+      case 'IMPROVE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'improve' || pd.stage !== 'trash') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        if (card == null) { // 辞退＝この増築の窓を閉じる
+          t.improveLeft = 0;
+          state.pending = null;
+          endBuyTailSchemeOrCleanup(state, pd.player);
+          return state;
+        }
+        if (improveTargets(state, pd.player).indexOf(card) < 0) return state;
+        if (!removeOne(pl.inPlay, card) && !removeOne(pl.durationCards, card)) return state;
+        const exact = cardCost(state, card) + 1;
+        const pot = potionCost(card), dbt = (C()[card] && C()[card].debt) || 0;
+        trashCard(state, pd.player, card); // 場から直接 廃棄置き場へ（「捨てたとき」は発動しない／「廃棄されたとき」は発動する）
+        log(state, `${pl.name} は増築で「${C()[card].name}」を廃棄した。`);
+        t.improveLeft = Math.max(0, (t.improveLeft || 0) - 1);
+        const can = (id) => !NON_SUPPLY.has(id) && !splitLocked(state, id) && cardCost(state, id) === exact &&
+          potionCost(id) === pot && ((C()[id] && C()[id].debt) || 0) === dbt;
+        if (anyGainable(state, can)) {
+          state.pending = { type: 'improve', stage: 'gain', player: pd.player, exact, pot, dbt };
+          return state;
+        }
+        state.pending = null; // ちょうど+$1のカードが無ければ獲得できない（廃棄は成立）
+        endBuyTailSchemeOrCleanup(state, pd.player);
+        return state;
+      }
+      case 'IMPROVE_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'improve' || pd.stage !== 'gain') return state;
+        const can = (id) => !NON_SUPPLY.has(id) && !splitLocked(state, id) && cardCost(state, id) === pd.exact &&
+          potionCost(id) === pd.pot && ((C()[id] && C()[id].debt) || 0) === pd.dbt;
+        if (!finishGain(state, pd, action.card, can, 'discard', '獲得した（増築）。')) return state;
+        endBuyTailSchemeOrCleanup(state, pd.player);
+        return state;
+      }
+      // 王笏：二択（+2コイン／このターン使用し場に残っている非命令アクション1枚を再度使用）。
+      case 'SCEPTER_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'scepter' || pd.stage !== 'choose') return state;
+        if (action.mode === 'coins') {
+          t.coins += 2;
+          log(state, `${me.name} は王笏で +2コイン。`);
+          state.pending = null;
+          return state;
+        }
+        if (action.mode === 'replay') {
+          // 遂行できない選択肢も選べる（対象が無ければ何も起きない）
+          if (!scepterTargets(state, pd.player).length) { state.pending = null; return state; }
+          state.pending = { type: 'scepter', stage: 'replay', player: pd.player };
+          return state;
+        }
+        return state;
+      }
+      case 'SCEPTER_REPLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'scepter' || pd.stage !== 'replay') return state;
+        const card = action.card;
+        if (!card || scepterTargets(state, pd.player).indexOf(card) < 0) return state;
+        state.pending = null;
+        log(state, `${state.players[pd.player].name} は王笏で「${C()[card].name}」を再度使用する。`);
+        (state.replay = state.replay || []).push({ player: pd.player, card: card, label: 'scepter' });
+        return state;
+      }
+
       /* ---- ルネサンス R3：アーティファクト絡み ---- */
       // ドゥカート金貨：獲得したとき、手札の銅貨1枚を廃棄してもよい（任意）。
       case 'DUCAT_TRASH': {
@@ -11200,6 +11407,8 @@
     'SCULPTOR_GAIN', 'SEER_ORDER', 'OLD_WITCH_REACT', 'OLD_WITCH_TRASH', 'VILLAIN_REACT', 'VILLAIN_DISCARD',
     'DUCAT_TRASH', 'BORDER_GUARD_KEEP', 'BORDER_GUARD_ARTIFACT',
     'TREASURER_CHOOSE', 'TREASURER_TRASH', 'TREASURER_GAIN',
+    'RESEARCH_TRASH', 'CARGO_SHIP_SETASIDE', 'IMPROVE_TRASH', 'IMPROVE_GAIN',
+    'SCEPTER_CHOOSE', 'SCEPTER_REPLAY',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',
@@ -11273,6 +11482,8 @@
     canBuyProject,     // ルネサンス：このプロジェクトを今買えるか（1人2つまで／同じものは1回だけ。engine拒否とCPU/UI非提案のセット）
     hasMyProject,      // ルネサンス：そのプレイヤーがそのプロジェクトを買っているか（効果判定の正本）
     hasArtifact,       // ルネサンス：そのプレイヤーがそのアーティファクトを持っているか（engine/CPU/UI が同じ述語）
+    scepterTargets,    // ルネサンス：王笏の再演対象（engine/CPU/UI が同じ候補を参照）
+    improveTargets,    // ルネサンス：増築の廃棄対象（engine/CPU/UI が同じ候補を参照）
     maskStateFor,
     PLAYER_ACTIONS,
     // 「誰が今操作すべきか」: 選択待ちならその人、なければ手番のプレイヤー
