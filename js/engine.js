@@ -62,6 +62,21 @@
     return !!(p && p.projects && p.projects.indexOf(id) >= 0 && isProjectInPlay(state, id));
   }
   const PROJECT_CUBES = 2; // 公式：各プレイヤーはキューブ2個＝プロジェクトは最大2つまで
+  /* ---------- ルネサンス：アーティファクト（Artifact）----------
+     state.artifacts = { flag|horn|key|lantern|treasure_chest: 席番号|null }（トップレベル・公開・**非カード**）。
+     「取る(take)」は**獲得ではない**＝獲得/廃棄トリガーは一切発火しない。同時に持てるのは1人だけ＝取ると相手から奪う。
+     付与カード（旗手／国境警備隊／剣客／出納官）が王国にあるときだけ createInitialState がキーを作る。 */
+  function hasArtifact(state, pi, id) { return !!(state.artifacts && state.artifacts[id] === pi); }
+  function takeArtifact(state, pi, id) {
+    if (!state.artifacts || !Object.prototype.hasOwnProperty.call(state.artifacts, id)) return false;
+    const prev = state.artifacts[id];
+    const nm = (DOM.LANDSCAPES[id] && DOM.LANDSCAPES[id].name) || id;
+    if (prev === pi) { log(state, `${state.players[pi].name} は既に${nm}を持っている。`); return true; }
+    state.artifacts[id] = pi;
+    log(state, `${state.players[pi].name} は${nm}を受け取った` +
+      (prev != null ? `（${state.players[prev].name} から奪った）` : '') + '。');
+    return true;
+  }
   // engine拒否・CPU非提案・UIボタン無効の3面が見る唯一の述語（片側だけずれると CPU 無限ループ）。
   function canBuyProject(state, pi, id) {
     const t = state.turn, p = state.players[pi];
@@ -224,6 +239,11 @@
     // ===== ルネサンス：財宝カードの「使ったとき」効果 =====
     // 香辛料：+1購入（コイン2は coin:2 で加算済み）。獲得時の +2財源 は triggerOnGain。
     if (card === 'spices') t.buys += 1;
+    // ドゥカート金貨：**コインは出ない（coin:0）**。+1財源+1購入。獲得時の銅貨廃棄は triggerOnGain。
+    if (card === 'ducat') {
+      p.coffers = (p.coffers || 0) + 1; t.buys += 1;
+      log(state, `${p.name} はドゥカート金貨を使った（+1財源 +1購入）。`);
+    }
     // ペテン師：他のプレイヤーは各自 銅貨1枚を獲得（アタック）。コイン3は coin:3 で加算済み。
     if (card === 'charlatan') {
       const q = [];
@@ -641,13 +661,29 @@
      seat=公開した席 / cards=公開カードid配列 / note=どの効果による公開か。
      revealLatest=直近に公開した席（点滅・通知用）。公開は公式どおり全員に見える情報なので
      maskStateFor でも伏せない（clone がそのまま運ぶ）。*/
-  function reveal(state, seat, cards, note) {
-    const list = (cards || []).filter(Boolean).slice(0, 8);
+  /* カードを「公開する」。表示（state.reveals）と、公開に反応するカードのフックを一箇所に集約する。
+     ルネサンス：**パトロン（Patron）＝アクションフェイズ中に「公開する」の語であなたが公開したとき +1財源**（枚数ぶん・強制）。
+       - 公開元はどこでもよい（手札／山札／捨て札）。相手のアタックで公開させられても、そのアタックが
+         相手のアクションフェイズ中なら +1財源（「アクションフェイズ中」は“あなたの”とは限らない＝公式）。
+       - 2022エラッタでフェイズ不問→アクションフェイズ限定に変更（購入フェイズの公開では得られない）。
+     opts.notReveal=true ＝「公開」ではない表示（家臣の捨て札／闇市場デッキ／廃棄置き場からの獲得）＝パトロンは誘発しない。 */
+  function reveal(state, seat, cards, note, opts) {
+    const all = (cards || []).filter(Boolean);
+    const list = all.slice(0, 8);
     if (!list.length) return;
     state.revealSeq = (state.revealSeq || 0) + 1;
     if (!state.reveals) state.reveals = {};
     state.reveals[seat] = { cards: list.slice(), note: note || '', seq: state.revealSeq };
     state.revealLatest = seat;
+    if (opts && opts.notReveal) return;
+    if (state.turn && state.turn.phase === 'action' && state.players[seat]) {
+      const n = all.filter((c) => c === 'patron').length;
+      if (n > 0) {
+        const rp = state.players[seat];
+        rp.coffers = (rp.coffers || 0) + n;
+        log(state, `${rp.name} はパトロンを公開して +${n}財源。`);
+      }
+    }
   }
 
   /* ---------- カード操作 ---------- */
@@ -2845,6 +2881,52 @@
         else if (rest.length === 1) p.deck.unshift(rest[0]);
         break;
       }
+      /* ===== ルネサンス R3：アーティファクトが絡む王国4枚 ===== */
+      // 国境警備隊：+1アクション。山札の上2枚（**ランタン所持なら3枚**）を公開し、1枚を手札へ・残りを捨て札へ。
+      //   公開したカードが**すべてアクション**なら、ランタンか角笛を受け取る
+      //   （非ランタン＝2枚とも→強制の二択／ランタン＝3枚とも→角笛を任意で）。
+      case 'border_guard': {
+        t.actions += 1;
+        const n2 = hasArtifact(state, pi, 'lantern') ? 3 : 2;
+        const rev = [];
+        for (let i = 0; i < n2; i++) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
+          rev.push(p.deck.shift());
+        }
+        if (rev.length) reveal(state, pi, rev.slice(), '国境警備隊：山札の上を公開');
+        // 公開枚数が足りなければアーティファクトは取れない（公式）。
+        const allAction = rev.length === n2 && rev.every((c) => DOM.isType(c, 'action'));
+        if (rev.length === 0) break;
+        if (rev.length === 1) { p.hand.push(rev[0]); log(state, `${p.name} は国境警備隊で1枚を手札に加えた。`); break; }
+        state.pending = { type: 'border_guard', player: pi, cards: rev, allAction: allAction, lantern: n2 === 3 };
+        break;
+      }
+      // 旗手：+2コイン。獲得時/廃棄時に旗を受け取る（triggerOnGain / triggerOnTrash）。
+      case 'flag_bearer':
+        t.coins += 2;
+        break;
+      // パトロン：+1村人+2コイン。「アクションフェイズ中に公開されたら +1財源」は reveal() の共通フック（リアクション）。
+      case 'patron':
+        p.villagers = (p.villagers || 0) + 1;
+        t.coins += 2;
+        log(state, `${p.name} はパトロンを使った（+1村人 +2コイン）。`);
+        break;
+      // 剣客：+3カード。**その後**捨て札置き場にカードがあれば +1財源。**その後**財源4個以上なら宝箱を受け取る。
+      //   （3枚引く途中でシャッフルが起きて捨て札が空になったら、+1財源も宝箱も得られない＝順序が肝）。
+      case 'swashbuckler':
+        draw(state, pi, 3);
+        if (p.discard.length > 0) {
+          p.coffers = (p.coffers || 0) + 1;
+          log(state, `${p.name} は剣客で +1財源（捨て札にカードがある）。`);
+          if ((p.coffers || 0) >= 4) takeArtifact(state, pi, 'treasure_chest');
+        }
+        break;
+      // 出納官：+3コイン。3択（手札の財宝1枚を廃棄／廃棄置き場から財宝1枚を手札に獲得／鍵を受け取る）。
+      //   **遂行できない選択肢も選べる**（公式）＝engine は3択をいつでも受理し、実行不能なら効果なしで閉じる。
+      case 'treasurer':
+        t.coins += 3;
+        state.pending = { type: 'treasurer', stage: 'choose', player: pi };
+        break;
       // 悪党：+2財源。手札5枚以上の他の各プレイヤーは、手札からコスト$2以上のカード1枚を捨てる（無ければ手札を公開）。
       case 'villain': {
         p.coffers = (p.coffers || 0) + 2;
@@ -3184,7 +3266,8 @@
         if (p.deck.length > 0) {
           const top = p.deck.shift();
           p.discard.push(top); // 一旦捨てる（公式どおり：捨ててから使うなら捨て札から場へ）
-          reveal(state, pi, [top], '家臣で山札の上を公開');
+          // 家臣は「捨てる」であって「公開する」ではない（公式）＝パトロンは誘発しない（表示のみ）。
+          reveal(state, pi, [top], '家臣で山札の上を公開', { notReveal: true });
           log(state, `${p.name} は山札の上の「${C()[top].name}」を捨てた（家臣）。`);
           if (DOM.isType(top, 'action')) state.pending = { type: 'vassal', player: pi, card: top };
         }
@@ -3301,7 +3384,8 @@
         const revealed = bm.splice(0, 3); // 上3枚（買わなかったぶんは後で底へ）
         state.blackMarket = bm;
         if (revealed.length) {
-          reveal(state, pi, revealed, '闇市場デッキの上を公開');
+          // 闇市場デッキのカードは「あなたのカード」ではない＝パトロンは誘発しない（表示のみ）。
+          reveal(state, pi, revealed, '闇市場デッキの上を公開', { notReveal: true });
           state.pending = { type: 'black_market', stage: 'play', player: pi, revealed };
         }
         break;
@@ -4827,6 +4911,13 @@
       delete state._experimentGain;
       if (g) log(state, `${gp.name} は実験の獲得で もう1枚の実験を獲得した。`);
     }
+    // 旗手：獲得したとき（および廃棄したとき＝triggerOnTrash）旗を受け取る（誰の獲得でも本人が取る）。
+    if (cardId === 'flag_bearer') takeArtifact(state, pIndex, 'flag');
+    // ドゥカート金貨：獲得したとき、手札の銅貨1枚を廃棄してもよい（任意・相手のターンの獲得でも本人が選ぶ）。
+    //   対話＝onGainQueue（工房/改築等の *_GAIN 経由の獲得でも取りこぼさない）。
+    if (cardId === 'ducat' && gp.hand.includes('copper')) {
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'ducat_trash', player: pIndex });
+    }
     // 遊牧民：獲得したとき +2コイン（自分の手番のときのみ意味がある）。廃棄時の+2は triggerOnTrash。
     if (cardId === 'nomads' && state.turn && pIndex === state.turn.active) { state.turn.coins += 2; log(state, `${gp.name} は遊牧民の獲得で +2コイン。`); }
     // 暗黒時代：死の荷車＝獲得したとき廃墟を2枚獲得（山の一番上から。足りなければあるだけ・非サプライではない配布）。
@@ -5139,6 +5230,8 @@
       p.coffers = (p.coffers || 0) + 1; p.villagers = (p.villagers || 0) + 1;
       log(state, `${p.name} は絹商人の廃棄で +1財源+1村人。`);
     }
+    // ルネサンス：旗手＝獲得または廃棄したとき旗を受け取る（廃棄を実行したプレイヤー＝owner）。
+    if (card === 'flag_bearer') takeArtifact(state, pIndex, 'flag');
     // 帝国：石（rocks）＝獲得または廃棄したとき銀貨1枚を獲得（購入フェイズ中なら山札の上・そうでなければ手札）。
     if (card === 'rocks') rocksGainSilver(state, pIndex);
     // 帝国：崩れた城（crumbling_castle）＝獲得または廃棄したとき +1勝利点トークン＋銀貨1枚（獲得は triggerOnGain）。
@@ -5290,6 +5383,14 @@
         log(state, `${p.name} は元手を捨て 負債${6 * caps} を負った${r > 0 ? `（うち${r}を即返済）` : ''}。`);
       }
     }
+    /* ルネサンス：角笛（Horn・アーティファクト）＝各ターンに1度、場から国境警備隊を捨て札にするとき、
+       代わりに山札の上に置いてよい。**この「置き換え」は必ず“次の手札の先引き”より前に処理する**
+       （後にすると1ターン遅れて引かれる＝角笛がほぼ無効化される。本エンジンは片付けで次の手札を先引きするため）。
+       「ほぼ常に得」なので自動で置く（城壁のある村／宝物庫の自動返却と同じ扱い＝許容簡略化）。 */
+    if (hasArtifact(state, pi, 'horn') && removeOne(restInPlay, 'border_guard')) {
+      p.deck.unshift('border_guard');
+      log(state, `${p.name} は角笛で国境警備隊を山札の上に置いた。`);
+    }
     p.discard.push(...restInPlay, ...p.hand);
     p.durationCards = newDur;
     p.inPlay = [];
@@ -5316,7 +5417,11 @@
     p.missionExtra = false;
     // 冒険：-1カードトークン（遺物）は draw() 内で「次のドロー」に効く（この先引きが次のドローなら1枚減）。
     //   冒険：探検（Expedition）＝このターンに買ったぶんだけ追加で引く（累積・前哨地の3枚にも加算）。
-    draw(state, pi, (extra ? 3 : 5) + (state.turn.extraDraw || 0));
+    //   ルネサンス：旗（Flag・アーティファクト）＝**手札を引くとき +1カード**（＝この片付けの先引きと前哨地の3枚引き）。
+    //     学者/手先/寄付のような「引く」効果には効かない（手札そのものを引く場面のみ＝公式）。
+    //     先引きの瞬間の保持者に適用する（その後に旗が奪われても引いた枚数は返さない）。
+    const flagBonus = hasArtifact(state, pi, 'flag') ? 1 : 0;
+    draw(state, pi, (extra ? 3 : 5) + (state.turn.extraDraw || 0) + flagBonus);
     // 冒険：保存（Save）＝脇に置いた1枚を「次の手札を引いた後」に手札へ加える（＝この片付けの中で戻す）。
     if (state.turn.savedCard) {
       const sv = state.turn.savedCard;
@@ -5345,6 +5450,11 @@
       next = (anchor + 1) % n; rotationSeat = next;
     }
     state.turn = freshTurn(next, isExtra, { rotationSeat, possessedBy, noBuyCards });
+    // ルネサンス：鍵（Key・アーティファクト）＝あなたのターンの開始時 +$1（取ったターンには恩恵なし＝開始時は過ぎている）。
+    if (hasArtifact(state, next, 'key')) {
+      state.turn.coins += 1;
+      log(state, `${state.players[next].name} は鍵で +1コイン（ターン開始時）。`);
+    }
     log(state, possessedBy != null
       ? `${state.players[possessedBy].name} が ${state.players[next].name} の追加ターンを操作します（支配）。`
       : (extra ? `${state.players[next].name} の追加ターンです（前哨地）。`
@@ -6308,6 +6418,12 @@
         t.afterActionCard = null; // 冒険：アクションフェイズを抜けたら法貨/御料車の呼び出し窓は閉じる
         // 冒険：-$1トークンを消化（購入フェイズ開始時に食い込み分へ変換。財宝を出すとそのコインに食い込む）。
         if (me.minusCoin) { t.coinPenalty = (t.coinPenalty || 0) + 1; me.minusCoin = false; log(state, `${me.name} は -$1トークンを支払う（このターンのコイン $1分）。`); applyCoinPenalty(state); }
+        // ルネサンス：宝箱（Treasure Chest・アーティファクト）＝**購入フェイズの開始時**に金貨1枚を獲得（強制）。
+        //   公式（2022エラッタ）：「購入フェイズの開始時」は1ターンに複数回起こり得る（ヴィラでアクションフェイズに
+        //   戻り再び購入フェイズに入るたびに再発動する）＝1ターン1回のフラグを立てない。
+        if (hasArtifact(state, pi, 'treasure_chest')) {
+          if (gain(state, pi, 'gold', 'discard')) log(state, `${me.name} は宝箱で金貨1枚を獲得した（購入フェイズ開始時）。`);
+        }
         // 帝国：闘技場＝購入フェイズ開始時、手札のアクション1枚を捨ててよい（捨てたら +2勝利点）。
         maybeArena(state, pi);
         return state;
@@ -7811,7 +7927,8 @@
         const cc = card != null ? cardCost(state, card) : -1;
         if (card == null || state.trash.indexOf(card) < 0 || cc < 3 || cc > 6 || potionCost(card) !== 0) return state;
         removeOne(state.trash, card); p.deck.unshift(card);
-        reveal(state, pd.player, [card], '墓暴きで廃棄置き場から獲得'); // 何を取ったかは公開
+        // 「獲得」は公開ではない＝パトロンは誘発しない（何を取ったかの表示のみ）。
+        reveal(state, pd.player, [card], '墓暴きで廃棄置き場から獲得', { notReveal: true });
         log(state, `${p.name} は墓暴きで廃棄置き場の「${C()[card].name}」を山札の上に獲得した。`);
         state.pending = null;
         return state;
@@ -8199,7 +8316,8 @@
         const cc = card != null ? cardCost(state, card) : -1;
         if (card == null || state.trash.indexOf(card) < 0 || cc < 3 || cc > 6 || potionCost(card) !== 0) return state; // 獲得は強制
         removeOne(state.trash, card); p.discard.push(card);
-        reveal(state, pd.player, [card], '盗賊で廃棄置き場から獲得');
+        // 「獲得」は公開ではない＝パトロンは誘発しない（表示のみ）。
+        reveal(state, pd.player, [card], '盗賊で廃棄置き場から獲得', { notReveal: true });
         log(state, `${p.name} は盗賊で廃棄置き場の「${C()[card].name}」を獲得した。`);
         state.pending = null;
         return state;
@@ -9500,6 +9618,107 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'villain' || pd.stage !== 'react') return state;
         villainApply(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      /* ---- ルネサンス R3：アーティファクト絡み ---- */
+      // ドゥカート金貨：獲得したとき、手札の銅貨1枚を廃棄してもよい（任意）。
+      case 'DUCAT_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ducat_trash') return state;
+        const pl = state.players[pd.player];
+        if (action.trash && pl.hand.includes('copper')) {
+          removeOne(pl.hand, 'copper');
+          trashCard(state, pd.player, 'copper');
+          log(state, `${pl.name} はドゥカート金貨の獲得で銅貨1枚を廃棄した。`);
+        }
+        state.pending = null;
+        return state;
+      }
+      // 国境警備隊：公開したカードから1枚を手札へ・残りを捨て札へ。すべてアクションならアーティファクトを取る。
+      case 'BORDER_GUARD_KEEP': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'border_guard') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        const rest = (pd.cards || []).slice();
+        if (!card || !removeOne(rest, card)) return state;
+        pl.hand.push(card);
+        const disc = rest.slice();
+        disc.forEach((c) => pl.discard.push(c));
+        log(state, `${pl.name} は国境警備隊で「${C()[card].name}」を手札に加え、${disc.length}枚を捨てた。`);
+        state.pending = null;
+        if (disc.length) triggerOnDiscard(state, pd.player, disc, true); // トンネル等（対話は出さない＝安全側）
+        if (pd.allAction) {
+          if (pd.lantern) {
+            // ランタン所持＝3枚すべてアクション → 角笛を「取ってもよい」（任意）。
+            if (!hasArtifact(state, pd.player, 'horn')) {
+              state.pending = { type: 'border_guard_artifact', player: pd.player, only: 'horn' };
+            }
+          } else {
+            // 非ランタン＝2枚ともアクション → ランタンか角笛を受け取る（強制の二択）。
+            state.pending = { type: 'border_guard_artifact', player: pd.player };
+          }
+        }
+        return state;
+      }
+      case 'BORDER_GUARD_ARTIFACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'border_guard_artifact') return state;
+        const want = action.artifact;
+        if (pd.only) {
+          // 任意（角笛を取るか取らないか）
+          if (want === pd.only) takeArtifact(state, pd.player, pd.only);
+          else if (want != null) return state;
+          state.pending = null;
+          return state;
+        }
+        if (want !== 'horn' && want !== 'lantern') return state; // 強制の二択
+        takeArtifact(state, pd.player, want);
+        state.pending = null;
+        return state;
+      }
+      // 出納官：3択（遂行できない選択肢も選べる＝engine は拒否しない・実行不能なら効果なしで閉じる）。
+      case 'TREASURER_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'treasurer' || pd.stage !== 'choose') return state;
+        const pl = state.players[pd.player];
+        const mode = action.mode;
+        if (mode === 'key') { takeArtifact(state, pd.player, 'key'); state.pending = null; return state; }
+        if (mode === 'trash') {
+          if (!pl.hand.some((c) => DOM.isType(c, 'treasure'))) { state.pending = null; return state; } // 実行不能＝効果なし
+          state.pending = { type: 'treasurer', stage: 'trash', player: pd.player };
+          return state;
+        }
+        if (mode === 'gain') {
+          if (!(state.trash || []).some((c) => DOM.isType(c, 'treasure'))) { state.pending = null; return state; }
+          state.pending = { type: 'treasurer', stage: 'gain', player: pd.player };
+          return state;
+        }
+        return state;
+      }
+      case 'TREASURER_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'treasurer' || pd.stage !== 'trash') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        if (!card || pl.hand.indexOf(card) < 0 || !DOM.isType(card, 'treasure')) return state;
+        if (!trashFromHand(state, pd.player, [card], 1, `廃棄した（出納官）。`)) return state;
+        state.pending = null;
+        return state;
+      }
+      // 廃棄置き場から財宝1枚を「手札に」獲得（サプライ山は減らない＝3山終了に影響しない）。
+      //   これは通常の**獲得**＝獲得時能力が誘発する（ドゥカートの銅貨廃棄／香辛料の +2財源 など）。
+      case 'TREASURER_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'treasurer' || pd.stage !== 'gain') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        if (!card || !DOM.isType(card, 'treasure') || (state.trash || []).indexOf(card) < 0) return state;
+        removeOne(state.trash, card);
+        pl.hand.push(card);
+        log(state, `${pl.name} は廃棄置き場から「${C()[card].name}」を手札に獲得した（出納官）。`);
+        state.pending = null;
+        triggerOnGain(state, pd.player, card, 'hand'); // 通常の獲得＝獲得時能力は誘発する
         return state;
       }
       // 悪党：手札からコスト$2以上のカード1枚を捨てる（強制・被害者が選ぶ）。
@@ -10979,6 +11198,8 @@
     'SPEND_VILLAGER', 'BUY_PROJECT',
     'HIDEOUT_TRASH', 'INVENTOR_GAIN', 'MOUNTAIN_VILLAGE_TAKE', 'PRIEST_TRASH', 'RECRUITER_TRASH',
     'SCULPTOR_GAIN', 'SEER_ORDER', 'OLD_WITCH_REACT', 'OLD_WITCH_TRASH', 'VILLAIN_REACT', 'VILLAIN_DISCARD',
+    'DUCAT_TRASH', 'BORDER_GUARD_KEEP', 'BORDER_GUARD_ARTIFACT',
+    'TREASURER_CHOOSE', 'TREASURER_TRASH', 'TREASURER_GAIN',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',
@@ -11051,6 +11272,7 @@
     canBuyEvent,       // 冒険：1ターン1回／1ゲーム1回のイベントを今買えるか（engine拒否とCPU/UI非提案のセット）
     canBuyProject,     // ルネサンス：このプロジェクトを今買えるか（1人2つまで／同じものは1回だけ。engine拒否とCPU/UI非提案のセット）
     hasMyProject,      // ルネサンス：そのプレイヤーがそのプロジェクトを買っているか（効果判定の正本）
+    hasArtifact,       // ルネサンス：そのプレイヤーがそのアーティファクトを持っているか（engine/CPU/UI が同じ述語）
     maskStateFor,
     PLAYER_ACTIONS,
     // 「誰が今操作すべきか」: 選択待ちならその人、なければ手番のプレイヤー

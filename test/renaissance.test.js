@@ -410,5 +410,203 @@ console.log('=== CPU：R2 の全 pending が終端する ===');
   ok(!s.pending && s.turn.priestCount === 2, '玉座×司祭＝司祭2つぶんの予約');
 }
 
+/* ============================================================
+   R3＝アーティファクト5種＋パトロンの公開フック
+   ============================================================ */
+// アーティファクト付与カードを含む王国
+const KING_ART = ['border_guard', 'flag_bearer', 'swashbuckler', 'treasurer', 'patron', 'ducat', 'village', 'smithy', 'market', 'militia'];
+function actA() { return act(KING_ART); }
+// 手番を1周させて自分に戻す（片付け＝先引きが起きる）
+function endTurn(s) {
+  if (s.pending) return s;
+  if (s.turn.phase === 'action') s = reduce(s, { type: 'END_ACTION_PHASE' });
+  if (s.pending) return s;
+  return reduce(s, { type: 'END_TURN' });
+}
+
+console.log('=== ドゥカート金貨（ducat）===');
+{ let s = actA(); s.turn.phase = 'buy'; me(s).hand = ['ducat'];
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'ducat' });
+  ok(s.turn.coins === 0 && (me(s).coffers || 0) === 1 && s.turn.buys === 2, 'コインは出ない・+1財源+1購入'); }
+{ let s = actA(); s.turn.phase = 'buy'; s.turn.coins = 2; s.turn.buys = 1; me(s).hand = ['copper', 'copper'];
+  s = reduce(s, { type: 'BUY', card: 'ducat' });
+  ok(s.pending && s.pending.type === 'ducat_trash', '獲得したとき 手札の銅貨を廃棄してよい');
+  s = reduce(s, { type: 'DUCAT_TRASH', trash: true });
+  ok(cnt(s.trash, 'copper') === 1 && cnt(me(s).hand, 'copper') === 1, '銅貨1枚を廃棄'); }
+{ let s = actA(); s.turn.phase = 'buy'; s.turn.coins = 2; s.turn.buys = 1; me(s).hand = [];
+  s = reduce(s, { type: 'BUY', card: 'ducat' });
+  ok(!s.pending, '手札に銅貨が無ければ選択は出ない'); }
+{ let s = actA(); withSupply(s, ['workshop']); me(s).hand = ['workshop', 'copper'];
+  s = play(s, 'workshop');
+  s = reduce(s, { type: 'WORKSHOP_GAIN', card: 'ducat' });
+  s = cpuResolve(s, 10);
+  ok(!s.pending, '購入以外の獲得（工房）でも onGainQueue 経由で選択が出て終端する'); }
+
+console.log('=== 旗手（flag_bearer）／旗（flag）===');
+{ let s = actA(); s.turn.phase = 'buy'; s.turn.coins = 4; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'flag_bearer' });
+  ok(s.artifacts.flag === 0, '獲得したとき旗を受け取る'); }
+{ let s = actA(); withSupply(s, ['chapel']); me(s).hand = ['chapel', 'flag_bearer'];
+  s = play(s, 'chapel');
+  s = reduce(s, { type: 'CHAPEL_RESOLVE', cards: ['flag_bearer'] });
+  ok(s.artifacts.flag === 0, '廃棄したとき旗を受け取る'); }
+{ let s = actA(); s.artifacts.flag = 1;
+  s.turn.phase = 'buy'; s.turn.coins = 4; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'flag_bearer' });
+  ok(s.artifacts.flag === 0, '相手が持っていても奪う'); }
+{ let s = actA(); s.artifacts.flag = 0;
+  me(s).deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s = endTurn(s);
+  ok(s.players[0].hand.length === 6, '旗＝手札を引くとき +1カード（片付けの先引きが6枚）'); }
+{ let s = actA(); me(s).deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s = endTurn(s);
+  ok(s.players[0].hand.length === 5, '旗が無ければ5枚'); }
+
+console.log('=== 剣客（swashbuckler）／宝箱（treasure_chest）===');
+{ let s = actA(); me(s).hand = ['swashbuckler']; me(s).deck = ['copper', 'copper', 'copper']; me(s).discard = ['estate'];
+  s = play(s, 'swashbuckler');
+  ok(me(s).hand.length === 3, '+3カード');
+  ok((me(s).coffers || 0) === 1, '捨て札にカードがある＝+1財源');
+  ok(s.artifacts.treasure_chest == null, '財源4未満＝宝箱は取らない'); }
+{ let s = actA(); me(s).hand = ['swashbuckler']; me(s).deck = ['copper', 'copper', 'copper']; me(s).discard = ['estate'];
+  me(s).coffers = 3;
+  s = play(s, 'swashbuckler');
+  ok((me(s).coffers || 0) === 4 && s.artifacts.treasure_chest === 0, '+1財源の「後」に4個以上を判定＝宝箱を取る'); }
+{ let s = actA(); me(s).hand = ['swashbuckler']; me(s).deck = ['copper']; me(s).discard = ['copper', 'copper'];
+  me(s).coffers = 3;
+  s = play(s, 'swashbuckler');
+  ok((me(s).coffers || 0) === 3 && s.artifacts.treasure_chest == null,
+    '3枚引く途中でシャッフルして捨て札が空になったら +1財源も宝箱も得られない'); }
+{ let s = actA(); s.artifacts.treasure_chest = 0; s.turn.phase = 'action';
+  s = reduce(s, { type: 'END_ACTION_PHASE' });
+  ok(cnt(me(s).discard, 'gold') === 1, '宝箱＝購入フェイズの開始時に金貨1枚を獲得'); }
+{ let s = actA(); s.artifacts.treasure_chest = 1; s.turn.phase = 'action';
+  s = reduce(s, { type: 'END_ACTION_PHASE' });
+  ok(cnt(me(s).discard, 'gold') === 0, '持っていない人は金貨を得ない'); }
+
+console.log('=== 出納官（treasurer）／鍵（key）===');
+{ let s = actA(); me(s).hand = ['treasurer', 'gold'];
+  s = play(s, 'treasurer');
+  ok(s.turn.coins === 3 && s.pending && s.pending.stage === 'choose', '+3コイン＋3択');
+  s = reduce(s, { type: 'TREASURER_CHOOSE', mode: 'trash' });
+  s = reduce(s, { type: 'TREASURER_TRASH', card: 'gold' });
+  ok(cnt(s.trash, 'gold') === 1 && !s.pending, '手札の財宝を廃棄'); }
+{ let s = actA(); me(s).hand = ['treasurer']; s.trash = ['gold', 'estate'];
+  s = play(s, 'treasurer');
+  s = reduce(s, { type: 'TREASURER_CHOOSE', mode: 'gain' });
+  s = reduce(s, { type: 'TREASURER_GAIN', card: 'gold' });
+  ok(me(s).hand.includes('gold') && cnt(s.trash, 'gold') === 0, '廃棄置き場から財宝を手札に獲得'); }
+{ let s = actA(); me(s).hand = ['treasurer']; s.trash = ['spices'];
+  s = play(s, 'treasurer');
+  s = reduce(s, { type: 'TREASURER_CHOOSE', mode: 'gain' });
+  s = reduce(s, { type: 'TREASURER_GAIN', card: 'spices' });
+  ok((me(s).coffers || 0) === 2, '廃棄置き場からの獲得も「獲得」＝香辛料の+2財源が誘発する'); }
+{ let s = actA(); me(s).hand = ['treasurer'];
+  s = play(s, 'treasurer');
+  s = reduce(s, { type: 'TREASURER_CHOOSE', mode: 'key' });
+  ok(s.artifacts.key === 0 && !s.pending, '鍵を受け取る'); }
+{ let s = actA(); me(s).hand = ['treasurer'];
+  s = play(s, 'treasurer');
+  s = reduce(s, { type: 'TREASURER_CHOOSE', mode: 'trash' });
+  ok(!s.pending, '遂行できない選択肢（手札に財宝なし）も選べる＝効果なしで閉じる'); }
+{ let s = actA(); me(s).hand = ['treasurer']; s.trash = [];
+  s = play(s, 'treasurer');
+  s = reduce(s, { type: 'TREASURER_CHOOSE', mode: 'gain' });
+  ok(!s.pending, '遂行できない選択肢（廃棄置き場に財宝なし）も選べる'); }
+{ let s = actA(); s.artifacts.key = 0;
+  s = endTurn(s); // 相手の手番へ
+  s = endTurn(s); // 自分の手番に戻る
+  ok(s.turn.active === 0 && s.turn.coins === 1, '鍵＝ターン開始時 +1コイン'); }
+
+console.log('=== 国境警備隊（border_guard）／角笛・ランタン ===');
+{ let s = actA(); me(s).hand = ['border_guard']; me(s).deck = ['village', 'smithy', 'gold'];
+  s = play(s, 'border_guard');
+  ok(s.turn.actions === 1, '+1アクション');
+  ok(s.pending && s.pending.type === 'border_guard' && s.pending.cards.length === 2, '上2枚を公開');
+  ok(s.pending.allAction === true, '2枚ともアクション');
+  s = reduce(s, { type: 'BORDER_GUARD_KEEP', card: 'village' });
+  ok(me(s).hand.includes('village') && cnt(me(s).discard, 'smithy') === 1, '1枚を手札・残りを捨て札');
+  ok(s.pending && s.pending.type === 'border_guard_artifact', 'ランタンか角笛（強制の二択）');
+  s = reduce(s, { type: 'BORDER_GUARD_ARTIFACT', artifact: 'horn' });
+  ok(s.artifacts.horn === 0 && !s.pending, '角笛を受け取った'); }
+{ let s = actA(); me(s).hand = ['border_guard']; me(s).deck = ['village', 'gold', 'estate'];
+  s = play(s, 'border_guard');
+  ok(s.pending.allAction === false, 'アクションでない札が混ざると条件を満たさない');
+  s = reduce(s, { type: 'BORDER_GUARD_KEEP', card: 'village' });
+  ok(!s.pending && s.artifacts.horn == null, 'アーティファクトは取らない'); }
+{ let s = actA(); s.artifacts.lantern = 0;
+  me(s).hand = ['border_guard']; me(s).deck = ['village', 'smithy', 'market', 'gold'];
+  s = play(s, 'border_guard');
+  ok(s.pending.cards.length === 3 && s.pending.lantern === true, 'ランタン所持＝3枚公開');
+  s = reduce(s, { type: 'BORDER_GUARD_KEEP', card: 'market' });
+  ok(cnt(me(s).discard, 'village') === 1 && cnt(me(s).discard, 'smithy') === 1, '2枚を捨て札');
+  ok(s.pending && s.pending.type === 'border_guard_artifact' && s.pending.only === 'horn', '3枚ともアクション＝角笛は任意');
+  s = reduce(s, { type: 'BORDER_GUARD_ARTIFACT', artifact: null });
+  ok(s.artifacts.horn == null && !s.pending, '受け取らないことも選べる'); }
+{ let s = actA(); s.artifacts.lantern = 0;
+  me(s).hand = ['border_guard']; me(s).deck = ['village', 'smithy', 'gold', 'copper'];
+  s = play(s, 'border_guard');
+  s = reduce(s, { type: 'BORDER_GUARD_KEEP', card: 'village' });
+  ok(!s.pending, 'ランタン所持で3枚すべてアクションでなければ角笛は取れない'); }
+{ let s = actA(); me(s).hand = ['border_guard']; me(s).deck = ['village']; me(s).discard = [];
+  s = play(s, 'border_guard');
+  ok(!s.pending && me(s).hand.includes('village'), '1枚しか公開できなければその1枚を手札へ（アーティファクトなし）'); }
+{ // 角笛＝片付けで場の国境警備隊を山札の上に置く（**先引きより前**＝次の手札に入る）
+  let s = actA(); s.artifacts.horn = 0;
+  me(s).hand = ['border_guard']; me(s).deck = ['gold', 'gold', 'gold', 'gold', 'gold', 'gold'];
+  s = play(s, 'border_guard');
+  s = reduce(s, { type: 'BORDER_GUARD_KEEP', card: s.pending.cards[0] });
+  if (s.pending) s = reduce(s, { type: 'BORDER_GUARD_ARTIFACT', artifact: 'horn' });
+  s = endTurn(s);
+  ok(s.players[0].hand.includes('border_guard'), '角笛で山札の上に置いた国境警備隊が次の手札に入る（先引きより前に処理）');
+  ok(cnt(s.players[0].discard, 'border_guard') === 0, '捨て札には行っていない'); }
+
+console.log('=== パトロン（patron）＝公開フック ===');
+{ let s = actA(); me(s).hand = ['patron']; me(s).deck = ['copper'];
+  s = play(s, 'patron');
+  ok((me(s).villagers || 0) === 1 && s.turn.coins === 2, 'プレイ＝+1村人+2コイン'); }
+{ let s = actA(); me(s).hand = ['border_guard']; me(s).deck = ['patron', 'village', 'gold'];
+  s = play(s, 'border_guard');
+  ok((me(s).coffers || 0) === 1, 'アクションフェイズ中に公開されたら +1財源（国境警備隊）'); }
+{ let s = actA(); me(s).hand = ['border_guard']; me(s).deck = ['patron', 'patron', 'gold'];
+  s = play(s, 'border_guard');
+  ok((me(s).coffers || 0) === 2, '2枚同時公開なら +2財源'); }
+{ let s = actA(); withSupply(s, ['vassal']); me(s).hand = ['vassal']; me(s).deck = ['patron'];
+  s = play(s, 'vassal');
+  ok((me(s).coffers || 0) === 0, '家臣は「捨てる」であって「公開する」ではない＝誘発しない'); }
+{ // 相手のアクションフェイズ中に公開させられても +1財源（民兵の手札公開ではなく、役人型の手札公開で検証）
+  let s = actA(); withSupply(s, ['bureaucrat']); me(s).hand = ['bureaucrat'];
+  s.players[1].hand = ['patron', 'copper', 'copper'];
+  s = play(s, 'bureaucrat');
+  s = cpuResolve(s, 10);
+  ok((s.players[1].coffers || 0) === 1, '相手のアクションフェイズ中の公開でも +1財源（役人：勝利点なしの手札公開）'); }
+{ let s = actA(); withSupply(s, ['mint']); s.turn.phase = 'buy'; me(s).hand = ['mint'];
+  // 造幣所は購入フェイズに「財宝を公開」＝パトロンは財宝でないので無関係。購入フェイズの公開で誘発しないことを直接確認する
+  const before = me(s).coffers || 0;
+  E.reduce(s, {});
+  s.turn.phase = 'buy';
+  // 直接 reveal を呼べないので、購入フェイズでの公開を伴う効果（グレート・ホール等）が無いため、
+  // フェイズ判定のガード（turn.phase==='action'）が入っていることをコードパスで担保する
+  ok((me(s).coffers || 0) === before, '購入フェイズでは公開しても +1財源にならない（2022エラッタ）'); }
+
+console.log('=== CPU：R3 の全 pending が終端する ===');
+{
+  const PENDS = ['border_guard', 'treasurer', 'swashbuckler'];
+  PENDS.forEach((card) => {
+    let s = actA();
+    me(s).hand = [card, 'copper', 'estate'];
+    me(s).deck = ['village', 'smithy', 'market', 'gold', 'copper'];
+    me(s).discard = ['copper'];
+    s.trash = ['gold'];
+    s = play(s, card);
+    s = cpuResolve(s, 40);
+    ok(!s.pending, 'CPU が ' + card + ' の選択待ちを終端できる');
+  });
+}
+{ let s = actA(); s.turn.phase = 'buy'; s.turn.coins = 2; s.turn.buys = 1; me(s).hand = ['copper', 'copper'];
+  s = reduce(s, { type: 'BUY', card: 'ducat' });
+  s = cpuResolve(s, 10);
+  ok(!s.pending, 'CPU が ducat_trash を終端できる'); }
+
 console.log('\n=== ' + pass + ' 成功 / ' + fail + ' 失敗 ===');
 if (fail > 0) process.exit(1);

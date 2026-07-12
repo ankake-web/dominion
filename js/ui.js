@@ -2229,6 +2229,36 @@
     if (pd.type === 'villain_discard') return modalSingleHand(p, '悪党 — 捨てる',
       '手札からコスト$2以上のカード1枚を選んで捨てます（強制）。',
       (id) => effCost(state, id) >= 2, (card) => dispatch({ type: 'VILLAIN_DISCARD', card }), null, '捨てる');
+    /* --- R3：アーティファクト絡み --- */
+    if (pd.type === 'ducat_trash') return modalOptions('ドゥカート金貨 — 銅貨を廃棄',
+      'ドゥカート金貨を獲得しました。手札の銅貨1枚を廃棄できます（任意・デッキ圧縮）。', [
+        { label: '銅貨1枚を廃棄する', cls: 'btn-primary', on: () => dispatch({ type: 'DUCAT_TRASH', trash: true }) },
+        { label: '廃棄しない', on: () => dispatch({ type: 'DUCAT_TRASH', trash: false }) }]);
+    if (pd.type === 'border_guard') return modalPickList(state, '国境警備隊 — 手札に加える',
+      '公開した' + (pd.cards || []).length + '枚から1枚を手札に加えます（残りは捨て札）。' +
+      (pd.allAction ? (pd.lantern ? '※すべてアクション＝この後、角笛を受け取れます。' : '※2枚ともアクション＝この後、ランタンか角笛を受け取ります。') : ''),
+      pd.cards, '手札に加える', (id) => dispatch({ type: 'BORDER_GUARD_KEEP', card: id }));
+    if (pd.type === 'border_guard_artifact') {
+      if (pd.only) return modalOptions('国境警備隊 — 角笛',
+        '公開した3枚がすべてアクションカードでした。角笛を受け取れます（任意）。\n角笛：各ターン1度、場の国境警備隊を捨てる代わりに山札の上に置けます。', [
+          { label: '角笛を受け取る', cls: 'btn-primary', on: () => dispatch({ type: 'BORDER_GUARD_ARTIFACT', artifact: 'horn' }) },
+          { label: '受け取らない', on: () => dispatch({ type: 'BORDER_GUARD_ARTIFACT', artifact: null }) }]);
+      return modalOptions('国境警備隊 — アーティファクト',
+        '2枚ともアクションカードでした。ランタンか角笛のどちらかを受け取ります（相手が持っていれば奪います）。', [
+          { label: '角笛（場の国境警備隊を山札の上に戻せる）', cls: 'btn-primary', on: () => dispatch({ type: 'BORDER_GUARD_ARTIFACT', artifact: 'horn' }) },
+          { label: 'ランタン（国境警備隊が3枚公開・2枚捨てになる）', on: () => dispatch({ type: 'BORDER_GUARD_ARTIFACT', artifact: 'lantern' }) }]);
+    }
+    if (pd.type === 'treasurer' && pd.stage === 'choose') return modalOptions('出納官', '次から1つを選びます（実行できない選択肢を選ぶこともできます）。', [
+      { label: '手札の財宝1枚を廃棄する', on: () => dispatch({ type: 'TREASURER_CHOOSE', mode: 'trash' }) },
+      { label: '廃棄置き場から財宝1枚を手札に獲得する', cls: 'btn-primary', on: () => dispatch({ type: 'TREASURER_CHOOSE', mode: 'gain' }) },
+      { label: '鍵を受け取る（毎ターン開始時 +1コイン）', on: () => dispatch({ type: 'TREASURER_CHOOSE', mode: 'key' }) }]);
+    if (pd.type === 'treasurer' && pd.stage === 'trash') return modalSingleHand(p, '出納官 — 財宝を廃棄',
+      '手札の財宝カード1枚を廃棄します。', (id) => DOM.isType(id, 'treasure'),
+      (card) => dispatch({ type: 'TREASURER_TRASH', card }), null, '廃棄する');
+    if (pd.type === 'treasurer' && pd.stage === 'gain') return modalPickList(state, '出納官 — 廃棄置き場から獲得',
+      '廃棄置き場の財宝カード1枚を手札に獲得します（獲得時の効果も発動します）。',
+      (state.trash || []).filter((c) => DOM.isType(c, 'treasure')), '手札に獲得する',
+      (id) => dispatch({ type: 'TREASURER_GAIN', card: id }));
 
     return h('div');
   }

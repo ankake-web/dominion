@@ -279,6 +279,7 @@
     if (has('treasure_hunter')) return 'treasure_hunter'; // +1アクション+$1（成長：→ウォリアー）
     if (has('fugitive')) return 'fugitive';               // +2カード+1アクション（成長：→門下生）
     // ルネサンス：非ターミナル（+アクション付き）
+    if (has('border_guard')) return 'border_guard';       // +1アクション（山札上2〜3枚から1枚を手札へ＋アーティファクト）
     if (has('hideout')) return 'hideout';                 // +1カード+2アクション（手札1枚を廃棄＝圧縮。勝利点を廃棄すると呪い）
     if (has('mountain_village')) return 'mountain_village'; // +2アクション（捨て札から1枚回収）
     if (has('seer')) return 'seer';                       // +1カード+1アクション（山札上3枚から$2〜$4を手札へ）
@@ -376,6 +377,10 @@
     // ルネサンス：ターミナル（アタック＞ドロー＞村人/財源＞圧縮）
     if (has('old_witch')) return 'old_witch';             // +3カード＋全員に呪い（強力）
     if (has('villain')) return 'villain';                 // +2財源＋相手の手札から$2以上を捨てさせる
+    if (has('swashbuckler')) return 'swashbuckler';       // +3カード（捨て札があれば+1財源→財源4個で宝箱＝毎ターン金貨）
+    if (has('treasurer')) return 'treasurer';             // +3コイン＋3択（廃棄置き場から財宝回収／鍵）
+    if (has('flag_bearer')) return 'flag_bearer';         // +2コイン（獲得/廃棄で旗＝毎ターン+1カード）
+    if (has('patron')) return 'patron';                   // +1村人+2コイン（村人でアクション権を補える）
     if (has('scholar')) return 'scholar';                 // 手札を捨てて +7カード
     if (has('recruiter')) return 'recruiter';             // +2カード＋廃棄して村人（圧縮＋村人）
     if (has('sculptor')) return 'sculptor';               // $4以下を手札に獲得（財宝なら+1村人）
@@ -2320,6 +2325,38 @@
         const cand = p.hand.filter((c) => cost(state, c) >= 2);
         const pick = cand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0] || null;
         return { type: 'VILLAIN_DISCARD', card: pick };
+      }
+      /* --- R3：アーティファクト絡み --- */
+      case 'ducat_trash': {
+        // 銅貨1枚を廃棄してよい（圧縮）。財宝が枯れているときは経済が崩れるので廃棄しない（礼拝堂と同じ安全弁）。
+        const deckTreasure = allCards(p).filter((c) => isTreasure(c)).length;
+        return { type: 'DUCAT_TRASH', trash: deckTreasure >= 7 };
+      }
+      case 'border_guard':
+        // 公開した中から1枚を手札へ（残りは捨て札）。最も価値の高い札を取る。
+        return { type: 'BORDER_GUARD_KEEP', card: (pd.cards || []).slice().sort((a, b) => keepValue(b) - keepValue(a))[0] || null };
+      case 'border_guard_artifact': {
+        if (pd.only) return { type: 'BORDER_GUARD_ARTIFACT', artifact: pd.only }; // 角笛は常に得
+        // 角笛（国境警備隊が毎ターン戻る）を優先。既に持っていればランタン。
+        const hasHorn = DOM.engine.hasArtifact && DOM.engine.hasArtifact(state, pd.player, 'horn');
+        return { type: 'BORDER_GUARD_ARTIFACT', artifact: hasHorn ? 'lantern' : 'horn' };
+      }
+      case 'treasurer': {
+        if (pd.stage === 'trash') {
+          const tre = p.hand.filter((c) => isTreasure(c)).sort((a, b) => keepValue(a) - keepValue(b));
+          return { type: 'TREASURER_TRASH', card: tre[0] || null };
+        }
+        if (pd.stage === 'gain') {
+          const tre = (state.trash || []).filter((c) => isTreasure(c)).sort((a, b) => keepValue(b) - keepValue(a));
+          return { type: 'TREASURER_GAIN', card: tre[0] || null };
+        }
+        // stage 'choose'：廃棄置き場に良い財宝があれば回収、無ければ鍵（毎ターン+$1）、それも持っていれば銅貨を圧縮。
+        const best = (state.trash || []).filter((c) => isTreasure(c)).sort((a, b) => keepValue(b) - keepValue(a))[0];
+        if (best && keepValue(best) >= keepValue('silver')) return { type: 'TREASURER_CHOOSE', mode: 'gain' };
+        const hasKey = DOM.engine.hasArtifact && DOM.engine.hasArtifact(state, pd.player, 'key');
+        if (!hasKey) return { type: 'TREASURER_CHOOSE', mode: 'key' };
+        if (p.hand.includes('copper')) return { type: 'TREASURER_CHOOSE', mode: 'trash' };
+        return { type: 'TREASURER_CHOOSE', mode: 'key' }; // 既に持っていても選べる＝実質no-op（engineは拒否しない）
       }
 
       default:
