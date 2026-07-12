@@ -41,8 +41,8 @@ function diffTally(a, b) { const ks = new Set([...Object.keys(a), ...Object.keys
 function hasBack(s) { return s.players.some((p) => ZONES.some((z) => (p[z] || []).some((c) => c === 'back'))) || s.players.some((p) => (p.archives || []).some((a) => (a.cards || []).some((c) => c === 'back'))) || (s.trash || []).some((c) => c === 'back'); }
 
 // 1ゲームを最後まで進め、安定点ごとに全不変条件を検査。違反があれば false と詳細を返す。
-function runGame(kingdom, players, landmarks, events) {
-  let s = E.createInitialState(players, kingdom, { startActive: 0, landmarks: landmarks || [], events: events || [] });
+function runGame(kingdom, players, landmarks, events, projects) {
+  let s = E.createInitialState(players, kingdom, { startActive: 0, landmarks: landmarks || [], events: events || [], projects: projects || [] });
   const init = tally(s);
   const n = s.players.length;
   let step = 0;
@@ -122,7 +122,7 @@ console.log('=== カード保存則: 全プール混成ランダム王国 ===');
 // C) 出荷セット（各セットを実際に組んで検証）
 console.log('=== カード保存則: 出荷セット（固定/ランダム各種） ===');
 {
-  const sets = ['basic', 'intrigue', 'seaside', 'alchemy', 'prosperity', 'cornucopia', 'guilds', 'hinterlands', 'darkages', 'adventures', 'adventures-events', 'empires', 'empires-landmarks', 'empires-events', 'promo2-pack', 'random', 'random-promo', 'random-seaside', 'random-alchemy', 'random-prosperity', 'random-cornucopia', 'random-guilds', 'random-hinterlands', 'random-darkages', 'random-adventures', 'random-empires'];
+  const sets = ['basic', 'intrigue', 'seaside', 'alchemy', 'prosperity', 'cornucopia', 'guilds', 'hinterlands', 'darkages', 'adventures', 'adventures-events', 'empires', 'empires-landmarks', 'empires-events', 'renaissance', 'renaissance-projects', 'promo2-pack', 'random', 'random-promo', 'random-seaside', 'random-alchemy', 'random-prosperity', 'random-cornucopia', 'random-guilds', 'random-hinterlands', 'random-darkages', 'random-adventures', 'random-empires', 'random-renaissance'];
   let allOk = true;
   for (const setId of sets) {
     for (let sd = 0; sd < 3; sd++) {
@@ -130,11 +130,45 @@ console.log('=== カード保存則: 出荷セット（固定/ランダム各種
       if (!k) continue;
       const lm = DOM.landmarksForSet ? DOM.landmarksForSet(setId) : []; // 帝国：empires-landmarks は横型ランドマーク2枚付き
       const ev = DOM.eventsForSet ? DOM.eventsForSet(setId) : [];       // 帝国：empires-events は横型イベント2枚付き
-      const r = runGame(k, mkPlayers(2 + (sd % 3), sd), lm, ev);
-      if (!r.okp) { allOk = false; console.log('    ' + setId + ' sd' + sd + ' [' + lm.join(',') + '][' + ev.join(',') + ']: ' + r.why); }
+      const pr = DOM.projectsForSet ? DOM.projectsForSet(setId) : [];   // ルネサンス：renaissance-projects は横型プロジェクト2枚付き
+      const r = runGame(k, mkPlayers(2 + (sd % 3), sd), lm, ev, pr);
+      if (!r.okp) { allOk = false; console.log('    ' + setId + ' sd' + sd + ' [' + lm.join(',') + '][' + ev.join(',') + '][' + pr.join(',') + ']: ' + r.why); }
     }
   }
   ok(allOk, '出荷セット各種すべて保存則・不変条件を満たし終局');
+}
+
+// E4) ルネサンス：横型プロジェクト（買う横型・1人2つまで）。村人/財源/アーティファクト/悪巧みトークンは
+//    **非カード**＝保存則の tally に混ざらないこと、貨物船の脇置き（p.cargo）は**カード**＝tally に数えること、
+//    新pending（大聖堂/城門/サイロ/悪巧み/輪作/野外劇/下水道/技術革新）が CPU で終端することを確認する。
+console.log('=== カード保存則: ルネサンス プロジェクト（買う横型・全20種）===');
+{
+  const PR_PAIRS = [
+    ['cathedral', 'city_gate'], ['pageant', 'sewers'], ['star_chart', 'exploration'],
+    ['fair', 'silos'], ['sinister_plot', 'academy'], ['capitalism', 'fleet'],
+    ['guildhall', 'piazza'], ['road_network', 'barracks'], ['crop_rotation', 'innovation'],
+    ['canal', 'citadel'],
+  ];
+  const K = DOM.KINGDOM_RENAISSANCE;
+  let allOk = true;
+  for (let i = 0; i < PR_PAIRS.length; i++) {
+    for (let sd = 0; sd < 3; sd++) {
+      const r = runGame(K, mkPlayers(2 + (sd % 3), sd), [], [], PR_PAIRS[i]);
+      if (!r.okp) { allOk = false; console.log('    PR ' + PR_PAIRS[i].join('+') + ' sd' + sd + ': ' + r.why); }
+    }
+  }
+  // 全プール混成王国にプロジェクトを付けて fuzz（資本主義の動的な財宝化を他拡張のカードに当てても壊れないこと）。
+  for (let g = 0; g < 12; g++) {
+    const pr = DOM.pickLandmarks(2, DOM.PROJECTS_RENAISSANCE);
+    const r = runGame(randK(), mkPlayers(2 + (g % 3), g), [], [], pr);
+    if (!r.okp) { allOk = false; console.log('    PR-MIX' + g + ' [' + pr.join(',') + ']: ' + r.why); }
+  }
+  // 資本主義を全プール混成に必ず付ける（財宝判定の集約が全拡張で壊れないことの重点検査）。
+  for (let g = 0; g < 8; g++) {
+    const r = runGame(randK(), mkPlayers(2 + (g % 3), 100 + g), [], [], ['capitalism', 'citadel']);
+    if (!r.okp) { allOk = false; console.log('    CAP-MIX' + g + ': ' + r.why); }
+  }
+  ok(allOk, 'ルネサンス プロジェクト各種すべて保存則・不変条件を満たし終局（村人/財源/アーティファクトは非カード・貨物船の脇はカード）');
 }
 
 // E) 帝国：横型ランドスケープ（ランドマーク）。得点/獲得トリガーを変えるが VPトークンは非カード＝保存則に無関係。

@@ -802,6 +802,52 @@
     return null;
   }
 
+  /* ルネサンス：横型プロジェクト（買う横型）を買うか判断。買うプロジェクトid か null を返す。
+     ※ 返すのは必ず engine の `canBuyProject` が真のものだけ＝BUY_PROJECT が拒否しない（拒否すると無限ループ）。
+       キューブは2個だけ＝「良いものから2つ」。序盤〜中盤に取り切る（終盤は属州/公領を優先）。 */
+  const PROJECT_RANK = [
+    // 恒久的にデッキを強くするもの＞経済＞得点補助 の順。コストは engine が見る（ここは優先度だけ）。
+    'citadel',       // $8：毎ターン最初のアクションを再演＝最強クラス
+    'innovation',    // $6：獲得したアクションを即使用
+    'barracks',      // $6：毎ターン +1アクション
+    'fair',          // $4：毎ターン +1購入
+    'canal',         // $7：全カード $1安い
+    'academy',       // $5：アクション獲得で村人
+    'guildhall',     // $5：財宝獲得で財源
+    'piazza',        // $5：ターン開始時に山札の上のアクションを使用
+    'crop_rotation', // $6：手札の勝利点を +2カードに変える
+    'sinister_plot',  // $4：溜めて一気に引く
+    'city_gate',     // $3：毎ターン +1カード→1枚を山札の上へ（引きの安定）
+    'star_chart',    // $3：シャッフルの一番上を選べる
+    'silos',         // $4：銅貨を引き直す
+    'exploration',   // $4：獲得なしの購入フェイズで財源+村人
+    'pageant',       // $3：余りコインを財源に
+    'sewers',        // $3：廃棄のたびに追加圧縮（廃棄札があるときだけ有効）
+    'cathedral',     // $3：毎ターン強制廃棄（圧縮だが手札を失う）
+    'road_network',  // $5：相手の勝利点獲得で+1カード
+    'fleet',         // $5：終了後の追加ターン
+    'capitalism',    // $5：+$を持つアクションが財宝にもなる
+  ];
+  function bestProjectBuy(state, p, level, cardBuy) {
+    const t = state.turn;
+    if (!state.projects || !state.projects.length) return null;
+    if (t.buys <= 0 || (p.debt || 0) > 0) return null;
+    if ((p.projects || []).length >= 2) return null; // キューブ切れ
+    const canBuy = (id) => DOM.engine.canBuyProject && DOM.engine.canBuyProject(state, t.active, id);
+    // 終盤（属州が残り少ない）＝プロジェクトより勝利点。ただし属州が買えないなら取ってよい。
+    const endgame = sup(state, 'province') <= 3;
+    const bigBuy = cardBuy && cost(state, cardBuy) >= 6;
+    if (endgame && bigBuy) return null;
+    if (cardBuy && isType(cardBuy, 'victory') && cost(state, cardBuy) >= 5) return null; // 公領/属州を優先
+    for (const id of PROJECT_RANK) {
+      if (!canBuy(id)) continue;
+      // 下水道は廃棄手段が無いと死に札＝廃棄札が王国にあるときだけ買う。
+      if (id === 'sewers' && !state.kingdom.some((k) => /廃棄/.test((C()[k] || {}).text || ''))) continue;
+      return id;
+    }
+    return null;
+  }
+
   // 帝国：横型イベント（買う横型）を買うか判断。買うイベントid（affordable・負債>0でない）か null を返す。
   //   cardBuy＝この局面で chooseBuy が返す最善のカード買い（イベントと比較して置き換え/併用を決める）。
   //   ※ 返すイベントは必ず「コスト≤coins・購入権>0・負債0・採用済み」＝BUY_EVENT が拒否しない（拒否すると無限ループ）。
@@ -2329,6 +2375,40 @@
         const pick = cand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0] || null;
         return { type: 'VILLAIN_DISCARD', card: pick };
       }
+      /* --- R5：プロジェクト（横型）--- */
+      case 'cathedral':
+        return { type: 'CATHEDRAL_TRASH', card: pickTrash(p.hand, 1)[0] || p.hand[0] || null };
+      case 'city_gate': {
+        // 手札1枚を山札の上に置く（強制）。次に引きたい＝最も価値の高い札を上に置く…のではなく、
+        // 「今使わない良い札」を置くのが定石。ここでは最も価値の高い札を置く（次のターンに確実に来る）。
+        const pick = p.hand.slice().sort((a, b) => keepValue(b) - keepValue(a))[0] || null;
+        return { type: 'CITY_GATE_TOPDECK', card: pick };
+      }
+      case 'silos': {
+        const coppers = p.hand.filter((c) => c === 'copper').length;
+        return { type: 'SILOS_DISCARD', count: coppers }; // 銅貨は全部引き直す
+      }
+      case 'sinister_plot': {
+        // 3個溜めたら引く（+3カード）。それまでは置く。
+        const k = p.sinisterPlot || 0;
+        return { type: 'SINISTER_PLOT_RESOLVE', mode: k >= 3 ? 'take' : 'add' };
+      }
+      case 'crop_rotation': {
+        const vic = p.hand.filter((c) => isType(c, 'victory') && !isType(c, 'action') && !isType(c, 'treasure'));
+        return { type: 'CROP_ROTATION_RESOLVE', card: vic[0] || null };
+      }
+      case 'pageant':
+        return { type: 'PAGEANT_PAY', pay: true }; // 余りコイン$1を財源に（常に得）
+      case 'sewers': {
+        const junk = p.hand.filter((c) => trashValue(c) < 10).sort((a, b) => trashValue(a) - trashValue(b))[0];
+        return { type: 'SEWERS_TRASH', card: junk || null };
+      }
+      case 'sewers_trash': {
+        const junk = p.hand.filter((c) => trashValue(c) < 10).sort((a, b) => trashValue(a) - trashValue(b))[0];
+        return { type: 'SEWERS_TRASH', card: junk || null };
+      }
+      case 'innovation':
+        return { type: 'INNOVATION_PLAY', play: true }; // 獲得したアクションを即使用（ほぼ常に得）
       /* --- R4：持続・クリンナップ・再演 --- */
       case 'research_trash': {
         // 手札1枚を廃棄（強制）。コイン費用ぶん山札の上を脇に置く＝**高コストほど得**だが良い札を失う。
@@ -2437,6 +2517,9 @@
     // 横型イベント（買う横型）を、カード買いと比較して買うか判断（採用時のみ・affordable かつ 負債0・1ターン1回制限も見る）。
     const evBuy = bestEventBuy(state, subj, level, b);
     if (evBuy) return { type: 'BUY_EVENT', event: evBuy };
+    // ルネサンス：横型プロジェクト（1人2つまで・同じものは1回だけ）。engine の canBuyProject が正本（拒否されない＝無限ループ防止）。
+    const prBuy = bestProjectBuy(state, subj, level, b);
+    if (prBuy) return { type: 'BUY_PROJECT', project: prBuy };
     return b ? { type: 'BUY', card: b } : { type: 'END_TURN' };
   }
   // 財源を何枚使うか：現状の最善買いより価値の高い買いに届く最小の財源枚数を返す（届かなければ0＝温存）。

@@ -1063,7 +1063,10 @@
           h('div', { class: 'mats' }, state.projects.map((id) => {
             const pr = (DOM.LANDSCAPES || {})[id] || { name: id, text: '', cost: 0 };
             const owners = state.players.filter((p) => (p.projects || []).indexOf(id) >= 0);
-            const cubes = owners.length ? owners.map((p) => '●' + p.name).join(' ') : '';
+            // 悪巧み（sinister_plot）はプレイヤーごとのトークン数もこの上に表示する。
+            const cubes = owners.length
+              ? owners.map((p) => '●' + p.name + (id === 'sinister_plot' && (p.sinisterPlot || 0) > 0 ? '(🔘' + p.sinisterPlot + ')' : '')).join(' ')
+              : '';
             const canBuy = buyableProject(id);
             return h('div', { class: 'mat-row project-row', title: (pr.text || '') },
               h('img', { class: 'landmark-thumb', src: 'asset/cards/' + id + '.webp', alt: pr.name, loading: 'lazy',
@@ -1232,8 +1235,13 @@
     const t = state.turn;
     if (t.phase === 'action') return (DOM.CARDS[id].types.includes('action') || inheritedEstate(state, id)) && t.actions > 0;
     // 公式：一度でも購入したら、そのターンはもう財宝を出せない（t.treasuresLocked）。
-    if (t.phase === 'buy') return DOM.CARDS[id].types.includes('treasure') && !t.treasuresLocked;
+    // ルネサンス：資本主義＝「+$を含むアクション」も自分のターン中は財宝＝engine の isTreasureFor が正本。
+    if (t.phase === 'buy') return isTreasureNow(state, id) && !t.treasuresLocked;
     return false;
+  }
+  // engine と同じ財宝判定（資本主義の動的な財宝化を含む）。engine が拒否する手をUIに出さない。
+  function isTreasureNow(state, id) {
+    return DOM.engine.isTreasureFor ? DOM.engine.isTreasureFor(state, id) : DOM.CARDS[id].types.includes('treasure');
   }
 
   function onHandTap(state, id, interactive) {
@@ -1241,7 +1249,7 @@
     const t = state.turn;
     if (interactive && !state.pending && t.phase === 'action' && (c.types.includes('action') || inheritedEstate(state, id)) && t.actions > 0) {
       showSheet(id, { label: '使う', cls: 'btn-primary', on: () => dispatch({ type: 'PLAY_ACTION', card: id }) });
-    } else if (interactive && !state.pending && t.phase === 'buy' && c.types.includes('treasure') && !t.treasuresLocked) {
+    } else if (interactive && !state.pending && t.phase === 'buy' && isTreasureNow(state, id) && !t.treasuresLocked) {
       showSheet(id, { label: '財宝を出す', cls: 'btn-primary', on: () => dispatch({ type: 'PLAY_TREASURE', card: id }) });
     } else {
       showSheet(id, null);
@@ -1297,7 +1305,7 @@
     // 支配中は操作対象（被支配者=t.active）の手札で判定する（財宝を出すのも engine では被支配者の手札）。
     const hp = (t.possessedBy != null && t.possessedBy === viewer) ? state.players[t.active] : state.players[viewer];
     // 公式：一度でも購入（カード/イベント）したら、そのターンはもう財宝を出せない（engine が拒否する＝ボタンも無効化）。
-    const hasTreasure = hp.hand.some((c) => DOM.CARDS[c].types.includes('treasure')) && !t.treasuresLocked;
+    const hasTreasure = hp.hand.some((c) => isTreasureNow(state, c)) && !t.treasuresLocked;
     // ギルド：財源(Coffers)を持っていれば「財源を使う」ボタン（購入フェイズ・1枚=+1コイン）。
     const cofferBtn = (t.active === viewer && (state.players[viewer].coffers || 0) > 0)
       ? h('button', { class: 'btn btn-block', style: 'background:#b8860b;color:#fff', onclick: () => { UI.coffersOpen = true; UI.amount = null; render(); } }, '💰 財源を使う（' + state.players[viewer].coffers + '）')
@@ -2229,6 +2237,41 @@
     if (pd.type === 'villain_discard') return modalSingleHand(p, '悪党 — 捨てる',
       '手札からコスト$2以上のカード1枚を選んで捨てます（強制）。',
       (id) => effCost(state, id) >= 2, (card) => dispatch({ type: 'VILLAIN_DISCARD', card }), null, '捨てる');
+    /* --- R5：プロジェクト（横型）--- */
+    if (pd.type === 'cathedral') return modalSingleHand(p, '大聖堂 — 廃棄',
+      'ターン開始時：手札から1枚を廃棄します（強制）。', () => true,
+      (card) => dispatch({ type: 'CATHEDRAL_TRASH', card }), null, '廃棄する');
+    if (pd.type === 'city_gate') return modalSingleHand(p, '城門 — 山札の上に置く',
+      'ターン開始時：+1カードを引きました。手札から1枚を山札の上に置きます（強制。引いたカードをそのまま戻してもOK）。',
+      () => true, (card) => dispatch({ type: 'CITY_GATE_TOPDECK', card }), null, '山札の上に置く');
+    if (pd.type === 'silos') {
+      const coppers = p.hand.filter((c) => c === 'copper').length;
+      return modalAmount('サイロ — 銅貨を捨てる', 'ターン開始時：好きな枚数の銅貨を公開して捨て、その後 捨てた枚数だけカードを引きます（手札の銅貨：' + coppers + '枚）。',
+        coppers, 0, (n) => (n > 0 ? '銅貨 ' + n + '枚 を捨てて ' + n + '枚 引く' : '捨てない'),
+        (n) => dispatch({ type: 'SILOS_DISCARD', count: n }));
+    }
+    if (pd.type === 'sinister_plot') {
+      const k = p.sinisterPlot || 0;
+      return modalOptions('悪巧み', 'ターン開始時：トークンを1個置くか、置いたトークンを全部取り除いて 1個につき +1カード を選びます（現在 ' + k + '個）。', [
+        { label: 'トークンを1個置く（計 ' + (k + 1) + '個）', cls: 'btn-primary', on: () => dispatch({ type: 'SINISTER_PLOT_RESOLVE', mode: 'add' }) },
+        { label: 'トークン ' + k + '個 を取り除いて +' + k + 'カード', on: () => dispatch({ type: 'SINISTER_PLOT_RESOLVE', mode: 'take' }) }]);
+    }
+    if (pd.type === 'crop_rotation') return modalSingleHand(p, '輪作 — 勝利点を捨てる（任意）',
+      'ターン開始時：手札の勝利点カード1枚を捨てると +2カード（しなくてもよい）。',
+      (id) => DOM.isType(id, 'victory'), (card) => dispatch({ type: 'CROP_ROTATION_RESOLVE', card }),
+      { label: '捨てない', on: () => dispatch({ type: 'CROP_ROTATION_RESOLVE', card: null }) }, '捨てる');
+    if (pd.type === 'pageant') return modalOptions('野外劇 — $1を支払う？',
+      '購入フェイズの終了時：$1を支払うと +1財源（残りコイン ' + state.turn.coins + '）。', [
+        { label: '$1 を支払って +1財源', cls: 'btn-primary', on: () => dispatch({ type: 'PAGEANT_PAY', pay: true }) },
+        { label: '支払わない', on: () => dispatch({ type: 'PAGEANT_PAY', pay: false }) }]);
+    if (pd.type === 'sewers_trash') return modalSingleHand(p, '下水道 — 追加で廃棄（任意）',
+      'カードを廃棄しました。追加で手札1枚を廃棄できます（しなくてもよい）。', () => true,
+      (card) => dispatch({ type: 'SEWERS_TRASH', card }),
+      { label: '廃棄しない', on: () => dispatch({ type: 'SEWERS_TRASH', card: null }) }, '廃棄する');
+    if (pd.type === 'innovation') return modalOptions('技術革新 — 獲得したアクションを使用？',
+      '獲得した「' + DOM.CARDS[pd.card].name + '」を、いま使用できます（アクション権を消費しません。各ターン1回）。', [
+        { label: '使用する', cls: 'btn-primary', on: () => dispatch({ type: 'INNOVATION_PLAY', play: true }) },
+        { label: '使用しない（権利は残る）', on: () => dispatch({ type: 'INNOVATION_PLAY', play: false }) }]);
     /* --- R4：持続・クリンナップ・再演 --- */
     if (pd.type === 'research_trash') return modalSingleHand(p, '研究 — 廃棄',
       '手札から1枚を廃棄します（強制）。そのカードのコイン費用$1につき1枚、山札の上から裏向きで脇に置き、次のあなたの手番開始時に手札へ加えます。',

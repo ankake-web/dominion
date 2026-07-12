@@ -785,5 +785,302 @@ console.log('=== CPU：R4 の全 pending が終端する ===');
   s = cpuResolve(s, 40);
   ok(!s.pending, 'CPU が王笏の選択待ちを終端できる'); }
 
+/* ============================================================
+   R5＝プロジェクト19種
+   ============================================================ */
+// プロジェクトを採用し、席0がそれを買った状態の盤面（アクションフェイズ）
+function proj(ids, kingdom) {
+  const s = E.createInitialState(['あなた', '相手'], (kingdom || ['village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'chapel', 'mine', 'remodel', 'laboratory']).slice(),
+    { startActive: 0, projects: ids });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].projects = ids.slice(0, 2);
+  return s;
+}
+// 自分の手番開始まで進める（相手→自分）。相手の選択待ちだけ CPU に解かせ、**自分のターン開始時の pending は残す**。
+function toMyTurn(s) {
+  s = endTurn(s); s = cpuResolve(s, 40); // 相手の手番へ
+  s = endTurn(s);                        // 相手の手番終了 → 自分のターン開始（pending はそのまま）
+  return s;
+}
+
+console.log('=== 縁日／兵舎（自動）===');
+{ let s = proj(['fair', 'barracks']); s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s = toMyTurn(s);
+  ok(s.turn.active === 0 && s.turn.buys === 2 && s.turn.actions === 2, '縁日＝+1購入／兵舎＝+1アクション（ターン開始時）'); }
+
+console.log('=== 大聖堂（強制廃棄）===');
+{ let s = proj(['cathedral']); s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'estate'];
+  s = toMyTurn(s);
+  ok(s.pending && s.pending.type === 'cathedral', 'ターン開始時に廃棄（強制）');
+  s = reduce(s, { type: 'CATHEDRAL_TRASH', card: 'copper' });
+  ok(cnt(s.trash, 'copper') === 1 && !s.pending, '手札1枚を廃棄'); }
+
+console.log('=== 城門（+1カード→1枚を山札の上へ）===');
+{ let s = proj(['city_gate']); s.players[0].deck = ['gold', 'copper', 'copper', 'copper', 'copper', 'estate'];
+  s = toMyTurn(s);
+  ok(s.pending && s.pending.type === 'city_gate' && s.players[0].hand.length === 6, '先に+1カード（手札6枚）');
+  s = reduce(s, { type: 'CITY_GATE_TOPDECK', card: 'gold' });
+  ok(s.players[0].deck[0] === 'gold' && s.players[0].hand.length === 5, '手札1枚を山札の上へ'); }
+
+console.log('=== サイロ（銅貨を引き直す）===');
+{ let s = proj(['silos']);
+  s.players[0].deck = ['copper', 'copper', 'estate', 'estate', 'estate', 'gold', 'gold'];
+  s = toMyTurn(s);
+  ok(s.pending && s.pending.type === 'silos', 'ターン開始時に銅貨捨ての選択');
+  const h0 = s.players[0].hand.length;
+  s = reduce(s, { type: 'SILOS_DISCARD', count: 2 });
+  ok(s.players[0].hand.length === h0 && cnt(s.players[0].hand, 'copper') === 0, '銅貨2枚を捨てて2枚引く'); }
+
+console.log('=== 悪巧み（トークンを溜めて引く）===');
+{ let s = proj(['sinister_plot']); s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s = toMyTurn(s);
+  s = reduce(s, { type: 'SINISTER_PLOT_RESOLVE', mode: 'add' });
+  ok(s.players[0].sinisterPlot === 1, 'トークンを置く');
+  s = toMyTurn(s);
+  s = reduce(s, { type: 'SINISTER_PLOT_RESOLVE', mode: 'add' });
+  ok(s.players[0].sinisterPlot === 2, 'トークンが累積する');
+  s = toMyTurn(s);
+  const h0 = s.players[0].hand.length;
+  s = reduce(s, { type: 'SINISTER_PLOT_RESOLVE', mode: 'take' });
+  ok(s.players[0].sinisterPlot === 0 && s.players[0].hand.length === h0 + 2, 'トークンを全部取り除いて +2カード'); }
+
+console.log('=== 輪作（勝利点を捨てて+2カード）===');
+{ let s = proj(['crop_rotation']);
+  s.players[0].deck = ['estate', 'copper', 'copper', 'copper', 'copper', 'gold', 'gold'];
+  s = toMyTurn(s);
+  ok(s.pending && s.pending.type === 'crop_rotation', '手札に勝利点があれば選択');
+  const h0 = s.players[0].hand.length;
+  s = reduce(s, { type: 'CROP_ROTATION_RESOLVE', card: 'estate' });
+  ok(s.players[0].hand.length === h0 + 1 && cnt(s.players[0].discard, 'estate') === 1, '勝利点1枚を捨てて +2カード'); }
+{ let s = proj(['crop_rotation']); s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s = toMyTurn(s);
+  ok(!s.pending, '手札に勝利点が無ければ何も起きない'); }
+
+console.log('=== 野外劇／探査（購入フェイズ終了時）===');
+{ let s = proj(['pageant']); s.turn.phase = 'buy'; s.turn.coins = 3;
+  s = reduce(s, { type: 'END_TURN' });
+  ok(s.pending && s.pending.type === 'pageant', '$1以上残っていれば選択');
+  s = reduce(s, { type: 'PAGEANT_PAY', pay: true });
+  ok(s.players[0].coffers === 1, '$1を支払って +1財源'); }
+{ let s = proj(['exploration']); s.turn.phase = 'buy'; s.turn.coins = 5; s.turn.buys = 1;
+  s = reduce(s, { type: 'END_TURN' });
+  ok(s.players[0].coffers === 1 && s.players[0].villagers === 1, 'カードを1枚も獲得しなかった＝+1財源+1村人'); }
+{ let s = proj(['exploration']); s.turn.phase = 'buy'; s.turn.coins = 5; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'silver' });
+  s = reduce(s, { type: 'END_TURN' });
+  ok((s.players[0].coffers || 0) === 0, 'カードを獲得したら発動しない'); }
+
+console.log('=== 学園／ギルド集会所／道路網（獲得トリガー）===');
+{ let s = proj(['academy']); s.turn.phase = 'buy'; s.turn.coins = 3; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'village' });
+  ok(s.players[0].villagers === 1, '学園＝アクション獲得で +1村人'); }
+{ let s = proj(['guildhall']); s.turn.phase = 'buy'; s.turn.coins = 3; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'silver' });
+  ok(s.players[0].coffers === 1, 'ギルド集会所＝財宝獲得で +1財源'); }
+{ let s = proj(['road_network']);
+  s.players[1].deck = ['copper', 'copper', 'copper'];
+  s.turn.phase = 'buy'; s.turn.coins = 5; s.turn.buys = 1;
+  const h1 = s.players[1].hand.length;
+  s = reduce(s, { type: 'BUY', card: 'duchy' });
+  ok(s.players[1].hand.length === h1, '道路網を持っていない相手は引かない');
+  s.players[1].projects = ['road_network'];
+  s.turn.coins = 5; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'duchy' });
+  ok(s.players[1].hand.length === h1 + 1, '他のプレイヤーが勝利点を獲得したとき +1カード（自分のターンでなくても）'); }
+
+console.log('=== 技術革新（獲得したアクションを使用）===');
+{ let s = proj(['innovation']); s.turn.phase = 'buy'; s.turn.coins = 3; s.turn.buys = 1;
+  s.players[0].deck = ['gold', 'gold'];
+  s = reduce(s, { type: 'BUY', card: 'village' });
+  ok(s.pending && s.pending.type === 'innovation', 'アクションを獲得したとき使用してよい');
+  s = reduce(s, { type: 'INNOVATION_PLAY', play: true });
+  ok(s.players[0].inPlay.includes('village') && s.players[0].hand.includes('gold'), '獲得した村を使用した（+1カード）');
+  ok(s.turn.innovationUsed === true, '各ターン1回'); }
+{ let s = proj(['innovation']); s.turn.phase = 'buy'; s.turn.coins = 6; s.turn.buys = 2;
+  s = reduce(s, { type: 'BUY', card: 'village' });
+  s = reduce(s, { type: 'INNOVATION_PLAY', play: false });
+  ok(!s.turn.innovationUsed, '使わなければ権利は消費しない');
+  s = reduce(s, { type: 'BUY', card: 'village' });
+  ok(s.pending && s.pending.type === 'innovation', '2枚目の獲得でも使える'); }
+
+console.log('=== 運河（コスト-$1）===');
+{ let s = proj(['canal']);
+  ok(E.cardCost(s, 'province') === 7 && E.cardCost(s, 'copper') === 0, '自分のターン中は全カード$1安い（$0未満にならない）');
+  ok(E.cardCost(s, 'estate') === 1, '屋敷は$1（$0ではない）');
+  s.turn.active = 1;
+  ok(E.cardCost(s, 'province') === 8, '相手のターン中は元のコストに戻る'); }
+
+console.log('=== 下水道（廃棄のたびに追加廃棄）===');
+{ let s = proj(['sewers']);
+  s.players[0].hand = ['chapel', 'copper', 'copper', 'estate', 'curse'];
+  s = play(s, 'chapel');
+  s = reduce(s, { type: 'CHAPEL_RESOLVE', cards: ['copper', 'estate'] });
+  ok(s.pending && s.pending.type === 'sewers_trash', '廃棄のたびに追加廃棄の選択');
+  s = reduce(s, { type: 'SEWERS_TRASH', card: 'curse' });
+  ok(cnt(s.trash, 'curse') === 1, '追加で手札1枚を廃棄');
+  ok(s.pending && s.pending.type === 'sewers_trash', '2枚同時廃棄＝枚数ぶん誘発');
+  s = reduce(s, { type: 'SEWERS_TRASH', card: null });
+  ok(!s.pending, '辞退できる'); }
+{ let s = proj(['sewers']);
+  s.players[0].hand = ['chapel', 'copper', 'estate'];
+  s = play(s, 'chapel');
+  s = reduce(s, { type: 'CHAPEL_RESOLVE', cards: ['copper'] });
+  s = reduce(s, { type: 'SEWERS_TRASH', card: 'estate' });
+  ok(!s.pending, '下水道の追加廃棄では再誘発しない'); }
+
+console.log('=== 星図（シャッフルの一番上）===');
+{ let s = proj(['star_chart']);
+  s.players[0].deck = []; s.players[0].discard = ['copper', 'copper', 'gold', 'estate'];
+  E.reduce(s, {});
+  const p0 = s.players[0];
+  // draw を起こす：手札を引く
+  s.players[0].hand = [];
+  s = proj(['star_chart']);
+  s.players[0].deck = []; s.players[0].discard = ['copper', 'copper', 'gold', 'estate'];
+  s.turn.phase = 'buy';
+  s = reduce(s, { type: 'END_TURN' }); // 片付けで5枚引く＝リシャッフル
+  ok(s.players[0].hand.includes('gold'), '星図＝シャッフルした束の一番上に最良の札（金貨）が来る'); }
+
+console.log('=== 山砦（最初のアクションを再演）===');
+{ let s = proj(['citadel']);
+  s.players[0].hand = ['market', 'village'];
+  s.players[0].deck = ['gold', 'gold', 'gold'];
+  s.turn.actions = 2;
+  s = play(s, 'market');
+  ok(s.turn.coins === 2 && s.turn.buys === 3, '市場を2回使用した（+2コイン+2購入）');
+  ok(s.turn.citadelUsed === true, 'このターンは発動済み');
+  const c0 = s.turn.coins;
+  s = play(s, 'village');
+  ok(s.turn.coins === c0, '2枚目のアクションは再演されない'); }
+
+console.log('=== ピアッツァ（ターン開始時に山札の上のアクションを使用）===');
+// ※このエンジンは前ターンの片付けで次の手札を先引きする＝ターン開始時の「山札の一番上」は6枚目のカード。
+{ let s = proj(['piazza']);
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'market', 'gold'];
+  s = toMyTurn(s);
+  ok(s.players[0].inPlay.includes('market'), '山札の一番上のアクションを使用');
+  ok(s.turn.actions === 2, 'アクション権を消費しない（市場の+1アクションで2）');
+  ok(s.turn.phase === 'action', 'ターン開始時はアクションフェイズ（帝国の冠が壊れない）'); }
+{ let s = proj(['piazza']);
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'gold'];
+  s = toMyTurn(s);
+  ok(s.players[0].deck[0] === 'gold', 'アクションでなければ山札の上に残す（捨てない）'); }
+{ // ピアッツァ×山砦＝ターン開始時のアクションも「そのターン最初のアクション使用」
+  let s = proj(['piazza', 'citadel']);
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'market', 'gold', 'gold'];
+  s = toMyTurn(s);
+  ok(s.turn.citadelUsed === true && s.turn.buys === 3, 'ピアッツァでプレイしたアクションも山砦で再演される'); }
+
+console.log('=== 艦隊（終了後の追加ターン）===');
+{ let s = proj(['fleet']);
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s.players[1].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s.supply.province = 1;
+  s.turn.phase = 'buy'; s.turn.coins = 8; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'province' }); // 属州の山が尽きる
+  s = reduce(s, { type: 'END_TURN' });
+  ok(!s.gameOver, '艦隊を持つプレイヤーがいるのでまだ終わらない');
+  ok(s.turn.active === 0, '艦隊の追加ターン（席0＝艦隊の所有者）');
+  s = endTurn(s); s = cpuResolve(s, 40);
+  ok(s.gameOver === true, '艦隊ターンが終わったらゲーム終了'); }
+{ let s = proj(['fleet']);
+  s.players[0].projects = []; // 誰も艦隊を持っていない
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s.supply.province = 1;
+  s.turn.phase = 'buy'; s.turn.coins = 8; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'province' });
+  s = reduce(s, { type: 'END_TURN' });
+  ok(s.gameOver === true, '艦隊を誰も持っていなければ通常どおり終了'); }
+
+console.log('=== CPU：R5 の全 pending が終端する ===');
+{
+  const P5 = ['cathedral', 'city_gate', 'silos', 'sinister_plot', 'crop_rotation'];
+  P5.forEach((id) => {
+    let s = proj([id]);
+    s.players[0].deck = ['copper', 'copper', 'estate', 'copper', 'copper', 'gold', 'gold'];
+    s = toMyTurn(s);
+    s = cpuResolve(s, 40);
+    ok(!s.pending, 'CPU が ' + id + ' の選択待ちを終端できる');
+  });
+}
+{ let s = proj(['pageant']); s.turn.phase = 'buy'; s.turn.coins = 3;
+  s = reduce(s, { type: 'END_TURN' });
+  s = cpuResolve(s, 20);
+  ok(!s.pending, 'CPU が野外劇を終端できる'); }
+{ let s = proj(['innovation']); s.turn.phase = 'buy'; s.turn.coins = 3; s.turn.buys = 1;
+  s.players[0].deck = ['gold', 'gold'];
+  s = reduce(s, { type: 'BUY', card: 'village' });
+  s = cpuResolve(s, 20);
+  ok(!s.pending, 'CPU が技術革新を終端できる'); }
+{ let s = proj(['sewers']); s.players[0].hand = ['chapel', 'copper', 'estate', 'curse'];
+  s = play(s, 'chapel');
+  s = reduce(s, { type: 'CHAPEL_RESOLVE', cards: ['copper'] });
+  s = cpuResolve(s, 20);
+  ok(!s.pending, 'CPU が下水道を終端できる'); }
+
+/* ============================================================
+   R5b＝資本主義（Capitalism）＝唯一の「種別を動的に書き換える」プロジェクト
+   ============================================================ */
+console.log('=== 資本主義（capitalism）===');
+{ let s = proj(['capitalism'], ['improve', 'inventor', 'militia', 'village', 'smithy', 'market', 'moat', 'cellar', 'mine', 'laboratory']);
+  ok(E.isTreasureFor(s, 'improve') === true, '増築（+$2）は財宝になる');
+  ok(E.isTreasureFor(s, 'inventor') === false, '発明家（+$なし）は財宝にならない');
+  ok(E.isTreasureFor(s, 'village') === false, '村（+$なし）は財宝にならない');
+  ok(E.isTreasureFor(s, 'market') === true, '市場（+$1）は財宝になる');
+  ok(E.isTreasureFor(s, 'copper') === true, '銅貨は当然 財宝');
+  s.turn.active = 1;
+  ok(E.isTreasureFor(s, 'improve') === false, '相手のターン中は無効'); }
+{ let s = proj(['capitalism'], ['improve', 'inventor', 'militia', 'village', 'smithy', 'market', 'moat', 'cellar', 'mine', 'laboratory']);
+  ok(E.isTreasureFor(s, 'coppersmith') === false, '銅細工師は英語原文に「+$」記号が無い＝除外（誤判定しない）'); }
+{ // 財宝として購入フェイズに使える（アクション権を消費しない）＋効果は全部解決する
+  let s = proj(['capitalism'], ['improve', 'militia', 'village', 'smithy', 'market', 'moat', 'cellar', 'mine', 'laboratory', 'inventor']);
+  s.players[0].hand = ['market'];
+  s.players[0].deck = ['gold'];
+  s.turn.phase = 'buy'; s.turn.actions = 0;
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'market' });
+  ok(s.players[0].inPlay.includes('market'), '購入フェイズにアクションを財宝として使える');
+  ok(s.turn.coins === 1 && s.turn.buys === 2 && s.players[0].hand.includes('gold'), '効果は全部解決する（+1カード+1アクション+1購入+1コイン）');
+  ok(s.turn.actions === 1, 'アクション権は消費しない（市場の +1アクション だけ増える）'); }
+{ // アタックも購入フェイズで発動する
+  let s = proj(['capitalism'], ['improve', 'militia', 'village', 'smithy', 'market', 'moat', 'cellar', 'mine', 'laboratory', 'inventor']);
+  s.players[0].hand = ['militia'];
+  s.players[1].hand = ['copper', 'copper', 'copper', 'copper', 'estate'];
+  s.turn.phase = 'buy';
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'militia' });
+  ok(s.turn.coins === 2 && s.pending && s.pending.type === 'militia', '購入フェイズでもアタックが発動しリアクション窓が開く'); }
+{ // 山賊で相手の「財宝になったアクション」を廃棄できる
+  let s = proj(['capitalism'], ['improve', 'militia', 'village', 'smithy', 'market', 'moat', 'cellar', 'mine', 'laboratory', 'bandit']);
+  s.players[0].hand = ['bandit'];
+  s.players[1].deck = ['market', 'estate'];
+  s = play(s, 'bandit');
+  s = cpuResolve(s, 20);
+  ok(cnt(s.trash, 'market') === 1, '山賊が相手の市場（資本主義で財宝）を廃棄した'); }
+{ // 出納官で廃棄置き場から「財宝になったアクション」を獲得できる
+  let s = proj(['capitalism'], ['improve', 'treasurer', 'village', 'smithy', 'market', 'moat', 'cellar', 'mine', 'laboratory', 'inventor']);
+  s.players[0].hand = ['treasurer'];
+  s.trash = ['improve'];
+  s = play(s, 'treasurer');
+  s = reduce(s, { type: 'TREASURER_CHOOSE', mode: 'gain' });
+  s = reduce(s, { type: 'TREASURER_GAIN', card: 'improve' });
+  ok(s.players[0].hand.includes('improve'), '廃棄置き場の増築を財宝として手札に獲得できた'); }
+{ // ギルド集会所＝「財宝の獲得」に数える
+  let s = proj(['capitalism', 'guildhall'], ['improve', 'militia', 'village', 'smithy', 'market', 'moat', 'cellar', 'mine', 'laboratory', 'inventor']);
+  s.turn.phase = 'buy'; s.turn.coins = 3; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'improve' });
+  ok(s.players[0].coffers === 1, '資本主義で財宝になった増築の獲得＝ギルド集会所が発動'); }
+{ // 財宝を全部出す＝資本主義の財宝も出る
+  let s = proj(['capitalism'], ['improve', 'militia', 'village', 'smithy', 'market', 'moat', 'cellar', 'mine', 'laboratory', 'inventor']);
+  s.players[0].hand = ['copper', 'improve'];
+  s.turn.phase = 'buy';
+  s = reduce(s, { type: 'PLAY_ALL_TREASURES' });
+  ok(s.turn.coins === 3, '銅貨$1＋増築$2＝$3'); }
+{ // 資本主義を持っていなければ何も起きない（既存挙動）
+  let s = proj([], ['improve', 'militia', 'village', 'smithy', 'market', 'moat', 'cellar', 'mine', 'laboratory', 'inventor']);
+  s.players[0].hand = ['market'];
+  s.turn.phase = 'buy';
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'market' });
+  ok(!s.players[0].inPlay.includes('market') && s.turn.coins === 0, '資本主義が無ければアクションは財宝ではない'); }
+
 console.log('\n=== ' + pass + ' 成功 / ' + fail + ' 失敗 ===');
 if (fail > 0) process.exit(1);

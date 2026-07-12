@@ -863,6 +863,12 @@
   //     （命令の「自身が動く」clause は未実装＝§6の既知簡略化。random-empires でのみ同居し得る）。
   DOM.KINGDOM_EMPIRES = ['engineer', 'overlord', 'settlers', 'catapult', 'castles',
                          'temple', 'villa', 'forum', 'wild_hunt', 'crown'];
+  // ルネサンス 推奨10種（自作＝公式の固定10種は無い）。新機構をひと通り味わえる構成：
+  //   村人(追従者・パトロン)／財源(ドゥカート金貨・パトロン・剣客)／アーティファクト4種
+  //   （国境警備隊＝角笛・ランタン／出納官＝鍵／剣客＝宝箱）／持続(研究)／クリンナップの格上げ(増築)／
+  //   公開リアクション(パトロン)／アタック(老魔女)／山に戻る(実験)。
+  DOM.KINGDOM_RENAISSANCE = ['border_guard', 'ducat', 'lackeys', 'experiment', 'improve',
+                             'patron', 'research', 'old_witch', 'swashbuckler', 'treasurer'];
   // 初版（第二版で廃止されたカードを含む懐かしのセット）
   DOM.KINGDOM_1E = ['cellar', 'chancellor', 'woodcutter', 'feast', 'militia',
                     'spy', 'thief', 'council_room', 'adventurer', 'market'];
@@ -973,6 +979,10 @@
     { id: 'empires-landmarks', kind: 'standard', name: '帝国＋ランドマーク', desc: '帝国10種＋ランドマーク2枚（得点や獲得の仕方が変わる横型）', kingdom: DOM.KINGDOM_EMPIRES, landmarksFrom: 'empires' },
     // 帝国＋イベント（横型）。固定10王国に、帝国イベント13種から2枚を無作為に付ける（購入フェイズにコイン/負債で買う横型）。
     { id: 'empires-events',  kind: 'standard', name: '帝国＋イベント', desc: '帝国10種＋イベント2枚（購入フェイズに買う横型・負債経済）', kingdom: DOM.KINGDOM_EMPIRES, eventsFrom: 'empires' },
+    // ルネサンスセット（固定10種）。村人・財源・アーティファクトの3機構。
+    { id: 'renaissance',     kind: 'standard', name: 'ルネサンスセット', desc: '村人・財源・アーティファクト（奪い合う）', kingdom: DOM.KINGDOM_RENAISSANCE },
+    // ルネサンス＋プロジェクト（横型）。固定10王国に、プロジェクト20種から2枚を無作為に付ける（1人2つまで買える永続効果）。
+    { id: 'renaissance-projects', kind: 'standard', name: 'ルネサンス＋プロジェクト', desc: 'ルネサンス10種＋プロジェクト2枚（買うと永続する横型・1人2つまで）', kingdom: DOM.KINGDOM_RENAISSANCE, projectsFrom: 'renaissance' },
     // ---- おすすめ（テーマ別・固定10種）----
     { id: 'big-money',       kind: 'recommend', name: 'ビッグマネー', desc: 'お金を伸ばして属州を狙う王道',
       kingdom: ['chapel', 'moneylender', 'harbinger', 'throne_room', 'bureaucrat', 'poacher', 'market', 'mine', 'laboratory', 'sentry'] },
@@ -1010,6 +1020,7 @@
     { id: 'random-adventures', kind: 'random', name: '冒険から',     randomFrom: ['adventures'] },
     // 帝国から＝POOLS.empires（29枠）。分割山の下段は randomKingdom が上段へ正規化し、城は 'castles' の1枠で抽選される。
     { id: 'random-empires',  kind: 'random', name: '帝国から',     randomFrom: ['empires'] },
+    { id: 'random-renaissance', kind: 'random', name: 'ルネサンスから', randomFrom: ['renaissance'] },
     { id: 'random-intrigue', kind: 'random', name: '陰謀のみから',   randomFrom: ['intrigue'] },
     { id: 'random-basic',    kind: 'random', name: '基本のみから',   randomFrom: ['basic'] },
     { id: 'random-promo',    kind: 'random', name: 'プロモ込みから',  randomFrom: ['basic', 'intrigue', 'promo'] },
