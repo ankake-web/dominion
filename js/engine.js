@@ -221,6 +221,9 @@
     }
     // 収集：+1購入（コイン2は coin:2 で加算済み）。アクション獲得時の+VPは triggerOnGain が処理。
     if (card === 'collection') t.buys += 1;
+    // ===== ルネサンス：財宝カードの「使ったとき」効果 =====
+    // 香辛料：+1購入（コイン2は coin:2 で加算済み）。獲得時の +2財源 は triggerOnGain。
+    if (card === 'spices') t.buys += 1;
     // ペテン師：他のプレイヤーは各自 銅貨1枚を獲得（アタック）。コイン3は coin:3 で加算済み。
     if (card === 'charlatan') {
       const q = [];
@@ -410,6 +413,8 @@
       active, phase: 'action', actions: 1, buys: 1, coins: 0, potions: 0, costReduction: 0,
       actionsPlayed: 0, copperBonus: 0, merchants: 0, silverPlayed: false, buysMade: 0,
       coinPenalty: 0, // 冒険：-$1トークンの未消化ぶん（購入フェイズで最初に得る$1に食い込む。毎ターンリセット）
+      priestCount: 0, // ルネサンス：司祭＝このターン有効な司祭の数（廃棄1枚につき +2コイン × この数）
+      cargoShips: [], // ルネサンス：貨物船＝このターン「獲得したカードを脇に置ける」残り回数ぶんの場の貨物船id（R4で使用）
       afterActionCard: null, // 冒険：直前にプレイし解決したアクション（法貨/御料車の呼び出し窓の対象）
       // 冒険：横型イベント用のターン状態。
       eventsBought: [],   // このターンに購入したイベントid列（施し/借入/保存/巡礼＝1ターン1回の判定）
@@ -742,6 +747,13 @@
       state.players[oi].vpTokens = (state.players[oi].vpTokens || 0) + 1;
       log(state, `${state.players[oi].name} は墓標で +1勝利点（廃棄）。`);
     }
+    // ルネサンス：司祭＝このターンの残りの間、「あなたが」カードを廃棄するたび（1枚につき）+2コイン × 有効な司祭の数。
+    //   アタック（詐欺師/騎士/盗賊/山賊/破壊工作員/私掠船）は**被害者が廃棄者**＝owner=被害者≠手番 なので乗らない（公式）。
+    //   サプライからの廃棄（塩まき/剣闘士）は owner=手番プレイヤー＝乗る（公式）。
+    if (t && (t.priestCount || 0) > 0 && ownerIdx === t.active) {
+      t.coins += 2 * t.priestCount;
+      log(state, `${state.players[ownerIdx].name} は司祭で +${2 * t.priestCount}コイン（廃棄）。`);
+    }
     return triggerOnTrash(state, ownerIdx, card); // 城塞は手札へ戻り false／nomads等の副次効果も発動
   }
 
@@ -1061,6 +1073,9 @@
     pillage:       { onMoat: (s, pd) => pillageEnterVictim(s, pd.source, pd.queue) },
     rogue:         { onMoat: (s, pd) => rogueEnterVictim(s, pd.source, pd.queue) },
     discard_down:  { embedded: true, onMoat: (s, pd) => advanceDiscardDown(s, pd) },
+    // ルネサンス：老魔女（呪い配布＋手札の呪いを廃棄してよい）・悪党（$2以上を1枚捨て／無ければ手札公開）。
+    old_witch:     { onMoat: (s, pd) => oldWitchEnterVictim(s, pd.source, pd.queue) },
+    villain:       { onMoat: (s, pd) => villainEnterVictim(s, pd.source, pd.queue) },
     knight:        { onMoat: (s, pd) => knightAttackEnter(s, pd.source, pd.sourceCard, pd.queue) },
     // 冒険：遺物（-1カードトークン）・巨人（公開廃棄/呪い）・橋の下のトロル（-$1トークン）。
     relic:         { onMoat: (s, pd) => relicEnterVictim(s, pd.source, pd.queue) },
@@ -1178,6 +1193,64 @@
       log(state, `${state.players[victim].name} は呪いを獲得した（魔女）。`);
     }
     witchEnterVictim(state, source, queue);
+  }
+
+  /* ========== ルネサンス（Renaissance）：アタック2種 ========== */
+  /* 老魔女（old_witch）＝呪いを配り、その後 各被害者は「手札の呪い1枚」を廃棄してもよい。
+     公式：**免疫のプレイヤーは呪いを獲得もせず、呪いを廃棄することもできない**（魔女と違い「廃棄だけ許す」のは誤り）。
+     呪い山が空でも「手札の呪いを廃棄してよい」は行える（獲得だけが起きない）＝呪い枯渇後も死に札にならない。
+     廃棄できるのは「もともと手札にある呪い」だけ（獲得した呪いは捨て札に入る）。 */
+  function oldWitchEnterVictim(state, source, queue) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'old_witch', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      oldWitchApply(state, source, victim, rest);
+    }
+  }
+  function oldWitchApply(state, source, victim, queue) {
+    if ((state.supply.curse || 0) > 0) {
+      gain(state, victim, 'curse', 'discard');
+      log(state, `${state.players[victim].name} は呪いを獲得した（老魔女）。`);
+    }
+    // 手札に（もとから）呪いがあれば、1枚を廃棄してよい（任意）。
+    if (state.players[victim].hand.includes('curse')) {
+      state.pending = { type: 'old_witch_trash', player: victim, source, queue };
+      return;
+    }
+    oldWitchEnterVictim(state, source, queue);
+  }
+  /* 悪党（villain）＝手札5枚以上の各相手は、手札からコスト$2以上のカード1枚を捨てる（無ければ手札を公開）。
+     - 手札5枚以上の判定は**各プレイヤーの解決時点**（リアクションで手札が減れば対象外）。
+     - 「$2以上」は解決時点の**現在コスト**（運河があると屋敷は$1＝捨てられない）。
+     - 「捨て札にする」は公開(reveal)ではない＝パトロンは誘発しない。ただし**「手札を公開する」枝は reveal**。 */
+  function villainEnterVictim(state, source, queue) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    while (queue.length && state.players[queue[0]].hand.length < 5) queue = queue.slice(1); // 手札4枚以下は何も起きない
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'villain', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      villainApply(state, source, victim, rest);
+    }
+  }
+  function villainApply(state, source, victim, queue) {
+    const v = state.players[victim];
+    if (v.hand.length < 5) { villainEnterVictim(state, source, queue); return; } // 反応で手札が減ったら対象外
+    if (v.hand.some((c) => cardCost(state, c) >= 2)) {
+      state.pending = { type: 'villain_discard', player: victim, source, queue };
+      return;
+    }
+    reveal(state, victim, v.hand.slice(), '悪党：コスト$2以上が無いので手札を公開');
+    log(state, `${v.name} はコスト$2以上のカードが無く、手札を公開した（悪党）。`);
+    villainEnterVictim(state, source, queue);
+  }
+  // 発明家／彫刻家の「コスト$4以下」＝コイン成分のみ（負債/ポーション費用のカードは含まない・非サプライ/分割山下段は除く）。
+  function inventorGainable(state, id) {
+    return !NON_SUPPLY.has(id) && !splitLocked(state, id) && costIsPlainCoin(id) && cardCost(state, id) <= 4;
   }
 
   /* ========== 暗黒時代：アタック各種（廃墟配布/手札公開/山札上2枚廃棄/手札削り） ========== */
@@ -2676,6 +2749,111 @@
       case 'crown':
         crownOpenPending(state, pi);
         break;
+
+      /* ===== ルネサンス（Renaissance）R2：素直な王国15枚 ===== */
+      // 追従者：+2カード。獲得時 +2村人（triggerOnGain）。
+      case 'lackeys':
+        draw(state, pi, 2);
+        break;
+      // 劇団：+4村人。これを廃棄する（廃棄は村人の条件ではない＝命令経由で廃棄に失敗しても村人は得る）。
+      case 'acting_troupe': {
+        p.villagers = (p.villagers || 0) + 4;
+        log(state, `${p.name} は劇団で +4村人。`);
+        const self = takeSelf(state, pi, 'acting_troupe'); // 命令(大君主/はみだし者/船長/王子)経由なら null＝廃棄は失敗
+        if (self) trashCard(state, pi, self);
+        break;
+      }
+      // 実験：+2カード+1アクション。これをその山に戻す（獲得でも捨て札でも廃棄でもない＝トリガー一切なし）。
+      //   玉座/王の宮廷の2回目は既に場に無い＝戻せないが +2カード+1アクションは得る。闇市場由来（山が無い）も戻せない。
+      case 'experiment':
+        draw(state, pi, 2); t.actions += 1;
+        if (state.supply.experiment != null && takeSelf(state, pi, 'experiment')) {
+          state.supply.experiment += 1;
+          log(state, `${p.name} は実験を山に戻した。`);
+        }
+        break;
+      // 根城：+1カード+2アクション。手札1枚を廃棄（強制）。それが勝利点カードなら呪い1枚を獲得。
+      case 'hideout':
+        draw(state, pi, 1); t.actions += 2;
+        if (p.hand.length > 0) state.pending = { type: 'hideout_trash', player: pi };
+        break;
+      // 発明家：コスト$4以下を1枚獲得 → **その後** このターン すべてのカードが$1安くなる（自分の獲得には効かない＝順序が肝）。
+      case 'inventor':
+        if (anyGainable(state, (id) => inventorGainable(state, id))) state.pending = { type: 'inventor_gain', player: pi };
+        else { t.costReduction += 1; log(state, `${p.name} は発明家：獲得できるカードが無く、コストが$1安くなった。`); }
+        break;
+      // 山村：+2アクション。捨て札から1枚を手札へ（捨て札があれば強制）。できない場合だけ +1カード。
+      case 'mountain_village':
+        t.actions += 2;
+        if (p.discard.length > 0) state.pending = { type: 'mountain_village', player: pi };
+        else { draw(state, pi, 1); log(state, `${p.name} は山村：捨て札が無いので +1カード。`); }
+        break;
+      // 司祭：+2コイン。手札1枚を廃棄（強制）。このターンの残りの間、廃棄するたびに +2コイン
+      //   （※司祭自身が指示したこの廃棄には乗らない＝予約の設置がその廃棄の「後」）。
+      case 'priest':
+        t.coins += 2;
+        if (p.hand.length > 0) state.pending = { type: 'priest_trash', player: pi };
+        else { t.priestCount = (t.priestCount || 0) + 1; log(state, `${p.name} は司祭：手札が無く廃棄なし（以後の廃棄で +2コイン）。`); }
+        break;
+      // 絹商人：+2カード+1購入。獲得時/廃棄時 +1財源+1村人（triggerOnGain / triggerOnTrash）。
+      case 'silk_merchant':
+        draw(state, pi, 2); t.buys += 1;
+        break;
+      // 老魔女：+3カード。他の各プレイヤーは呪い1枚を獲得し、その後 手札の呪い1枚を廃棄してもよい
+      //   （免疫のプレイヤーは獲得も廃棄もしない＝公式）。
+      case 'old_witch': {
+        draw(state, pi, 3);
+        const vics = [];
+        for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
+        oldWitchEnterVictim(state, pi, vics);
+        break;
+      }
+      // 徴募官：+2カード。手札1枚を廃棄（強制）。そのコイン費用1につき +1村人（行商人はアクションフェイズでは$8＝+8村人）。
+      case 'recruiter':
+        draw(state, pi, 2);
+        if (p.hand.length > 0) state.pending = { type: 'recruiter_trash', player: pi };
+        break;
+      // 学者：手札をすべて捨て、その後 +7カード（捨てた札もリシャッフルに混ざる＝先に捨てるのが肝）。
+      case 'scholar': {
+        const disc = p.hand.slice();
+        p.hand.length = 0;
+        disc.forEach((c) => p.discard.push(c));
+        if (disc.length) { log(state, `${p.name} は学者で手札 ${disc.length}枚 を捨てた。`); triggerOnDiscard(state, pi, disc); }
+        draw(state, pi, 7);
+        break;
+      }
+      // 彫刻家：コスト$4以下を1枚「手札に」獲得（強制）。それが財宝なら +1村人。
+      case 'sculptor':
+        if (anyGainable(state, (id) => inventorGainable(state, id))) state.pending = { type: 'sculptor_gain', player: pi };
+        break;
+      // 先見者：+1カード+1アクション（先に引く）→ 山札の上3枚を公開し、コスト$2〜$4を手札へ（強制）・残りを好きな順で山札の上に戻す。
+      case 'seer': {
+        draw(state, pi, 1); t.actions += 1;
+        const revealed = [];
+        for (let i = 0; i < 3; i++) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
+          revealed.push(p.deck.shift());
+        }
+        if (revealed.length) reveal(state, pi, revealed.slice(), '先見者：山札の上3枚を公開');
+        const keep = [], rest = [];
+        revealed.forEach((c) => {
+          const cc = cardCost(state, c);
+          if (costIsPlainCoin(c) && cc >= 2 && cc <= 4) keep.push(c); else rest.push(c);
+        });
+        if (keep.length) { p.hand.push(...keep); log(state, `${p.name} は先見者で ${keep.length}枚（$2〜$4）を手札に加えた。`); }
+        if (rest.length > 1) state.pending = { type: 'seer_order', player: pi, cards: rest };
+        else if (rest.length === 1) p.deck.unshift(rest[0]);
+        break;
+      }
+      // 悪党：+2財源。手札5枚以上の他の各プレイヤーは、手札からコスト$2以上のカード1枚を捨てる（無ければ手札を公開）。
+      case 'villain': {
+        p.coffers = (p.coffers || 0) + 2;
+        log(state, `${p.name} は悪党で +2財源。`);
+        const vics = [];
+        for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
+        villainEnterVictim(state, pi, vics);
+        break;
+      }
 
       case 'cellar':
         t.actions += 1;
@@ -4629,7 +4807,26 @@
     // 不正利得：獲得したとき、他の各プレイヤーは呪い1枚を獲得（アタックではない＝堀では防げない）。
     if (cardId === 'ill_gotten_gains') { for (let o = 0; o < n; o++) if (o !== pIndex && (state.supply.curse || 0) > 0 && gain(state, o, 'curse', 'discard')) log(state, `${state.players[o].name} は呪い1枚を獲得した（不正利得）。`); }
     // 遊牧民の野営地：獲得したとき、山札の一番上に置く。
-    if (cardId === 'nomad_camp') { const z = dest === 'hand' ? gp.hand : (dest === 'deck' ? gp.deck : gp.discard); if (removeOne(z, 'nomad_camp')) { gp.deck.unshift('nomad_camp'); log(state, `${gp.name} は遊牧民の野営地を山札の上に置いた。`); } }
+    //   ※「手札に獲得する」効果（彫刻家/出納官/職人 等）で得た場合は手札に残す（獲得置換が2つ競合＝獲得者が選ぶ。
+    //     RGG は彫刻家×遊牧民の野営地で「手札に入る」と明記）。
+    if (cardId === 'nomad_camp' && dest !== 'hand') { const z = dest === 'deck' ? gp.deck : gp.discard; if (removeOne(z, 'nomad_camp')) { gp.deck.unshift('nomad_camp'); log(state, `${gp.name} は遊牧民の野営地を山札の上に置いた。`); } }
+    /* ===== ルネサンス：獲得時の「自動」効果（対話不要＝pending を立てない）===== */
+    // 追従者：獲得したとき +2村人（購入以外の獲得でも・相手のターンの獲得でも）。
+    if (cardId === 'lackeys') { gp.villagers = (gp.villagers || 0) + 2; log(state, `${gp.name} は追従者の獲得で +2村人。`); }
+    // 香辛料：獲得したとき +2財源（あらゆる獲得経路）。
+    if (cardId === 'spices') { gp.coffers = (gp.coffers || 0) + 2; log(state, `${gp.name} は香辛料の獲得で +2財源。`); }
+    // 絹商人：獲得または廃棄したとき +1財源+1村人（廃棄時は triggerOnTrash）。
+    if (cardId === 'silk_merchant') {
+      gp.coffers = (gp.coffers || 0) + 1; gp.villagers = (gp.villagers || 0) + 1;
+      log(state, `${gp.name} は絹商人の獲得で +1財源+1村人。`);
+    }
+    // 実験：獲得したとき、実験をもう1枚獲得する（この2枚目では誘発しない＝フラグで抑止）。2枚目は必ず捨て札へ。
+    if (cardId === 'experiment' && !state._experimentGain) {
+      state._experimentGain = true;
+      const g = gain(state, pIndex, 'experiment', 'discard');
+      delete state._experimentGain;
+      if (g) log(state, `${gp.name} は実験の獲得で もう1枚の実験を獲得した。`);
+    }
     // 遊牧民：獲得したとき +2コイン（自分の手番のときのみ意味がある）。廃棄時の+2は triggerOnTrash。
     if (cardId === 'nomads' && state.turn && pIndex === state.turn.active) { state.turn.coins += 2; log(state, `${gp.name} は遊牧民の獲得で +2コイン。`); }
     // 暗黒時代：死の荷車＝獲得したとき廃墟を2枚獲得（山の一番上から。足りなければあるだけ・非サプライではない配布）。
@@ -4934,6 +5131,13 @@
     // 暗黒時代：狩場＝廃棄されたとき、公領1枚 or 屋敷3枚 を選んで獲得（対話＝onTrashQueue へ）。
     if (card === 'hunting_grounds') {
       (state.onTrashQueue = state.onTrashQueue || []).push({ type: 'hunting_grounds_trash', player: pIndex });
+    }
+    // ルネサンス：絹商人＝獲得または廃棄したとき +1財源+1村人。
+    //   公式＝「廃棄を実行したプレイヤー」が得る。本エンジンの trashCard は owner=被害者 で呼ぶので、
+    //   詐欺師/騎士/盗賊などのアタックでは**被害者**が得る（＝攻撃側の利敵）＝公式と一致。
+    if (card === 'silk_merchant') {
+      p.coffers = (p.coffers || 0) + 1; p.villagers = (p.villagers || 0) + 1;
+      log(state, `${p.name} は絹商人の廃棄で +1財源+1村人。`);
     }
     // 帝国：石（rocks）＝獲得または廃棄したとき銀貨1枚を獲得（購入フェイズ中なら山札の上・そうでなければ手札）。
     if (card === 'rocks') rocksGainSilver(state, pIndex);
@@ -9173,6 +9377,143 @@
         log(state, `${me.name} は村人 ${amount}人 を使った（+${amount}アクション）。`);
         return state;
       }
+
+      /* ---- ルネサンス R2：王国カードの選択待ち ---- */
+      // 根城：手札1枚を廃棄（強制）。勝利点カードなら呪い1枚を獲得（呪い山が空なら獲得しない）。
+      case 'HIDEOUT_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'hideout_trash') return state;
+        const pl = state.players[pd.player];
+        if (!pl.hand.length) { state.pending = null; return state; } // 終端保証
+        const card = action.card;
+        if (!card || pl.hand.indexOf(card) < 0) return state;
+        const isVic = DOM.isType(card, 'victory');
+        if (!trashFromHand(state, pd.player, [card], 1, `廃棄した（根城）。`)) return state;
+        if (isVic && (state.supply.curse || 0) > 0) {
+          gain(state, pd.player, 'curse', 'discard');
+          log(state, `${pl.name} は勝利点カードを廃棄したので呪い1枚を獲得した（根城）。`);
+        }
+        state.pending = null;
+        return state;
+      }
+      // 発明家：コスト$4以下を1枚獲得 →「その後」このターン すべてのカードが$1安くなる（順序が肝＝自分の獲得には効かない）。
+      case 'INVENTOR_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'inventor_gain') return state;
+        if (!finishGain(state, pd, action.card, (id) => inventorGainable(state, id), 'discard', '獲得した（発明家）。')) return state;
+        t.costReduction += 1;
+        log(state, `${state.players[pd.player].name} は発明家：このターン すべてのカードが$1安くなる。`);
+        return state;
+      }
+      // 山村：捨て札から1枚を手札へ（捨て札があれば強制。獲得でも捨て札でも廃棄でもない＝トリガーなし）。
+      case 'MOUNTAIN_VILLAGE_TAKE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'mountain_village') return state;
+        const pl = state.players[pd.player];
+        if (!pl.discard.length) { draw(state, pd.player, 1); state.pending = null; return state; } // 終端保証
+        const card = action.card;
+        if (!card || !removeOne(pl.discard, card)) return state;
+        pl.hand.push(card);
+        log(state, `${pl.name} は山村で捨て札から「${C()[card].name}」を手札に加えた。`);
+        state.pending = null;
+        return state;
+      }
+      // 司祭：手札1枚を廃棄（強制）。**この廃棄には +2コインは乗らない**（予約の設置がこの廃棄の後）。
+      case 'PRIEST_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'priest_trash') return state;
+        const pl = state.players[pd.player];
+        if (!pl.hand.length) { t.priestCount = (t.priestCount || 0) + 1; state.pending = null; return state; } // 終端保証
+        const card = action.card;
+        if (!card || pl.hand.indexOf(card) < 0) return state;
+        if (!trashFromHand(state, pd.player, [card], 1, `廃棄した（司祭）。`)) return state;
+        t.priestCount = (t.priestCount || 0) + 1; // 以後この手番の廃棄に +2コイン
+        state.pending = null;
+        return state;
+      }
+      // 徴募官：手札1枚を廃棄（強制）。そのコイン費用1につき +1村人（廃棄前の現在コストで数える）。
+      case 'RECRUITER_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'recruiter_trash') return state;
+        const pl = state.players[pd.player];
+        if (!pl.hand.length) { state.pending = null; return state; } // 終端保証
+        const card = action.card;
+        if (!card || pl.hand.indexOf(card) < 0) return state;
+        const n = cardCost(state, card); // 行商人はアクションフェイズでは$8＝+8村人（公式コンボ）
+        if (!trashFromHand(state, pd.player, [card], 1, `廃棄した（徴募官）。`)) return state;
+        if (n > 0) { pl.villagers = (pl.villagers || 0) + n; log(state, `${pl.name} は徴募官で +${n}村人。`); }
+        state.pending = null;
+        return state;
+      }
+      // 彫刻家：コスト$4以下を1枚「手札に」獲得（強制）。それが財宝なら +1村人。
+      case 'SCULPTOR_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'sculptor_gain') return state;
+        const card = action.card;
+        if (!finishGain(state, pd, card, (id) => inventorGainable(state, id), 'hand', '手札に獲得した（彫刻家）。')) return state;
+        if (card && DOM.isType(card, 'treasure')) {
+          const pl = state.players[pd.player];
+          pl.villagers = (pl.villagers || 0) + 1;
+          log(state, `${pl.name} は財宝を獲得したので +1村人（彫刻家）。`);
+        }
+        return state;
+      }
+      // 先見者：公開して手札に入らなかったカードを、好きな順番で山札の上に戻す（cards[0] が一番上）。
+      case 'SEER_ORDER': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'seer_order') return state;
+        const want = (pd.cards || []).slice();
+        const order = Array.isArray(action.cards) ? action.cards.slice() : null;
+        if (!order || order.length !== want.length) return state;
+        const copy = want.slice();
+        for (const c of order) if (!removeOne(copy, c)) return state; // 並べ替えは元の集合の置換でなければ拒否
+        const pl = state.players[pd.player];
+        for (let i = order.length - 1; i >= 0; i--) pl.deck.unshift(order[i]); // order[0] が一番上になる
+        log(state, `${pl.name} は先見者で ${order.length}枚 を山札の上に戻した。`);
+        state.pending = null;
+        return state;
+      }
+      // 老魔女：堀を出さずにアタックを受ける（呪い獲得 → 手札の呪いを廃棄してよい）。
+      case 'OLD_WITCH_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'old_witch' || pd.stage !== 'react') return state;
+        oldWitchApply(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      // 老魔女：手札の呪い1枚を廃棄してもよい（任意。card:null で辞退）。
+      case 'OLD_WITCH_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'old_witch_trash') return state;
+        const pl = state.players[pd.player];
+        if (action.card === 'curse' && pl.hand.includes('curse')) {
+          removeOne(pl.hand, 'curse');
+          trashCard(state, pd.player, 'curse');
+          log(state, `${pl.name} は手札の呪い1枚を廃棄した（老魔女）。`);
+        } else if (action.card != null) {
+          return state; // 呪い以外は廃棄できない
+        }
+        oldWitchEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+      // 悪党：堀を出さずにアタックを受ける。
+      case 'VILLAIN_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'villain' || pd.stage !== 'react') return state;
+        villainApply(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      // 悪党：手札からコスト$2以上のカード1枚を捨てる（強制・被害者が選ぶ）。
+      case 'VILLAIN_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'villain_discard') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        if (!card || pl.hand.indexOf(card) < 0 || cardCost(state, card) < 2) return state;
+        if (!discardFromHand(state, pd.player, [card], 1, `捨てた（悪党）。`)) return state;
+        triggerOnDiscard(state, pd.player, [card], true); // トンネル等（相手のアタックによる捨て札＝対話は出さない）
+        villainEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
       // 帝国：負債（Debt）を返済する。購入フェイズに $1=1個。購入権は消費しない（購入の前でも後でも・交互でも可）。
       case 'REPAY_DEBT': {
         if (state.pending) return state;
@@ -10634,8 +10975,10 @@
     'ALMS_GAIN', 'QUEST_MODE', 'QUEST_DISCARD', 'SAVE_SETASIDE', 'SCOUTING_DISCARD', 'SCOUTING_ORDER',
     'BONFIRE_TRASH', 'BALL_GAIN', 'SEAWAY_GAIN', 'TRADE_TRASH', 'PILGRIMAGE_GAIN', 'EVENT_TOKEN_PILE',
     'PLAN_TRASH', 'TRAVELLING_FAIR_TOPDECK', 'INHERITANCE_SET',
-    // ルネサンス（Renaissance）：村人（アクションフェイズ）／プロジェクト（買う横型・1人2つまで）
+    // ルネサンス（Renaissance）：村人（アクションフェイズ）／プロジェクト（買う横型・1人2つまで）／王国カード
     'SPEND_VILLAGER', 'BUY_PROJECT',
+    'HIDEOUT_TRASH', 'INVENTOR_GAIN', 'MOUNTAIN_VILLAGE_TAKE', 'PRIEST_TRASH', 'RECRUITER_TRASH',
+    'SCULPTOR_GAIN', 'SEER_ORDER', 'OLD_WITCH_REACT', 'OLD_WITCH_TRASH', 'VILLAIN_REACT', 'VILLAIN_DISCARD',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',

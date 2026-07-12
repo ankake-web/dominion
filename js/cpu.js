@@ -278,6 +278,12 @@
     if (has('page')) return 'page';                       // +1カード+1アクション（成長：→トレジャーハンター）
     if (has('treasure_hunter')) return 'treasure_hunter'; // +1アクション+$1（成長：→ウォリアー）
     if (has('fugitive')) return 'fugitive';               // +2カード+1アクション（成長：→門下生）
+    // ルネサンス：非ターミナル（+アクション付き）
+    if (has('hideout')) return 'hideout';                 // +1カード+2アクション（手札1枚を廃棄＝圧縮。勝利点を廃棄すると呪い）
+    if (has('mountain_village')) return 'mountain_village'; // +2アクション（捨て札から1枚回収）
+    if (has('seer')) return 'seer';                       // +1カード+1アクション（山札上3枚から$2〜$4を手札へ）
+    if (has('experiment')) return 'experiment';           // +2カード+1アクション（山に戻る＝実質タダ）
+    // ルネサンス：相続と同じく engine の述語を見る必要は無い（素直な効果）
     // 冒険：相続＝自分のターン中、屋敷は「脇に置いたカードを使用する」アクション（命令）としてプレイできる。
     //   engine の述語（inheritedEstate）を見る＝engine が拒否する手を提案しない。脇の札が非ターミナルなら先に使う。
     if (has('estate') && DOM.engine.inheritedEstate(p, 'estate')) {
@@ -367,6 +373,17 @@
     if (has('spice_merchant') && p.hand.includes('copper')) return 'spice_merchant'; // 銅貨を廃棄→ボーナス
     if (has('stables') && p.hand.includes('copper')) return 'stables';               // 銅貨を捨て→+3カード+1アクション
     if (has('develop') && p.hand.some((c) => c === 'estate' || c === 'copper' || isType(c, 'curse'))) return 'develop'; // 不要札を2枚に格上げ
+    // ルネサンス：ターミナル（アタック＞ドロー＞村人/財源＞圧縮）
+    if (has('old_witch')) return 'old_witch';             // +3カード＋全員に呪い（強力）
+    if (has('villain')) return 'villain';                 // +2財源＋相手の手札から$2以上を捨てさせる
+    if (has('scholar')) return 'scholar';                 // 手札を捨てて +7カード
+    if (has('recruiter')) return 'recruiter';             // +2カード＋廃棄して村人（圧縮＋村人）
+    if (has('sculptor')) return 'sculptor';               // $4以下を手札に獲得（財宝なら+1村人）
+    if (has('inventor')) return 'inventor';               // $4以下を獲得＋このターン全カード-$1
+    if (has('lackeys')) return 'lackeys';                 // +2カード
+    if (has('silk_merchant')) return 'silk_merchant';     // +2カード+1購入
+    if (has('acting_troupe')) return 'acting_troupe';     // +4村人（自身を廃棄）
+    if (has('priest')) return 'priest';                   // +2コイン＋以後の廃棄で+2コイン（圧縮と併せて強い）
     // 暗黒時代：ターミナル（アタック＞ドロー＞trash-to-gain＞その他）
     if (has('cultist')) return 'cultist';                   // +2カード＋廃墟配布＋連鎖（強力）
     if (has('marauder')) return 'marauder';                 // 戦利品＋廃墟配布
@@ -2251,6 +2268,59 @@
         return { type: 'MARKET_SQUARE_REACT', discard: true }; // 青空市場を捨てて金貨（MONEY方針＝常に得）
       case 'hovel_react':
         return { type: 'HOVEL_REACT', trash: true }; // 納屋を廃棄（純粋な圧縮＝常に得）
+
+      /* ===== ルネサンス（Renaissance）R2 ===== */
+      case 'hideout_trash': {
+        // 手札1枚を廃棄（強制）。勝利点を廃棄すると呪いを得るので、勝利点でない不要札を優先する。
+        const nonVic = p.hand.filter((c) => !isType(c, 'victory'));
+        const pick = pickTrash(nonVic, 1)[0] || p.hand[0] || null;
+        return { type: 'HIDEOUT_TRASH', card: pick };
+      }
+      case 'inventor_gain': {
+        // コスト$4以下を1枚獲得（強制）。engine の inventorGainable と同じ述語で候補を選ぶ（拒否されない＝無限ループ防止）。
+        const ok = (id) => plainCoin(id) && cost(state, id) <= 4;
+        const pick = firstGainable(state, (id) => ok(id) && !isType(id, 'victory') && !isType(id, 'curse'))
+          || firstGainable(state, ok);
+        return { type: 'INVENTOR_GAIN', card: pick };
+      }
+      case 'mountain_village': {
+        // 捨て札から1枚を手札へ（強制）。勝利点/呪い以外で最も価値の高い札を回収する。
+        const good = p.discard.filter((c) => !isType(c, 'victory') && !isType(c, 'curse'));
+        const src = good.length ? good : p.discard;
+        const pick = src.slice().sort((a, b) => keepValue(b) - keepValue(a))[0] || null;
+        return { type: 'MOUNTAIN_VILLAGE_TAKE', card: pick };
+      }
+      case 'priest_trash':
+        return { type: 'PRIEST_TRASH', card: pickTrash(p.hand, 1)[0] || p.hand[0] || null };
+      case 'recruiter_trash': {
+        // コイン費用1につき+1村人。不要札の中で最も高コストなもの（屋敷=+2村人）を優先し、無ければ最も不要な札。
+        const junky = p.hand.filter((c) => trashValue(c) < 10);
+        const pick = junky.sort((a, b) => cost(state, b) - cost(state, a))[0] || pickTrash(p.hand, 1)[0] || p.hand[0] || null;
+        return { type: 'RECRUITER_TRASH', card: pick };
+      }
+      case 'sculptor_gain': {
+        const ok = (id) => plainCoin(id) && cost(state, id) <= 4;
+        const pick = firstGainable(state, (id) => ok(id) && !isType(id, 'victory') && !isType(id, 'curse'))
+          || firstGainable(state, ok);
+        return { type: 'SCULPTOR_GAIN', card: pick };
+      }
+      case 'seer_order':
+        // 山札の上に戻す順（cards[0]が一番上＝次に引く）。価値の高い札を上に。
+        return { type: 'SEER_ORDER', cards: (pd.cards || []).slice().sort((a, b) => keepValue(b) - keepValue(a)) };
+      case 'old_witch':
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'OLD_WITCH_REACT' };
+      case 'old_witch_trash':
+        return { type: 'OLD_WITCH_TRASH', card: 'curse' }; // 手札の呪いを廃棄できるなら常に得
+      case 'villain':
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'VILLAIN_REACT' };
+      case 'villain_discard': {
+        // コスト$2以上の手札1枚を捨てる（強制）。最も価値の低いものを捨てる。
+        const cand = p.hand.filter((c) => cost(state, c) >= 2);
+        const pick = cand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0] || null;
+        return { type: 'VILLAIN_DISCARD', card: pick };
+      }
 
       default:
         return { type: 'END_TURN' };

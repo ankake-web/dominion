@@ -2192,6 +2192,44 @@
       { label: '納屋を廃棄する', cls: 'btn-primary', on: () => dispatch({ type: 'HOVEL_REACT', trash: true }) },
       { label: 'しない', on: () => dispatch({ type: 'HOVEL_REACT', trash: false }) }]);
 
+    /* ===== ルネサンス（Renaissance）R2 ===== */
+    if (pd.type === 'hideout_trash') return modalSingleHand(p, '根城 — 廃棄',
+      '手札から1枚を廃棄します（強制）。廃棄したのが勝利点カードなら、呪い1枚を獲得します。',
+      () => true, (card) => dispatch({ type: 'HIDEOUT_TRASH', card }), null, '廃棄する');
+    if (pd.type === 'inventor_gain') return modalGainSupply(state, '発明家 — 獲得',
+      'コスト$4以下のカード1枚を獲得します。その後、このターン すべてのカードのコストが$1安くなります（この獲得には効きません）。',
+      (id) => effCost(state, id) <= 4 && !DOM.CARDS[id].potion && !DOM.CARDS[id].debt,
+      (id) => dispatch({ type: 'INVENTOR_GAIN', card: id }), () => dispatch({ type: 'INVENTOR_GAIN', card: null }));
+    if (pd.type === 'mountain_village') return modalPickList(state, '山村 — 捨て札から手札へ',
+      '捨て札置き場から1枚を選んで手札に加えます（捨て札があるときは必ず1枚取ります）。',
+      p.discard, '手札に加える', (id) => dispatch({ type: 'MOUNTAIN_VILLAGE_TAKE', card: id }));
+    if (pd.type === 'priest_trash') return modalSingleHand(p, '司祭 — 廃棄',
+      '手札から1枚を廃棄します（強制）。この廃棄には +2コインは付きませんが、このターンの残りの間、カードを廃棄するたびに +2コインを得ます。',
+      () => true, (card) => dispatch({ type: 'PRIEST_TRASH', card }), null, '廃棄する');
+    if (pd.type === 'recruiter_trash') return modalSingleHand(p, '徴募官 — 廃棄',
+      '手札から1枚を廃棄します（強制）。そのカードのコイン費用$1につき +1村人を得ます。',
+      () => true, (card) => dispatch({ type: 'RECRUITER_TRASH', card }), null, '廃棄する');
+    if (pd.type === 'sculptor_gain') return modalGainSupply(state, '彫刻家 — 手札に獲得',
+      'コスト$4以下のカード1枚を獲得し、手札に加えます。それが財宝カードなら +1村人。',
+      (id) => effCost(state, id) <= 4 && !DOM.CARDS[id].potion && !DOM.CARDS[id].debt,
+      (id) => dispatch({ type: 'SCULPTOR_GAIN', card: id }), () => dispatch({ type: 'SCULPTOR_GAIN', card: null }), false, '手札に獲得する');
+    if (pd.type === 'seer_order') return modalReorder('先見者 — 山札の上に戻す',
+      '手札に入らなかったカードを山札の上に戻す順番をタップで選びます（最初のタップが一番上）。',
+      pd.cards, (order) => dispatch({ type: 'SEER_ORDER', cards: order }));
+    if (pd.type === 'old_witch' && pd.stage === 'react') return modalOptions('老魔女を受ける',
+      '呪い1枚を獲得します。その後、手札に呪いがあれば1枚を廃棄できます。',
+      reactOptions(p, pd, { type: 'OLD_WITCH_REACT' }));
+    if (pd.type === 'old_witch_trash') return modalOptions('老魔女 — 手札の呪いを廃棄',
+      '手札の呪い1枚を廃棄できます（任意）。※いま獲得した呪いは捨て札に入るので対象外です。', [
+        { label: '呪いを1枚廃棄する', cls: 'btn-primary', on: () => dispatch({ type: 'OLD_WITCH_TRASH', card: 'curse' }) },
+        { label: '廃棄しない', on: () => dispatch({ type: 'OLD_WITCH_TRASH', card: null }) }]);
+    if (pd.type === 'villain' && pd.stage === 'react') return modalOptions('悪党を受ける',
+      '手札からコスト$2以上のカード1枚を捨てます（無ければ手札を公開します）。',
+      reactOptions(p, pd, { type: 'VILLAIN_REACT' }));
+    if (pd.type === 'villain_discard') return modalSingleHand(p, '悪党 — 捨てる',
+      '手札からコスト$2以上のカード1枚を選んで捨てます（強制）。',
+      (id) => effCost(state, id) >= 2, (card) => dispatch({ type: 'VILLAIN_DISCARD', card }), null, '捨てる');
+
     return h('div');
   }
 
