@@ -260,16 +260,18 @@
     if (n <= 0) return null;
     return h('div', { class: 'pile-vp', title: '山上の勝利点トークン' }, '⭐' + n);
   }
-  // 冒険：教師の山トークンを山に小さく表示（各プレイヤーのトークンは公開情報）。
+  // 冒険：山トークンを山に小さく表示（各プレイヤーのトークンは公開情報）。
+  //   +1系4種＝教師／失われた技術・鍛錬・誘導・海路（プレイ時ボーナス）。
+  //   -$2＝渡し船（自分のターン中その山が安い）／🗑＝立案（その山から獲得したとき手札1枚を廃棄してよい）。
   function pileTokenBadge(state, id) {
-    const SYM = { card: '+1🃏', action: '+1▶', buy: '+1🛒', coin: '+1$' };
+    const SYM = { card: '+1🃏', action: '+1▶', buy: '+1🛒', coin: '+1$', cost: '-$2', trash: '🗑' };
     const chips = [];
     (state.players || []).forEach((pl, pi) => {
       const toks = pl.pileTokens || {};
-      Object.keys(toks).forEach((tk) => { if (toks[tk] === id) chips.push((state.players.length > 2 ? 'P' + (pi + 1) + ':' : '') + SYM[tk]); });
+      Object.keys(toks).forEach((tk) => { if (toks[tk] === id && SYM[tk]) chips.push((state.players.length > 2 ? 'P' + (pi + 1) + ':' : '') + SYM[tk]); });
     });
     if (!chips.length) return null;
-    return h('div', { class: 'pile-tokens', title: '教師トークン' }, chips.join(' '));
+    return h('div', { class: 'pile-tokens', title: '山トークン（教師／イベント）' }, chips.join(' '));
   }
 
   // 暗黒時代：廃墟の山（混合山・購入不可）。一番上の実廃墟の絵/名前と残枚数を表示（クリック不可）。
@@ -717,6 +719,10 @@
         h('div', { class: 'section-h' }, 'イベント（帝国・横型・購入フェイズに買う）'),
         h('div', { class: 'landmark-list-grid', style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px' },
           DOM.EVENTS_EMPIRES.map((id) => landmarkMini(id)))) : null,
+      (DOM.EVENTS_ADVENTURES && DOM.EVENTS_ADVENTURES.length) ? h('div', { class: 'list-group' },
+        h('div', { class: 'section-h' }, 'イベント（冒険・横型・購入フェイズに買う）'),
+        h('div', { class: 'landmark-list-grid', style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px' },
+          DOM.EVENTS_ADVENTURES.map((id) => landmarkMini(id)))) : null,
       (DOM.POOLS && DOM.POOLS.promo) ? group('プロモカード', byCost(DOM.POOLS.promo)) : null,
       (DOM.POOLS && DOM.POOLS.basic1e) ? group('初版のみ（第二版で廃止）', byCost(
         DOM.POOLS.basic1e.filter((id) => DOM.POOLS.basic.indexOf(id) < 0)
@@ -925,13 +931,15 @@
         : null);
 
     // サプライ（種類ごと）
-    const buyableId = (id) => interactive && t.phase === 'buy' && !state.pending &&
+    const buyableId = (id) => interactive && t.phase === 'buy' && !state.pending && !t.noBuyCards && // 冒険：使節団の追加ターンはカード購入不可
       (state.players[t.active].debt || 0) === 0 && // 帝国：負債があると購入不可
       (state.supply[id] || 0) > 0 && t.buys > 0 && affordable(state, id) && DOM.engine.canBuyCard(state, t.active, id); // コイン・ポーション・繁栄制約＋購入可否（非サプライ/高級市場/分割山下段を弾く）
-    // 帝国：横型イベントの購入可否（購入フェイズ・負債0・購入権あり・コインが足りる。イベントはコスト軽減を受けない）。
+    // 横型イベントの購入可否（購入フェイズ・負債0・購入権あり・コインが足りる。イベントはコスト軽減を受けない）。
+    //   冒険：1ターン1回／1ゲーム1回のイベント（施し/借入/保存/巡礼/使節団/相続）は engine の canBuyEvent が正本。
     const buyableEvent = (id) => {
       const ev = (DOM.LANDSCAPES || {})[id];
       return !!ev && interactive && t.phase === 'buy' && !state.pending &&
+        (DOM.engine.canBuyEvent ? DOM.engine.canBuyEvent(state, t.active, id) : true) &&
         (state.players[t.active].debt || 0) === 0 && t.buys > 0 && (ev.cost || 0) <= t.coins;
     };
     // 初心者モード：おすすめ購入の山を黄色枠でハイライト（購入フェーズ・自分の操作中のみ）。
@@ -1125,20 +1133,27 @@
     };
   }
 
+  // 冒険：相続＝自分のターン中、屋敷はアクション（命令）としてもプレイできる。engine と同じ述語を見る。
+  function inheritedEstate(state, id) {
+    const t = state.turn;
+    const subj = state.players[t.active];
+    return !!(DOM.engine.inheritedEstate && DOM.engine.inheritedEstate(subj, id));
+  }
   function handCardPlayable(state, id, interactive) {
     if (!interactive || state.pending) return false;
     const t = state.turn;
-    if (t.phase === 'action') return DOM.CARDS[id].types.includes('action') && t.actions > 0;
-    if (t.phase === 'buy') return DOM.CARDS[id].types.includes('treasure');
+    if (t.phase === 'action') return (DOM.CARDS[id].types.includes('action') || inheritedEstate(state, id)) && t.actions > 0;
+    // 公式：一度でも購入したら、そのターンはもう財宝を出せない（t.treasuresLocked）。
+    if (t.phase === 'buy') return DOM.CARDS[id].types.includes('treasure') && !t.treasuresLocked;
     return false;
   }
 
   function onHandTap(state, id, interactive) {
     const c = DOM.CARDS[id];
     const t = state.turn;
-    if (interactive && !state.pending && t.phase === 'action' && c.types.includes('action') && t.actions > 0) {
+    if (interactive && !state.pending && t.phase === 'action' && (c.types.includes('action') || inheritedEstate(state, id)) && t.actions > 0) {
       showSheet(id, { label: '使う', cls: 'btn-primary', on: () => dispatch({ type: 'PLAY_ACTION', card: id }) });
-    } else if (interactive && !state.pending && t.phase === 'buy' && c.types.includes('treasure')) {
+    } else if (interactive && !state.pending && t.phase === 'buy' && c.types.includes('treasure') && !t.treasuresLocked) {
       showSheet(id, { label: '財宝を出す', cls: 'btn-primary', on: () => dispatch({ type: 'PLAY_TREASURE', card: id }) });
     } else {
       showSheet(id, null);
@@ -1148,7 +1163,8 @@
     const t = state.turn;
     const cost = effCost(state, id);
     const pc = potCost(id); // 錬金術：ポーション費用（あれば）
-    const canBuy = interactive && !state.pending && t.phase === 'buy' && (state.players[t.active].debt || 0) === 0 && (state.supply[id] || 0) > 0 && t.buys > 0 && affordable(state, id) && DOM.engine.canBuyCard(state, t.active, id);
+    // 冒険：使節団（Mission）の追加ターンはカードを購入できない（イベントは買える）＝engine の拒否と揃える。
+    const canBuy = interactive && !state.pending && t.phase === 'buy' && !t.noBuyCards && (state.players[t.active].debt || 0) === 0 && (state.supply[id] || 0) > 0 && t.buys > 0 && affordable(state, id) && DOM.engine.canBuyCard(state, t.active, id);
     const label = '購入する（' + cost + 'コイン' + (pc ? '＋ポーション' + (pc > 1 ? pc : '') : '') + '）';
     if (canBuy) showSheet(id, { label, cls: 'btn-primary', on: () => dispatch({ type: 'BUY', card: id }) });
     else showSheet(id, null);
@@ -1186,7 +1202,8 @@
     }
     // 支配中は操作対象（被支配者=t.active）の手札で判定する（財宝を出すのも engine では被支配者の手札）。
     const hp = (t.possessedBy != null && t.possessedBy === viewer) ? state.players[t.active] : state.players[viewer];
-    const hasTreasure = hp.hand.some((c) => DOM.CARDS[c].types.includes('treasure'));
+    // 公式：一度でも購入（カード/イベント）したら、そのターンはもう財宝を出せない（engine が拒否する＝ボタンも無効化）。
+    const hasTreasure = hp.hand.some((c) => DOM.CARDS[c].types.includes('treasure')) && !t.treasuresLocked;
     // ギルド：財源(Coffers)を持っていれば「財源を使う」ボタン（購入フェイズ・1枚=+1コイン）。
     const cofferBtn = (t.active === viewer && (state.players[viewer].coffers || 0) > 0)
       ? h('button', { class: 'btn btn-block', style: 'background:#b8860b;color:#fff', onclick: () => { UI.coffersOpen = true; UI.amount = null; render(); } }, '💰 財源を使う（' + state.players[viewer].coffers + '）')
@@ -1548,6 +1565,84 @@
     if (pd.type === 'annex_keep') return modalMultiCards(p.discard, '併合 — 捨て札に残す（最大5枚）',
       '捨て札から最大5枚を選んで捨て札に残します（選ばなかった残りは山札に混ぜてシャッフルされます）。その後、公領1枚を獲得します。',
       (n) => '確定（' + n + '枚 残す）', 5, (cards) => dispatch({ type: 'ANNEX_KEEP', cards }));
+
+    /* ===== 冒険（Adventures）の横型イベント ===== */
+    if (pd.type === 'alms_gain') return modalGainSupply(state, '施し — 獲得', 'コスト$4以下のカード1枚を獲得します（場に財宝が無いときだけ買えたイベントです）。',
+      (id) => effCost(state, id) <= 4 && !DOM.CARDS[id].potion && !DOM.CARDS[id].debt,
+      (id) => dispatch({ type: 'ALMS_GAIN', card: id }));
+    if (pd.type === 'ball_gain') return modalGainSupply(state, '舞踏会 — 獲得（残り' + (pd.left || 1) + '枚）', 'コスト$4以下のカードを獲得します（合計2枚）。',
+      (id) => effCost(state, id) <= 4 && !DOM.CARDS[id].potion && !DOM.CARDS[id].debt,
+      (id) => dispatch({ type: 'BALL_GAIN', card: id }));
+    if (pd.type === 'seaway') return modalGainSupply(state, '海路 — 獲得', 'コスト$4以下のアクションカード1枚を獲得します。その山にあなたの +1購入トークンを置きます。',
+      (id) => effCost(state, id) <= 4 && DOM.CARDS[id].types.includes('action') && !DOM.CARDS[id].potion && !DOM.CARDS[id].debt,
+      (id) => dispatch({ type: 'SEAWAY_GAIN', card: id }));
+    if (pd.type === 'quest' && pd.stage === 'mode') {
+      // 公式：条件を満たさない選択肢も選べる（捨てるだけで金貨は出ない）。engine は忠実に受理するので、
+      //   UIでは「金貨が出ない」ことを明示して事故を防ぐ（選択肢自体は消さない＝トンネル等で捨てたい場合もあるため）。
+      const curses = p.hand.filter((c) => DOM.isType(c, 'curse')).length;
+      const atks = p.hand.filter((c) => DOM.isType(c, 'attack')).length;
+      const ng = '（金貨は得られません）';
+      return modalOptions('探索 — 何を捨てますか', 'いずれか1つを選んで「ちょうど」捨てられたら、金貨1枚を獲得できます。', [
+        { label: 'アタック1枚を捨てる' + (atks ? '' : ng), cls: atks ? 'btn-primary' : 'btn-ghost', on: () => dispatch({ type: 'QUEST_MODE', mode: 'attack' }) },
+        { label: '呪い2枚を捨てる（手札の呪い：' + curses + '枚）' + (curses >= 2 ? '' : ng), cls: curses >= 2 ? 'btn-primary' : 'btn-ghost', on: () => dispatch({ type: 'QUEST_MODE', mode: 'curses' }) },
+        { label: '手札6枚を捨てる（手札：' + p.hand.length + '枚）' + (p.hand.length >= 6 ? '' : ng), cls: p.hand.length >= 6 ? 'btn-primary' : 'btn-ghost', on: () => dispatch({ type: 'QUEST_MODE', mode: 'six' }) },
+        { label: '何もしない', cls: 'btn-ghost', on: () => dispatch({ type: 'QUEST_MODE', mode: 'skip' }) },
+      ]);
+    }
+    if (pd.type === 'quest' && pd.stage === 'attack') return modalSingleHand(p, '探索 — アタックを捨てる', '手札のアタックカード1枚を捨てます（→金貨1枚）。',
+      (id) => DOM.CARDS[id].types.includes('attack'), (card) => dispatch({ type: 'QUEST_DISCARD', cards: [card] }), null, '捨てる');
+    if (pd.type === 'quest' && pd.stage === 'six') return modalSelectN(p, '探索 — 6枚捨てる', '手札から' + Math.min(6, p.hand.length) + '枚を選んで捨てます（6枚捨てられたときだけ金貨1枚）。',
+      Math.min(6, p.hand.length), '捨てる', (cards) => dispatch({ type: 'QUEST_DISCARD', cards }));
+    if (pd.type === 'save') return modalSingleHand(p, '保存 — 脇に置く', '手札1枚を脇に置きます（このターンの終了時、次の手札を引いた後に手札へ加わります）。',
+      () => true, (card) => dispatch({ type: 'SAVE_SETASIDE', card }), null, '脇に置く');
+    if (pd.type === 'scouting_party' && pd.stage === 'discard') return modalMultiCards(pd.cards, '偵察隊 — 3枚捨てる',
+      '山札の上5枚です。3枚を選んで捨て、残りを好きな順で山札の上に戻します。', (n) => '捨てる（' + n + '/3）', 3,
+      (cards) => dispatch({ type: 'SCOUTING_DISCARD', cards }), 3);
+    if (pd.type === 'scouting_party' && pd.stage === 'order') return modalReorder('偵察隊 — 山札の上に戻す',
+      '戻す順番をタップで選びます（最初のタップが一番上）。', pd.cards, (order) => dispatch({ type: 'SCOUTING_ORDER', order }));
+    if (pd.type === 'bonfire') {
+      const coppers = p.inPlay.filter((c) => c === 'copper').length;
+      const max = Math.min(2, coppers);
+      return modalOptions('焚火 — 場の銅貨を廃棄', '場にある銅貨を最大2枚まで廃棄できます（場の銅貨：' + coppers + '枚）。',
+        [2, 1, 0].filter((n) => n <= max).map((n) => ({ label: n + '枚 廃棄する', cls: n ? 'btn-primary' : 'btn-ghost', on: () => dispatch({ type: 'BONFIRE_TRASH', count: n }) })));
+    }
+    if (pd.type === 'trade') return modalMultiHand(p, '交易 — 廃棄（最大2枚）',
+      '手札から2枚まで廃棄します。廃棄した枚数だけ銀貨を獲得します。0枚でもOK。',
+      (n) => '確定（' + n + '枚 廃棄）', true, (cards) => dispatch({ type: 'TRADE_TRASH', cards }), 2);
+    if (pd.type === 'pilgrimage') {
+      const choices = DOM.engine.pilgrimageChoices(state, pd.player) || [];
+      return modalMultiCards(choices, '巡礼 — コピーを獲得（最大3枚）',
+        '場にある「名前の異なるカード」を最大3枚選び、それぞれのコピーを1枚ずつ獲得します。',
+        (n) => '獲得する（' + n + '枚）', 3, (cards) => dispatch({ type: 'PILGRIMAGE_GAIN', cards }));
+    }
+    if (pd.type === 'event_token') {
+      const LABEL = { action: '+1アクション', coin: '+$1', card: '+1カード', cost: '-$2コスト', trash: '廃棄' };
+      const DESC = {
+        action: 'その山のカードをプレイするたび、まず +1アクション を得ます。',
+        coin: 'その山のカードをプレイするたび、まず +$1 を得ます。',
+        card: 'その山のカードをプレイするたび、まず +1カード を引きます。',
+        cost: 'あなたのターン中、その山のカードのコストが $2 安くなります。',
+        trash: 'その山からカードを獲得したとき、手札1枚を廃棄してもよくなります。',
+      };
+      const piles = DOM.engine.actionSupplyPiles(state) || [];
+      return modalPickList(state, LABEL[pd.token] + 'トークン — 置く山を選ぶ', DESC[pd.token], piles, '置く',
+        (id) => dispatch({ type: 'EVENT_TOKEN_PILE', pile: id }));
+    }
+    if (pd.type === 'plan_trash') return modalSingleHand(p, '立案 — 廃棄（任意）',
+      '廃棄トークンを置いた山からカードを獲得しました。手札1枚を廃棄できます（しなくてもよい）。', () => true,
+      (card) => dispatch({ type: 'PLAN_TRASH', card }),
+      { label: '廃棄しない', on: () => dispatch({ type: 'PLAN_TRASH', card: null }) }, '廃棄する');
+    if (pd.type === 'travelling_fair') return modalOptions('移動遊園地 — 山札の上に置く？',
+      '獲得した「' + (DOM.CARDS[pd.card] ? DOM.CARDS[pd.card].name : pd.card) + '」を山札の上に置けます。', [
+      { label: '山札の上に置く', cls: 'btn-primary', on: () => dispatch({ type: 'TRAVELLING_FAIR_TOPDECK', topdeck: true }) },
+      { label: 'そのまま（捨て札）', cls: 'btn-ghost', on: () => dispatch({ type: 'TRAVELLING_FAIR_TOPDECK', topdeck: false }) },
+    ]);
+    if (pd.type === 'inheritance') {
+      const targets = DOM.engine.inheritanceTargets(state) || [];
+      return modalPickList(state, '相続 — 脇に置くカードを選ぶ',
+        'サプライから、命令でないコスト$4以下のアクションカード1枚を脇に置き、屋敷トークンを載せます（以後、あなたのターン中は屋敷がこのカードを使用するアクションになります）。',
+        targets, '脇に置く', (id) => dispatch({ type: 'INHERITANCE_SET', card: id }));
+    }
     if (pd.type === 'church') return modalMultiHand(p, '教会 — 脇に置く',
       '手札から最大3枚を裏向きで脇に置きます（次のあなたのターン開始時に手札へ戻り、その後1枚廃棄できます）。0枚でもOK。',
       (n) => '確定（' + n + '枚 置く）', true, (cards) => dispatch({ type: 'CHURCH_SETASIDE', cards }), 3);
@@ -1635,7 +1730,10 @@
     if (pd.type === 'soldier' && pd.stage === 'discard') return modalSingleHand(p, '兵士 — 手札を1枚捨てる', '手札からカード1枚を選んで捨てます。', () => true, (card) => dispatch({ type: 'SOLDIER_DISCARD', card }), null, '捨てる');
     if (pd.type === 'hero_gain') return modalGainSupply(state, 'ヒーロー — 財宝を獲得', '財宝カード1枚を獲得します。', (id) => DOM.isType(id, 'treasure'), (id) => dispatch({ type: 'HERO_GAIN', card: id }));
     if (pd.type === 'fugitive_discard') return modalSingleHand(p, '脱走兵 — 手札を1枚捨てる', '手札からカード1枚を選んで捨てます。', () => true, (card) => dispatch({ type: 'FUGITIVE_DISCARD', card }), null, '捨てる');
-    if (pd.type === 'disciple_play') return modalSingleHand(p, '門下生 — 2回使うアクションを選ぶ', '手札のアクション1枚を選ぶと、それを2回使い、同じカード1枚を獲得します。', (id) => DOM.isType(id, 'action'), (card) => dispatch({ type: 'DISCIPLE_PLAY', card }), { label: '使わない', on: () => dispatch({ type: 'DISCIPLE_PLAY', card: null }) }, '2回使う');
+    // 冒険：相続した屋敷もアクション（命令）＝門下生の対象にできる（engine と同じ述語 inheritedEstate を見る）。
+    if (pd.type === 'disciple_play') return modalSingleHand(p, '門下生 — 2回使うアクションを選ぶ', '手札のアクション1枚を選ぶと、それを2回使い、同じカード1枚を獲得します。',
+      (id) => DOM.isType(id, 'action') || (DOM.engine.inheritedEstate && DOM.engine.inheritedEstate(p, id)),
+      (card) => dispatch({ type: 'DISCIPLE_PLAY', card }), { label: '使わない', on: () => dispatch({ type: 'DISCIPLE_PLAY', card: null }) }, '2回使う');
     if (pd.type === 'teacher_call' && pd.stage === 'token') {
       const TL = { card: '+1 カード', action: '+1 アクション', buy: '+1 購入', coin: '+1 コイン' };
       const tk = p.pileTokens || {};
@@ -2139,7 +2237,8 @@
         onclick: () => onConfirm(UI.selection.map((i) => p.hand[i])) }, confirmLabel(n)));
   }
   // 任意のカード配列（手札に限らない・併合の捨て札など）から最大 maxN 枚を選ぶ。onConfirm には選んだカードid配列を渡す。
-  function modalMultiCards(cards, title, desc, confirmLabel, maxN, onConfirm) {
+  //   requireN を渡すと「ちょうどその枚数」でないと確定できない（偵察隊＝3枚ちょうど捨てる）。
+  function modalMultiCards(cards, title, desc, confirmLabel, maxN, onConfirm, requireN) {
     const chips = cards.map((id, idx) =>
       cardEl(id, {
         size: 'sm',
@@ -2153,6 +2252,7 @@
     const body = chips.length ? chips : [h('p', { class: 'muted' }, 'カードがありません')];
     return modalShell(title, desc, body,
       h('button', { class: 'btn btn-primary btn-block',
+        disabled: (requireN != null && UI.selection.length !== requireN) ? 'disabled' : null,
         onclick: () => onConfirm(UI.selection.map((i) => cards[i])) }, confirmLabel(UI.selection.length)));
   }
   function modalMilitia(p, need, hasMoat, hasSecret, hasDiplomat) {
@@ -2287,9 +2387,10 @@
     const hasTreasure = p.hand.some((c) => DOM.CARDS[c].types.includes('treasure'));
     const coins = state.turn.coins;
     const inDebt = (p.debt || 0) > 0; // 帝国：負債があると闇市場でも購入不可
+    const noBuy = !!state.turn.noBuyCards; // 冒険：使節団の追加ターンはカードを購入できない（闇市場の購入も購入）
     const chips = pd.revealed.length ? pd.revealed.map((id) => {
       const cst = effCost(state, id);
-      const can = cst <= coins && !inDebt;
+      const can = cst <= coins && !inDebt && !noBuy;
       return h('div', { class: 'pick-supply' },
         cardEl(id, { size: 'sm', extra: can ? 'selectable' : 'disabled', onClick: can ? () => openPickZoom(id, '購入する（$' + cst + '）', () => dispatch({ type: 'BLACK_MARKET_BUY', card: id })) : null }),
         h('div', { class: 'pick-remain' }, '$' + cst));
@@ -2297,7 +2398,10 @@
     const footer = h('div', null,
       hasTreasure ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'BLACK_MARKET_PLAY_TREASURES' }) }, '💰 手札の財宝を全て出す') : null,
       h('button', { class: 'btn btn-block', onclick: () => dispatch({ type: 'BLACK_MARKET_SKIP' }) }, '買わずに進む'));
-    return modalShell('闇市場（所持 ' + coins + ' コイン）', inDebt ? '負債があるため購入できません（買わずに進んでください）。' : '財宝を出してから、公開3枚のうち1枚を購入できます（任意・1枚まで）。', chips, footer);
+    return modalShell('闇市場（所持 ' + coins + ' コイン）',
+      inDebt ? '負債があるため購入できません（買わずに進んでください）。'
+        : noBuy ? '使節団の追加ターンなので、カードは購入できません（買わずに進んでください）。'
+          : '財宝を出してから、公開3枚のうち1枚を購入できます（任意・1枚まで）。', chips, footer);
   }
   // 手札からちょうど n 枚を選んで廃棄
   function modalTrashHand(p, title, desc, n, onConfirm) {

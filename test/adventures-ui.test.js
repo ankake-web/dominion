@@ -116,6 +116,88 @@ try {
     showAs(s, 0);
     ok(byText('button', '隊商の護衛') != null && !runtimeError, '民兵の embedded 反応窓に隊商の護衛ボタンが出る');
   }
+
+  /* ===================== 冒険：横型イベント（買う横型・20種） ===================== */
+  console.log('=== 冒険イベント：盤面のイベント帯と購入ボタン ===');
+  {
+    const s = E.createInitialState(['あなた', '相手'], K.slice(), { startActive: 0, events: ['alms', 'inheritance'] });
+    s.turn.phase = 'buy'; s.turn.coins = 7; s.turn.buys = 1;
+    showAs(s, 0);
+    ok(!runtimeError && doc.body.textContent.includes(DOM.LANDSCAPES.alms.name), '盤面にイベント帯（施し）が出る');
+    ok(doc.body.textContent.includes(DOM.LANDSCAPES.inheritance.name), '盤面にイベント帯（相続）が出る');
+    const buyBtns = $all('button').filter((b) => b.textContent === '買う');
+    ok(buyBtns.length === 2 && !buyBtns[0].disabled, 'イベントの購入ボタンが出る（$7で相続も買える）');
+  }
+  console.log('=== 冒険イベント：1ターン1回の制限がUIに反映される ===');
+  {
+    const s = E.createInitialState(['あなた', '相手'], K.slice(), { startActive: 0, events: ['alms', 'borrow'] });
+    s.turn.phase = 'buy'; s.turn.coins = 5; s.turn.buys = 2;
+    s.turn.eventsBought = ['alms']; // 施しは購入済み
+    showAs(s, 0);
+    const btns = $all('button').filter((b) => b.textContent === '買う');
+    ok(btns.length === 2 && btns[0].disabled && !btns[1].disabled, '施しは購入済み＝ボタンが無効（借入は買える）');
+  }
+  console.log('=== 冒険イベント：使節団の追加ターンではカードを買えない ===');
+  {
+    const s = E.createInitialState(['あなた', '相手'], K.slice(), { startActive: 0, events: ['delve'] });
+    s.turn.phase = 'buy'; s.turn.coins = 8; s.turn.buys = 1; s.turn.noBuyCards = true;
+    showAs(s, 0);
+    ok(!runtimeError && $all('.pile.buyable').length === 0, '使節団の追加ターン：どの山も購入ボタンが出ない');
+  }
+  console.log('=== 冒険イベント：購入後は「財宝を全部出す」が無効 ===');
+  {
+    const s = mk(); s.turn.phase = 'buy'; s.turn.treasuresLocked = true;
+    s.players[0].hand = ['copper', 'silver'];
+    showAs(s, 0);
+    const tb = byText('button', '財宝を全部出す');
+    ok(tb != null && tb.disabled, '購入後は財宝ボタンが無効（公式ルール）');
+    const coinTile = $all('.card').find((el) => el.textContent.includes(DOM.CARDS.silver.name) && !el.className.includes('pile'));
+    ok(coinTile != null && coinTile.className.includes('dim'), '購入後は手札の財宝も光らない（dim）');
+  }
+  console.log('=== 冒険イベント：相続の屋敷がアクションとして光る ===');
+  {
+    const s = mk(); s.turn.phase = 'action'; s.turn.actions = 1;
+    s.players[0].inherited = ['ranger'];
+    s.players[0].hand = ['estate', 'copper'];
+    showAs(s, 0);
+    const estTile = $all('.card').find((el) => el.textContent.includes(DOM.CARDS.estate.name) && !el.className.includes('pile'));
+    ok(!runtimeError && estTile != null && !estTile.className.includes('dim'), '相続後：手札の屋敷がアクションとしてプレイ可能（dimでない）');
+  }
+  console.log('=== 冒険イベント：全pendingモーダルが描画できる ===');
+  {
+    const pcases = [
+      ['alms_gain', { type: 'alms_gain', player: 0 }, null],
+      ['ball_gain', { type: 'ball_gain', player: 0, left: 2 }, null],
+      ['seaway', { type: 'seaway', player: 0 }, null],
+      ['quest mode', { type: 'quest', stage: 'mode', player: 0 }, (s) => { s.players[0].hand = ['curse', 'curse', 'militia']; }],
+      ['quest attack', { type: 'quest', stage: 'attack', player: 0 }, (s) => { s.players[0].hand = ['militia', 'copper']; }],
+      ['quest six', { type: 'quest', stage: 'six', player: 0 }, (s) => { s.players[0].hand = ['copper', 'copper', 'estate', 'silver', 'gold', 'curse']; }],
+      ['save', { type: 'save', player: 0 }, null],
+      ['scouting discard', { type: 'scouting_party', stage: 'discard', player: 0, cards: ['copper', 'estate', 'silver', 'gold', 'curse'] }, null],
+      ['scouting order', { type: 'scouting_party', stage: 'order', player: 0, cards: ['gold', 'silver'] }, null],
+      ['bonfire', { type: 'bonfire', player: 0 }, (s) => { s.players[0].inPlay = ['copper', 'copper']; }],
+      ['trade', { type: 'trade', player: 0 }, null],
+      ['pilgrimage', { type: 'pilgrimage', player: 0 }, (s) => { s.players[0].inPlay = ['ranger', 'guide']; }],
+      ['event_token action', { type: 'event_token', token: 'action', player: 0 }, null],
+      ['event_token cost', { type: 'event_token', token: 'cost', player: 0 }, null],
+      ['event_token trash', { type: 'event_token', token: 'trash', player: 0 }, null],
+      ['plan_trash', { type: 'plan_trash', player: 0 }, null],
+      ['travelling_fair', { type: 'travelling_fair', player: 0, card: 'silver', dest: 'discard' }, null],
+      ['inheritance', { type: 'inheritance', player: 0 }, null],
+    ];
+    for (const [name, pd, setup] of pcases) {
+      showPend(pd, setup);
+      ok(modalOk(), name + ' のモーダルがエラー無く描画');
+    }
+  }
+  console.log('=== 冒険イベント：セット選択に adventures-events が出る ===');
+  {
+    runtimeError = null;
+    UI.view = 'setup'; UI.setup = Object.assign({}, UI.setup, { kingdomSet: 'adventures-events' });
+    DOM.render();
+    ok(!runtimeError && doc.body.textContent.includes('冒険＋イベント'), 'セット選択に「冒険＋イベント」が出る');
+    UI.view = 'game';
+  }
 } catch (e) {
   fail++; console.log('  ✗ 例外: ' + (e && e.stack || e));
 }

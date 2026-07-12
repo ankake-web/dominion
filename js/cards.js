@@ -902,6 +902,8 @@
     //   王国内容の一致で自動判定＝opts不要。random-darkages は避難所OFF）。
     { id: 'darkages',        kind: 'standard', name: '暗黒時代セット', desc: '廃墟・騎士の混合山・避難所・廃棄で得', kingdom: DOM.KINGDOM_DARKAGES },
     { id: 'adventures',      kind: 'standard', name: '冒険セット', desc: 'トラベラー・酒場マット・各種トークン', kingdom: DOM.KINGDOM_ADVENTURES },
+    // 冒険＋イベント（横型）。固定10王国に、冒険イベント20種から2枚を無作為に付ける（購入フェイズに買う横型・トークン中心）。
+    { id: 'adventures-events', kind: 'standard', name: '冒険＋イベント', desc: '冒険10種＋イベント2枚（旅/山トークン・追加ターン・相続）', kingdom: DOM.KINGDOM_ADVENTURES, eventsFrom: 'adventures' },
     // 帝国セット（固定10種）。分割山（開拓者/騒がしい村・投石機/石）と城の混合山は createInitialState が
     //   下段/山の中身を自動で用意する（王国枠は1山ぶん）。
     { id: 'empires',         kind: 'standard', name: '帝国セット', desc: '負債・山上の勝利点・分割山・城・命令', kingdom: DOM.KINGDOM_EMPIRES },
@@ -994,10 +996,16 @@
     if (set && set.landmarksFrom === 'empires') return DOM.pickLandmarks(2, DOM.LANDMARKS_EMPIRES || []);
     return [];
   };
-  // セットID → 使用するイベントid列（横型・0〜2枚）。eventsFrom を持つセットのみ抽選する（pickLandmarks は汎用シャッフル選択）。
+  // セットID → 使用するイベントid列（横型・0〜2枚）。eventsFrom（拡張id）を持つセットのみ抽選する
+  //   （pickLandmarks は汎用シャッフル選択）。新しい拡張のイベントを足すときは EVENTS_* を1行足すだけでよい。
+  DOM.eventPoolFor = function (expansion) {
+    if (expansion === 'empires') return DOM.EVENTS_EMPIRES || [];
+    if (expansion === 'adventures') return DOM.EVENTS_ADVENTURES || [];
+    return [];
+  };
   DOM.eventsForSet = function (setId) {
     const set = DOM.CARD_SETS.find((s) => s.id === setId);
-    if (set && set.eventsFrom === 'empires') return DOM.pickLandmarks(2, DOM.EVENTS_EMPIRES || []);
+    if (set && set.eventsFrom) return DOM.pickLandmarks(2, DOM.eventPoolFor(set.eventsFrom));
     return [];
   };
 
@@ -1093,11 +1101,56 @@
       text: '+1 勝利点。金貨1枚を獲得する。' },
     windfall: { name: '意外な授かり物', nameEn: 'Windfall', kind: 'event', expansion: 'empires', cost: 5, debt: 0,
       text: '山札と捨て札置き場が両方とも空の場合、金貨3枚を獲得する。' },
+
+    /* ---- 冒険（Adventures）イベント 20種（買う横型・負債は無し＝すべてコインのみ）。カタログ文は現行エラッタ。
+       トークン中心（旅トークン／-1カード／-$1／山トークン6種）＝帝国イベント（負債経済）と主題が異なる。 ---- */
+    alms: { name: '施し', nameEn: 'Alms', kind: 'event', expansion: 'adventures', cost: 0, debt: 0,
+      text: '1ターンに1回：場に財宝がない場合、コスト$4以下のカード1枚を獲得する。' },
+    borrow: { name: '借入', nameEn: 'Borrow', kind: 'event', expansion: 'adventures', cost: 0, debt: 0,
+      text: '＋購入1。\n1ターンに1回：あなたの-1カードトークンが山札の上になければ、それを山札の上に置き、+$1。' },
+    quest: { name: '探索', nameEn: 'Quest', kind: 'event', expansion: 'adventures', cost: 0, debt: 0,
+      text: 'アタックカード1枚、呪い2枚、または任意のカード6枚を捨て札にしてもよい。\nそうしたなら、金貨1枚を獲得する。' },
+    save: { name: '保存', nameEn: 'Save', kind: 'event', expansion: 'adventures', cost: 1, debt: 0,
+      text: '1ターンに1回：＋購入1。手札1枚を脇に置き、\nこのターンの終了時（手札を引いた後）にそれを手札に加える。' },
+    scouting_party: { name: '偵察隊', nameEn: 'Scouting Party', kind: 'event', expansion: 'adventures', cost: 2, debt: 0,
+      text: '＋購入1。山札の上から5枚を見る。そのうち3枚を捨て札にし、\n残りを好きな順番で山札の上に戻す。' },
+    travelling_fair: { name: '移動遊園地', nameEn: 'Travelling Fair', kind: 'event', expansion: 'adventures', cost: 2, debt: 0,
+      text: '＋購入2。\nこのターン、カードを獲得するたび、それを山札の上に置いてもよい。' },
+    bonfire: { name: '焚火', nameEn: 'Bonfire', kind: 'event', expansion: 'adventures', cost: 3, debt: 0,
+      text: '場にある銅貨を2枚まで廃棄する。' },
+    expedition: { name: '探検', nameEn: 'Expedition', kind: 'event', expansion: 'adventures', cost: 3, debt: 0,
+      text: '次の手札を引くとき、追加で2枚引く。' },
+    ferry: { name: '渡し船', nameEn: 'Ferry', kind: 'event', expansion: 'adventures', cost: 3, debt: 0,
+      text: 'あなたの-$2コストトークンを、アクションのサプライ山1つに移す。\n（あなたのターン中、その山のカードのコストが$2安くなる。）' },
+    plan: { name: '立案', nameEn: 'Plan', kind: 'event', expansion: 'adventures', cost: 3, debt: 0,
+      text: 'あなたの廃棄トークンを、アクションのサプライ山1つに移す。\n（その山からカードを獲得したとき、手札1枚を廃棄してもよい。）' },
+    mission: { name: '使節団', nameEn: 'Mission', kind: 'event', expansion: 'adventures', cost: 4, debt: 0,
+      text: 'このターンの後に追加のターンを1回行う（3ターン連続にはできない）。\nその追加ターン中はカードを購入できない。' },
+    pilgrimage: { name: '巡礼', nameEn: 'Pilgrimage', kind: 'event', expansion: 'adventures', cost: 4, debt: 0,
+      text: '1ターンに1回：あなたの旅トークンを裏返す（開始時は表向き）。\nそれが表向きになったなら、場にある名前の異なるカードを3枚まで選び、\nそれぞれのコピーを1枚ずつ獲得する。' },
+    ball: { name: '舞踏会', nameEn: 'Ball', kind: 'event', expansion: 'adventures', cost: 5, debt: 0,
+      text: 'あなたの-$1トークンを受け取る。コスト$4以下のカードを2枚獲得する。' },
+    raid: { name: '奇襲', nameEn: 'Raid', kind: 'event', expansion: 'adventures', cost: 5, debt: 0,
+      text: '場にある銀貨1枚につき、銀貨1枚を獲得する。\n他のプレイヤーは全員、自分の-1カードトークンを山札の上に置く。' },
+    seaway: { name: '海路', nameEn: 'Seaway', kind: 'event', expansion: 'adventures', cost: 5, debt: 0,
+      text: 'コスト$4以下のアクションカード1枚を獲得する。\nあなたの+1購入トークンを、その山に移す。' },
+    trade: { name: '交易', nameEn: 'Trade', kind: 'event', expansion: 'adventures', cost: 5, debt: 0,
+      text: '手札を2枚まで廃棄する。廃棄した枚数だけ、銀貨を獲得する。' },
+    lost_arts: { name: '失われた技術', nameEn: 'Lost Arts', kind: 'event', expansion: 'adventures', cost: 6, debt: 0,
+      text: 'あなたの+1アクショントークンを、アクションのサプライ山1つに移す。\n（その山のカードをプレイするたび、まず +1アクション。）' },
+    training: { name: '鍛錬', nameEn: 'Training', kind: 'event', expansion: 'adventures', cost: 6, debt: 0,
+      text: 'あなたの+$1トークンを、アクションのサプライ山1つに移す。\n（その山のカードをプレイするたび、まず +$1。）' },
+    inheritance: { name: '相続', nameEn: 'Inheritance', kind: 'event', expansion: 'adventures', cost: 7, debt: 0,
+      text: 'ゲーム中に1回：サプライから、命令でないコスト$4以下のアクションカード1枚を脇に置き、\nあなたの屋敷トークンをその上に置く。\n（あなたのターン中、あなたの屋敷は「屋敷トークンの置かれたカードを、\nそこに置いたまま使用する」能力を持つ命令アクションにもなる。）' },
+    pathfinding: { name: '誘導', nameEn: 'Pathfinding', kind: 'event', expansion: 'adventures', cost: 8, debt: 0,
+      text: 'あなたの+1カードトークンを、アクションのサプライ山1つに移す。\n（その山のカードをプレイするたび、まず +1カード。）' },
   };
   // 帝国ランドマーク21種（抽選元）。イベントは未実装（docs/research/landscape_cards.md §2 にデータあり）。
   DOM.LANDMARKS_EMPIRES = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'landmark');
   // 帝国イベント13種（抽選元）。買う横型＝BUY_EVENT で発火。
   DOM.EVENTS_EMPIRES = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'event' && DOM.LANDSCAPES[id].expansion === 'empires');
+  // 冒険イベント20種（抽選元）。負債は無し＝コインのみ。トークン中心。
+  DOM.EVENTS_ADVENTURES = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'event' && DOM.LANDSCAPES[id].expansion === 'adventures');
   // 「準備で山に勝利点トークンを置く」集合(Gathering)カード＝汚された神殿はこの山には置かない。
   DOM.GATHERING_CARDS = ['temple', 'farmers_market', 'wild_hunt'];
 

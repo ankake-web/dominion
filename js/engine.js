@@ -103,6 +103,10 @@
       const highways = (active.inPlay || []).filter((x) => x === 'highway').length;
       if (highways) base -= highways;
     }
+    // 冒険：渡し船（Ferry）の -$2 コストトークン＝手番プレイヤーが自分のトークンを置いた山だけ$2安い
+    //   （「あらゆる用途」に効く＝購入・改築等のコスト判定すべて。$0未満にはならない。他人の手番では効かない）。
+    //   山キーは pileKeyOf で正規化する（分割山は1山＝上段キー。下段カードも同じ山なのでトークンが効く）。
+    if (active && active.pileTokens && active.pileTokens.cost === pileKeyOf(state, id)) base -= 2;
     const red = (t && t.costReduction) || 0;
     return Math.max(0, base - red);
   }
@@ -120,7 +124,17 @@
   //   コインは$0未満にならない（未消化ぶんは残るが毎ターン freshTurn でリセット）。
   function applyCoinPenalty(state) {
     const t = state.turn;
-    if (!t || !(t.coinPenalty > 0)) return;
+    if (!t) return;
+    // 冒険：舞踏会（Ball）＝自分の購入フェイズ中に -$1トークンを受け取ることがある。END_ACTION_PHASE の変換は
+    //   もう済んでいるので、ここで「購入フェイズ中に持っている -$1トークン」を食い込み分へ変換する
+    //   （公式＝「次にコインを得るとき$1少なくなる」。この関数はコインが増えた直後に呼ばれる）。
+    //   ※このターンにもうコインを得なければ変換されず、トークンは次のターンへ持ち越す（＝空振りしない）。
+    const me = state.players && state.players[t.active];
+    if (me && me.minusCoin && t.phase === 'buy' && t.coins > 0) {
+      t.coinPenalty = (t.coinPenalty || 0) + 1; me.minusCoin = false;
+      log(state, `${me.name} は -$1トークンを支払う（得たコインから $1）。`);
+    }
+    if (!(t.coinPenalty > 0)) return;
     const pay = Math.min(t.coinPenalty, t.coins);
     t.coins -= pay; t.coinPenalty -= pay;
   }
@@ -370,6 +384,13 @@
       actionsPlayed: 0, copperBonus: 0, merchants: 0, silverPlayed: false, buysMade: 0,
       coinPenalty: 0, // 冒険：-$1トークンの未消化ぶん（購入フェイズで最初に得る$1に食い込む。毎ターンリセット）
       afterActionCard: null, // 冒険：直前にプレイし解決したアクション（法貨/御料車の呼び出し窓の対象）
+      // 冒険：横型イベント用のターン状態。
+      eventsBought: [],   // このターンに購入したイベントid列（施し/借入/保存/巡礼＝1ターン1回の判定）
+      extraDraw: 0,       // 探検（Expedition）＝このターンの片付けで引く枚数の追加ぶん（累積・前哨地の3枚にも加算）
+      travellingFair: false, // 移動遊園地＝このターン、獲得したカードを山札の上に置いてよい
+      savedCard: null,    // 保存（Save）＝脇に置いた1枚（片付けで次の手札を引いた「後」に手札へ戻す）
+      noBuyCards: !!extra.noBuyCards, // 使節団（Mission）の追加ターン＝カードを購入できない（イベントは買える）
+      treasuresLocked: false, // 公式：一度でも購入（カード/イベント/闇市場）したら、そのターンはもう財宝を出せない
 
       gainedThisTurn: [], outpostUsed: false, isExtraTurn: !!isExtraTurn, startQueue: null,
       corsairTrashed: false, // 私掠船：このターンに最初の銀/金を廃棄済みか（被害者ごと）
@@ -428,7 +449,11 @@
         debt: 0,           // 帝国：負債（Debt）トークン。負債があるとカードを購入できない。購入フェイズに$1=1個返済。公開・VPには数えない（ターンを跨いで残る＝freshTurn非対象）。
         princes: [],       // プロモ：王子の脇に置いたカードid列（公開）。毎ターン開始時に脇のままプレイ。1要素=王子1枚が稼働中。
         tavern: [],        // 冒険：酒場マット（Reserve カードと守銭奴の銅貨。公開＝islandMat型。呼び出しで場へ戻す）。
-        pileTokens: {},    // 冒険：教師の山トークン（{card|action|buy|coin: 山id}。各山1つまで・公開。その山のカードをプレイ時にボーナス）。
+        pileTokens: {},    // 冒険：山トークン（{card|action|buy|coin|cost|trash: 山id}・公開。各種別1個ずつ・置き直し可）。
+                           //   +1系4種（教師／失われた技術・鍛錬・誘導・海路）＝その山のカードをプレイ時にボーナス（applyPileTokens）。
+                           //   cost＝渡し船の-$2コストトークン（自分のターン中その山が$2安い＝cardCost）。trash＝立案の廃棄トークン。
+        inherited: [],     // 冒険：相続（Inheritance）で脇に置いたカード（＝屋敷トークンを載せたカード。公開・1枚だけ）。
+                           //   「獲得」ではないが、得点計算では自分のデッキに数える（公式）＝allCards に入れる。
         stashPlacement: 'top', // プロモ：へそくり(Stash)のシャッフル時配置方針 'top'|'mix'|'bottom'（本人がいつでも変更可）。
         // 冒険：トークン（すべて公開情報・スカラー＝maskStateFor でそのまま残る・JSONセーフ）。
         journeyDown: false, // 旅トークンの向き（false=表向き／true=裏向き。山守/巨人が共有＝プレイのたびに裏返す）。
@@ -1254,31 +1279,40 @@
       log(state, `${p.name} の「${C()[cardId].name}」は動かないので酒場マットに置かれない。`);
     }
   }
-  const TOKEN_LABEL = { card: 'カード', action: 'アクション', buy: '購入', coin: 'コイン' };
-  // 冒険：教師の山トークン＝プレイしたカードの山に自分のトークンがあれば、まずそのボーナスを得る。
+  const TOKEN_LABEL = { card: 'カード', action: 'アクション', buy: '購入', coin: 'コイン', cost: '-$2コスト', trash: '廃棄' };
+  // +1系の山トークン（プレイ時ボーナス）＝教師／失われた技術・鍛錬・誘導・海路。
+  //   cost（渡し船）・trash（立案）は「プレイ時ボーナス」ではない別トークンなのでここでは扱わない。
+  const BONUS_TOKENS = ['card', 'action', 'buy', 'coin'];
+  // 冒険：山トークン＝プレイしたカードの山に自分の+1系トークンがあれば、まずそのボーナスを得る
+  //   （カード自身の効果解決より前・1回のプレイにつき1回＝玉座で2回プレイすれば2回発火）。
   function applyPileTokens(state, pi, card) {
     const p = state.players[pi], toks = p.pileTokens || {}, t = state.turn;
-    Object.keys(toks).forEach((tk) => {
-      if (toks[tk] !== card) return;
+    const key = pileKeyOf(state, card); // 分割山は1山＝上段キーで一元管理（下段のカードをプレイしても発火する）
+    BONUS_TOKENS.forEach((tk) => {
+      if (toks[tk] !== key) return;
       if (tk === 'card') draw(state, pi, 1);
       else if (tk === 'action') t.actions += 1;
       else if (tk === 'buy') t.buys += 1;
-      else if (tk === 'coin') t.coins += 1;
-      log(state, `${p.name} は教師トークンで +1${TOKEN_LABEL[tk]}（${C()[card].name}）。`);
+      else if (tk === 'coin') { t.coins += 1; applyCoinPenalty(state); }
+      log(state, `${p.name} は山トークンで +1${TOKEN_LABEL[tk]}（${C()[card].name}）。`);
     });
   }
   // ターン開始時に呼び出せる Reserve（案内人/鼠取り/変容／教師）。
   const TAVERN_START_CALLS = ['guide', 'ratcatcher', 'transmogrify', 'teacher'];
   // 冒険：教師の置き先＝「自分のトークンが無いアクションのサプライ山」。
   //   非サプライ/騎士/分割山下段/勝利点専用等を除く。トークンは公開情報（各山1つまで）。
-  function validTeacherPiles(state, pi) {
-    const p = state.players[pi];
-    const mine = new Set(Object.values(p.pileTokens || {})); // 自分のトークンが既に乗っている山
-    // 公式：山が空でも「アクションのサプライ山」であればトークンを置ける（自分のデッキに残るコピーをプレイするとボーナス）。
-    //   ＝残枚数は問わない（Object.keys で存在するサプライ山キーのみを対象にする）。
+  //   ※ 山が空でも「アクションのサプライ山」ならトークンを置ける（公式）＝残枚数は問わない。
+  //   ※ 分割山は1山＝**上段キーだけ**を候補にする（下段キーに置くと READ 側の pileKeyOf 正規化と食い違い、
+  //      トークンが孤児化して永久に発火しない＝帝国の徴税で踏んだのと同型の事故）。
+  function actionSupplyPiles(state) {
     return Object.keys(state.supply).filter((id) =>
       state.supply[id] != null && !NON_SUPPLY.has(id) && C()[id] && DOM.isType(id, 'action') &&
-      !mine.has(id) && id !== 'knights' && !splitLocked(state, id));
+      id !== 'knights' && !SPLIT_TOP[id] && !splitLocked(state, id));
+  }
+  function validTeacherPiles(state, pi) {
+    const p = state.players[pi];
+    const mine = new Set(Object.values(p.pileTokens || {})); // 自分のトークンが既に乗っている山（教師だけの制約＝公式）
+    return actionSupplyPiles(state).filter((id) => !mine.has(id));
   }
   // 教師を呼べるか＝酒場マットにあり、置ける山が1つ以上あるとき（置き先が無ければ呼んでも無意味なので窓を開かない）。
   function teacherCallable(state, pi) {
@@ -2369,6 +2403,9 @@
        - `as`（今まさに命令が代理でプレイしているカード）で識別する。伝令官/家臣/水晶玉のように
          applyEffect の内側で **別の本物のカード** をプレイする経路があり、そちらの「これ」は本物を指すため。
        - 後から解決する選択待ち（死の荷車／倒壊）は pending に「これを廃棄できるか」を載せて持ち回る。 */
+  // 冒険：相続＝この屋敷は（自分のターン中）アクションとしてプレイできるか（脇にカードがあるか）。
+  //   engine（PLAY_ACTION）・CPU（chooseAction）・UI（手札の再生ボタン）が同じ述語を見る。
+  function inheritedEstate(p, cardId) { return cardId === 'estate' && ((p && p.inherited) || []).length > 0; }
   function playedByCommand(state, pi, cardId) {
     const c = state._cmd;
     return !!(c && c.player === pi && c.as === cardId);
@@ -2403,6 +2440,13 @@
     const t = state.turn;
     const p = state.players[pi];
     switch (cardId) {
+      /* ===== 冒険（Adventures）：相続＝自分のターン中、屋敷は「脇のカードを動かさずに使用する」命令アクション ===== */
+      //   applyEffect に置くことで PLAY_ACTION だけでなく 玉座/王の宮廷/行進/御料車 の再演でも同じ挙動になる。
+      case 'estate': {
+        const inh = (p.inherited || [])[0];
+        if (inh) { log(state, `${p.name} は相続の屋敷で「${C()[inh].name}」を使用する（脇に置いたまま）。`); playAsCommand(state, pi, 'estate', inh); }
+        break;
+      }
       /* ===== 帝国（Empires）Batch E1：負債（Debt）カード ===== */
       case 'engineer':
         // コスト4以下を1枚獲得（強制）。その後これを廃棄してよく、廃棄したらもう1枚コスト4以下を獲得（強制）。
@@ -4196,8 +4240,9 @@
         if (p.hand.length > 0) state.pending = { type: 'fugitive_discard', player: pi };
         break;
       // 門下生：手札のアクションカード1枚を2度使用してよい。それと同じカード1枚を獲得する。
+      //   冒険：相続した屋敷もアクション（命令）＝対象になる（公式）。
       case 'disciple':
-        if (p.hand.some((c) => DOM.isType(c, 'action'))) state.pending = { type: 'disciple_play', player: pi };
+        if (p.hand.some((c) => DOM.isType(c, 'action') || inheritedEstate(p, c))) state.pending = { type: 'disciple_play', player: pi };
         break;
       // 教師（Reserve）：効果なし → 酒場マットへ。ターン開始時に呼び出してトークンをアクション山に置く。
       case 'teacher':
@@ -4238,6 +4283,7 @@
     return [].concat(p.deck, p.hand, p.discard, p.inPlay,
       p.durationCards || [], p.setAside || [], p.islandMat || [], p.nativeVillageMat || [],
       p.princes || [], p.tavern || [], // 冒険：酒場マット（Reserve/守銭奴の銅貨。公開・所有カードに数える）
+      p.inherited || [],  // 冒険：相続の脇置き（獲得ではないが「得点計算時は自分のデッキに含める」＝公式）
       ...((p.archives || []).map((a) => a.cards || []))); // 帝国：資料庫の脇置き（所有カード＝VPに数える）
   }
   function vpOf(p) {
@@ -4759,6 +4805,18 @@
         state.mountainPassArmed = { gainer: pIndex };
       }
     }
+    /* ===== 冒険：立案（Plan）の廃棄トークン＝そのトークンを置いた山からカードを獲得したとき、手札1枚を廃棄してよい =====
+       2022エラッタで「購入したとき」→「獲得したとき」に変更。トークンの持ち主が獲得したかどうかだけで判定する
+       （相手のターン中の獲得でも発火する／購入以外の獲得＝工房等でも発火する）。分割山の下段は上段キーに正規化。 */
+    if (gp.pileTokens && gp.pileTokens.trash && gp.hand.length > 0 && gp.pileTokens.trash === pileKeyOf(state, cardId)) {
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'plan_trash', player: pIndex });
+    }
+    /* ===== 冒険：移動遊園地＝このターン、獲得したカードを山札の上に置いてよい（獲得のたびに任意）=====
+       gainer の pending 中の獲得（工房/改築等）でも取りこぼさないよう onGainQueue に積む（城の on-gain 対話と同型）。
+       既に山札の上に置かれた獲得（dest==='deck'）は対象外。 */
+    if (state.turn && state.turn.travellingFair && pIndex === state.turn.active && dest !== 'deck') {
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'travelling_fair', player: pIndex, card: cardId, dest: dest || 'discard' });
+    }
     state._gainDepth--;
   }
   /* ---------- 異郷：捨て札にしたとき／廃棄したときのフック ---------- */
@@ -5008,8 +5066,18 @@
     // 前哨地：このプレイヤーの追加ターンか（手札3枚で同一プレイヤー続行）。
     const extra = !!p.outpostExtra;
     p.outpostExtra = false;
+    // 冒険：使節団＝追加ターン（手札は通常5枚だが、そのターンはカードを購入できない）。
+    //   前哨地と同時に立った場合は前哨地を優先し、使節団ぶんは不発（＝3連続ターンにはできない・公式）。
+    const missionExtra = !!p.missionExtra && !extra;
+    p.missionExtra = false;
     // 冒険：-1カードトークン（遺物）は draw() 内で「次のドロー」に効く（この先引きが次のドローなら1枚減）。
-    draw(state, pi, extra ? 3 : 5);
+    //   冒険：探検（Expedition）＝このターンに買ったぶんだけ追加で引く（累積・前哨地の3枚にも加算）。
+    draw(state, pi, (extra ? 3 : 5) + (state.turn.extraDraw || 0));
+    // 冒険：保存（Save）＝脇に置いた1枚を「次の手札を引いた後」に手札へ加える（＝この片付けの中で戻す）。
+    if (state.turn.savedCard) {
+      const sv = state.turn.savedCard;
+      if (removeOne(p.setAside, sv)) { p.hand.push(sv); log(state, `${p.name} は保存で脇に置いた1枚を手札に加えた。`); }
+    }
     p.turns += 1;
 
     if (isGameOver(state)) {
@@ -5021,19 +5089,23 @@
     // 次の手番を決める：1)前哨地=同一プレイヤー 2)支配などの追加ターン待ち行列 3)通常=rotationSeatの次。
     const n = state.players.length;
     const anchor = state.turn.rotationSeat != null ? state.turn.rotationSeat : pi;
-    let next, isExtra = false, possessedBy = null, rotationSeat;
+    let next, isExtra = false, possessedBy = null, rotationSeat, noBuyCards = false;
     if (extra) {
       next = pi; isExtra = true; rotationSeat = anchor;
+    } else if (missionExtra) {
+      next = pi; isExtra = true; rotationSeat = anchor; noBuyCards = true; // 冒険：使節団の追加ターン（カード購入不可・イベントは可）
     } else if (state.extraTurns && state.extraTurns.length) {
       const et = state.extraTurns.shift();
       next = et.seat; isExtra = true; possessedBy = et.possessedBy; rotationSeat = et.rotationSeat;
     } else {
       next = (anchor + 1) % n; rotationSeat = next;
     }
-    state.turn = freshTurn(next, isExtra, { rotationSeat, possessedBy });
+    state.turn = freshTurn(next, isExtra, { rotationSeat, possessedBy, noBuyCards });
     log(state, possessedBy != null
       ? `${state.players[possessedBy].name} が ${state.players[next].name} の追加ターンを操作します（支配）。`
-      : (extra ? `${state.players[next].name} の追加ターンです（前哨地）。` : `${state.players[next].name} の番です。`));
+      : (extra ? `${state.players[next].name} の追加ターンです（前哨地）。`
+        : (missionExtra ? `${state.players[next].name} の追加ターンです（使節団：カードは購入できません）。`
+          : `${state.players[next].name} の番です。`)));
     // 海辺：次の手番開始時の予約効果を解決（非対話は即適用、対話は startQueue→pending）。
     resolveDurationStartEffects(state, next);
   }
@@ -5048,6 +5120,16 @@
      （商人ギルド/値切り屋/過払い）も発動しない（BUY_EVENT 側で呼ばない）。 */
   function anyVictorySupply(state) {
     return Object.keys(state.supply).some((id) => (state.supply[id] || 0) > 0 && DOM.isType(id, 'victory'));
+  }
+  // 冒険：1ターンに1回しか買えないイベント（施し/借入/保存/巡礼）＝2回目の購入は engine が拒否する
+  //   （公式ルールブック "You can only buy this once per turn."＝購入自体ができない＝購入権を無駄にしない）。
+  const ONCE_PER_TURN_EVENTS = new Set(['alms', 'borrow', 'save', 'pilgrimage', 'mission']);
+  // 相続は1ゲーム1回（既に脇置きを持っていれば買えない）。
+  function canBuyEvent(state, pi, id) {
+    const t = state.turn, p = state.players[pi];
+    if (ONCE_PER_TURN_EVENTS.has(id) && (t.eventsBought || []).indexOf(id) >= 0) return false;
+    if (id === 'inheritance' && (p.inherited || []).length > 0) return false;
+    return true;
   }
   function applyEventEffect(state, pi, id) {
     const me = state.players[pi];
@@ -5117,8 +5199,151 @@
         else gain(state, pi, 'duchy', 'discard'); // 捨て札が空でも公領は獲得する
         break;
       }
+      /* ========== 冒険（Adventures）イベント 20種 ==========
+         負債は無し（コインのみ）。トークン中心＝旅トークン(journeyDown)／-1カード(minusCard)／
+         -$1(minusCoin)／山トークン(pileTokens) を再利用する。
+         1ターン1回のイベント（施し/借入/保存/巡礼）は BUY_EVENT 側で2回目の購入を拒否する。 */
+      // 施し＝場に財宝が1枚も無いなら、コスト$4以下のカード1枚を獲得（強制・条件を満たさなければ何も起きない）。
+      case 'alms': {
+        if (me.inPlay.some((c) => DOM.isType(c, 'treasure'))) { log(state, `${me.name} は施しを買ったが、場に財宝があるので何も獲得できない。`); break; }
+        if (anyGainable(state, (cid) => upToCanGain(state, cid, 4))) state.pending = { type: 'alms_gain', player: pi };
+        break;
+      }
+      // 借入＝+1購入。-1カードトークンを持っていなければ、それを受け取って +$1。
+      case 'borrow': {
+        t.buys += 1;
+        if (!me.minusCard) {
+          me.minusCard = true;
+          t.coins += 1; applyCoinPenalty(state);
+          log(state, `${me.name} は借入で -1カードトークンを受け取り +$1。`);
+        }
+        break;
+      }
+      // 探索＝アタック1枚／呪い2枚／任意6枚 のどれかを捨ててよい。捨てられたなら金貨1枚。
+      case 'quest': {
+        if (me.hand.length > 0) state.pending = { type: 'quest', stage: 'mode', player: pi };
+        break;
+      }
+      // 保存＝+1購入。手札1枚を脇に置き、このターンの終了時（次の手札を引いた後）に手札へ加える。
+      case 'save': {
+        t.buys += 1;
+        if (me.hand.length > 0 && !t.savedCard) state.pending = { type: 'save', player: pi };
+        break;
+      }
+      // 偵察隊＝+1購入。山札の上5枚を見て3枚捨て、残りを好きな順で山札の上に戻す。
+      case 'scouting_party': {
+        t.buys += 1;
+        const look = [];
+        for (let i = 0; i < 5; i++) {
+          if (me.deck.length === 0) { if (me.discard.length === 0) break; reshuffleDeck(me); }
+          look.push(me.deck.shift());
+        }
+        if (look.length === 0) break;
+        if (look.length <= 3) { // 3枚以下なら全部捨てる（戻すカードは無い）
+          look.forEach((c) => me.discard.push(c));
+          log(state, `${me.name} は偵察隊で ${look.length}枚 を捨て札にした。`);
+          triggerOnDiscard(state, pi, look);
+          break;
+        }
+        state.pending = { type: 'scouting_party', stage: 'discard', player: pi, cards: look };
+        break;
+      }
+      // 移動遊園地＝+2購入。このターン、獲得したカードを山札の上に置いてよい（獲得のたびに任意）。
+      case 'travelling_fair': { t.buys += 2; t.travellingFair = true; break; }
+      // 焚火＝場にある銅貨を2枚まで廃棄（2022エラッタ＝銅貨限定）。
+      case 'bonfire': {
+        if (me.inPlay.includes('copper')) state.pending = { type: 'bonfire', player: pi };
+        break;
+      }
+      // 探検＝次の手札を引くとき、追加で2枚引く（同一ターンに複数回買えば累積）。
+      case 'expedition': { t.extraDraw = (t.extraDraw || 0) + 2; break; }
+      // 渡し船＝-$2コストトークンをアクションのサプライ山1つへ移す。
+      case 'ferry': {
+        if (actionSupplyPiles(state).length) state.pending = { type: 'event_token', token: 'cost', player: pi };
+        break;
+      }
+      // 立案＝廃棄トークンをアクションのサプライ山1つへ移す。
+      case 'plan': {
+        if (actionSupplyPiles(state).length) state.pending = { type: 'event_token', token: 'trash', player: pi };
+        break;
+      }
+      // 使節団＝このターンの後に追加ターン（3連続は不可＝今が追加ターンなら得られない）。追加ターン中はカードを購入できない。
+      case 'mission': {
+        if (t.isExtraTurn) { log(state, `${me.name} は使節団を買ったが、このターンは追加ターンなので追加ターンは得られない。`); break; }
+        if (me.missionExtra) break; // 既に予約済み（同一ターンに複数回買っても追加ターンは1回）
+        me.missionExtra = true;
+        log(state, `${me.name} は使節団で追加ターンを得る（そのターンはカードを購入できない）。`);
+        break;
+      }
+      // 巡礼＝旅トークンを裏返す。表向きになったら、場にある名前の異なるカードを3枚まで選びコピーを獲得。
+      case 'pilgrimage': {
+        me.journeyDown = !me.journeyDown;
+        if (me.journeyDown) { log(state, `${me.name} は巡礼で旅トークンを裏にした（効果なし）。`); break; }
+        log(state, `${me.name} は巡礼で旅トークンを表にした。`);
+        if (pilgrimageChoices(state, pi).length) state.pending = { type: 'pilgrimage', player: pi };
+        break;
+      }
+      // 舞踏会＝-$1トークンを受け取り、コスト$4以下のカードを2枚獲得。
+      case 'ball': {
+        if (!me.minusCoin) { me.minusCoin = true; log(state, `${me.name} は舞踏会で -$1トークンを受け取った。`); }
+        if (anyGainable(state, (cid) => upToCanGain(state, cid, 4))) state.pending = { type: 'ball_gain', player: pi, left: 2 };
+        break;
+      }
+      // 奇襲＝場の銀貨1枚につき銀貨1枚を獲得。他の各プレイヤーは -1カードトークンを受け取る（アタックではない＝堀不可）。
+      case 'raid': {
+        const silvers = me.inPlay.filter((c) => c === 'silver').length;
+        let g = 0; for (let i = 0; i < silvers; i++) if (gain(state, pi, 'silver', 'discard')) g++;
+        if (g) log(state, `${me.name} は奇襲で銀貨 ${g}枚 を獲得した（場の銀貨${silvers}枚）。`);
+        for (let o = 0; o < state.players.length; o++) {
+          if (o === pi) continue;
+          const op = state.players[o];
+          if (!op.minusCard) { op.minusCard = true; log(state, `${op.name} は -1カードトークンを受け取った（奇襲）。`); }
+        }
+        break;
+      }
+      // 海路＝コスト$4以下のアクション1枚を獲得し、その山に +1購入トークンを移す（獲得できなければ何も起きない）。
+      case 'seaway': {
+        if (anyGainable(state, (cid) => seawayCanGain(state, cid))) state.pending = { type: 'seaway', player: pi };
+        break;
+      }
+      // 交易＝手札を2枚まで廃棄し、廃棄した枚数だけ銀貨を獲得。
+      case 'trade': {
+        if (me.hand.length > 0) state.pending = { type: 'trade', player: pi };
+        break;
+      }
+      // 失われた技術／鍛錬／誘導＝+1アクション／+$1／+1カードトークンをアクションのサプライ山1つへ移す。
+      case 'lost_arts': case 'training': case 'pathfinding': {
+        const tok = id === 'lost_arts' ? 'action' : (id === 'training' ? 'coin' : 'card');
+        if (actionSupplyPiles(state).length) state.pending = { type: 'event_token', token: tok, player: pi };
+        break;
+      }
+      // 相続＝1ゲーム1回。サプライから 命令でないコスト$4以下のアクション1枚を脇に置き、屋敷トークンを載せる。
+      case 'inheritance': {
+        if (inheritanceTargets(state).length) state.pending = { type: 'inheritance', player: pi };
+        break;
+      }
       default: break;
     }
+  }
+  // コスト$N以下の獲得候補（負債/ポーション費用は除外＝成分ごと比較の公式ルール）。
+  function upToCanGain(state, cid, max) {
+    return !NON_SUPPLY.has(cid) && !splitLocked(state, cid) && costIsPlainCoin(cid) && cardCost(state, cid) <= max;
+  }
+  function seawayCanGain(state, cid) { return upToCanGain(state, cid, 4) && DOM.isType(cid, 'action'); }
+  // 巡礼＝場（inPlay＋持続カード）にある名前の異なるカードのうち、サプライから獲得できるもの。
+  function pilgrimageChoices(state, pi) {
+    const p = state.players[pi];
+    const names = [];
+    p.inPlay.concat(p.durationCards || []).forEach((c) => { if (names.indexOf(c) < 0) names.push(c); });
+    return names.filter((c) => !NON_SUPPLY.has(c) && !splitLocked(state, c) && (state.supply[c] || 0) > 0);
+  }
+  // 相続の対象＝サプライにある「命令でない・コスト$4以下（負債/ポーション費用なし）のアクション」。
+  //   ※持続は除外（屋敷が持続として場に残る追跡が要るため＝船長/大君主と同じ許容簡略化）。
+  function inheritanceTargets(state) {
+    return Object.keys(state.supply).filter((id) =>
+      (state.supply[id] || 0) > 0 && !NON_SUPPLY.has(id) && C()[id] &&
+      DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && !DOM.isType(id, 'command') &&
+      costIsPlainCoin(id) && cardCost(state, id) <= 4 && id !== 'knights' && !splitLocked(state, id));
   }
   function banquetCanGain(state, cid) {
     return !NON_SUPPLY.has(cid) && !splitLocked(state, cid) && costIsPlainCoin(cid) && cardCost(state, cid) <= 5 && !DOM.isType(cid, 'victory');
@@ -5328,7 +5553,9 @@
         if (t.phase !== 'action') return state;
         if (t.actions <= 0) return state;
         const card = action.card;
-        if (!DOM.isType(card, 'action')) return state;
+        // 冒険：相続＝自分のターン中、屋敷はアクション（命令）としてもプレイできる（脇のカードを動かさずに使用）。
+        const asInherited = inheritedEstate(me, card);
+        if (!DOM.isType(card, 'action') && !asInherited) return state;
         if (me.hand.indexOf(card) < 0) return state;
         removeOne(me.hand, card);
         me.inPlay.push(card);
@@ -5340,9 +5567,10 @@
           const champs = me.inPlay.filter((c) => c === 'champion').length + (me.durationCards || []).filter((c) => c === 'champion').length - (card === 'champion' ? 1 : 0);
           if (champs > 0) { t.actions += champs; log(state, `${me.name} はチャンピオンで +${champs}アクション。`); }
         }
-        // 冒険：教師の山トークン＝この山のカードをプレイしたとき、まず該当ボーナスを得る（アクションの効果解決より前）。
+        // 冒険：山トークン＝この山のカードをプレイしたとき、まず該当ボーナスを得る（アクションの効果解決より前）。
         //   ※玉座/王の宮廷/門下生の再演（applyEffect経由）は対象外＝champion と同じ許容簡略化。
-        applyPileTokens(state, pi, card);
+        //   相続の屋敷でプレイする場合は「脇に置いたカードの山」のトークンを見る（公式）。
+        applyPileTokens(state, pi, asInherited ? me.inherited[0] : card);
         t.afterActionCard = card; // 冒険：法貨/御料車の「アクション解決直後」の呼び出し窓の対象
         log(state, `${me.name} は「${C()[card].name}」を使った。`);
         // 帝国：女魔術師（enchantress）＝この手番で最初にプレイしたアクションは、記載効果の代わりに +1カード +1アクション。
@@ -5361,9 +5589,14 @@
       }
 
       /* ---- 財宝を出す ---- */
+      // 公式の基本ルール：「先に財宝を出し、それから買う」＝**一度でも購入したら、そのターンはもう財宝を出せない**
+      //   （基本ルールブック "You cannot go back and play more Treasures after buying a card"。
+      //    冒険ルールブックは「イベントを買った後も同様」と明記＝t.treasuresLocked で3経路（BUY/BUY_EVENT/闇市場）を塞ぐ）。
+      //   これが無いと「施し（場に財宝が無ければ$4以下を獲得）を先に買ってから財宝を出す」抜け道ができる。
       case 'PLAY_TREASURE': {
         if (state.pending) return state;
         if (t.phase !== 'buy') return state;
+        if (t.treasuresLocked) return state;
         const card = action.card;
         if (!DOM.isType(card, 'treasure')) return state;
         if (me.hand.indexOf(card) < 0) return state;
@@ -5373,6 +5606,7 @@
       case 'PLAY_ALL_TREASURES': {
         if (state.pending) return state;
         if (t.phase !== 'buy') return state;
+        if (t.treasuresLocked) return state;
         // 商人の「最初の銀貨」を確実に最初に出すため銀貨を先に、帝国：大金は最後に出す（コイン2倍を最大化）。
         const treasures = me.hand.filter((c) => DOM.isType(c, 'treasure'))
           .sort((a, b) => ((a === 'silver' ? -1 : 0) - (b === 'silver' ? -1 : 0)) || ((a === 'fortune' ? 1 : 0) - (b === 'fortune' ? 1 : 0)));
@@ -5387,6 +5621,7 @@
         if (state.pending) return state;
         if (t.phase !== 'buy') return state;
         if ((me.debt || 0) > 0) return state; // 帝国：負債があるとカードを購入できない（先に REPAY_DEBT で返済する）
+        if (t.noBuyCards) return state;       // 冒険：使節団の追加ターン＝カードは購入できない（イベントは買える）
         const card = action.card;
         if (!C()[card]) return state; // 未知のカードIDは状態不変で拒否（throwしない）
         const cost = cardCost(state, card); // 「橋」等のコスト軽減を反映
@@ -5400,6 +5635,7 @@
         t.potions = (t.potions || 0) - pot;
         t.buys -= 1;
         t.buysMade = (t.buysMade || 0) + 1; // 冒険：使者の「そのターン最初の購入か」判定用（購入回数）
+        t.treasuresLocked = true;           // 公式：購入したら、そのターンはもう財宝を出せない
         gain(state, pi, card, 'discard');
         log(state, `${me.name} は「${C()[card].name}」を購入した。`);
         // 繁栄：造幣所を購入したとき、場の財宝をすべて廃棄する。
@@ -5444,11 +5680,254 @@
         const cost = ev.cost || 0, debt = ev.debt || 0;
         if (t.buys <= 0) return state;                  // 購入権が必要
         if (cost > t.coins) return state;               // コイン不足（イベントはコスト軽減を受けない）
+        if (!canBuyEvent(state, pi, id)) return state;  // 1ターン1回／1ゲーム1回の制限
         t.coins -= cost;
         t.buys -= 1;
+        t.treasuresLocked = true; // 公式：イベントを買った後も、そのターンはもう財宝を出せない
+        t.buysMade = (t.buysMade || 0) + 1; // 冒険：使者の「そのターン最初に買ったもの」＝イベントも「買ったもの」に数える
+        (t.eventsBought = t.eventsBought || []).push(id);
         if (debt > 0) me.debt = (me.debt || 0) + debt;  // 負債コストのイベントは負債を負う
         log(state, `${me.name} はイベント「${ev.name}」を購入した。` + (debt ? `（負債+${debt}）` : ''));
         applyEventEffect(state, pi, id);
+        return state;
+      }
+
+      /* ===== 冒険：横型イベントの選択待ち（すべて 4点セット＝reducer＋PLAYER_ACTIONS＋CPU＋UI） ===== */
+      // 施し＝コスト$4以下を1枚獲得（強制）。
+      case 'ALMS_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'alms_gain') return state;
+        const card = action.card;
+        // 終端保証：候補が尽きていれば「獲得せず解決」（CPUの無限ループ／人間の詰みを防ぐ）
+        if (!anyGainable(state, (cid) => upToCanGain(state, cid, 4))) { state.pending = null; return state; }
+        if (!card || !upToCanGain(state, card, 4) || (state.supply[card] || 0) <= 0) return state;
+        state.pending = null;
+        gain(state, pd.player, card, 'discard');
+        log(state, `${state.players[pd.player].name} は施しで「${C()[card].name}」を獲得した。`);
+        return state;
+      }
+      // 探索＝3択（アタック1枚／呪い2枚／任意6枚）。捨てられたら金貨。辞退も可。
+      case 'QUEST_MODE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'quest' || pd.stage !== 'mode') return state;
+        const p = state.players[pd.player];
+        const mode = action.mode;
+        if (mode === 'skip') { state.pending = null; return state; }
+        if (mode === 'curses') { // 呪いは選択の余地なし＝その場で解決（2枚捨てられたときだけ金貨）
+          const n = Math.min(2, p.hand.filter((c) => c === 'curse').length);
+          const disc = [];
+          for (let i = 0; i < n; i++) { removeOne(p.hand, 'curse'); p.discard.push('curse'); disc.push('curse'); }
+          state.pending = null;
+          if (disc.length) { log(state, `${p.name} は探索で呪い${disc.length}枚を捨てた。`); triggerOnDiscard(state, pd.player, disc); }
+          if (n === 2 && gain(state, pd.player, 'gold', 'discard')) log(state, `${p.name} は探索で金貨1枚を獲得した。`);
+          return state;
+        }
+        // 公式：条件を満たせない選択肢も選べるが、その場合は捨てられず金貨も得られない（＝ここで終端させる）。
+        if (mode === 'attack') {
+          if (!p.hand.some((c) => DOM.isType(c, 'attack'))) { state.pending = null; return state; }
+          pd.stage = 'attack'; return state;
+        }
+        if (mode === 'six') {
+          if (p.hand.length === 0) { state.pending = null; return state; }
+          pd.stage = 'six'; return state;
+        }
+        return state;
+      }
+      case 'QUEST_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'quest' || (pd.stage !== 'attack' && pd.stage !== 'six')) return state;
+        const p = state.players[pd.player];
+        const cards = (action.cards || []).slice();
+        const need = pd.stage === 'attack' ? 1 : Math.min(6, p.hand.length);
+        if (cards.length !== need) return state;
+        // 手札に無いカードを含む選択は拒否（多重度も検査）
+        const pool = p.hand.slice();
+        for (const c of cards) { if (!removeOne(pool, c)) return state; }
+        if (pd.stage === 'attack' && !DOM.isType(cards[0], 'attack')) return state;
+        cards.forEach((c) => { removeOne(p.hand, c); p.discard.push(c); });
+        state.pending = null;
+        log(state, `${p.name} は探索で ${cards.length}枚 を捨てた。`);
+        triggerOnDiscard(state, pd.player, cards);
+        // 「アタック1枚」＝成立／「任意6枚」＝ちょうど6枚捨てられたときだけ金貨
+        const okQuest = pd.stage === 'attack' ? true : cards.length === 6;
+        if (okQuest && gain(state, pd.player, 'gold', 'discard')) log(state, `${p.name} は探索で金貨1枚を獲得した。`);
+        return state;
+      }
+      // 保存＝手札1枚を脇に置く（このターンの終了時＝次の手札を引いた後に手札へ戻す）。
+      case 'SAVE_SETASIDE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'save') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        if (!card || p.hand.indexOf(card) < 0) return state;
+        removeOne(p.hand, card);
+        p.setAside.push(card);
+        t.savedCard = card;
+        state.pending = null;
+        log(state, `${p.name} は保存でカード1枚を脇に置いた（ターン終了時に手札へ）。`);
+        return state;
+      }
+      // 偵察隊＝5枚のうち3枚を捨て、残り2枚を好きな順で山札の上へ。
+      case 'SCOUTING_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'scouting_party' || pd.stage !== 'discard') return state;
+        const p = state.players[pd.player];
+        const cards = (action.cards || []).slice();
+        if (cards.length !== 3) return state;
+        const pool = pd.cards.slice();
+        for (const c of cards) { if (!removeOne(pool, c)) return state; }
+        cards.forEach((c) => p.discard.push(c));
+        log(state, `${p.name} は偵察隊で 3枚 を捨て札にした。`);
+        triggerOnDiscard(state, pd.player, cards);
+        if (pool.length === 0) { state.pending = null; return state; }
+        if (pool.length === 1) { p.deck.unshift(pool[0]); state.pending = null; return state; }
+        pd.stage = 'order'; pd.cards = pool;
+        return state;
+      }
+      case 'SCOUTING_ORDER': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'scouting_party' || pd.stage !== 'order') return state;
+        const p = state.players[pd.player];
+        const order = (action.order || []).slice();
+        if (order.length !== pd.cards.length) return state;
+        const pool = pd.cards.slice();
+        for (const c of order) { if (!removeOne(pool, c)) return state; }
+        for (let i = order.length - 1; i >= 0; i--) p.deck.unshift(order[i]); // 先頭が一番上
+        state.pending = null;
+        log(state, `${p.name} は偵察隊で ${order.length}枚 を山札の上に戻した。`);
+        return state;
+      }
+      // 焚火＝場の銅貨を2枚まで廃棄（任意）。
+      case 'BONFIRE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'bonfire') return state;
+        const p = state.players[pd.player];
+        const n = Math.max(0, Math.min(2, (action.count || 0), p.inPlay.filter((c) => c === 'copper').length));
+        for (let i = 0; i < n; i++) { removeOne(p.inPlay, 'copper'); trashCard(state, pd.player, 'copper'); }
+        state.pending = null;
+        if (n) log(state, `${p.name} は焚火で場の銅貨 ${n}枚 を廃棄した。`);
+        return state;
+      }
+      // 舞踏会＝コスト$4以下を2枚獲得（強制・候補が尽きたら終わる）。
+      case 'BALL_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ball_gain') return state;
+        const card = action.card;
+        if (!anyGainable(state, (cid) => upToCanGain(state, cid, 4))) { state.pending = null; return state; } // 終端保証
+        if (!card || !upToCanGain(state, card, 4) || (state.supply[card] || 0) <= 0) return state;
+        const holder = pd.player, left = (pd.left || 1) - 1;
+        state.pending = null; // gain の獲得時対話（望楼等）を通すため先に閉じる
+        gain(state, holder, card, 'discard');
+        log(state, `${state.players[holder].name} は舞踏会で「${C()[card].name}」を獲得した。`);
+        if (left > 0 && !state.pending && anyGainable(state, (cid) => upToCanGain(state, cid, 4))) {
+          state.pending = { type: 'ball_gain', player: holder, left };
+        } else if (left > 0) {
+          (state.onGainQueue = state.onGainQueue || []).push({ type: 'ball_gain', player: holder, left });
+        }
+        return state;
+      }
+      // 海路＝コスト$4以下のアクション1枚を獲得し、その山に +1購入トークンを移す。
+      case 'SEAWAY_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'seaway') return state;
+        const card = action.card;
+        if (!anyGainable(state, (cid) => seawayCanGain(state, cid))) { state.pending = null; return state; } // 終端保証
+        if (!card || !seawayCanGain(state, card) || (state.supply[card] || 0) <= 0) return state;
+        const holder = pd.player;
+        state.pending = null;
+        if (gain(state, holder, card, 'discard')) {
+          const p = state.players[holder];
+          p.pileTokens = p.pileTokens || {};
+          p.pileTokens.buy = pileKeyOf(state, card); // 分割山は上段キーに正規化（下段だと READ 側と食い違い孤児化する）
+          log(state, `${p.name} は海路で「${C()[card].name}」を獲得し、その山に +1購入トークンを置いた。`);
+        }
+        return state;
+      }
+      // 交易＝手札を2枚まで廃棄し、廃棄した枚数だけ銀貨を獲得。
+      case 'TRADE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'trade') return state;
+        const p = state.players[pd.player];
+        const cards = (action.cards || []).slice();
+        if (cards.length > 2) return state;
+        const pool = p.hand.slice();
+        for (const c of cards) { if (!removeOne(pool, c)) return state; }
+        state.pending = null;
+        cards.forEach((c) => { removeOne(p.hand, c); trashCard(state, pd.player, c); });
+        if (cards.length) log(state, `${p.name} は交易で ${cards.length}枚 を廃棄した。`);
+        let g = 0; for (let i = 0; i < cards.length; i++) if (gain(state, pd.player, 'silver', 'discard')) g++;
+        if (g) log(state, `${p.name} は交易で銀貨 ${g}枚 を獲得した。`);
+        return state;
+      }
+      // 巡礼＝場にある名前の異なるカードを3枚まで選び、それぞれのコピーを獲得。
+      case 'PILGRIMAGE_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'pilgrimage') return state;
+        const cards = (action.cards || []).slice();
+        if (cards.length > 3) return state;
+        const valid = pilgrimageChoices(state, pd.player);
+        const seen = {};
+        for (const c of cards) { if (valid.indexOf(c) < 0 || seen[c]) return state; seen[c] = 1; } // 名前は異なること
+        state.pending = null;
+        cards.forEach((c) => { if (gain(state, pd.player, c, 'discard')) log(state, `${state.players[pd.player].name} は巡礼で「${C()[c].name}」を獲得した。`); });
+        return state;
+      }
+      // 山トークンの移動（失われた技術=+1アクション／鍛錬=+$1／誘導=+1カード／渡し船=-$2コスト／立案=廃棄）。
+      case 'EVENT_TOKEN_PILE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'event_token') return state;
+        const pile = action.pile;
+        if (!actionSupplyPiles(state).length) { state.pending = null; return state; } // 終端保証（置き先ゼロ）
+        if (!pile || actionSupplyPiles(state).indexOf(pile) < 0) return state;
+        const p = state.players[pd.player];
+        p.pileTokens = p.pileTokens || {};
+        p.pileTokens[pd.token] = pileKeyOf(state, pile); // 各種別1個＝元の山からは自動的に外れる（分割山は上段キー）
+        state.pending = null;
+        log(state, `${p.name} は ${TOKEN_LABEL[pd.token]}トークンを「${C()[pile].name}」の山に置いた。`);
+        return state;
+      }
+      // 立案＝廃棄トークンの山からカードを購入したとき、手札1枚を廃棄してよい（任意）。
+      case 'PLAN_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'plan_trash') return state;
+        const p = state.players[pd.player];
+        const card = action.card;
+        state.pending = null;
+        if (card && p.hand.indexOf(card) >= 0) {
+          removeOne(p.hand, card);
+          trashCard(state, pd.player, card);
+          log(state, `${p.name} は立案の廃棄トークンで「${C()[card].name}」を廃棄した。`);
+        }
+        return state;
+      }
+      // 移動遊園地＝獲得したカードを山札の上に置いてよい。
+      case 'TRAVELLING_FAIR_TOPDECK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'travelling_fair') return state;
+        const p = state.players[pd.player];
+        state.pending = null;
+        if (action.topdeck) {
+          // 獲得先（dest）はヒント。ヴィラ等の獲得時効果が獲得先を変える（捨て札→手札）ので、
+          //   実際にカードが在るゾーンを 捨て札→手札 の順で探して移す（見つからなければ黙って不発＝lose track）。
+          const zones = pd.dest === 'hand' ? [p.hand, p.discard] : [p.discard, p.hand];
+          const zone = zones.find((z) => z.indexOf(pd.card) >= 0);
+          if (zone && removeOne(zone, pd.card)) { p.deck.unshift(pd.card); log(state, `${p.name} は移動遊園地で「${C()[pd.card].name}」を山札の上に置いた。`); }
+        }
+        return state;
+      }
+      // 相続＝サプライから 命令でないコスト$4以下のアクション1枚を脇に置き、屋敷トークンを載せる（1ゲーム1回）。
+      case 'INHERITANCE_SET': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'inheritance') return state;
+        const card = action.card;
+        if (!inheritanceTargets(state).length) { state.pending = null; return state; } // 終端保証（対象ゼロ）
+        if (!card || inheritanceTargets(state).indexOf(card) < 0) return state;
+        const p = state.players[pd.player];
+        if ((p.inherited || []).length) { state.pending = null; return state; }
+        state.supply[card] -= 1;           // サプライから1枚取り出して脇に置く（獲得ではない＝獲得トリガーは起きない）
+        p.inherited = [card];
+        state.pending = null;
+        log(state, `${p.name} は相続で「${C()[card].name}」を脇に置き、屋敷トークンを載せた（以後、自分のターンの屋敷はこれを使用するアクションになる）。`);
         return state;
       }
       // 帝国：塩まき＝サプライの勝利点カード1枚を廃棄（山を選ぶ・強制）。廃棄はサプライから直接（Tomb は発火）。
@@ -5561,6 +6040,9 @@
         if (state.pending) return state;
         if (t.phase !== 'action') return state;
         t.phase = 'buy';
+        // 公式：「購入したら財宝を出せない」は**その購入フェイズ内**の制限。ヴィラ等でアクションフェイズに戻り、
+        //   再び購入フェイズに入った場合は「購入フェイズの最初から」＝財宝を出し直せる（ロックを解除する）。
+        t.treasuresLocked = false;
         t.afterActionCard = null; // 冒険：アクションフェイズを抜けたら法貨/御料車の呼び出し窓は閉じる
         // 冒険：-$1トークンを消化（購入フェイズ開始時に食い込み分へ変換。財宝を出すとそのコインに食い込む）。
         if (me.minusCoin) { t.coinPenalty = (t.coinPenalty || 0) + 1; me.minusCoin = false; log(state, `${me.name} は -$1トークンを支払う（このターンのコイン $1分）。`); applyCoinPenalty(state); }
@@ -6663,11 +7145,14 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'black_market' || pd.stage !== 'play') return state;
         if ((state.players[pd.player].debt || 0) > 0) return state; // 帝国：負債があると闇市場でも購入できない（購入は購入）
+        if (t.noBuyCards) return state; // 冒険：使節団の追加ターン＝カードは購入できない（闇市場の購入も「購入」）
         const card = action.card;
         if (pd.revealed.indexOf(card) < 0) return state;
         const cost = cardCost(state, card);
         if (cost > t.coins) return state; // 払えない
         t.coins -= cost; // 闇市場の購入は購入回数を消費しない
+        // ※闇市場はアクションフェイズに解決する（自前の財宝プレイ手順を持つ）ので、ここで treasuresLocked は立てない
+        //   （立てると購入フェイズで財宝を出せなくなる＝実プレイが壊れる）。
         state.players[pd.player].discard.push(card); // サプライ外のカードを獲得（捨て札へ）
         // 帝国：負債コストのカード（元手/技術者/市街 等）を闇市場で買っても、その負債を負う（闇市場は gain() を通さないため個別に付与）。
         {
@@ -7352,7 +7837,8 @@
         const p = state.players[pd.player];
         const card = action.card;
         if (card == null) { state.pending = null; return state; } // 使わない
-        if (p.hand.indexOf(card) < 0 || !DOM.isType(card, 'action')) return state;
+        // 冒険：相続＝自分のターン中、屋敷もアクション（命令）＝門下生の対象にできる（公式）。
+        if (p.hand.indexOf(card) < 0 || !(DOM.isType(card, 'action') || inheritedEstate(p, card))) return state;
         removeOne(p.hand, card); p.inPlay.push(card);
         t.actionsPlayed = (t.actionsPlayed || 0) + 1;
         state.pending = null;
@@ -9987,7 +10473,8 @@
     // ※支配中に決定者(支配者)へ配信しないと、UIが未知id 'back' を描画して render 例外→操作不能になる。
     const secretSeer = (s.turn && s.turn.possessedBy != null && s.pending && s.pending.player === s.turn.active)
       ? s.turn.possessedBy : (s.pending ? s.pending.player : -1);
-    if (s.pending && (s.pending.type === 'sentry' || s.pending.type === 'lookout' || s.pending.type === 'catacombs' || s.pending.type === 'survivors') && Array.isArray(s.pending.cards) && seat !== s.pending.player && seat !== secretSeer) {
+    // 冒険：偵察隊（scouting_party）の「山札の上5枚を見る」も私的な看破＝本人と支配者以外には伏せる。
+    if (s.pending && (s.pending.type === 'sentry' || s.pending.type === 'lookout' || s.pending.type === 'catacombs' || s.pending.type === 'survivors' || s.pending.type === 'scouting_party') && Array.isArray(s.pending.cards) && seat !== s.pending.player && seat !== secretSeer) {
       // 暗黒時代：地下墓所/生存者の「山札の上N枚を見る」は私的（公開ではない）＝本人と支配者以外には伏せる。
       s.pending = Object.assign({}, s.pending, { cards: new Array(s.pending.cards.length).fill('back') });
     }
@@ -9997,6 +10484,13 @@
     // ギルド：医者の過払いで「見た」山札の上1枚は私的（本人と支配者のみ）。他席には伏せる。
     if (s.pending && s.pending.type === 'doctor_overpay' && s.pending.card != null && seat !== s.pending.player && seat !== secretSeer) {
       s.pending = Object.assign({}, s.pending, { card: 'back' });
+    }
+    // 冒険：保存（Save）で脇に置いた1枚は**裏向き**（公式）＝p.setAside は伏せているので turn.savedCard も伏せる。
+    //   （手番プレイヤー本人と、支配中の決定者だけが見てよい。engine の権威 state は元の id を保持する。）
+    if (s.turn && s.turn.savedCard) {
+      const owner = s.turn.active;
+      const decider = (s.turn.possessedBy != null) ? s.turn.possessedBy : owner;
+      if (seat !== owner && seat !== decider) s.turn = Object.assign({}, s.turn, { savedCard: 'back' });
     }
     s.you = seat;
     return s;
@@ -10064,6 +10558,10 @@
     // 帝国：横型イベント（買う横型）
     'BUY_EVENT', 'SALT_TRASH', 'BANQUET_GAIN', 'ADVANCE_TRASH', 'ADVANCE_GAIN', 'RITUAL_TRASH',
     'TAX_PILE', 'DONATE_TRASH', 'ANNEX_KEEP',
+    // 冒険：横型イベント（買う横型）
+    'ALMS_GAIN', 'QUEST_MODE', 'QUEST_DISCARD', 'SAVE_SETASIDE', 'SCOUTING_DISCARD', 'SCOUTING_ORDER',
+    'BONFIRE_TRASH', 'BALL_GAIN', 'SEAWAY_GAIN', 'TRADE_TRASH', 'PILGRIMAGE_GAIN', 'EVENT_TOKEN_PILE',
+    'PLAN_TRASH', 'TRAVELLING_FAIR_TOPDECK', 'INHERITANCE_SET',
     // 暗黒時代（Dark Ages）
     'SURVIVORS_RESOLVE', 'RATS_TRASH', 'ARMORY_GAIN', 'FORAGER_TRASH', 'SQUIRE_RESOLVE', 'SQUIRE_TRASH_GAIN',
     'STOREROOM_DISCARD', 'SCAVENGER_DECK', 'SCAVENGER_TOPDECK', 'IRONMONGER_RESOLVE', 'MINSTREL_RESOLVE',
@@ -10129,6 +10627,11 @@
     overlordTargets, // 帝国：大君主の対象（CPU/UIが同じ候補を参照）
     pendingSelf, // E8：倒壊/死の荷車の「これを廃棄できるか」（CPU/UIが同じ述語を参照＝engine拒否とCPU非提案のセット）
     validTeacherPiles, // 冒険：教師のトークン置き先（CPU/UIが同じ候補を参照）
+    actionSupplyPiles, // 冒険：山トークン（渡し船/立案/失われた技術/鍛錬/誘導）の置き先＝アクションのサプライ山
+    inheritanceTargets, // 冒険：相続の対象（CPU/UIが同じ候補を参照）
+    inheritedEstate,   // 冒険：相続＝この屋敷はアクションとしてプレイできるか（engine/CPU/UI が同じ述語）
+    pilgrimageChoices, // 冒険：巡礼で獲得できる「場にある名前の異なるカード」
+    canBuyEvent,       // 冒険：1ターン1回／1ゲーム1回のイベントを今買えるか（engine拒否とCPU/UI非提案のセット）
     maskStateFor,
     PLAYER_ACTIONS,
     // 「誰が今操作すべきか」: 選択待ちならその人、なければ手番のプレイヤー
