@@ -2424,7 +2424,14 @@
       }
       case 'improve': {
         if (pd.stage === 'gain') {
-          return { type: 'IMPROVE_GAIN', card: bestGainExact(state, pd.exact, { noVictory: true }) || bestGainExact(state, pd.exact) };
+          // engine の述語と完全に一致させる（コイン/ポーション/負債の成分がすべて一致）。
+          //   ※bestGainExact は potion を見ない＝ポーション費用の札を廃棄した窓（大学→錬金術師 等）で
+          //     engine に拒否され続けて CPU 無限ループになる（敵対レビュー M3）。
+          const ok = (id) => cost(state, id) === pd.exact &&
+            ((C()[id] || {}).potion || 0) === (pd.pot || 0) && ((C()[id] || {}).debt || 0) === (pd.dbt || 0);
+          const pick = firstGainable(state, (id) => ok(id) && !isType(id, 'victory') && !isType(id, 'curse'))
+            || firstGainable(state, ok);
+          return { type: 'IMPROVE_GAIN', card: pick };
         }
         // クリンナップ開始時：ちょうど+$1の獲得先があり、格上げが得になる場のアクションを廃棄する。
         const targets = (DOM.engine.improveTargets ? DOM.engine.improveTargets(state, pd.player) : [])
@@ -2495,12 +2502,21 @@
     const subj = state.players[t.active]; // 手番の主体（支配中は被支配者）の手札を操作する
     if (t.phase === 'action') {
       const a = chooseAction(state, subj);
-      return a ? { type: 'PLAY_ACTION', card: a } : { type: 'END_ACTION_PHASE' };
+      if (a) return { type: 'PLAY_ACTION', card: a };
+      /* ルネサンス：村人（Villagers）＝アクション権が尽きたが手札にまだ使えるアクションがあるなら、村人を1人使う。
+         engine は「アクションフェイズ・所持数以内・1個以上」でしか受理しないので、その条件下でだけ返す＝非ループ
+         （村人は有限＝毎回1人ずつ減るので必ず終端する）。 */
+      if ((t.actions || 0) === 0 && (subj.villagers || 0) > 0 &&
+          subj.hand.some((c) => isType(c, 'action') || DOM.engine.inheritedEstate(subj, c))) {
+        return { type: 'SPEND_VILLAGER', amount: 1 };
+      }
+      return { type: 'END_ACTION_PHASE' };
     }
     // 購入フェーズ（支配中は被支配者の手札の財宝を出し、獲得は支配者が受け取る）
     //   ※ 一度でも購入すると engine は財宝プレイを拒否する（公式ルール）。拒否される手を返すと無限ループになるので
     //     t.treasuresLocked を必ず見る（イベントの効果で財宝が手札に入るケースがある）。
-    if (!t.treasuresLocked && subj.hand.some((c) => isTreasure(c))) return { type: 'PLAY_ALL_TREASURES' };
+    //   ルネサンス：資本主義で「財宝になったアクション」も engine の isTreasureFor が受理する＝同じ述語を見る。
+    if (!t.treasuresLocked && subj.hand.some((c) => (DOM.engine.isTreasureFor ? DOM.engine.isTreasureFor(state, c) : isTreasure(c)))) return { type: 'PLAY_ALL_TREASURES' };
     // 帝国：負債があるとカードを購入できない。財宝を出し切った後、コインで可能な限り返済する。
     //   返済しきれない（コイン0）なら購入不可＝END_TURN（負債は次ターンに持ち越し。財宝を出せば返せる＝非ループ）。
     if ((subj.debt || 0) > 0) {

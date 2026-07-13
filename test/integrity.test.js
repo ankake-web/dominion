@@ -130,6 +130,23 @@ console.log('=== 種別ラベルが全 type を含む（表記漏れ検知）===
   });
 }
 
+/* 6. ルネサンス：資本主義で「財宝にもなるアクション」の集合を固定する。
+      判定は日本語カードテキストからの機械判定＋明示リスト（engine の isCapitalismTreasure）なので、
+      カタログ文を1文字触るだけで集合が静かに変わり得る。ここで期待集合とサイズを固定して検知する。 */
+console.log('=== 資本主義：財宝になるアクションの集合が固定されている ===');
+{
+  const set = DOM.engine.capitalismTreasures().sort();
+  // 「+$」を持たない代表例は含まれてはいけない
+  ['coppersmith', 'transmogrify', 'inventor', 'village', 'smithy', 'chapel', 'upgrade', 'remake', 'develop', 'highway', 'raze', 'sculptor', 'seer', 'research', 'recruiter']
+    .forEach((id) => ok(set.indexOf(id) < 0, '資本主義：' + id + ' は財宝にならない（+$ 記号を持たない）'));
+  // 「+$」を持つ代表例は必ず含まれる（機械判定ぶん＋明示リストぶん）
+  ['market', 'militia', 'improve', 'festival', 'woodcutter', 'monument', 'poacher', 'steward', 'baron', 'clerk',
+    'salvager', 'artificer', 'peasant', 'messenger', 'wine_merchant', 'giant', 'swamp_hag', 'caravan_guard', 'miser', 'amulet']
+    .forEach((id) => ok(set.indexOf(id) >= 0, '資本主義：' + id + ' は財宝になる（+$ を持つ）'));
+  ok(set.every((id) => DOM.isType(id, 'action') && !DOM.isType(id, 'treasure')), '資本主義の対象は「財宝でないアクション」だけ');
+  ok(set.length === 98, '資本主義で財宝になるアクションは98枚（カタログ文を変えたらこの数を見直す。実: ' + set.length + '）');
+}
+
 console.log('\n========================================');
 console.log('整合性テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

@@ -75,6 +75,12 @@
     state.artifacts[id] = pi;
     log(state, `${state.players[pi].name} は${nm}を受け取った` +
       (prev != null ? `（${state.players[prev].name} から奪った）` : '') + '。');
+    // 公式の明示例外：**ピアッツァでターン開始時に出納官がプレイされ、その解決中に鍵を取った場合**は、
+    //   その開始時トリガーとして +$1 を得る（通常は「取ったターンには恩恵なし」＝開始時は既に過ぎている）。
+    if (id === 'key' && state.turn && state.turn.inStartPhase && state.turn.active === pi) {
+      state.turn.coins += 1;
+      log(state, `${state.players[pi].name} は鍵で +1コイン（ターン開始時に受け取った）。`);
+    }
     return true;
   }
   // engine拒否・CPU非提案・UIボタン無効の3面が見る唯一の述語（片側だけずれると CPU 無限ループ）。
@@ -167,6 +173,13 @@
      判定表は日本語カードテキストから機械判定する（house style は「+N コイン」）。ただし英語原文に「+$」記号を
      持たない札（銅細工師＝"Copper produces an extra $1"）は日本語では「+1 コイン」と書いているため除外する。 */
   const CAPITALISM_RE = /[+＋]\s*\d+\s*コイン/;
+  // 機械判定が取りこぼす札（本アプリのカタログ文が「+$N」表記／可変額のため）。公式英文には「+$」がある＝財宝になる。
+  //   ※「+$1以下」のようなコスト参照は +$ トークンではない（変容 transmogrify は含めない）＝正規表現を広げず明示列挙する。
+  const CAPITALISM_EXTRA = new Set([
+    'salvager',      // +（廃棄したカードのコスト）コイン＝可変額の +$
+    'artificer', 'peasant', 'messenger', 'wine_merchant', 'giant', 'swamp_hag', 'caravan_guard', 'miser', 'amulet',
+  ]);
+  // 機械判定に当たるが公式英文には「+$」記号が無い札（銅細工師＝"Copper produces an extra $1"）。
   const CAPITALISM_EXCLUDE = new Set(['coppersmith']);
   function isCapitalismTreasure(id) {
     const c = C()[id];
@@ -174,7 +187,12 @@
     if (CAPITALISM_EXCLUDE.has(id)) return false;
     if (!DOM.isType(id, 'action')) return false;
     if (DOM.isType(id, 'treasure')) return false; // 既に財宝
+    if (CAPITALISM_EXTRA.has(id)) return true;
     return CAPITALISM_RE.test(c.text || '');
+  }
+  // 整合性テストが「集合が意図せず変わっていないか」を検査するために公開する（カタログ文を触ると静かに変わるため）。
+  function capitalismTreasures() {
+    return Object.keys(C()).filter((id) => isCapitalismTreasure(id));
   }
   function isTreasureFor(state, id) {
     if (DOM.isType(id, 'treasure')) return true;
@@ -225,6 +243,8 @@
       log(state, `${p.name} は資本主義で「${C()[card].name}」を財宝として使った。`);
       maybeCitadel(state, pIndex, card);
       applyEffect(state, card, pIndex);
+      // 冒険：-$1トークン（橋の下のトロル／舞踏会）は「最初に得る$1」に食い込む＝財宝の共通末尾と同じ処理を通す。
+      applyCoinPenalty(state);
       return;
     }
     applyTreasureEffect(state, pIndex, card);
@@ -391,7 +411,11 @@
     const p = state.players[pIndex];
     const buyPhase = !!(state.turn && state.turn.phase === 'buy');
     const kind = buyPhase ? 'treasure' : 'action';
-    if (p.hand.some((c) => DOM.isType(c, kind))) state.pending = { type: 'crown', mode: kind, player: pIndex };
+    // 財宝の候補判定は動的（資本主義で財宝になったアクションも対象＝受理側 CROWN_CHOOSE と同じ述語）。
+    const has = kind === 'treasure'
+      ? p.hand.some((c) => isTreasureFor(state, c))
+      : p.hand.some((c) => DOM.isType(c, 'action'));
+    if (has) state.pending = { type: 'crown', mode: kind, player: pIndex };
   }
 
   /* ---------- 乱数・シャッフル ---------- */
@@ -504,7 +528,10 @@
       coinPenalty: 0, // 冒険：-$1トークンの未消化ぶん（購入フェイズで最初に得る$1に食い込む。毎ターンリセット）
       priestCount: 0, // ルネサンス：司祭＝このターン有効な司祭の数（廃棄1枚につき +2コイン × この数）
       cargoCharges: 0, // ルネサンス：貨物船＝このターン「獲得したカードを脇に置ける」残り回数（貨物船1枚につき1回）
+      improvePlays: 0, // ルネサンス：増築＝このターンに使用した回数（玉座/山砦/王笏の再演も数える＝策謀 t.schemes と同型）
       improveLeft: null, // ルネサンス：増築＝クリンナップ開始時に残っている増築の回数（null=未初期化）
+      cleanupWaiting: null, // ルネサンス：片付けを保留中の席（増築が誘発した対話を先に解決するため）
+      inStartPhase: false, // ルネサンス：ターン開始時効果を解決中か（鍵をその場で取ったときの +$1 の判定用）
       afterActionCard: null, // 冒険：直前にプレイし解決したアクション（法貨/御料車の呼び出し窓の対象）
       // 冒険：横型イベント用のターン状態。
       eventsBought: [],   // このターンに購入したイベントid列（施し/借入/保存/巡礼＝1ターン1回の判定）
@@ -2998,8 +3025,11 @@
         if (p.hand.length > 0) state.pending = { type: 'research_trash', player: pi };
         break;
       // 増築：+2コイン。クリンナップ開始時の廃棄→格上げ獲得は endBuyTailSchemeOrCleanup の窓で処理する。
+      //   **窓の回数は「このターンに使用した回数」**（玉座/山砦/王笏の再演も数える＝策謀 t.schemes と同型）。
+      //   場の物理枚数で数えると再演ぶんが落ちる（公式：玉座で2回使えば格上げも2回）。
       case 'improve':
         t.coins += 2;
+        t.improvePlays = (t.improvePlays || 0) + 1;
         break;
 
       /* ===== ルネサンス R3：アーティファクトが絡む王国4枚 ===== */
@@ -4857,6 +4887,9 @@
   }
   function resolveDurationStartEffects(state, pi) {
     const p = state.players[pi];
+    // ルネサンス：ターン開始時効果の解決中フラグ（鍵をその場で取ったときの +$1 の判定用。
+    //   PLAY_ACTION / END_ACTION_PHASE / BUY で降ろす＝「開始時効果が終わった」とみなす）。
+    if (state.turn) state.turn.inStartPhase = true;
     // 帝国：寄付（Donate）＝この手番開始時に「まず」（他の開始時効果より前に）デッキと捨て札を全部手札に集める。
     //   → 任意枚数廃棄（donate_trash pending）→ 残りをシャッフルして5枚引く → その後で通常の開始時効果を続行（再入）。
     if (p.donateNext) {
@@ -6068,7 +6101,7 @@
   function endBuyTailSchemeOrCleanup(state, pi) {
     const me = state.players[pi];
     // ルネサンス：増築（クリンナップ開始時の廃棄→ちょうど+$1の獲得）。場の増築1枚につき1回。
-    if (state.turn.improveLeft == null) state.turn.improveLeft = me.inPlay.filter((c) => c === 'improve').length;
+    if (state.turn.improveLeft == null) state.turn.improveLeft = state.turn.improvePlays || 0;
     if (state.turn.improveLeft > 0 && improveTargets(state, pi).length) {
       state.pending = { type: 'improve', stage: 'trash', player: pi };
       return;
@@ -6079,6 +6112,15 @@
       state.pending = { type: 'scheme_cleanup', player: pi, max: schemes };
       return;
     }
+    /* 【重要】増築の廃棄/獲得が誘発した対話（技術革新／下水道／貨物船／ドゥカート＝onGain/onTrashQueue）は、
+       **片付け（手札を捨てる・次の手札を先引きする・手番を渡す）より前**に解決しなければならない。
+       キューが残っているうちは片付けを保留し、reduce 末尾のキュー消化に譲る（storytellerResume と同型の再入）。
+       これを怠ると「相手の手番中に技術革新でアクションを使う」「先引きした次の手札を下水道で廃棄する」等が起きる。 */
+    if ((state.onGainQueue && state.onGainQueue.length) || (state.onTrashQueue && state.onTrashQueue.length)) {
+      state.turn.cleanupWaiting = pi;
+      return;
+    }
+    state.turn.cleanupWaiting = null;
     cleanupAndAdvance(state);
   }
 
@@ -6115,6 +6157,15 @@
     //   獲得すると（remodel/工房等の *_GAIN 経由）その場で立てられないため onGainQueue に貯め、選択待ちが無くなったら 1件ずつ pending 化する。
     if (!state.pending && !state.gameOver && state.onGainQueue && state.onGainQueue.length) {
       state.pending = state.onGainQueue.shift();
+      state = runReplays(state);
+    }
+    // ルネサンス：増築の廃棄/獲得が誘発した対話（技術革新/下水道/貨物船/ドゥカート）を解決し終えたら、
+    //   保留していた片付け（endBuyTailSchemeOrCleanup）に戻る。＝「片付けは対話の後」を保証する再入。
+    if (!state.pending && !state.gameOver && state.turn && state.turn.cleanupWaiting != null &&
+        !(state.onGainQueue && state.onGainQueue.length) && !(state.onTrashQueue && state.onTrashQueue.length)) {
+      const cw = state.turn.cleanupWaiting;
+      state.turn.cleanupWaiting = null;
+      endBuyTailSchemeOrCleanup(state, cw);
       state = runReplays(state);
     }
     // 冒険：語り部の中断再開は runReplays より前（上）で処理済み。ここでは onTrashQueue 由来などで再度残っていれば拾う保険。
@@ -6156,7 +6207,14 @@
         //   カードは動かさず（既に場にある）効果だけをもう一度適用する。1回目が選択待ちを立てた場合は
         //   それが解決してからここに来る（＝御守り/金床/水晶玉などの選択が2回とも正しく出る）。
         log(state, `${state.players[r.player].name} は「${C()[r.card].name}」をもう一度使った。`);
-        applyTreasureEffect(state, r.player, r.card);
+        // ルネサンス：資本主義で「財宝になったアクション」を2回使う場合は、**アクションの効果**をもう一度適用する
+        //   （applyTreasureEffect ではコインもどの分岐にも当たらず完全に不発になる）。
+        if (!DOM.isType(r.card, 'treasure') && DOM.isType(r.card, 'action')) {
+          state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
+          applyEffect(state, r.card, r.player);
+        } else {
+          applyTreasureEffect(state, r.player, r.card);
+        }
         continue; // applyEffect（アクションの効果）は行わない
       }
       if (r.label === 'counterfeit_trash') {
@@ -6212,6 +6270,7 @@
         if (state.pending) return state;
         if (t.phase !== 'action') return state;
         if (t.actions <= 0) return state;
+        t.inStartPhase = false; // ルネサンス：自分でアクションを使い始めたら「ターン開始時効果」は終わり
         const card = action.card;
         // 冒険：相続＝自分のターン中、屋敷はアクション（命令）としてもプレイできる（脇のカードを動かさずに使用）。
         const asInherited = inheritedEstate(me, card);
@@ -6720,6 +6779,7 @@
         if (state.pending) return state;
         if (t.phase !== 'action') return state;
         t.phase = 'buy';
+        t.inStartPhase = false; // ルネサンス：ターン開始時効果はもう終わっている
         // 公式：「購入したら財宝を出せない」は**その購入フェイズ内**の制限。ヴィラ等でアクションフェイズに戻り、
         //   再び購入フェイズに入った場合は「購入フェイズの最初から」＝財宝を出し直せる（ロックを解除する）。
         t.treasuresLocked = false;
@@ -10044,6 +10104,8 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'innovation') return state;
         state.pending = null;
+        // 「各ターンに1回」＝**解決時に権利を再検査**する（実験の on-gain のように1回の獲得で窓が2件積まれ得るため）。
+        if (t.innovationUsed) return state;
         if (!action.play) return state;
         const pl = state.players[pd.player];
         const z = pd.dest === 'hand' ? pl.hand : (pd.dest === 'deck' ? pl.deck : pl.discard);
@@ -10088,6 +10150,8 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'cargo_ship_setaside') return state;
         const pl = state.players[pd.player];
+        // 「このターン1回」＝**解決時に残回数を再検査**する（実験の on-gain のように1回の獲得で窓が2件積まれ得るため）。
+        if ((t.cargoCharges || 0) <= 0) { state.pending = null; return state; }
         if (action.set) {
           const z = pd.dest === 'hand' ? pl.hand : (pd.dest === 'deck' ? pl.deck : pl.discard);
           if (removeOne(z, pd.card)) {
@@ -10247,6 +10311,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'treasurer' || pd.stage !== 'trash') return state;
         const pl = state.players[pd.player];
+        if (!pl.hand.some((c) => isTreasureFor(state, c))) { state.pending = null; return state; } // 終端保証
         const card = action.card;
         if (!card || pl.hand.indexOf(card) < 0 || !isTreasureFor(state, card)) return state;
         if (!trashFromHand(state, pd.player, [card], 1, `廃棄した（出納官）。`)) return state;
@@ -10259,6 +10324,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'treasurer' || pd.stage !== 'gain') return state;
         const pl = state.players[pd.player];
+        if (!(state.trash || []).some((c) => isTreasureFor(state, c))) { state.pending = null; return state; } // 終端保証
         const card = action.card;
         if (!card || !isTreasureFor(state, card) || (state.trash || []).indexOf(card) < 0) return state;
         removeOne(state.trash, card);
@@ -11828,6 +11894,7 @@
     scepterTargets,    // ルネサンス：王笏の再演対象（engine/CPU/UI が同じ候補を参照）
     improveTargets,    // ルネサンス：増築の廃棄対象（engine/CPU/UI が同じ候補を参照）
     isTreasureFor,     // ルネサンス：資本主義を含む「今この状態で財宝か」＝**財宝判定の正本**（engine/CPU/UI が同じ述語）
+    capitalismTreasures, // ルネサンス：資本主義で財宝になるアクションの集合（整合性テストで固定する）
     maskStateFor,
     PLAYER_ACTIONS,
     // 「誰が今操作すべきか」: 選択待ちならその人、なければ手番のプレイヤー

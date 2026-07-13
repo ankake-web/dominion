@@ -1082,5 +1082,165 @@ console.log('=== 資本主義（capitalism）===');
   s = reduce(s, { type: 'PLAY_TREASURE', card: 'market' });
   ok(!s.players[0].inPlay.includes('market') && s.turn.coins === 0, '資本主義が無ければアクションは財宝ではない'); }
 
+/* ============================================================
+   敵対レビュー（多エージェント・5観点）で確定したバグの回帰テスト（H1/H2/M1/M2/M3/L1/L2/L4/L5）
+   ============================================================ */
+console.log('=== 回帰 H1：増築が誘発した対話は「片付け（先引き・手番交代）より前」に解決する ===');
+{ // 技術革新：増築の格上げ獲得したアクションを、**自分の手番のうちに**使う
+  let s = proj(['innovation', 'fair'], ['improve', 'research', 'old_witch', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'laboratory']);
+  s.players[0].projects = ['innovation'];
+  s.players[0].hand = ['improve'];
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s.players[1].hand = ['copper', 'copper', 'copper', 'estate', 'estate']; // 民兵のアタック対象
+  s = play(s, 'improve');
+  s.turn.phase = 'buy';
+  s = reduce(s, { type: 'END_TURN' });
+  ok(s.pending && s.pending.type === 'improve', 'クリンナップ開始時に増築の窓');
+  s = reduce(s, { type: 'IMPROVE_TRASH', card: 'improve' }); // $3 → ちょうど$4
+  s = reduce(s, { type: 'IMPROVE_GAIN', card: 'militia' });
+  ok(s.pending && s.pending.type === 'innovation', '技術革新の窓が開く');
+  ok(s.turn.active === 0, '**まだ自分の手番**（片付けは保留されている）');
+  s = reduce(s, { type: 'INNOVATION_PLAY', play: true });
+  ok(s.pending && s.pending.player === 1 && s.turn.active === 0,
+    '獲得した民兵を**自分の手番のうちに**使い、相手がアタックを受けた');
+  s = cpuResolve(s, 30);
+  ok(s.turn.active === 1, 'その後で片付けが進み手番が移る'); }
+{ // 下水道：追加廃棄の対象は「先引きした次の手札」ではなく、いまの手札
+  let s = proj(['sewers'], ['improve', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'chapel', 'mine', 'laboratory']);
+  s.players[0].projects = ['sewers'];
+  s.players[0].hand = ['improve', 'estate'];
+  s.players[0].deck = ['gold', 'gold', 'gold', 'gold', 'gold', 'gold'];
+  s = play(s, 'improve');
+  s.turn.phase = 'buy';
+  s = reduce(s, { type: 'END_TURN' });
+  s = reduce(s, { type: 'IMPROVE_TRASH', card: 'improve' });
+  s = reduce(s, { type: 'IMPROVE_GAIN', card: 'militia' });
+  ok(s.pending && s.pending.type === 'sewers_trash', '下水道の窓が開く');
+  ok(s.turn.active === 0 && s.players[0].hand.includes('estate') && !s.players[0].hand.includes('gold'),
+    '対象は「捨てる前の手札」＝先引きした金貨ではない'); }
+
+console.log('=== 回帰 H2：出納官 × 資本主義（人間が詰まない＝終端保証）===');
+{ let s = proj(['capitalism'], ['improve', 'treasurer', 'village', 'smithy', 'market', 'moat', 'cellar', 'mine', 'laboratory', 'inventor']);
+  s.players[0].projects = ['capitalism'];
+  s.players[0].hand = ['treasurer', 'inventor', 'estate']; // 本物の財宝も「+$を持つアクション」も無い
+  s = play(s, 'treasurer');
+  s = reduce(s, { type: 'TREASURER_CHOOSE', mode: 'trash' });
+  ok(!s.pending, '手札に（動的にも）財宝が無ければ trash ステージは即終端する'); }
+{ let s = proj(['capitalism'], ['improve', 'treasurer', 'village', 'smithy', 'market', 'moat', 'cellar', 'mine', 'laboratory', 'inventor']);
+  s.players[0].projects = ['capitalism'];
+  s.players[0].hand = ['treasurer'];
+  s.trash = ['estate'];
+  s = play(s, 'treasurer');
+  s = reduce(s, { type: 'TREASURER_CHOOSE', mode: 'gain' });
+  ok(!s.pending, '廃棄置き場に財宝が無ければ gain ステージは即終端する'); }
+{ let s = proj(['capitalism'], ['improve', 'treasurer', 'village', 'smithy', 'market', 'moat', 'cellar', 'mine', 'laboratory', 'inventor']);
+  s.players[0].projects = ['capitalism'];
+  s.players[0].hand = ['treasurer', 'improve'];
+  s = play(s, 'treasurer');
+  s = reduce(s, { type: 'TREASURER_CHOOSE', mode: 'trash' });
+  ok(s.pending && s.pending.stage === 'trash', '資本主義で財宝になった増築があるので trash ステージが開く');
+  s = reduce(s, { type: 'TREASURER_TRASH', card: 'improve' });
+  ok(cnt(s.trash, 'improve') === 1 && !s.pending, '増築を財宝として廃棄できる'); }
+
+console.log('=== 回帰 M1：「1回だけ」の窓は解決時に再検査する（実験の on-gain で窓が2件積まれる）===');
+{ let s = proj(['innovation'], ['experiment', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'chapel', 'mine', 'laboratory']);
+  s.players[0].projects = ['innovation'];
+  s.players[0].deck = ['gold', 'gold', 'gold', 'gold'];
+  s.turn.phase = 'buy'; s.turn.coins = 3; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'experiment' }); // 実験を獲得→もう1枚の実験も獲得＝窓が2件
+  s = reduce(s, { type: 'INNOVATION_PLAY', play: true });
+  const played = s.players[0].inPlay.filter((c) => c === 'experiment').length + (s.turn.actionsPlayed || 0);
+  if (s.pending && s.pending.type === 'innovation') s = reduce(s, { type: 'INNOVATION_PLAY', play: true });
+  ok(s.turn.innovationUsed === true, '各ターン1回だけ使える');
+  ok((s.turn.actionsPlayed || 0) === 1, '2回目の窓を受諾しても2枚目は使用されない（actionsPlayed=1）'); }
+{ let s = proj([], ['cargo_ship', 'experiment', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'chapel', 'laboratory']);
+  s.players[0].hand = ['cargo_ship'];
+  s = play(s, 'cargo_ship');
+  s.turn.phase = 'buy'; s.turn.coins = 3; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'experiment' });
+  s = reduce(s, { type: 'CARGO_SHIP_SETASIDE', set: true });
+  if (s.pending && s.pending.type === 'cargo_ship_setaside') s = reduce(s, { type: 'CARGO_SHIP_SETASIDE', set: true });
+  ok(s.players[0].cargo.length === 1, '貨物船1枚で脇に置けるのは1枚だけ');
+  ok((s.players[0].delayedEffects || []).filter((e) => e.type === 'cargo_ship').length === 1, '持続の予約も1件だけ'); }
+
+console.log('=== 回帰 M2：増築の窓は「プレイ回数」で数える（山砦/玉座の再演を落とさない）===');
+{ let s = proj(['citadel'], ['improve', 'lackeys', 'experiment', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'laboratory']);
+  s.players[0].projects = ['citadel'];
+  s.players[0].hand = ['improve'];
+  s.players[0].inPlay = ['village']; // 2回目の格上げ対象（場のアクション）
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s = play(s, 'improve');
+  ok(s.turn.coins === 4 && s.turn.improvePlays === 2, '山砦で増築を2回使った（+$4・プレイ回数2）');
+  s.turn.phase = 'buy';
+  s = reduce(s, { type: 'END_TURN' });
+  s = reduce(s, { type: 'IMPROVE_TRASH', card: 'improve' });
+  s = reduce(s, { type: 'IMPROVE_GAIN', card: 'militia' });
+  ok(s.pending && s.pending.type === 'improve', '2回目の増築の窓が開く（場の物理枚数で数えていない）');
+  s = reduce(s, { type: 'IMPROVE_TRASH', card: null });
+  ok(s.turn.active === 1, '辞退で片付けが進む'); }
+
+console.log('=== 回帰 M3：CPU が増築でポーション費用の札を廃棄しても無限ループしない ===');
+{ let s = proj([], ['improve', 'university', 'alchemist', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'laboratory']);
+  s.players[0].inPlay = ['improve', 'university'];
+  s.turn.improvePlays = 1;
+  s.turn.phase = 'buy';
+  s = reduce(s, { type: 'END_TURN' });
+  s = reduce(s, { type: 'IMPROVE_TRASH', card: 'university' }); // $2P → ちょうど $3P（錬金術師）
+  ok(s.pending && s.pending.stage === 'gain' && s.pending.pot === 1, 'ポーション費用の窓');
+  const a = CPU.decide(s);
+  ok(a && a.type === 'IMPROVE_GAIN' && a.card === 'alchemist', 'CPU はポーション費用の一致する札を選ぶ');
+  s = cpuResolve(s, 20);
+  ok(!s.pending, 'CPU が終端できる（engine が拒否し続けない）'); }
+
+console.log('=== 回帰 L1/L2：資本主義の財宝を2回使う／-$1トークンが食い込む ===');
+{ let s = proj(['capitalism'], ['improve', 'market', 'village', 'smithy', 'militia', 'moat', 'cellar', 'mine', 'laboratory', 'counterfeit']);
+  s.players[0].projects = ['capitalism'];
+  s.players[0].hand = ['counterfeit', 'market'];
+  s.players[0].deck = ['gold', 'gold', 'gold'];
+  s.turn.phase = 'buy';
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'counterfeit' });
+  s = reduce(s, { type: 'COUNTERFEIT_PLAY', card: 'market' });
+  ok(s.turn.coins === 3 && s.turn.buys === 4, '偽造通貨で市場を2回使った（$1+$1＋偽造通貨$1／+1購入×2）');
+  ok(s.players[0].hand.filter((c) => c === 'gold').length === 2, '2回とも +1カード'); }
+{ let s = proj(['capitalism'], ['improve', 'market', 'village', 'smithy', 'militia', 'moat', 'cellar', 'mine', 'laboratory', 'inventor']);
+  s.players[0].projects = ['capitalism'];
+  s.players[0].hand = ['market'];
+  s.players[0].deck = ['gold'];
+  s.players[0].minusCoin = true;
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); // -$1トークンを coinPenalty に変換
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'market' });
+  ok(s.turn.coins === 0, '-$1トークンが資本主義の財宝（市場の+$1）にも食い込む'); }
+
+console.log('=== 回帰 L4：ピアッツァでターン開始時に出納官→鍵を取ると +$1 が入る ===');
+{ let s = proj(['piazza'], ['treasurer', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'chapel', 'mine', 'laboratory']);
+  s.players[0].projects = ['piazza'];
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'treasurer', 'gold'];
+  s = toMyTurn(s);
+  ok(s.pending && s.pending.type === 'treasurer', 'ピアッツァが出納官を使用した');
+  s = reduce(s, { type: 'TREASURER_CHOOSE', mode: 'key' });
+  ok(s.artifacts.key === 0 && s.turn.coins === 4, '鍵を受け取り、開始時トリガーとして +$1（出納官の$3＋鍵の$1）'); }
+{ let s = proj([], ['treasurer', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'chapel', 'mine', 'laboratory']);
+  s.players[0].hand = ['treasurer'];
+  s = play(s, 'treasurer');
+  s = reduce(s, { type: 'TREASURER_CHOOSE', mode: 'key' });
+  ok(s.turn.coins === 3, '通常は取ったターンには +$1 が入らない'); }
+
+console.log('=== 回帰 L5：CPU が村人を使う ===');
+{ let s = act(['lackeys', 'acting_troupe', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'mine', 'laboratory']);
+  me(s).hand = ['smithy', 'market'];
+  me(s).deck = ['gold', 'gold', 'gold', 'gold'];
+  me(s).villagers = 2;
+  s.turn.actions = 0;
+  const a = CPU.decide(s);
+  ok(a && a.type === 'SPEND_VILLAGER', 'アクション権0＋手札にアクション＋村人あり → 村人を使う');
+  s = reduce(s, a);
+  ok(s.turn.actions === 1 && me(s).villagers === 1, '+1アクション'); }
+{ let s = act(['lackeys', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'mine', 'remodel', 'laboratory']);
+  me(s).hand = ['copper', 'copper'];
+  me(s).villagers = 2;
+  s.turn.actions = 0;
+  const a = CPU.decide(s);
+  ok(a && a.type === 'END_ACTION_PHASE', '手札にアクションが無ければ村人を無駄遣いしない（非ループ）'); }
+
 console.log('\n=== ' + pass + ' 成功 / ' + fail + ' 失敗 ===');
 if (fail > 0) process.exit(1);

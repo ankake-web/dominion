@@ -1219,6 +1219,8 @@
     return {
       counts,
       actions: present.filter((id) => DOM.isType(id, 'action')),
+      // ※ここは「手札の表示グループ分け」＝静的種別でよい（資本主義でアクションが財宝になっても
+      //   アクション群に入れて表示し、購入フェイズでは playable() が動的述語で光らせる）。state を持たない関数。
       coins: present.filter((id) => DOM.isType(id, 'treasure') && !DOM.isType(id, 'action')),
       vp: present.filter((id) => (DOM.isType(id, 'victory') || DOM.isType(id, 'curse')) && !DOM.isType(id, 'action') && !DOM.isType(id, 'treasure')),
     };
@@ -1636,7 +1638,7 @@
         () => dispatch({ type: 'OVERLORD_PLAY', card: null }), false, '使う');
     }
     if (pd.type === 'crown' && pd.mode === 'action') return modalSingleHand(p, '冠 — 2回使うアクション', '手札のアクションカードを1枚選ぶと、それを2回使います（使わなくてもよい）。', (id) => DOM.isType(id, 'action'), (card) => dispatch({ type: 'CROWN_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'CROWN_CHOOSE', card: null }) }, '2回使う');
-    if (pd.type === 'crown' && pd.mode === 'treasure') return modalSingleHand(p, '冠 — 2回使う財宝', '手札の財宝カードを1枚選ぶと、それを2回使います（使わなくてもよい）。', (id) => DOM.isType(id, 'treasure'), (card) => dispatch({ type: 'CROWN_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'CROWN_CHOOSE', card: null }) }, '2回使う');
+    if (pd.type === 'crown' && pd.mode === 'treasure') return modalSingleHand(p, '冠 — 2回使う財宝', '手札の財宝カードを1枚選ぶと、それを2回使います（使わなくてもよい）。', (id) => isTreasureNow(state, id), (card) => dispatch({ type: 'CROWN_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'CROWN_CHOOSE', card: null }) }, '2回使う');
     /* ===== 帝国：横型ランドスケープ（ランドマーク＝闘技場・峠）===== */
     if (pd.type === 'arena') return modalSingleHand(p, '闘技場', 'アクションカード1枚を捨ててもよい（捨てたら +2勝利点）。捨てても廃棄ではありません。',
       (id) => DOM.CARDS[id].types.includes('action'),
@@ -1837,7 +1839,7 @@
     if (pd.type === 'warrior' && pd.stage === 'react') return modalOptions('ウォリアーを受ける', '山札の一番上を捨て、コストが$3か$4なら廃棄します（場のトラベラー数だけ繰り返し）。', reactOptions(p, pd, { type: 'WARRIOR_REACT' }));
     if (pd.type === 'soldier' && pd.stage === 'react') return modalOptions('兵士を受ける', '手札からカード1枚を捨てます。', reactOptions(p, pd, { type: 'SOLDIER_REACT' }));
     if (pd.type === 'soldier' && pd.stage === 'discard') return modalSingleHand(p, '兵士 — 手札を1枚捨てる', '手札からカード1枚を選んで捨てます。', () => true, (card) => dispatch({ type: 'SOLDIER_DISCARD', card }), null, '捨てる');
-    if (pd.type === 'hero_gain') return modalGainSupply(state, 'ヒーロー — 財宝を獲得', '財宝カード1枚を獲得します。', (id) => DOM.isType(id, 'treasure'), (id) => dispatch({ type: 'HERO_GAIN', card: id }));
+    if (pd.type === 'hero_gain') return modalGainSupply(state, 'ヒーロー — 財宝を獲得', '財宝カード1枚を獲得します。', (id) => isTreasureNow(state, id), (id) => dispatch({ type: 'HERO_GAIN', card: id }));
     if (pd.type === 'fugitive_discard') return modalSingleHand(p, '脱走兵 — 手札を1枚捨てる', '手札からカード1枚を選んで捨てます。', () => true, (card) => dispatch({ type: 'FUGITIVE_DISCARD', card }), null, '捨てる');
     // 冒険：相続した屋敷もアクション（命令）＝門下生の対象にできる（engine と同じ述語 inheritedEstate を見る）。
     if (pd.type === 'disciple_play') return modalSingleHand(p, '門下生 — 2回使うアクションを選ぶ', '手札のアクション1枚を選ぶと、それを2回使い、同じカード1枚を獲得します。',
@@ -1863,7 +1865,7 @@
     if (pd.type === 'raze' && pd.stage === 'look') return modalPickList(state, '倒壊 — 手札に加える', '見たカードから1枚を手札に加えます（残りは捨て札）。', pd.cards, '手札に加える', (card) => dispatch({ type: 'RAZE_LOOK', card }));
     if (pd.type === 'artificer' && pd.stage === 'discard') return modalMultiHand(p, '工匠 — 捨てる', '好きな枚数を捨て、捨てた枚数ちょうどのコストのカードを1枚 山札の上に獲得できます（0枚でもOK）。', (n) => '確定（' + n + '枚捨て）', true, (cards) => dispatch({ type: 'ARTIFICER_DISCARD', cards }));
     if (pd.type === 'artificer' && pd.stage === 'gain') return modalGainSupply(state, '工匠 — 山札の上に獲得', 'ちょうどコスト $' + pd.exact + ' のカードを1枚、山札の上に獲得できます（しなくてもよい）。', (id) => effCost(state, id) === pd.exact, (id) => dispatch({ type: 'ARTIFICER_GAIN', card: id }), () => dispatch({ type: 'ARTIFICER_GAIN', card: null }), true);
-    if (pd.type === 'storyteller') return modalMultiHand(p, '語り部 — 財宝をプレイ', '手札から最大3枚の財宝を選んでプレイします。その後、+1カード＋所持コイン$1につき+1カード（コインは全て使い切ります）。', (n) => '確定（' + n + '枚プレイ）', true, (cards) => dispatch({ type: 'STORYTELLER_PLAY', cards }), 3, (id) => DOM.isType(id, 'treasure'));
+    if (pd.type === 'storyteller') return modalMultiHand(p, '語り部 — 財宝をプレイ', '手札から最大3枚の財宝を選んでプレイします。その後、+1カード＋所持コイン$1につき+1カード（コインは全て使い切ります）。', (n) => '確定（' + n + '枚プレイ）', true, (cards) => dispatch({ type: 'STORYTELLER_PLAY', cards }), 3, (id) => isTreasureNow(state, id));
     if (pd.type === 'messenger_play') return modalOptions('使者 — 山札を捨てる？', '自分の山札を捨て札にできます（任意）。', [
       { label: '山札を捨て札にする', on: () => dispatch({ type: 'MESSENGER_PLAY', discard: true }) },
       { label: '捨てない', cls: 'btn-primary', on: () => dispatch({ type: 'MESSENGER_PLAY', discard: false }) }]);
@@ -1883,7 +1885,7 @@
       { label: '「' + DOM.CARDS[pd.card].name + '」を使う', cls: 'btn-primary', on: () => dispatch({ type: 'SAILOR_PLAY_GAIN', play: true }) },
       { label: '使わない', on: () => dispatch({ type: 'SAILOR_PLAY_GAIN', play: false }) },
     ]);
-    if (pd.type === 'pirate_gain') return modalGainSupply(state, '海賊 — 財宝を獲得', 'コスト6以下の財宝1枚を手札に獲得します。', (id) => DOM.isType(id, 'treasure') && effCost(state, id) <= 6, (id) => dispatch({ type: 'PIRATE_GAIN', card: id }), () => dispatch({ type: 'PIRATE_GAIN', card: null }));
+    if (pd.type === 'pirate_gain') return modalGainSupply(state, '海賊 — 財宝を獲得', 'コスト6以下の財宝1枚を手札に獲得します。', (id) => isTreasureNow(state, id) && effCost(state, id) <= 6, (id) => dispatch({ type: 'PIRATE_GAIN', card: id }), () => dispatch({ type: 'PIRATE_GAIN', card: null }));
 
     /* ===== 拡張: 錬金術（Alchemy 第二版）===== */
     if (pd.type === 'transmute') return modalSingleHand(p, '変成 — 廃棄', '手札から1枚を廃棄します（アクション→公領／財宝→変成／勝利点→金貨。多重タイプは各ぶん獲得）。', () => true, (card) => dispatch({ type: 'TRANSMUTE_TRASH', card }), null, '廃棄する');
@@ -1912,7 +1914,7 @@
     if (pd.type === 'bishop' && pd.stage === 'other') return modalSingleHand(p, '司教 — 廃棄（任意）', '手札1枚を廃棄できます（しなくてもよい）。', () => true, (card) => dispatch({ type: 'BISHOP_OTHER', card }), { label: '廃棄しない', on: () => dispatch({ type: 'BISHOP_OTHER', card: null }) }, '廃棄する');
     if (pd.type === 'vault' && pd.stage === 'discard') return modalMultiHand(p, '金庫室 — 捨てる', '好きな枚数を捨て、1枚につき +1コイン。', (n) => '確定（' + n + '枚捨てる）', true, (cards) => dispatch({ type: 'VAULT_DISCARD', cards }));
     if (pd.type === 'vault' && pd.stage === 'other') return modalMultiHand(p, '金庫室 — 2枚捨てて1枚引く？', '手札2枚を捨てると1枚引けます（任意）。', (n) => (n === 2 ? '2枚捨てて1枚引く' : '捨てない'), true, (cards) => dispatch({ type: 'VAULT_OTHER', cards }), 2);
-    if (pd.type === 'mint') return modalSingleHand(p, '造幣所 — 財宝を公開', '手札の財宝1枚を公開し、そのコピーを獲得します（任意）。', (id) => DOM.isType(id, 'treasure'), (card) => dispatch({ type: 'MINT_REVEAL', card }), { label: '公開しない', on: () => dispatch({ type: 'MINT_REVEAL', card: null }) }, '公開して獲得');
+    if (pd.type === 'mint') return modalSingleHand(p, '造幣所 — 財宝を公開', '手札の財宝1枚を公開し、そのコピーを獲得します（任意）。', (id) => isTreasureNow(state, id), (card) => dispatch({ type: 'MINT_REVEAL', card }), { label: '公開しない', on: () => dispatch({ type: 'MINT_REVEAL', card: null }) }, '公開して獲得');
     if (pd.type === 'expand' && pd.stage === 'trash') return modalSingleHand(p, '拡張 — 廃棄', '廃棄するカードを1枚選びます（その後 +$3 までを獲得）。', () => true, (card) => dispatch({ type: 'EXPAND_TRASH', card }), null, '廃棄する');
     if (pd.type === 'expand' && pd.stage === 'gain') return modalGainSupply(state, '拡張 — 獲得', 'コスト ' + pd.maxCost + ' 以下のカードを1枚獲得します。', (id) => effCost(state, id) <= pd.maxCost, (id) => dispatch({ type: 'EXPAND_GAIN', card: id }));
     if (pd.type === 'forge' && pd.stage === 'trash') return modalMultiHand(p, '溶鉱炉 — 廃棄', '好きな枚数を廃棄します（合計コストちょうどのカードを獲得）。', (n) => '確定（' + n + '枚廃棄）', true, (cards) => dispatch({ type: 'FORGE_TRASH', cards }));
@@ -1929,14 +1931,14 @@
       { label: '山札の上に置く', cls: 'btn-primary', on: () => dispatch({ type: 'TIARA_TOPDECK', topdeck: true }) },
       { label: '置かない', on: () => dispatch({ type: 'TIARA_TOPDECK', topdeck: false }) },
     ]);
-    if (pd.type === 'tiara_play') return modalSingleHand(p, 'ティアラ — 財宝を2回使う', '2回使う財宝を1枚選びます（任意）。', (id) => DOM.isType(id, 'treasure'), (card) => dispatch({ type: 'TIARA_PLAY', card }), { label: '使わない', on: () => dispatch({ type: 'TIARA_PLAY', card: null }) }, '2回使う');
-    if (pd.type === 'anvil' && pd.stage === 'discard') return modalSingleHand(p, '金床 — 財宝を捨てる', '財宝1枚を捨てると、コスト4以下を獲得できます（任意）。', (id) => DOM.isType(id, 'treasure'), (card) => dispatch({ type: 'ANVIL_DISCARD', card }), { label: '捨てない', on: () => dispatch({ type: 'ANVIL_DISCARD', card: null }) }, '捨てる');
+    if (pd.type === 'tiara_play') return modalSingleHand(p, 'ティアラ — 財宝を2回使う', '2回使う財宝を1枚選びます（任意）。', (id) => isTreasureNow(state, id), (card) => dispatch({ type: 'TIARA_PLAY', card }), { label: '使わない', on: () => dispatch({ type: 'TIARA_PLAY', card: null }) }, '2回使う');
+    if (pd.type === 'anvil' && pd.stage === 'discard') return modalSingleHand(p, '金床 — 財宝を捨てる', '財宝1枚を捨てると、コスト4以下を獲得できます（任意）。', (id) => isTreasureNow(state, id), (card) => dispatch({ type: 'ANVIL_DISCARD', card }), { label: '捨てない', on: () => dispatch({ type: 'ANVIL_DISCARD', card: null }) }, '捨てる');
     if (pd.type === 'anvil' && pd.stage === 'gain') return modalGainSupply(state, '金床 — 獲得', 'コスト4以下のカードを1枚獲得します。', (id) => effCost(state, id) <= 4, (id) => dispatch({ type: 'ANVIL_GAIN', card: id }));
     if (pd.type === 'investment' && !pd.stage) return modalOptions('投資', '次のどちらかを選びます。', [
       { label: '+1 コイン', cls: 'btn-primary', on: () => dispatch({ type: 'INVESTMENT', choice: 'coin' }) },
       { label: '財宝1枚を廃棄して、場の財宝の種類ぶん +勝利点', on: () => dispatch({ type: 'INVESTMENT', choice: 'vp' }) },
     ]);
-    if (pd.type === 'investment' && pd.stage === 'trash') return modalSingleHand(p, '投資 — 財宝を廃棄', '廃棄する財宝を1枚選びます（場の財宝の種類ぶん +勝利点）。', (id) => DOM.isType(id, 'treasure'), (card) => dispatch({ type: 'INVESTMENT_TRASH', card }), null, '廃棄する');
+    if (pd.type === 'investment' && pd.stage === 'trash') return modalSingleHand(p, '投資 — 財宝を廃棄', '廃棄する財宝を1枚選びます（場の財宝の種類ぶん +勝利点）。', (id) => isTreasureNow(state, id), (card) => dispatch({ type: 'INVESTMENT_TRASH', card }), null, '廃棄する');
     if (pd.type === 'crystal_ball') {
       const c = pd.card; const opts = [];
       if (DOM.isType(c, 'action') || DOM.isType(c, 'treasure')) opts.push({ label: '使う', cls: 'btn-primary', on: () => dispatch({ type: 'CRYSTAL_BALL', choice: 'play' }) });
@@ -2010,9 +2012,9 @@
     if (pd.type === 'doctor' && pd.stage === 'name') return modalNameCard(state, '医者 — カードを指定', '山札の上3枚を公開し、指定と同名を全て廃棄します。1種を指定してください。', (id) => dispatch({ type: 'DOCTOR_NAME', card: id }));
     if (pd.type === 'doctor' && pd.stage === 'order') return modalReorder('医者 — 山札の上に戻す', '廃棄しなかったカードを山札の上に戻す順番をタップで選びます（最初のタップが一番上）。', pd.cards, (order) => dispatch({ type: 'DOCTOR_ORDER', order }));
     if (pd.type === 'advisor') return modalPickList(state, '助言者 — 捨てさせるカードを選ぶ', state.players[pd.source].name + ' が公開した ' + pd.cards.length + '枚 から、捨てさせる1枚を選びます（残りは ' + state.players[pd.source].name + ' の手札へ）。', pd.cards, '捨てさせる', (id) => dispatch({ type: 'ADVISOR_CHOOSE', card: id }));
-    if (pd.type === 'plaza') return modalSingleHand(p, '広場 — 財宝を捨てる', '財宝1枚を捨てると +1財源（しなくてもよい）。', (id) => DOM.isType(id, 'treasure'), (card) => dispatch({ type: 'PLAZA_DISCARD', card }), { label: '捨てない', on: () => dispatch({ type: 'PLAZA_DISCARD', card: null }) }, '捨てる');
-    if (pd.type === 'taxman' && pd.stage === 'trash') return modalSingleHand(p, '収税吏 — 財宝を廃棄', '手札の財宝1枚を廃棄できます（廃棄すると、そのコスト+$3までの財宝を山札の上に獲得し、相手に同名を捨てさせます）。', (id) => DOM.isType(id, 'treasure'), (card) => dispatch({ type: 'TAXMAN_TRASH', card }), { label: '廃棄しない', on: () => dispatch({ type: 'TAXMAN_TRASH', card: null }) }, '廃棄する');
-    if (pd.type === 'taxman' && pd.stage === 'gain') return modalGainSupply(state, '収税吏 — 財宝を獲得', 'コスト $' + pd.maxCost + ' 以下の財宝を山札の上に獲得します。', (id) => DOM.isType(id, 'treasure') && effCost(state, id) <= pd.maxCost, (id) => dispatch({ type: 'TAXMAN_GAIN', card: id }), () => dispatch({ type: 'TAXMAN_GAIN', card: null }));
+    if (pd.type === 'plaza') return modalSingleHand(p, '広場 — 財宝を捨てる', '財宝1枚を捨てると +1財源（しなくてもよい）。', (id) => isTreasureNow(state, id), (card) => dispatch({ type: 'PLAZA_DISCARD', card }), { label: '捨てない', on: () => dispatch({ type: 'PLAZA_DISCARD', card: null }) }, '捨てる');
+    if (pd.type === 'taxman' && pd.stage === 'trash') return modalSingleHand(p, '収税吏 — 財宝を廃棄', '手札の財宝1枚を廃棄できます（廃棄すると、そのコスト+$3までの財宝を山札の上に獲得し、相手に同名を捨てさせます）。', (id) => isTreasureNow(state, id), (card) => dispatch({ type: 'TAXMAN_TRASH', card }), { label: '廃棄しない', on: () => dispatch({ type: 'TAXMAN_TRASH', card: null }) }, '廃棄する');
+    if (pd.type === 'taxman' && pd.stage === 'gain') return modalGainSupply(state, '収税吏 — 財宝を獲得', 'コスト $' + pd.maxCost + ' 以下の財宝を山札の上に獲得します。', (id) => isTreasureNow(state, id) && effCost(state, id) <= pd.maxCost, (id) => dispatch({ type: 'TAXMAN_GAIN', card: id }), () => dispatch({ type: 'TAXMAN_GAIN', card: null }));
     if (pd.type === 'taxman' && pd.stage === 'react') return modalOptions('収税吏を受ける', '手札が5枚以上なら「' + DOM.CARDS[pd.trashedName].name + '」を1枚捨てます（無ければ手札を公開）。', reactOptions(p, pd, { type: 'TAXMAN_REACT' }));
     if (pd.type === 'butcher' && pd.stage === 'trash') return modalSingleHand(p, '肉屋 — 廃棄', '手札1枚を廃棄できます（廃棄すると、財源を払って格上げ獲得）。', () => true, (card) => dispatch({ type: 'BUTCHER_TRASH', card }), { label: '廃棄しない', on: () => dispatch({ type: 'BUTCHER_TRASH', card: null }) }, '廃棄する');
     if (pd.type === 'butcher' && pd.stage === 'pay') return modalAmount('肉屋 — 財源を支払う', '財源を支払うと、獲得できるカードのコスト上限が上がります（廃棄したカードのコスト $' + pd.trashedCost + ' ＋ 支払った財源）。', p.coffers || 0, 0,
@@ -2046,13 +2048,13 @@
         { label: '捨てる', cls: 'btn-primary', on: () => dispatch({ type: 'JACK_LOOK', discard: true }) },
         { label: 'そのまま', on: () => dispatch({ type: 'JACK_LOOK', discard: false }) }]);
     }
-    if (pd.type === 'jack' && pd.stage === 'trash') return modalSingleHand(p, '何でも屋 — 廃棄（任意）', '財宝でないカードを1枚廃棄できます（しなくてもよい）。', (id) => !DOM.isType(id, 'treasure'), (card) => dispatch({ type: 'JACK_TRASH', card }), { label: '廃棄しない', on: () => dispatch({ type: 'JACK_TRASH', card: null }) }, '廃棄する');
+    if (pd.type === 'jack' && pd.stage === 'trash') return modalSingleHand(p, '何でも屋 — 廃棄（任意）', '財宝でないカードを1枚廃棄できます（しなくてもよい）。', (id) => !isTreasureNow(state, id), (card) => dispatch({ type: 'JACK_TRASH', card }), { label: '廃棄しない', on: () => dispatch({ type: 'JACK_TRASH', card: null }) }, '廃棄する');
     if (pd.type === 'noble_brigand' && pd.stage === 'react') return modalOptions('高貴な山賊を受ける', '山札の上2枚から、公開された銀貨/金貨1枚が廃棄され相手に奪われます。', reactOptions(p, pd, { type: 'NOBLE_BRIGAND_REACT' }));
     if (pd.type === 'noble_brigand' && pd.stage === 'pick') {
       const cands = []; (pd.revealed || []).forEach((c) => { if ((c === 'silver' || c === 'gold') && cands.indexOf(c) < 0) cands.push(c); });
       return modalOptions('高貴な山賊 — 廃棄する財宝を選ぶ', state.players[pd.victim].name + ' の公開財宝から、廃棄して獲得する1枚を選びます。', cands.map((c) => ({ label: DOM.CARDS[c].name, on: () => dispatch({ type: 'NOBLE_BRIGAND_PICK', card: c }) })));
     }
-    if (pd.type === 'spice_merchant' && pd.stage === 'trash') return modalSingleHand(p, '香辛料商人 — 財宝を廃棄（任意）', '手札の財宝1枚を廃棄できます（廃棄するとボーナスを選べます）。', (id) => DOM.isType(id, 'treasure'), (card) => dispatch({ type: 'SPICE_MERCHANT_TRASH', card }), { label: '廃棄しない', on: () => dispatch({ type: 'SPICE_MERCHANT_TRASH', card: null }) }, '廃棄する');
+    if (pd.type === 'spice_merchant' && pd.stage === 'trash') return modalSingleHand(p, '香辛料商人 — 財宝を廃棄（任意）', '手札の財宝1枚を廃棄できます（廃棄するとボーナスを選べます）。', (id) => isTreasureNow(state, id), (card) => dispatch({ type: 'SPICE_MERCHANT_TRASH', card }), { label: '廃棄しない', on: () => dispatch({ type: 'SPICE_MERCHANT_TRASH', card: null }) }, '廃棄する');
     if (pd.type === 'spice_merchant' && pd.stage === 'choose') return modalOptions('香辛料商人', 'どちらかを選びます。', [
       { label: '+2 カード ＆ +1 アクション', cls: 'btn-primary', on: () => dispatch({ type: 'SPICE_MERCHANT_CHOOSE', choice: 'cards' }) },
       { label: '+2 コイン ＆ +1 購入', on: () => dispatch({ type: 'SPICE_MERCHANT_CHOOSE', choice: 'coins' }) }]);
@@ -2072,7 +2074,7 @@
     if (pd.type === 'mandarin') return modalSingleHand(p, '役人 — 山札の上に置く', '手札から1枚を選び、山札の一番上に置きます。', () => true, (card) => dispatch({ type: 'MANDARIN_TOPDECK', card }), null, '山札の上に置く');
     if (pd.type === 'margrave' && pd.stage === 'react') return modalOptions('辺境伯を受ける', '+1カードを引いた後、手札が3枚になるまで捨てます。', reactOptions(p, pd, { type: 'MARGRAVE_REACT' }));
     if (pd.type === 'margrave' && pd.stage === 'discard') return modalSelectN(p, '辺境伯 — 手札を捨てる', '手札が3枚になるまで（' + (p.hand.length - 3) + '枚）捨てます。', Math.max(0, p.hand.length - 3), '確定（捨てる）', (cards) => dispatch({ type: 'MARGRAVE_DISCARD', cards }));
-    if (pd.type === 'stables') return modalSingleHand(p, '厩舎 — 財宝を捨てる（任意）', '財宝1枚を捨てると +3カード +1アクション（しなくてもよい）。', (id) => DOM.isType(id, 'treasure'), (card) => dispatch({ type: 'STABLES_DISCARD', card }), { label: '捨てない', on: () => dispatch({ type: 'STABLES_DISCARD', card: null }) }, '捨てる');
+    if (pd.type === 'stables') return modalSingleHand(p, '厩舎 — 財宝を捨てる（任意）', '財宝1枚を捨てると +3カード +1アクション（しなくてもよい）。', (id) => isTreasureNow(state, id), (card) => dispatch({ type: 'STABLES_DISCARD', card }), { label: '捨てない', on: () => dispatch({ type: 'STABLES_DISCARD', card: null }) }, '捨てる');
     if (pd.type === 'border_village') return modalGainSupply(state, '国境の村 — 獲得', 'コスト ' + pd.maxCost + ' 以下のカードを1枚獲得します。', (id) => effCost(state, id) <= pd.maxCost, (id) => dispatch({ type: 'BORDER_VILLAGE_GAIN', card: id }));
     if (pd.type === 'weaver' && pd.stage === 'gain') return modalGainSupply(state, '織工 — 獲得', 'コスト4以下のカードを1枚獲得します。', (id) => effCost(state, id) <= 4, (id) => dispatch({ type: 'WEAVER_GAIN', card: id }));
     if (pd.type === 'weaver') return modalOptions('織工', 'どちらかを選びます。', [
@@ -2160,11 +2162,11 @@
       const cands = (E() && E().bandOfMisfitsTargets) ? E().bandOfMisfitsTargets(state) : [];
       return modalGainSupply(state, 'はみだし者 — サプライのカードを使う', 'サプライにある「これより安い・非命令・非持続のアクション」を、サプライに残したまま使用します。', (id) => cands.includes(id), (id) => dispatch({ type: 'BAND_OF_MISFITS_PLAY', card: id }), () => dispatch({ type: 'BAND_OF_MISFITS_PLAY', card: null }), false, '使う');
     }
-    if (pd.type === 'hermit' && pd.stage === 'trash') return modalHermitTrash(p);
+    if (pd.type === 'hermit' && pd.stage === 'trash') return modalHermitTrash(p, state);
     if (pd.type === 'hermit' && pd.stage === 'gain') return modalGainSupply(state, '隠遁者 — 獲得', 'コスト3以下のカードを1枚獲得します。', (id) => effCost(state, id) <= 3, (id) => dispatch({ type: 'HERMIT_GAIN', card: id }), () => dispatch({ type: 'HERMIT_GAIN', card: null }));
     if (pd.type === 'procession') return modalSingleHand(p, '行進 — 2回使うアクション', '手札の非持続アクション1枚を選ぶと2回使い、廃棄して、ちょうど+$1高いアクションを獲得します（使わなくてもよい）。', (id) => DOM.isType(id, 'action') && !DOM.isType(id, 'duration'), (card) => dispatch({ type: 'PROCESSION_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'PROCESSION_CHOOSE', card: null }) }, '2回使う');
     if (pd.type === 'procession_gain') return modalGainSupply(state, '行進 — 獲得', 'ちょうどコスト $' + pd.exact + (pd.pot ? 'P' : '') + ' のアクションを1枚獲得します。', (id) => DOM.isType(id, 'action') && effCost(state, id) === pd.exact && (DOM.CARDS[id].potion || 0) === (pd.pot || 0), (id) => dispatch({ type: 'PROCESSION_GAIN', card: id }));
-    if (pd.type === 'counterfeit') return modalSingleHand(p, '偽造通貨 — 2回使う財宝', '手札の非持続財宝1枚を選ぶと2回使い、それを廃棄します（使わなくてもよい）。', (id) => DOM.isType(id, 'treasure') && !DOM.isType(id, 'duration'), (card) => dispatch({ type: 'COUNTERFEIT_PLAY', card }), { label: '使わない', on: () => dispatch({ type: 'COUNTERFEIT_PLAY', card: null }) }, '2回使う');
+    if (pd.type === 'counterfeit') return modalSingleHand(p, '偽造通貨 — 2回使う財宝', '手札の非持続財宝1枚を選ぶと2回使い、それを廃棄します（使わなくてもよい）。', (id) => isTreasureNow(state, id) && !DOM.isType(id, 'duration'), (card) => dispatch({ type: 'COUNTERFEIT_PLAY', card }), { label: '使わない', on: () => dispatch({ type: 'COUNTERFEIT_PLAY', card: null }) }, '2回使う');
     // --- Group D（アタック）---
     if (pd.type === 'relic' && pd.stage === 'react') return modalOptions('遺物を受ける', '-1カードトークンを受け取ります（次に引く手札が1枚少なくなります）。', reactOptions(p, pd, { type: 'RELIC_REACT' }));
     if (pd.type === 'giant' && pd.stage === 'react') return modalOptions('巨人を受ける', '山札の一番上を公開し、コスト$3〜$6なら廃棄、そうでなければ捨てて呪い1枚を獲得します。', reactOptions(p, pd, { type: 'GIANT_REACT' }));
@@ -2328,11 +2330,11 @@
       { label: '廃棄置き場から財宝1枚を手札に獲得する', cls: 'btn-primary', on: () => dispatch({ type: 'TREASURER_CHOOSE', mode: 'gain' }) },
       { label: '鍵を受け取る（毎ターン開始時 +1コイン）', on: () => dispatch({ type: 'TREASURER_CHOOSE', mode: 'key' }) }]);
     if (pd.type === 'treasurer' && pd.stage === 'trash') return modalSingleHand(p, '出納官 — 財宝を廃棄',
-      '手札の財宝カード1枚を廃棄します。', (id) => DOM.isType(id, 'treasure'),
+      '手札の財宝カード1枚を廃棄します。', (id) => isTreasureNow(state, id),
       (card) => dispatch({ type: 'TREASURER_TRASH', card }), null, '廃棄する');
     if (pd.type === 'treasurer' && pd.stage === 'gain') return modalPickList(state, '出納官 — 廃棄置き場から獲得',
       '廃棄置き場の財宝カード1枚を手札に獲得します（獲得時の効果も発動します）。',
-      (state.trash || []).filter((c) => DOM.isType(c, 'treasure')), '手札に獲得する',
+      (state.trash || []).filter((c) => isTreasureNow(state, c)), '手札に獲得する',
       (id) => dispatch({ type: 'TREASURER_GAIN', card: id }));
 
     return h('div');
@@ -2390,9 +2392,9 @@
     return modalShell('死の荷車', (self ? 'これ自身か手札のアクション1枚' : '手札のアクション1枚') + 'を廃棄すると +$5（しなくてもよい）。', [], h('div', null, buttons));
   }
   // 暗黒時代：隠遁者＝手札か捨て札の非財宝を1枚廃棄できる（任意）。
-  function modalHermitTrash(p) {
-    const handNT = [...new Set(p.hand.filter((id) => !DOM.isType(id, 'treasure')))];
-    const discNT = [...new Set(p.discard.filter((id) => !DOM.isType(id, 'treasure')))];
+  function modalHermitTrash(p, state) {
+    const handNT = [...new Set(p.hand.filter((id) => !isTreasureNow(state, id)))];
+    const discNT = [...new Set(p.discard.filter((id) => !isTreasureNow(state, id)))];
     const buttons = [];
     handNT.forEach((id) => buttons.push(h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'HERMIT_TRASH', from: 'hand', card: id }) }, '手札「' + DOM.CARDS[id].name + '」を廃棄')));
     discNT.forEach((id) => buttons.push(h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'HERMIT_TRASH', from: 'discard', card: id }) }, '捨て札「' + DOM.CARDS[id].name + '」を廃棄')));
