@@ -2,7 +2,58 @@
 
 ---
 
-## 0-23. **mix-all モード（拡張を自由に混ぜるランダム対戦）**＝配線完了・**エンジン硬化が未着手**（2026-07-14・**未push**）
+## 0-23. **mix-all モード（拡張を自由に混ぜるランダム対戦）＝エンジン硬化 完了**（2026-07-14・**未push**・`sw.js` v52）
+
+### 状態：配線＋硬化とも完了。**全38スイート緑（exit 0）**。残るは push（ユーザー確認）だけ。
+- **npm test 38スイート緑**（整合性3401・不変条件**9**［mix-all fuzz 追加］・**新設 `test/mixall.test.js` 102件**）／
+  `verify:e2e` 9/9（webp 371/0）／**mix CPUソーク 318戦（180＋修正後138）＝完走318・膠着0・例外0・保存則違反0**。
+
+### 硬化の中身（`docs/research/mixall_hardening.md` の23件を完遂）
+1. **獲得コスト述語を engine に1本化**（`costOf` / `gainableBase` / `costUpTo` / `costUnder` / `costExact` / `sameCost` を
+   新設し `DOM.engine` に公開）。公式のコスト比較は **coin / potion / debt の成分別**（`$4+P` は "up to $4" ではない／
+   `$0+負債8` は "exactly $0" ではない）。「より安い」は **component-wise strictly less**。
+   **engine reducer・`anyGainable` ゲート・CPU の候補選び・UI のモーダル filter の4面が同じ関数を見る**。
+   engine 約60箇所／CPU 約25箇所／UI 約40箇所を置換。**「ちょうど/以下」の pending には pot/debt を焼き込む**
+   （旧スナップショット互換＝欠落時は 0／`underRef` で復元）。
+2. **gain()/trashCard を通らない経路を統一**：封鎖＝`gain(dest:'setAside')`（新 dest）／待ち伏せ・剣闘士・塩まき＝
+   新ヘルパ **`trashFromSupplyPile`**（混合山は一番上の実カード・supply 同期・`trashCard(opts.fromSupply)` で支配の退避をしない）／
+   待ち伏せ・墓暴き・盗賊・出納官・泥棒・闇市場＝新ヘルパ **`gainFromOutside`**（負債付与・**支配の振り分け**・獲得トリガーを
+   gain と同じに揃える）／造幣所＝`gainableBase`／密輸人＝候補と受理の両方で `costUpTo(6)`／交易商人＝**`returnToPile`**＋
+   「サプライ由来でない獲得では窓を開かない」（`state._gainOutside`）。**自己廃棄5枚**（投資/祝宴/宝の地図/鉱山の村/豊穣の角）を
+   `trashCard` 経由に統一。
+3. **支配（Possession）**：負債は**支配者**が負う（`takeDebt`・BUY_EVENT/徴税も同じ振り分け）／**支配中の獲得でも獲得トリガーを
+   発火**させる。**獲得者は支配者**（公式："any cards they would gain, you gain instead"）＝「他の各プレイヤー」句が正しく
+   被支配者を含み、VP/財源/村人/アーティファクトは支配者に入り、「自分の手番」条件の on-gain（ヴィラ/物見やぐら/交易商人/
+   貨物船/技術革新…）は発火しない＝**獲得札を動かす on-gain が被支配者の同名コピーを動かす事故が起きない**。
+   塩まきの属州は被支配者に湧かない。自己廃棄5枚は possessionTrash 経由で返却される。
+
+### 敵対レビュー（多エージェント6観点＝述語忠実性/保存則/支配/CPU非ループ/UI詰み/既存退行。各 finding を node 再現）＝**確定17件→全修正**
+- **[high] 複製（duplicate）の「$6以下」ゲートが素の cardCost のまま**＝ポーション費用（ファミリアー/**支配**）・負債コスト・
+  **非サプライ（戦利品）**をコピーできた（mix で到達）→ ゲートと受理の両方を `costUpTo(...,6)` に。
+- **[high] 馬上槍試合の賞品ゲートが NON_SUPPLY を全部「賞品」扱い**＝戦利品/狂人/傭兵/トラベラー成長先が同居すると、
+  賞品も公領も尽きているのに「賞品を獲得」pending が開き**CPU が永久ループ／人間が詰む**→ `PRIZE_SET`（5種）で判定＋終端保証。
+- **[high] UI：獲得モーダルにポーションの山が出ない**（`SUPPLY_ORDER` は基本＋王国10種しか返さない）＝「ちょうど$4を獲得」等の
+  **強制獲得で選択肢0の閉じられないモーダル**→ `modalGainSupply` が supply の残りキーも走査する。
+- **[med] 交易商人が「廃棄置き場からの獲得」に反応して札をサプライの山へ戻す**（廃棄が巻き戻り・**空の山が復活して3山終了が
+  巻き戻る**。カード総数は保存されるので保存則 fuzz では捕まらない）→ `_gainOutside` で窓を開かない。
+- **[med] 封鎖の `dest:'setAside'` を on-gain の移動系が知らず、捨て札の同名コピーを動かす**（ヴィラ/遊牧民の野営地/物見やぐら/
+  ティアラ/貨物船/技術革新/交易商人）→ **`zoneOf(p, dest)` に一本化**（'setAside' を含む）。
+- **[med] 青空市場がサプライからの廃棄（待ち伏せ/剣闘士/塩まき）に反応して金貨**（公式＝「**あなたの**カードが廃棄されたとき」）
+  → `triggerOnTrash` に `opts.fromSupply` を伝えて抑止。
+- **[med] 支配中の獲得トリガーの獲得者**（不正利得の呪いを支配者が食う／VPが被支配者に入る／交易商人で二重取り）→ 上記3で根治。
+- **[med] UI：王子のフィルタが負債コストを除外していない**（技術者が光るが engine が拒否＝死に選択肢）→ 除外。
+- **[low] 値切り屋が gain() の**後**にコストを測る**＝混合山（城/騎士）で基準が1段ずれる → 購入時点の3成分を渡す。
+- **[low] 待ち伏せのゲート（LURKER_CHOOSE）が gainableBase を見ない**＝候補ありと判定→受理が拒否で **CPU 無限ループ**→ 同述語に。
+- **[low] CPU の「財宝を獲得」候補が静的 `isType('treasure')`**＝資本主義（`isTreasureFor`）と食い違い収税吏で livelock → 統一。
+- **[low] UI：教師のトークンを空のアクション山に置けない**（公式は置ける）→ `modalGainSupply(..., allowEmpty)`。
+
+### 【次にやること】push（ユーザー確認）
+- **push すれば本番 Pages/Render に mix-all が出る**（`sw.js` v52）。サーバは `isValidKingdomSet` で mix セットIDを検証済み。
+- push 後：PROGRESS §6 の「ポーション/負債は同居しないので未修正」注記は**解消済み**（下記に反映）。
+
+---
+
+## （旧）0-23. mix-all の配線（硬化前のメモ）
 
 ユーザー要望＝「ランダム対戦でどのシリーズを混ぜるか選びたい」（今は1拡張＋3つのプリセットしか無い）。
 **ユーザー決定＝実プレイ可能な全13拡張を自由に組み合わせ／横型（イベント・ランドマーク・プロジェクト）も選べる／
@@ -22,7 +73,7 @@ mix:<王国プール,カンマ区切り>[:<横型の枚数0-2>[:<横型プール
 - `server/gameServer.js`：`isValidKingdomSet`（正規表現＋プール名の実在検証。不正文字列で意図しない王国になるのを防ぐ）。
 - `css/style.css`：`.mix-chip`（折り返し・320px幅でも全部押せる）。
 
-### ❌ **エンジン硬化が未着手＝この状態で push してはいけない**
+### ✅ **エンジン硬化は完了（上の §0-23 が最新）**。以下は硬化前に書いた計画メモ（履歴として保持）。
 mix を解禁すると、PROGRESS §6 / §0-10 に**「どの出荷 CARD_SET でも同居しないから未修正」**と明記して先送りしてきた
 簡略化の前提が崩れ、**全部が到達可能になる**。多エージェント監査＋敵対検証（各 finding を node で再現）＝**確定23件**。
 **正本＝`docs/research/mixall_hardening.md`（作業指示書。上から順に潰せば終わる形）**。要点：
@@ -39,11 +90,7 @@ mix を解禁すると、PROGRESS §6 / §0-10 に**「どの出荷 CARD_SET で
 - **engine を締める修正と CPU を締める修正は必ず同一コミット**（engine だけ締めると CPU が拒否される札を提案し続けて
   本番 livelock ＝監査で実測済み）。
 
-### 【次にやること】
-1. `docs/research/mixall_hardening.md` に沿って**エンジン硬化を完遂**（新規 `test/mixall.test.js` に穴ごとの回帰＋
-   `invariants` に mix-all fuzz を追加）。
-2. 硬化が終わったら **敵対レビュー → CPUソーク（mix 各種）→ `sw.js` VERSION++ → ユーザー確認の上で push**。
-3. PROGRESS §6 の「ポーション/負債は同居しないので未修正」「闇市場に段階1プールが漏れる」の注記を**解消済みに更新**。
+### （この節の「次にやること」は §0-23 冒頭に統合。硬化・敵対レビュー・ソーク・sw.js v52 まで完了済み）
 
 ---
 
@@ -255,9 +302,15 @@ mix を解禁すると、PROGRESS §6 / §0-10 に**「どの出荷 CARD_SET で
 
 最終更新: 2026-07-14 / branch `main`（最新は `git log` で確認）。
 
-**【いま最優先】§0-23＝mix-all モード（拡張を自由に混ぜるランダム対戦）＝配線は完了・全37スイート緑だが、
-エンジン硬化（確定23件）が未着手＝この状態で push してはいけない。作業指示書＝`docs/research/mixall_hardening.md`。
-未pushコミットが2本ある（mix の配線＋硬化計画／PROGRESS 更新）。**
+**【いま最優先】§0-23＝mix-all モード（拡張を自由に混ぜるランダム対戦）＝配線＋エンジン硬化（確定23件）＋敵対レビュー
+（確定17件）まで完了。全38スイート緑（exit 0・整合性3401・不変条件9・mixall 102）／mix CPUソーク318戦クリーン／
+`verify:e2e` 9/9／`sw.js` v52。**残るは push（ユーザー確認）だけ**。未pushコミットは §0-23 関連。**
+
+**【mix-all 以後の必読】獲得の可否・コスト比較は必ず `DOM.engine` の述語を使う**
+（`gainableBase` / `costUpTo` / `costUnder` / `costExact` / `sameCost`）。素の `cardCost(state,id) <= N` を書くと、
+非サプライ（賞品/戦利品/成長先）・ロック中の分割山下段・ポーション費用・負債コストを取りこぼし、
+**engine が拒否×CPU が提案し続けて本番 livelock**になる（今回のレビューで複製/馬上槍試合/待ち伏せが実際にそうなっていた）。
+**サプライ外からの獲得は `gainFromOutside`／サプライの山からの廃棄は `trashFromSupplyPile`／獲得先ゾーンは `zoneOf`**。
 
 **§0-22＝新拡張ルネサンス（Renaissance）全50枚（王国25＋プロジェクト20＋アーティファクト5）＝実装・敵対レビュー修正・
 絵まで完了し push 済（`sw.js` v50）。§0-21＝冒険イベント20種の絵も回収して push 済（v51）。
@@ -1065,8 +1118,8 @@ mix を解禁すると、PROGRESS §6 / §0-10 に**「どの出荷 CARD_SET で
 - **海辺の簡略化2点は本格実装済み**：封鎖の堀免疫窓・海賊の財宝獲得リアクション。on-gain対話は `!pending && _gainDepth===1` ゲートで安全側。
 
 ## 5. 未完了タスク（優先順。次セッションは 1. から）
-0. **【最優先】mix-all モードのエンジン硬化（§0-23）**＝`docs/research/mixall_hardening.md` の作業指示書に沿って
-   確定23件を潰す。**配線は済んでいるが硬化前は push 禁止**。
+0. **【最優先】mix-all モードの push（ユーザー確認）**＝硬化（23件）＋敵対レビュー（17件）まで完了・全38スイート緑（§0-23）。
+   `sw.js` v52。push すれば本番に「ミックス」分類が出る。
 1. **次の拡張に着手する**（下記2の候補から選ぶ）。ルネサンス（§0-22）は**絵まで含めて push 済・本番反映確認済**。
 2. **次の拡張候補**（着手前に `docs/adding-cards.md` 必読）:
    - ✅**絵（webp）の回収は完了**：ルネサンス50枚（2026-07-13）／冒険イベント20種（2026-07-14）。
@@ -1082,14 +1135,19 @@ mix を解禁すると、PROGRESS §6 / §0-10 に**「どの出荷 CARD_SET で
 - **新カードを `DOM.CARDS` に足すと整合性テストが赤くなる**（GAIN_ORDER網羅＋POOL所属を要求）→ 孤立プール＋GAIN_ORDER追加で回避。実ゲーム化時は ATTACKS/PLAYER_ACTIONS/CPU decidePending/UI viewPendingModal も忘れず（抜けはCIで赤 or CPU無限ループ/人間詰み）。
 - **デプロイ**：サーバ変更時は Pages と Render の反映タイミング差で一時的に空振りし得る。`sw.js` VERSION更新を忘れない。
 - **一時スクリプト規約**：使い捨ては**プロジェクト直下に `_*.tmp.js`** で作り実行後**必ず削除**。スクショ等は scratchpad へ。シェルcwdがずれることがあるので実行前に `Set-Location 'C:\Users\b1242\claude\game\dominion'`。
-- **支配（Possession）の廃棄カード返却の簡略化＝到達不能を証明済み（監査⑤）＝意図的に未修正**：`possession` は alchemy プール専用で、複数プールを混ぜる出荷セット（random/random-promo/random-1e）はいずれも alchemy を含まない＝支配と外部拡張self-trashはどの出荷王国でも共存しない。全self-trashのtrashOwn化はアタック廃棄/供給廃棄の誤変換で**可到達バグを生むリスク**があり見送り。**混成alchemyモードを正式追加する時に一緒に対応**する方針。同型のポーション費用問題も到達不能（可到達だった大学のみガード済み）。
+- ~~**支配（Possession）の廃棄カード返却の簡略化＝到達不能（監査⑤）**~~ → **§0-23（mix-all 硬化）で解消済み**。
+  自己廃棄5枚（投資/祝宴/宝の地図/鉱山の村/豊穣の角）は `trashCard` 経由＝支配中は possessionTrash へ退避して返却される。
+  **同型の「ポーション費用/負債コストは同居しないので未修正」も全て解消**（`costUpTo`/`costExact` が成分別に弾く）。
+  **サプライからの廃棄（塩まき/待ち伏せ/剣闘士）は `trashFromSupplyPile`**＝支配中でも退避しない（属州が被支配者に湧かない）。
 - **支配のCPU簡略化**：CPUは支配を自動購入しない（`bestPotionBuy` で除外）。人間が使うぶんは支配者がCPUでも動作する。
 - **非サプライ数値キー山（賞品Prizes・将来の戦利品/狂人/傭兵）を足すときの必須チェックリスト**（§0-2のレビューで実際に踏んだ罠）：`NON_SUPPLY` set に登録し、**(1) `emptyPileCount`(3山終了) (2) `canBuyCard`(購入) (3) `blackMarket` 母集団（`createInitialState` の universe フィルタ） (4) 汎用獲得（engine の `*_GAIN` reducer と CPU `bestGain`/`bestGainExact`）** の4系統すべてから除外すること。特に「reducer だけガードして CPU 側を放置すると、CPU が拒否される獲得を出し続けて無限ループ」する（豊穣の角で実際に発生）＝**engine拒否とCPU非提案は必ずセット**。汎用獲得を持つ札（`horn_of_plenty` 等）は特に漏れやすい。
 - **段階1(§0-3)＋ギルド段階2(§0-4)は push済（`6d1d69c`・2026-07-04・ユーザー確認の上で本番デプロイ）**。以後の段階2作業も 完成→CARD_SET昇格→全テスト緑→**都度確認の上で** push。
 - **`5150017` まで push済（2026-07-05・本番デプロイ済）＝異郷段階2＋冒険/帝国段階1＋新プロモ段階2(§0-7)**。以後の段階2作業も 完成→CARD_SET昇格→全テスト緑→**都度ユーザー確認の上で** push。`sw.js` は v34。
 - **冒険/帝国段階1の画像回収メモ**：Downloads の ChatGPT画像はファイル名不定→生成時刻でバッチ割当→視覚判別で id確定（chatgpt-card-art-workflow 記憶＋今回は多エージェント判別）。`asset/art/*.png`・`images/` は gitignore＝このPCのみ。webp再生成は `CARDS_ONLY=<id,...> node tools/build-cards.js`。研究データは scratchpad `adv_emp_carddata.json`。
 - **異郷の許容簡略化（到達が稀 or 忠実性のみ・敵対レビューで重大でないと確定）＝意図的に未実装**：(1)**交易商人の獲得置換は自分の手番の獲得のみ**（相手ターンの魔女等の呪い獲得を銀貨に置換する反応は非対応＝獲得時対話ゲートが active限定・相手ターンだと pending 競合で潰れるため。呪いはそのまま受ける＝安全側）。(2)**値切り屋/農地/高貴な山賊の on-buy は「1購入=1 pending」**＝farmland/noble_brigand を買うと同ターン場の値切り屋の強制獲得がスキップされ得る（複数 on-buy を並べる汎用キューが無いため。カード保存則は保持・ループ/クラッシュ無し）。(3)**develop 等の獲得で入れ子の獲得時対話（border_village等）は `!pending` ゲートでスキップ**。いずれも「on-buy/on-gain の汎用 pending キュー」を導入する時にまとめて対応する方針（現状は保存則・非ループを敵対レビューで確認済）。
-- **【既存・スコープ外の別課題】闇市場デッキに「段階1のみ（＝engineロジック未実装）のプール」が漏れる**：`createInitialState` の黒市universeは全 `Object.values(DOM.POOLS)` を平坦化するため、promo-pack/random-promo で黒市デッキに hinterlands/darkages/knights/ruins/shelters/darkages_np（＋spoils/madman/mercenary）が混入する。これらは段階1（applyEffect未実装＝買って使っても何も起きない死に札）。**ギルドの段階2化で guilds プールは playable になった**ので問題なし。残りは各拡張が段階2化される都度 自動解消。**根治するなら黒市universeを「CARD_SETSが参照する playable プールのみ」に絞る**（＝段階2化の順に自然消化。急がば注意：正しく除外しないと変種が減る）。敵対レビューが指摘（元からの挙動＝ギルド作業とは独立）。
+- ~~**【既存】闇市場デッキに「段階1のみ（engine未実装）のプール」が漏れる**~~ → **解消済み**：13拡張すべてが段階2（実プレイ可能）に
+  なったため、闇市場デッキに入る札はすべて動く。混合山の中身（騎士/廃墟/城）は元から除外済み。（以下は当時の記録）
+- **【旧記録】闇市場デッキに「段階1のみ（＝engineロジック未実装）のプール」が漏れる**：`createInitialState` の黒市universeは全 `Object.values(DOM.POOLS)` を平坦化するため、promo-pack/random-promo で黒市デッキに hinterlands/darkages/knights/ruins/shelters/darkages_np（＋spoils/madman/mercenary）が混入する。これらは段階1（applyEffect未実装＝買って使っても何も起きない死に札）。**ギルドの段階2化で guilds プールは playable になった**ので問題なし。残りは各拡張が段階2化される都度 自動解消。**根治するなら黒市universeを「CARD_SETSが参照する playable プールのみ」に絞る**（＝段階2化の順に自然消化。急がば注意：正しく除外しないと変種が減る）。敵対レビューが指摘（元からの挙動＝ギルド作業とは独立）。
 - **段階1で追加した暗黒時代の非サプライ札（戦利品/狂人/傭兵/騎士10種/廃墟5/避難所3）を段階2で実プレイ化する時は、上の「4系統除外チェックリスト」を必ず通す**。特殊山（廃墟＝混合順序山→top-level配列・invariants tally追加／騎士＝混合山／避難所＝開始デッキ置換）は `docs/adding-cards.md` §C に実装手順あり。新種別 knight/ruins/shelter は表示ラベルのみ実装済（engineロジックは段階2で新設）。
 - **暗黒時代 段階2 は WIP（§0-8 が正）**：カタログのみ現行エラッタに修正済み＝**カード一覧の文言と webp 画像の文字が9枚で不一致**（hermit/procession/pillage/death_cart/rats/counterfeit＋種別変更の marauder/cultist/band_of_misfits）。**CARD_SET昇格前に webp 再生成必須**（このPCで `CARDS_ONLY=<ids> node tools/build-cards.js`）。sw.js VERSION は完成時に v34→v35。
 - **Read ツール出力の汚染を観測（2026-07-05）**：実在しないコード/コメントが Read 結果に混入して見え、「基盤実装済み」と誤認しかけた（git diff / grep の生バイト確認で否定して復旧）。以後この作業では、実装状態を断定する前に **Grep・`Get-Content`・`git show` での裏取り**を併用すること。

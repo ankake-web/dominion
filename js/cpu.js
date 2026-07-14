@@ -81,57 +81,45 @@
   // 新プロモ：サウナ/アヴァント分割山＝上のサウナが残る間はアヴァントを獲得できない
   // （engine の gain/canBuyCard 拒否と必ずセット＝提案すると強制獲得と噛み合い無限ループ）。
   function splitBlocked(state, id) { const top = (DOM.SPLIT_PILES || {})[id]; return !!(top && sup(state, top) > 0); }
+
+  /* ---------- mix-all 硬化：獲得の述語は **engine の正本をそのまま呼ぶ** ----------
+     engine が拒否する札を CPU が提案し続けると pending が閉じず無限ループ（本番 livelock）になる。
+     コスト比較は coin/potion/debt の成分別（$4+P は "up to $4" でない／$0+負債8 は "exactly $0" でない）。
+     spec = { pot, debt }（省略時 0）＝廃棄/購入した札のポーション・負債成分を引き継ぐときに渡す。 */
+  const gainableBase = (state, id) => DOM.engine.gainableBase(state, id);
+  const costUpTo = (state, id, coin, spec) => DOM.engine.costUpTo(state, id, coin, spec);
+  const costUnder = (state, id, coin, spec) => DOM.engine.costUnder(state, id, coin, spec);
+  const costExact = (state, id, coin, pot, debt) => DOM.engine.costExact(state, id, coin, pot, debt);
+  // GAIN_ORDER（強さ順）→ supply の順で pred を満たす獲得可能札を返す（候補があるのに null を返さない＝終端保証）。
+  function firstGainable(state, pred) {
+    for (const id of GAIN_ORDER) { if (gainableBase(state, id) && pred(id)) return id; }
+    for (const id of Object.keys(state.supply)) { if (gainableBase(state, id) && pred(id)) return id; }
+    return null;
+  }
+  const notVictory = (id) => !(isType(id, 'victory') || isType(id, 'curse'));
+  // 「今この状態で財宝か」＝engine の正本（ルネサンス：資本主義で「+$」を持つアクションも財宝）。
+  //   静的 isType('treasure') のままだと engine の受理（isTreasureFor）と食い違い、収税吏等で無限ループする。
+  const isTreasureNow = (state, id) => (DOM.engine && DOM.engine.isTreasureFor)
+    ? DOM.engine.isTreasureFor(state, id) : isTreasure(id);
+  // 「コスト$N以下」の最善獲得。opts = { treasureOnly, noVictory, pot, debt }
   function bestGain(state, maxCost, opts) {
     opts = opts || {};
-    for (const id of GAIN_ORDER) {
-      if (NON_SUPPLY_SET.has(id)) continue;
-      if (splitBlocked(state, id)) continue;
-      if (opts.treasureOnly && !isTreasure(id)) continue;
-      if (opts.noVictory && (isType(id, 'victory') || isType(id, 'curse'))) continue;
-      if (!C()[id]) continue;
-      if ((C()[id].debt || 0) > 0) continue; // 帝国：負債コストのカードは「コインN以下を獲得」では取れない（負債は追加コスト）
-      if (cost(state, id) <= maxCost && sup(state, id) > 0) return id;
-    }
-    return null;
+    return firstGainable(state, (id) => costUpTo(state, id, maxCost, opts) &&
+      (!opts.treasureOnly || isTreasureNow(state, id)) && (!opts.noVictory || notVictory(id)));
   }
-  // ちょうど exact コストの最善獲得（改良など）。GAIN_ORDER に無いカードも最後に拾い、
-  // 候補があるのに null を返して engine の「強制獲得」と噛み合いCPUが無限ループするのを防ぐ。
+  // 「これより安い」の最善獲得（地下墓所/石工/国境の村/値切り屋/取り壊し）。opts = { noVictory, pot, debt }
+  function bestGainUnder(state, coin, opts) {
+    opts = opts || {};
+    return firstGainable(state, (id) => costUnder(state, id, coin, opts) &&
+      (!opts.noVictory || notVictory(id)));
+  }
+  // 「ちょうど exact コスト（ポーション/負債も一致）」の最善獲得。opts = { noVictory, pot, debt }
   function bestGainExact(state, exact, opts) {
     opts = opts || {};
-    for (const id of GAIN_ORDER) {
-      if (NON_SUPPLY_SET.has(id)) continue;
-      if (splitBlocked(state, id)) continue;
-      if (opts.noVictory && (isType(id, 'victory') || isType(id, 'curse'))) continue;
-      if (!C()[id]) continue;
-      if ((C()[id].debt || 0) > 0) continue; // 帝国：負債コストのカードは「ちょうどNコスト獲得」でも取れない
-      if (cost(state, id) === exact && sup(state, id) > 0) return id;
-    }
-    for (const id of Object.keys(state.supply)) {
-      if (NON_SUPPLY_SET.has(id)) continue;
-      if (splitBlocked(state, id)) continue;
-      if (opts.noVictory && (isType(id, 'victory') || isType(id, 'curse'))) continue;
-      if (C()[id] && (C()[id].debt || 0) > 0) continue; // 帝国：負債コストのカードは取れない
-      if (C()[id] && cost(state, id) === exact && sup(state, id) > 0) return id;
-    }
-    return null;
+    return firstGainable(state, (id) => costExact(state, id, exact, opts.pot, opts.debt) &&
+      (!opts.noVictory || notVictory(id)));
   }
-
-  // 帝国イベント（宴会/昇進）用：engine の canGain 述語と食い違わない「獲得候補」探し。
-  //   GAIN_ORDER（強さ順）→ supply の順で pred を満たす獲得可能札を返す（候補があるのに null で無限ループを防ぐ）。
   const plainCoin = (id) => !(C()[id] && (C()[id].potion || C()[id].debt));
-  function firstGainable(state, pred) {
-    for (const id of GAIN_ORDER) {
-      if (NON_SUPPLY_SET.has(id) || splitBlocked(state, id)) continue;
-      if (!C()[id] || sup(state, id) <= 0) continue;
-      if (pred(id)) return id;
-    }
-    for (const id of Object.keys(state.supply)) {
-      if (NON_SUPPLY_SET.has(id) || splitBlocked(state, id)) continue;
-      if (!C()[id] || sup(state, id) <= 0) continue;
-      if (pred(id)) return id;
-    }
-    return null;
-  }
 
   /* ---------- E8：倒壊/死の荷車の「これ(this)を廃棄できるか」＝engine と同じ述語を見る ---------- */
   //   engine が拒否する選択を CPU が提案し続けると無限ループになるので、必ず engine.pendingSelf を参照する。
@@ -410,7 +398,10 @@
     // 行進＝アップグレード先(ちょうど+$1のアクション)がある非持続アクションが手札にあるとき
     if (has('procession')) {
       const cands = p.hand.filter((c) => isType(c, 'action') && !isType(c, 'duration') && c !== 'procession');
-      const upOK = cands.some((c) => { const mx = cost(state, c) + 1, pot = C()[c].potion || 0; return GAIN_ORDER.some((id) => C()[id] && isType(id, 'action') && !NON_SUPPLY_SET.has(id) && cost(state, id) === mx && (C()[id].potion || 0) === pot && sup(state, id) > 0); });
+      const upOK = cands.some((c) => {
+        const mx = cost(state, c) + 1, pot = C()[c].potion || 0, dbt = C()[c].debt || 0;
+        return !!firstGainable(state, (id) => costExact(state, id, mx, pot, dbt) && isType(id, 'action'));
+      });
       if (upOK) return 'procession';
     }
     // 建て直し＝屋敷/公領を持っているとき（勝利点を格上げ）
@@ -899,7 +890,7 @@
     if (buyable('lost_arts') && !tok.action && deckActions >= 4 && !(cardBuy && cost(state, cardBuy) >= 6)) return 'lost_arts';
     if (buyable('training') && !tok.coin && deckActions >= 4 && !(cardBuy && cost(state, cardBuy) >= 6)) return 'training';
     // 海路（$5）＝$4以下のアクション獲得＋その山に+1購入トークン（獲得できるときだけ）。
-    if (buyable('seaway') && !tok.buy && firstGainable(state, (id) => plainCoin(id) && isType(id, 'action') && cost(state, id) <= 4) &&
+    if (buyable('seaway') && !tok.buy && firstGainable(state, (id) => costUpTo(state, id, 4) && isType(id, 'action')) &&
         !(cardBuy && cost(state, cardBuy) >= 6)) return 'seaway';
     // 舞踏会（$5）＝-$1トークンを受けて$4以下を2枚。金貨1枚より2枚のほうが得な序盤に。
     if (buyable('ball') && (p.turns || 0) <= 8 && !wantVP && !(cardBuy && cost(state, cardBuy) >= 6)) return 'ball';
@@ -916,7 +907,7 @@
     if (buyable('bonfire') && p.inPlay.filter((c) => c === 'copper').length >= 2 &&
         allCards(p).filter((c) => isTreasure(c)).length >= 8 && cardBuy == null) return 'bonfire';
     // 偵察隊（$2）／施し（$0）／借入（$0）＝余りコイン・余り購入権の使い道。
-    if (buyable('alms') && !p.inPlay.some((c) => isTreasure(c)) && firstGainable(state, (id) => plainCoin(id) && cost(state, id) <= 4)) return 'alms';
+    if (buyable('alms') && !p.inPlay.some((c) => isTreasure(c)) && firstGainable(state, (id) => costUpTo(state, id, 4))) return 'alms';
     if (buyable('scouting_party') && coins >= 2 && cardBuy == null) return 'scouting_party';
     // 保存/移動遊園地/使節団/渡し船/立案/探索 は CPU は買わない（価値が読みにくい／効果が薄い＝skip）。
     return null;
@@ -956,8 +947,9 @@
     return out;
   }
   // 詐欺師で相手に与えるカード（相手の利得が最小＝呪い→弱い財宝/アクション。勝利点は点を与えるので避ける）。
-  function pickSwindlerGift(state, cst) {
-    const cands = Object.keys(state.supply).filter((id) => C()[id] && cost(state, id) === cst && sup(state, id) > 0 && !NON_SUPPLY_SET.has(id) && !splitBlocked(state, id));
+  //   コスト一致は3成分（engine の SWINDLER_GAIN と同じ述語＝拒否される札を提案しない）。
+  function pickSwindlerGift(state, pd) {
+    const cands = Object.keys(state.supply).filter((id) => costExact(state, id, pd.cost, pd.pot, pd.debt));
     if (!cands.length) return null;
     const harm = (id) => isType(id, 'curse') ? -1 : (isType(id, 'victory') ? 100 : keepValue(id));
     cands.sort((a, b) => harm(a) - harm(b));
@@ -1012,17 +1004,17 @@
       return { type: 'SALT_TRASH', card: cand[0] || null };
     }
     if (pd.type === 'banquet') {
-      return { type: 'BANQUET_GAIN', card: firstGainable(state, (id) => plainCoin(id) && cost(state, id) <= 5 && !isType(id, 'victory')) };
+      return { type: 'BANQUET_GAIN', card: firstGainable(state, (id) => costUpTo(state, id, 5) && !isType(id, 'victory')) };
     }
     if (pd.type === 'advance') {
       if (pd.stage === 'trash') {
         // 手札のアクション1枚を廃棄してよい（may）。$6以下の最善アクションが「一番安い手札アクション」以上なら格上げ、無益なら辞退。
         const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => (C()[a].cost || 0) - (C()[b].cost || 0));
-        const target = firstGainable(state, (id) => plainCoin(id) && cost(state, id) <= 6 && isType(id, 'action'));
+        const target = firstGainable(state, (id) => costUpTo(state, id, 6) && isType(id, 'action'));
         if (acts.length && target && (C()[target].cost || 0) >= (C()[acts[0]].cost || 0)) return { type: 'ADVANCE_TRASH', card: acts[0] };
         return { type: 'ADVANCE_TRASH', card: null };
       }
-      return { type: 'ADVANCE_GAIN', card: firstGainable(state, (id) => plainCoin(id) && cost(state, id) <= 6 && isType(id, 'action')) };
+      return { type: 'ADVANCE_GAIN', card: firstGainable(state, (id) => costUpTo(state, id, 6) && isType(id, 'action')) };
     }
     if (pd.type === 'ritual') {
       // 手札1枚を廃棄（強制・手札があれば）。屋敷（+2VP＆ジャンク除去）＞呪い＞銅貨を優先、無ければ最安札。
@@ -1059,12 +1051,12 @@
     /* ===== 冒険：横型イベント（買う横型）の選択待ち＝すべて終端保証（engine が拒否しない選択だけ返す） ===== */
     // 施し／舞踏会＝コスト$4以下を獲得（強制）。engine の upToCanGain と同じ述語で候補を選ぶ。
     if (pd.type === 'alms_gain' || pd.type === 'ball_gain') {
-      const card = firstGainable(state, (id) => plainCoin(id) && cost(state, id) <= 4);
+      const card = firstGainable(state, (id) => costUpTo(state, id, 4));
       return { type: pd.type === 'alms_gain' ? 'ALMS_GAIN' : 'BALL_GAIN', card };
     }
     // 海路＝コスト$4以下のアクションを獲得（強制）→ その山に+1購入トークン。
     if (pd.type === 'seaway') {
-      return { type: 'SEAWAY_GAIN', card: firstGainable(state, (id) => plainCoin(id) && isType(id, 'action') && cost(state, id) <= 4) };
+      return { type: 'SEAWAY_GAIN', card: firstGainable(state, (id) => costUpTo(state, id, 4) && isType(id, 'action')) };
     }
     // 探索＝3択。呪い2枚 → アタック1枚 → 手札7枚以上なら6枚捨て、どれも損なら辞退。
     if (pd.type === 'quest' && pd.stage === 'mode') {
@@ -1176,10 +1168,10 @@
           if (p.hand.includes('copper') && sup(state, 'silver') > 0) return { type: 'MINE_TRASH', card: 'copper' };
           return { type: 'MINE_TRASH', card: null };
         }
-        return { type: 'MINE_GAIN', card: bestGain(state, pd.maxCost, { treasureOnly: true }) };
+        return { type: 'MINE_GAIN', card: bestGain(state, pd.maxCost, { treasureOnly: true, pot: pd.pot, debt: pd.debt }) };
       case 'remodel':
         if (pd.stage === 'trash') return { type: 'REMODEL_TRASH', card: pickRemodelTrash(state, p) };
-        return { type: 'REMODEL_GAIN', card: bestGain(state, pd.maxCost) };
+        return { type: 'REMODEL_GAIN', card: bestGain(state, pd.maxCost, pd) };
       case 'workshop':
         return { type: 'WORKSHOP_GAIN', card: bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) };
 
@@ -1230,14 +1222,14 @@
           return { type: 'SWINDLER_REACT' };
         }
         // gain ステージ（攻撃側）。相手の利得が最小のカードを与える（候補ありなら必ず非null）
-        return { type: 'SWINDLER_GAIN', card: pickSwindlerGift(state, pd.cost) };
+        return { type: 'SWINDLER_GAIN', card: pickSwindlerGift(state, pd) };
       case 'saboteur':
         if (pd.stage === 'react') {
           if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
           return { type: 'SABOTEUR_REACT' };
         }
         // gain ステージ（犠牲者・任意）。上限内で最善を拾う。無ければ獲得しない(null)
-        return { type: 'SABOTEUR_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
+        return { type: 'SABOTEUR_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true, pot: pd.pot, debt: pd.debt }) || bestGain(state, pd.maxCost, pd) };
       case 'minion':
         // 攻撃側の選択。手札に他のアクションがあれば捨てたくない→+2コイン。
         // 手札が弱い(財宝が乏しい)なら引き直し（相手も妨害）。
@@ -1319,7 +1311,7 @@
       case 'upgrade':
         if (pd.stage === 'trash') return { type: 'UPGRADE_TRASH', card: pickRemodelTrash(state, p) };
         // ちょうど+1コストを獲得（勝利点を避けた最善→無ければ何でも。候補ありなら必ず非null）
-        return { type: 'UPGRADE_GAIN', card: bestGainExact(state, pd.exactCost, { noVictory: true }) || bestGainExact(state, pd.exactCost) };
+        return { type: 'UPGRADE_GAIN', card: bestGainExact(state, pd.exactCost, { noVictory: true, pot: pd.pot, debt: pd.debt }) || bestGainExact(state, pd.exactCost, pd) };
 
       /* ===== 基本セット 第二版 ===== */
       case 'harbinger': {
@@ -1372,8 +1364,10 @@
           return { type: 'LURKER_CHOOSE', choice: good ? 'gain' : 'trash' };
         }
         if (pd.stage === 'trash') {
-          const acts = Object.keys(state.supply).filter((id) => isType(id, 'action') && sup(state, id) > 0).sort((a, b) => C()[a].cost - C()[b].cost);
-          return { type: 'LURKER_TRASH', card: acts[0] };
+          // engine と同じ述語（非サプライ/ロック中の分割山下段は「サプライの山」ではない＝拒否される）
+          const acts = Object.keys(state.supply).filter((id) => gainableBase(state, id) && isType(id, 'action'))
+            .sort((a, b) => C()[a].cost - C()[b].cost);
+          return { type: 'LURKER_TRASH', card: acts[0] || null };
         }
         { const acts = state.trash.filter((id) => isType(id, 'action')).sort((a, b) => C()[b].cost - C()[a].cost); return { type: 'LURKER_GAIN', card: acts[0] }; }
       case 'mill': {
@@ -1385,7 +1379,7 @@
       case 'replace':
         if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'REPLACE_REACT' }; }
         if (pd.stage === 'trash') return { type: 'REPLACE_TRASH', card: pickRemodelTrash(state, p) };
-        return { type: 'REPLACE_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
+        return { type: 'REPLACE_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true, pot: pd.pot, debt: pd.debt }) || bestGain(state, pd.maxCost, pd) };
       case 'secret_passage':
         if (pd.stage === 'pick') {
           const junk = p.hand.find((c) => isType(c, 'curse') || c === 'estate');
@@ -1406,14 +1400,16 @@
         return { type: 'GOVERNOR_CHOOSE', choice: 'silver' }; // 自分は金貨が得られる銀貨モード
       case 'governor_remodel':
         if (pd.stage === 'trash') {
-          const tryT = (c) => p.hand.includes(c) && bestGainExact(state, cost(state, c) + pd.delta, { noVictory: true });
+          // 「ちょうど +delta」＝廃棄する札のポーション/負債成分も一致していること（engine と同じ述語）。
+          const specOf = (c) => ({ noVictory: true, pot: (C()[c] && C()[c].potion) || 0, debt: (C()[c] && C()[c].debt) || 0 });
+          const tryT = (c) => p.hand.includes(c) && bestGainExact(state, cost(state, c) + pd.delta, specOf(c));
           let card = null;
           if (tryT('estate')) card = 'estate';
           else if (pd.delta >= 2 && tryT('copper')) card = 'copper';
-          else { const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => C()[a].cost - C()[b].cost); if (acts.length && bestGainExact(state, cost(state, acts[0]) + pd.delta, { noVictory: true })) card = acts[0]; }
+          else { const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => C()[a].cost - C()[b].cost); if (acts.length && bestGainExact(state, cost(state, acts[0]) + pd.delta, specOf(acts[0]))) card = acts[0]; }
           return { type: 'GOVERNOR_REMODEL_TRASH', card };
         }
-        return { type: 'GOVERNOR_REMODEL_GAIN', card: bestGainExact(state, pd.exact, { noVictory: true }) || bestGainExact(state, pd.exact) };
+        return { type: 'GOVERNOR_REMODEL_GAIN', card: bestGainExact(state, pd.exact, { noVictory: true, pot: pd.pot, debt: pd.debt }) || bestGainExact(state, pd.exact, pd) };
       case 'dismantle':
         if (pd.stage === 'trash') {
           let card;
@@ -1421,7 +1417,9 @@
           else { const acts = p.hand.filter((c) => isType(c, 'action') && cost(state, c) >= 1).sort((a, b) => C()[a].cost - C()[b].cost); card = acts[0] || p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0]; }
           return { type: 'DISMANTLE_TRASH', card };
         }
-        return { type: 'DISMANTLE_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
+        // 取り壊し＝「廃棄した札より安い」（engine と同じ costUnder。旧スナップショット互換で maxCost+1 から復元）
+        { const uc = (pd.coin != null) ? pd.coin : (pd.maxCost || 0) + 1;
+          return { type: 'DISMANTLE_GAIN', card: bestGainUnder(state, uc, { noVictory: true, pot: pd.pot, debt: pd.debt }) || bestGainUnder(state, uc, pd) }; }
       /* ===== 新プロモ（王子/船長/教会/サウナ/アヴァント） ===== */
       case 'prince': {
         // 良い対象があれば脇置き、無ければ置かない（王子は普通に捨て札へ＝後で再挑戦できる）。
@@ -1532,11 +1530,8 @@
         return { type: 'RATCATCHER_TRASH', card: p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0] };
       case 'transmogrify_trash':
         return { type: 'TRANSMOGRIFY_TRASH', card: p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0] };
-      case 'transmogrify_gain': {
-        let g = null;
-        for (const id of GAIN_ORDER) { if (C()[id] && !NON_SUPPLY_SET.has(id) && cost(state, id) <= pd.maxCost && (C()[id].potion || 0) <= pd.pot && sup(state, id) > 0) { g = id; break; } }
-        return { type: 'TRANSMOGRIFY_GAIN', card: g };
-      }
+      case 'transmogrify_gain':
+        return { type: 'TRANSMOGRIFY_GAIN', card: bestGain(state, pd.maxCost, pd) };
       case 'wine_merchant':
         return { type: 'WINE_MERCHANT_DISCARD', discard: true }; // マットから捨てて再利用（+$4を再演可能に）＝常に得
       case 'after_action': {
@@ -1585,8 +1580,8 @@
         return { type: 'FUGITIVE_DISCARD', card: p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0] };
       case 'hero_gain': {
         let g = null;
-        for (const id of ['platinum', 'gold', 'silver', 'copper']) { if (sup(state, id) > 0) { g = id; break; } }
-        if (!g) for (const id of GAIN_ORDER) { if (C()[id] && isType(id, 'treasure') && !NON_SUPPLY_SET.has(id) && sup(state, id) > 0) { g = id; break; } }
+        for (const id of ['platinum', 'gold', 'silver', 'copper']) { if (gainableBase(state, id)) { g = id; break; } }
+        if (!g) g = firstGainable(state, (id) => isTreasureNow(state, id)); // 財宝ならコスト制限なし（engine と同じ isTreasureFor）
         return { type: 'HERO_GAIN', card: g };
       }
       case 'disciple_play': {
@@ -1657,12 +1652,7 @@
         return { type: 'CHARM_MODE', mode: 'coins' };
       case 'charm_gain': {
         // モードBは通常選ばないが、万一立ったら同コスト・別名の最良カードを1枚（無ければ辞退＝count減少で終端）。
-        let pick = null;
-        for (const id of GAIN_ORDER) {
-          if (id === pd.trig || NON_SUPPLY_SET.has(id) || !C()[id]) continue;
-          if (sup(state, id) <= 0) continue;
-          if (cost(state, id) === pd.coin && (C()[id].debt || 0) === pd.debt && (C()[id].potion || 0) === pd.pot) { pick = id; break; }
-        }
+        const pick = firstGainable(state, (id) => id !== pd.trig && costExact(state, id, pd.coin, pd.pot, pd.debt));
         return { type: 'CHARM_GAIN', card: pick };
       }
       case 'legionary_reveal':
@@ -1777,9 +1767,12 @@
       case 'sea_witch_discard':
         return { type: 'SEA_WITCH_DISCARD', cards: pickDiscards(p.hand, Math.min(2, p.hand.length)) };
       case 'smugglers': {
-        // 右隣の獲得の中で最も価値の高いものを真似る（GAIN_ORDER優先）
-        let pick = pd.candidates[0];
-        for (const id of GAIN_ORDER) { if (pd.candidates.includes(id)) { pick = id; break; } }
+        // 右隣の獲得の中で最も価値の高いものを真似る（GAIN_ORDER優先）。
+        //   engine は受理時にも述語を再検査するので、CPU も同じ述語で絞る（拒否される札を提案しない）。
+        const cands = (pd.candidates || []).filter((id) => costUpTo(state, id, 6));
+        if (!cands.length) return { type: 'SMUGGLERS_GAIN', card: null };
+        let pick = cands[0];
+        for (const id of GAIN_ORDER) { if (cands.includes(id)) { pick = id; break; } }
         return { type: 'SMUGGLERS_GAIN', card: pick };
       }
       case 'blockade':
@@ -1827,8 +1820,7 @@
       case 'university': {
         // 非サプライ（賞品/成長先）とロック中の分割山下段は engine が獲得を拒否する＝提案すると無限ループになる
         //   （bestGain/bestGainExact/pickSwindlerGift には入っている除外の書き漏れ＝今回のレビューで発見した既存バグ）。
-        const actGain = GAIN_ORDER.find((id) => C()[id] && isType(id, 'action') && cost(state, id) <= 5 &&
-          (C()[id].potion || 0) === 0 && sup(state, id) > 0 && !NON_SUPPLY_SET.has(id) && !splitBlocked(state, id));
+        const actGain = firstGainable(state, (id) => costUpTo(state, id, 5) && isType(id, 'action'));
         return { type: 'UNIVERSITY_GAIN', card: actGain || null };
       }
       case 'familiar':
@@ -1877,7 +1869,7 @@
       }
       case 'expand':
         if (pd.stage === 'trash') { const c = p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0]; return { type: 'EXPAND_TRASH', card: c }; }
-        return { type: 'EXPAND_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
+        return { type: 'EXPAND_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true, pot: pd.pot, debt: pd.debt }) || bestGain(state, pd.maxCost, pd) };
       case 'forge':
         if (pd.stage === 'trash') return { type: 'FORGE_TRASH', cards: p.hand.filter((c) => c === 'estate') };
         return { type: 'FORGE_GAIN', card: bestGainExact(state, pd.exact, { noVictory: true }) || bestGainExact(state, pd.exact) };
@@ -1889,7 +1881,9 @@
       }
       case 'war_chest':
         if (pd.stage === 'name') return { type: 'WAR_CHEST_NAME', card: bestGain(state, 5, { noVictory: true }) || bestGain(state, 5) || 'curse' };
-        { const named = (state.turn.warChestNamed) || []; let g = null; for (const id of GAIN_ORDER) { if (cost(state, id) <= 5 && sup(state, id) > 0 && named.indexOf(id) < 0) { g = id; break; } } return { type: 'WAR_CHEST_GAIN', card: g }; }
+        { const named = (state.turn.warChestNamed) || [];
+          const g = firstGainable(state, (id) => costUpTo(state, id, 5) && named.indexOf(id) < 0);
+          return { type: 'WAR_CHEST_GAIN', card: g }; }
       case 'watchtower':
         return { type: 'WATCHTOWER', choice: (pd.card === 'curse' ? 'trash' : 'keep') };
       case 'tiara_topdeck':
@@ -1929,7 +1923,7 @@
         return { type: 'HORSE_TRADERS_DISCARD', cards: pickDiscards(p.hand, Math.min(2, p.hand.length)) };
       case 'remake':
         if (pd.stage === 'trash') return { type: 'REMAKE_TRASH', card: pickRemodelTrash(state, p) };
-        return { type: 'REMAKE_GAIN', card: bestGainExact(state, pd.exactCost, { noVictory: true }) || bestGainExact(state, pd.exactCost) };
+        return { type: 'REMAKE_GAIN', card: bestGainExact(state, pd.exactCost, { noVictory: true, pot: pd.pot, debt: pd.debt }) || bestGainExact(state, pd.exactCost, pd) };
       case 'tournament':
         if (pd.stage === 'reveal_self') return { type: 'TOURNAMENT_REVEAL', reveal: true }; // 属州を公開して賞品を得る
         if (pd.stage === 'reveal_opp') return { type: 'TOURNAMENT_REVEAL', reveal: true };  // 相手のボーナスを打ち消す
@@ -1964,6 +1958,7 @@
         // 常に +2カードを軸に、他にアクションがあれば +2アクション、無ければ +2コイン
         return { type: 'TRUSTY_STEED_RESOLVE', choices: ['cards', p.hand.some((c) => isType(c, 'action')) ? 'actions' : 'coins'] };
       case 'horn_of_plenty':
+        // 勝利点を獲得すると豊穣の角自身を廃棄する＝終盤（属州が残り少ない）以外は非勝利点を選ぶ。
         return { type: 'HORN_OF_PLENTY_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
 
       /* ===== 拡張: ギルド（Guilds）===== */
@@ -1974,8 +1969,7 @@
         if (card === 'masterpiece') amt = max; // 過払い1コイン→銀貨1枚は好レート。全額。
         else if (card === 'stonemason') {
           for (let x = max; x >= 1; x--) {
-            if (Object.keys(state.supply).some((id) => C()[id] && isType(id, 'action') && !isType(id, 'victory') &&
-                !NON_SUPPLY_SET.has(id) && cost(state, id) === x && sup(state, id) > 0)) { amt = x; break; }
+            if (firstGainable(state, (id) => costExact(state, id, x, 0, 0) && isType(id, 'action') && !isType(id, 'victory'))) { amt = x; break; }
           }
         } else if (card === 'herald') {
           const good = p.discard.filter((c) => keepValue(c) >= 60).length; // 良い札を山札の上へ
@@ -1984,10 +1978,7 @@
         return { type: 'OVERPAY_RESOLVE', amount: amt };
       }
       case 'stonemason_overpay': {
-        let g = null;
-        for (const id of GAIN_ORDER) {
-          if (C()[id] && isType(id, 'action') && !NON_SUPPLY_SET.has(id) && cost(state, id) === pd.exact && sup(state, id) > 0) { g = id; break; }
-        }
+        const g = firstGainable(state, (id) => costExact(state, id, pd.exact, 0, 0) && isType(id, 'action'));
         return { type: 'STONEMASON_OVERPAY_GAIN', card: g };
       }
       case 'doctor_overpay': {
@@ -2008,7 +1999,8 @@
           const c = p.hand.includes('copper') ? 'copper' : (p.hand.includes('curse') ? 'curse' : pickTrash(p.hand, 1)[0]);
           return { type: 'STONEMASON_TRASH', card: c };
         }
-        return { type: 'STONEMASON_GAIN', card: bestGain(state, pd.maxCost - 1, { noVictory: true }) || bestGain(state, pd.maxCost - 1) };
+        // 石工＝「廃棄した札より安い」（pd.maxCost は**廃棄した札のコスト**＝その未満。engine と同じ costUnder）
+        return { type: 'STONEMASON_GAIN', card: bestGainUnder(state, pd.maxCost, { noVictory: true, pot: pd.pot, debt: pd.debt }) || bestGainUnder(state, pd.maxCost, pd) };
       case 'doctor':
         if (pd.stage === 'name') {
           const named = owned(p, 'curse') > 0 ? 'curse' : (owned(p, 'estate') > 0 ? 'estate' : 'copper');
@@ -2033,7 +2025,7 @@
           const tre = p.hand.filter((c) => isTreasure(c)).sort((a, b) => (C()[a].coin || 0) - (C()[b].coin || 0))[0];
           return { type: 'TAXMAN_TRASH', card: tre || null };
         }
-        return { type: 'TAXMAN_GAIN', card: bestGain(state, pd.maxCost, { treasureOnly: true }) };
+        return { type: 'TAXMAN_GAIN', card: bestGain(state, pd.maxCost, { treasureOnly: true, pot: pd.pot, debt: pd.debt }) };
       case 'butcher':
         if (pd.stage === 'trash') {
           const junk = p.hand.includes('curse') ? 'curse' : (p.hand.includes('estate') ? 'estate' : (p.hand.includes('copper') ? 'copper' : null));
@@ -2042,11 +2034,12 @@
         if (pd.stage === 'pay') {
           const coffers = p.coffers || 0;
           const total = pd.trashedCost + coffers;
-          const target = bestGain(state, total, { noVictory: true }) || bestGain(state, total);
+          const spec = { pot: pd.pot, debt: pd.debt };
+          const target = bestGain(state, total, { noVictory: true, pot: pd.pot, debt: pd.debt }) || bestGain(state, total, spec);
           const need = target ? Math.max(0, cost(state, target) - pd.trashedCost) : 0;
           return { type: 'BUTCHER_PAY', amount: Math.min(coffers, need) };
         }
-        return { type: 'BUTCHER_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
+        return { type: 'BUTCHER_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true, pot: pd.pot, debt: pd.debt }) || bestGain(state, pd.maxCost, pd) };
       case 'journeyman': {
         const named = owned(p, 'curse') > 0 ? 'curse' : (owned(p, 'estate') > 0 ? 'estate' : (owned(p, 'copper') > 0 ? 'copper' : mostLikelyTop(p)));
         return { type: 'JOURNEYMAN_NAME', card: named };
@@ -2065,7 +2058,7 @@
       case 'develop':
         if (pd.stage === 'trash') return { type: 'DEVELOP_TRASH', card: pickRemodelTrash(state, p) };
         {
-          const pickFor = (c) => bestGainExact(state, c, { noVictory: true }) || bestGainExact(state, c);
+          const pickFor = (c) => bestGainExact(state, c, { noVictory: true, pot: pd.pot, debt: pd.debt }) || bestGainExact(state, c, pd);
           if (!pd.hiDone && pickFor(pd.hi)) return { type: 'DEVELOP_GAIN', card: pickFor(pd.hi) };
           if (!pd.loDone && pickFor(pd.lo)) return { type: 'DEVELOP_GAIN', card: pickFor(pd.lo) };
           return { type: 'DEVELOP_GAIN', card: null };
@@ -2112,7 +2105,9 @@
       case 'stables':
         return { type: 'STABLES_DISCARD', card: p.hand.includes('copper') ? 'copper' : null };
       case 'border_village':
-        return { type: 'BORDER_VILLAGE_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
+        // 「国境の村より安い」＝engine と同じ costUnder（pd.maxCost は cost-1）
+        { const uc = (pd.maxCost || 0) + 1;
+          return { type: 'BORDER_VILLAGE_GAIN', card: bestGainUnder(state, uc, { noVictory: true }) || bestGainUnder(state, uc) }; }
       case 'weaver':
         if (pd.stage === 'gain') return { type: 'WEAVER_GAIN', card: bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) };
         return { type: 'WEAVER_MODE', mode: 'silver' }; // 銀貨2枚が堅実
@@ -2124,7 +2119,8 @@
         return { type: 'BERSERKER_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
       case 'wheelwright':
         if (pd.stage === 'discard') return { type: 'WHEELWRIGHT_DISCARD', card: p.hand.includes('estate') ? 'estate' : null };
-        { const g = GAIN_ORDER.find((id) => C()[id] && isType(id, 'action') && !NON_SUPPLY_SET.has(id) && cost(state, id) <= pd.maxCost && sup(state, id) > 0); return { type: 'WHEELWRIGHT_GAIN', card: g || null }; }
+        { const g = firstGainable(state, (id) => costUpTo(state, id, pd.maxCost, pd) && isType(id, 'action'));
+          return { type: 'WHEELWRIGHT_GAIN', card: g || null }; }
       case 'witchs_hut': {
         if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'WITCHS_HUT_REACT' }; }
         const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => cost(state, a) - cost(state, b));
@@ -2138,11 +2134,12 @@
         return { type: 'DUCHESS_GAIN', gain: false }; // デッキを濁さないため受け取らない
       case 'farmland':
         if (pd.stage === 'trash') return { type: 'FARMLAND_TRASH', card: pickRemodelTrash(state, p) };
-        return { type: 'FARMLAND_GAIN', card: bestGainExact(state, pd.exactCost, { noVictory: true }) || bestGainExact(state, pd.exactCost) };
-      case 'haggler':
-        // 兄弟(border_village/weaver/berserker/farmland)と同じく curse を含むフォールバックを持つ
-        // （engine の canGain は非勝利点＝呪いを許可＝必須獲得。noVictory だけだと呪いのみの局面で null→無限ループ）。
-        return { type: 'HAGGLER_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
+        return { type: 'FARMLAND_GAIN', card: bestGainExact(state, pd.exactCost, { noVictory: true, pot: pd.pot, debt: pd.debt }) || bestGainExact(state, pd.exactCost, pd) };
+      case 'haggler': {
+        // 「購入した札より安い・勝利点でない」＝engine と同じ述語（勝利点は engine が拒否／呪いは可＝GAIN_ORDER の最後尾）。
+        const uc = (pd.coin != null) ? pd.coin : (pd.maxCost || 0) + 1;
+        return { type: 'HAGGLER_GAIN', card: firstGainable(state, (id) => costUnder(state, id, uc, pd) && !isType(id, 'victory')) };
+      }
       case 'fools_gold_react':
         return { type: 'FOOLS_GOLD_REACT', trash: true };
       case 'igg_play':
@@ -2168,7 +2165,7 @@
       case 'squire':
         return { type: 'SQUIRE_RESOLVE', choice: 'silver' };
       case 'squire_trash_gain': {
-        const atk = GAIN_ORDER.find((id) => C()[id] && isType(id, 'attack') && !NON_SUPPLY_SET.has(id) && sup(state, id) > 0);
+        const atk = firstGainable(state, (id) => isType(id, 'attack')); // アタックならコスト制限なし（engine と同じ）
         return { type: 'SQUIRE_TRASH_GAIN', card: atk || null };
       }
       case 'storeroom':
@@ -2200,8 +2197,9 @@
         return { type: 'CATACOMBS_RESOLVE', choice: good >= 2 ? 'hand' : 'discard' };
       }
       case 'catacombs_trash': {
-        const m = (pd.under || 5) - 1;
-        return { type: 'CATACOMBS_TRASH_GAIN', card: bestGain(state, m, { noVictory: true }) || bestGain(state, m) };
+        // 「地下墓所より安い」＝engine と同じ costUnder
+        const uc = (pd.under != null) ? pd.under : 5;
+        return { type: 'CATACOMBS_TRASH_GAIN', card: bestGainUnder(state, uc, { noVictory: true }) || bestGainUnder(state, uc) };
       }
       case 'hunting_grounds_trash':
         return { type: 'HUNTING_GROUNDS_TRASH', choice: sup(state, 'duchy') > 0 ? 'duchy' : 'estates' };
@@ -2220,12 +2218,11 @@
           const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => cost(state, a) - cost(state, b));
           return { type: 'GRAVEROBBER_TRASH', card: acts[0] };
         }
-        return { type: 'GRAVEROBBER_GAIN', card: bestGain(state, pd.maxCost) }; // stage 'gain'
+        return { type: 'GRAVEROBBER_GAIN', card: bestGain(state, pd.maxCost, pd) }; // stage 'gain'
       }
       case 'rebuild': {
         if (pd.stage === 'name') return { type: 'REBUILD_NAME', card: 'province' }; // 属州を守り 屋敷/公領を格上げ
-        let g = null;
-        for (const id of GAIN_ORDER) { if (C()[id] && isType(id, 'victory') && !NON_SUPPLY_SET.has(id) && cost(state, id) <= pd.maxCost && sup(state, id) > 0) { g = id; break; } }
+        const g = firstGainable(state, (id) => costUpTo(state, id, pd.maxCost, pd) && isType(id, 'victory'));
         return { type: 'REBUILD_GAIN', card: g };
       }
       case 'count': {
@@ -2260,13 +2257,15 @@
       }
       case 'procession': {
         const cands = p.hand.filter((c) => isType(c, 'action') && !isType(c, 'duration') && c !== 'procession');
-        const upgradeable = (c) => { const mx = cost(state, c) + 1, pot = C()[c].potion || 0; return GAIN_ORDER.some((id) => C()[id] && isType(id, 'action') && !NON_SUPPLY_SET.has(id) && cost(state, id) === mx && (C()[id].potion || 0) === pot && sup(state, id) > 0); };
+        const upgradeable = (c) => {
+          const mx = cost(state, c) + 1, pot = C()[c].potion || 0, dbt = C()[c].debt || 0;
+          return !!firstGainable(state, (id) => costExact(state, id, mx, pot, dbt) && isType(id, 'action'));
+        };
         const ok = cands.filter(upgradeable).sort((a, b) => ((isType(b, 'ruins') ? 1 : 0) - (isType(a, 'ruins') ? 1 : 0)) || (cost(state, a) - cost(state, b)));
         return { type: 'PROCESSION_CHOOSE', card: ok[0] || null };
       }
       case 'procession_gain': {
-        let g = null;
-        for (const id of GAIN_ORDER) { if (C()[id] && isType(id, 'action') && !NON_SUPPLY_SET.has(id) && cost(state, id) === pd.exact && (C()[id].potion || 0) === pd.pot && sup(state, id) > 0) { g = id; break; } }
+        const g = firstGainable(state, (id) => costExact(state, id, pd.exact, pd.pot, pd.debt) && isType(id, 'action'));
         return { type: 'PROCESSION_GAIN', card: g };
       }
       case 'counterfeit': {
@@ -2332,7 +2331,7 @@
       }
       case 'inventor_gain': {
         // コスト$4以下を1枚獲得（強制）。engine の inventorGainable と同じ述語で候補を選ぶ（拒否されない＝無限ループ防止）。
-        const ok = (id) => plainCoin(id) && cost(state, id) <= 4;
+        const ok = (id) => costUpTo(state, id, 4);
         const pick = firstGainable(state, (id) => ok(id) && !isType(id, 'victory') && !isType(id, 'curse'))
           || firstGainable(state, ok);
         return { type: 'INVENTOR_GAIN', card: pick };
@@ -2353,7 +2352,7 @@
         return { type: 'RECRUITER_TRASH', card: pick };
       }
       case 'sculptor_gain': {
-        const ok = (id) => plainCoin(id) && cost(state, id) <= 4;
+        const ok = (id) => costUpTo(state, id, 4);
         const pick = firstGainable(state, (id) => ok(id) && !isType(id, 'victory') && !isType(id, 'curse'))
           || firstGainable(state, ok);
         return { type: 'SCULPTOR_GAIN', card: pick };
