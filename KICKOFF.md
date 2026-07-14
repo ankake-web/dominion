@@ -1,4 +1,4 @@
-<!-- /handoff が自動生成（2026-07-12）。新セッションはこのファイルの指示に従う。手編集不要 -->
+<!-- /handoff が自動生成（2026-07-14）。新セッションはこのファイルの指示に従う。手編集不要 -->
 
 ウルトラコード（最大エフォート）で進めてください。
 
@@ -6,25 +6,48 @@
 作業ディレクトリ: c:\Users\b1242\claude\game\dominion / branch: main（main直接作業運用。最新は git log で確認）。
 
 ## まずやること
-1. `Set-Location 'C:\Users\b1242\claude\game\dominion'` して `npm test` → **35スイート・オールグリーン（exit 0・整合性3149・不変条件7・横型イベント149（events＝帝国13＋冒険20）・帝国269＋UI75・ランドマーク80・冒険59＋UI67・暗黒時代87＋UI57・新プロモ165＋UI22・繁栄69・異郷83＋UI44・収穫祭107・ギルド81＋UI25・CPU序列 強vs弱100/強vs普通64/普通vs弱95）** を確認。
-2. `PROGRESS.md` 先頭サマリ＋**§0-21（冒険イベント20種・push済）**を読む。横型の設計正本＝`docs/research/landscape_cards.md`＋`landscape_gaps.md`（※**2022エラッタ前の記述が混じる**＝§0-21 の裁定が新しい）。全体設計図＝`docs/adding-cards.md`。
+1. `Set-Location 'C:\Users\b1242\claude\game\dominion'` して `npm test` → **37スイート・オールグリーン（exit 0・整合性3401・不変条件8・ルネサンス320＋UI62・帝国269＋UI75・ランドマーク80・横型イベント149・冒険59＋UI67・暗黒時代87＋UI57・新プロモ165＋UI22・繁栄69・異郷83＋UI44・収穫祭107・ギルド81＋UI25・CPU序列 強vs弱100/強vs普通64/普通vs弱95）** を確認。
+2. **`docs/research/mixall_hardening.md`（作業指示書＝正本）** と `PROGRESS.md` の **§0-23** を読む。全体設計図＝`docs/adding-cards.md`。
 
-## 現状：冒険イベント20種まで完了＝**本番反映済み**（`aa0c185`・`sw.js` v48）
-`adventures-events`（冒険固定10＋イベント2抽選）が本番で実プレイ可能。**帝国も冒険も、縦型＋横型すべて実プレイ可能**になった。
-この作業で**既存エンジンの全体ルールの穴を2つ修正**＝①一度でも購入したらそのターンは財宝を出せない（`t.treasuresLocked`・**購入フェイズ単位**＝ヴィラで戻ったら解除）／②使者の「最初の購入」にイベント購入を数える。
-敵対レビュー4観点で確定9件＋既存バグ1件を修正（ヴィラ×財宝ロックの退行[high]・使節団×闇市場のCPU無限ループ[high]・偵察隊/保存のオンライン情報漏洩・山トークンの分割山孤児化 ほか）。
+## 現状
+- **ルネサンス（全50枚）と冒険イベントの絵まで完了・push 済**（本番 `sw.js` v51・実機確認済）。実装済みの全カードに絵が入っている。
+- **未pushのコミットが2本**：mix-all モードの「配線」＋硬化計画、と PROGRESS 更新。**硬化が終わるまで push 禁止**。
 
-## 次に取り組むタスク（優先順1位）：**次の拡張候補**（着手前に `docs/adding-cards.md` 必読）
-- **発売順の未着手拡張**（段階1すら未着手＝画像・カタログとも無し）：夜想曲/ルネサンス/移動動物園/同盟/略奪/日の出づる国。
-- **冒険イベント20種の絵（webp）回収**（今は枠＋文字だけ。`asset/art/<id>.png` に絵を置いて `CARDS_ONLY=<ids> node tools/build-landscape.js`）。
+## 次に取り組むタスク（優先順1位）：**mix-all モードのエンジン硬化（確定23件）**
+ユーザー要望＝「ランダム対戦で混ぜる拡張を選びたい」。実プレイ可能な13拡張＋横型を自由に組み合わせる **mix モード**の
+**配線は完了している**（`DOM.isMixSet`/`parseMixSet`/`makeMixSet`/`kingdomForSet`/**`landscapesForSet`＝横型3種を一度に決める唯一の入口**、
+UI の「ミックス」分類、サーバの `isValidKingdomSet`）。全37スイート緑・CPU が全13拡張ミックスで完走することも確認済み。
+
+**しかし mix を解禁すると、コードが「どうせ同居しないから」と先送りしてきた穴が全部到達可能になる**（多エージェント監査＋
+敵対検証で**確定23件**・各 finding は node 再現済み）。例：基本＋収穫祭で**工房が賞品を獲得できる**／基本＋錬金術で
+**工房がブドウ園（ポーション費用）をタダ獲得できる**／支配（Possession）×他拡張で廃棄カードの返却が壊れる。
+
+- **やること＝`docs/research/mixall_hardening.md` を上から順に潰す**（engine 約60箇所・CPU 約10・UI 約40・支配は別章）。
+- **方針＝述語を engine に1本化**：`costUpTo` / `costUnder` / `costExact` / `gainableBase` / `sameCost` を新設して
+  `DOM.engine` に公開し、**engine reducer・`anyGainable` ゲート・CPU の候補選び・UI のモーダルフィルタの4面が同じ関数を見る**。
+  個別に `if` を足して回る修正は禁止（今回の穴は全部「同じ条件を2箇所に手書きして片方で落とした」もの）。
+- **engine を締める修正と CPU を締める修正は必ず同一コミット**（engine だけ締めると CPU が拒否される札を提案し続けて livelock）。
+- 回帰＝新規 `test/mixall.test.js`（穴ごとに最小1件）＋ `invariants` に mix-all fuzz。
+- 完了後：敵対レビュー（多エージェント）→ CPUソーク（mix 各種）→ `sw.js` VERSION++（現在 v51）→ **ユーザー確認の上で** push。
+  PROGRESS §6 の「ポーション/負債は同居しないので未修正」「闇市場に段階1プールが漏れる」の注記を**解消済みに更新**する。
+
+## その次の候補
+発売順の未着手拡張（段階1すら未着手＝画像・カタログとも無し）：夜想曲／移動動物園／同盟／略奪／日の出づる国。
 
 ## 守るべき進め方・流儀
-- **新pendingは必ず4点セット**（engine reducer＋PLAYER_ACTIONS＋CPU decidePending＋UI viewPendingModal）＋終端保証。無いとCPU無限ループ／人間詰み。**engine が拒否する手はCPUにも提案させない**（同じ述語を engine が公開して3面で共有する＝`canBuyEvent`／`inheritedEstate`／`actionSupplyPiles` 等）。
-- **山トークンの山キーは `pileKeyOf` で正規化**（分割山＝上段キー）を READ/WRITE 両方で通す。**`p.inherited`（相続の脇置き）は物理カード**＝保存則 tally に数える。
-- **1機構ごとに**：狙い撃ち一時テスト（直下 `_*.tmp.js`＝実行後必ず削除。cwd がずれるので実行前に `Set-Location`）→ `node test/invariants.test.js` 緑 → `npm test` 全緑 → 恒久回帰は該当 test へ。大きな決定は PROGRESS.md に追記。
-- **substantiveなタスクは Workflow/Agent で多エージェント＋敵対的検証**（各finding は node 再現で確定）。公式ルールが曖昧なら研究エージェントで裏取り（wiki.dominionstrategy.com は WebFetch 不可＝WebSearch＋RGG公式PDF＋fandom＋wikiwiki.jp。**RGG の Adventures PDF は2022エラッタ前**なので鵜呑みにしない）。
-- client資産（js/css/webp等）を変えたら `sw.js` の VERSION を上げる（現在 v48）。回答は日本語・フランクに短く。**push は勝手にしない＝完成→全テスト緑→都度ユーザー確認の上で**。**セッションが重くなったら促さず自動で /handoff**（記憶 auto-handoff）。**Read出力の汚染に注意**：断定前に Grep・`git show`・`Get-Content` で裏取り。
+- **新pendingは必ず4点セット**（engine reducer＋PLAYER_ACTIONS＋CPU decidePending＋UI viewPendingModal）＋終端保証。
+  **engine が拒否する手はCPU/UIにも出させない**（同じ述語を engine が公開して3〜4面で共有する）。
+- **1機構ごとに**：狙い撃ち一時テスト（直下 `_*.tmp.js`＝実行後必ず削除。cwd がずれるので実行前に `Set-Location`）→
+  `node test/invariants.test.js` 緑 → `npm test` 全緑 → 恒久回帰は該当 test へ。大きな決定は PROGRESS.md に追記。
+- **substantive なタスクは Workflow/Agent で多エージェント＋敵対的検証**（各 finding は node 再現で確定）。
+- client資産（js/css/webp等）を変えたら `sw.js` の VERSION を上げる。回答は日本語・フランクに短く。
+- **push は勝手にしない＝完成→全テスト緑→都度ユーザー確認の上で**。**セッションが重くなったら促さず自動で /handoff**。
+- **Read出力の汚染に注意**：実装状態を断定する前に Grep・`git show`・`Get-Content` で裏取りする。
+- カード絵はユーザーが ChatGPT で生成 → 私が中身を見て判別し `asset/art/<id>.png` に回収 → webp 再生成
+  （縦型 `tools/build-cards.js`／横型 `tools/build-landscape.js`。`CARDS_ONLY=<ids>` で個別生成。このPCのみ可）。
 
 ## 直近で完了した大仕事（参考）
-- **§0-21 冒険イベント20種**（2026-07-12・push済 `aa0c185`・本番 v48 実機確認）＝軽量11＋山トークン6（新種別＝渡し船の-$2コスト／立案の廃棄）＋重量3（保存/使節団/相続＝屋敷が命令アクション）。
-- **§0-20 帝国イベント13種**（2026-07-11・push済・v47）／**§0-19 帝国ランドマーク21種＋絵**（v46）。
+- **§0-22 ルネサンス全50枚**（2026-07-13・push済 v50）＝王国25＋プロジェクト20＋アーティファクト5。新機構＝村人／
+  アーティファクト／プロジェクト。横断リファクタ2件（`reveal()` に公開フック集約＝パトロン／財宝判定を `isTreasureFor` に
+  集約69箇所＝資本主義）。敵対レビュー確定9件を修正。
+- **絵の回収**：ルネサンス50枚（v50）／冒険イベント20枚（v51）。**これで全カードに絵が入った**。
