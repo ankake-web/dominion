@@ -175,6 +175,17 @@ input.code-input {
 .set-tile.on .set-tile-name { color: var(--gold-bright); }
 .set-tile-desc { font-size: 11px; color: var(--ink-dim); margin-top: 2px; line-height: 1.4; }
 .set-note { font-size: 12px; color: var(--ink-dim); margin: 2px 2px 0; line-height: 1.5; }
+/* ミックス（拡張を自由に混ぜる）＝複数選択できるチップ。折り返して全部押せるようにする（320px幅でも切れない）。 */
+.mix-picker { gap: 8px; }
+.mix-label { font-size: 12px; font-weight: 700; color: var(--gold-bright); margin-top: 2px; }
+.mix-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.mix-chip {
+  padding: 7px 10px; border-radius: 999px; font-size: 12px; font-family: inherit;
+  border: 1px solid var(--line); background: #15131f; color: var(--ink-dim); cursor: pointer;
+  transition: border-color .12s, background .12s, color .12s;
+}
+.mix-chip.on { border-color: var(--gold); background: linear-gradient(180deg, rgba(216,180,106,0.22), rgba(216,180,106,0.06)); color: var(--gold-bright); font-weight: 700; }
+.mix-chip:active { transform: scale(0.97); }
 
 .code-display {
   font-family: 'Cinzel', serif;

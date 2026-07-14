@@ -1044,8 +1044,58 @@
     for (let i = src.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = src[i]; src[i] = src[j]; src[j] = t; }
     return src.slice(0, n || 10).sort((a, b) => DOM.CARDS[a].cost - DOM.CARDS[b].cost || a.localeCompare(b));
   };
+  /* ============================================================
+     mix モード（拡張を自由に混ぜるランダム対戦）
+     ------------------------------------------------------------
+     セットIDを **1本の文字列** にエンコードする（サーバ/永続化/再戦の protocol を変えずに済む）。
+       `mix:<王国プール,カンマ区切り>[:<横型の枚数 0-2>[:<横型プール,カンマ区切り>]]`
+       例) mix:basic,intrigue,seaside
+           mix:seaside,empires,renaissance:2:ev-empires,pj-renaissance
+     - 王国プール ＝ MIX_KINGDOM_POOLS のキー（実プレイ可能な13拡張）。選んだプールの**和集合から10種を抽選**（公式どおり）。
+     - 横型プール ＝ MIX_LANDSCAPE_POOLS のキー。選んだプールを**まとめてシャッフルし、合計で最大2枚**だけ引く
+       （公式：イベント＋ランドマーク＋プロジェクトの合算で最大2枚。王国山は常に10）。
+     - サーバは正規表現＋プール実在チェックで検証する（gameServer.js の isValidKingdomSet）。
+     ============================================================ */
+  // mix で選べる王国プール（＝実プレイ可能な拡張だけ。孤立プール/非サプライ/混合山の中身は入れない）。
+  DOM.MIX_KINGDOM_POOLS = {
+    basic: '基本', intrigue: '陰謀', seaside: '海辺', alchemy: '錬金術', prosperity: '繁栄',
+    cornucopia: '収穫祭', guilds: 'ギルド', hinterlands: '異郷', darkages: '暗黒時代',
+    adventures: '冒険', empires: '帝国', renaissance: 'ルネサンス', promo: 'プロモ',
+  };
+  // mix で選べる横型プール（kind ごとに分けて選べる）。
+  DOM.MIX_LANDSCAPE_POOLS = {
+    'lm-empires': { label: 'ランドマーク（帝国）', get: () => DOM.LANDMARKS_EMPIRES || [] },
+    'ev-empires': { label: 'イベント（帝国）', get: () => DOM.EVENTS_EMPIRES || [] },
+    'ev-adventures': { label: 'イベント（冒険）', get: () => DOM.EVENTS_ADVENTURES || [] },
+    'pj-renaissance': { label: 'プロジェクト（ルネサンス）', get: () => DOM.PROJECTS_RENAISSANCE || [] },
+  };
+  DOM.isMixSet = function (setId) { return typeof setId === 'string' && setId.indexOf('mix:') === 0; };
+  // mix セットIDを分解する。不正なプール名は捨てる（サーバ側の検証と同じ挙動）。
+  DOM.parseMixSet = function (setId) {
+    if (!DOM.isMixSet(setId)) return null;
+    const parts = String(setId).slice(4).split(':');
+    const pools = (parts[0] || '').split(',').map((s) => s.trim())
+      .filter((p) => p && Object.prototype.hasOwnProperty.call(DOM.MIX_KINGDOM_POOLS, p));
+    let count = parseInt(parts[1], 10);
+    if (!(count >= 0 && count <= 2)) count = 0;
+    const lsPools = (parts[2] || '').split(',').map((s) => s.trim())
+      .filter((p) => p && Object.prototype.hasOwnProperty.call(DOM.MIX_LANDSCAPE_POOLS, p));
+    if (!lsPools.length) count = 0;
+    return { pools, count, lsPools };
+  };
+  DOM.makeMixSet = function (pools, count, lsPools) {
+    let id = 'mix:' + (pools || []).join(',');
+    if (count > 0 && (lsPools || []).length) id += ':' + count + ':' + lsPools.join(',');
+    return id;
+  };
   // セットID → 王国カード配列（ランダム系は毎回その場で10種を確定）
   DOM.kingdomForSet = function (setId) {
+    if (DOM.isMixSet(setId)) {
+      const m = DOM.parseMixSet(setId);
+      const pool = m.pools.reduce((a, ex) => a.concat(DOM.POOLS[ex] || []), []);
+      if (!pool.length) return DOM.KINGDOM.slice(); // プール未選択＝フォールバック
+      return DOM.randomKingdom(10, pool);
+    }
     const set = DOM.CARD_SETS.find((s) => s.id === setId);
     if (set && set.randomFrom) {
       const pool = set.randomFrom.reduce((a, ex) => a.concat(DOM.POOLS[ex] || []), []);
@@ -1090,6 +1140,42 @@
     const set = DOM.CARD_SETS.find((s) => s.id === setId);
     if (set && set.projectsFrom) return DOM.pickLandmarks(2, DOM.projectPoolFor(set.projectsFrom));
     return [];
+  };
+  /* セットID → 使用する横型3種を**一度に**確定する唯一の入口（ui.js の startConfigured／server の startGame が呼ぶ）。
+     ※ landmarksForSet / eventsForSet / projectsForSet を別々に呼ぶと mix で「合計最大2枚」を超えてしまう
+       （3つとも独立に2枚ずつ引いてしまう）。**mix では必ずこの関数を使うこと**。 */
+  DOM.landscapesForSet = function (setId) {
+    if (DOM.isMixSet(setId)) {
+      const m = DOM.parseMixSet(setId);
+      const out = { landmarks: [], events: [], projects: [] };
+      if (!m.count || !m.lsPools.length) return out;
+      // 選んだ横型プールを1つの束にまとめてシャッフルし、合計 count 枚だけ引く（公式：横型は合算で最大2枚）。
+      let bag = [];
+      m.lsPools.forEach((k) => { bag = bag.concat(DOM.MIX_LANDSCAPE_POOLS[k].get()); });
+      DOM.pickLandmarks(m.count, bag).forEach((id) => {
+        const kind = (DOM.LANDSCAPES[id] || {}).kind;
+        if (kind === 'landmark') out.landmarks.push(id);
+        else if (kind === 'event') out.events.push(id);
+        else if (kind === 'project') out.projects.push(id);
+      });
+      return out;
+    }
+    return {
+      landmarks: DOM.landmarksForSet(setId),
+      events: DOM.eventsForSet(setId),
+      projects: DOM.projectsForSet(setId),
+    };
+  };
+  // 表示名（mix はプール名から組み立てる。ロビー/セット選択の見出しに使う）。
+  DOM.setDisplayName = function (setId) {
+    if (DOM.isMixSet(setId)) {
+      const m = DOM.parseMixSet(setId);
+      const names = m.pools.map((p) => DOM.MIX_KINGDOM_POOLS[p]).join('＋');
+      const ls = (m.count && m.lsPools.length) ? '＋横型' + m.count + '枚' : '';
+      return names ? 'ミックス：' + names + ls : 'ミックス（未選択）';
+    }
+    const set = DOM.CARD_SETS.find((s) => s.id === setId);
+    return (set && set.name) || '王国基本セット（第二版）';
   };
 
   DOM.TREASURES = ['copper', 'silver', 'gold'];

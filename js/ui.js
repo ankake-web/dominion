@@ -369,24 +369,26 @@
     current = current || 'basic';
     const sets = DOM.CARD_SETS || [];
     const byId = (id) => sets.find((s) => s.id === id);
-    const cur = byId(current) || byId('basic');
+    const isMix = DOM.isMixSet && DOM.isMixSet(current);
+    const cur = (!isMix && byId(current)) || byId('basic');
     const recommend = sets.filter((s) => s.kind === 'recommend');
     const randoms = sets.filter((s) => s.kind === 'random');
-    // 拡張の固定セット（海辺〜帝国）＝ kind:'standard' のうち 王国基本/陰謀 以外。
+    // 拡張の固定セット（海辺〜ルネサンス）＝ kind:'standard' のうち 王国基本/陰謀 以外。
     //   これを出さないと「海辺セット」「帝国セット」等の固定10種が画面から選べない。
     const expansions = sets.filter((s) => s.kind === 'standard' && s.id !== 'basic' && s.id !== 'intrigue');
     // 現在のトップ分類
     let top = 'basic';
-    if (cur.id === 'intrigue') top = 'intrigue';
+    if (isMix) top = 'mix';
+    else if (cur.id === 'intrigue') top = 'intrigue';
     else if (expansions.some((s) => s.id === cur.id)) top = 'expansion';
     else if (cur.kind === 'recommend') top = 'recommend';
     else if (cur.kind === 'random') top = 'random';
     // 分類を切り替えたときに飛ぶ既定ID
     const defaults = { basic: 'basic', intrigue: 'intrigue', expansion: (expansions[0] || {}).id,
-      recommend: (recommend[0] || {}).id, random: 'random' };
+      recommend: (recommend[0] || {}).id, random: 'random', mix: 'mix:basic,intrigue' };
     const topSeg = segmented(
       [{ value: 'basic', label: '王国基本' }, { value: 'intrigue', label: '陰謀' }, { value: 'expansion', label: '拡張' },
-       { value: 'recommend', label: 'おすすめ' }, { value: 'random', label: 'ランダム' }],
+       { value: 'recommend', label: 'おすすめ' }, { value: 'random', label: 'ランダム' }, { value: 'mix', label: 'ミックス' }],
       top, (v) => { if (v !== top && defaults[v]) onChange(defaults[v]); }, 'set-top-seg');
 
     const tiles = (list) => h('div', { class: 'set-tiles' }, list.map((s) =>
@@ -403,12 +405,69 @@
       sub = h('div', { class: 'set-sub' },
         segmented(randoms.map((s) => ({ value: s.id, label: s.name.replace('から', '') })), current, (v) => onChange(v), 'seg-wrap'),
         h('p', { class: 'muted set-note' }, '毎回ランダムに10種を選びます。'));
+    } else if (top === 'mix') {
+      sub = mixPicker(current, onChange);
     }
     // 固定セットは収録カード名をプレビュー
-    const preview = cur.kingdom
+    const preview = (!isMix && cur.kingdom)
       ? h('p', { class: 'muted set-note' }, '収録：' + cur.kingdom.map((id) => (DOM.CARDS[id] ? DOM.CARDS[id].name : id)).join('・'))
       : null;
     return h('div', { class: 'set-picker' }, topSeg, sub, preview);
+  }
+
+  /* ミックス（拡張を自由に混ぜるランダム対戦）の選択UI。
+     - 王国：選んだ拡張の王国カードを**全部混ぜて10種抽選**（公式どおり）。最低1つ選ぶ。
+     - 横型：イベント/ランドマーク/プロジェクトを**合計0〜2枚**（公式）。抽選元も選べる。
+     セットIDは `mix:<王国プール>[:<枚数>:<横型プール>]` の1文字列にエンコードされ、
+     オンラインでもそのままサーバへ送られる（サーバは形式とプール名を検証してから受理する）。 */
+  function mixPicker(current, onChange) {
+    const m = DOM.parseMixSet(current) || { pools: [], count: 0, lsPools: [] };
+    const KP = DOM.MIX_KINGDOM_POOLS || {};
+    const LP = DOM.MIX_LANDSCAPE_POOLS || {};
+    const emit = (pools, count, lsPools) => onChange(DOM.makeMixSet(pools, count, lsPools));
+    const toggle = (arr, v) => (arr.indexOf(v) >= 0 ? arr.filter((x) => x !== v) : arr.concat([v]));
+
+    const poolChips = h('div', { class: 'mix-chips' }, Object.keys(KP).map((k) => {
+      const on = m.pools.indexOf(k) >= 0;
+      return h('button', {
+        class: 'mix-chip' + (on ? ' on' : ''),
+        onclick: () => {
+          const next = toggle(m.pools, k);
+          if (!next.length) return; // 最低1つは必要（engine が王国を作れない）
+          emit(next, m.count, m.lsPools);
+        },
+      }, (on ? '✓ ' : '') + KP[k]);
+    }));
+    const total = m.pools.reduce((a, p) => a + ((DOM.POOLS[p] || []).length), 0);
+
+    const countSeg = segmented(
+      [{ value: 0, label: 'なし' }, { value: 1, label: '1枚' }, { value: 2, label: '2枚' }],
+      m.count, (v) => emit(m.pools, v, (v > 0 && !m.lsPools.length) ? Object.keys(LP) : m.lsPools), 'seg-wrap');
+
+    const lsChips = m.count > 0
+      ? h('div', { class: 'mix-chips' }, Object.keys(LP).map((k) => {
+          const on = m.lsPools.indexOf(k) >= 0;
+          return h('button', {
+            class: 'mix-chip' + (on ? ' on' : ''),
+            onclick: () => {
+              const next = toggle(m.lsPools, k);
+              if (!next.length) return; // 横型を使うなら抽選元が最低1つ必要
+              emit(m.pools, m.count, next);
+            },
+          }, (on ? '✓ ' : '') + LP[k].label);
+        }))
+      : null;
+
+    return h('div', { class: 'set-sub mix-picker' },
+      h('div', { class: 'mix-label' }, '混ぜる拡張（王国カード）'),
+      poolChips,
+      h('p', { class: 'muted set-note' }, '選んだ拡張の王国カード ' + total + '種 から毎回10種を抽選します。'),
+      h('div', { class: 'mix-label' }, '横型カード（イベント／ランドマーク／プロジェクト）'),
+      countSeg,
+      lsChips,
+      h('p', { class: 'muted set-note' }, m.count > 0
+        ? '選んだ抽選元から合計 ' + m.count + '枚 を無作為に使います（公式：横型は合計2枚まで）。'
+        : '横型カードは使いません。'));
   }
 
   /* ---------- 対戦設定（2〜4人・人間/CPU・強さ） ---------- */
@@ -507,11 +566,10 @@
           h('span', { class: 'lobby-tag' },
             p.isCpu ? 'CPU・' + LEVEL_JP[p.level || 'normal'] : (p.isHost ? 'ホスト' : '') + (p.connected ? '' : ' 🔌')))));
 
-    // 王国セット名・手番順の表示用（ゲストの読み取り専用表示に使う）
+    // 王国セット名・手番順の表示用（ゲストの読み取り専用表示に使う）。mix はプール名から組み立てる。
     const setName = (() => {
       const id = (lb && lb.kingdomSet) || 'basic';
-      const s = (DOM.CARD_SETS || []).find((x) => x.id === id);
-      return s ? s.name : id;
+      return DOM.setDisplayName ? DOM.setDisplayName(id) : id;
     })();
     const orderLabel = (lb && lb.randomOrder === false) ? '上から順' : 'ランダム';
 
@@ -2844,12 +2902,12 @@
     }
     // 使う王国カード（基本/陰謀/ランダム）。ランダムはこの場で10種を確定して以後固定。
     const kingdom = opts.kingdom || (DOM.kingdomForSet ? DOM.kingdomForSet(UI.setup.kingdomSet) : DOM.KINGDOM);
-    // 帝国：横型ランドスケープ（ランドマーク）もこの場で確定して以後固定（empires-landmarks 等）。
-    const landmarks = opts.landmarks || (DOM.landmarksForSet ? DOM.landmarksForSet(UI.setup.kingdomSet) : []);
-    // 帝国：横型イベント（買う横型）もこの場で確定して以後固定（empires-events 等）。
-    const events = opts.events || (DOM.eventsForSet ? DOM.eventsForSet(UI.setup.kingdomSet) : []);
-    // ルネサンス：横型プロジェクト（買う横型）もこの場で確定して以後固定（renaissance-projects 等）。
-    const projects = opts.projects || (DOM.projectsForSet ? DOM.projectsForSet(UI.setup.kingdomSet) : []);
+    // 横型ランドスケープ（ランドマーク/イベント/プロジェクト）もこの場で確定して以後固定。
+    //   **必ず landscapesForSet（3種を一度に決める唯一の入口）を使う**＝mix モードで「合計最大2枚」を守るため。
+    const ls = (DOM.landscapesForSet ? DOM.landscapesForSet(UI.setup.kingdomSet) : { landmarks: [], events: [], projects: [] });
+    const landmarks = opts.landmarks || ls.landmarks;
+    const events = opts.events || ls.events;
+    const projects = opts.projects || ls.projects;
     UI.lastConfigs = configs;
     UI.lastKingdom = kingdom;
     UI.lastLandmarks = landmarks;
