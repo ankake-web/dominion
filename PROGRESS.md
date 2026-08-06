@@ -1275,6 +1275,13 @@ mix を解禁すると、PROGRESS §6 / §0-10 に**「どの出荷 CARD_SET で
 ## 6. 詰まり・注意点・保留中の判断
 - **新カードを `DOM.CARDS` に足すと整合性テストが赤くなる**（GAIN_ORDER網羅＋POOL所属を要求）→ 孤立プール＋GAIN_ORDER追加で回避。実ゲーム化時は ATTACKS/PLAYER_ACTIONS/CPU decidePending/UI viewPendingModal も忘れず（抜けはCIで赤 or CPU無限ループ/人間詰み）。
 - **デプロイ**：サーバ変更時は Pages と Render の反映タイミング差で一時的に空振りし得る。`sw.js` VERSION更新を忘れない。
+- **【2026-08-06 に踏んだ】GitHub Pages の公開キューが混むと `deployment_queued` のまま待たされ、
+  `actions/deploy-pages@v4` の既定タイムアウト(10分)で `Timeout reached, aborting!` になり失敗する**（3回連続で失敗。
+  同日に成功した回も 10分42秒 かかっていた）。**`timeout` 入力を上げても効かない**＝`deploy-pages` の上限が 600000ms で、
+  超える値は `timeout value is greater than the allowed maximum` の警告付きで丸められる（実測）。**待つしかない＝失敗したら入れ直す**。
+  **失敗した run を `gh run rerun` すると「Multiple artifacts named github-pages」で必ず失敗する**（前回のアーティファクトと二重になる）。
+  やり直すときは **`gh workflow run "Deploy to GitHub Pages" --ref main`（新規実行）** を使うこと。
+  同時に2つ走らせると片方が `Deployment cancelled.` になるので、前の run が completed になってから投げる。
 - **一時スクリプト規約**：使い捨ては**プロジェクト直下に `_*.tmp.js`** で作り実行後**必ず削除**。スクショ等は scratchpad へ。シェルcwdがずれることがあるので実行前に `Set-Location 'C:\Users\b1242\claude\game\dominion'`。
 - ~~**支配（Possession）の廃棄カード返却の簡略化＝到達不能（監査⑤）**~~ → **§0-23（mix-all 硬化）で解消済み**。
   自己廃棄5枚（投資/祝宴/宝の地図/鉱山の村/豊穣の角）は `trashCard` 経由＝支配中は possessionTrash へ退避して返却される。

@@ -51,11 +51,11 @@ jobs:
         with:
           path: ./_site
 
+      # GitHub Pages 側の公開キューが混むと deployment_queued のまま待たされ、10分で
+      # "Timeout reached, aborting!" になり失敗することがある（2026-08-06 に連続で発生）。
+      # ★ timeout 入力は上げられない（deploy-pages の上限が 600000ms で、超える値は警告付きで丸められる）。
+      #   → 失敗したら **新規実行**（gh workflow run "Deploy to GitHub Pages" --ref main）で入れ直す。
+      #     `gh run rerun` は artifact が二重になり必ず失敗するので使わないこと。
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-        with:
-          # GitHub Pages 側の公開キューが混むと deployment_queued のまま待たされる。
-          # 既定のタイムアウト(10分)だと "Timeout reached, aborting!" で失敗するので余裕を持たせる
-          # （2026-08-06 に実際に3回連続で失敗。成功した回も10分42秒かかっていた）。
-          timeout: 1800000
