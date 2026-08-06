@@ -54,3 +54,8 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          # GitHub Pages 側の公開キューが混むと deployment_queued のまま待たされる。
+          # 既定のタイムアウト(10分)だと "Timeout reached, aborting!" で失敗するので余裕を持たせる
+          # （2026-08-06 に実際に3回連続で失敗。成功した回も10分42秒かかっていた）。
+          timeout: 1800000
