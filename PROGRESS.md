@@ -5,7 +5,9 @@
 ## 0-24. **UX 6件＋実バグ2件（1手もどす／終局後デッキ公開／カード検索／植民地終了／ティアラの出す順）＋敵対レビュー確定10件**（2026-08-06・**push済 `a84f1fa` → 修正 push**・`sw.js` v54）
 
 ### push＝完了（2026-08-06・`5ee170a..a84f1fa`）＝本番反映を実機確認済み
-- **GitHub Pages**（Deploy ワークフロー success）：`sw.js` **v53**（レビュー修正で **v54**）／`js/store.js` に `canUndo`／`js/engine.js` に
+- **GitHub Pages**：`sw.js` **v53** → レビュー修正で **v54**（2026-08-06 実機確認：`js/ui.js` の `_imeComposing`／
+  `js/engine.js` の `playAllResume`・植民地判定／`js/cpu.js` の `emptyPileCount`／`css/style.css` の `.with-undo`／
+  `deck-modal` すべて配信を確認）。※途中で Pages のデプロイが**ゾンビ化**して不通になった（下の注意点参照）／`js/store.js` に `canUndo`／`js/engine.js` に
   `playAllOrder`・`deckCards`・`supply.colony` 判定／`js/ui.js` に `card-search-input`・`deck-modal`・`undo-btn`。
 - **Render（オンライン）**：実 ws で本番接続して確認＝**自分の操作の後に `canUndo:true` が届き、`undo` で
   購入フェイズ→アクションフェイズに巻き戻り、`undoDone` が返る**（CPU1人＝他に人間がいないので即実行の経路）。
@@ -1284,6 +1286,14 @@ mix を解禁すると、PROGRESS §6 / §0-10 に**「どの出荷 CARD_SET で
   一度キャンセルされた SHA で `gh workflow run`（新規実行）しても **5秒で `Deployment cancelled.`** になる（実測）。
   中身を変える必要が無ければ `git commit --allow-empty` でSHAを進めて push する。
   同時に2つ走らせると片方が `Deployment cancelled.` になるので、前の run が completed になってから投げること。
+- **【最重要・2026-08-06 に7回連続で失敗した真因】タイムアウトした Pages デプロイが GitHub 側で
+  `deployment_in_progress` のまま“ゾンビ化”し、以後のデプロイを全部 400 で弾く**：
+  `Deployment request failed for <新SHA> due to in progress deployment. Please cancel <旧SHA> first`。
+  ワークフローがタイムアウト時に出す `Canceling Pages deployment...` は**実際には解除できていない**。
+  → **API で明示的にキャンセルすると即座に直る**：
+  `gh api -X POST repos/ankake-web/dominion/pages/deployments/<旧SHA>/cancel`
+  （状態確認は `gh api repos/ankake-web/dominion/pages/deployments/<SHA>` の `status`）。
+  キャンセル後に新しいコミットを push すれば通る。**デプロイが失敗し続けたらまずこれを疑うこと。**
 - **一時スクリプト規約**：使い捨ては**プロジェクト直下に `_*.tmp.js`** で作り実行後**必ず削除**。スクショ等は scratchpad へ。シェルcwdがずれることがあるので実行前に `Set-Location 'C:\Users\b1242\claude\game\dominion'`。
 - ~~**支配（Possession）の廃棄カード返却の簡略化＝到達不能（監査⑤）**~~ → **§0-23（mix-all 硬化）で解消済み**。
   自己廃棄5枚（投資/祝宴/宝の地図/鉱山の村/豊穣の角）は `trashCard` 経由＝支配中は possessionTrash へ退避して返却される。
