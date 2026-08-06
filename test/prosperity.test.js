@@ -52,6 +52,34 @@ console.log('=== プラチナ貨/植民地：繁栄が場にあると供給さ�
   ok(E.vpOf(s.players[0]) === 3 + 10, '植民地で +10勝利点');
 }
 
+console.log('=== 植民地の山が尽きたらゲーム終了（属州と並ぶ独立の終了条件）===');
+{
+  // 3山終了でも属州枯れでもない盤面で、植民地だけが尽きた状態を作る。
+  let s = mk();
+  s.supply.colony = 1;
+  ok(!E.isGameOver(s), '植民地が残っていれば終了しない');
+  s.supply.colony = 0;
+  ok(s.supply.province > 0, '前提：属州は残っている');
+  ok(E.emptyPileCount(s) < 3, '前提：空の山は3未満（3山終了ではない）');
+  ok(E.isGameOver(s), '植民地が尽きたら終了する');
+  ok(E.scoreGame(s).reason === '植民地の山が尽きた', '終了理由が「植民地の山が尽きた」（実 ' + E.scoreGame(s).reason + '）');
+  // 実プレイ経路：最後の1枚を購入 → そのターンの終了時に終局する
+  s = mk(); s.supply.colony = 1; s.turn.phase = 'buy'; s.turn.coins = 11;
+  s = reduce(s, { type: 'BUY', card: 'colony' });
+  ok(s.supply.colony === 0, '前提：植民地を購入して山が尽きる');
+  s = endTurn(s);
+  ok(s.gameOver, '植民地の最後の1枚を買ったターンの終了時にゲームが終わる');
+  ok(s.result && s.result.reason === '植民地の山が尽きた', '結果画面の理由も植民地');
+  // 終了後に「全員のデッキ」を見せるための内訳（相手の山札はマスクで復元できないので result に載せる）
+  const dc0 = s.result.scores[0].deckCards;
+  ok(dc0 && dc0.copper === 7 && dc0.estate === 3 && dc0.colony === 1,
+    'result に全員のデッキ内訳（deckCards）が載る（実 ' + JSON.stringify(dc0) + '）');
+  ok(Object.keys(dc0).reduce((n, k) => n + dc0[k], 0) === s.result.scores[0].deckSize, 'deckCards の合計＝deckSize');
+  // 植民地を使わないゲーム（colony キーが無い）は影響を受けない＝誤終了しない
+  let b = E.createInitialState(['A', 'B'], DOM.KINGDOM, { startActive: 0 });
+  ok(b.supply.colony == null && !E.isGameOver(b), '植民地を使わないゲームは誤って終了しない');
+}
+
 console.log('=== 記念碑：+2コイン +1VPトークン（終了時に得点）===');
 {
   let s = mk(); s.players[0].hand.push('monument');
@@ -327,6 +355,48 @@ console.log('=== 水晶玉：山札上のペテン師を「使う」とアタッ
   s = resolveAll(s);
   ok(s.players[0].inPlay.includes('charlatan'), '水晶玉：ペテン師を場に出して使った');
   ok(count(s.players[1].discard, 'copper') === before + 1, '水晶玉で使ったペテン師のアタックで相手が銅貨獲得（実 +' + (count(s.players[1].discard, 'copper') - before) + '）');
+}
+
+console.log('=== 「財宝を全部出す」：ティアラ/冠/偽造通貨（財宝を2回使う札）を最初に出す ===');
+{
+  // ティアラを後回しにすると手札に財宝が残らず「2回使う」が空振りするので、必ず先頭で出す。
+  let s = mk(); s.turn.phase = 'buy';
+  s.players[0].hand = ['copper', 'gold', 'tiara', 'silver'];
+  s = reduce(s, { type: 'PLAY_ALL_TREASURES' });
+  ok(!!s.pending && s.pending.type === 'tiara_play', 'ティアラの選択が最初に開く（実 ' + (s.pending && s.pending.type) + '）');
+  ok(s.players[0].inPlay.length === 1 && s.players[0].inPlay[0] === 'tiara', 'この時点で場はティアラだけ');
+  ok(count(s.players[0].hand, 'gold') === 1, '金貨はまだ手札にある＝2回使う対象に選べる');
+  // 中断した残りの財宝は、選択を解決したら自動で出し切る（ボタンを押し直させない）
+  s = reduce(s, { type: 'TIARA_PLAY', card: 'gold' });
+  ok(!s.pending, '選択の解決後に選択待ちが残らない');
+  ok(s.players[0].hand.length === 0, '残りの財宝も自動で出し切る（実 手札' + s.players[0].hand.length + '枚）');
+  ok(s.turn.coins === 9, 'コイン9＝ティアラ0＋金貨2回6＋銅貨1＋銀貨2（実 ' + s.turn.coins + '）');
+  // ティアラが無ければ従来どおり一度に全部出る
+  s = mk(); s.turn.phase = 'buy'; s.players[0].hand = ['copper', 'gold', 'silver'];
+  s = reduce(s, { type: 'PLAY_ALL_TREASURES' });
+  ok(!s.pending && s.turn.coins === 6, 'ティアラ無しは一度に全部出る（実 ' + s.turn.coins + '）');
+  // 偽造通貨（暗黒時代）も同じ理由で最初に出す
+  s = E.createInitialState(['A', 'B'], DOM.KINGDOM_DARKAGES, { startActive: 0 });
+  s.turn.phase = 'buy'; s.players[0].hand = ['copper', 'counterfeit', 'gold'];
+  s = reduce(s, { type: 'PLAY_ALL_TREASURES' });
+  ok(!!s.pending && String(s.pending.type).indexOf('counterfeit') === 0, '偽造通貨の選択が最初に開く（実 ' + (s.pending && s.pending.type) + '）');
+  ok(s.players[0].hand.includes('gold'), '偽造通貨：金貨はまだ手札にある');
+  // 冠（帝国）も購入フェイズでは「手札の財宝1枚を2回」＝最初に出す
+  s = E.createInitialState(['A', 'B'], DOM.KINGDOM_EMPIRES, { startActive: 0 });
+  s.turn.phase = 'buy'; s.players[0].hand = ['copper', 'crown', 'gold'];
+  s = reduce(s, { type: 'PLAY_ALL_TREASURES' });
+  ok(!!s.pending, '冠の選択が最初に開く（実 ' + (s.pending && s.pending.type) + '）');
+  ok(s.players[0].hand.includes('gold'), '冠：金貨はまだ手札にある');
+  // ティアラ/冠/偽造通貨が同居する王国で CPU が止まらない
+  let done = 0;
+  const pool = ['tiara', 'counterfeit', 'crown', 'merchant', 'monument', 'city', 'peddler', 'vault', 'grand_market', 'bank'];
+  for (let k = 0; k < 6; k++) {
+    let g = E.createInitialState([{ name: 'A', isCpu: true, level: 'hard' }, { name: 'B', isCpu: true, level: 'normal' }], pool, { startActive: 0 });
+    let n = 0;
+    while (!g.gameOver && n++ < 6000) g = reduce(g, CPU.decide(g));
+    if (g.gameOver) done++;
+  }
+  ok(done === 6, 'ティアラ/冠/偽造通貨 同居の王国で 6戦とも終局（実 ' + done + '/6）');
 }
 
 console.log('=== CPU対CPU：繁栄フル王国で無限ループ無く終局（複数シード）===');

@@ -311,6 +311,112 @@ try {
     UI.setup.kingdomSet = prev; UI.view = 'home'; DOM.render();
   }
 
+  console.log('=== カード一覧の検索 ===');
+  {
+    UI._listReturn = 'home';
+    go('cardList');
+    ok($('.card-search-input'), '検索欄がある');
+    const typeQ = (v) => { const i = $('.card-search-input'); i.value = v; i.dispatchEvent(new win.Event('input')); };
+    typeQ('ティアラ');
+    ok($all('.cardlist-grid .card').length === 1, 'カード名で1枚に絞られる（実 ' + $all('.cardlist-grid .card').length + '）');
+    ok(doc.body.textContent.includes('ティアラ'), '結果にティアラが出る');
+    typeQ('aqueduct');
+    ok($all('.landmark-mini').length === 1 && $all('.cardlist-grid .card').length === 0,
+      '横型（ランドマーク）も英語idで検索できる（実 横型' + $all('.landmark-mini').length + '/縦型' + $all('.cardlist-grid .card').length + '）');
+    typeQ('アタック');
+    ok($all('.cardlist-grid .card').length > 10, '種別で複数ヒット（実 ' + $all('.cardlist-grid .card').length + '）');
+    typeQ('繁栄');
+    ok(doc.body.textContent.includes('王国カード（繁栄'), '拡張名でその群がまるごと出る');
+    typeQ('そんなカードはない');
+    ok(doc.body.textContent.includes('見つかりません'), '該当なしの案内が出る');
+    $('.card-search-clear').click();
+    ok(!UI.cardSearch && $all('.cardlist-grid .card').length > 100, 'クリアで全件に戻る（実 ' + $all('.cardlist-grid .card').length + '）');
+  }
+
+  console.log('=== 終局後：全員のデッキを確認できる ===');
+  {
+    // 直前のテストで TOP に戻り store が破棄されているので、対戦を作り直す
+    go('home');
+    clickText('button', 'CPUと対戦');
+    clickText('.seg-btn', '2人');
+    clickText('button', 'この設定で開始');
+    timers.length = 0;
+    st = UI.store.state;
+    st.gameOver = true;
+    st.result = {
+      scores: [
+        { name: 'P1', vp: 12, turns: 8, vpCards: { province: 2 }, deckCards: { copper: 7, estate: 3, province: 2, village: 1 }, deckSize: 13 },
+        { name: 'P2', vp: 9, turns: 8, vpCards: { duchy: 3 }, deckCards: { copper: 7, duchy: 3 }, deckSize: 10 },
+      ],
+      winners: [0], reason: '属州の山が尽きた',
+    };
+    setState(st);
+    ok($all('.deck-view-btn').length === 2, '各プレイヤーに「デッキを見る」ボタン');
+    $all('.deck-view-btn')[0].click();
+    ok($('.deck-modal'), 'デッキ確認モーダルが開く');
+    ok($('.deck-modal h3').textContent.includes('13枚'), '合計枚数を出す（実 ' + $('.deck-modal h3').textContent + '）');
+    ok($all('.deck-grid .card').length === 4, '種類ぶんのカードを表示（実 ' + $all('.deck-grid .card').length + '）');
+    byText('.deck-modal .mix-chip', 'P2').click();
+    ok($('.deck-modal h3').textContent.includes('P2') && $('.deck-modal h3').textContent.includes('10枚'), '相手のデッキに切り替えられる');
+    clickText('.deck-modal .btn', 'とじる');
+    ok(!$('.deck-modal'), '閉じられる');
+  }
+
+  console.log('=== 1手もどす: LocalStore の履歴（人間の操作だけを戻り地点にする）===');
+  {
+    const s0 = DOM.engine.createInitialState(['A', 'B'], DOM.KINGDOM, { startActive: 0 });
+    const store = DOM.LocalStore(s0);
+    ok(!store.canUndo(0), '履歴が空なら戻せない');
+    store.dispatch({ type: 'END_ACTION_PHASE' }, { undoSeat: 0 });
+    ok(store.canUndo(0), '自分の操作は戻り地点になる');
+    ok(!store.canUndo(1), '他人の操作の前には戻れない（覗き見防止）');
+    store.dispatch({ type: 'BUY', card: 'copper' }); // CPU/自動相当＝戻り地点を積まない
+    ok(store.canUndo(0), 'CPU・自動処理は戻り地点を作らない');
+    ok(store.undo(0) === true && store.state === s0, '自分の直前の操作の前まで戻る（間の自動処理ごと巻き戻る）');
+    ok(!store.canUndo(0), '戻したら履歴を1つ消費する');
+    store.dispatch({ type: 'END_ACTION_PHASE' }, { undoSeat: 0 });
+    store.dispatch({ type: 'NEW_GAME', players: ['A', 'B'], kingdom: DOM.KINGDOM });
+    ok(!store.canUndo(0), '新しいゲームを始めたら前のゲームへは戻れない');
+  }
+
+  console.log('=== 1手もどす（初心者モード・盤面）===');
+  {
+    go('home');
+    clickText('button', 'CPUと対戦');
+    clickText('.seg-btn', '2人');
+    clickText('button', 'この設定で開始');
+    timers.length = 0;
+    const wasBeginner = UI.beginner;
+    UI.beginner = true;
+    st = UI.store.state;
+    st.turn = { active: 0, phase: 'action', actions: 1, buys: 1, coins: 0 };
+    st.pending = null;
+    st.players[0].isCpu = false;
+    st.players[0].hand = ['village', 'copper', 'copper', 'estate', 'estate'];
+    UI.localViewer = 0;
+    setState(st);
+    UI.store.clearUndo(); // setState は履歴を通らないので、ここから測る
+    DOM.render();
+    ok(!$('.undo-btn'), 'まだ自分で操作していないので「1手もどす」は出ない');
+    const handBefore = UI.store.state.players[0].hand.slice().sort().join(',');
+    byText('.hand-cards.big .card .cname', '村').closest('.card').click();
+    clickText('.sheet .btn', '使う');
+    ok(UI.store.state.players[0].inPlay.includes('village'), '（前提）村を使った');
+    ok($('.undo-btn'), '自分の操作の後は「1手もどす」が出る');
+    $('.undo-btn').click();
+    ok(UI.store.state.players[0].hand.slice().sort().join(',') === handBefore, '1手もどして手札が元に戻る');
+    ok(!UI.store.state.players[0].inPlay.includes('village'), '場からも戻る');
+    ok(UI.store.state.turn.actions === 1, 'アクション権も戻る');
+    ok(!$('.undo-btn'), '戻したら履歴が尽きてボタンは消える');
+    // 初心者モードOFFでは出さない
+    byText('.hand-cards.big .card .cname', '村').closest('.card').click();
+    clickText('.sheet .btn', '使う');
+    ok($('.undo-btn'), '（前提）もう一度操作するとボタンが出る');
+    UI.beginner = false; DOM.render();
+    ok(!$('.undo-btn'), '初心者モードOFFでは「1手もどす」を出さない');
+    UI.beginner = wasBeginner; DOM.render();
+  }
+
   ok(runtimeError === null, '実行時エラーなし: ' + (runtimeError ? (runtimeError.stack || runtimeError) : ''));
 } catch (e) {
   fail++;

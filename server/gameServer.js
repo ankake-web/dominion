@@ -150,9 +150,59 @@ function broadcastState(room) {
   if (!room.state) return;
   for (const m of room.members) {
     if (!m.connected) continue;
-    send(m.ws, { t: 'state', state: E.maskStateFor(room.state, m.seat) });
+    // canUndo＝この席が今「1手もどす」を頼めるか（クライアントのボタン表示用。判定の正本はサーバ）
+    send(m.ws, { t: 'state', state: E.maskStateFor(room.state, m.seat), canUndo: canUndoSeat(room, m.seat) });
   }
   persistRoom(room);
+}
+
+/* ---------- 1手もどす（オンライン＝他の人間プレイヤー全員の承認制） ----------
+   ローカルと違い state はサーバが正本なので、サーバが「人間が自分で行った操作の直前の状態」を
+   積んでおき、要求 → 他の接続中の人間 全員が許可 → 巻き戻す。
+   - 積むのは人間の action のみ（CPUの手番は積まない）＝1回もどすと「間に挟まったCPUの手番」ごと戻る。
+   - 頼めるのは「今その席が操作できる場面」かつ「履歴の一番上が自分の手」のときだけ。
+   - 履歴は**永続化しない**（Upstashが肥大するため）。サーバ再起動後の復元直後は空＝1手指すまで使えない。 */
+const UNDO_MAX = 40;         // 保持する巻き戻し地点の数（1部屋あたり）
+let UNDO_VOTE_MS = 45000;    // 承認待ちのタイムアウト(ms)
+
+function pushUndoPoint(room, seat) {
+  if (!room.history) room.history = [];
+  room.history.push({ state: room.state, seat });
+  if (room.history.length > UNDO_MAX) room.history.shift();
+}
+function undoTopSeat(room) {
+  const h = room.history && room.history[room.history.length - 1];
+  return h ? h.seat : null;
+}
+function canUndoSeat(room, seat) {
+  if (!room || !room.started || !room.state || room.state.gameOver) return false;
+  if (E.actor(room.state) !== seat) return false; // 自分が操作できる場面だけ
+  return undoTopSeat(room) === seat;
+}
+function otherConnectedHumans(room, seat) {
+  return room.members.filter((m) => m.connected && !m.expired && m.seat !== seat);
+}
+function clearUndoReq(room) {
+  if (room && room.undoReq && room.undoReq.timer) clearTimeout(room.undoReq.timer);
+  if (room) room.undoReq = null;
+}
+function sendAll(room, msg) {
+  for (const m of room.members) if (m.connected) send(m.ws, msg);
+}
+// 承認が揃った（or 他に人間がいない）→ 実際に巻き戻す
+function applyUndo(room, seat) {
+  if (!canUndoSeat(room, seat)) return false;
+  if (room.cpuTimer) { clearTimeout(room.cpuTimer); room.cpuTimer = null; } // 古い局面向けのCPU予約を捨てる
+  room.state = room.history.pop().state;
+  // 巻き戻した state は「その時点の接続状況」を持っている。切断/復帰/CPU代行まで巻き戻さないよう、
+  // 今の接続状況で上書きし直す（人間席のみ。純粋なCPU席はスナップショットでもCPUのまま）。
+  for (const m of room.members) {
+    if (m.expired) { setSeatCpu(room, m.seat, true); setSeatDc(room, m.seat, false); }
+    else { setSeatCpu(room, m.seat, false); setSeatDc(room, m.seat, !m.connected); }
+  }
+  broadcastState(room);
+  scheduleCpuTick(room, room.cpuStepMs);
+  return true;
 }
 
 /* ---------- 永続化（再起動後の復元用） ---------- */
@@ -186,6 +236,7 @@ function restoreRoom(snap) {
     code: snap.code, members: [], started: !!snap.started, state: snap.state || null,
     cpuCount: snap.cpuCount != null ? snap.cpuCount : 1, cpuLevel: snap.cpuLevel || 'normal',
     kingdomSet: snap.kingdomSet || 'basic', randomOrder: snap.randomOrder !== false, cpuTimer: null,
+    history: [], undoReq: null, // 巻き戻し履歴は永続化しない（復元直後は1手もどせない）
     graceMs: GRACE_MS, startedGraceMs: STARTED_GRACE_MS, cpuStepMs: CPU_STEP_MS,
   };
   room.members = (snap.members || []).map((m) => ({
@@ -230,8 +281,10 @@ function startGame(room) {
     : (room.randomOrder !== false ? 'random' : 0);
   room.state = E.createInitialState(configs, kingdom, { startActive, landmarks, events, projects });
   room.started = true;
+  room.history = [];      // 「1手もどす」の履歴は対局ごと（再戦で前の対局へ戻れないように捨てる）
+  clearUndoReq(room);
   for (const m of room.members) {
-    send(m.ws, { t: 'started', you: m.seat, state: E.maskStateFor(room.state, m.seat) });
+    send(m.ws, { t: 'started', you: m.seat, state: E.maskStateFor(room.state, m.seat), canUndo: false });
   }
   persistRoom(room);
   scheduleCpuTick(room, room.cpuStepMs);
@@ -317,6 +370,7 @@ function destroyRoom(room) {
   room._destroyed = true;
   if (room.cpuTimer) { clearTimeout(room.cpuTimer); room.cpuTimer = null; }
   if (room._persistTimer) { clearTimeout(room._persistTimer); room._persistTimer = null; }
+  clearUndoReq(room); // 承認待ちタイマーを残さない
   store.del(room.code); // 永続化済みなら削除（ゴミを残さない）
   for (const m of room.members) {
     if (m.graceTimer) { clearTimeout(m.graceTimer); m.graceTimer = null; }
@@ -359,6 +413,7 @@ function handleConnection(ws) {
         room = {
           code, members: [], started: false, state: null,
           cpuCount: 1, cpuLevel: 'normal', kingdomSet: 'basic', randomOrder: true, cpuTimer: null,
+          history: [], undoReq: null, // 1手もどす（永続化しない＝再起動後は空）
           graceMs: GRACE_MS, startedGraceMs: STARTED_GRACE_MS, cpuStepMs: CPU_STEP_MS,
         };
         rooms.set(code, room);
@@ -409,7 +464,7 @@ function handleConnection(ws) {
         if (target.started && target.state) {
           setSeatDc(target, member.seat, false);   // 切断中マーク解除
           setSeatCpu(target, member.seat, false);  // CPU代行していたら人間へ戻す
-          send(ws, { t: 'started', you: member.seat, state: E.maskStateFor(target.state, member.seat) });
+          send(ws, { t: 'started', you: member.seat, state: E.maskStateFor(target.state, member.seat), canUndo: canUndoSeat(target, member.seat) });
           broadcastState(target);                  // 他メンバーへも「復帰」を反映（再接続中…表示が消える）
           scheduleCpuTick(target, target.cpuStepMs);
         } else {
@@ -471,9 +526,55 @@ function handleConnection(ws) {
         const action = msg.action;
         if (!action || typeof action !== 'object' || !ALLOWED.has(action.type)) { send(ws, { t: 'error', message: 'この操作は対応していません' }); return; }
         if (E.actor(room.state) !== me.seat) { send(ws, { t: 'error', message: 'あなたの操作できる場面ではありません' }); return; }
-        try { room.state = E.reduce(room.state, action); } catch { send(ws, { t: 'error', message: '無効な操作です' }); return; }
+        // 局面が動いたら「確認中の取り消し」は無効にする（承認が古い局面に当たらないように）
+        if (room.undoReq) { clearUndoReq(room); sendAll(room, { t: 'undoDenied', reason: 'stale' }); }
+        pushUndoPoint(room, me.seat); // 巻き戻し地点＝人間が自分で行った操作の直前
+        try { room.state = E.reduce(room.state, action); }
+        catch { room.history.pop(); send(ws, { t: 'error', message: '無効な操作です' }); return; }
         broadcastState(room);
         scheduleCpuTick(room, room.cpuStepMs);
+        break;
+      }
+      case 'undo': {
+        // 「1手もどす」の要求。他に接続中の人間がいなければ即実行、いれば全員の承認を待つ。
+        if (!room || !me || !room.started || !room.state) return;
+        if (room.state.gameOver) { send(ws, { t: 'error', message: 'この対戦は終了しました' }); return; }
+        if (room.undoReq) { send(ws, { t: 'error', message: '取り消しの確認中です' }); return; }
+        if (!canUndoSeat(room, me.seat)) { send(ws, { t: 'error', message: 'いまは1手もどせません' }); return; }
+        const others = otherConnectedHumans(room, me.seat);
+        if (others.length === 0) {
+          if (applyUndo(room, me.seat)) sendAll(room, { t: 'undoDone', by: me.seat, name: me.name });
+          else send(ws, { t: 'error', message: 'いまは1手もどせません' });
+          return;
+        }
+        const req = { seat: me.seat, need: others.map((m) => m.seat), yes: [], timer: null };
+        req.timer = setTimeout(() => {
+          try {
+            if (room._destroyed || room.undoReq !== req) return;
+            clearUndoReq(room);
+            sendAll(room, { t: 'undoDenied', reason: 'timeout' });
+          } catch (e) { try { console.error('[dominion] undo timeout error:', (e && e.message) || e); } catch (e2) { /* noop */ } }
+        }, UNDO_VOTE_MS);
+        room.undoReq = req;
+        for (const m of room.members) {
+          if (!m.connected) continue;
+          if (m.seat === me.seat) send(m.ws, { t: 'undoPending' });
+          else send(m.ws, { t: 'undoAsk', from: me.seat, name: me.name });
+        }
+        break;
+      }
+      case 'undoVote': {
+        if (!room || !me || !room.undoReq) return;
+        const req = room.undoReq;
+        if (req.need.indexOf(me.seat) < 0) return; // 頼まれていない席の投票は無視
+        if (!msg.ok) { clearUndoReq(room); sendAll(room, { t: 'undoDenied', reason: 'rejected', name: me.name }); return; }
+        if (req.yes.indexOf(me.seat) < 0) req.yes.push(me.seat);
+        if (req.yes.length < req.need.length) return; // まだ全員そろっていない
+        const seat = req.seat;
+        const asker = room.members.find((m) => m.seat === seat);
+        clearUndoReq(room);
+        if (applyUndo(room, seat)) sendAll(room, { t: 'undoDone', by: seat, name: asker ? asker.name : '' });
+        else sendAll(room, { t: 'undoDenied', reason: 'stale' });
         break;
       }
       }
@@ -486,6 +587,11 @@ function handleConnection(ws) {
     if (!room || !me) return;
     if (me.ws !== ws) return; // 既に別接続へ置き換わっている
     me.connected = false; me.ws = null;
+    // 「1手もどす」の確認中に当事者が落ちたら成立しないので破棄する（誰も待たされない）
+    if (room.undoReq && (room.undoReq.seat === me.seat || room.undoReq.need.indexOf(me.seat) >= 0)) {
+      clearUndoReq(room);
+      sendAll(room, { t: 'undoDenied', reason: 'stale' });
+    }
     if (!room.started) {
       broadcastLobby(room);
       scheduleRelease(room, me);
@@ -526,6 +632,7 @@ function attachGameServer(httpServer, opts = {}) {
   if (opts.graceMs != null) GRACE_MS = opts.graceMs;
   if (opts.startedGraceMs != null) STARTED_GRACE_MS = opts.startedGraceMs;
   if (opts.cpuStepMs != null) CPU_STEP_MS = opts.cpuStepMs;
+  if (opts.undoVoteMs != null) UNDO_VOTE_MS = opts.undoVoteMs;
   if (opts.startActive != null) START_ACTIVE = opts.startActive;
   const heartbeatMs = opts.heartbeatMs != null ? opts.heartbeatMs : HEARTBEAT_MS;
   // maxPayload: 巨大ペイロードでheap爆発→プロセス死を防ぐ（正規メッセージは数KB）。

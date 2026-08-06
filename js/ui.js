@@ -55,6 +55,12 @@
     _t: null,
     _cpuTimer: null,
     lastConfigs: null,
+    cardSearch: '',     // カード一覧の検索語
+    _searchActive: false, // 検索欄を編集中か（render の全再構築でフォーカスを戻す判定）
+    deckView: null,     // 終局後にデッキ内訳を見ている席（null=閉じている）
+    netCanUndo: false,  // オンライン：サーバが「この席は今1手もどせる」と言っているか
+    undoPending: false, // オンライン：自分の要求が相手の返事待ちか
+    undoAskOpen: false, // オンライン：相手から頼まれた確認を出しているか
     // オンライン(WebSocket)用
     netClient: null,
     isHost: false,
@@ -296,8 +302,85 @@
   }
 
   /* ---------- 共通操作 ---------- */
-  function go(view) { UI.view = view; UI.sheet = null; UI.logModal = false; UI.revealView = null; render(); }
-  function dispatch(action) { UI.sheet = null; UI.store.dispatch(action); }
+  function go(view) { UI.view = view; UI.sheet = null; UI.logModal = false; UI.revealView = null; UI.deckView = null; render(); }
+  // 人間の操作はここを通る（CPU駆動・自動スキップは UI.store.dispatch を直接呼ぶ＝戻れる地点にしない）。
+  // ローカルでは「誰の操作か」を store に渡し、初心者モードの「1手もどす」の戻り先として積む。
+  function dispatch(action) {
+    UI.sheet = null;
+    UI._noAutoSkipOnce = false; // 何か操作したら自動スキップの一時停止は解除
+    const st = UI.store && UI.store.state;
+    const seat = (UI.mode === 'local' && st && !st.gameOver) ? E().actor(st) : null;
+    if (seat != null) UI.store.dispatch(action, { undoSeat: seat });
+    else UI.store.dispatch(action);
+  }
+
+  /* ---------- 1手もどす（初心者モード） ----------
+     ローカル＝クライアントに履歴があるのでその場で巻き戻す（LocalStore.undo）。
+     オンライン＝サーバ権威なので「相手に取り消しをお願いする」＝承認制（requestUndoOnline）。
+     どちらも「自分が最後にした操作の直前」まで戻る（間のCPUの手番はまとめて巻き戻る）。 */
+  function canUndoNow(state, viewer, interactive) {
+    if (!UI.beginner) return false;              // 初心者モードの機能
+    if (!state || state.gameOver) return false;
+    if (!interactive) return false;              // 自分が操作できる場面だけ
+    if (UI.mode === 'online') return canRequestUndoOnline(state);
+    return !!(UI.store && UI.store.canUndo && UI.store.canUndo(viewer));
+  }
+  function doUndo() {
+    const st = UI.store && UI.store.state;
+    if (!st || st.gameOver) return;
+    if (UI.mode === 'online') { requestUndoOnline(); return; }
+    const seat = E().actor(st);
+    if (!UI.store.canUndo || !UI.store.canUndo(seat)) return;
+    // 予約済みのCPU/自動スキップのタイマーは巻き戻し前に捨てる（古い局面向けの予約を残さない）
+    if (UI._cpuTimer) { clearTimeout(UI._cpuTimer); UI._cpuTimer = null; }
+    if (UI._autoSkipTimer) { clearTimeout(UI._autoSkipTimer); UI._autoSkipTimer = null; }
+    // 開きっぱなしの選択・確認・拡大は全部たたむ（巻き戻し後の局面と食い違うため）
+    UI.sheet = null; UI.selection = []; UI._selKey = ''; UI.amount = null; UI.sentryChoice = null;
+    UI.confirm = null; UI.pickZoom = null; UI.lmZoom = null; UI.coffersOpen = false; UI.villagersOpen = false;
+    // 戻した直後に「手札にアクションが無い」自動スキップで即飛ばされないよう1回だけ抑止する
+    UI._noAutoSkipOnce = true;
+    if (UI.store.undo(seat)) { sfx('tap'); toast('↩ 1手もどしました'); }
+  }
+  // 盤面ヘッダ／選択モーダルに出す「1手もどす」ボタン（出せないときは null）
+  function undoBtn(state, viewer, interactive, cls) {
+    if (!canUndoNow(state, viewer, interactive)) return null;
+    const label = (UI.mode === 'online')
+      ? (UI.undoPending ? '↩ 相手の返事を待っています…' : '↩ 1手もどす（相手に確認）')
+      : '↩ 1手もどす';
+    return h('button', {
+      class: cls || 'btn btn-ghost btn-sm undo-btn',
+      'aria-label': '1手もどす',
+      disabled: UI.undoPending ? 'disabled' : null,
+      onclick: () => doUndo(),
+    }, label);
+  }
+  /* オンラインの「1手もどす」＝サーバ権威なので勝手に巻き戻せない。
+     サーバが配信する canUndo（＝この席が今頼めるか）を見てボタンを出し、
+     押すと他の接続中の人間 全員に確認 → 全員が許可したときだけサーバが巻き戻す。 */
+  function canRequestUndoOnline(state) {
+    return !!UI.netCanUndo && !UI.undoAskOpen;
+  }
+  function requestUndoOnline() {
+    if (!UI.netClient || UI.undoPending) return;
+    UI.undoPending = true;
+    UI.netClient.send({ t: 'undo' });
+    render();
+  }
+  // 相手から「1手もどしたい」と頼まれたときの確認（許可/断るの両方を必ずサーバへ返す）
+  function askUndoApproval(msg) {
+    UI.undoAskOpen = true;
+    const vote = (okFlag) => {
+      UI.undoAskOpen = false; UI.confirm = null;
+      if (UI.netClient) UI.netClient.send({ t: 'undoVote', ok: !!okFlag });
+      render();
+    };
+    UI.confirm = {
+      message: (msg.name || '相手') + ' さんが「1手もどす」をお願いしています。\n許可すると、その人の直前の操作が取り消されます（間に入ったCPUの手番も巻き戻ります）。',
+      yesLabel: '許可する', noLabel: '断る', sticky: true,
+      onYes: () => vote(true), onNo: () => vote(false),
+    };
+    render();
+  }
   function closeSheet() { UI.sheet = null; render(); }
   function showSheet(cardId, primary) { UI.sheet = { cardId, primary }; sfx('tap'); render(); }
   // カード説明(sheet)は #sheet-host に常駐させ、同じ表示要求の間は作り直さない。
@@ -702,7 +785,8 @@
         sec('勝利点（ゲーム終了時に数える）', h('ul', null,
           h('li', null, '屋敷=1点／公領=3点／属州=6点／呪い=−1点'),
           h('li', null, '※ 勝利点・呪いは手札では何もしません。早く集めるとデッキが重くなる点に注意。'))),
-        sec('ゲームの終わり', h('p', null, '「属州」の山が尽きるか、任意の3種類の山が尽きたターンの終了時に終了します。')),
+        sec('ゲームの終わり', h('p', null, '「属州」の山が尽きるか、任意の3種類の山が尽きたターンの終了時に終了します。'
+          + '（繁栄の「植民地」を使うゲームでは、植民地の山が尽きたときも終了します。）')),
         sec('このアプリの操作', h('ul', null,
           h('li', null, 'カードをタップすると拡大表示。アクションは「使う」、財宝は「出す」、サプライは「購入」。'),
           h('li', null, '同じカードは重ねて枚数（×N）で表示。種類ごとにまとまっています。'),
@@ -753,62 +837,119 @@
         h('div', { style: 'white-space:pre-line;font-size:14px;line-height:1.55' }, ls.text || '')));
   }
 
+  /* ---------- カード一覧の検索 ----------
+     ひらがな→カタカナ／全角→半角／大文字→小文字 に寄せて「ゆるく」当てる。
+     空白区切りは AND（例: 「アタック 繁栄」）。検索対象＝カード名・id（英語）・効果テキスト・
+     種別ラベル・コスト・その群の見出し（＝拡張名）。 */
+  function searchNorm(s) {
+    return String(s == null ? '' : s)
+      .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+      .replace(/[ぁ-ゖ]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60))
+      .toLowerCase();
+  }
+  // 縦型カード（DOM.CARDS）の検索用テキスト
+  function cardHaystack(id) {
+    const c = DOM.CARDS[id];
+    if (!c) return '';
+    const types = (c.types || []).map((t) => (TYPE_JP[t] || '') + ' ' + t).join(' ');
+    const cost = 'コスト' + c.cost + ' $' + c.cost + (c.potion ? ' ポーション potion' : '') + (c.debt ? ' 負債' + c.debt + ' debt' : '');
+    return searchNorm([id, c.name, c.text || '', types, cost].join(' '));
+  }
+  // 横型（ランドマーク/イベント/プロジェクト/アーティファクト）の検索用テキスト
+  function landscapeHaystack(id) {
+    const ls = (DOM.LANDSCAPES || {})[id];
+    if (!ls) return '';
+    const cost = (ls.kind === 'event' || ls.kind === 'project') ? ('コスト' + (ls.cost || 0) + ' $' + (ls.cost || 0) + (ls.debt ? ' 負債' + ls.debt : '')) : '';
+    return searchNorm([id, ls.name, ls.text || '', LS_KIND_LABEL[ls.kind] || '', ls.kind || '', cost].join(' '));
+  }
+  function matchesTerms(hay, terms) { return terms.every((t) => hay.indexOf(t) >= 0); }
+
   function viewCardList() {
     const back = UI._listReturn || 'home';
-    const group = (title, ids) => h('div', { class: 'list-group' },
-      h('div', { class: 'section-h' }, title),
-      h('div', { class: 'cardlist-grid' }, ids.map((id) => miniCard(id))));
+    const terms = searchNorm(UI.cardSearch || '').split(/\s+/).filter(Boolean);
     const byCost = (ids) => ids.slice().sort((a, b) => DOM.CARDS[a].cost - DOM.CARDS[b].cost || a.localeCompare(b));
+    // 群の定義（表示順は従来どおり）。landscape=true は横型（DOM.CARDS に無い＝専用の描画経路）。
+    const groups = [];
+    const addC = (title, ids) => { if (ids && ids.length) groups.push({ title, ids, landscape: false }); };
+    const addL = (title, ids) => { if (ids && ids.length) groups.push({ title, ids, landscape: true }); };
+    const P = DOM.POOLS || {};
+    addC('財宝', DOM.TREASURES);
+    addC('勝利点・呪い', DOM.VICTORY.concat(['curse']));
+    addC('王国カード（基本・第二版）', byCost(P.basic || DOM.KINGDOM));
+    addC('王国カード（陰謀・第二版）', byCost(P.intrigue || []));
+    addC('王国カード（海辺・第二版）', P.seaside ? byCost(P.seaside) : null);
+    addC('王国カード（錬金術・第二版）', P.alchemy ? byCost(P.alchemy) : null);
+    addC('王国カード（繁栄・第二版）', P.prosperity ? byCost(P.prosperity) : null);
+    addC('王国カード（収穫祭）', P.cornucopia ? byCost(P.cornucopia) : null);
+    addC('賞品（褒賞・馬上槍試合）', P.prizes ? byCost(P.prizes) : null);
+    addC('王国カード（ギルド）', P.guilds ? byCost(P.guilds) : null);
+    addC('王国カード（異郷）', P.hinterlands ? byCost(P.hinterlands) : null);
+    addC('王国カード（暗黒時代）', P.darkages ? byCost(P.darkages) : null);
+    addC('騎士（暗黒時代）', P.knights ? byCost(P.knights) : null);
+    addC('廃墟（暗黒時代）', P.ruins ? byCost(P.ruins) : null);
+    addC('避難所（暗黒時代）', P.shelters ? byCost(P.shelters) : null);
+    addC('非サプライ（戦利品・狂人・傭兵）', P.darkages_np ? byCost(P.darkages_np) : null);
+    addC('王国カード（冒険）', P.adventures ? byCost(P.adventures) : null);
+    addC('トラベラー成長先（冒険・非サプライ）', P.travellers ? byCost(P.travellers) : null);
+    addC('王国カード（帝国）', P.empires ? byCost(P.empires) : null);
+    addC('城（帝国・混合山）', P.castles ? P.castles.slice() : null);
+    addC('王国カード（ルネサンス）', P.renaissance ? byCost(P.renaissance) : null);
+    addL('ランドマーク（帝国・横型）', DOM.LANDMARKS_EMPIRES);
+    addL('イベント（帝国・横型・購入フェイズに買う）', DOM.EVENTS_EMPIRES);
+    addL('イベント（冒険・横型・購入フェイズに買う）', DOM.EVENTS_ADVENTURES);
+    addL('プロジェクト（ルネサンス・横型・1人2つまで）', DOM.PROJECTS_RENAISSANCE);
+    addL('アーティファクト（ルネサンス・横型・1人だけが持てる）', DOM.ARTIFACTS_RENAISSANCE);
+    addC('プロモカード', P.promo ? byCost(P.promo) : null);
+    addC('初版のみ（第二版で廃止）', P.basic1e ? byCost(
+      P.basic1e.filter((id) => P.basic.indexOf(id) < 0)
+        .concat(P.intrigue1e.filter((id) => P.intrigue.indexOf(id) < 0))) : null);
+
+    // 絞り込み（見出し＝拡張名も検索対象に含めるので「繁栄」「帝国」で群ごと出る）
+    let hits = 0;
+    const blocks = [];
+    groups.forEach((g) => {
+      const titleHay = searchNorm(g.title);
+      const hay = g.landscape ? landscapeHaystack : cardHaystack;
+      const ids = terms.length ? g.ids.filter((id) => matchesTerms(titleHay + ' ' + hay(id), terms)) : g.ids;
+      if (!ids.length) return;
+      hits += ids.length;
+      blocks.push(h('div', { class: 'list-group' },
+        h('div', { class: 'section-h' }, g.title + (terms.length ? '（' + ids.length + '）' : '')),
+        g.landscape
+          ? h('div', { class: 'landmark-list-grid', style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px' },
+            ids.map((id) => landmarkMini(id)))
+          : h('div', { class: 'cardlist-grid' }, ids.map((id) => miniCard(id)))));
+    });
+
+    const setQuery = (v) => { UI.cardSearch = v; UI._searchActive = false; render(); };
+    const chip = (label, q) => h('button', {
+      class: 'mix-chip' + (searchNorm(UI.cardSearch || '') === searchNorm(q) ? ' on' : ''),
+      onclick: () => setQuery(searchNorm(UI.cardSearch || '') === searchNorm(q) ? '' : q),
+    }, label);
+    const searchBar = h('div', { class: 'card-search' },
+      h('div', { class: 'card-search-row' },
+        h('input', {
+          type: 'text', class: 'card-search-input', value: UI.cardSearch || '',
+          placeholder: 'カード名・効果・拡張で検索',
+          'aria-label': 'カードを検索',
+          oninput: (e) => { UI.cardSearch = e.target.value; UI._searchActive = true; UI._searchCaret = e.target.selectionStart; render(); },
+          onfocus: () => { UI._searchActive = true; },
+        }),
+        (UI.cardSearch || '') ? h('button', { class: 'btn btn-ghost btn-sm card-search-clear', 'aria-label': '検索をクリア', onclick: () => setQuery('') }, '✕') : null),
+      h('div', { class: 'mix-chips' },
+        chip('アクション', 'アクション'), chip('財宝', '財宝'), chip('勝利点', '勝利点'),
+        chip('アタック', 'アタック'), chip('リアクション', 'リアクション'), chip('持続', '持続')),
+      terms.length
+        ? h('div', { class: 'muted', style: 'font-size:12px' }, hits ? ('見つかったカード：' + hits + '枚') : '該当するカードがありません')
+        : null);
+
     return h('div', { class: 'page' },
       h('div', { class: 'page-top' },
-        h('button', { class: 'btn btn-ghost btn-sm', onclick: () => go(back) }, '← 戻る'),
+        h('button', { class: 'btn btn-ghost btn-sm', onclick: () => { UI._searchActive = false; go(back); } }, '← 戻る'),
         h('h2', null, 'カード一覧')),
       h('p', { class: 'muted', style: 'font-size:12px;padding:0 4px' }, 'タップで拡大（コスト・効果つき）。'),
-      group('財宝', DOM.TREASURES),
-      group('勝利点・呪い', DOM.VICTORY.concat(['curse'])),
-      group('王国カード（基本・第二版）', byCost((DOM.POOLS && DOM.POOLS.basic) || DOM.KINGDOM)),
-      group('王国カード（陰謀・第二版）', byCost((DOM.POOLS && DOM.POOLS.intrigue) || [])),
-      (DOM.POOLS && DOM.POOLS.seaside) ? group('王国カード（海辺・第二版）', byCost(DOM.POOLS.seaside)) : null,
-      (DOM.POOLS && DOM.POOLS.alchemy) ? group('王国カード（錬金術・第二版）', byCost(DOM.POOLS.alchemy)) : null,
-      (DOM.POOLS && DOM.POOLS.prosperity) ? group('王国カード（繁栄・第二版）', byCost(DOM.POOLS.prosperity)) : null,
-      (DOM.POOLS && DOM.POOLS.cornucopia) ? group('王国カード（収穫祭）', byCost(DOM.POOLS.cornucopia)) : null,
-      (DOM.POOLS && DOM.POOLS.prizes) ? group('賞品（褒賞・馬上槍試合）', byCost(DOM.POOLS.prizes)) : null,
-      (DOM.POOLS && DOM.POOLS.guilds) ? group('王国カード（ギルド）', byCost(DOM.POOLS.guilds)) : null,
-      (DOM.POOLS && DOM.POOLS.hinterlands) ? group('王国カード（異郷）', byCost(DOM.POOLS.hinterlands)) : null,
-      (DOM.POOLS && DOM.POOLS.darkages) ? group('王国カード（暗黒時代）', byCost(DOM.POOLS.darkages)) : null,
-      (DOM.POOLS && DOM.POOLS.knights) ? group('騎士（暗黒時代）', byCost(DOM.POOLS.knights)) : null,
-      (DOM.POOLS && DOM.POOLS.ruins) ? group('廃墟（暗黒時代）', byCost(DOM.POOLS.ruins)) : null,
-      (DOM.POOLS && DOM.POOLS.shelters) ? group('避難所（暗黒時代）', byCost(DOM.POOLS.shelters)) : null,
-      (DOM.POOLS && DOM.POOLS.darkages_np) ? group('非サプライ（戦利品・狂人・傭兵）', byCost(DOM.POOLS.darkages_np)) : null,
-      (DOM.POOLS && DOM.POOLS.adventures) ? group('王国カード（冒険）', byCost(DOM.POOLS.adventures)) : null,
-      (DOM.POOLS && DOM.POOLS.travellers) ? group('トラベラー成長先（冒険・非サプライ）', byCost(DOM.POOLS.travellers)) : null,
-      (DOM.POOLS && DOM.POOLS.empires) ? group('王国カード（帝国）', byCost(DOM.POOLS.empires)) : null,
-      (DOM.POOLS && DOM.POOLS.castles) ? group('城（帝国・混合山）', DOM.POOLS.castles.slice()) : null,
-      (DOM.POOLS && DOM.POOLS.renaissance) ? group('王国カード（ルネサンス）', byCost(DOM.POOLS.renaissance)) : null,
-      (DOM.LANDMARKS_EMPIRES && DOM.LANDMARKS_EMPIRES.length) ? h('div', { class: 'list-group' },
-        h('div', { class: 'section-h' }, 'ランドマーク（帝国・横型）'),
-        h('div', { class: 'landmark-list-grid', style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px' },
-          DOM.LANDMARKS_EMPIRES.map((id) => landmarkMini(id)))) : null,
-      (DOM.EVENTS_EMPIRES && DOM.EVENTS_EMPIRES.length) ? h('div', { class: 'list-group' },
-        h('div', { class: 'section-h' }, 'イベント（帝国・横型・購入フェイズに買う）'),
-        h('div', { class: 'landmark-list-grid', style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px' },
-          DOM.EVENTS_EMPIRES.map((id) => landmarkMini(id)))) : null,
-      (DOM.EVENTS_ADVENTURES && DOM.EVENTS_ADVENTURES.length) ? h('div', { class: 'list-group' },
-        h('div', { class: 'section-h' }, 'イベント（冒険・横型・購入フェイズに買う）'),
-        h('div', { class: 'landmark-list-grid', style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px' },
-          DOM.EVENTS_ADVENTURES.map((id) => landmarkMini(id)))) : null,
-      (DOM.PROJECTS_RENAISSANCE && DOM.PROJECTS_RENAISSANCE.length) ? h('div', { class: 'list-group' },
-        h('div', { class: 'section-h' }, 'プロジェクト（ルネサンス・横型・1人2つまで）'),
-        h('div', { class: 'landmark-list-grid', style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px' },
-          DOM.PROJECTS_RENAISSANCE.map((id) => landmarkMini(id)))) : null,
-      (DOM.ARTIFACTS_RENAISSANCE && DOM.ARTIFACTS_RENAISSANCE.length) ? h('div', { class: 'list-group' },
-        h('div', { class: 'section-h' }, 'アーティファクト（ルネサンス・横型・1人だけが持てる）'),
-        h('div', { class: 'landmark-list-grid', style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px' },
-          DOM.ARTIFACTS_RENAISSANCE.map((id) => landmarkMini(id)))) : null,
-      (DOM.POOLS && DOM.POOLS.promo) ? group('プロモカード', byCost(DOM.POOLS.promo)) : null,
-      (DOM.POOLS && DOM.POOLS.basic1e) ? group('初版のみ（第二版で廃止）', byCost(
-        DOM.POOLS.basic1e.filter((id) => DOM.POOLS.basic.indexOf(id) < 0)
-          .concat(DOM.POOLS.intrigue1e.filter((id) => DOM.POOLS.intrigue.indexOf(id) < 0)))) : null
+      searchBar,
+      blocks.length ? blocks : h('p', { class: 'muted', style: 'padding:18px 4px' }, '見つかりませんでした。別の言葉で試してください（例：ティアラ／アタック／繁栄）。')
     );
   }
 
@@ -837,7 +978,14 @@
     // interactive は actor===viewer（＝この保留の決定者。支配中は支配者に委譲済み）を意味するので、
     // pending があれば必ずこの人が解決する。旧来の pending.player===viewer 判定は支配で詰むため撤廃。
     if (interactive && state.pending) {
-      frag.appendChild(viewPendingModal(state, state.pending));
+      const pm = viewPendingModal(state, state.pending);
+      if (pm) {
+        // 選択モーダルはヘッダを覆うので、同じ「1手もどす」をモーダル内にも挿し込む
+        // （全 pending 分岐に手を入れず、共通の外枠 .modal に後付けする）。
+        const ub = undoBtn(state, viewer, interactive, 'btn btn-ghost btn-block undo-btn-modal');
+        if (ub) (pm.querySelector('.modal') || pm).appendChild(ub);
+        frag.appendChild(pm);
+      }
     }
     // ギルド：財源を使うオーバーレイ（pending ではない。購入フェイズ・自分の操作中のみ）。
     if (interactive && UI.coffersOpen && !state.pending && state.turn.phase === 'buy' && state.turn.active === viewer) {
@@ -1241,7 +1389,12 @@
       h('div', { class: 'log-more' }, '📜 タップで全履歴'));
 
     const moveLine = lastMove(state.log);
-    const moveBar = h('div', { class: 'last-move' }, moveLine ? h('span', null, '🃏 ' + moveLine) : h('span', { class: 'muted' }, 'まだ動きはありません'));
+    // 初心者モードの「1手もどす」はヘッダ（常に見える位置）に置く。選択モーダル中は
+    // viewGameDispatch がモーダル内にも同じボタンを挿し込む（モーダルで詰まっても戻れるように）。
+    const undoTop = undoBtn(state, viewer, interactive, 'btn btn-ghost btn-sm undo-btn');
+    const moveBar = h('div', { class: 'last-move' + (undoTop ? ' with-undo' : '') },
+      moveLine ? h('span', null, '🃏 ' + moveLine) : h('span', { class: 'muted' }, 'まだ動きはありません'),
+      undoTop);
 
     // 初心者モード：今やることの案内（ヘッダー内に常時表示）
     const coach = UI.beginner ? coachHint(state, viewer, interactive) : null;
@@ -2883,7 +3036,12 @@
             h('div', null,
               h('div', { class: 'nm' }, row.p.name + (row.p.isCpu ? '（CPU・' + LEVEL_JP[row.p.cpuLevel] + '）' : '')),
               h('div', { class: 'tn' }, row.s.turns + ' ターン'),
-              bd ? h('div', { class: 'vbd' }, bd.map((t) => h('div', null, t))) : null),
+              bd ? h('div', { class: 'vbd' }, bd.map((t) => h('div', null, t))) : null,
+              // 終了後は全員のデッキ中身を見られる（対戦中は相手の山札/捨て札はマスクされている）。
+              row.s.deckCards
+                ? h('button', { class: 'btn btn-ghost btn-sm deck-view-btn', onclick: () => { UI.deckView = row.i; sfx('tap'); render(); } },
+                  '🃏 デッキを見る（' + (row.s.deckSize || 0) + '枚）')
+                : null),
             h('div', { class: 'vp' }, row.s.vp + ' 点'));
         })),
       h('div', { class: 'row center' },
@@ -2895,6 +3053,36 @@
       UI.mode === 'online' && !UI.isHost
         ? h('p', { class: 'muted', style: 'font-size:12px' }, 'ホストが「もう一度」を押すとこのメンバーで再戦できます')
         : null);
+  }
+
+  /* ---------- 終局後：各プレイヤーのデッキ内訳（全員ぶんをタブで切り替え） ----------
+     対戦中は相手の山札・捨て札・脇置きが maskStateFor で伏せられており、クライアントからは復元できない。
+     そこで engine の scoreGame が result.scores[i].deckCards に所有カード全部の枚数を確定して載せている
+     （＝オンラインでも「終了後だけ」全員に見せられる。対戦中の情報は一切増えない）。 */
+  function viewDeckModal() {
+    const s = UI.store && UI.store.state;
+    const r = s && s.result;
+    if (!r || !r.scores || !r.scores.length) return null;
+    const seat = Math.max(0, Math.min(UI.deckView | 0, r.scores.length - 1));
+    const sc = r.scores[seat];
+    const close = () => { UI.deckView = null; render(); };
+    const counts = (sc && sc.deckCards) || {};
+    // アクション → 財宝 → 勝利点/呪い の順、その中はコストの高い順（デッキの中身を読み取りやすく）
+    const rank = (id) => ((DOM.isType(id, 'victory') || DOM.isType(id, 'curse')) ? 2 : (DOM.isType(id, 'treasure') ? 1 : 0));
+    const ids = Object.keys(counts).filter((id) => DOM.CARDS[id])
+      .sort((a, b) => rank(a) - rank(b) || DOM.CARDS[b].cost - DOM.CARDS[a].cost || a.localeCompare(b));
+    const total = ids.reduce((n, id) => n + counts[id], 0);
+    return h('div', { class: 'modal-scrim deck-scrim', onclick: (e) => { if (e.target.classList.contains('modal-scrim')) close(); } },
+      h('div', { class: 'modal deck-modal' },
+        h('h3', null, '🃏 ' + ((sc && sc.name) || '') + ' のデッキ（' + total + '枚）'),
+        h('div', { class: 'mix-chips' }, r.scores.map((x, i) =>
+          h('button', { class: 'mix-chip' + (i === seat ? ' on' : ''), onclick: () => { UI.deckView = i; render(); } }, x.name))),
+        ids.length
+          ? h('div', { class: 'cardlist-grid deck-grid' }, ids.map((id) => cardEl(id, { size: 'sm', count: counts[id], onClick: () => showSheet(id, null) })))
+          : h('p', { class: 'muted' }, 'カードがありません'),
+        h('p', { class: 'muted', style: 'font-size:11px' },
+          '※ 終了時点で持っていたカードすべて（山札・手札・捨て札・場・マット・脇置きを合算）。タップで拡大。'),
+        h('button', { class: 'btn btn-block', onclick: close }, 'とじる')));
   }
 
   /* ---------- ログ全履歴モーダル ---------- */
@@ -3022,15 +3210,36 @@
       case 'started':
         UI.connecting = null; UI.reconnecting = false; UI._reconnectTries = 0; stopReconnect();
         UI.mySeat = msg.you;
+        UI.netCanUndo = !!msg.canUndo; UI.undoPending = false; UI.undoAskOpen = false;
         UI.store.setState(msg.state);
         UI.view = 'game';
         saveSession();
         render();
         break;
       case 'state':
+        // canUndo＝サーバが判定した「この席が今1手もどすを頼めるか」（判定の正本はサーバ）
+        UI.netCanUndo = !!msg.canUndo;
         UI.store.setState(msg.state);
         if (msg.state && msg.state.gameOver) clearSession(); // 対戦終了→以後の自動復帰は不要
         else touchSession();
+        render();
+        break;
+      // ---- 1手もどす（オンライン＝承認制） ----
+      case 'undoAsk':      // 相手からの要求 → 許可/断るを選ぶ
+        askUndoApproval(msg);
+        break;
+      case 'undoPending':  // 自分の要求がサーバに受理され、相手の返事待ち
+        UI.undoPending = true; toast('相手に「1手もどす」を確認しています…'); break;
+      case 'undoDone':     // 巻き戻し成立（state は別途配信される）
+        UI.undoPending = false; UI.undoAskOpen = false; if (UI.confirm && UI.confirm.sticky) UI.confirm = null;
+        toast('↩ ' + (msg.name || '') + ' が1手もどしました');
+        render();
+        break;
+      case 'undoDenied':   // 断られた／時間切れ／局面が動いた
+        UI.undoPending = false; UI.undoAskOpen = false; if (UI.confirm && UI.confirm.sticky) UI.confirm = null;
+        toast(msg.reason === 'rejected' ? '「1手もどす」は断られました'
+          : msg.reason === 'timeout' ? '「1手もどす」は返事がなく取り消しました'
+          : '「1手もどす」は成立しませんでした');
         render();
         break;
       case 'error':
@@ -3116,6 +3325,7 @@
     UI.netClient = null; UI.store = null; UI.mode = 'local';
     UI.mySeat = null; UI.roomCode = null; UI.isHost = false; UI.lobby = null;
     UI.netToken = null; UI.reconnecting = false; UI._reconnectTries = 0; UI.connecting = null;
+    UI.netCanUndo = false; UI.undoPending = false; UI.undoAskOpen = false; // 1手もどす（オンライン）の状態も戻す
   }
   function clearGameTimers() {
     if (UI._cpuTimer) { clearTimeout(UI._cpuTimer); UI._cpuTimer = null; }
@@ -3162,11 +3372,12 @@
   }
   function viewConfirm() {
     const c = UI.confirm;
-    return h('div', { class: 'modal-scrim', onclick: (e) => { if (e.target.classList.contains('modal-scrim')) { UI.confirm = null; render(); } } },
+    // sticky＝背景タップで閉じない（必ず返事が要る確認。例＝オンラインの「1手もどす」の許可）
+    return h('div', { class: 'modal-scrim', onclick: (e) => { if (!c.sticky && e.target.classList.contains('modal-scrim')) { UI.confirm = null; render(); } } },
       h('div', { class: 'modal confirm-modal' },
         h('p', { class: 'confirm-msg' }, c.message),
         h('button', { class: 'btn btn-primary btn-block', onclick: c.onYes }, c.yesLabel || 'OK'),
-        h('button', { class: 'btn btn-ghost btn-block', style: 'margin-top:8px', onclick: () => { UI.confirm = null; render(); } }, c.noLabel || '戻る')));
+        h('button', { class: 'btn btn-ghost btn-block', style: 'margin-top:8px', onclick: c.onNo || (() => { UI.confirm = null; render(); }) }, c.noLabel || '戻る')));
   }
 
   /* ---------- アクションフェーズの自動スキップ ----------
@@ -3176,6 +3387,9 @@
     const s = UI.store && UI.store.state;
     if (!s || s.gameOver || UI.view !== 'game' || s.pending) return;
     if (UI.sheet || UI.pickZoom || UI.confirm) return; // 何か見ている間は送らない
+    // 「1手もどす」の直後は自動スキップしない（戻した瞬間に購入フェイズへ飛ばされて戻せなくなるため）。
+    // 次に何か操作すれば（dispatch）解除される。
+    if (UI._noAutoSkipOnce) return;
     if (s.turn.phase !== 'action') return;
     const actor = E().actor(s);
     const p = s.players[actor];
@@ -3319,12 +3533,28 @@
       default: root = viewHome();
     }
     app.appendChild(root);
+    // カード一覧の検索欄：render() は毎回 DOM を作り直すのでフォーカスとカーソル位置が失われる。
+    // 「入力中（UI._searchActive）」のときだけ戻す＝初回表示でスマホのキーボードが勝手に開かない。
+    if (UI.view === 'cardList' && UI._searchActive) {
+      const si = app.querySelector('.card-search-input');
+      if (si) {
+        si.focus();
+        const pos = (UI._searchCaret == null) ? si.value.length : UI._searchCaret;
+        try { si.setSelectionRange(pos, pos); } catch (e) { /* 非対応環境は無視 */ }
+      }
+    }
     // ログ欄は常に最新行が見える位置へ（全再構築で scrollTop が0に戻るため毎回合わせる）
     const logEl = app.querySelector('.log');
     if (logEl) logEl.scrollTop = logEl.scrollHeight;
     if (UI.revealView != null) { const rm = viewRevealModal(); if (rm) app.appendChild(rm); }
     syncSheet(); // カード説明は専用ホスト常駐（再描画でスクロール位置・画像を保つ）
     if (UI.logModal) app.appendChild(viewLogModal());
+    // 終局後のデッキ確認（結果画面でのみ・カード拡大シートより下の層＝タップ拡大が前に出る）
+    if (UI.deckView != null) {
+      const gs = UI.store && UI.store.state;
+      if (UI.view === 'game' && gs && gs.gameOver) { const dm = viewDeckModal(); if (dm) app.appendChild(dm); }
+      else UI.deckView = null;
+    }
     if (UI.pickZoom) app.appendChild(viewPickZoom()); // 廃棄/獲得カードの拡大確認（最前面）
     if (UI.lmZoom) app.appendChild(viewLandmarkZoom()); // 横型ランドマークの拡大
     if (UI.confirm) app.appendChild(viewConfirm());
@@ -3334,7 +3564,7 @@
     const histEl = app.querySelector('.log-history');
     if (histEl) histEl.scrollTop = histEl.scrollHeight;
     // モーダル表示中は背面（盤面）のスクロールをロックする
-    const modalOpen = !!(UI.sheet || UI.revealView != null || UI.logModal || UI.pickZoom || UI.confirm || UI.lmZoom);
+    const modalOpen = !!(UI.sheet || UI.revealView != null || UI.logModal || UI.pickZoom || UI.confirm || UI.lmZoom || UI.deckView != null);
     document.documentElement.classList.toggle('modal-open', modalOpen);
     // モーダルを開いた瞬間の位置を記録し、閉じたら（同じ画面なら）その位置へ戻す＝先頭に飛ばない。
     if (modalOpen && !wasModalOpen) UI._pageScrollY = prevScroll;

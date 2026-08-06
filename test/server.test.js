@@ -207,6 +207,45 @@ function mkClient(url) {
     ok(!!g1Sync, '不正resume試行後も正規ゲストへ同期が続く');
     hacker.close();
 
+    console.log('=== 1手もどす（オンライン・他の人間全員の承認制）===');
+    {
+      // 直前で h1 が END_ACTION_PHASE を送っている＝履歴の一番上は席0の手
+      const hState = await h1.waitFor((m) => m.t === 'state' && m.state.turn.phase === 'buy', 2000);
+      ok(hState.canUndo === true, '自分の手のあとは canUndo=true が届く');
+      ok(g1Sync.canUndo === false, '相手には canUndo=false（勝手に巻き戻せない）');
+      // 自分の手番でない席は頼めない
+      g1.send({ t: 'undo' });
+      const gerr = await g1.waitFor((m) => m.t === 'error', 2000);
+      ok(/もどせません/.test(gerr.message), '操作できる場面でない席の要求は拒否される');
+      // ホストが要求 → ゲストが許可 → 巻き戻る
+      h1.send({ t: 'undo' });
+      const ask = await g1.waitFor((m) => m.t === 'undoAsk', 2000);
+      ok(ask.from === 0 && ask.name === 'H1', '相手に「1手もどしたい」が届く');
+      await h1.waitFor((m) => m.t === 'undoPending', 2000);
+      ok(rooms.get(h1j.code).state.turn.phase === 'buy', '承認を待っている間は巻き戻さない');
+      g1.send({ t: 'undoVote', ok: true });
+      const back = await h1.waitFor((m) => m.t === 'state' && m.state.turn.phase === 'action', 2000);
+      ok(!!back, '承認されると巻き戻った状態が配信される（購入フェイズ→アクションフェイズ）');
+      ok(back.canUndo === false, '巻き戻したら履歴を消費して canUndo=false');
+      const done = await h1.waitFor((m) => m.t === 'undoDone', 2000);
+      ok(done.by === 0, 'undoDone が届く');
+      ok(rooms.get(h1j.code).state.players[0].hand.length === 5, '巻き戻し後も手札は壊れない');
+      // もう一度手を進めて、今度は断られるケース
+      h1.send({ t: 'action', action: { type: 'END_ACTION_PHASE' } });
+      await h1.waitFor((m) => m.t === 'state' && m.state.turn.phase === 'buy', 2000);
+      h1.send({ t: 'undo' });
+      await g1.waitFor((m) => m.t === 'undoAsk', 2000);
+      g1.send({ t: 'undoVote', ok: false });
+      const denied = await h1.waitFor((m) => m.t === 'undoDenied', 2000);
+      ok(denied.reason === 'rejected', '断られたら undoDenied（rejected）');
+      ok(rooms.get(h1j.code).state.turn.phase === 'buy', '断られたら局面は動かない');
+      // 履歴はサーバのメモリだけが持ち、永続化スナップショットには載せない（Upstash肥大を防ぐ）
+      const rm = rooms.get(h1j.code);
+      ok(rm.history && rm.history.length >= 1, 'サーバは巻き戻し地点を保持している');
+      const snapOf = require('../server/gameServer').roomSnapshot;
+      ok(Object.keys(snapOf(rm)).indexOf('history') < 0, '永続化スナップショットに履歴は含めない');
+    }
+
     console.log('=== 再戦（rematch）: 終局後にホストが同メンバーで新対戦を開始 ===');
     // ゲーム終了状態を直接作る（フルプレイは別テストで担保済み）
     const room1 = rooms.get(h1j.code);

@@ -230,6 +230,16 @@
     const pay = Math.min(t.coinPenalty, t.coins);
     t.coins -= pay; t.coinPenalty -= pay;
   }
+  /* 「財宝を全部出す」(PLAY_ALL_TREASURES) の並び順。
+     ① **手札の財宝1枚を2回使う札（ティアラ／冠／偽造通貨）を最初に出す**。
+        後回しにすると手札に財宝が残っておらず「2回使う」が空振りするため（＝出す順で強さが変わる札）。
+     ② 商人の「このターン最初の銀貨」を確実に拾うため銀貨を早めに。
+     ③ 帝国：大金（fortune）は最後（このターン最初の大金でコインが2倍＝合計を最大化）。 */
+  const PLAY_TWICE_TREASURES = { tiara: 1, crown: 1, counterfeit: 1 };
+  function playAllOrder(a, b) {
+    const rank = (c) => (PLAY_TWICE_TREASURES[c] ? -2 : c === 'silver' ? -1 : c === 'fortune' ? 1 : 0);
+    return rank(a) - rank(b);
+  }
   // 財宝1枚を手札から場に出してコインを加算。「商人」の“このターン最初の銀貨で+1コイン（商人の数だけ）”もここで処理。
   // PLAY_TREASURE / PLAY_ALL_TREASURES / 闇市場 で共通利用。
   function playTreasureCard(state, pIndex, card) {
@@ -4862,6 +4872,10 @@
   }
   function isGameOver(state) {
     if (state.supply.province <= 0 || emptyPileCount(state) >= 3) return true;
+    // 繁栄：植民地を使うゲームは「植民地の山が尽きた」ときも終了する（公式＝属州と並ぶ独立の終了条件）。
+    //   植民地/プラチナは繁栄の王国カードが場にあるときだけ initSupply が足すので、
+    //   キーが無い（＝使っていない）ゲームでは判定しない。
+    if (state.supply.colony != null && state.supply.colony <= 0) return true;
     // 安全網：ルール上あり得ない超長期化を打ち切る。例＝泥棒(thief)で全財宝が枯れ、銅貨の山も尽き、
     // 全員コイン0で誰も購入できず山も減らない膠着（実カードでも起こり得る degenerate 盤面）。
     // オンラインCPU部屋やCPU戦が永久に終わらないのを構造的に防ぐ。通常のゲームは遥か手前で終わる。
@@ -4977,11 +4991,19 @@
     const scores = state.players.map((p, i) => {
       // 勝敗画面用の内訳（例: {province:2, duchy:1, estate:3, curse:1}）。
       // マスク配信後はクライアントから再計算できないため、ここで確定して持たせる。
+      const cards = allCards(p);
       const vpCards = {};
-      allCards(p).forEach((c) => { if (DOM.isType(c, 'victory') || DOM.isType(c, 'curse')) vpCards[c] = (vpCards[c] || 0) + 1; });
+      // deckCards＝終了後に「全員のデッキ」を見せるための所有カード全部の枚数。
+      //   相手の山札/捨て札は maskStateFor で伏せられ、クライアントからは復元できない。
+      //   ここ（権威state）で確定して result に載せれば、オンラインでも終了後だけ全員に見せられる。
+      const deckCards = {};
+      cards.forEach((c) => {
+        deckCards[c] = (deckCards[c] || 0) + 1;
+        if (DOM.isType(c, 'victory') || DOM.isType(c, 'curse')) vpCards[c] = (vpCards[c] || 0) + 1;
+      });
       const lmVp = landmarkScore(state, i); // 帝国：ランドマーク得点（負にもなり得る）
       // deckSize は庭園の得点表示用（デッキ10枚につき1点）
-      return { name: p.name, vp: vpOf(p) + lmVp, landmarkVp: lmVp, turns: p.turns, vpCards, deckSize: allCards(p).length };
+      return { name: p.name, vp: vpOf(p) + lmVp, landmarkVp: lmVp, turns: p.turns, vpCards, deckCards, deckSize: cards.length };
     });
     // 勝者判定：勝利点が多い → 同点ならターン数が少ない
     let best = null;
@@ -5000,6 +5022,8 @@
       }
     });
     const reason = state.supply.province <= 0 ? '属州の山が尽きた'
+      // 繁栄：植民地を使うゲームは植民地が尽きても終了する（isGameOver と同じ条件・同じ順序で判定する）。
+      : (state.supply.colony != null && state.supply.colony <= 0) ? '植民地の山が尽きた'
       : emptyPileCount(state) >= 3 ? '3つの山が尽きた'
       : '膠着のため打ち切り';
     return { scores, winners, reason };
@@ -6330,6 +6354,24 @@
       if (callable) state.pending = { type: 'after_action', player: pi2, card: ac };
       else state.turn.afterActionCard = null;
     }
+    /* 「財宝を全部出す」の続き。ティアラ/冠/偽造通貨/金床/水晶玉/投資/ペテン師(堀) 等で選択待ちが立つと
+       途中で止まるので、解決したら**自動で残りを出し切る**（ボタンを押し直させない）。
+       ・その手番の購入フェイズ限定（freshTurn で turn ごと消える／購入すると treasuresLocked で止まる）。
+       ・支配中も t.active（＝手札の持ち主）の財宝を出す＝PLAY_ALL_TREASURES 本体と同じ。 */
+    if (!state.pending && !state.gameOver && state.turn && state.turn.playAllResume) {
+      const t2 = state.turn;
+      if (t2.phase !== 'buy' || t2.treasuresLocked) t2.playAllResume = false;
+      else {
+        const p2 = state.players[t2.active];
+        const rest = p2.hand.filter((c) => isTreasureFor(state, c)).sort(playAllOrder);
+        if (!rest.length) t2.playAllResume = false;
+        else {
+          for (const card of rest) { playTreasureCard(state, t2.active, card); if (state.pending) break; }
+          if (!state.pending) t2.playAllResume = false;
+          state = runReplays(state);
+        }
+      }
+    }
     return state;
   }
   // 玉座の間の「2回目の適用」（および錬金術ゴーレムの2枚目）を、選択待ちが解消したタイミングで実行する。
@@ -6476,11 +6518,12 @@
         if (state.pending) return state;
         if (t.phase !== 'buy') return state;
         if (t.treasuresLocked) return state;
-        // 商人の「最初の銀貨」を確実に最初に出すため銀貨を先に、帝国：大金は最後に出す（コイン2倍を最大化）。
-        const treasures = me.hand.filter((c) => isTreasureFor(state, c))
-          .sort((a, b) => ((a === 'silver' ? -1 : 0) - (b === 'silver' ? -1 : 0)) || ((a === 'fortune' ? 1 : 0) - (b === 'fortune' ? 1 : 0)));
+        // 並び順は playAllOrder が正本（ティアラ/冠/偽造通貨を最初・銀貨を早め・大金を最後）。
+        const treasures = me.hand.filter((c) => isTreasureFor(state, c)).sort(playAllOrder);
         // 繁栄：金床/投資/水晶玉/ティアラ/ペテン師(堀)は使ったとき選択が出る。pending が立ったら残りは止める。
+        //   止まった残りは reduce 末尾の playAllResume が、選択の解決後に自動で出し切る。
         for (const card of treasures) { playTreasureCard(state, pi, card); if (state.pending) break; }
+        if (state.pending) t.playAllResume = true;
         if (treasures.length) log(state, `${me.name} は財宝を出した。`);
         return state;
       }

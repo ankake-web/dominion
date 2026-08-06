@@ -565,6 +565,8 @@
   function buyEndsGame(state, id) {
     const after = (k) => (state.supply[k] || 0) - (k === id ? 1 : 0);
     if (after('province') <= 0) return true;
+    // 繁栄：植民地を使うゲームは植民地が尽きても終了する（engine の isGameOver と同じ条件を見る）。
+    if (state.supply.colony != null && after('colony') <= 0) return true;
     let empty = 0;
     Object.keys(state.supply).forEach((k) => { if (after(k) <= 0) empty++; });
     return empty >= 3;

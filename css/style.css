@@ -1159,3 +1159,34 @@ html.modal-open, html.modal-open body { overflow: hidden; }
   border: 1px solid #9fce93;
   border-radius: 8px;
 }
+
+/* ============================================================
+   カード一覧の検索バー（見出しの直下に貼り付く）
+   ============================================================ */
+.card-search {
+  position: sticky; top: 46px; z-index: 19;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 8px 0 10px; margin-bottom: 4px;
+  background: var(--bg0);
+  border-bottom: 1px solid var(--line);
+}
+.card-search-row { display: flex; align-items: center; gap: 8px; }
+input.card-search-input { flex: 1 1 auto; min-width: 0; min-height: 44px; font-size: 16px; }
+.card-search-clear { flex: 0 0 auto; min-width: 44px; min-height: 44px; font-size: 16px; }
+
+/* ============================================================
+   終局後のデッキ確認モーダル
+   （カード拡大シート #sheet-host(.scrim z-index:38) より下に置き、タップ拡大が前面に出るようにする）
+   ============================================================ */
+.modal-scrim.deck-scrim { z-index: 30; }
+.deck-modal { max-width: 640px; }
+.deck-grid { max-height: 52vh; overflow-y: auto; padding: 2px; }
+.deck-view-btn { margin-top: 6px; }
+
+/* ============================================================
+   1手もどす（初心者モード）
+   ============================================================ */
+.last-move.with-undo { display: flex; align-items: center; gap: 8px; }
+.last-move.with-undo > span { flex: 1 1 auto; min-width: 0; }
+.undo-btn { flex: 0 0 auto; white-space: nowrap; }
+.undo-btn-modal { margin-top: 8px; }
