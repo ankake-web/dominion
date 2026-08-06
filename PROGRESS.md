@@ -1280,8 +1280,10 @@ mix を解禁すると、PROGRESS §6 / §0-10 に**「どの出荷 CARD_SET で
   同日に成功した回も 10分42秒 かかっていた）。**`timeout` 入力を上げても効かない**＝`deploy-pages` の上限が 600000ms で、
   超える値は `timeout value is greater than the allowed maximum` の警告付きで丸められる（実測）。**待つしかない＝失敗したら入れ直す**。
   **失敗した run を `gh run rerun` すると「Multiple artifacts named github-pages」で必ず失敗する**（前回のアーティファクトと二重になる）。
-  やり直すときは **`gh workflow run "Deploy to GitHub Pages" --ref main`（新規実行）** を使うこと。
-  同時に2つ走らせると片方が `Deployment cancelled.` になるので、前の run が completed になってから投げる。
+  **やり直しは「新しいコミットを積んで push」しかない**＝Pages のデプロイIDは**コミットSHAそのもの**なので、
+  一度キャンセルされた SHA で `gh workflow run`（新規実行）しても **5秒で `Deployment cancelled.`** になる（実測）。
+  中身を変える必要が無ければ `git commit --allow-empty` でSHAを進めて push する。
+  同時に2つ走らせると片方が `Deployment cancelled.` になるので、前の run が completed になってから投げること。
 - **一時スクリプト規約**：使い捨ては**プロジェクト直下に `_*.tmp.js`** で作り実行後**必ず削除**。スクショ等は scratchpad へ。シェルcwdがずれることがあるので実行前に `Set-Location 'C:\Users\b1242\claude\game\dominion'`。
 - ~~**支配（Possession）の廃棄カード返却の簡略化＝到達不能（監査⑤）**~~ → **§0-23（mix-all 硬化）で解消済み**。
   自己廃棄5枚（投資/祝宴/宝の地図/鉱山の村/豊穣の角）は `trashCard` 経由＝支配中は possessionTrash へ退避して返却される。
