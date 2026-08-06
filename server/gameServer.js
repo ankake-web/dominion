@@ -162,12 +162,16 @@ function broadcastState(room) {
    - 積むのは人間の action のみ（CPUの手番は積まない）＝1回もどすと「間に挟まったCPUの手番」ごと戻る。
    - 頼めるのは「今その席が操作できる場面」かつ「履歴の一番上が自分の手」のときだけ。
    - 履歴は**永続化しない**（Upstashが肥大するため）。サーバ再起動後の復元直後は空＝1手指すまで使えない。 */
-const UNDO_MAX = 40;         // 保持する巻き戻し地点の数（1部屋あたり）
+/* UNDO_MAX＝1部屋が持つ巻き戻し地点の数。state は reduce のたびに deep clone される独立オブジェクトなので、
+   ここに積んだぶんだけ実ヒープを持つ（1局面おおよそ 10〜25KB）。MAX_ROOMS=2000 の想定メモリを膨らませない
+   ため小さめにする（「1手もどす」用途には十分）。 */
+const UNDO_MAX = 12;
 let UNDO_VOTE_MS = 45000;    // 承認待ちのタイムアウト(ms)
 
-function pushUndoPoint(room, seat) {
+// prevState＝reduce に渡す**前**の state（＝戻り先）。呼び出し側が「実際に局面が変わったとき」だけ積む。
+function pushUndoPoint(room, seat, prevState) {
   if (!room.history) room.history = [];
-  room.history.push({ state: room.state, seat });
+  room.history.push({ state: prevState, seat });
   if (room.history.length > UNDO_MAX) room.history.shift();
 }
 function undoTopSeat(room) {
@@ -179,8 +183,12 @@ function canUndoSeat(room, seat) {
   if (E.actor(room.state) !== seat) return false; // 自分が操作できる場面だけ
   return undoTopSeat(room) === seat;
 }
-function otherConnectedHumans(room, seat) {
-  return room.members.filter((m) => m.connected && !m.expired && m.seat !== seat);
+// 承認が要る相手＝「席がまだ人間のもの」（expired＝猶予切れでCPUに引き継がれた席は対象外）。
+//   **接続中かどうかで判定してはいけない**：対戦中の切断者は startedGrace(本番5分)の間 席を人間のまま保持され、
+//   engine 上も現役（サーバは彼を待って進行を止める）。そこを外すと「相手がバックグラウンド落ちしている隙に
+//   承認ゼロで何手でも巻き戻せる」＝承認制のバイパスになる（敵対レビューで実証）。
+function otherHumanSeats(room, seat) {
+  return room.members.filter((m) => !m.expired && m.seat !== seat);
 }
 function clearUndoReq(room) {
   if (room && room.undoReq && room.undoReq.timer) clearTimeout(room.undoReq.timer);
@@ -194,6 +202,15 @@ function applyUndo(room, seat) {
   if (!canUndoSeat(room, seat)) return false;
   if (room.cpuTimer) { clearTimeout(room.cpuTimer); room.cpuTimer = null; } // 古い局面向けのCPU予約を捨てる
   room.state = room.history.pop().state;
+  // 巻き戻すと当該操作の log 行ごと消えるので、**巻き戻した事実を state.log に残す**。
+  //   log は state に載る＝切断していた人も resume 時に必ず受け取れる（後から確認できる）。
+  const who = room.state.players[seat];
+  if (Array.isArray(room.state.log)) {
+    // engine の log() と同じ形（logSeq を進める＝クライアントの効果音/差分検出が正しく動く／200行で刈る）
+    room.state.log.push(`${(who && who.name) || 'プレイヤー'} は1手もどした。`);
+    room.state.logSeq = (room.state.logSeq || 0) + 1;
+    if (room.state.log.length > 200) room.state.log = room.state.log.slice(-200);
+  }
   // 巻き戻した state は「その時点の接続状況」を持っている。切断/復帰/CPU代行まで巻き戻さないよう、
   // 今の接続状況で上書きし直す（人間席のみ。純粋なCPU席はスナップショットでもCPUのまま）。
   for (const m of room.members) {
@@ -528,9 +545,15 @@ function handleConnection(ws) {
         if (E.actor(room.state) !== me.seat) { send(ws, { t: 'error', message: 'あなたの操作できる場面ではありません' }); return; }
         // 局面が動いたら「確認中の取り消し」は無効にする（承認が古い局面に当たらないように）
         if (room.undoReq) { clearUndoReq(room); sendAll(room, { t: 'undoDenied', reason: 'stale' }); }
-        pushUndoPoint(room, me.seat); // 巻き戻し地点＝人間が自分で行った操作の直前
-        try { room.state = E.reduce(room.state, action); }
-        catch { room.history.pop(); send(ws, { t: 'error', message: '無効な操作です' }); return; }
+        const prevState = room.state;
+        let nextState;
+        try { nextState = E.reduce(room.state, action); }
+        catch { send(ws, { t: 'error', message: '無効な操作です' }); return; }
+        // engine は「無効な操作」を **state を変えずに** 返す（throw しない）。それを巻き戻し地点に積むと
+        //   「押しても何も戻らない undo」が積み上がり、相手の承認を無駄に消費し、履歴メモリも食う。
+        //   → **局面が実際に変わったときだけ**積む（reduce は毎回 clone を返すので参照比較は使えない）。
+        if (JSON.stringify(nextState) !== JSON.stringify(prevState)) pushUndoPoint(room, me.seat, prevState);
+        room.state = nextState;
         broadcastState(room);
         scheduleCpuTick(room, room.cpuStepMs);
         break;
@@ -541,7 +564,10 @@ function handleConnection(ws) {
         if (room.state.gameOver) { send(ws, { t: 'error', message: 'この対戦は終了しました' }); return; }
         if (room.undoReq) { send(ws, { t: 'error', message: '取り消しの確認中です' }); return; }
         if (!canUndoSeat(room, me.seat)) { send(ws, { t: 'error', message: 'いまは1手もどせません' }); return; }
-        const others = otherConnectedHumans(room, me.seat);
+        const others = otherHumanSeats(room, me.seat);
+        // 席が人間のまま残っている相手が切断中なら、承認を取りようがないので**受理しない**。
+        //   （猶予が切れて CPU に引き継がれれば expired=true になり、自動的に承認不要へ落ちる）
+        if (others.some((m) => !m.connected)) { send(ws, { t: 'error', message: '相手の再接続を待っています' }); return; }
         if (others.length === 0) {
           if (applyUndo(room, me.seat)) sendAll(room, { t: 'undoDone', by: me.seat, name: me.name });
           else send(ws, { t: 'error', message: 'いまは1手もどせません' });

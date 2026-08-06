@@ -244,6 +244,46 @@ function mkClient(url) {
       ok(rm.history && rm.history.length >= 1, 'サーバは巻き戻し地点を保持している');
       const snapOf = require('../server/gameServer').roomSnapshot;
       ok(Object.keys(snapOf(rm)).indexOf('history') < 0, '永続化スナップショットに履歴は含めない');
+      // 回帰：engine が状態不変で拒否する操作は巻き戻し地点にしない（押しても何も戻らない undo を作らない）
+      const before = rm.history.length;
+      h1.send({ t: 'action', action: { type: 'BUY', card: 'province' } }); // コイン不足＝engine が state 不変で拒否
+      await sleep(120);
+      ok(rooms.get(h1j.code).history.length === before, '無効な操作は巻き戻し地点を積まない（実 ' + rooms.get(h1j.code).history.length + '/' + before + '）');
+      // 回帰【high】：相手が「猶予内の切断」中は、承認を取りようがないので undo を受理しない
+      //   （ここを接続中判定にすると、相手のバックグラウンド落ち中に承認ゼロで何手でも巻き戻せてしまう）
+      //   ※ h1/g1 の部屋は後続テストで使うので、専用の部屋を立てて検証する。
+      const u0 = mkClient(URL); await u0.open();
+      u0.send({ t: 'create', name: 'U0' });
+      const u0j = await u0.waitFor((m) => m.t === 'joined');
+      const u1 = mkClient(URL); await u1.open();
+      u1.send({ t: 'join', code: u0j.code, name: 'U1' });
+      await u1.waitFor((m) => m.t === 'joined');
+      u0.send({ t: 'setCpu', count: 0 });
+      await u0.waitFor((m) => m.t === 'lobby' && m.cpuCount === 0);
+      u0.send({ t: 'start' });
+      await u0.waitFor((m) => m.t === 'started');
+      await u1.waitFor((m) => m.t === 'started');
+      u0.send({ t: 'action', action: { type: 'END_ACTION_PHASE' } });
+      const uSync = await u0.waitFor((m) => m.t === 'state' && m.state.turn.phase === 'buy', 2000);
+      ok(uSync.canUndo === true, '前提：自分の手のあとは1手もどせる');
+      u1.close(); // 相手がバックグラウンド落ち（猶予内の切断）
+      await u0.waitFor((m) => m.t === 'state' && m.state.players[1].dc === true, 2000);
+      const rm2 = rooms.get(u0j.code);
+      ok(rm2.members.find((m) => m.seat === 1).expired === false, '前提：切断中でも席はまだ人間のもの（猶予内）');
+      const phaseBefore = rm2.state.turn.phase;
+      u0.send({ t: 'undo' });
+      const waitErr = await u0.waitFor((m) => m.t === 'error', 2000);
+      ok(/再接続を待っています/.test(waitErr.message), '切断中の相手がいる間は1手もどせない（承認バイパス防止）');
+      ok(rooms.get(u0j.code).state.turn.phase === phaseBefore, '局面は動かない（承認ゼロの巻き戻しが起きない）');
+      // 猶予が切れて席がCPUに引き継がれたら（expired）、承認は不要になる＝従来どおり即実行できる
+      await sleep(700); // startedGraceMs=500 を超えて待つ
+      ok(rooms.get(u0j.code).members.find((m) => m.seat === 1).expired === true, '前提：猶予切れで席がCPUに引き継がれる');
+      u0.send({ t: 'undo' });
+      const uBack = await u0.waitFor((m) => m.t === 'state' && m.state.turn.phase === 'action', 3000);
+      ok(!!uBack, '猶予切れ後は承認不要で巻き戻せる');
+      ok((rooms.get(u0j.code).state.log || []).some((l) => /1手もどした/.test(l)), '巻き戻した事実がログに残る（復帰した人が後から確認できる）');
+      u0.close();
+      await sleep(50);
     }
 
     console.log('=== 再戦（rematch）: 終局後にホストが同メンバーで新対戦を開始 ===');

@@ -1186,7 +1186,13 @@ input.card-search-input { flex: 1 1 auto; min-width: 0; min-height: 44px; font-s
 /* ============================================================
    1手もどす（初心者モード）
    ============================================================ */
+/* 「1手もどす」を横に並べても、直近ログの1行省略（…）が効くようにする。
+   flex 化すると .last-move 自身の overflow/text-overflow が効かなくなり、
+   文字がボタンの上に重なって描かれるので、内側の span に付け直す。 */
 .last-move.with-undo { display: flex; align-items: center; gap: 8px; }
-.last-move.with-undo > span { flex: 1 1 auto; min-width: 0; }
+.last-move.with-undo > span {
+  flex: 1 1 auto; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .undo-btn { flex: 0 0 auto; white-space: nowrap; }
 .undo-btn-modal { margin-top: 8px; }

@@ -567,9 +567,12 @@
     if (after('province') <= 0) return true;
     // 繁栄：植民地を使うゲームは植民地が尽きても終了する（engine の isGameOver と同じ条件を見る）。
     if (state.supply.colony != null && after('colony') <= 0) return true;
-    let empty = 0;
-    Object.keys(state.supply).forEach((k) => { if (after(k) <= 0) empty++; });
-    return empty >= 3;
+    /* 3山終了は **engine の emptyPileCount が正本**（非サプライ＝賞品/戦利品/成長先を数えない・
+       分割山は上下で1山・廃墟の混合山を state.ruins で数える）。ここで素朴に supply のキーを数えると
+       非サプライ山や分割山下段まで「空」に数えてしまい、engine はまだ続くのに CPU だけ「買うと終わる」と
+       誤判定して終盤ずっと買い控える（敵対レビューで実測）。 */
+    const hypo = Object.assign({}, state, { supply: Object.assign({}, state.supply, { [id]: (state.supply[id] || 0) - 1 }) });
+    return (DOM.engine && DOM.engine.emptyPileCount) ? DOM.engine.emptyPileCount(hypo) >= 3 : false;
   }
   // 帝国：ランドマーク得点は engine の正本 landmarkScoreForCards を仮デッキに当てて算出する
   //   （オベリスクの分割山両半分・塔の空山写像・砦の全員比較を engine と完全一致で見積る）。

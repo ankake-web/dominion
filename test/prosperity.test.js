@@ -371,6 +371,18 @@ console.log('=== 「財宝を全部出す」：ティアラ/冠/偽造通貨（�
   ok(!s.pending, '選択の解決後に選択待ちが残らない');
   ok(s.players[0].hand.length === 0, '残りの財宝も自動で出し切る（実 手札' + s.players[0].hand.length + '枚）');
   ok(s.turn.coins === 9, 'コイン9＝ティアラ0＋金貨2回6＋銅貨1＋銀貨2（実 ' + s.turn.coins + '）');
+  // 回帰：中断中に手札へ入ってきた財宝は自動再開で出さない（押した時点の残りだけを出し切る）
+  //   ＝これを守らないと、獲得した銅貨が勝手に場に出て高級市場が買えなくなる／資本主義でアタックが無断発動する。
+  s = mk(); s.turn.phase = 'buy';
+  s.players[0].hand = ['tiara', 'copper', 'silver'];
+  s = reduce(s, { type: 'PLAY_ALL_TREASURES' });
+  ok(!!s.pending, '前提：ティアラで中断している');
+  s.players[0].hand.push('gold'); // 中断中に獲得された財宝（収税吏/彫刻家などを模擬）
+  s = reduce(s, { type: 'TIARA_PLAY', card: 'copper' });
+  ok(!s.pending, '前提：解決して自動再開が走る');
+  ok(s.players[0].hand.length === 1 && s.players[0].hand[0] === 'gold', '中断中に手札へ入った財宝は出さない（実 ' + JSON.stringify(s.players[0].hand) + '）');
+  ok(!s.players[0].inPlay.includes('gold'), '金貨は場にも出ていない');
+  ok(s.players[0].inPlay.includes('silver'), '押した時点で手札にあった残り（銀貨）は出し切る');
   // ティアラが無ければ従来どおり一度に全部出る
   s = mk(); s.turn.phase = 'buy'; s.players[0].hand = ['copper', 'gold', 'silver'];
   s = reduce(s, { type: 'PLAY_ALL_TREASURES' });

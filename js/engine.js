@@ -6360,16 +6360,24 @@
        ・支配中も t.active（＝手札の持ち主）の財宝を出す＝PLAY_ALL_TREASURES 本体と同じ。 */
     if (!state.pending && !state.gameOver && state.turn && state.turn.playAllResume) {
       const t2 = state.turn;
-      if (t2.phase !== 'buy' || t2.treasuresLocked) t2.playAllResume = false;
-      else {
-        const p2 = state.players[t2.active];
-        const rest = p2.hand.filter((c) => isTreasureFor(state, c)).sort(playAllOrder);
-        if (!rest.length) t2.playAllResume = false;
-        else {
-          for (const card of rest) { playTreasureCard(state, t2.active, card); if (state.pending) break; }
-          if (!state.pending) t2.playAllResume = false;
-          state = runReplays(state);
+      const r = t2.playAllResume;
+      // 中断したときのキューをそのまま出し切る（手札の再スキャンはしない＝下記の理由）。
+      //   ・途中で手札に入った財宝を勝手に出さない（高級市場が買えなくなる／資本主義でアタックが無断発動する）
+      //   ・購入したら treasuresLocked で止まる／ヴィラ等でアクションフェイズへ戻ったら止まる／手番が変われば止まる
+      if (t2.phase !== 'buy' || t2.treasuresLocked || !r || r.player !== t2.active || !Array.isArray(r.queue)) {
+        t2.playAllResume = null;
+      } else {
+        const p2 = state.players[r.player];
+        while (r.queue.length) {
+          const card = r.queue.shift();
+          if (!p2.hand.includes(card)) continue;         // 途中で手札から消えた札は飛ばす（廃棄/捨てられた等）
+          if (!isTreasureFor(state, card)) continue;     // もう財宝でない（資本主義が外れた等）なら飛ばす
+          playTreasureCard(state, r.player, card);
+          if (state.pending) break;
         }
+        // 選択待ちが立たずに抜けた＝キューを出し切った。立っていれば残りは r.queue に残したまま次回へ。
+        if (!state.pending) t2.playAllResume = null;
+        state = runReplays(state);
       }
     }
     return state;
@@ -6522,8 +6530,13 @@
         const treasures = me.hand.filter((c) => isTreasureFor(state, c)).sort(playAllOrder);
         // 繁栄：金床/投資/水晶玉/ティアラ/ペテン師(堀)は使ったとき選択が出る。pending が立ったら残りは止める。
         //   止まった残りは reduce 末尾の playAllResume が、選択の解決後に自動で出し切る。
-        for (const card of treasures) { playTreasureCard(state, pi, card); if (state.pending) break; }
-        if (state.pending) t.playAllResume = true;
+        //   **残りは「ボタンを押した時点の手札」で固定する**（再開時に手札を再スキャンすると、
+        //   途中で手札に入ってきた財宝＝収税吏/彫刻家の獲得・資本主義で財宝になったアクション まで
+        //   勝手に出してしまう＝高級市場が買えなくなる／アタックが無断で発動する）。
+        for (let i = 0; i < treasures.length; i++) {
+          playTreasureCard(state, pi, treasures[i]);
+          if (state.pending) { t.playAllResume = { player: pi, queue: treasures.slice(i + 1) }; break; }
+        }
         if (treasures.length) log(state, `${me.name} は財宝を出した。`);
         return state;
       }

@@ -57,6 +57,8 @@
     lastConfigs: null,
     cardSearch: '',     // カード一覧の検索語
     _searchActive: false, // 検索欄を編集中か（render の全再構築でフォーカスを戻す判定）
+    _imeComposing: false, // 日本語入力(IME)の変換中か（変換中は再描画しない＝入力が壊れるため）
+    _noAutoSkipOnce: false, // 「1手もどす」直後に自動スキップを1回だけ抑止する（対局をまたいで残さない）
     deckView: null,     // 終局後にデッキ内訳を見ている席（null=閉じている）
     netCanUndo: false,  // オンライン：サーバが「この席は今1手もどせる」と言っているか
     undoPending: false, // オンライン：自分の要求が相手の返事待ちか
@@ -382,7 +384,8 @@
     render();
   }
   function closeSheet() { UI.sheet = null; render(); }
-  function showSheet(cardId, primary) { UI.sheet = { cardId, primary }; sfx('tap'); render(); }
+  // カード拡大を開くときは検索欄の「入力中」を解除する（閉じたあとにスマホのキーボードが開き直さない）
+  function showSheet(cardId, primary) { UI.sheet = { cardId, primary }; UI._searchActive = false; UI._imeComposing = false; sfx('tap'); render(); }
   // カード説明(sheet)は #sheet-host に常駐させ、同じ表示要求の間は作り直さない。
   // これで他人の行動などで盤面が再描画されても、スクロール位置とカード画像が保たれる
   // （毎回作り直すと画像の読込前に scrollTop が0付近へクランプされ、位置が飛んでいた）。
@@ -819,7 +822,7 @@
         onerror: function () { this.style.display = 'none'; } }),
       h('div', { style: 'font-size:12px;margin-top:3px' }, ls.name));
   }
-  function openLandmarkZoom(id) { UI.lmZoom = id; render(); }
+  function openLandmarkZoom(id) { UI.lmZoom = id; UI._searchActive = false; UI._imeComposing = false; render(); }
   function viewLandmarkZoom() {
     const id = UI.lmZoom;
     const ls = (DOM.LANDSCAPES || {})[id] || { name: id, text: '' };
@@ -928,12 +931,26 @@
     }, label);
     const searchBar = h('div', { class: 'card-search' },
       h('div', { class: 'card-search-row' },
+        // 【重要】日本語入力(IME)対応：render() は app.innerHTML='' で <input> ごと作り直すため、
+        //   変換中（composition 中）に再描画すると未確定文字列が壊れる（「むら」→「むむら村」等）。
+        //   変換中は UI.cardSearch だけ更新して**再描画しない**。確定(compositionend)で描き直す。
         h('input', {
           type: 'text', class: 'card-search-input', value: UI.cardSearch || '',
           placeholder: 'カード名・効果・拡張で検索',
           'aria-label': 'カードを検索',
-          oninput: (e) => { UI.cardSearch = e.target.value; UI._searchActive = true; UI._searchCaret = e.target.selectionStart; render(); },
+          oninput: (e) => {
+            UI.cardSearch = e.target.value; UI._searchCaret = e.target.selectionStart;
+            if (UI._imeComposing) return; // 変換中は作り直さない（入力が壊れる）
+            UI._searchActive = true; render();
+          },
+          oncompositionstart: () => { UI._imeComposing = true; },
+          oncompositionend: (e) => {
+            UI._imeComposing = false;
+            UI.cardSearch = e.target.value; UI._searchCaret = e.target.selectionStart;
+            UI._searchActive = true; render();
+          },
           onfocus: () => { UI._searchActive = true; },
+          onblur: () => { UI._imeComposing = false; },
         }),
         (UI.cardSearch || '') ? h('button', { class: 'btn btn-ghost btn-sm card-search-clear', 'aria-label': '検索をクリア', onclick: () => setQuery('') }, '✕') : null),
       h('div', { class: 'mix-chips' },
@@ -3125,6 +3142,7 @@
     UI.lastProjects = projects;
     const st = E().createInitialState(configs, kingdom, { landmarks, events, projects });
     UI.mode = 'local'; UI.mySeat = null; UI.localViewer = firstHuman(st);
+    UI._noAutoSkipOnce = false; // 前の対局で「1手もどす」を押した名残を持ち越さない
     UI.store = DOM.LocalStore(st);
     UI.store.subscribe(onStoreChange);
     UI.view = 'game';
@@ -3330,6 +3348,9 @@
   function clearGameTimers() {
     if (UI._cpuTimer) { clearTimeout(UI._cpuTimer); UI._cpuTimer = null; }
     if (UI._autoSkipTimer) { clearTimeout(UI._autoSkipTimer); UI._autoSkipTimer = null; }
+    // 「1手もどす」直後の自動スキップ抑止は**その対局限り**（次の対局へ持ち越すと、
+    //   アクション0枚の1ターン目が自動で購入フェイズへ進まなくなる＝既存機能の退行）。
+    UI._noAutoSkipOnce = false;
   }
   function leaveOnline() {
     clearGameTimers();
@@ -3535,7 +3556,9 @@
     app.appendChild(root);
     // カード一覧の検索欄：render() は毎回 DOM を作り直すのでフォーカスとカーソル位置が失われる。
     // 「入力中（UI._searchActive）」のときだけ戻す＝初回表示でスマホのキーボードが勝手に開かない。
-    if (UI.view === 'cardList' && UI._searchActive) {
+    // **カード拡大シート等を開いている間は戻さない**（検索欄にフォーカスを引き戻すと、カードを見た瞬間に
+    //   スマホのキーボードが開き直して画面の半分が隠れる）。
+    if (UI.view === 'cardList' && UI._searchActive && !UI.sheet && !UI.lmZoom) {
       const si = app.querySelector('.card-search-input');
       if (si) {
         si.focus();

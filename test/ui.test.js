@@ -331,6 +331,25 @@ try {
     ok(doc.body.textContent.includes('見つかりません'), '該当なしの案内が出る');
     $('.card-search-clear').click();
     ok(!UI.cardSearch && $all('.cardlist-grid .card').length > 100, 'クリアで全件に戻る（実 ' + $all('.cardlist-grid .card').length + '）');
+
+    // 回帰【日本語入力(IME)】: 変換中に render() で <input> を作り直すと未確定文字列が壊れる
+    //   （「むら」と打つと「むむら村」になり0件）。変換中は再描画せず、確定(compositionend)で描き直す。
+    const inp = $('.card-search-input');
+    inp.dispatchEvent(new win.Event('compositionstart'));
+    inp.value = 'むら'; inp.dispatchEvent(new win.Event('input'));
+    ok($('.card-search-input') === inp, '変換中は入力欄を作り直さない（同じ要素のまま＝IMEが壊れない）');
+    ok(UI._imeComposing === true, '変換中フラグが立つ');
+    inp.value = '村'; inp.dispatchEvent(new win.Event('compositionend'));
+    ok(UI._imeComposing === false && UI.cardSearch === '村', '確定で変換中フラグが降り、検索語が入る');
+    ok($all('.cardlist-grid .card').length >= 1, '確定したら絞り込みが走る（実 ' + $all('.cardlist-grid .card').length + '）');
+
+    // 回帰【フォーカス】: カードを拡大している間は検索欄にフォーカスを引き戻さない
+    //   （引き戻すとスマホのキーボードが開き直して画面の半分が隠れる）。
+    UI._searchActive = true; DOM.render();
+    byText('.cardlist-grid .card .cname', '村').closest('.card').click();
+    ok(UI.sheet && UI._searchActive === false, 'カードを開いたら検索欄の「入力中」は解除される');
+    ok(doc.activeElement !== $('.card-search-input'), '拡大中は検索欄にフォーカスが戻らない');
+    UI.sheet = null; UI.cardSearch = ''; UI._searchActive = false; DOM.render();
   }
 
   console.log('=== 終局後：全員のデッキを確認できる ===');
@@ -415,6 +434,15 @@ try {
     UI.beginner = false; DOM.render();
     ok(!$('.undo-btn'), '初心者モードOFFでは「1手もどす」を出さない');
     UI.beginner = wasBeginner; DOM.render();
+
+    // 回帰: 「1手もどす」直後の自動スキップ抑止フラグは**その対局限り**。
+    //   持ち越すと、次の対局の1ターン目（手札にアクション0枚）が自動で購入フェイズへ進まなくなる。
+    UI._noAutoSkipOnce = true;
+    go('home');
+    clickText('button', 'CPUと対戦');
+    clickText('button', 'この設定で開始');
+    ok(UI._noAutoSkipOnce === false, '新しい対局を始めたら自動スキップの抑止は解除される');
+    timers.length = 0;
   }
 
   ok(runtimeError === null, '実行時エラーなし: ' + (runtimeError ? (runtimeError.stack || runtimeError) : ''));
