@@ -887,6 +887,122 @@
     // 馬（Horse）＝非サプライ30枚。「馬を獲得する」効果でのみ得られる（購入・汎用獲得の対象外）。
     horse:           { id: 'horse', name: '馬', cost: 3, types: ['action'],
                  text: '+2 カード\n+1 アクション\nこれをその山に戻す。' },
+    /* ===== 夜想曲（Nocturne）縦型48種 ＝ 王国33＋家宝7＋非サプライ5＋ゾンビ3 =====
+       正本＝docs/research/nocturne_rules.md（多エージェント研究＋敵対検証で確定）。
+       新機構＝夜フェイズ（Night＝購入フェイズの後に使う）／家宝（Heirloom＝開始デッキの銅貨と置き換わる）／
+       幸運(Fate)→祝福(Boon)・不運(Doom)→呪詛(Hex) の横型デッキ／状態(State)／精霊(Spirit)の非サプライ山。
+       負債・ポーション費用・分割山・混合山は無い。テキストは**現行（最新エラッタ後）**。
+       【HJ日本語版の印刷カードから意図的に変えた点＝差し戻し禁止】
+        1. 取り替え子(changeling) の区切り線の下：HJ印刷「代わりに取り替え子1枚を獲得してもよい」は公式に誤訳
+           （日本語版マニュアル側は「交換」と正しく書いてある）。印刷どおり「獲得の置換」にすると獲得時トリガーが
+           一切発火せず壊れるので、訂正版＝「それを取り替え子と交換してもよい。」を採用。
+        2. 納骨堂(crypt)＝2022年の**機能**エラッタ（脇に置けるのは「持続でない」財宝だけ）を反映。
+        3. ネクロマンサー(necromancer)＝2021年印刷の**機能**エラッタ（裏返してから使用する）を反映。
+        4. 追跡者(tracker)＝2022年の**機能**エラッタ（「これが場にある間」→「このターン」）を反映。
+        5. 2021年印刷で削除された "from its pile"（悪魔の工房／迫害者／レプラコーン／沼の恵み 等）は落とす＝機能差ゼロ。
+       家宝を持つ王国カードは末尾に「（家宝：X）」を付ける（実カードでは枠外の帯なので区切り線は入れない）。
+       非サプライ札の "(This is not in the Supply.)" は既存カタログ（馬/戦利品/狂人/賞品）と同じく書かない。 */
+    bard:            { id: 'bard', name: '詩人', cost: 4, types: ['action', 'fate'],
+                 text: '+2 コイン\n祝福を1つ受ける。' },
+    blessed_village: { id: 'blessed_village', name: '恵みの村', cost: 4, types: ['action', 'fate'],
+                 text: '+1 カード\n+2 アクション\n————\nこのカードを獲得するとき、祝福を1つ取り、それを今か次のあなたのターンの開始時に受ける。' },
+    cemetery:        { id: 'cemetery', name: '墓地', cost: 4, types: ['victory'], vp: 2,
+                 text: '2 勝利点\n————\nこのカードを獲得したとき、あなたの手札から最大4枚までのカードを廃棄する。\n（家宝：呪いの鏡）' },
+    changeling:      { id: 'changeling', name: '取り替え子', cost: 3, types: ['night'],
+                 text: 'このカードを廃棄する。あなたの場に出ているカード1枚と同じカード1枚を獲得する。\n————\n取り替え子を使用するゲームで、コスト3以上のカード1枚を獲得するとき、それを取り替え子と交換してもよい。' },
+    cobbler:         { id: 'cobbler', name: 'カブラー', cost: 5, types: ['night', 'duration'],
+                 text: 'あなたの次のターンの開始時、コスト4以下のカードを1枚獲得し、手札に加える。' },
+    conclave:        { id: 'conclave', name: 'コンクラーベ', cost: 4, types: ['action'],
+                 text: '+2 コイン\nあなたの場に出ていないアクションカード1枚を手札から使用してもよい。\nそうした場合、+1 アクション。' },
+    crypt:           { id: 'crypt', name: '納骨堂', cost: 5, types: ['night', 'duration'],
+                 text: 'あなたの場に出ている、持続でない財宝カードを好きな枚数、（このカードの下に）裏向きで脇に置く。\n残りがある限り、あなたの各ターンの開始時に、その中の1枚を手札に加える。' },
+    cursed_village:  { id: 'cursed_village', name: '呪われた村', cost: 5, types: ['action', 'doom'],
+                 text: '+2 アクション\nあなたの手札が6枚になるまでカードを引く。\n————\nこのカードを獲得するとき、呪詛を1つ受ける。' },
+    den_of_sin:      { id: 'den_of_sin', name: '悪人のアジト', cost: 5, types: ['night', 'duration'],
+                 text: 'あなたの次のターンの開始時、+2 カード。\n————\nこのカードを獲得するとき、（捨て札に置く代わりに）手札に加える。' },
+    devils_workshop: { id: 'devils_workshop', name: '悪魔の工房', cost: 4, types: ['night'],
+                 text: 'このターンにあなたが獲得したカードの枚数が：\n2枚以上の場合、インプ1枚を獲得する。\n1枚の場合、コスト4以下のカード1枚を獲得する。\n0枚の場合、金貨1枚を獲得する。' },
+    druid:           { id: 'druid', name: 'ドルイド', cost: 2, types: ['action', 'fate'],
+                 text: '+1 購入\n脇に置かれた祝福1つを受ける（その祝福はそのまま置いておく）。\n————\n準備：祝福3枚を表向きにして脇に置く。' },
+    exorcist:        { id: 'exorcist', name: '悪魔祓い', cost: 4, types: ['night'],
+                 text: '手札1枚を廃棄する。廃棄したカードよりコストの低い精霊カード1枚を、精霊の山のいずれか1つから獲得する。' },
+    faithful_hound:  { id: 'faithful_hound', name: '忠犬', cost: 2, types: ['action', 'reaction'],
+                 text: '+2 カード\n————\nこれをクリーンアップフェイズ以外で捨て札にするとき、これを脇に置いてもよい。そうした場合、このターンの終了時にこれを手札に加える。' },
+    fool:            { id: 'fool', name: '愚者', cost: 3, types: ['action', 'fate'],
+                 text: 'あなたが森の迷子を持っていない場合、それを受け取り、祝福3枚を取り、好きな順番でその祝福を受ける。\n（家宝：幸運のコイン）' },
+    ghost_town:      { id: 'ghost_town', name: 'ゴーストタウン', cost: 3, types: ['night', 'duration'],
+                 text: 'あなたの次のターンの開始時に、+1 カード および +1 アクション。\n————\nこのカードを獲得するとき、（捨て札に置く代わりに）手札に加える。' },
+    guardian:        { id: 'guardian', name: '守護者', cost: 2, types: ['night', 'duration'],
+                 text: 'あなたの次のターンの開始時に、+1 コイン。それまでの間、他のプレイヤーがアタックカードを使用するとき、あなたはその影響を受けない。\n————\nこのカードを獲得するとき、（捨て札に置く代わりに）手札に加える。' },
+    idol:            { id: 'idol', name: '偶像', cost: 5, types: ['treasure', 'attack', 'fate'], coin: 2,
+                 text: '+2 コイン\n場にある偶像（これを含む）が奇数枚の場合、祝福1つを受ける。そうでない場合、他のプレイヤーは全員、呪い1枚を獲得する。' },
+    leprechaun:      { id: 'leprechaun', name: 'レプラコーン', cost: 3, types: ['action', 'doom'],
+                 text: '金貨1枚を獲得する。場にあるカードがちょうど7枚の場合、願い1枚を獲得する。そうでない場合、呪詛1つを受ける。' },
+    monastery:       { id: 'monastery', name: '修道院', cost: 2, types: ['night'],
+                 text: 'このターンにあなたが獲得したカード1枚につき、手札1枚または場にある銅貨1枚を廃棄してもよい。' },
+    necromancer:     { id: 'necromancer', name: 'ネクロマンサー', cost: 4, types: ['action'],
+                 text: '廃棄置き場にある、表向きで持続ではないアクションカード1枚を選ぶ。それをこのターンの間裏向きにし、廃棄置き場に置いたまま使用する。\n————\n準備：ゾンビ3枚を廃棄置き場に置く。' },
+    night_watchman:  { id: 'night_watchman', name: '夜警', cost: 3, types: ['night'],
+                 text: 'あなたの山札の上から5枚を見る。好きな枚数を捨て札にし、残りを好きな順番で山札の上に戻す。\n————\nこのカードを獲得するとき、（捨て札に置く代わりに）手札に加える。' },
+    pixie:           { id: 'pixie', name: 'ピクシー', cost: 2, types: ['action', 'fate'],
+                 text: '+1 カード\n+1 アクション\n祝福の山の一番上を捨て札にする。これを廃棄して、その祝福を2回受けてもよい。\n（家宝：ヤギ）' },
+    pooka:           { id: 'pooka', name: 'プーカ', cost: 5, types: ['action'],
+                 text: 'あなたの手札から呪われた金貨以外の財宝カード1枚を廃棄してもよい。そうした場合、+4 カード。\n（家宝：呪われた金貨）' },
+    raider:          { id: 'raider', name: '夜襲', cost: 6, types: ['night', 'duration', 'attack'],
+                 text: '手札が5枚以上ある他のプレイヤーは全員、あなたの場に出ているいずれかのカードと同じカード1枚を捨て札にする（それができない場合、手札を公開する）。\nあなたの次のターンの開始時に、+3 コイン。' },
+    sacred_grove:    { id: 'sacred_grove', name: '聖なる木立ち', cost: 5, types: ['action', 'fate'],
+                 text: '+1 購入\n+3 コイン\n祝福を1つ受ける。それにより +1 コイン を得なければ、他のプレイヤーも全員、それを受けてもよい。' },
+    secret_cave:     { id: 'secret_cave', name: '秘密の洞窟', cost: 3, types: ['action', 'duration'],
+                 text: '+1 カード\n+1 アクション\nあなたの手札からカード3枚を捨て札にしてもよい。そうした場合、あなたの次のターンの開始時、+3 コイン。\n（家宝：魔法のランプ）' },
+    shepherd:        { id: 'shepherd', name: '羊飼い', cost: 4, types: ['action'],
+                 text: '+1 アクション\n好きな枚数の勝利点カードを公開して捨て札にする。捨て札にしたカード1枚につき、+2 カード。\n（家宝：牧草地）' },
+    skulk:           { id: 'skulk', name: '暗躍者', cost: 4, types: ['action', 'attack', 'doom'],
+                 text: '+1 購入\n他のプレイヤーは全員、次の呪詛を1つ受ける。\n————\nこのカードを獲得するとき、金貨1枚を獲得する。' },
+    tormentor:       { id: 'tormentor', name: '迫害者', cost: 5, types: ['action', 'attack', 'doom'],
+                 text: '+2 コイン\n他のカードがあなたの場に出ていなければ、インプ1枚を獲得する。そうでない場合、他のプレイヤーは全員、次の呪詛を1つ受ける。' },
+    tracker:         { id: 'tracker', name: '追跡者', cost: 2, types: ['action', 'fate'],
+                 text: '+1 コイン\nこのターン、カード1枚を獲得したとき、それを山札の上に置いてもよい。\n祝福を1つ受ける。\n（家宝：革袋）' },
+    tragic_hero:     { id: 'tragic_hero', name: '悲劇のヒーロー', cost: 5, types: ['action'],
+                 text: '+3 カード\n+1 購入\nカードを引いた後にあなたの手札が8枚以上あるなら、これを廃棄して財宝カード1枚を獲得する。' },
+    vampire:         { id: 'vampire', name: '吸血鬼', cost: 5, types: ['night', 'attack', 'doom'],
+                 text: '他のプレイヤーは全員、次の呪詛を1つ受ける。\nコスト5以下の吸血鬼以外のカード1枚を獲得する。\nこれをコウモリ1枚と交換する。' },
+    werewolf:        { id: 'werewolf', name: '人狼', cost: 5, types: ['action', 'night', 'attack', 'doom'],
+                 text: 'あなたの夜フェイズである場合、他のプレイヤーは全員、次の呪詛を1つ受ける。そうでない場合、+3 カード。' },
+    // ----- 家宝（Heirloom）7種＝開始デッキの銅貨と置き換わる非サプライ財宝（山が存在しない） -----
+    cursed_gold:       { id: 'cursed_gold', name: '呪われた金貨', cost: 4, types: ['treasure', 'heirloom'], coin: 3,
+                 text: '+3 コイン\n呪い1枚を獲得する。' },
+    goat:              { id: 'goat', name: 'ヤギ', cost: 2, types: ['treasure', 'heirloom'], coin: 1,
+                 text: '+1 コイン\n手札からカード1枚を廃棄してもよい。' },
+    haunted_mirror:    { id: 'haunted_mirror', name: '呪いの鏡', cost: 0, types: ['treasure', 'heirloom'], coin: 1,
+                 text: '+1 コイン\n————\nこれを廃棄したとき、手札からアクションカード1枚を捨て札にし、幽霊1枚を獲得してもよい。' },
+    lucky_coin:        { id: 'lucky_coin', name: '幸運のコイン', cost: 4, types: ['treasure', 'heirloom'], coin: 1,
+                 text: '+1 コイン\n銀貨1枚を獲得する。' },
+    magic_lamp:        { id: 'magic_lamp', name: '魔法のランプ', cost: 0, types: ['treasure', 'heirloom'], coin: 1,
+                 text: '+1 コイン\nあなたの場にちょうど1枚だけ出ているカードが（これを含めて）6種類以上ある場合、これを廃棄する。そうした場合、願い3枚を獲得する。' },
+    pasture:           { id: 'pasture', name: '牧草地', cost: 2, types: ['treasure', 'victory', 'heirloom'], coin: 1,
+                 text: '+1 コイン\n（勝利点：所有する屋敷1枚につき1点）' },
+    pouch:             { id: 'pouch', name: '革袋', cost: 2, types: ['treasure', 'heirloom'], coin: 1,
+                 text: '+1 コイン\n+1 購入' },
+
+    // ----- 非サプライ5種（精霊3＝ウィル・オ・ウィスプ/インプ/幽霊、願い、コウモリ） -----
+    will_o_wisp:       { id: 'will_o_wisp', name: 'ウィル・オ・ウィスプ', cost: 0, types: ['action', 'spirit'],
+                 text: '+1 カード\n+1 アクション\nあなたのデッキの一番上のカードを公開する。そのカードのコストが2コイン以下なら、それを手札に加える。' },
+    imp:               { id: 'imp', name: 'インプ', cost: 2, types: ['action', 'spirit'],
+                 text: '+2 カード\nあなたの場に出ていないアクションカード1枚をあなたの手札から使用してもよい。' },
+    ghost:             { id: 'ghost', name: '幽霊', cost: 4, types: ['night', 'duration', 'spirit'],
+                 text: 'アクションカードが公開されるまで、あなたのデッキを上から公開する。公開したアクションカードを脇に置き、残りのカードを捨て札にする。\nあなたの次のターンの開始時、そのアクションカードを2度使用する。' },
+    wish:              { id: 'wish', name: '願い', cost: 0, types: ['action'],
+                 text: '+1 アクション\nこのカードを願いの山に戻す。そうした場合、コスト6コイン以下のカード1枚を獲得し、あなたの手札に加える。' },
+    bat:               { id: 'bat', name: 'コウモリ', cost: 2, types: ['night'],
+                 text: 'あなたの手札から最大2枚までのカードを廃棄する。\nこれにより1枚以上廃棄した場合、このカードを吸血鬼1枚と交換する。' },
+
+    // ----- ゾンビ3種＝ネクロマンサーを使うゲームの準備で廃棄置き場に表向きで置く（各1枚・山が存在しない） -----
+    zombie_apprentice: { id: 'zombie_apprentice', name: 'ゾンビの弟子', cost: 3, types: ['action', 'zombie'],
+                 text: 'あなたの手札にあるアクションカード1枚を廃棄して、+3 カード、+1 アクションを得てもよい。' },
+    zombie_mason:      { id: 'zombie_mason', name: 'ゾンビの石工', cost: 3, types: ['action', 'zombie'],
+                 text: 'あなたのデッキの一番上のカードを廃棄する。そのカードよりコストが最大1コイン多いカード1枚を獲得してもよい。' },
+    zombie_spy:        { id: 'zombie_spy', name: 'ゾンビの密偵', cost: 3, types: ['action', 'zombie'],
+                 text: '+1 カード\n+1 アクション\nあなたのデッキの一番上のカードを見る。そのカードを捨て札にするか元に戻す。' },
   };
 
   /* ---------- 王国カードのセット ----------
@@ -1030,6 +1146,20 @@
   // 移動動物園：馬＝非サプライ30枚（「馬を獲得する」効果でのみ得る）。賞品/トラベラー成長先と同型で
   //   ランダム抽選の母集団には入れない。整合性テストの「全カードがどれかのプールに属す」は満たす。
   DOM.POOLS.horse = ['horse'];
+  /* 夜想曲（Nocturne）＝段階1（カタログのみ。CARD_SETS 未参照＝実サプライには出ない）。
+     正本＝docs/research/nocturne_rules.md。 */
+  DOM.POOLS.nocturne = ['bard', 'blessed_village', 'cemetery', 'changeling', 'cobbler', 'conclave',
+                         'crypt', 'cursed_village', 'den_of_sin', 'devils_workshop', 'druid', 'exorcist',
+                         'faithful_hound', 'fool', 'ghost_town', 'guardian', 'idol', 'leprechaun',
+                         'monastery', 'necromancer', 'night_watchman', 'pixie', 'pooka', 'raider',
+                         'sacred_grove', 'secret_cave', 'shepherd', 'skulk', 'tormentor', 'tracker',
+                         'tragic_hero', 'vampire', 'werewolf'];
+  // 家宝＝開始デッキの銅貨と置き換わる非サプライ財宝。**山が存在しない**（購入も汎用獲得も不可）。
+  DOM.POOLS.heirlooms = ['cursed_gold', 'goat', 'haunted_mirror', 'lucky_coin', 'magic_lamp', 'pasture', 'pouch'];
+  // 精霊3種＋願い＋コウモリ＝非サプライ山（それぞれ専用の効果でのみ得る）。
+  DOM.POOLS.nocturne_np = ['will_o_wisp', 'imp', 'ghost', 'wish', 'bat'];
+  // ゾンビ3種＝ネクロマンサーを使うゲームの準備で廃棄置き場に置く（山ではない）。
+  DOM.POOLS.zombies = ['zombie_apprentice', 'zombie_mason', 'zombie_spy'];
   // 移動動物園の固定10種（自作 showcase）。追放（ラクダの隊列）・馬（そり/騎兵隊/馬丁/貸し馬屋）・
   //   持続（艀/村有緑地）・アタック（魔女の集会）・獲得に反応するリアクション（牧羊犬/村有緑地）を一通り味わえる。
   //   コスト分布＝$2×1／$3×3／$4×3／$5×3。
@@ -1571,6 +1701,80 @@
       text: 'これを脇に置く。脇に置いた場合、次のターンの開始時にそれを使用する。' },
     way_of_the_worm: { name: 'ミミズの習性', nameEn: 'Way of the Worm', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
       text: 'サプライの屋敷1枚を追放する。' },
+    /* ===== 夜想曲（Nocturne）横型29種 ＝ 祝福12・呪詛12・状態5 =====
+       いずれも**カードではない**（`DOM.CARDS` に入れない／得点にも所有カードにも数えない）。買えない。
+       祝福＝幸運(Fate)カードから「受ける」／呪詛＝不運(Doom)カードから「受ける」／状態＝プレイヤーが「取る」。
+       正本＝docs/research/nocturne_rules.md。 */
+    the_earths_gift: { name: '大地の恵み', nameEn: 'The Earth\'s Gift', kind: 'boon', expansion: 'nocturne', cost: 0, debt: 0,
+      text: '手札の財宝カード1枚を捨て札にして、コスト4コイン以下のカード1枚を獲得してもよい。' },
+    the_fields_gift: { name: '田畑の恵み', nameEn: 'The Field\'s Gift', kind: 'boon', expansion: 'nocturne', cost: 0, debt: 0,
+      text: '+1 アクション\n+1 コイン\n（これをクリーンアップフェイズまで持っておく。）' },
+    the_flames_gift: { name: '炎の恵み', nameEn: 'The Flame\'s Gift', kind: 'boon', expansion: 'nocturne', cost: 0, debt: 0,
+      text: '手札のカード1枚を廃棄してもよい。' },
+    the_forests_gift: { name: '森の恵み', nameEn: 'The Forest\'s Gift', kind: 'boon', expansion: 'nocturne', cost: 0, debt: 0,
+      text: '+1 購入\n+1 コイン\n（これをクリーンアップフェイズまで持っておく。）' },
+    the_moons_gift: { name: '月の恵み', nameEn: 'The Moon\'s Gift', kind: 'boon', expansion: 'nocturne', cost: 0, debt: 0,
+      text: '捨て札置き場をすべて見る。\nその中のカード1枚を山札の上に置いてもよい。' },
+    the_mountains_gift: { name: '山の恵み', nameEn: 'The Mountain\'s Gift', kind: 'boon', expansion: 'nocturne', cost: 0, debt: 0,
+      text: '銀貨1枚を獲得する。' },
+    the_rivers_gift: { name: '川の恵み', nameEn: 'The River\'s Gift', kind: 'boon', expansion: 'nocturne', cost: 0, debt: 0,
+      text: 'このターンの終了時、+1 カード。\n（これをクリーンアップフェイズまで持っておく。）' },
+    the_seas_gift: { name: '海の恵み', nameEn: 'The Sea\'s Gift', kind: 'boon', expansion: 'nocturne', cost: 0, debt: 0,
+      text: '+1 カード' },
+    the_skys_gift: { name: '空の恵み', nameEn: 'The Sky\'s Gift', kind: 'boon', expansion: 'nocturne', cost: 0, debt: 0,
+      text: '手札3枚を捨て札にして、金貨1枚を獲得してもよい。' },
+    the_suns_gift: { name: '太陽の恵み', nameEn: 'The Sun\'s Gift', kind: 'boon', expansion: 'nocturne', cost: 0, debt: 0,
+      text: '山札の上から4枚を見る。\n好きな枚数を捨て札にし、残りを好きな順番で山札の上に戻す。' },
+    the_swamps_gift: { name: '沼の恵み', nameEn: 'The Swamp\'s Gift', kind: 'boon', expansion: 'nocturne', cost: 0, debt: 0,
+      text: 'ウィル・オ・ウィスプ1枚を獲得する。' },
+    the_winds_gift: { name: '風の恵み', nameEn: 'The Wind\'s Gift', kind: 'boon', expansion: 'nocturne', cost: 0, debt: 0,
+      text: '+2 カード\n手札からカード2枚を捨て札にする。' },
+
+    /* ---- 夜想曲（Nocturne）呪詛（Hex）12種。横型・コスト無し・買えない。
+       不運(Doom)カードが1枚でもあれば、12枚をシャッフルして裏向きの山にする。
+       このとき 錯乱／嫉妬 と 生活苦／二重苦 も一緒に置く＝幻惑・羨望・みじめな生活の配布先（RB 準備 逐語）。
+       「他のプレイヤーは各自、次の呪詛を受ける」＝呪詛は1枚だけめくり、全員が同じ1枚に従う（人数分めくらない）。
+       解決後は必ず呪詛の捨て札へ（＝前に置き続ける呪詛は無い。状態カードは別物）。
+       12種すべて強制＝任意("you may")は1つも無い。 ---- */
+    bad_omens: { name: '凶兆', nameEn: 'Bad Omens', kind: 'hex', expansion: 'nocturne', cost: 0, debt: 0,
+      text: '山札を捨て札置き場に置く。\n捨て札置き場をすべて見て、その中から銅貨2枚を山札の上に置く。\n（それができない場合、捨て札置き場をすべて公開する。）' },
+    delusion: { name: '幻惑', nameEn: 'Delusion', kind: 'hex', expansion: 'nocturne', cost: 0, debt: 0,
+      text: 'あなたが錯乱も嫉妬も持っていなければ、錯乱を取る。' },
+    envy: { name: '羨望', nameEn: 'Envy', kind: 'hex', expansion: 'nocturne', cost: 0, debt: 0,
+      text: 'あなたが錯乱も嫉妬も持っていなければ、嫉妬を取る。' },
+    famine: { name: '飢饉', nameEn: 'Famine', kind: 'hex', expansion: 'nocturne', cost: 0, debt: 0,
+      text: '山札の上から3枚を公開し、そのうちのアクションカードをすべて捨て札にする。\n残りを山札に加えてシャッフルする。' },
+    fear: { name: '恐怖', nameEn: 'Fear', kind: 'hex', expansion: 'nocturne', cost: 0, debt: 0,
+      text: '手札が5枚以上の場合、手札からアクションカードか財宝カード1枚を捨て札にする。\n（それができない場合、手札を公開する。）' },
+    greed: { name: '貪欲', nameEn: 'Greed', kind: 'hex', expansion: 'nocturne', cost: 0, debt: 0,
+      text: '銅貨1枚を獲得し、山札の上に置く。' },
+    haunting: { name: '憑依', nameEn: 'Haunting', kind: 'hex', expansion: 'nocturne', cost: 0, debt: 0,
+      text: '手札が4枚以上の場合、その中のカード1枚を山札の上に置く。' },
+    locusts: { name: '蝗害', nameEn: 'Locusts', kind: 'hex', expansion: 'nocturne', cost: 0, debt: 0,
+      text: '山札の一番上のカード1枚を廃棄する。\nそれが銅貨か屋敷の場合、呪い1枚を獲得する。\nそうでない場合、廃棄したカードと同じ種別を1つ以上持ち、それよりコストが少ないカード1枚を獲得する。' },
+    misery: { name: 'みじめな生活', nameEn: 'Misery', kind: 'hex', expansion: 'nocturne', cost: 0, debt: 0,
+      text: 'このゲーム中にあなたが初めてみじめな生活の効果を受けた場合、生活苦を取る。\nそうでない場合、生活苦を裏返して二重苦にする。' },
+    plague: { name: '疫病', nameEn: 'Plague', kind: 'hex', expansion: 'nocturne', cost: 0, debt: 0,
+      text: '呪い1枚を獲得し、手札に加える。' },
+    poverty: { name: '貧困', nameEn: 'Poverty', kind: 'hex', expansion: 'nocturne', cost: 0, debt: 0,
+      text: '手札が3枚になるように捨て札にする。' },
+    war: { name: '戦争', nameEn: 'War', kind: 'hex', expansion: 'nocturne', cost: 0, debt: 0,
+      text: 'コスト3コインまたは4コインのカードが公開されるまで、山札の上からカードを公開する。\nそのカードを廃棄し、残りを捨て札にする。' },
+
+    /* ---- 夜想曲（Nocturne）状態（State）5種。横型・コスト無し・買えない・「取る」もの（獲得ではない）。
+       物理的には3種類の札＝錯乱／嫉妬（両面・各プレイヤー1枚）、生活苦／二重苦（両面・各プレイヤー1枚）、
+       森の迷子（ゲーム中1枚だけ・両面同文）。カタログでは表示用に5件の独立エントリとして持つ。
+       錯乱・嫉妬は「持っている間は何も起きない」＝購入フェイズの開始時に返して初めて発動し、そのターンの残り全部に効く。 ---- */
+    deluded: { name: '錯乱', nameEn: 'Deluded', kind: 'state', expansion: 'nocturne', cost: 0, debt: 0,
+      text: 'あなたの購入フェイズの開始時、このカードを返し、あなたはこのターンが終わるまでアクションカードを購入できない。' },
+    envious: { name: '嫉妬', nameEn: 'Envious', kind: 'state', expansion: 'nocturne', cost: 0, debt: 0,
+      text: 'あなたの購入フェイズの開始時、このカードを返し、このターンが終わるまで銀貨と金貨は1コインのみ生み出す。' },
+    miserable: { name: '生活苦', nameEn: 'Miserable', kind: 'state', expansion: 'nocturne', cost: 0, debt: 0,
+      text: '-2 勝利点' },
+    twice_miserable: { name: '二重苦', nameEn: 'Twice Miserable', kind: 'state', expansion: 'nocturne', cost: 0, debt: 0,
+      text: '-4 勝利点' },
+    lost_in_the_woods: { name: '森の迷子', nameEn: 'Lost in the Woods', kind: 'state', expansion: 'nocturne', cost: 0, debt: 0,
+      text: 'あなたのターンの開始時、あなたは手札1枚を捨て札にして祝福を1つ受けてもよい。' },
   };
   // 帝国ランドマーク21種（抽選元）。イベントは未実装（docs/research/landscape_cards.md §2 にデータあり）。
   DOM.LANDMARKS_EMPIRES = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'landmark');
@@ -1582,6 +1786,12 @@
   DOM.EVENTS_MENAGERIE = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'event' && DOM.LANDSCAPES[id].expansion === 'menagerie');
   // 移動動物園 習性（Way）20種（抽選元）。買わない横型＝アクションの記載効果の代わりに使う。
   DOM.WAYS_MENAGERIE = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'way');
+  // 夜想曲：祝福12種（幸運カードから受ける横型・買わない）。
+  DOM.BOONS_NOCTURNE = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'boon');
+  // 夜想曲：呪詛12種（不運カードから受ける横型・買わない）。
+  DOM.HEXES_NOCTURNE = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'hex');
+  // 夜想曲：状態5種（プレイヤーが「取る」横型。獲得ではない）。
+  DOM.STATES_NOCTURNE = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'state');
   // ルネサンス プロジェクト20種（抽選元）。買う横型＝BUY_PROJECT で発火（1人2つまで・同じものは1回だけ）。
   DOM.PROJECTS_RENAISSANCE = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'project' && DOM.LANDSCAPES[id].expansion === 'renaissance');
   // ルネサンス アーティファクト5種（抽選しない＝付与カードが王国にあれば自動で盤面に出る）。

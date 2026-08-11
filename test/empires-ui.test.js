@@ -210,11 +210,10 @@ try {
     ok(!runtimeError && doc.body.textContent.includes('ランドマーク（帝国・横型）'), 'カード一覧にランドマーク群が出る');
     ok(doc.body.textContent.includes('イベント（帝国・横型・購入フェイズに買う）'), 'カード一覧にイベント群が出る');
     // カード一覧の .landmark-mini は 横型すべて（ランドマーク21＋帝国イベント13＋冒険イベント20＋
-    //   ルネサンスのプロジェクト20＋アーティファクト5＋移動動物園のイベント20＋習性20）に使う
-    ok($all('.landmark-mini img').length === DOM.LANDMARKS_EMPIRES.length + DOM.EVENTS_EMPIRES.length +
-      (DOM.EVENTS_ADVENTURES || []).length + (DOM.PROJECTS_RENAISSANCE || []).length + (DOM.ARTIFACTS_RENAISSANCE || []).length +
-      (DOM.EVENTS_MENAGERIE || []).length + (DOM.WAYS_MENAGERIE || []).length,
-      'カード一覧に全ランドマーク＋全イベント＋プロジェクト/アーティファクト＋習性のアートが並ぶ');
+    //   ルネサンスのプロジェクト20＋アーティファクト5＋移動動物園のイベント20＋習性20＋
+    //   夜想曲の祝福12＋呪詛12＋状態5）に使う＝`DOM.LANDSCAPES` の全件と一致する。
+    ok($all('.landmark-mini img').length === Object.keys(DOM.LANDSCAPES).length,
+      'カード一覧に横型カード（DOM.LANDSCAPES）が全部並ぶ');
     UI.view = 'setup';
     // セット選択に empires-landmarks / empires-events
     ok(DOM.CARD_SETS.some((x) => x.id === 'empires-landmarks'), 'CARD_SETS に empires-landmarks がある');

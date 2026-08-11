@@ -64,12 +64,17 @@ const SKIN = {
   project:    { base: [150, 62, 46] },
   artifact:   { base: [72, 84, 104] },
   way:        { base: [74, 104, 44] },  // 移動動物園：習性＝深い黄緑（ランドマークの青緑と混ざらない色）
+  // 夜想曲：祝福＝明るい黄金（本家の Boon）／呪詛＝濃い紫（Hex）／状態＝灰褐色（State）
+  boon:       { base: [160, 124, 34] },
+  hex:        { base: [86, 44, 110] },
+  state:      { base: [96, 90, 80] },
 };
-const WITH_COIN = { event: true, project: true, landmark: false, artifact: false, way: false };
+const WITH_COIN = { event: true, project: true, landmark: false, artifact: false, way: false, boon: false, hex: false, state: false };
 const KIND_LABEL = {
   event: 'イベント / Event', landmark: 'ランドマーク / Landmark',
   project: 'プロジェクト / Project', artifact: 'アーティファクト / Artifact',
   way: '習性 / Way',
+  boon: '祝福 / Boon', hex: '呪詛 / Hex', state: '状態 / State',
 };
 
 const W = 1536, H = 1024;             // 合成解像度（縦型 1024×1536 の 90度相当）

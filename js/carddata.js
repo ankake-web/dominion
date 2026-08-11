@@ -98,7 +98,8 @@
   // 表示枠の色キー（持続を最優先＝本家ドミニオン同様オレンジ。次いで attack/reaction を優先。
   // 勝利点・アクション等の複合も1つに決める）
   function frameType(types) {
-    if (types.includes('duration')) return 'duration'; // 海辺：持続はオレンジ（最優先）
+    if (types.includes('night')) return 'night';       // 夜想曲：夜行は黒（持続より優先＝本家も夜行カードは黒地）
+    if (types.includes('duration')) return 'duration'; // 海辺：持続はオレンジ
     if (types.includes('attack')) return 'attack';
     if (types.includes('reaction')) return 'reaction';
     if (types.includes('treasure')) return 'treasure';
@@ -110,6 +111,24 @@
   // 種別ラベル（日本語）
   function typeLabel(types) {
     const has = (t) => types.includes(t);
+    // 夜想曲：夜行（Night）の複合は持続より先に決める（夜行＋持続があるため）
+    if (has('night')) {
+      if (has('action') && has('attack') && has('doom')) return 'アクション・夜行・アタック・不運'; // 人狼
+      if (has('attack') && has('doom')) return '夜行・アタック・不運';                              // 吸血鬼
+      if (has('duration') && has('attack')) return '夜行・持続・アタック';                          // 夜襲
+      if (has('duration') && has('spirit')) return '夜行・持続・精霊';                              // 幽霊
+      if (has('duration')) return '夜行・持続';           // カブラー/納骨堂/悪人のアジト/ゴーストタウン/守護者
+      return '夜行';                                      // 取り替え子/悪魔の工房/悪魔祓い/修道院/夜警/コウモリ
+    }
+    // 夜想曲：家宝／精霊／ゾンビ／幸運／不運（いずれも夜行ではない側）
+    if (has('heirloom')) return has('victory') ? '財宝・勝利点・家宝' : '財宝・家宝'; // 牧草地 / 他6種
+    if (has('spirit')) return 'アクション・精霊';                                     // ウィル・オ・ウィスプ/インプ
+    if (has('zombie')) return 'アクション・ゾンビ';
+    if (has('fate')) {
+      if (has('treasure')) return has('attack') ? '財宝・アタック・幸運' : '財宝・幸運'; // 偶像
+      return 'アクション・幸運';                                                         // 詩人/恵みの村/ドルイド/愚者/ピクシー/聖なる木立ち/追跡者
+    }
+    if (has('doom')) return has('attack') ? 'アクション・アタック・不運' : 'アクション・不運'; // 暗躍者・迫害者 / 呪われた村・レプラコーン
     // 海辺：持続の複合（本家の表記順に合わせる）
     if (has('duration')) {
       if (has('treasure') && has('reaction')) return '財宝・持続・リアクション'; // 海賊
@@ -161,6 +180,22 @@
   // 種別ラベル（英語。プレートに日英併記する＝基準カードと同じ体裁）
   function typeLabelEn(types) {
     const has = (t) => types.includes(t);
+    if (has('night')) {
+      if (has('action') && has('attack') && has('doom')) return 'Action - Night - Attack - Doom'; // Werewolf
+      if (has('attack') && has('doom')) return 'Night - Attack - Doom';                           // Vampire
+      if (has('duration') && has('attack')) return 'Night - Duration - Attack';                   // Raider
+      if (has('duration') && has('spirit')) return 'Night - Duration - Spirit';                   // Ghost
+      if (has('duration')) return 'Night - Duration';
+      return 'Night';
+    }
+    if (has('heirloom')) return has('victory') ? 'Treasure - Victory - Heirloom' : 'Treasure - Heirloom';
+    if (has('spirit')) return 'Action - Spirit';
+    if (has('zombie')) return 'Action - Zombie';
+    if (has('fate')) {
+      if (has('treasure')) return has('attack') ? 'Treasure - Attack - Fate' : 'Treasure - Fate';
+      return 'Action - Fate';
+    }
+    if (has('doom')) return has('attack') ? 'Action - Attack - Doom' : 'Action - Doom';
     if (has('duration')) {
       if (has('treasure') && has('reaction')) return 'Treasure - Duration - Reaction'; // Pirate
       if (has('command')) return 'Action - Duration - Command';                        // Prince/Captain

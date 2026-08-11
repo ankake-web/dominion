@@ -903,11 +903,18 @@
     addC('王国カード（ルネサンス）', P.renaissance ? byCost(P.renaissance) : null);
     addC('王国カード（移動動物園）', P.menagerie ? byCost(P.menagerie) : null);
     addC('馬（移動動物園・非サプライ）', P.horse ? P.horse.slice() : null);
+    addC('王国カード（夜想曲）', P.nocturne ? byCost(P.nocturne) : null);
+    addC('家宝（夜想曲・開始デッキの銅貨と置き換わる）', P.heirlooms ? byCost(P.heirlooms) : null);
+    addC('非サプライ（夜想曲：精霊・願い・コウモリ）', P.nocturne_np ? byCost(P.nocturne_np) : null);
+    addC('ゾンビ（夜想曲・準備で廃棄置き場に置く）', P.zombies ? byCost(P.zombies) : null);
     addL('ランドマーク（帝国・横型）', DOM.LANDMARKS_EMPIRES);
     addL('イベント（帝国・横型・購入フェイズに買う）', DOM.EVENTS_EMPIRES);
     addL('イベント（冒険・横型・購入フェイズに買う）', DOM.EVENTS_ADVENTURES);
     addL('イベント（移動動物園・横型・購入フェイズに買う）', DOM.EVENTS_MENAGERIE);
     addL('習性（移動動物園・横型・アクションの効果の代わりに使う）', DOM.WAYS_MENAGERIE);
+    addL('祝福（夜想曲・横型・幸運カードから受ける）', DOM.BOONS_NOCTURNE);
+    addL('呪詛（夜想曲・横型・不運カードから受ける）', DOM.HEXES_NOCTURNE);
+    addL('状態（夜想曲・横型・プレイヤーが取る）', DOM.STATES_NOCTURNE);
     addL('プロジェクト（ルネサンス・横型・1人2つまで）', DOM.PROJECTS_RENAISSANCE);
     addL('アーティファクト（ルネサンス・横型・1人だけが持てる）', DOM.ARTIFACTS_RENAISSANCE);
     addC('プロモカード', P.promo ? byCost(P.promo) : null);

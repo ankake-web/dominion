@@ -82,6 +82,9 @@
     'engineer', 'city_quarter', 'overlord', 'royal_blacksmith', 'farmers_market', 'chariot_race', 'enchantress', 'sacrifice', 'temple', 'villa', 'archive', 'capital', 'charm', 'forum', 'groundskeeper', 'legionary', 'wild_hunt', 'crown', 'encampment', 'plunder', 'patrician', 'emporium', 'settlers', 'bustling_village', 'catapult', 'rocks', 'gladiator', 'fortune', 'castles', 'humble_castle', 'crumbling_castle', 'small_castle', 'haunted_castle', 'opulent_castle', 'sprawling_castle', 'grand_castle', 'kings_castle',
     // 移動動物園：馬＝非サプライ（「馬を獲得する」効果でのみ得る）＝汎用獲得は選ばない（NON_SUPPLY_SET）。
     'horse',
+    // 段階1追加（夜想曲。CARD_SETS 未参照＝実際には獲得されないが GAIN_ORDER=全カードの整合性を満たす）
+    'bard', 'blessed_village', 'cemetery', 'changeling', 'cobbler', 'conclave', 'crypt', 'cursed_village', 'den_of_sin', 'devils_workshop', 'druid', 'exorcist', 'faithful_hound', 'fool', 'ghost_town', 'guardian', 'idol', 'leprechaun', 'monastery', 'necromancer', 'night_watchman', 'pixie', 'pooka', 'raider', 'sacred_grove', 'secret_cave', 'shepherd', 'skulk', 'tormentor', 'tracker', 'tragic_hero', 'vampire', 'werewolf',
+    'cursed_gold', 'goat', 'haunted_mirror', 'lucky_coin', 'magic_lamp', 'pasture', 'pouch', 'will_o_wisp', 'imp', 'ghost', 'wish', 'bat', 'zombie_apprentice', 'zombie_mason', 'zombie_spy',
     'copper', 'curse'];
   // 収穫祭：賞品(Prize)は馬上槍試合でのみ獲得する非サプライ札＝汎用の獲得効果(bestGain/bestGainExact)は
   // 絶対に賞品を選ばない（豊穣の角等で$0賞品を不正獲得しない／賞品を拒否する reducer と噛み合って無限ループしない）。

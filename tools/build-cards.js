@@ -56,6 +56,8 @@ const SKIN = {
   reaction:{ base: [18, 88, 84],   ramp: GOLD_RAMP },
   // 海辺の持続＝本家同様オレンジ地＋金トリム
   duration:{ base: [176, 84, 20],  ramp: GOLD_RAMP },
+  // 夜想曲の夜行＝本家同様ほぼ黒の地＋金トリム（持続より優先＝夜行＋持続も黒）
+  night:   { base: [30, 28, 38],   ramp: GOLD_RAMP },
 };
 
 (async () => {
