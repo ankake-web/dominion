@@ -15270,11 +15270,13 @@
     const secretSeer = (s.turn && s.turn.possessedBy != null && s.pending && s.pending.player === s.turn.active)
       ? s.turn.possessedBy : (s.pending ? s.pending.player : -1);
     // 冒険：偵察隊（scouting_party）の「山札の上5枚を見る」も私的な看破＝本人と支配者以外には伏せる。
-    if (s.pending && (s.pending.type === 'sentry' || s.pending.type === 'lookout' || s.pending.type === 'catacombs' || s.pending.type === 'survivors' || s.pending.type === 'scouting_party') && Array.isArray(s.pending.cards) && seat !== s.pending.player && seat !== secretSeer) {
+    // 夜想曲：`look_arrange`（夜警＝山札の上5枚／太陽の恵み＝4枚）は「**見る**」＝本人だけの私的情報。
+    if (s.pending && (s.pending.type === 'sentry' || s.pending.type === 'lookout' || s.pending.type === 'catacombs' || s.pending.type === 'survivors' || s.pending.type === 'scouting_party' || s.pending.type === 'look_arrange') && Array.isArray(s.pending.cards) && seat !== s.pending.player && seat !== secretSeer) {
       // 暗黒時代：地下墓所/生存者の「山札の上N枚を見る」は私的（公開ではない）＝本人と支配者以外には伏せる。
       s.pending = Object.assign({}, s.pending, { cards: new Array(s.pending.cards.length).fill('back') });
     }
-    if (s.pending && s.pending.type === 'crystal_ball' && s.pending.card != null && seat !== s.pending.player && seat !== secretSeer) {
+    // 夜想曲：ゾンビの密偵の「山札の一番上を見る」も私的情報（水晶玉と同型）。
+    if (s.pending && (s.pending.type === 'crystal_ball' || s.pending.type === 'zombie_spy') && s.pending.card != null && seat !== s.pending.player && seat !== secretSeer) {
       s.pending = Object.assign({}, s.pending, { card: 'back' });
     }
     // ギルド：医者の過払いで「見た」山札の上1枚は私的（本人と支配者のみ）。他席には伏せる。

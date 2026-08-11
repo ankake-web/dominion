@@ -1167,6 +1167,24 @@ console.log('\n=== N4: 取り替え子／ネクロマンサー＋ゾンビ／幽
   ok(!(t.players[0].ghostSetAside || []).length, '脇なし');
 }
 
+console.log('\n=== N0/N3: オンラインの看破（私的情報が相手に漏れない） ===');
+{
+  // 夜警／太陽の恵みの「山札の上を**見る**」は本人だけの私的情報（公開ではない）。
+  const s = mk(king(['night_watchman']));
+  s.pending = { type: 'look_arrange', player: 0, cards: ['gold', 'estate', 'copper'], source: 'night_watchman' };
+  const foeView = E.maskStateFor(s, 1);
+  ok(foeView.pending.cards.every((c) => c === 'back'), '夜警で見た山札の上は相手に見えない');
+  const myView = E.maskStateFor(s, 0);
+  ok(myView.pending.cards[0] === 'gold', '本人には見える');
+}
+{
+  // ゾンビの密偵の「山札の一番上を見る」も私的情報（水晶玉と同型）。
+  const s = mk(king(['necromancer']));
+  s.pending = { type: 'zombie_spy', player: 0, card: 'gold' };
+  ok(E.maskStateFor(s, 1).pending.card === 'back', 'ゾンビの密偵で見たカードは相手に見えない');
+  ok(E.maskStateFor(s, 0).pending.card === 'gold', '本人には見える');
+}
+
 console.log('\n=== N0b: CPU が夜フェイズで詰まらない ===');
 {
   const s = mk(king(['guardian', 'monastery']));
