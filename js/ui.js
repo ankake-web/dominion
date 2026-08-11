@@ -2122,6 +2122,86 @@
         'おまかせで残り ' + piles.length + '枚 を獲得');
       return modalShell('植民 — 獲得する山を選ぶ', 'アクションのサプライ山それぞれから1枚ずつ獲得します（残り ' + piles.length + '山）。獲得する順番は選べます。', chips, footer);
     }
+    /* ===== 夜想曲（Nocturne）：祝福／呪詛／状態 ===== */
+    if (pd.type === 'boon_wind') {
+      const n = Math.min(2, p.hand.length);
+      return modalSelectN(p, '風の恵み — 2枚捨てる', '手札を' + n + '枚選んで捨てます（強制）。', n, '確定（捨てる）',
+        (cards) => dispatch({ type: 'BOON_WIND_DISCARD', cards }));
+    }
+    if (pd.type === 'boon_flame') {
+      return modalSingleHand(p, '炎の恵み — 廃棄', '手札から1枚を廃棄できます（しなくてもよい）。', () => true,
+        (card) => dispatch({ type: 'BOON_FLAME_TRASH', card }),
+        { label: '廃棄しない', on: () => dispatch({ type: 'BOON_FLAME_TRASH', card: null }) });
+    }
+    if (pd.type === 'boon_earth') {
+      return modalSingleHand(p, '大地の恵み — 財宝を捨てる', '手札の財宝1枚を捨てると、コスト4以下のカードを1枚獲得できます（しなくてもよい）。',
+        (id) => isTreasureNow(state, id), (card) => dispatch({ type: 'BOON_EARTH_DISCARD', card }),
+        { label: '捨てない', on: () => dispatch({ type: 'BOON_EARTH_DISCARD', card: null }) }, '捨てる');
+    }
+    if (pd.type === 'boon_earth_gain') {
+      return modalGainSupply(state, '大地の恵み — 獲得', 'コスト4以下のカードを1枚獲得します。',
+        (id) => DOM.engine.costUpTo(state, id, 4), (id) => dispatch({ type: 'BOON_EARTH_GAIN', card: id }));
+    }
+    if (pd.type === 'boon_sky') {
+      const n = Math.min(3, p.hand.length);
+      const chips = p.hand.map((id, idx) => {
+        const pos = UI.selection.indexOf(idx);
+        return cardEl(id, { size: 'sm', extra: pos >= 0 ? 'selected' : 'selectable', badge: pos >= 0 ? String(pos + 1) : null,
+          onClick: () => { const i = UI.selection.indexOf(idx); if (i >= 0) UI.selection.splice(i, 1); else if (UI.selection.length < n) UI.selection.push(idx); render(); } });
+      });
+      const remain = n - UI.selection.length;
+      const footer = h('div', null,
+        h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled', style: 'margin-bottom:8px',
+          onclick: () => dispatch({ type: 'BOON_SKY_DISCARD', cards: UI.selection.map((i) => p.hand[i]) }) },
+          remain === 0 ? (n === 3 ? '確定（3枚捨てて金貨を獲得）' : '確定（' + n + '枚捨てる／金貨は得られません）') : ('あと ' + remain + ' 枚')),
+        h('button', { class: 'btn btn-block', onclick: () => dispatch({ type: 'BOON_SKY_DISCARD', cards: null }) }, '捨てない'));
+      return modalShell('空の恵み — 3枚捨てて金貨', '手札を' + n + '枚選んで捨てると金貨1枚を獲得します（手札が3枚未満なら捨てるだけで金貨は得られません）。', chips, footer);
+    }
+    if (pd.type === 'boon_moon') {
+      const ids = [...new Set(p.discard)];
+      return modalPickIds('月の恵み — 捨て札から山札の上へ', '捨て札（' + p.discard.length + '枚）の中から1枚を山札の上に置けます（置かなくてもよい）。',
+        ids, (id) => dispatch({ type: 'BOON_MOON_TOPDECK', card: id }), '山札の上に置く',
+        { label: '置かない', on: () => dispatch({ type: 'BOON_MOON_TOPDECK', card: null }) });
+    }
+    if (pd.type === 'look_arrange') {
+      const cards = pd.cards || [];
+      const src = (DOM.LANDSCAPES[pd.source] && DOM.LANDSCAPES[pd.source].name) || (DOM.CARDS[pd.source] && DOM.CARDS[pd.source].name) || '';
+      const chips = cards.map((id, idx) =>
+        cardEl(id, { size: 'sm', extra: UI.selection.includes(idx) ? 'selected' : 'selectable',
+          badge: UI.selection.includes(idx) ? '捨' : null,
+          onClick: () => { const i = UI.selection.indexOf(idx); if (i >= 0) UI.selection.splice(i, 1); else UI.selection.push(idx); render(); } }));
+      const footer = h('button', { class: 'btn btn-primary btn-block',
+        onclick: () => { const disc = UI.selection.map((i) => cards[i]); const top = cards.filter((c, i) => UI.selection.indexOf(i) < 0); dispatch({ type: 'LOOK_ARRANGE_RESOLVE', discard: disc, top }); } },
+        '確定（' + UI.selection.length + '枚 捨て、残り ' + (cards.length - UI.selection.length) + '枚 を山札の上へ）');
+      return modalShell(src + ' — 山札の上' + cards.length + '枚', 'タップして捨てるカードを選びます（選ばなかったカードはこの順のまま山札の上に戻ります）。', chips, footer);
+    }
+    if (pd.type === 'hex' && pd.stage === 'react') {
+      return modalOptions('呪詛を受ける', '呪詛が1枚めくられ、防げなかった全員が同じ呪詛を受けます。', reactOptions(p, pd, { type: 'HEX_REACT' }));
+    }
+    if (pd.type === 'hex_poverty') {
+      const n = Math.max(0, p.hand.length - 3);
+      return modalSelectN(p, '貧困 — 手札3枚まで捨てる', '手札が3枚になるように' + n + '枚 選んで捨てます。', n, '確定（捨てる）',
+        (cards) => dispatch({ type: 'HEX_POVERTY_DISCARD', cards }));
+    }
+    if (pd.type === 'hex_fear') {
+      return modalSingleHand(p, '恐怖 — アクションか財宝を捨てる', '手札からアクションカードか財宝カード1枚を捨てます（強制）。',
+        (id) => DOM.isType(id, 'action') || isTreasureNow(state, id),
+        (card) => dispatch({ type: 'HEX_FEAR_DISCARD', card }), null, '捨てる');
+    }
+    if (pd.type === 'hex_haunting') {
+      return modalSingleHand(p, '憑依 — 手札を山札の上へ', '手札から1枚を選んで山札の上に置きます（強制）。', () => true,
+        (card) => dispatch({ type: 'HEX_HAUNTING_TOPDECK', card }), null, '山札の上に置く');
+    }
+    if (pd.type === 'hex_locusts') {
+      return modalGainSupply(state, '蝗害 — 獲得', '廃棄した「' + (DOM.CARDS[pd.ref] ? DOM.CARDS[pd.ref].name : '') + '」と同じ種別を持ち、それより安いカードを1枚獲得します。',
+        (id) => DOM.engine.costUnder(state, id, pd.coin, { pot: pd.pot || 0, debt: pd.debt || 0 }) && DOM.engine.sharesType(id, pd.ref),
+        (id) => dispatch({ type: 'HEX_LOCUSTS_GAIN', card: id }));
+    }
+    if (pd.type === 'lost_in_the_woods') {
+      return modalSingleHand(p, '森の迷子 — 捨てて祝福', '手札1枚を捨てると祝福を1つ受けられます（しなくてもよい）。', () => true,
+        (card) => dispatch({ type: 'LOST_IN_WOODS', card }),
+        { label: '何もしない', on: () => dispatch({ type: 'LOST_IN_WOODS', card: null }) }, '捨てる');
+    }
     if (pd.type === 'nobles') return modalOptions('貴族', '次から1つを選びます。', [
       { label: '+3 カード', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'cards' }) },
       { label: '+2 アクション', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'actions' }) },

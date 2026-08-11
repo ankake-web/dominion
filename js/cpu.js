@@ -470,6 +470,9 @@
     if (has('poor_house')) return 'poor_house';             // +$4（手札の財宝で減）
     if (has('squire')) return 'squire';                     // +$1＋選択
     if (has('beggar')) return 'beggar';                     // 銅貨3枚を手札に
+    // 夜想曲：ターミナル（アタック＞コイン＋祝福）
+    if (has('skulk')) return 'skulk';                       // +1購入＋全員に呪詛（獲得時に金貨）
+    if (has('bard')) return 'bard';                         // +2コイン＋祝福を1つ受ける
     // 玉座の間: 2回使える別アクションが手札にあるときだけ（無駄打ち回避）
     if (has('throne_room') && p.hand.some((c) => isType(c, 'action') && c !== 'throne_room')) return 'throne_room';
     if (has('council_room')) return 'council_room'; // +4カード+1購入
@@ -2051,6 +2054,62 @@
       // 植民＝残りをまとめて獲得する（獲得順にこだわらない＝engine が高コスト順に処理する）。
       case 'populate':
         return { type: 'POPULATE_GAIN', auto: true };
+
+      /* ===== 拡張: 夜想曲（Nocturne）＝祝福／呪詛／状態 =====
+         **どの分岐でも null を返さない**（オンラインで reduce(state,null) が TypeError →部屋が固まる）。
+         任意効果は `{type:'X', card:null}`＝辞退を返す。 */
+      case 'boon_wind': // 風の恵み＝手札2枚を捨てる（強制）
+        return { type: 'BOON_WIND_DISCARD', cards: pickDiscards(p.hand, Math.min(2, p.hand.length)) };
+      case 'boon_flame': { // 炎の恵み＝手札1枚を廃棄してもよい（呪い/銅貨/屋敷だけ捨てる）
+        const junk = p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0];
+        const worth = junk != null && trashValue(junk) <= 2;
+        return { type: 'BOON_FLAME_TRASH', card: worth ? junk : null };
+      }
+      case 'boon_earth': { // 大地の恵み＝財宝1枚を捨てて $4以下を獲得してもよい（銅貨を捨てられるときだけ）
+        const cop = p.hand.includes('copper') ? 'copper' : null;
+        return { type: 'BOON_EARTH_DISCARD', card: cop };
+      }
+      case 'boon_earth_gain':
+        return { type: 'BOON_EARTH_GAIN', card: bestGain(state, 4) };
+      case 'boon_sky': { // 空の恵み＝手札3枚を捨てて金貨（手札が3枚以上あり、捨てる3枚が安いときだけ）
+        if (p.hand.length < 3) return { type: 'BOON_SKY_DISCARD', cards: null };
+        const cards = pickDiscards(p.hand, 3);
+        const cheap = cards.every((c) => keepValue(c) <= 60);
+        return { type: 'BOON_SKY_DISCARD', cards: cheap ? cards : null };
+      }
+      case 'boon_moon': { // 月の恵み＝捨て札の1枚を山札の上に（一番良い札を戻す）
+        const best = p.discard.slice().sort((a, b) => keepValue(b) - keepValue(a))[0];
+        return { type: 'BOON_MOON_TOPDECK', card: (best != null && keepValue(best) >= 60) ? best : null };
+      }
+      case 'look_arrange': { // 太陽の恵み／夜警＝要らない札を捨て、残りを良い順に山札の上へ
+        const discard = (pd.cards || []).filter((c) => isDead(c));
+        const top = (pd.cards || []).filter((c) => !isDead(c)).sort((a, b) => keepValue(b) - keepValue(a));
+        return { type: 'LOOK_ARRANGE_RESOLVE', discard, top };
+      }
+      case 'hex': // 呪詛のリアクション窓（堀があれば公開して免れる）
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'HEX_REACT' };
+      case 'hex_poverty':
+        return { type: 'HEX_POVERTY_DISCARD', cards: pickDiscards(p.hand, Math.max(0, p.hand.length - 3)) };
+      case 'hex_fear': { // 恐怖＝アクションか財宝1枚を捨てる（強制。最も価値の低いものを）
+        const cand = p.hand.filter((c) => isType(c, 'action') || isTreasureNow(state, c))
+          .sort((a, b) => keepValue(a) - keepValue(b));
+        return { type: 'HEX_FEAR_DISCARD', card: cand[0] != null ? cand[0] : null };
+      }
+      case 'hex_haunting': { // 憑依＝手札1枚を山札の上へ（強制。どうせ引き直すので価値の低い札）
+        const c = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0];
+        return { type: 'HEX_HAUNTING_TOPDECK', card: c != null ? c : null };
+      }
+      case 'hex_locusts': { // 蝗害＝同じ種別でより安いカードを獲得（強制）
+        const okId = (id) => costUnder(state, id, pd.coin, { pot: pd.pot || 0, debt: pd.debt || 0 }) &&
+          DOM.engine.sharesType(id, pd.ref);
+        return { type: 'HEX_LOCUSTS_GAIN', card: firstGainable(state, okId) };
+      }
+      case 'lost_in_the_woods': { // 森の迷子＝手札1枚を捨てて祝福を1つ受けてもよい（要らない札があるときだけ）
+        const junk = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0];
+        const worth = junk != null && keepValue(junk) <= 40;
+        return { type: 'LOST_IN_WOODS', card: worth ? junk : null };
+      }
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
       case 'warehouse':

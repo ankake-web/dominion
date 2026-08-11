@@ -122,6 +122,66 @@ try {
     ok(byText('.coach-bar', '夜フェーズ'), '初心者モードの案内が夜フェイズ用になる');
     UI.beginner = false;
   }
+  /* ============================================================
+     N1＝祝福／呪詛／状態の全 pending にモーダルがあり、押せる選択肢が1つ以上あること
+     （選択肢ゼロの閉じられないモーダル＝人間が詰む、を防ぐのがこのスイートの主目的）
+     ============================================================ */
+  console.log('\n=== 祝福／呪詛の選択モーダル（N1） ===');
+  function showPend(pd, setup, kingdom) {
+    const s = mk(kingdom || ['bard', 'skulk']);
+    if (setup) setup(s);
+    s.pending = pd;
+    showAs(s, pd.player);
+    return s;
+  }
+  const richHand = (s, seat) => {
+    s.players[seat == null ? 0 : seat].hand = ['copper', 'estate', 'silver', 'village', 'gold'];
+    s.players[seat == null ? 0 : seat].deck = ['gold', 'duchy', 'copper', 'estate'];
+    s.players[seat == null ? 0 : seat].discard = ['militia', 'moat'];
+  };
+  [
+    ['boon_wind', { type: 'boon_wind', player: 0 }, null],
+    ['boon_flame', { type: 'boon_flame', player: 0 }, null],
+    ['boon_earth', { type: 'boon_earth', player: 0 }, null],
+    ['boon_earth_gain', { type: 'boon_earth_gain', player: 0 }, null],
+    ['boon_sky', { type: 'boon_sky', player: 0 }, null],
+    ['boon_moon', { type: 'boon_moon', player: 0 }, null],
+    ['look_arrange', { type: 'look_arrange', player: 0, cards: ['copper', 'gold', 'estate', 'village'], source: 'the_suns_gift' }, null],
+    ['hex(react)', { type: 'hex', stage: 'react', player: 0, source: 1, victim: 0, queue: [], accepted: [] }, null],
+    ['hex_poverty', { type: 'hex_poverty', player: 0 }, null],
+    ['hex_fear', { type: 'hex_fear', player: 0 }, null],
+    ['hex_haunting', { type: 'hex_haunting', player: 0 }, null],
+    ['hex_locusts', { type: 'hex_locusts', player: 0, ref: 'gold', coin: 6, pot: 0, debt: 0 }, null],
+    ['lost_in_the_woods', { type: 'lost_in_the_woods', player: 0 }, null],
+  ].forEach(([name, pd, kd]) => {
+    showPend(pd, richHand, kd);
+    ok(actionable(), name + ' のモーダルに押せる選択肢がある');
+  });
+  {
+    // 夜想曲の全モーダルが「モーダルは出るが押せない」状態にならないか（空手札/空捨て札の極端値）
+    showPend({ type: 'boon_moon', player: 0 }, (s) => { s.players[0].discard = []; });
+    ok(actionable(), '月の恵み＝捨て札が空でも「置かない」で閉じられる');
+    showPend({ type: 'boon_flame', player: 0 }, (s) => { s.players[0].hand = []; });
+    ok(actionable(), '炎の恵み＝手札が空でも「廃棄しない」で閉じられる');
+    showPend({ type: 'boon_earth', player: 0 }, (s) => { s.players[0].hand = ['estate']; });
+    ok(actionable(), '大地の恵み＝財宝が無くても「捨てない」で閉じられる');
+  }
+  {
+    // 空の恵み＝手札3枚未満でも「捨てる（金貨は得られません）」が押せる
+    const s = showPend({ type: 'boon_sky', player: 0 }, (st) => { st.players[0].hand = ['copper', 'estate']; });
+    UI.selection = [0, 1]; DOM.render();
+    ok(byText('.modal button', '金貨は得られません'), '空の恵み＝3枚未満のときは「金貨は得られません」と明示する');
+  }
+  {
+    // 錯乱＝アクションカードの購入ボタンを出さない（engine 拒否とUIを揃える）
+    const s = mk(['bard', 'skulk']);
+    s.turn.phase = 'buy'; s.turn.coins = 8; s.turn.buys = 1; s.turn.cantBuyActions = true;
+    showAs(s, 0);
+    ok(!runtimeError, '錯乱が効いている盤面が例外なく描画される');
+    const pile = (id) => $all('.pile').find((e) => e.getAttribute('data-pile') === id);
+    ok(pile('village') && pile('village').className.indexOf('buyable') < 0, '錯乱中はアクションカードの山が「買える」表示にならない');
+    ok(pile('silver') && pile('silver').className.indexOf('buyable') >= 0, '錯乱中でも銀貨は買える');
+  }
 } catch (e) {
   fail++; console.log('  x 例外: ' + (e && e.stack ? e.stack : e));
 }

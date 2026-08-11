@@ -254,6 +254,11 @@
   function treasureCoins(state, id) {
     const base = (C()[id] && C()[id].coin) || 0;
     if (id === 'copper') return base + ((state.turn && state.turn.copperBonus) || 0);
+    /* 夜想曲：嫉妬(Envious)＝**返した後**このターンが終わるまで銀貨と金貨は $1 しか生まない（公式）。
+       判定軸は「購入フェイズか」ではなく「嫉妬を返したか」＝語り部でアクションフェイズに出した銀貨/金貨は対象外。
+       冠/ティアラ/偽造通貨で2回使っても各回 $1（applyTreasureEffect が毎回ここを通る）。
+       銀貨/金貨の**付随効果は消えない**（商人の「最初の銀貨で +$1」等）。 */
+    if (state.turn && state.turn.enviousActive && (id === 'silver' || id === 'gold')) return 1;
     return base;
   }
   // 冒険：-$1トークン（橋の下のトロル）は購入フェイズで最初に得る$1に食い込む。
@@ -664,6 +669,7 @@
       cantBuyActions: false, // 錯乱を返した＝このターンはアクションカードを購入できない
       enviousActive: false,  // 嫉妬を返した＝このターン、銀貨と金貨は $1 しか生まない
       currentHex: null,      // 配布中の呪詛id（リアクションを全部閉じてから1回だけ確定し、全員に同じ1枚を適用する）
+      hexQueue: null,        // その呪詛をまだ受けていない被害者（手番順。reduce 末尾の再開網が1人ずつ消化する）
       nightPlayed: 0,        // このターンに使用した夜行カードの枚数（ログ/CPU用）
 
       gainedThisTurn: [], outpostUsed: false, isExtraTurn: !!isExtraTurn, startQueue: null,
@@ -1340,6 +1346,10 @@
     if (id === 'ruins') return false; // 暗黒時代：廃墟は購入できない（略奪者アタック/獲得でのみ配られる）
     if (NON_SUPPLY.has(id)) return false; // 収穫祭：賞品は購入できない（馬上槍試合でのみ獲得）
     if (splitLocked(state, id)) return false; // 分割山：下段は上段が尽きるまで購入できない
+    /* 夜想曲：錯乱(Deluded)を返したターンは**アクションカードを購入できない**（獲得はできる／
+       イベント・プロジェクトは「カードではない」ので買える／夜行カードはアクションでなければ買える）。
+       手番プレイヤーにだけ効く（この述語は engine拒否・CPU非提案・UIボタン無効化の3面が共有する）。 */
+    if (state.turn && state.turn.cantBuyActions && state.turn.active === pi && DOM.isType(id, 'action')) return false;
     return true;
   }
 
@@ -1645,6 +1655,9 @@
     old_witch:     { onMoat: (s, pd) => oldWitchEnterVictim(s, pd.source, pd.queue) },
     villain:       { onMoat: (s, pd) => villainEnterVictim(s, pd.source, pd.queue) },
     knight:        { onMoat: (s, pd) => knightAttackEnter(s, pd.source, pd.sourceCard, pd.queue) },
+    /* 夜想曲：呪詛（不運アタック＝暗躍者/迫害者/吸血鬼/人狼）の共通リアクション窓。
+       堀を公開した被害者は accepted に入らない＝呪詛を受けない。**呪詛は全員の窓を閉じてから1枚だけめくる**。 */
+    hex:           { onMoat: (s, pd) => hexReactEnter(s, pd.source, pd.queue, pd.accepted || []) },
     // 冒険：遺物（-1カードトークン）・巨人（公開廃棄/呪い）・橋の下のトロル（-$1トークン）。
     relic:         { onMoat: (s, pd) => relicEnterVictim(s, pd.source, pd.queue) },
     giant:         { onMoat: (s, pd) => giantEnterVictim(s, pd.source, pd.queue) },
@@ -5526,6 +5539,19 @@
         if ((state.supply.silver || 0) > 0) state.pending = { type: 'wayfarer_gain', player: pi };
         break;
 
+      /* ===== 夜想曲（Nocturne）：王国カード ===== */
+      // 詩人（幸運）＝+2コイン、祝福を1つ受ける。
+      case 'bard':
+        addCoins(state, 2);
+        receiveBoon(state, pi, 1);
+        break;
+      /* 暗躍者（不運・アタック）＝+1購入、他のプレイヤーは全員「次の呪詛」を1つ受ける。
+         獲得時に金貨1枚（triggerOnGain 側）。**呪詛は全員のリアクション窓を閉じてから1枚だけめくる**。 */
+      case 'skulk':
+        t.buys += 1;
+        startHexAttack(state, pi, othersInOrder(state, pi));
+        break;
+
       default:
         break;
     }
@@ -5773,6 +5799,11 @@
     for (let i = 0; i < clerks; i++) state.turn.startQueue.push({ type: 'clerk_start', player: pi });
     // 冒険：ターン開始時に呼び出せる Reserve（案内人/鼠取り/変容／教師）が酒場マットにあれば呼び出し窓を開く。
     if (anyTavernStartCallable(state, pi)) state.turn.startQueue.push({ type: 'tavern_start', player: pi });
+    /* 夜想曲：森の迷子（状態・ゲーム中1枚）＝自分のターン開始時、手札1枚を捨てて祝福を1つ受けてもよい（任意）。
+       愚者を持ち主自身が使っても何も起きない＝この窓だけが祝福の入口になる。 */
+    if (state.lostInTheWoods === pi && p.hand.length > 0) state.turn.startQueue.push({ type: 'lost_in_the_woods', player: pi });
+    /* 夜想曲：恵みの村＝獲得時に取っておいた祝福を「次の自分のターンの開始時」に受ける。 */
+    if (p.boonHeld) { const b = p.boonHeld; p.boonHeld = null; queueBoon(state, pi, b); }
     // ルネサンス：ターン開始時のプロジェクト（自動＝縁日/兵舎／対話＝大聖堂・城門・サイロ・悪巧み・輪作／ピアッツァ＝プレイ）。
     startOfTurnProjects(state, pi);
     // ピアッツァのプレイが選択待ちを立てた場合はそれを優先し、残りは reduce 末尾の startQueue 安全網が拾う。
@@ -6006,6 +6037,9 @@
     //   ※「手札に獲得する」効果（彫刻家/出納官/職人 等）で得た場合は手札に残す（獲得置換が2つ競合＝獲得者が選ぶ。
     //     RGG は彫刻家×遊牧民の野営地で「手札に入る」と明記）。
     if (cardId === 'nomad_camp' && dest !== 'hand') { const z = zoneOf(gp, dest); if (removeOne(z, 'nomad_camp')) { gp.deck.unshift('nomad_camp'); log(state, `${gp.name} は遊牧民の野営地を山札の上に置いた。`); } }
+    /* ===== 夜想曲：獲得時の「自動」効果（対話不要＝pending を立てない）===== */
+    // 暗躍者：これを獲得したとき、金貨1枚を獲得する（あらゆる獲得経路。獲得の窓が2段になる）。
+    if (cardId === 'skulk') { if (gain(state, pIndex, 'gold', 'discard')) log(state, `${gp.name} は暗躍者の獲得で金貨1枚を獲得した。`); }
     /* ===== ルネサンス：獲得時の「自動」効果（対話不要＝pending を立てない）===== */
     // 追従者：獲得したとき +2村人（購入以外の獲得でも・相手のターンの獲得でも）。
     if (cardId === 'lackeys') { gp.villagers = (gp.villagers || 0) + 2; log(state, `${gp.name} は追従者の獲得で +2村人。`); }
@@ -6528,8 +6562,292 @@
   function attackImmune(state, victim) {
     const v = state.players[victim];
     // 冒険：チャンピオン＝場にある間（永続持続）、他プレイヤーのアタックの影響を受けない。
+    // 夜想曲：守護者＝使用してから次の自分のターン開始時まで、他プレイヤーのアタックの影響を受けない
+    //   （予約が残っている間＝durationCards に守護者がある間）。
     return v.inPlay.includes('lighthouse') || (v.durationCards || []).includes('lighthouse')
-        || v.inPlay.includes('champion') || (v.durationCards || []).includes('champion');
+        || v.inPlay.includes('champion') || (v.durationCards || []).includes('champion')
+        || (v.durationCards || []).includes('guardian');
+  }
+
+  /* ============================================================
+     夜想曲（Nocturne）：祝福(Boon) / 呪詛(Hex) / 状態(State) の共通機構
+     正本＝docs/research/nocturne_rules.md §機構3・4・5（冒頭の「実装前に必読」4〜6も参照）。
+     - 祝福・呪詛・状態は**カードではない**（allCards にも invariants の ZONES にも入れない）。
+     - 「祝福を受ける」＝山の一番上をめくって従う。山が空なら捨て札をシャッフルして作り直す。
+       **山も捨て札も空なら受けられない**（pending を開かずに終端する）。
+     - **「1つの効果で複数の祝福を順に受ける」が普通に起きる**（ドルイド／愚者3枚／恵みの村／ピクシー2回）ので、
+       `state.pending` に直接代入せず **`state.boonQueue` に積む**（§0-26 の要求(demand)で望楼の窓を
+       握りつぶした事故と同型）。reduce 末尾の再開網が1件ずつ解決する。
+     - 「他のプレイヤーは各自、次の呪詛を受ける」＝**リアクションを全員ぶん閉じてから呪詛を1枚だけめくり**、
+       免疫でない全員が**同じ1枚**に従う（被害者ごとにめくり直さない＝ルール違反になりやすい最頻の事故）。
+     ============================================================ */
+  const LS = () => DOM.LANDSCAPES || {};
+  const lsName = (id) => (LS()[id] && LS()[id].name) || id;
+  // 「他のプレイヤー全員」を手番順（手番プレイヤーの左隣から）で並べる。
+  function othersInOrder(state, pi) {
+    const out = [];
+    for (let k = 1; k < state.players.length; k++) out.push((pi + k) % state.players.length);
+    return out;
+  }
+  // クリンナップまで受け手の前に置く祝福3種（残りは解決後すぐ祝福の捨て札へ）。
+  const BOON_KEEPERS = new Set(['the_fields_gift', 'the_forests_gift', 'the_rivers_gift']);
+  // 「+コイン を与える」祝福＝聖なる木立ちで他プレイヤーと共有できない2種（公式）。
+  const BOON_GIVES_COIN = new Set(['the_fields_gift', 'the_forests_gift']);
+  // 同じ祝福idは1枚しか存在しない＝どこにあっても取り除いてから置き直す（ピクシーの2回受けを冪等にする）。
+  function removeBoonAnywhere(state, boon) {
+    const b = state.boons; if (!b) return;
+    removeOne(b.deck, boon); removeOne(b.discard, boon);
+    state.players.forEach((p) => {
+      if (p.boonsInFront) removeOne(p.boonsInFront, boon);
+      if (p.boonHeld === boon) p.boonHeld = null;
+    });
+  }
+  // 祝福の山から1枚めくる（空なら捨て札をシャッフルして作り直す。両方空なら null＝受けられない）。
+  //   **ドルイドの脇3枚と、各プレイヤーが保持中の祝福は新しい山に入れない**（公式）。
+  function takeBoon(state) {
+    const b = state.boons; if (!b) return null;
+    if (!b.deck.length) {
+      if (!b.discard.length) return null;
+      b.deck = shuffle(b.discard.slice()); b.discard = [];
+      log(state, '祝福の捨て札をシャッフルして山を作り直した。');
+    }
+    return b.deck.shift() || null;
+  }
+  // 呪詛の山から1枚めくる（祝福と違い「任意で作り直す」節は無い＝空なら必ず作り直す）。
+  function takeHex(state) {
+    const h = state.hexes; if (!h) return null;
+    if (!h.deck.length) {
+      if (!h.discard.length) return null;
+      h.deck = shuffle(h.discard.slice()); h.discard = [];
+      log(state, '呪詛の捨て札をシャッフルして山を作り直した。');
+    }
+    return h.deck.shift() || null;
+  }
+  // 祝福をキューに積む（opts.aside＝ドルイドの脇に置いたまま／opts.place===false＝置き直さない）。
+  function queueBoon(state, pi, boon, opts) {
+    if (!boon) return false;
+    (state.boonQueue = state.boonQueue || []).push(Object.assign({ player: pi, boon: boon }, opts || {}));
+    return true;
+  }
+  // 「祝福を n つ受ける」＝山からめくってキューに積む（受けられない分は静かに終わる）。
+  function receiveBoon(state, pi, n) {
+    let got = 0;
+    for (let i = 0; i < (n || 1); i++) { const b = takeBoon(state); if (!b) break; queueBoon(state, pi, b); got++; }
+    return got;
+  }
+  /* 祝福1件の解決。**置き場所を先に確定してから効果を適用する**（途中で選択待ちが立っても状態が破綻しない）。 */
+  function applyBoonEntry(state, q) {
+    const pi = q.player, boon = q.boon, p = state.players[pi], t = state.turn;
+    if (!p) return;
+    if (!q.aside && q.place !== false) {
+      removeBoonAnywhere(state, boon);
+      if (BOON_KEEPERS.has(boon)) (p.boonsInFront = p.boonsInFront || []).push(boon);
+      else if (state.boons) state.boons.discard.push(boon);
+    }
+    log(state, `${p.name} は祝福「${lsName(boon)}」を受けた。`);
+    switch (boon) {
+      case 'the_seas_gift': // +1 カード
+        draw(state, pi, 1);
+        break;
+      case 'the_fields_gift': // +1 アクション +1 コイン（クリンナップまで前に置く）
+        addActions(t, 1); addCoins(state, 1);
+        break;
+      case 'the_forests_gift': // +1 購入 +1 コイン（クリンナップまで前に置く）
+        t.buys += 1; addCoins(state, 1);
+        break;
+      case 'the_rivers_gift': // このターンの終了時 +1カード（＝**次の手札を先引きした後**に引く。cleanupAndAdvance で処理）
+        break;
+      case 'the_mountains_gift': // 銀貨1枚を獲得
+        if (gain(state, pi, 'silver', 'discard')) log(state, `${p.name} は山の恵みで銀貨1枚を獲得した。`);
+        break;
+      case 'the_swamps_gift': // ウィル・オ・ウィスプ1枚を獲得（山が空なら何も起きない）
+        if (gain(state, pi, 'will_o_wisp', 'discard')) log(state, `${p.name} は沼の恵みでウィル・オ・ウィスプ1枚を獲得した。`);
+        break;
+      case 'the_winds_gift': // +2カード → 手札2枚を捨てる（**強制**・実際に引けたかに関わらず）
+        draw(state, pi, 2);
+        if (p.hand.length) state.pending = { type: 'boon_wind', player: pi };
+        break;
+      case 'the_flames_gift': // 手札1枚を廃棄してもよい
+        if (p.hand.length) state.pending = { type: 'boon_flame', player: pi };
+        break;
+      case 'the_earths_gift': // 手札の財宝1枚を捨てて、コスト$4以下を1枚獲得してもよい
+        if (p.hand.some((c) => isTreasureFor(state, c))) state.pending = { type: 'boon_earth', player: pi };
+        break;
+      case 'the_skys_gift': // 手札3枚を捨てて金貨1枚を獲得してもよい（3枚未満なら捨てるだけで金貨は得られない）
+        if (p.hand.length) state.pending = { type: 'boon_sky', player: pi };
+        break;
+      case 'the_moons_gift': // 捨て札を全部見て、その中の1枚を山札の上に置いてもよい（見るのは強制・置くのは任意）
+        if (p.discard.length) state.pending = { type: 'boon_moon', player: pi };
+        break;
+      case 'the_suns_gift': { // 山札の上から4枚を見て、好きな枚数を捨て、残りを好きな順で戻す
+        const look = [];
+        for (let i = 0; i < 4; i++) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
+          if (p.deck.length === 0) break;
+          look.push(p.deck.shift());
+        }
+        if (look.length) state.pending = { type: 'look_arrange', player: pi, cards: look, source: 'the_suns_gift' };
+        break;
+      }
+      default: break;
+    }
+  }
+  /* 呪詛。**リアクションを全員ぶん閉じてから1枚だけめくる**（hexReactEnter → dealHex）。 */
+  function startHexAttack(state, source, victims) {
+    hexReactEnter(state, source, (victims || []).slice(), []);
+  }
+  function hexReactEnter(state, source, queue, accepted) {
+    queue = (queue || []).slice();
+    while (queue.length) {
+      const v = queue.shift();
+      if (attackImmune(state, v)) continue; // 灯台/チャンピオン/守護者＝影響を受けない
+      if (hasReaction(state.players[v])) {
+        state.pending = { type: 'hex', stage: 'react', player: v, source, victim: v, queue: queue.slice(), accepted: accepted.slice() };
+        return;
+      }
+      accepted.push(v);
+    }
+    dealHex(state, source, accepted);
+  }
+  /* 全員のリアクション窓を閉じた後で、はじめて呪詛を1枚めくる。
+     **免疫者しかいなくてもカードの指示があれば1枚めくって捨てる**（jwiki 明文・confidence medium）。 */
+  function dealHex(state, source, victims) {
+    const hex = takeHex(state);
+    state.pending = null;
+    if (!hex) return;
+    log(state, `呪詛「${lsName(hex)}」がめくられた。`);
+    const t = state.turn;
+    t.currentHex = hex;
+    t.hexQueue = (victims || []).slice();
+    if (!t.hexQueue.length) { finishHex(state); return; }
+    runHexQueue(state);
+  }
+  // キューの被害者へ同じ1枚を手番順に適用する（選択待ちが立ったら止まり、reduce 末尾の再開網が続きを回す）。
+  function runHexQueue(state) {
+    const t = state.turn;
+    let guard = 0;
+    while (!state.pending && t.hexQueue && t.hexQueue.length && guard++ < 20) {
+      const v = t.hexQueue.shift();
+      applyHexTo(state, v, t.currentHex);
+    }
+    if (!state.pending && t.hexQueue && !t.hexQueue.length) finishHex(state);
+  }
+  function finishHex(state) {
+    const t = state.turn;
+    if (t.currentHex && state.hexes) state.hexes.discard.push(t.currentHex);
+    t.currentHex = null; t.hexQueue = null;
+  }
+  // 「自分が呪詛を1つ受ける」（呪われた村の獲得時／レプラコーン＝非アタック）。
+  function receiveHex(state, pi) {
+    const hex = takeHex(state);
+    if (!hex) return;
+    log(state, `呪詛「${lsName(hex)}」がめくられた。`);
+    const t = state.turn;
+    t.currentHex = hex; t.hexQueue = [pi];
+    runHexQueue(state);
+  }
+  function applyHexTo(state, pi, hex) {
+    const p = state.players[pi];
+    if (!p) return;
+    log(state, `${p.name} は呪詛「${lsName(hex)}」を受けた。`);
+    switch (hex) {
+      case 'delusion': // 錯乱も嫉妬も持っていなければ錯乱を取る（**持っているだけでは効かない**＝購入フェイズ開始時に返して発動）
+        if (!p.deluded && !p.envious) { p.deluded = true; log(state, `${p.name} は錯乱を取った。`); }
+        break;
+      case 'envy':
+        if (!p.deluded && !p.envious) { p.envious = true; log(state, `${p.name} は嫉妬を取った。`); }
+        break;
+      case 'misery': // 1回目＝生活苦(-2VP)／2回目＝二重苦(-4VP)／3回目以降は何も起きない
+        if (!p.misery) { p.misery = 1; log(state, `${p.name} は生活苦を取った（-2勝利点）。`); }
+        else if (p.misery === 1) { p.misery = 2; log(state, `${p.name} は二重苦になった（-4勝利点）。`); }
+        break;
+      case 'greed': // 銅貨1枚を獲得し山札の上に置く（捨て札置き場を経由しない）
+        if (gain(state, pi, 'copper', 'deck')) log(state, `${p.name} は銅貨1枚を山札の上に獲得した（貪欲）。`);
+        break;
+      case 'plague': // 呪い1枚を手札に獲得（呪い山が空なら何も起きない）
+        if (gain(state, pi, 'curse', 'hand')) log(state, `${p.name} は呪い1枚を手札に獲得した（疫病）。`);
+        break;
+      case 'poverty': // 手札が3枚になるように捨てる
+        if (p.hand.length > 3) state.pending = { type: 'hex_poverty', player: pi };
+        break;
+      case 'fear': // 手札5枚以上ならアクションか財宝1枚を捨てる（できなければ手札を公開）
+        if (p.hand.length >= 5) {
+          if (p.hand.some((c) => DOM.isType(c, 'action') || isTreasureFor(state, c))) state.pending = { type: 'hex_fear', player: pi };
+          else reveal(state, pi, p.hand.slice(), '恐怖：捨てられるアクション/財宝がない');
+        }
+        break;
+      case 'haunting': // 手札4枚以上なら手札1枚を山札の上に置く
+        if (p.hand.length >= 4) state.pending = { type: 'hex_haunting', player: pi };
+        break;
+      case 'bad_omens': { // 山札を捨て札に置き、捨て札から銅貨2枚を山札の上へ（できなければ捨て札を公開）
+        // 「山札を捨て札置き場に置く」は**捨て札トリガーを誘発しない**（公式・英語wiki 明記）。
+        while (p.deck.length) p.discard.push(p.deck.shift());
+        let got = 0;
+        for (let i = 0; i < 2; i++) { if (removeOne(p.discard, 'copper')) { p.deck.unshift('copper'); got++; } }
+        if (got < 2) reveal(state, pi, p.discard.slice(0, 8), '凶兆：銅貨が足りない（捨て札を公開）');
+        log(state, `${p.name} は山札を捨て札にし、銅貨 ${got}枚 を山札の上に置いた（凶兆）。`);
+        break;
+      }
+      case 'famine': { // 山札の上3枚を公開し、アクションを全部捨てる。残りを山札に加えてシャッフル
+        const rev = [];
+        for (let i = 0; i < 3; i++) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
+          if (p.deck.length === 0) break;
+          rev.push(p.deck.shift());
+        }
+        if (rev.length) reveal(state, pi, rev.slice(), '飢饉');
+        const acts = rev.filter((c) => DOM.isType(c, 'action'));
+        const rest = rev.filter((c) => !DOM.isType(c, 'action'));
+        acts.forEach((c) => p.discard.push(c));
+        // 「残りを山札に加えてシャッフル」＝その場でシャッフルが発生する（対話は挟めない＝既存の許容簡略化と同型）。
+        p.deck = shuffle(p.deck.concat(rest));
+        placeStash(p);
+        log(state, `${p.name} は飢饉でアクション ${acts.length}枚 を捨て、残りを山札に混ぜた。`);
+        if (acts.length) triggerOnDiscard(state, pi, acts, true);
+        break;
+      }
+      case 'locusts': { // 山札の一番上を廃棄。銅貨か屋敷なら呪い／そうでなければ「同じ種別を持ちコストが少ないカード」を獲得
+        if (p.deck.length === 0 && p.discard.length) reshuffleDeck(p);
+        if (!p.deck.length) { log(state, `${p.name} は蝗害を受けたが山札が空だった。`); break; }
+        const top = p.deck.shift();
+        reveal(state, pi, [top], '蝗害', { notReveal: true });
+        trashCard(state, pi, top);
+        log(state, `${p.name} は蝗害で「${C()[top].name}」を廃棄した。`);
+        if (top === 'copper' || top === 'estate') {
+          if (gain(state, pi, 'curse', 'discard')) log(state, `${p.name} は呪い1枚を獲得した（蝗害）。`);
+        } else {
+          const ref = costOf(state, top);
+          // **成分別のコスト比較**（素の `cost <` は禁止＝mix-all で livelock する）＋種別の共有。
+          const okId = (id) => costUnder(state, id, ref.coin, ref) && sharesType(id, top);
+          if (anyGainable(state, okId)) state.pending = { type: 'hex_locusts', player: pi, ref: top, coin: ref.coin, pot: ref.pot, debt: ref.debt };
+        }
+        break;
+      }
+      case 'war': { // コスト$3か$4のカードが公開されるまで山札の上から公開し、それを廃棄して残りを捨てる
+        const rev = [];
+        let found = null, guard = 0;
+        while (guard++ < 200) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
+          if (p.deck.length === 0) break;
+          const c = p.deck.shift();
+          const cc = cardCost(state, c);
+          if (cc === 3 || cc === 4) { found = c; break; }
+          rev.push(c);
+        }
+        if (rev.length || found) reveal(state, pi, (found ? rev.concat([found]) : rev).slice(-8), '戦争');
+        rev.forEach((c) => p.discard.push(c));
+        if (found) { trashCard(state, pi, found); log(state, `${p.name} は戦争で「${C()[found].name}」を廃棄した。`); }
+        else log(state, `${p.name} は戦争でコスト3〜4のカードを見つけられなかった（廃棄なし）。`);
+        if (rev.length) triggerOnDiscard(state, pi, rev, true);
+        break;
+      }
+      default: break;
+    }
+  }
+  // 蝗害用：2枚のカードが種別（カード下部の種別欄の語）を1つ以上共有するか。
+  function sharesType(a, b) {
+    const ta = (C()[a] && C()[a].types) || [], tb = (C()[b] && C()[b].types) || [];
+    return ta.some((x) => tb.indexOf(x) >= 0);
   }
 
   /* ---------- クリーンアップ＆次の番へ ---------- */
@@ -6682,6 +7000,23 @@
       const got = draw(state, pi, state.turn.squirrelDraw);
       if (got.length) log(state, `${p.name} はリスの習性で +${got.length}カード（ターンの終了時）。`);
     }
+    /* 夜想曲：川の恵み＝「このターンの終了時、+1カード」＝**次の手札を先引きした後**に引く
+       （§0-25 のリス／§0-21 の保存 と同じ位置。角笛は逆に先引きの前）。
+       聖なる木立ちで**他のプレイヤーも持ち得る**（公式：あなたと同時に引く）ので全員ぶん見る。
+       引き終えたら、前に置かれている祝福（田畑/森/川）を全員ぶん祝福の捨て札へ戻す＝「クリンナップまで持つ」の終わり。 */
+    state.players.forEach((pl, idx) => {
+      const n = (pl.boonsInFront || []).filter((b) => b === 'the_rivers_gift').length;
+      for (let i = 0; i < n; i++) {
+        const got = draw(state, idx, 1);
+        if (got.length) log(state, `${pl.name} は川の恵みで +1カード（ターンの終了時）。`);
+      }
+    });
+    state.players.forEach((pl) => {
+      while ((pl.boonsInFront || []).length) {
+        const b = pl.boonsInFront.shift();
+        if (state.boons) state.boons.discard.push(b);
+      }
+    });
     p.turns += 1;
     // 移動動物園：今を生きるの追加ターンは同点時のタイブレーク（ターン数の少なさ）に数えない（公式）。
     if (state.turn.seizeTurn) p.freeTurns = (p.freeTurns || 0) + 1;
@@ -7347,6 +7682,20 @@
     if (!state.pending && !state.gameOver && state.turn && state.turn.startQueue && state.turn.startQueue.length) {
       popStartQueue(state);
       state = runReplays(state); // 念のため（開始時効果が replay を積むことは無いが無害）
+    }
+    /* 夜想曲：祝福(Boon)を1件ずつ解決する再開網。**1つの効果で複数の祝福を順に受ける**（ドルイド／愚者3枚／
+       恵みの村／ピクシー2回／聖なる木立ちの共有）ので、pending を直接代入せず boonQueue に積んである。
+       自動で終わる祝福（海/山/沼/川）は選択待ちを立てないので **while で続けて消化する**
+       （1件ずつ止めると、誰も操作しないまま残りの祝福が宙に浮く）。 */
+    if (!state.pending && !state.gameOver && state.boonQueue && state.boonQueue.length) {
+      let bguard = 0;
+      while (!state.pending && state.boonQueue.length && bguard++ < 40) applyBoonEntry(state, state.boonQueue.shift());
+      state = runReplays(state);
+    }
+    /* 夜想曲：呪詛(Hex)を被害者へ順に適用する再開網（同じ1枚を手番順に適用し、全員終わったら捨て札へ）。 */
+    if (!state.pending && !state.gameOver && state.turn && state.turn.hexQueue) {
+      runHexQueue(state);
+      state = runReplays(state);
     }
     // 暗黒時代：on-trash の「対話つき」効果（地下墓所＝安い獲得／狩場＝公領or屋敷3／従者＝アタック獲得）は
     //   トリガー時点で別の pending（アタック処理中・廃棄札の続きの獲得等）が走っていることがあるため、
@@ -8082,6 +8431,13 @@
         // ルネサンス：探査／野外劇は「その購入フェイズ」単位＝購入フェイズに入り直すたびにリセット（ヴィラ対応）。
         t.bpGained = 0;
         t.pageantDone = false;
+        /* 夜想曲：錯乱(Deluded)／嫉妬(Envious)＝**購入フェイズの開始時に「返す」ことで初めて発動**し、
+           そのターンの残り全部に効く（持っているだけでは何も起きない＝最頻の事故）。
+           `END_ACTION_PHASE` は1ターンに複数回走り得る（ヴィラ/騎兵）ので**毎回 返す判定をする**が、
+           一度立った `t.cantBuyActions` / `t.enviousActive` は**同じターン中は下ろさない**（公式）。
+           ＝購入フェイズ中に得た錯乱はその購入フェイズでは発動せず、次に購入フェイズへ入るときに返す。 */
+        if (me.deluded) { me.deluded = false; t.cantBuyActions = true; log(state, `${me.name} は錯乱を返した（このターンはアクションカードを購入できない）。`); }
+        if (me.envious) { me.envious = false; t.enviousActive = true; log(state, `${me.name} は嫉妬を返した（このターン、銀貨と金貨は $1 しか生まない）。`); }
         // 冒険：-$1トークンを消化（購入フェイズ開始時に食い込み分へ変換。財宝を出すとそのコインに食い込む）。
         if (me.minusCoin) { t.coinPenalty = (t.coinPenalty || 0) + 1; me.minusCoin = false; log(state, `${me.name} は -$1トークンを支払う（このターンのコイン $1分）。`); applyCoinPenalty(state); }
         // ルネサンス：宝箱（Treasure Chest・アーティファクト）＝**購入フェイズの開始時**に金貨1枚を獲得（強制）。
@@ -9206,6 +9562,9 @@
         if (t.noBuyCards) return state; // 冒険：使節団の追加ターン＝カードは購入できない（闇市場の購入も「購入」）
         const card = action.card;
         if (pd.revealed.indexOf(card) < 0) return state;
+        /* 夜想曲：錯乱を**返した後**なら闇市場でもアクションカードは買えない（公式）。
+           まだ返していない＝アクションフェイズで闇市場を使うぶんには普通に買える（`t.cantBuyActions` が立っていない）。 */
+        if (t.cantBuyActions && pd.player === t.active && DOM.isType(card, 'action')) return state;
         const cost = cardCost(state, card);
         if (cost > t.coins) return state; // 払えない
         t.coins -= cost; // 闇市場の購入は購入回数を消費しない
@@ -13623,6 +13982,182 @@
         return state; // 残りは reduce 末尾の再開網が（獲得時対話を解決してから）次の選択待ちを開く
       }
 
+      /* ============================================================
+         夜想曲（Nocturne）：祝福 / 呪詛 / 状態 の選択待ち
+         ============================================================ */
+      // 風の恵み＝+2カードの後、手札2枚を捨てる（**強制**・複数枚は「同時に」捨てる）。
+      case 'BOON_WIND_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'boon_wind') return state;
+        const pl = state.players[pd.player];
+        const want = Math.min(2, pl.hand.length);
+        if (want === 0) { state.pending = null; return state; }
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (!discardFromHand(state, pd.player, cards, want, 'を捨てた（風の恵み）。')) return state;
+        state.pending = null;
+        triggerOnDiscard(state, pd.player, cards);
+        return state;
+      }
+      // 炎の恵み＝手札1枚を廃棄してもよい。
+      case 'BOON_FLAME_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'boon_flame') return state;
+        const pl = state.players[pd.player];
+        const c = action.card;
+        if (c == null) { state.pending = null; return state; }
+        if (pl.hand.indexOf(c) < 0) return state;
+        if (!trashFromHand(state, pd.player, [c], 1, 'を廃棄した（炎の恵み）。')) return state;
+        state.pending = null;
+        return state;
+      }
+      // 大地の恵み＝手札の財宝1枚を捨てて、コスト$4以下を1枚獲得してもよい（捨てたら獲得は強制）。
+      case 'BOON_EARTH_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'boon_earth') return state;
+        const pl = state.players[pd.player];
+        const c = action.card;
+        if (c == null) { state.pending = null; return state; }
+        if (pl.hand.indexOf(c) < 0 || !isTreasureFor(state, c)) return state;
+        if (!discardFromHand(state, pd.player, [c], 1, 'を捨てた（大地の恵み）。')) return state;
+        state.pending = null;
+        // この後すぐ獲得の窓を開くので、捨て札トリガーの**対話**は開かない（地図職人と同じ noPrompt 運用）。
+        triggerOnDiscard(state, pd.player, [c], true);
+        // 終端保証：獲得できる山が無ければ窓を開かずに終わる。
+        if (!state.pending && anyGainable(state, (id) => costUpTo(state, id, 4))) state.pending = { type: 'boon_earth_gain', player: pd.player };
+        return state;
+      }
+      case 'BOON_EARTH_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'boon_earth_gain') return state;
+        if (!anyGainable(state, (id) => costUpTo(state, id, 4))) { state.pending = null; return state; } // 終端保証
+        const id = action.card;
+        if (!id || !costUpTo(state, id, 4)) return state;
+        state.pending = null;
+        if (gain(state, pd.player, id, 'discard')) log(state, `${state.players[pd.player].name} は大地の恵みで「${C()[id].name}」を獲得した。`);
+        return state;
+      }
+      // 空の恵み＝手札3枚を捨てて金貨1枚を獲得してもよい（3枚未満なら手札を全部捨てるだけ＝金貨は得られない・公式）。
+      case 'BOON_SKY_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'boon_sky') return state;
+        const pl = state.players[pd.player];
+        if (action.cards == null) { state.pending = null; return state; } // 捨てない
+        const want = Math.min(3, pl.hand.length);
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (!discardFromHand(state, pd.player, cards, want, 'を捨てた（空の恵み）。')) return state;
+        state.pending = null;
+        if (cards.length === 3) { if (gain(state, pd.player, 'gold', 'discard')) log(state, `${pl.name} は空の恵みで金貨1枚を獲得した。`); }
+        else log(state, `${pl.name} は手札が3枚未満だったので金貨を得られなかった（空の恵み）。`);
+        triggerOnDiscard(state, pd.player, cards);
+        return state;
+      }
+      // 月の恵み＝捨て札を全部見て、その中の1枚を山札の上に置いてもよい。
+      case 'BOON_MOON_TOPDECK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'boon_moon') return state;
+        const pl = state.players[pd.player];
+        const c = action.card;
+        if (c == null) { state.pending = null; return state; }
+        if (!removeOne(pl.discard, c)) return state;
+        pl.deck.unshift(c);
+        state.pending = null;
+        log(state, `${pl.name} は月の恵みで捨て札の「${C()[c].name}」を山札の上に置いた。`);
+        return state;
+      }
+      /* 汎用「山札の上からN枚を見て、好きな枚数を捨て、残りを好きな順で山札の上に戻す」
+         （太陽の恵み＝4枚／夜警＝5枚）。地図職人と同型だが夜想曲の複数カードで共有する。 */
+      case 'LOOK_ARRANGE_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'look_arrange') return state;
+        const pl = state.players[pd.player];
+        const look = (pd.cards || []).slice();
+        const disc = Array.isArray(action.discard) ? action.discard : [];
+        const top = Array.isArray(action.top) ? action.top : [];
+        const chk = look.slice();
+        for (const c of disc.concat(top)) { const i = chk.indexOf(c); if (i < 0) return state; chk.splice(i, 1); }
+        if (chk.length !== 0) return state; // discard+top が look の並べ替えであること
+        disc.forEach((c) => pl.discard.push(c));
+        for (let i = top.length - 1; i >= 0; i--) pl.deck.unshift(top[i]); // top[0] が一番上
+        log(state, `${pl.name} は${lsName(pd.source) || ''}（${disc.length}枚 捨て、${top.length}枚 を山札の上へ）。`);
+        state.pending = null;
+        if (disc.length) triggerOnDiscard(state, pd.player, disc, true);
+        return state;
+      }
+      // 呪詛のリアクション窓＝「受ける」。**全員ぶん閉じてから呪詛を1枚めくる**（dealHex）。
+      case 'HEX_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'hex' || pd.stage !== 'react') return state;
+        hexReactEnter(state, pd.source, pd.queue, (pd.accepted || []).concat([pd.victim]));
+        return state;
+      }
+      // 貧困＝手札が3枚になるように捨てる（呪詛の効果＝免疫判定は配布時点で済んでいる）。
+      case 'HEX_POVERTY_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'hex_poverty') return state;
+        const pl = state.players[pd.player];
+        const want = Math.max(0, pl.hand.length - 3);
+        if (want === 0) { state.pending = null; return state; }
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (!discardFromHand(state, pd.player, cards, want, 'を捨てた（貧困）。')) return state;
+        state.pending = null;
+        triggerOnDiscard(state, pd.player, cards);
+        return state;
+      }
+      // 恐怖＝手札5枚以上ならアクションか財宝1枚を捨てる（強制）。
+      case 'HEX_FEAR_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'hex_fear') return state;
+        const pl = state.players[pd.player];
+        const okc = (c) => DOM.isType(c, 'action') || isTreasureFor(state, c);
+        if (!pl.hand.some(okc)) { state.pending = null; return state; } // 終端保証
+        const c = action.card;
+        if (!c || pl.hand.indexOf(c) < 0 || !okc(c)) return state;
+        if (!discardFromHand(state, pd.player, [c], 1, 'を捨てた（恐怖）。')) return state;
+        state.pending = null;
+        triggerOnDiscard(state, pd.player, [c]);
+        return state;
+      }
+      // 憑依＝手札4枚以上なら手札1枚を山札の上に置く（強制）。
+      case 'HEX_HAUNTING_TOPDECK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'hex_haunting') return state;
+        const pl = state.players[pd.player];
+        if (!pl.hand.length) { state.pending = null; return state; } // 終端保証
+        const c = action.card;
+        if (!c || !removeOne(pl.hand, c)) return state;
+        pl.deck.unshift(c);
+        state.pending = null;
+        log(state, `${pl.name} は憑依で手札1枚を山札の上に置いた。`);
+        return state;
+      }
+      // 蝗害＝廃棄したカードと同じ種別を持ち、それより安いカード1枚を獲得（強制）。
+      case 'HEX_LOCUSTS_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'hex_locusts') return state;
+        const okId = (id) => costUnder(state, id, pd.coin, { pot: pd.pot || 0, debt: pd.debt || 0 }) && sharesType(id, pd.ref);
+        if (!anyGainable(state, okId)) { state.pending = null; return state; } // 終端保証
+        const id = action.card;
+        if (!id || !okId(id)) return state;
+        state.pending = null;
+        if (gain(state, pd.player, id, 'discard')) log(state, `${state.players[pd.player].name} は蝗害で「${C()[id].name}」を獲得した。`);
+        return state;
+      }
+      // 森の迷子＝ターン開始時、手札1枚を捨てて祝福を1つ受けてもよい（任意）。
+      case 'LOST_IN_WOODS': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'lost_in_the_woods') return state;
+        const pl = state.players[pd.player];
+        const c = action.card;
+        if (c == null) { state.pending = null; return state; } // 使わない（任意効果）
+        if (pl.hand.indexOf(c) < 0) return state;
+        if (!discardFromHand(state, pd.player, [c], 1, 'を捨てた（森の迷子）。')) return state;
+        state.pending = null;
+        triggerOnDiscard(state, pd.player, [c]);
+        receiveBoon(state, pd.player, 1);
+        // 残りのターン開始時効果は reduce 末尾の startQueue 安全網が拾う（祝福の解決が先に入ってよい）。
+        return state;
+      }
+
       default:
         return state;
     }
@@ -13863,6 +14398,11 @@
     'BARGAIN_GAIN', 'DEMAND_GAIN', 'DESPERATION', 'BANISH_EXILE', 'INVEST_EXILE',
     'TRANSPORT_MODE', 'TRANSPORT_PICK', 'TOIL_PLAY', 'MARCH_PLAY', 'GAMBLE_PLAY',
     'DELAY_SETASIDE', 'EVENT_PLAY', 'ENHANCE_TRASH', 'ENHANCE_GAIN', 'PURSUE_NAME', 'POPULATE_GAIN',
+    // 夜想曲：祝福／呪詛／状態
+    'BOON_WIND_DISCARD', 'BOON_FLAME_TRASH', 'BOON_EARTH_DISCARD', 'BOON_EARTH_GAIN',
+    'BOON_SKY_DISCARD', 'BOON_MOON_TOPDECK', 'LOOK_ARRANGE_RESOLVE',
+    'HEX_REACT', 'HEX_POVERTY_DISCARD', 'HEX_FEAR_DISCARD', 'HEX_HAUNTING_TOPDECK', 'HEX_LOCUSTS_GAIN',
+    'LOST_IN_WOODS',
   ]);
 
   /* ---------- 公開API ---------- */
@@ -13907,6 +14447,8 @@
     bargainCanGain,    // 移動動物園：特価品の獲得候補（$5以下・勝利点でない）
     populatePiles,     // 移動動物園：植民で獲得できる「アクションのサプライ山」の一覧（engine/CPU/UI が同じ候補を参照）
     isUsableWay,       // 移動動物園：その習性がこの対局で採用されているか（イベントの「使用」でも習性を選べる）
+    // 夜想曲：祝福/呪詛/状態（CPU/UI が engine と同じ述語を見る）
+    sharesType,        // 蝗害＝2枚が種別を1つ以上共有するか（獲得候補の絞り込みに CPU/UI も使う）
     improveTargets,    // ルネサンス：増築の廃棄対象（engine/CPU/UI が同じ候補を参照）
     isTreasureFor,     // ルネサンス：資本主義を含む「今この状態で財宝か」＝**財宝判定の正本**（engine/CPU/UI が同じ述語）
     capitalismTreasures, // ルネサンス：資本主義で財宝になるアクションの集合（整合性テストで固定する）
