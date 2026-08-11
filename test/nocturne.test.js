@@ -1167,6 +1167,28 @@ console.log('\n=== N4: 取り替え子／ネクロマンサー＋ゾンビ／幽
   ok(!(t.players[0].ghostSetAside || []).length, '脇なし');
 }
 
+console.log('\n=== 回帰: 祝福/呪詛の解決中に「再演」を割り込ませない ===');
+{
+  /* 玉座の間×迫害者（3人戦）＝1人目の呪詛（対話つき）を解決した瞬間に runReplays が2回目の迫害者を
+     先に走らせると、**残りの被害者と呪詛カード自体が消える**（t.currentHex/t.hexQueue の上書き）。 */
+  const s = mk3(king(['tormentor']));
+  s.players[0].hand = ['throne_room', 'tormentor'];
+  s.players[0].inPlay = ['copper']; // 「他のカードが場にある」＝インプではなく呪詛
+  s.players[1].hand = ['copper', 'copper', 'copper', 'copper', 'copper'];
+  s.players[2].hand = ['estate', 'estate', 'estate', 'estate', 'estate'];
+  s.hexes.deck = ['poverty', 'greed'];
+  let t = reduce(reduce(s, { type: 'PLAY_ACTION', card: 'throne_room' }), { type: 'THRONE_CHOOSE', card: 'tormentor' });
+  ok(t.pending && t.pending.type === 'hex_poverty' && t.pending.player === 1, '1人目に貧困');
+  t = reduce(t, { type: 'HEX_POVERTY_DISCARD', cards: ['copper', 'copper'] });
+  ok(t.pending && t.pending.type === 'hex_poverty' && t.pending.player === 2,
+    '**2回目の迫害者が割り込まず**、同じ呪詛が2人目に続く');
+  t = reduce(t, { type: 'HEX_POVERTY_DISCARD', cards: ['estate', 'estate'] });
+  let g = 0;
+  while (t.pending && g++ < 10) { const a = CPU.decide(t, t.pending.player); if (!a) break; t = reduce(t, a); }
+  ok(t.players[1].hand.length === 3 && t.players[2].hand.length === 3, '全員が貧困を受けた');
+  ok(t.hexes.discard.length === 2, '呪詛が2枚とも捨て札に入る（1枚も消えない）');
+}
+
 console.log('\n=== N0/N3: オンラインの看破（私的情報が相手に漏れない） ===');
 {
   // 夜警／太陽の恵みの「山札の上を**見る**」は本人だけの私的情報（公開ではない）。

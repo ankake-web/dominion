@@ -8332,9 +8332,23 @@
     return state;
   }
   // 玉座の間の「2回目の適用」（および錬金術ゴーレムの2枚目）を、選択待ちが解消したタイミングで実行する。
+  /* 夜想曲：祝福/呪詛の解決が途中のあいだは「再演（玉座の間の2回目など）」を割り込ませてはいけない。
+     呪詛は `t.currentHex` と `t.hexQueue` を1枚ぶん占有するので、割り込むと**残りの被害者と呪詛カード自体が消える**
+     （玉座の間×迫害者の3人戦で実際に踏んだ）。祝福も「1回目の効果を完全に解決してから2回目」が公式。 */
+  function nocturneQueueBusy(state) {
+    const t = state.turn;
+    if (state.boonQueue && state.boonQueue.length) return true;
+    if (state.hexSelfQueue && state.hexSelfQueue.length) return true;
+    if (!t) return false;
+    if (t.hexQueue && t.hexQueue.length) return true;
+    if (t.currentHex) return true;
+    if (t.boonChoice && (t.boonChoice.boons || []).length) return true;
+    if (t.groveShare && ((t.groveShare.queue || []).length)) return true;
+    return false;
+  }
   function runReplays(state) {
     let guard = 0;
-    while (!state.pending && state.replay && state.replay.length && !state.gameOver && guard++ < 200) {
+    while (!state.pending && !nocturneQueueBusy(state) && state.replay && state.replay.length && !state.gameOver && guard++ < 200) {
       const r = state.replay.shift();
       if (r.label === 'procession_finish') {
         // 暗黒時代：行進＝2回のプレイが終わった後、対象を場から廃棄し、ちょうど+$1高いアクションを獲得（強制）。
