@@ -1167,6 +1167,24 @@ console.log('\n=== N4: 取り替え子／ネクロマンサー＋ゾンビ／幽
   ok(!(t.players[0].ghostSetAside || []).length, '脇なし');
 }
 
+console.log('\n=== 回帰: 呪いの森を受けて購入すると夜行カードを1枚も使えない ===');
+{
+  /* 正本「実装前に必読」1 が名指しする経路：呪いの森（冒険）を受けた状態で購入すると手札が山札に載る
+     ＝夜フェイズに入る手札が無くなる（守護者などを使えない）。 */
+  const s = mk(king(['guardian', 'haunted_woods']));
+  let t = reduce(reduce(s, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+  t.players[1].hand = ['haunted_woods'];
+  t = reduce(t, { type: 'PLAY_ACTION', card: 'haunted_woods' });
+  t = reduce(reduce(t, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+  ok(t.turn.active === 0, '自分の手番に戻る');
+  me(t).hand = ['guardian', 'copper', 'copper'];
+  t.turn.phase = 'buy'; t.turn.coins = 3; t.turn.buys = 1;
+  t = reduce(t, { type: 'BUY', card: 'silver' });
+  ok(me(t).hand.length === 0, '購入で手札が全部山札の上に載る（呪いの森）');
+  t = reduce(t, { type: 'END_TURN' });
+  ok(t.turn.active === 1, '手札に夜行カードが無いので夜フェイズに入らず手番が移る');
+}
+
 console.log('\n=== 回帰: 呪われた金貨は「財宝を全部出す」で勝手に出さない ===');
 {
   const s = mk(king(['pooka']));
