@@ -240,6 +240,17 @@ console.log('=== 帝国E2: 戦車競走（厳密に高い時だけ・引分/空�
 { let s = mk2(); s.turn.phase = 'action'; s.turn.actions = 1; s.players[0].hand = ['chariot_race']; s.players[0].deck = ['gold']; s.players[1].deck = []; s.players[1].discard = [];
   s = reduce(s, { type: 'PLAY_ACTION', card: 'chariot_race' });
   ok(s.turn.coins === 0 && (s.players[0].vpTokens || 0) === 0, '戦車競走：左隣が公開できない→ボーナス無し'); }
+// 2025年2月エラッタ：「山札の上を公開して手札に加える」→「+1カード（公開して引く）」＝**通常のドロー**。
+//   -1カードトークン（遺物/借入）を持っていると1枚も引けず、公開できないのでボーナスも得られない（トークンは消費する）。
+{ let s = mk2(); s.turn.phase = 'action'; s.turn.actions = 1; s.players[0].hand = ['chariot_race'];
+  s.players[0].deck = ['gold']; s.players[0].discard = []; s.players[1].deck = ['copper'];
+  s.players[0].minusCard = true;
+  const t0 = tally(s); s = reduce(s, { type: 'PLAY_ACTION', card: 'chariot_race' });
+  ok(count(s.players[0].hand, 'gold') === 0 && count(s.players[0].deck, 'gold') === 1,
+    '戦車競走×-1カードトークン：1枚も引けない（draw() を通っている）');
+  ok(s.players[0].minusCard === false, '-1カードトークンは消費される');
+  ok(s.turn.coins === 0 && (s.players[0].vpTokens || 0) === 0 && tdiff(t0, tally(s)).length === 0,
+    '公開できないのでボーナス無し・保存則OK'); }
 
 console.log('=== 帝国E2: ヴィラ（購入でアクションフェイズ復帰）===');
 { let s = mk2(); s.turn.phase = 'buy'; s.turn.coins = 5; s.turn.buys = 1; s.turn.actions = 0; const t0 = tally(s);

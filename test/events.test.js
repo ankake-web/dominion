@@ -121,6 +121,12 @@ console.log('=== 新pendingの裁定＋CPU終端保証 ===');
   ok(cnt(me(s).discard, 'curse') === 1 && s.pending && s.pending.type === 'ritual', 'ritual：呪い獲得＋廃棄pending');
   s = reduce(s, { type: 'RITUAL_TRASH', card: 'gold' });
   ok(cnt(s.trash, 'gold') === 1 && me(s).vpTokens === 6 && !s.pending, 'ritual：金貨廃棄で+6VP'); }
+// 2025年2月エラッタ：`it cost`→`it costs`＝**廃棄した後の現在コスト**を参照する（他の廃棄コスト参照と同じ）。
+//   コスト軽減（橋）が効いている局面でも「廃棄後の現在コスト」で数える。
+{ let s = mk(['ritual'], 4, 1); me(s).hand = ['gold']; s.turn.costReduction = 2;
+  s = reduce(s, { type: 'BUY_EVENT', event: 'ritual' });
+  s = reduce(s, { type: 'RITUAL_TRASH', card: 'gold' });
+  ok(me(s).vpTokens === 4, 'ritual：廃棄「後」の現在コスト（$6-2=4）で +VP'); }
 { let s = mk(['ritual'], 4, 1); me(s).hand = []; s = reduce(s, { type: 'BUY_EVENT', event: 'ritual' });
   ok(cnt(me(s).discard, 'curse') === 1 && !s.pending, 'ritual：手札が空なら廃棄pendingは立たない'); }
 { let s = mk(['ritual'], 4, 1); me(s).hand = ['duchy', 'estate']; s = reduce(s, { type: 'BUY_EVENT', event: 'ritual' });
@@ -412,10 +418,16 @@ console.log('=== 冒険：使節団 / 巡礼 / 相続 ===');
   ok(!s.players[0].missionExtra, '使節団：3連続ターンにはできない');
   s = reduce(s, { type: 'END_TURN' });
   ok(s.turn.active === 1, '使節団：追加ターンの後は相手の手番'); }
+// 使節団は現行エラッタで「1ターン1回」の前置句が消えている＝**複数回買えるが2枚目以降は空振り**（購入権とコインは減る）。
 { let s = mka(['mission'], 8, 2); s = reduce(s, { type: 'BUY_EVENT', event: 'mission' });
   const b = s.turn.buys;
   s = reduce(s, { type: 'BUY_EVENT', event: 'mission' });
-  ok(s.turn.buys === b, '使節団：1ターンに2回は買えない'); }
+  ok(s.turn.buys === b - 1, '使節団：1ターンに2回買える（購入権を消費する）');
+  ok(s.players[0].missionExtra === true, '使節団：2枚目は空振り（追加ターンは1回だけ）');
+  s = reduce(s, { type: 'END_TURN' });
+  ok(s.turn.active === 0 && s.turn.isExtraTurn, '使節団：追加ターンに入る');
+  s = reduce(reduce(s, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+  ok(s.turn.active === 1, '使節団：追加ターンは1回だけ（2枚目で3連続にはならない）'); }
 { let s = mka(['pilgrimage'], 4, 1); me(s).inPlay = ['ranger'];
   s = reduce(s, { type: 'BUY_EVENT', event: 'pilgrimage' });
   ok(!s.pending && me(s).journeyDown === true, '巡礼：旅トークンが裏になったら何も起きない'); }

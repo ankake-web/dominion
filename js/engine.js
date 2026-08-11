@@ -3351,11 +3351,16 @@
         break;
       // 戦車競走：+1アクション。自分の山札の上を公開して手札に加える。左隣も山札の上を公開する（公開のみ＝山札に残す）。
       //   自分のカードのコストが左隣のより高ければ +$1 と VPトークン1個（同コスト/安いは無し・左隣が山札0枚ならこちらの勝ち）。
+      // 帝国：戦車競走。**2025年2月エラッタで「山札の上を公開して手札に加える」→「+1カード（公開して引く）」に変更**。
+      //   ＝通常のドローなので **-1カードトークン（遺物/借入）で1枚も引けない**ことがあり、カメレオンの習性の対象にもなる。
+      //   そのため `p.deck.shift()` を直読みせず必ず `draw()` を通す（直読みするとトークンを無視して常に引けてしまう）。
       case 'chariot_race': {
         addActions(t, 1);
-        if (p.deck.length === 0 && p.discard.length > 0) reshuffleDeck(p);
         let mine = null;
-        if (p.deck.length > 0) { mine = p.deck.shift(); reveal(state, pi, [mine], '戦車競走で山札の上を公開'); p.hand.push(mine); log(state, `${p.name} は戦車競走で「${C()[mine].name}」を公開し手札に加えた。`); }
+        {
+          const got = draw(state, pi, 1); // -1カードトークン等はここで消化される（引けないこともある）
+          if (got.length) { mine = got[0]; reveal(state, pi, [mine], '戦車競走で引いたカードを公開'); log(state, `${p.name} は戦車競走で「${C()[mine].name}」を引いて公開した。`); }
+        }
         const n = state.players.length, left = (pi + 1) % n, lp = state.players[left];
         let theirs = null;
         if (lp.deck.length === 0 && lp.discard.length > 0) reshuffleDeck(lp);
@@ -6670,7 +6675,9 @@
   //   （※一次資料の扱い：施し/保存/借入/巡礼は公式FAQに "You can only buy this once per turn." が明記されているが、
   //     絶望の個別FAQには同文が無い。カード文が完全に同一テンプレートなので同じ解釈を採用した。
   //     反対解釈＝「買えるが2回目は空振り」でも購入権1つを無駄にするだけの差＝どちらでも致命的な差は出ない。）
-  const ONCE_PER_TURN_EVENTS = new Set(['alms', 'borrow', 'save', 'pilgrimage', 'mission', 'desperation']);
+  //   ※**使節団（mission）は現行エラッタで前置句が消えている**＝1ターンに複数回買える（2枚目以降は空振り
+  //     ＝`me.missionExtra` が既に true なので何も起きない）。ここに入れてはいけない。
+  const ONCE_PER_TURN_EVENTS = new Set(['alms', 'borrow', 'save', 'pilgrimage', 'desperation']);
   // 相続は1ゲーム1回（既に脇置きを持っていれば買えない）。移動動物園：今を生きる（seize_the_day）も1ゲーム1回。
   function canBuyEvent(state, pi, id) {
     const t = state.turn, p = state.players[pi];
@@ -7862,8 +7869,10 @@
         if (rp.hand.length === 0) { state.pending = null; return state; }
         const c = action.card;
         if (!c || !rp.hand.includes(c)) return state;
-        const cost = cardCost(state, c);
         if (!trashFromHand(state, pd.player, [c], 1, 'を儀式で廃棄した。')) return state;
+        // 2025年2月エラッタ：`+1 VP per $1 it cost` → `it costs`（＝**廃棄した「後」の現在コスト**を参照する）。
+        //   他の「廃棄したカードのコスト」参照（改築/拡張など）と同じ扱いになった。
+        const cost = cardCost(state, c);
         if (cost > 0) { rp.vpTokens = (rp.vpTokens || 0) + cost; log(state, `${rp.name} は儀式で +${cost}勝利点（廃棄カードのコスト）。`); }
         state.pending = null;
         return state;
