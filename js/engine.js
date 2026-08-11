@@ -795,6 +795,7 @@
         deluded: false,    // 状態：錯乱（**持っているだけでは効かない**＝購入フェイズ開始時に返して初めて発動）
         envious: false,    // 状態：嫉妬（同上。錯乱とは排他＝両面カード1枚）
         misery: 0,         // 状態：0=なし / 1=生活苦(-2VP) / 2=二重苦(-4VP)
+        guardianActive: false, // 守護者：次の自分のターン開始時までアタックの影響を受けない（灯台とは窓が違う）
         ghostSetAside: [], // 幽霊の脇札（**公開**＝公開しながら掘るので全員が見ている。物理カード）
         cryptSetAside: [], // 納骨堂の脇札（**所有者のみ可視**＝裏向き。物理カード。納骨堂1枚につき1束だが枚数だけで足りる）
       };
@@ -1695,6 +1696,7 @@
        堀を公開した被害者は accepted に入らない＝呪詛を受けない。**呪詛は全員の窓を閉じてから1枚だけめくる**。 */
     hex:           { onMoat: (s, pd) => hexReactEnter(s, pd.source, pd.queue, pd.accepted || []) },
     idol:          { onMoat: (s, pd) => idolEnterVictim(s, pd.source, pd.queue) },
+    raider:        { onMoat: (s, pd) => raiderEnterVictim(s, pd.source, pd.queue) },
     // 冒険：遺物（-1カードトークン）・巨人（公開廃棄/呪い）・橋の下のトロル（-$1トークン）。
     relic:         { onMoat: (s, pd) => relicEnterVictim(s, pd.source, pd.queue) },
     giant:         { onMoat: (s, pd) => giantEnterVictim(s, pd.source, pd.queue) },
@@ -5685,6 +5687,109 @@
         t.trackerTurn = true;
         receiveBoon(state, pi, 1);
         break;
+      /* ===== 夜想曲：夜行（Night）カード ===== */
+      // カブラー（夜行・持続）＝次の自分のターン開始時、コスト4以下のカードを1枚**手札に**獲得（強制）。
+      case 'cobbler':
+        armDuration(state, pi, 'cobbler');
+        break;
+      /* 納骨堂（夜行・持続）＝場の「持続でない財宝」を好きな枚数、裏向きで脇に置く。
+         残りがある限り、**あなたの各ターンの開始時**に1枚を手札に加える。0枚なら持続にならない。 */
+      case 'crypt':
+        if (p.inPlay.some((c) => isTreasureFor(state, c) && !DOM.isType(c, 'duration'))) {
+          state.pending = { type: 'crypt_setaside', player: pi };
+        }
+        break;
+      // 悪人のアジト（夜行・持続）＝次の自分のターン開始時 +2カード。獲得時は手札へ（gain の GAIN_TO_HAND）。
+      case 'den_of_sin':
+        armDuration(state, pi, 'den_of_sin');
+        break;
+      /* 悪魔の工房（夜行）＝**このターンに獲得した枚数**で自動的に決まる（選ぶ余地は無い）。
+         2枚以上＝インプ／1枚＝コスト4以下を1枚（選ぶ）／0枚＝金貨。 */
+      case 'devils_workshop': {
+        const n = (t.gainedThisTurn || []).length;
+        if (n >= 2) { if (gain(state, pi, 'imp', 'discard')) log(state, `${p.name} は悪魔の工房でインプ1枚を獲得した（このターン${n}枚獲得）。`); }
+        else if (n === 1) { if (anyGainable(state, (id) => costUpTo(state, id, 4))) state.pending = { type: 'devils_workshop_gain', player: pi }; }
+        else { if (gain(state, pi, 'gold', 'discard')) log(state, `${p.name} は悪魔の工房で金貨1枚を獲得した（このターン獲得なし）。`); }
+        break;
+      }
+      // 悪魔祓い（夜行）＝手札1枚を廃棄し、それより**厳密に安い**精霊カード1枚を獲得（強制）。
+      case 'exorcist':
+        if (p.hand.length) state.pending = { type: 'exorcist_trash', player: pi };
+        break;
+      // ゴーストタウン（夜行・持続）＝次の自分のターン開始時 +1カード +1アクション。獲得時は手札へ。
+      case 'ghost_town':
+        armDuration(state, pi, 'ghost_town');
+        break;
+      /* 守護者（夜行・持続）＝次の自分のターン**開始時**に +1コイン。**それまで**他プレイヤーのアタックを受けない。
+         灯台と違い「次のターン中」は守られない（開始時に窓が閉じる）＝別フラグで管理する。 */
+      case 'guardian':
+        p.guardianActive = true;
+        armDuration(state, pi, 'guardian');
+        break;
+      /* 修道院（夜行）＝**このターンに獲得した枚数**まで、手札1枚か場の銅貨1枚を廃棄してよい（任意・1枚ずつ）。
+         上限は使用時点で固定（廃棄の途中で獲得が起きても増えない）。 */
+      case 'monastery': {
+        const n = (t.gainedThisTurn || []).length;
+        if (n > 0 && (p.hand.length || p.inPlay.includes('copper'))) {
+          state.pending = { type: 'monastery', player: pi, remaining: n };
+        }
+        break;
+      }
+      /* 夜警（夜行）＝山札の上5枚を**見る**（公開ではない＝reveal を通さない）。好きな枚数を捨て、残りを好きな順で戻す。
+         獲得時は手札へ（gain の GAIN_TO_HAND）。 */
+      case 'night_watchman': {
+        const look = [];
+        for (let i = 0; i < 5; i++) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
+          if (p.deck.length === 0) break;
+          look.push(p.deck.shift());
+        }
+        if (look.length) state.pending = { type: 'look_arrange', player: pi, cards: look, source: 'night_watchman' };
+        break;
+      }
+      /* 夜襲（夜行・持続・アタック）＝手札5枚以上の他プレイヤーは、使用者の場にあるカードと同名の1枚を捨てる
+         （できなければ手札を公開）。次の自分のターン開始時 +3コイン。 */
+      case 'raider':
+        armDuration(state, pi, 'raider');
+        raiderEnterVictim(state, pi, othersInOrder(state, pi));
+        break;
+      /* 人狼（アクション・夜行・アタック・不運）＝**あなたの夜フェイズなら**他プレイヤー全員が次の呪詛を受ける。
+         そうでなければ +3カード。 */
+      case 'werewolf':
+        if (t.phase === 'night') startHexAttack(state, pi, othersInOrder(state, pi));
+        else draw(state, pi, 3);
+        break;
+      /* ===== 夜想曲：非サプライのアクション（精霊2種＋願い） ===== */
+      // ウィル・オ・ウィスプ（精霊）＝+1カード+1アクション、山札の上を公開しコスト2以下なら手札へ。
+      case 'will_o_wisp': {
+        draw(state, pi, 1); addActions(t, 1);
+        if (p.deck.length === 0 && p.discard.length) reshuffleDeck(p);
+        if (p.deck.length) {
+          const top = p.deck[0];
+          reveal(state, pi, [top], 'ウィル・オ・ウィスプ');
+          if (cardCost(state, top) <= 2 && potionCost(top) === 0) {
+            p.deck.shift(); p.hand.push(top);
+            log(state, `${p.name} はウィル・オ・ウィスプで「${C()[top].name}」を手札に加えた。`);
+          }
+        }
+        break;
+      }
+      // インプ（精霊）＝+2カード、場に同名が無いアクション1枚を手札から使ってよい（コンクラーベと同じ述語）。
+      case 'imp':
+        draw(state, pi, 2);
+        if (conclaveTargets(state, pi).length) state.pending = { type: 'imp_play', player: pi };
+        break;
+      /* 願い＝+1アクション、これを願いの山に戻す。戻せたらコスト6以下のカード1枚を**手札に**獲得する。
+         「山に戻す」は獲得でも廃棄でもない（交換と同じ扱い）。 */
+      case 'wish': {
+        addActions(t, 1);
+        if (removeOne(p.inPlay, 'wish')) {
+          state.supply.wish = (state.supply.wish || 0) + 1;
+          log(state, `${p.name} は願いを山に戻した。`);
+          if (anyGainable(state, (id) => costUpTo(state, id, 6))) state.pending = { type: 'wish_gain', player: pi };
+        }
+        break;
+      }
       /* 悲劇のヒーロー＝+3カード+1購入。**引いた後**に手札が8枚以上なら、これを廃棄して財宝1枚を獲得（強制）。 */
       case 'tragic_hero':
         draw(state, pi, 3); t.buys += 1;
@@ -6017,6 +6122,27 @@
   const DURATION_RESOLVERS = {
     // 夜想曲：秘密の洞窟＝手札3枚を捨てたときだけ持続になり、次の自分のターン開始時に +3コイン。
     secret_cave: (s, pi) => { addCoins(s, 3); log(s, `${s.players[pi].name} は秘密の洞窟の持続効果（+3コイン）。`); },
+    // 夜想曲：悪人のアジト＝次の自分のターン開始時 +2カード。
+    den_of_sin: (s, pi) => { draw(s, pi, 2); log(s, `${s.players[pi].name} は悪人のアジトの持続効果（+2カード）。`); },
+    // 夜想曲：ゴーストタウン＝次の自分のターン開始時 +1カード +1アクション。
+    ghost_town: (s, pi) => { draw(s, pi, 1); addActions(s.turn, 1); log(s, `${s.players[pi].name} はゴーストタウンの持続効果（+1カード +1アクション）。`); },
+    // 夜想曲：守護者＝次の自分のターン開始時 +1コイン。**このとき免疫の窓が閉じる**（灯台と違い次のターン中は守られない）。
+    guardian: (s, pi) => { s.players[pi].guardianActive = false; addCoins(s, 1); log(s, `${s.players[pi].name} は守護者の持続効果（+1コイン。アタック免疫はここで終わる）。`); },
+    // 夜想曲：夜襲＝次の自分のターン開始時 +3コイン。
+    raider: (s, pi) => { addCoins(s, 3); log(s, `${s.players[pi].name} は夜襲の持続効果（+3コイン）。`); },
+    // 夜想曲：カブラー＝次の自分のターン開始時、コスト4以下のカードを1枚**手札に**獲得する（強制）。
+    cobbler: (s, pi) => {
+      if (anyGainable(s, (id) => costUpTo(s, id, 4))) s.turn.startQueue.push({ type: 'cobbler_gain', player: pi });
+    },
+    /* 夜想曲：納骨堂＝脇に残っている限り、**あなたの各ターンの開始時**に1枚を手札に加える
+       （納骨堂1枚につき1束＝予約に残り枚数 n を持たせ、残っていれば再武装する）。 */
+    crypt: (s, pi, e) => {
+      const p = s.players[pi];
+      const n = e.n || 0;
+      if (n > 0 && (p.cryptSetAside || []).length) {
+        s.turn.startQueue.push({ type: 'crypt_pick', player: pi, n });
+      }
+    },
     fishing_village: (s, pi) => { addActions(s.turn, 1); addCoins(s, 1); log(s, `${s.players[pi].name} は漁村の持続効果（+1アクション +1コイン）。`); },
     caravan: (s, pi) => { draw(s, pi, 1); log(s, `${s.players[pi].name} は隊商の持続効果（+1カード）。`); },
     merchant_ship: (s, pi) => { addCoins(s, 2); log(s, `${s.players[pi].name} は商船の持続効果（+2コイン）。`); },
@@ -6738,11 +6864,12 @@
   function attackImmune(state, victim) {
     const v = state.players[victim];
     // 冒険：チャンピオン＝場にある間（永続持続）、他プレイヤーのアタックの影響を受けない。
-    // 夜想曲：守護者＝使用してから次の自分のターン開始時まで、他プレイヤーのアタックの影響を受けない
-    //   （予約が残っている間＝durationCards に守護者がある間）。
+    /* 夜想曲：守護者＝使用してから**次の自分のターンの開始時まで**アタックの影響を受けない。
+       灯台（"While this is in play"＝次の自分のターン中も守られる）とは窓が違うので、
+       灯台の述語を流用してはいけない（1ターンぶん過剰に守ってしまう）＝専用フラグで管理する。 */
     return v.inPlay.includes('lighthouse') || (v.durationCards || []).includes('lighthouse')
         || v.inPlay.includes('champion') || (v.durationCards || []).includes('champion')
-        || (v.durationCards || []).includes('guardian');
+        || !!v.guardianActive;
   }
 
   /* ============================================================
@@ -7039,6 +7166,13 @@
     const inPlay = new Set(p.inPlay.concat(p.durationCards || []));
     return [...new Set(p.hand.filter((c) => (DOM.isType(c, 'action') || inheritedEstate(p, c)) && !inPlay.has(c)))];
   }
+  /* 悪魔祓い＝「廃棄したカードより**厳密に安い**精霊カード」の候補（engine/CPU/UI が必ずこれを見る）。
+     ⚠ 精霊は**非サプライ**なので `costUnder`（＝`gainableBase` を含む）では常に候補ゼロになる。
+        それに気づかず CPU が null を返し続けて本番 livelock になった（fuzz が検出）。 */
+  function exorcistSpirits(state, ref) {
+    const r = { coin: (ref && ref.coin) || 0, pot: (ref && ref.pot) || 0, debt: (ref && ref.debt) || 0 };
+    return SPIRITS.filter((id) => (state.supply[id] || 0) > 0 && costLT(costOf(state, id), r));
+  }
   // 偶像（財宝アタック）＝偶数枚なら他のプレイヤー全員が呪いを獲得。堀/灯台/守護者で防げる。
   function idolEnterVictim(state, source, queue) {
     queue = (queue || []).filter((v) => !attackImmune(state, v));
@@ -7051,6 +7185,30 @@
   function idolCurse(state, source, victim, queue) {
     if (gain(state, victim, 'curse', 'discard')) log(state, `${state.players[victim].name} は呪いを獲得した（偶像）。`);
     idolEnterVictim(state, source, queue);
+  }
+  /* 夜襲（夜行・持続・アタック）＝手札5枚以上の他プレイヤーは「使用者の場にあるカードと同名の1枚」を捨てる。
+     捨てられなければ手札を公開する（**本物の「捨てる」**＝忠犬/坑道などの捨て札トリガーが誘発する）。 */
+  function raiderEnterVictim(state, source, queue) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'raider', stage: 'react', player: victim, source, victim, queue: rest };
+    } else raiderApply(state, source, victim, rest);
+  }
+  function raiderTargets(state, source, victim) {
+    const sp = state.players[source], vp = state.players[victim];
+    const inPlay = new Set(sp.inPlay.concat(sp.durationCards || []));
+    return [...new Set(vp.hand.filter((c) => inPlay.has(c)))];
+  }
+  function raiderApply(state, source, victim, queue) {
+    const vp = state.players[victim];
+    if (vp.hand.length >= 5) {
+      const cand = raiderTargets(state, source, victim);
+      if (cand.length) { state.pending = { type: 'raider', stage: 'discard', player: victim, source, victim, queue }; return; }
+      reveal(state, victim, vp.hand.slice(), '夜襲：捨てられるカードがない');
+    }
+    raiderEnterVictim(state, source, queue);
   }
 
   /* ---------- クリーンアップ＆次の番へ ---------- */
@@ -14581,6 +14739,157 @@
         log(state, `${pl.name} は忠犬を脇に置いた（このターンの終了時に手札へ戻る）。`);
         return state;
       }
+      // カブラー＝次のターン開始時、コスト4以下のカードを**手札に**獲得（強制）。
+      case 'COBBLER_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'cobbler_gain') return state;
+        if (!anyGainable(state, (id) => costUpTo(state, id, 4))) { popStartQueue(state); return state; }
+        const id = action.card;
+        if (!id || !costUpTo(state, id, 4)) return state;
+        state.pending = null;
+        if (gain(state, pd.player, id, 'hand')) log(state, `${state.players[pd.player].name} はカブラーで「${C()[id].name}」を手札に獲得した。`);
+        if (!state.pending) popStartQueue(state);
+        return state;
+      }
+      /* 納骨堂＝場の「持続でない財宝」を好きな枚数、裏向きで脇に置く（0枚なら持続にならない）。 */
+      case 'CRYPT_SETASIDE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'crypt_setaside') return state;
+        const pl = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        const copy = pl.inPlay.slice();
+        for (const c of cards) {
+          if (!isTreasureFor(state, c) || DOM.isType(c, 'duration')) return state;
+          if (!removeOne(copy, c)) return state;
+        }
+        state.pending = null;
+        if (!cards.length) { log(state, `${pl.name} は納骨堂で脇に置かなかった（このターンの片付けで捨て札になる）。`); return state; }
+        cards.forEach((c) => { removeOne(pl.inPlay, c); (pl.cryptSetAside = pl.cryptSetAside || []).push(c); });
+        armDuration(state, pd.player, 'crypt', { n: cards.length });
+        log(state, `${pl.name} は納骨堂で財宝 ${cards.length}枚 を裏向きで脇に置いた。`);
+        return state;
+      }
+      // 納骨堂＝ターン開始時、脇の1枚を手札に加える（残っていれば次のターンも続く）。
+      case 'CRYPT_PICK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'crypt_pick') return state;
+        const pl = state.players[pd.player];
+        const c = action.card;
+        if (!(pl.cryptSetAside || []).length) { popStartQueue(state); return state; }
+        if (!c || !removeOne(pl.cryptSetAside, c)) return state;
+        pl.hand.push(c);
+        log(state, `${pl.name} は納骨堂から「${C()[c].name}」を手札に加えた。`);
+        // まだ残っていれば次のターンも続く（残り枚数を予約に持たせて再武装する）。
+        if ((pd.n || 1) - 1 > 0 && pl.cryptSetAside.length) armDuration(state, pd.player, 'crypt', { n: (pd.n || 1) - 1 });
+        popStartQueue(state);
+        return state;
+      }
+      // 悪魔の工房＝このターン1枚だけ獲得していた場合＝コスト4以下を1枚獲得（強制）。
+      case 'DEVILS_WORKSHOP_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'devils_workshop_gain') return state;
+        if (!anyGainable(state, (id) => costUpTo(state, id, 4))) { state.pending = null; return state; }
+        const id = action.card;
+        if (!id || !costUpTo(state, id, 4)) return state;
+        state.pending = null;
+        if (gain(state, pd.player, id, 'discard')) log(state, `${state.players[pd.player].name} は悪魔の工房で「${C()[id].name}」を獲得した。`);
+        return state;
+      }
+      // 悪魔祓い＝手札1枚を廃棄（強制）→ それより**厳密に安い**精霊カード1枚を獲得（強制）。
+      case 'EXORCIST_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'exorcist_trash') return state;
+        const pl = state.players[pd.player];
+        if (!pl.hand.length) { state.pending = null; return state; } // 終端保証
+        const c = action.card;
+        if (!c || pl.hand.indexOf(c) < 0) return state;
+        const ref = costOf(state, c);
+        if (!trashFromHand(state, pd.player, [c], 1, 'を悪魔祓いで廃棄した。')) return state;
+        state.pending = null;
+        if (exorcistSpirits(state, ref).length) {
+          state.pending = { type: 'exorcist_gain', player: pd.player, coin: ref.coin, pot: ref.pot, debt: ref.debt };
+        } else log(state, `${pl.name} は悪魔祓いで獲得できる精霊がなかった。`);
+        return state;
+      }
+      case 'EXORCIST_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'exorcist_gain') return state;
+        const cand = exorcistSpirits(state, { coin: pd.coin, pot: pd.pot || 0, debt: pd.debt || 0 });
+        if (!cand.length) { state.pending = null; return state; } // 終端保証
+        const id = action.card;
+        if (!id || cand.indexOf(id) < 0) return state;
+        state.pending = null;
+        if (gain(state, pd.player, id, 'discard')) log(state, `${state.players[pd.player].name} は悪魔祓いで「${C()[id].name}」を獲得した。`);
+        return state;
+      }
+      /* 修道院＝このターン獲得した枚数まで、手札1枚か場の銅貨1枚を廃棄してよい（任意・**1枚ずつ**）。
+         途中でドローが起きたらその引いたカードも廃棄対象にできる＝ループ pending にする。 */
+      case 'MONASTERY_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'monastery') return state;
+        const pl = state.players[pd.player];
+        const c = action.card;
+        if (c == null) { state.pending = null; return state; } // やめる
+        if (action.fromPlay) {
+          if (c !== 'copper' || !removeOne(pl.inPlay, 'copper')) return state;
+          trashCard(state, pd.player, 'copper');
+          log(state, `${pl.name} は修道院で場の銅貨1枚を廃棄した。`);
+        } else {
+          if (pl.hand.indexOf(c) < 0) return state;
+          if (!trashFromHand(state, pd.player, [c], 1, 'を修道院で廃棄した。')) return state;
+        }
+        const left = (pd.remaining || 1) - 1;
+        state.pending = (left > 0 && (pl.hand.length || pl.inPlay.includes('copper')))
+          ? { type: 'monastery', player: pd.player, remaining: left } : null;
+        return state;
+      }
+      // 夜襲＝リアクション窓（受ける）。
+      case 'RAIDER_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'raider' || pd.stage !== 'react') return state;
+        raiderApply(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      // 夜襲＝使用者の場にあるカードと同名の1枚を捨てる（被害者が選ぶ・強制）。
+      case 'RAIDER_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'raider' || pd.stage !== 'discard') return state;
+        const cand = raiderTargets(state, pd.source, pd.victim);
+        if (!cand.length) { raiderEnterVictim(state, pd.source, pd.queue); return state; } // 終端保証
+        const c = action.card;
+        if (!c || cand.indexOf(c) < 0) return state;
+        state.pending = null;
+        discardFromHand(state, pd.victim, [c], 1, 'を捨てた（夜襲）。');
+        triggerOnDiscard(state, pd.victim, [c]);
+        const keep = state.pending;                 // 捨て札トリガー（忠犬など）が窓を開けたら先に解決する
+        state.pending = null;
+        raiderEnterVictim(state, pd.source, pd.queue);
+        if (keep) { (state.onGainQueue = state.onGainQueue || []).push(keep); }
+        return state;
+      }
+      // インプ＝場に同名が無いアクション1枚を手札から使ってよい（コンクラーベと同じ述語。+1アクションは無い）。
+      case 'IMP_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'imp_play') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        state.pending = null;
+        if (card == null) return state;
+        if (conclaveTargets(state, pd.player).indexOf(card) < 0) return state;
+        playCardNoAction(state, pd.player, card, pl.hand, 'インプで', action.way);
+        return state;
+      }
+      // 願い＝山に戻せたらコスト6以下のカード1枚を**手札に**獲得する（強制）。
+      case 'WISH_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'wish_gain') return state;
+        if (!anyGainable(state, (id) => costUpTo(state, id, 6))) { state.pending = null; return state; }
+        const id = action.card;
+        if (!id || !costUpTo(state, id, 6)) return state;
+        state.pending = null;
+        if (gain(state, pd.player, id, 'hand')) log(state, `${state.players[pd.player].name} は願いで「${C()[id].name}」を手札に獲得した。`);
+        return state;
+      }
       // 偶像（財宝アタック）のリアクション窓＝「受ける」。
       case 'IDOL_REACT': {
         const pd = state.pending;
@@ -14853,6 +15162,10 @@
     'BLESSED_VILLAGE_BOON', 'CEMETERY_TRASH', 'CONCLAVE_PLAY', 'DRUID_BOON', 'BOON_CHOOSE', 'GROVE_OFFER',
     'PIXIE_TRASH', 'POOKA_TRASH', 'SECRET_CAVE_DISCARD', 'SHEPHERD_DISCARD', 'TRAGIC_HERO_GAIN',
     'GOAT_TRASH', 'HAUNTED_MIRROR_GHOST', 'FAITHFUL_HOUND_REACT', 'IDOL_REACT',
+    // 夜想曲：夜行カードと非サプライのアクション
+    'COBBLER_GAIN', 'CRYPT_SETASIDE', 'CRYPT_PICK', 'DEVILS_WORKSHOP_GAIN',
+    'EXORCIST_TRASH', 'EXORCIST_GAIN', 'MONASTERY_TRASH', 'RAIDER_REACT', 'RAIDER_DISCARD',
+    'IMP_PLAY', 'WISH_GAIN',
   ]);
 
   /* ---------- 公開API ---------- */
@@ -14900,6 +15213,7 @@
     // 夜想曲：祝福/呪詛/状態（CPU/UI が engine と同じ述語を見る）
     sharesType,        // 蝗害＝2枚が種別を1つ以上共有するか（獲得候補の絞り込みに CPU/UI も使う）
     conclaveTargets,   // コンクラーベ／インプ＝「場に同名が無い手札のアクション」（engine/CPU/UI が同じ候補を見る）
+    exorcistSpirits,   // 悪魔祓い＝廃棄したカードより安い精霊の候補（**非サプライなので costUnder では取れない**）
     improveTargets,    // ルネサンス：増築の廃棄対象（engine/CPU/UI が同じ候補を参照）
     isTreasureFor,     // ルネサンス：資本主義を含む「今この状態で財宝か」＝**財宝判定の正本**（engine/CPU/UI が同じ述語）
     capitalismTreasures, // ルネサンス：資本主義で財宝になるアクションの集合（整合性テストで固定する）

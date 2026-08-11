@@ -118,8 +118,9 @@ console.log('=== カード保存則: 全プール混成ランダム王国 ===');
 {
   let allOk = true, ran = 0;
   for (let g = 0; g < 60; g++) {
-    const r = runGame(randK(), mkPlayers(2 + (g % 3), g)); ran++;
-    if (!r.okp) { allOk = false; console.log('    MIX' + g + ': ' + r.why); }
+    const k = randK();
+    const r = runGame(k, mkPlayers(2 + (g % 3), g)); ran++;
+    if (!r.okp) { allOk = false; console.log('    MIX' + g + ': ' + r.why + ' k=' + k.join(',')); }
   }
   ok(allOk, '全プール混成ランダム ' + ran + '戦すべて保存則・不変条件を満たし終局');
 }

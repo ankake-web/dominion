@@ -2280,6 +2280,64 @@
         { label: '脇に置く（ターン終了時に手札へ）', cls: 'btn-primary', on: () => dispatch({ type: 'FAITHFUL_HOUND_REACT', setAside: true }) },
         { label: 'そのまま捨てる', on: () => dispatch({ type: 'FAITHFUL_HOUND_REACT', setAside: false }) }]);
     }
+    if (pd.type === 'cobbler_gain') {
+      return modalGainSupply(state, 'カブラー — 手札に獲得', 'コスト4以下のカード1枚を獲得し、手札に加えます。',
+        (id) => DOM.engine.costUpTo(state, id, 4), (id) => dispatch({ type: 'COBBLER_GAIN', card: id }));
+    }
+    if (pd.type === 'crypt_setaside') {
+      const elig = p.inPlay.map((id, idx) => ({ id, idx })).filter((x) => isTreasureNow(state, x.id) && !DOM.isType(x.id, 'duration'));
+      const chips = elig.map((x) => cardEl(x.id, { size: 'sm', extra: UI.selection.includes(x.idx) ? 'selected' : 'selectable',
+        onClick: () => { const i = UI.selection.indexOf(x.idx); if (i >= 0) UI.selection.splice(i, 1); else UI.selection.push(x.idx); render(); } }));
+      const footer = h('button', { class: 'btn btn-primary btn-block',
+        onclick: () => dispatch({ type: 'CRYPT_SETASIDE', cards: UI.selection.map((i) => p.inPlay[i]) }) },
+        UI.selection.length ? '確定（' + UI.selection.length + '枚 を脇に置く）' : '脇に置かない');
+      return modalShell('納骨堂 — 場の財宝を脇に置く', '場に出ている「持続でない財宝」を好きな枚数、裏向きで脇に置きます。以後あなたの各ターンの開始時に1枚ずつ手札へ加わります（0枚でもよい）。', chips, footer);
+    }
+    if (pd.type === 'crypt_pick') {
+      return modalPickIds('納骨堂 — 手札に加える', '脇に置いた財宝から1枚を手札に加えます。',
+        [...new Set(p.cryptSetAside || [])], (id) => dispatch({ type: 'CRYPT_PICK', card: id }), '手札に加える');
+    }
+    if (pd.type === 'devils_workshop_gain') {
+      return modalGainSupply(state, '悪魔の工房 — 獲得', 'このターンに1枚だけ獲得していたので、コスト4以下のカード1枚を獲得します。',
+        (id) => DOM.engine.costUpTo(state, id, 4), (id) => dispatch({ type: 'DEVILS_WORKSHOP_GAIN', card: id }));
+    }
+    if (pd.type === 'exorcist_trash') {
+      return modalSingleHand(p, '悪魔祓い — 廃棄', '手札から1枚を廃棄します（その後、それより安い精霊カードを1枚獲得します）。', () => true,
+        (card) => dispatch({ type: 'EXORCIST_TRASH', card }), null);
+    }
+    if (pd.type === 'exorcist_gain') {
+      // 精霊は非サプライ＝engine と同じ述語（exorcistSpirits）を見る（costUnder だと候補ゼロで人間が詰む）。
+      const ids = DOM.engine.exorcistSpirits(state, { coin: pd.coin, pot: pd.pot || 0, debt: pd.debt || 0 });
+      return modalPickIds('悪魔祓い — 精霊を獲得', '廃棄したカードより安い精霊カード1枚を獲得します。',
+        ids, (id) => dispatch({ type: 'EXORCIST_GAIN', card: id }), '獲得する', null, state);
+    }
+    if (pd.type === 'monastery') {
+      const chips = [...new Set(p.hand)].map((id) => cardEl(id, { size: 'sm', extra: 'selectable',
+        onClick: () => openPickZoom(id, '廃棄する', () => dispatch({ type: 'MONASTERY_TRASH', card: id })) }));
+      const btns = [];
+      if (p.inPlay.includes('copper')) btns.push(h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'MONASTERY_TRASH', card: 'copper', fromPlay: true }) }, '場の銅貨1枚を廃棄する'));
+      btns.push(h('button', { class: 'btn btn-block', onclick: () => dispatch({ type: 'MONASTERY_TRASH', card: null }) }, 'やめる'));
+      return modalShell('修道院 — 廃棄（あと ' + (pd.remaining || 1) + '回）', '手札1枚、または場にある銅貨1枚を廃棄できます（任意・1枚ずつ）。', chips, h('div', null, btns));
+    }
+    if (pd.type === 'raider' && pd.stage === 'react') {
+      return modalOptions('夜襲を受ける', '相手の場にあるカードと同じカード1枚を手札から捨てます（できなければ手札を公開します）。', reactOptions(p, pd, { type: 'RAIDER_REACT' }));
+    }
+    if (pd.type === 'raider' && pd.stage === 'discard') {
+      const src = state.players[pd.source];
+      const inPlay = new Set(src.inPlay.concat(src.durationCards || []));
+      return modalSingleHand(p, '夜襲 — 捨てる', src.name + ' の場にあるカードと同じカード1枚を捨てます（強制）。',
+        (id) => inPlay.has(id), (card) => dispatch({ type: 'RAIDER_DISCARD', card }), null, '捨てる');
+    }
+    if (pd.type === 'imp_play') {
+      const cand = DOM.engine.conclaveTargets(state, pd.player);
+      return modalSingleHand(p, 'インプ — 手札のアクションを使う', 'あなたの場に同じカードが出ていないアクションカード1枚を使えます（任意）。',
+        (id) => cand.indexOf(id) >= 0, (card) => dispatch({ type: 'IMP_PLAY', card }),
+        { label: '使わない', on: () => dispatch({ type: 'IMP_PLAY', card: null }) }, '使う');
+    }
+    if (pd.type === 'wish_gain') {
+      return modalGainSupply(state, '願い — 手札に獲得', 'コスト6以下のカード1枚を獲得し、手札に加えます。',
+        (id) => DOM.engine.costUpTo(state, id, 6), (id) => dispatch({ type: 'WISH_GAIN', card: id }));
+    }
     if (pd.type === 'idol' && pd.stage === 'react') {
       return modalOptions('偶像を受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'IDOL_REACT' }));
     }

@@ -833,6 +833,194 @@ console.log('\n=== N2: 家宝（Heirloom）7種 ===');
   ok(me(t).discard.includes('ghost') && me(t).discard.includes('village'), 'アクションを捨てて幽霊1枚を獲得');
 }
 
+
+console.log('\n=== N3: 夜行（Night）カード15種 ===');
+// 夜フェイズへ入る（手札に夜行カードがある前提）
+const night = (s) => reduce(reduce(s, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+const mkN = (k, n) => (n === 3 ? mk3(king(k)) : mk(king(k)));
+{ // カブラー
+  let s = mkN(['cobbler']); s.players[0].hand = ['cobbler'];
+  let t = night(s);
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'cobbler' });
+  ok(t.players[0].delayedEffects.length === 1, '持続');
+  t = reduce(t, { type: 'END_TURN' });          // 相手の番へ
+  t = reduce(reduce(t, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' }); // 相手のターン終了 → 自分のターン開始
+  ok(t.pending && t.pending.type === 'cobbler_gain', 'pending=' + (t.pending && t.pending.type));
+  t = reduce(t, { type: 'COBBLER_GAIN', card: 'village' });
+  ok(t.players[0].hand.includes('village'), '手札に獲得 hand=' + t.players[0].hand);
+}
+{ // 納骨堂
+  let s = mkN(['crypt']); s.players[0].hand = ['crypt', 'gold', 'silver']; s.turn.phase = 'buy';
+  let t = reduce(s, { type: 'PLAY_ALL_TREASURES' });
+  t = reduce(t, { type: 'END_TURN' });
+  ok(t.turn.phase === 'night', '夜フェイズ');
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'crypt' });
+  ok(t.pending && t.pending.type === 'crypt_setaside', 'pending=' + (t.pending && t.pending.type));
+  t = reduce(t, { type: 'CRYPT_SETASIDE', cards: ['gold', 'silver'] });
+  ok(t.players[0].cryptSetAside.length === 2, '脇=' + t.players[0].cryptSetAside);
+  ok(!t.players[0].inPlay.includes('gold'), '場から抜けた');
+  t = reduce(t, { type: 'END_TURN' });
+  t = reduce(reduce(t, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+  ok(t.pending && t.pending.type === 'crypt_pick', '開始時に手札へ pending=' + (t.pending && t.pending.type));
+  t = reduce(t, { type: 'CRYPT_PICK', card: 'gold' });
+  ok(t.players[0].hand.includes('gold'), '手札へ');
+  ok(t.players[0].cryptSetAside.length === 1, '残り1枚');
+  ok(t.players[0].durationCards.includes('crypt'), '納骨堂は場に残る');
+}
+{ // 納骨堂 0枚＝持続にならない
+  let s = mkN(['crypt']); s.players[0].hand = ['crypt', 'gold']; s.turn.phase = 'buy';
+  let t = reduce(s, { type: 'PLAY_ALL_TREASURES' });
+  t = reduce(t, { type: 'END_TURN' });
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'crypt' });
+  t = reduce(t, { type: 'CRYPT_SETASIDE', cards: [] });
+  ok(!t.players[0].delayedEffects.length, '持続にならない');
+  t = reduce(t, { type: 'END_TURN' });
+  ok(!t.players[0].durationCards.includes('crypt'), '片付けで場に残らない（捨て札へ）');
+}
+{ // 悪人のアジト＝獲得で手札／同ターンに使える
+  let s = mkN(['den_of_sin']); s.turn.phase = 'buy'; s.turn.coins = 5;
+  s.players[0].deck = ['gold', 'gold', 'gold', 'gold', 'gold', 'gold', 'gold'];
+  let t = reduce(s, { type: 'BUY', card: 'den_of_sin' });
+  ok(t.players[0].hand.includes('den_of_sin'), '手札に獲得 hand=' + t.players[0].hand);
+  t = reduce(t, { type: 'END_TURN' });
+  ok(t.turn.phase === 'night', '買ったターンの夜に使える');
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'den_of_sin' });
+  t = reduce(t, { type: 'END_TURN' });
+  t = reduce(reduce(t, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+  ok(t.players[0].hand.length === 7, '次のターン +2カード hand=' + t.players[0].hand.length);
+}
+{ // 悪魔の工房
+  let s = mkN(['devils_workshop']); s.players[0].hand = ['devils_workshop'];
+  let t = night(s);
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'devils_workshop' });
+  ok(t.players[0].discard.includes('gold'), '0枚獲得＝金貨 discard=' + t.players[0].discard);
+  s = mkN(['devils_workshop']); s.players[0].hand = ['devils_workshop']; s.turn.gainedThisTurn = ['silver', 'copper'];
+  t = night(s); t = reduce(t, { type: 'PLAY_NIGHT', card: 'devils_workshop' });
+  ok(t.players[0].discard.includes('imp'), '2枚以上＝インプ discard=' + t.players[0].discard);
+  s = mkN(['devils_workshop']); s.players[0].hand = ['devils_workshop']; s.turn.gainedThisTurn = ['silver'];
+  t = night(s); t = reduce(t, { type: 'PLAY_NIGHT', card: 'devils_workshop' });
+  ok(t.pending && t.pending.type === 'devils_workshop_gain', '1枚＝選ぶ');
+}
+{ // 悪魔祓い
+  let s = mkN(['exorcist']); s.players[0].hand = ['exorcist', 'silver'];
+  let t = night(s);
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'exorcist' });
+  t = reduce(t, { type: 'EXORCIST_TRASH', card: 'silver' });
+  ok(t.pending && t.pending.type === 'exorcist_gain', 'pending');
+  const bad1 = reduce(t, { type: 'EXORCIST_GAIN', card: 'ghost' });
+  ok(bad1.pending, '銀貨($3)では幽霊($4)は取れない');
+  t = reduce(t, { type: 'EXORCIST_GAIN', card: 'imp' });
+  ok(t.players[0].discard.includes('imp'), 'インプ');
+  // 銅貨($0)を廃棄すると何も獲得できない
+  s = mkN(['exorcist']); s.players[0].hand = ['exorcist', 'copper'];
+  t = night(s); t = reduce(t, { type: 'PLAY_NIGHT', card: 'exorcist' });
+  t = reduce(t, { type: 'EXORCIST_TRASH', card: 'copper' });
+  ok(!t.pending, '$0 を廃棄＝候補ゼロで終端');
+}
+{ // ゴーストタウン
+  let s = mkN(['ghost_town']); s.turn.phase = 'buy'; s.turn.coins = 3;
+  let t = reduce(s, { type: 'BUY', card: 'ghost_town' });
+  ok(t.players[0].hand.includes('ghost_town'), '手札に獲得');
+  t = reduce(t, { type: 'END_TURN' });
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'ghost_town' });
+  t = reduce(t, { type: 'END_TURN' });
+  t = reduce(reduce(t, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+  ok(t.turn.actions === 2, '+1アクション actions=' + t.turn.actions);
+}
+{ // 守護者＝次のターン開始時に免疫が終わる
+  let s = mkN(['guardian', 'militia']); s.players[0].hand = ['guardian'];
+  let t = night(s);
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'guardian' });
+  ok(t.players[0].guardianActive === true, '免疫中');
+  t = reduce(t, { type: 'END_TURN' });   // 相手のターン
+  // 相手が民兵を使う → 守護者は影響を受けない
+  t.players[1].hand = ['militia'];
+  let u = reduce(t, { type: 'PLAY_ACTION', card: 'militia' });
+  ok(!u.pending, '守護者は民兵の影響を受けない pending=' + (u.pending && u.pending.type));
+  // 次の自分のターン開始時に免疫が切れる
+  t = reduce(reduce(t, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+  ok(t.players[0].guardianActive === false, '免疫が終わる');
+  ok(t.turn.coins === 1, '+1コイン coins=' + t.turn.coins);
+}
+{ // 修道院
+  let s = mkN(['monastery']); s.players[0].hand = ['monastery', 'curse', 'copper']; s.players[0].inPlay = ['copper'];
+  s.turn.gainedThisTurn = ['silver', 'gold'];
+  let t = night(s);
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'monastery' });
+  ok(t.pending && t.pending.type === 'monastery' && t.pending.remaining === 2, 'remaining=' + (t.pending && t.pending.remaining));
+  t = reduce(t, { type: 'MONASTERY_TRASH', card: 'curse' });
+  ok(t.trash.includes('curse'), '手札から廃棄');
+  ok(t.pending && t.pending.remaining === 1, '残り1');
+  t = reduce(t, { type: 'MONASTERY_TRASH', card: 'copper', fromPlay: true });
+  ok(t.trash.filter((c) => c === 'copper').length === 1, '場の銅貨を廃棄');
+  ok(!t.pending, '上限に達して終わる');
+}
+{ // 夜警
+  let s = mkN(['night_watchman']); s.turn.phase = 'buy'; s.turn.coins = 3;
+  s.players[0].deck = ['copper', 'gold', 'estate', 'silver', 'village', 'duchy'];
+  let t = reduce(s, { type: 'BUY', card: 'night_watchman' });
+  ok(t.players[0].hand.includes('night_watchman'), '手札に獲得');
+  t = reduce(t, { type: 'END_TURN' });
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'night_watchman' });
+  ok(t.pending && t.pending.type === 'look_arrange' && t.pending.cards.length === 5, 'pending=' + (t.pending && t.pending.type));
+  t = reduce(t, { type: 'LOOK_ARRANGE_RESOLVE', discard: ['copper', 'estate'], top: ['gold', 'silver', 'village'] });
+  ok(t.players[0].deck[0] === 'gold', '順番どおり deck=' + t.players[0].deck);
+}
+{ // 夜襲
+  let s = mkN(['raider']); s.players[0].hand = ['raider']; s.players[0].inPlay = ['copper', 'silver'];
+  s.players[1].hand = ['copper', 'estate', 'estate', 'estate', 'estate'];
+  let t = night(s);
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'raider' });
+  ok(t.pending && t.pending.type === 'raider' && t.pending.stage === 'discard', 'pending=' + JSON.stringify(t.pending && t.pending.type));
+  t = reduce(t, { type: 'RAIDER_DISCARD', card: 'copper' });
+  ok(t.players[1].discard.includes('copper'), '捨てた');
+  t = reduce(t, { type: 'END_TURN' });
+  t = reduce(reduce(t, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+  ok(t.turn.coins === 3, '次ターン+3コイン coins=' + t.turn.coins);
+}
+{ // 夜襲＝手札4枚以下は対象外
+  let s = mkN(['raider']); s.players[0].hand = ['raider']; s.players[0].inPlay = ['copper'];
+  s.players[1].hand = ['copper', 'estate'];
+  let t = night(s);
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'raider' });
+  ok(!t.pending, '対象外 pending=' + (t.pending && t.pending.type));
+}
+{ // 人狼＝夜なら呪詛／昼なら+3カード
+  let s = mkN(['werewolf']); s.players[0].hand = ['werewolf']; s.players[0].deck = ['gold', 'gold', 'gold'];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'werewolf' });
+  ok(t.players[0].hand.length === 3, 'アクションフェイズ＝+3カード hand=' + t.players[0].hand.length);
+  s = mkN(['werewolf']); s.players[0].hand = ['werewolf']; s.hexes.deck = ['greed'];
+  t = night(s);
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'werewolf' });
+  ok(t.players[1].deck[0] === 'copper', '夜＝呪詛 deck=' + t.players[1].deck);
+}
+{ // ウィル・オ・ウィスプ
+  let s = mkN(['exorcist']); s.players[0].hand = ['will_o_wisp']; s.players[0].deck = ['gold', 'estate', 'copper'];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'will_o_wisp' });
+  ok(t.players[0].hand.includes('gold'), '+1カード');
+  ok(t.players[0].hand.includes('estate'), 'コスト2以下を手札へ hand=' + t.players[0].hand);
+  s = mkN(['exorcist']); s.players[0].hand = ['will_o_wisp']; s.players[0].deck = ['copper', 'gold'];
+  t = reduce(s, { type: 'PLAY_ACTION', card: 'will_o_wisp' });
+  ok(!t.players[0].hand.includes('gold'), 'コスト3以上は残す');
+}
+{ // インプ
+  let s = mkN(['devils_workshop']); s.players[0].hand = ['imp', 'village']; s.players[0].deck = ['gold', 'gold'];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'imp' });
+  ok(t.players[0].hand.length === 3, '+2カード');
+  ok(t.pending && t.pending.type === 'imp_play', 'pending');
+  t = reduce(t, { type: 'IMP_PLAY', card: 'village' });
+  ok(t.players[0].inPlay.includes('village'), '村を使った');
+}
+{ // 願い
+  let s = mkN(['leprechaun']); s.players[0].hand = ['wish'];
+  const before = s.supply.wish;
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'wish' });
+  ok(t.supply.wish === before + 1, '山に戻る supply=' + t.supply.wish);
+  ok(t.pending && t.pending.type === 'wish_gain', 'pending');
+  t = reduce(t, { type: 'WISH_GAIN', card: 'gold' });
+  ok(t.players[0].hand.includes('gold'), '手札に獲得');
+}
+
 console.log('\n=== N0b: CPU が夜フェイズで詰まらない ===');
 {
   const s = mk(king(['guardian', 'monastery']));

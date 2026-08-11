@@ -2198,6 +2198,52 @@
       case 'idol': // 偶像（財宝アタック）のリアクション窓
         if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
         return { type: 'IDOL_REACT' };
+      /* ---- 夜想曲：夜行カード ---- */
+      case 'cobbler_gain': // カブラー＝コスト4以下を手札に獲得（強制）
+        return { type: 'COBBLER_GAIN', card: bestGain(state, 4) };
+      case 'crypt_setaside': { // 納骨堂＝場の持続でない財宝を全部脇に置く（次のターン以降に手札へ）
+        const cand = p.inPlay.filter((c) => isTreasureNow(state, c) && !isType(c, 'duration'));
+        return { type: 'CRYPT_SETASIDE', cards: cand };
+      }
+      case 'crypt_pick': { // 納骨堂＝脇から1枚（良い財宝から）
+        const best = (p.cryptSetAside || []).slice().sort((a, b) => keepValue(b) - keepValue(a))[0];
+        return { type: 'CRYPT_PICK', card: best != null ? best : null };
+      }
+      case 'devils_workshop_gain':
+        return { type: 'DEVILS_WORKSHOP_GAIN', card: bestGain(state, 4) };
+      case 'exorcist_trash': { // 悪魔祓い＝不要札を廃棄（精霊が取れるよう、なるべく高いコストの不要札）
+        const junk = p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b));
+        const pick = junk.find((c) => trashValue(c) <= 3) || junk[0];
+        return { type: 'EXORCIST_TRASH', card: pick != null ? pick : null };
+      }
+      case 'exorcist_gain': { // 悪魔祓い＝取れる中で一番強い精霊（幽霊＞インプ＞ウィル・オ・ウィスプ）
+        // ⚠ 精霊は非サプライ＝costUnder（gainableBase 込み）では候補ゼロになる。engine と同じ述語を見ること。
+        const cand = DOM.engine.exorcistSpirits(state, { coin: pd.coin, pot: pd.pot || 0, debt: pd.debt || 0 });
+        const pick = ['ghost', 'imp', 'will_o_wisp'].find((id) => cand.indexOf(id) >= 0) || cand[0] || null;
+        return { type: 'EXORCIST_GAIN', card: pick };
+      }
+      case 'monastery': { // 修道院＝呪い/銅貨/屋敷を1枚ずつ廃棄（無ければやめる）
+        const junk = p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0];
+        if (junk != null && trashValue(junk) <= 2) return { type: 'MONASTERY_TRASH', card: junk };
+        if (p.inPlay.includes('copper')) return { type: 'MONASTERY_TRASH', card: 'copper', fromPlay: true };
+        return { type: 'MONASTERY_TRASH', card: null };
+      }
+      case 'raider':
+        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'RAIDER_REACT' }; }
+        { // 夜襲＝捨てる1枚は「最も価値の低い候補」
+          const inPlay = new Set(state.players[pd.source].inPlay.concat(state.players[pd.source].durationCards || []));
+          const cand = [...new Set(p.hand.filter((c) => inPlay.has(c)))].sort((a, b) => keepValue(a) - keepValue(b));
+          return { type: 'RAIDER_DISCARD', card: cand[0] != null ? cand[0] : null };
+        }
+      case 'imp_play': { // インプ＝場に同名が無いアクションを1枚使う
+        const cand = DOM.engine.conclaveTargets(state, pd.player);
+        if (!cand.length) return { type: 'IMP_PLAY', card: null };
+        const fake = Object.assign({}, p, { hand: cand });
+        const pick = chooseAction(Object.assign({}, state, { turn: Object.assign({}, state.turn, { actions: 1, phase: 'action' }) }), fake);
+        return { type: 'IMP_PLAY', card: (pick && cand.indexOf(pick) >= 0) ? pick : cand[0] };
+      }
+      case 'wish_gain': // 願い＝コスト6以下を手札に獲得（強制）
+        return { type: 'WISH_GAIN', card: bestGain(state, 6) };
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
       case 'warehouse':
