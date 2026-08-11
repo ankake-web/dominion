@@ -63,6 +63,23 @@ function runGame(kingdom, players, landmarks, events, projects, ways) {
     const d = diffTally(init, tally(s));
     if (d.length) return { okp: false, why: '保存則 step' + step + ': ' + d.join(' ') };
     if (Object.values(s.supply).some((v) => v < 0)) return { okp: false, why: 'supply負 step' + step };
+    /* 夜想曲：祝福12種・呪詛12種は「カード」ではないので上の保存則 tally では守られない。
+       **1枚でも消えると静かにゲームが壊れる**（玉座の間×迫害者で実際に消えた）ので、
+       「12種のidが必ずどこかに1つはある」を独立の不変条件として検査する
+       （聖なる木立ちの共有だけは同じ祝福が複数人の前に同時に置かれ得るので**集合**で見る）。 */
+    const bo = s.boons;
+    if (bo) {
+      const seen = new Set([].concat(bo.deck, bo.discard, bo.druid || []));
+      s.players.forEach((p) => { (p.boonsInFront || []).forEach((b) => seen.add(b)); (p.boonsHeld || []).forEach((b) => seen.add(b)); });
+      ((s.turn && s.turn.boonChoice && s.turn.boonChoice.boons) || []).forEach((b) => seen.add(b));
+      if (seen.size !== 12) return { okp: false, why: '祝福が消えた step' + step + ' 種類数=' + seen.size };
+    }
+    const hx = s.hexes;
+    if (hx) {
+      const seen = new Set([].concat(hx.deck, hx.discard));
+      if (s.turn && s.turn.currentHex) seen.add(s.turn.currentHex);
+      if (seen.size !== 12) return { okp: false, why: '呪詛が消えた step' + step + ' 種類数=' + seen.size };
+    }
     if (hasBack(s)) return { okp: false, why: 'back混入 step' + step };
     if (s.players.some((p) => (p.vpTokens || 0) < 0)) return { okp: false, why: 'vpTokens負 step' + step };
     if (s.players.some((p) => (p.debt || 0) < 0)) return { okp: false, why: 'debt負 step' + step }; // 帝国：負債は非負
