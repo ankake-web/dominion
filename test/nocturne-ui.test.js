@@ -172,6 +172,71 @@ try {
     UI.selection = [0, 1]; DOM.render();
     ok(byText('.modal button', '金貨は得られません'), '空の恵み＝3枚未満のときは「金貨は得られません」と明示する');
   }
+  console.log('\n=== 王国カード／家宝／夜行／複雑系の選択モーダル（N2〜N4） ===');
+  {
+    const rich = (s, seat) => {
+      const i = seat == null ? 0 : seat;
+      s.players[i].hand = ['copper', 'estate', 'silver', 'village', 'gold'];
+      s.players[i].deck = ['gold', 'duchy', 'copper', 'estate'];
+      s.players[i].discard = ['militia', 'moat'];
+      s.players[i].inPlay = ['copper', 'silver', 'gold'];
+    };
+    [
+      ['blessed_village_boon', { type: 'blessed_village_boon', player: 0, boon: 'the_seas_gift' }, ['blessed_village']],
+      ['cemetery_trash', { type: 'cemetery_trash', player: 0 }, ['cemetery']],
+      ['conclave', { type: 'conclave', player: 0 }, ['conclave']],
+      ['druid_boon', { type: 'druid_boon', player: 0 }, ['druid']],
+      ['boon_choose', { type: 'boon_choose', player: 0 }, ['fool'], (st) => { st.turn.boonChoice = { player: 0, boons: ['the_seas_gift', 'the_mountains_gift'] }; }],
+      ['grove_offer', { type: 'grove_offer', player: 0, boon: 'the_mountains_gift' }, ['sacred_grove']],
+      ['pixie_trash', { type: 'pixie_trash', player: 0, boon: 'the_mountains_gift' }, ['pixie']],
+      ['pooka_trash', { type: 'pooka_trash', player: 0 }, ['pooka']],
+      ['secret_cave', { type: 'secret_cave', player: 0 }, ['secret_cave']],
+      ['shepherd_discard', { type: 'shepherd_discard', player: 0 }, ['shepherd']],
+      ['tragic_hero_gain', { type: 'tragic_hero_gain', player: 0 }, ['tragic_hero']],
+      ['goat_trash', { type: 'goat_trash', player: 0 }, ['pixie']],
+      ['haunted_mirror', { type: 'haunted_mirror', player: 0 }, ['cemetery']],
+      ['faithful_hound_react', { type: 'faithful_hound_react', player: 0 }, ['faithful_hound']],
+      ['idol(react)', { type: 'idol', stage: 'react', player: 0, source: 1, victim: 0, queue: [] }, ['idol']],
+      ['cobbler_gain', { type: 'cobbler_gain', player: 0 }, ['cobbler']],
+      ['crypt_setaside', { type: 'crypt_setaside', player: 0 }, ['crypt']],
+      ['devils_workshop_gain', { type: 'devils_workshop_gain', player: 0 }, ['devils_workshop']],
+      ['exorcist_trash', { type: 'exorcist_trash', player: 0 }, ['exorcist']],
+      ['exorcist_gain', { type: 'exorcist_gain', player: 0, coin: 5, pot: 0, debt: 0 }, ['exorcist']],
+      ['monastery', { type: 'monastery', player: 0, remaining: 2 }, ['monastery']],
+      ['raider(react)', { type: 'raider', stage: 'react', player: 0, source: 1, victim: 0, queue: [] }, ['raider']],
+      ['imp_play', { type: 'imp_play', player: 0 }, ['devils_workshop']],
+      ['wish_gain', { type: 'wish_gain', player: 0 }, ['leprechaun']],
+      ['changeling_gain', { type: 'changeling_gain', player: 0 }, ['changeling']],
+      ['changeling_exchange', { type: 'changeling_exchange', player: 0, card: 'gold', dest: 'discard' }, ['changeling']],
+      ['bat_trash', { type: 'bat_trash', player: 0 }, ['vampire']],
+      ['vampire_gain', { type: 'vampire_gain', player: 0 }, ['vampire']],
+      ['necromancer', { type: 'necromancer', player: 0 }, ['necromancer']],
+      ['ghost_play', { type: 'ghost_play', player: 0, card: 'village' }, ['cemetery']],
+      ['zombie_apprentice', { type: 'zombie_apprentice', player: 0 }, ['necromancer']],
+      ['zombie_mason_gain', { type: 'zombie_mason_gain', player: 0, coin: 4, pot: 0, debt: 0 }, ['necromancer']],
+      ['zombie_spy', { type: 'zombie_spy', player: 0, card: 'curse' }, ['necromancer']],
+    ].forEach(([name, pd, kd, extra]) => {
+      showPend(pd, (st) => { rich(st); if (extra) extra(st); }, kd);
+      ok(actionable(), name + ' のモーダルに押せる選択肢がある');
+    });
+  }
+  {
+    // 夜襲の「捨てる」＝相手の場にあるカードと同名のものだけが選べる
+    const s = mk(['raider']);
+    s.players[1].inPlay = ['copper', 'silver'];
+    s.players[0].hand = ['copper', 'estate', 'estate', 'estate', 'estate'];
+    s.pending = { type: 'raider', stage: 'discard', player: 0, source: 1, victim: 0, queue: [] };
+    showAs(s, 0);
+    ok(actionable(), '夜襲の「捨てる」モーダルに押せる選択肢がある');
+  }
+  {
+    // 修道院＝手札が空でも「場の銅貨」と「やめる」で閉じられる
+    const s = mk(['monastery']);
+    s.players[0].hand = []; s.players[0].inPlay = ['copper'];
+    s.pending = { type: 'monastery', player: 0, remaining: 1 };
+    showAs(s, 0);
+    ok(actionable(), '修道院＝手札が空でも閉じられる');
+  }
   {
     // 錯乱＝アクションカードの購入ボタンを出さない（engine 拒否とUIを揃える）
     const s = mk(['bard', 'skulk']);
