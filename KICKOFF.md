@@ -1,54 +1,47 @@
-<!-- /handoff が自動生成（2026-07-14）。新セッションはこのファイルの指示に従う。手編集不要 -->
+<!-- /handoff が自動生成（2026-08-11）。新セッションはこのファイルの指示に従う。手編集不要 -->
 
-ウルトラコード（最大エフォート）で進めてください。
+**ウルトラコード（最大エフォート）で進めてください。**
 
-スマホ向けドミニオン対戦Webアプリ（CPU戦・2〜4人ローカル・オンライン対戦）の実装を引き継ぎます。回答/UIは日本語。
-作業ディレクトリ: c:\Users\b1242\claude\game\dominion / branch: main（main直接作業運用。最新は git log で確認）。
+スマホ向けドミニオン対戦Webアプリの開発（新拡張「移動動物園 / Menagerie」を実装中）。
+作業ディレクトリ＝`C:\Users\b1242\claude\game\dominion` ／ branch＝`main`（最新は `git log` で確認）。回答は日本語。
 
-## まずやること
-1. `Set-Location 'C:\Users\b1242\claude\game\dominion'` して `npm test` → **38スイート・オールグリーン（exit 0・整合性3401・
-   不変条件9・mix-all硬化102・ルネサンス320＋UI62・帝国269＋UI75・ランドマーク80・横型イベント149・冒険59＋UI67・
-   暗黒時代87＋UI57・新プロモ165＋UI22・繁栄69・異郷83＋UI44・収穫祭107・ギルド81＋UI25・CPU序列 100/64/95）** を確認。
-2. `PROGRESS.md` の **§0-23（mix-all 硬化）と §6（注意点）** を読む。全体設計図＝`docs/adding-cards.md`。
+## 最初にやること
+1. `npm test` を実行し、**全35スイート・オールグリーン（exit 0）**を確認する
+   （整合性 3694／不変条件 9／移動動物園 126／UI 119／server 70 など）。赤ならまずそこを直す。
+2. `PROGRESS.md` の **§0-25（移動動物園）を必ず読む**。実装済みの機構・落とし穴・未修正バグが全部そこにある。
+   カードの公式データ・裁定の正本は `docs/research/menagerie_rules.md`（13.7万字。記憶ではなくこれを見る）。
+   新カード実装の一般手順は `docs/adding-cards.md`。
 
-## 現状（2026-07-14 時点）
-- **未pushコミットは無い。本番は最新**（`sw.js` v52・GitHub Pages ＋ Render 反映確認済み）。
-- **実プレイ可能な13拡張（基本/陰謀/海辺/錬金術/繁栄/収穫祭/ギルド/異郷/暗黒時代/冒険/帝国/ルネサンス/プロモ）を
-  自由に混ぜる mix-all モードが稼働中**（横型＝イベント/ランドマーク/プロジェクトも合算2枚まで選べる）。
-  実装済みの全カードに絵（webp）が入っている。
+## いま何が終わっていて、何が残っているか
+移動動物園は **王国30枚＋馬（非サプライ30枚）＋習性(Way)20種＋CARD_SET昇格 まで完了**（`sw.js` v57・**未push**）。
+`menagerie` / `menagerie-ways` / `random-menagerie` が既に実プレイ可能。**イベント20種だけ未実装**（カタログと webp はある）。
 
-## 次に取り組むタスク（優先順1位）：**発売順の未着手拡張に着手**
-候補＝**夜想曲 / 移動動物園 / 同盟 / 略奪 / 日の出づる国**（段階1すら未着手＝画像・カタログとも無し）。
-どれをやるかは**ユーザーに1問だけ確認**してから着手する（技術的相性で順序を変えた前例あり＝§0-22）。
-進め方は §0-22（ルネサンス）が最良のテンプレ：
-公式ルールの多エージェント研究（一次資料＋エラッタ）→ カタログ＋webp（枠＋文字）→ 効果をバッチ実装 →
-CARD_SET 昇格 → 敵対レビュー → CPUソーク → 絵の回収 → ユーザー確認の上で push。
+## 次に取り組むタスク（優先順1位）＝ イベント20種の実装
+- `js/engine.js` の `applyEventEffect` に case を足す。**`BUY_EVENT` の基盤は帝国/冒険で完成済み**なのでそれをコピー元にする。
+- **絶望(desperation)** は `ONCE_PER_TURN_EVENTS` に足す＝ "Once per turn:" は**購入自体が1ターン1回**（一次資料で確定済み）。
+  **好機(seize_the_day)** は1ゲーム1回（`p.seizedTheDay`・冒険の相続と同型）。
+- 新しい選択待ちは必ず **4点セット**（engine reducer＋`PLAYER_ACTIONS`＋CPU `decidePending`＋UI `viewPendingModal`）。
+- 実装後に `menagerie-events`（固定10種＋イベント2枚抽選）を `DOM.CARD_SETS` に足し、invariants の出荷セット検証にも追加する。
+- その後は PROGRESS §5 の 1-2〜1-6（既存バグ3件の修正 → 敵対レビュー → UIテスト/ソーク → 絵の回収 → push）。
 
-## 【最重要・知らないと事故る】mix-all 以後の鉄則
-- **獲得の可否・コスト比較は必ず `DOM.engine` の述語を使う**：
-  `gainableBase` / `costUpTo` / `costUnder` / `costExact` / `sameCost`（＋`costOf`）。
-  素の `cardCost(state,id) <= N` を書くと、非サプライ（賞品/戦利品/トラベラー成長先）・ロック中の分割山下段・
-  ポーション費用・負債コストを取りこぼし、**engine が拒否 × CPU が提案し続けて本番 livelock**になる
-  （敵対レビューで複製/馬上槍試合/待ち伏せが実際にそうなっていた）。
-  **engine reducer・`anyGainable` ゲート・CPU の候補選び・UI のモーダル filter の4面が同じ関数を見ること。**
-- **サプライ外からの獲得（廃棄置き場/闇市場）は `gainFromOutside`**（負債・支配の振り分け・獲得トリガーを一括）。
-  **サプライの山からの廃棄（塩まき/待ち伏せ/剣闘士）は `trashFromSupplyPile`**（混合山は一番上の実カード・支配で退避しない）。
-  **獲得先ゾーンの写像は `zoneOf(p, dest)`**（'setAside' を忘れると捨て札の同名コピーを動かす）。
-- 新pendingは**4点セット必須**（engine reducer＋PLAYER_ACTIONS＋CPU decidePending＋UI viewPendingModal）＋終端保証。
-  「ちょうど/以下」の pending には **pot/debt を焼き込む**（オンライン永続化の旧スナップショット互換に注意）。
+## このプロジェクトの流儀（守ること）
+- **ウルトラコードで多エージェント＋敵対的検証**。研究も実装レビューも Workflow でファンアウトし、
+  **各 finding は node で再現してから直す**（偽陽性を捨てる）。
+- **完全忠実 > 簡略化**。簡略化するなら必ず PROGRESS に「許容簡略化」と理由を書く。
+- **push は毎回ユーザー確認を取る**（勝手に push しない）。コミットは随時してよい。
+- 使い捨てスクリプトは**プロジェクト直下に `_*.tmp.js`** で作り、実行後に必ず削除。一時ファイルは scratchpad へ。
+- client 資産（js/css/webp 等）を変えたら `sw.js` の VERSION を上げる（現在 v57）。
+- 進捗・決定は `PROGRESS.md` に追記する。
 
-## 守るべき進め方・流儀
-- **1機構ごとに**：狙い撃ち一時テスト（直下 `_*.tmp.js`＝実行後必ず削除。cwd がずれるので実行前に `Set-Location`）→
-  `node test/invariants.test.js` 緑 → `npm test` 全緑 → 恒久回帰は該当 test へ。大きな決定は PROGRESS.md に追記。
-- **substantive なタスクは Workflow/Agent で多エージェント＋敵対的検証**（各 finding は node 再現で確定／偽陽性は棄却）。
-- client資産（js/css/webp等）を変えたら `sw.js` の VERSION を上げる（現在 v52）。回答は日本語・フランクに短く。
-- **push は勝手にしない＝完成→全テスト緑→都度ユーザー確認の上で**。**セッションが重くなったら促さず自動で /handoff**。
-- **Read出力の汚染に注意**：実装状態を断定する前に Grep・`git show`・`Get-Content` で裏取りする。
-- カード絵はユーザーが ChatGPT で生成 → 私が中身を見て判別し `asset/art/<id>.png` に回収 → webp 再生成
-  （縦型 `tools/build-cards.js`／横型 `tools/build-landscape.js`。`CARDS_ONLY=<ids>` で個別生成。このPCのみ可）。
-
-## 直近で完了した大仕事（参考）
-- **§0-23 mix-all（2026-07-14・push済 v52）**＝13拡張を自由に混合。獲得述語を engine に一本化（engine 約60／CPU 約25／
-  UI 約40箇所を置換）、gain/trash を通らない経路を統一、支配（Possession）を硬化。敵対レビュー確定17件を修正。
-  新設 `test/mixall.test.js`（102件）＋invariants に mix-all fuzz。mix CPUソーク318戦クリーン。
-- **§0-22 ルネサンス全50枚（push済 v50）**／**§0-21 冒険イベント20種の絵（v51）**。
+## 次セッションが知らないと事故ること
+- **今回の作業はすべてコミット済みだが未 push**。本番（Pages/Render）にはまだ出ていない。
+- **`t.actions += n` / `t.coins += n` を直接書かないこと**。`addActions(t,n)` / `addCoins(state,n)` に一本化済み
+  （雪深い村＝+アクション全無視、カメレオンの習性＝+カード↔+コイン が静かに壊れる）。
+- **財宝カードの効果は `applyTreasureEffect` に書く**（`applyEffect` は財宝では呼ばれない。1回踏んだ）。
+- **獲得時の対話は `state.onGainQueue` に積む**（移動動物園は1回の獲得で複数の窓が開くのが普通）。
+- **「相手のターンをフックする持続アタック」を足したら、CPU分岐・UIモーダル・`LINGER_REACT` の許可リストの3箇所**を必ず足す
+  （門番でこれを漏らして fuzz が 20000 step 未終局になった）。
+- **獲得可否・コスト比較は必ず `DOM.engine` の述語**（`gainableBase`/`costUpTo`/`costUnder`/`costExact`/`sameCost`）。
+  追放の候補は `exilableSupplyIds`／`availableInSupply` が正本。素の `cardCost(state,id) <= N` を書くと mix で本番 livelock になる。
+- **未修正の既存バグ3件が PROGRESS §0-25 に列挙してある**（戦車競走が `draw()` を通らず -1カードトークンを無視するのが実害あり）。
+- 移動動物園の**絵は未回収**（71枚が枠＋文字の暗い板）。webp 再生成はこのPCでしか行えない（入力 `images/`・`asset/art/` は gitignore）。

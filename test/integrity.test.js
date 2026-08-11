@@ -137,14 +137,19 @@ console.log('=== 資本主義：財宝になるアクションの集合が固定
 {
   const set = DOM.engine.capitalismTreasures().sort();
   // 「+$」を持たない代表例は含まれてはいけない
-  ['coppersmith', 'transmogrify', 'inventor', 'village', 'smithy', 'chapel', 'upgrade', 'remake', 'develop', 'highway', 'raze', 'sculptor', 'seer', 'research', 'recruiter']
+  //   移動動物園：強制退去(displace)は「それよりコストが最大2コイン高い」＝コスト参照であって +$ ではない。
+  //   カタログ文を「コスト+2コイン以下」と書くと機械判定に誤ヒットするので、この2枚を番人として置く。
+  ['coppersmith', 'transmogrify', 'inventor', 'village', 'smithy', 'chapel', 'upgrade', 'remake', 'develop', 'highway', 'raze', 'sculptor', 'seer', 'research', 'recruiter',
+    'displace', 'groom', 'destrier', 'wayfarer', 'sanctuary', 'snowy_village']
     .forEach((id) => ok(set.indexOf(id) < 0, '資本主義：' + id + ' は財宝にならない（+$ 記号を持たない）'));
   // 「+$」を持つ代表例は必ず含まれる（機械判定ぶん＋明示リストぶん）
   ['market', 'militia', 'improve', 'festival', 'woodcutter', 'monument', 'poacher', 'steward', 'baron', 'clerk',
-    'salvager', 'artificer', 'peasant', 'messenger', 'wine_merchant', 'giant', 'swamp_hag', 'caravan_guard', 'miser', 'amulet']
+    'salvager', 'artificer', 'peasant', 'messenger', 'wine_merchant', 'giant', 'swamp_hag', 'caravan_guard', 'miser', 'amulet',
+    // 移動動物園（+$ を持つアクション10枚）。門番は持続の「次のターン開始時 +$3」だが カード文に +$ があるので対象。
+    'animal_fair', 'bounty_hunter', 'cardinal', 'coven', 'fisherman', 'gatekeeper', 'kiln', 'livery', 'paddock', 'scrap']
     .forEach((id) => ok(set.indexOf(id) >= 0, '資本主義：' + id + ' は財宝になる（+$ を持つ）'));
   ok(set.every((id) => DOM.isType(id, 'action') && !DOM.isType(id, 'treasure')), '資本主義の対象は「財宝でないアクション」だけ');
-  ok(set.length === 98, '資本主義で財宝になるアクションは98枚（カタログ文を変えたらこの数を見直す。実: ' + set.length + '）');
+  ok(set.length === 108, '資本主義で財宝になるアクションは108枚（カタログ文を変えたらこの数を見直す。実: ' + set.length + '）');
 }
 
 console.log('\n========================================');

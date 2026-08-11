@@ -23,7 +23,8 @@ const ZONES = ['deck', 'hand', 'discard', 'inPlay', 'durationCards', 'setAside',
   'princes', // 新プロモ：王子の脇に置いたカード（公開ゾーン。王子本体は inPlay/durationCards に残る）
   'tavern', // 冒険：酒場マット（Reserve カード・守銭奴の銅貨。公開ゾーン）
   'inherited', // 冒険：相続で脇に置いたカード（サプライから抜いて脇に置く＝物理カードなので保存則に数える）
-  'cargo']; // ルネサンス：貨物船の脇置き（表向き＝公開ゾーン。次の手番開始時に手札へ）
+  'cargo', // ルネサンス：貨物船の脇置き（表向き＝公開ゾーン。次の手番開始時に手札へ）
+  'exile']; // 移動動物園：追放マット（公開ゾーン。所有者のカード＝得点にも数える）
 function tally(s) {
   const t = {}; const add = (id) => { if (id != null) t[id] = (t[id] || 0) + 1; };
   Object.keys(s.supply).forEach((id) => {
@@ -41,8 +42,8 @@ function diffTally(a, b) { const ks = new Set([...Object.keys(a), ...Object.keys
 function hasBack(s) { return s.players.some((p) => ZONES.some((z) => (p[z] || []).some((c) => c === 'back'))) || s.players.some((p) => (p.archives || []).some((a) => (a.cards || []).some((c) => c === 'back'))) || (s.trash || []).some((c) => c === 'back'); }
 
 // 1ゲームを最後まで進め、安定点ごとに全不変条件を検査。違反があれば false と詳細を返す。
-function runGame(kingdom, players, landmarks, events, projects) {
-  let s = E.createInitialState(players, kingdom, { startActive: 0, landmarks: landmarks || [], events: events || [], projects: projects || [] });
+function runGame(kingdom, players, landmarks, events, projects, ways) {
+  let s = E.createInitialState(players, kingdom, { startActive: 0, landmarks: landmarks || [], events: events || [], projects: projects || [], ways: ways || [] });
   const init = tally(s);
   const n = s.players.length;
   let step = 0;
@@ -122,7 +123,8 @@ console.log('=== カード保存則: 全プール混成ランダム王国 ===');
 // C) 出荷セット（各セットを実際に組んで検証）
 console.log('=== カード保存則: 出荷セット（固定/ランダム各種） ===');
 {
-  const sets = ['basic', 'intrigue', 'seaside', 'alchemy', 'prosperity', 'cornucopia', 'guilds', 'hinterlands', 'darkages', 'adventures', 'adventures-events', 'empires', 'empires-landmarks', 'empires-events', 'renaissance', 'renaissance-projects', 'promo2-pack', 'random', 'random-promo', 'random-seaside', 'random-alchemy', 'random-prosperity', 'random-cornucopia', 'random-guilds', 'random-hinterlands', 'random-darkages', 'random-adventures', 'random-empires', 'random-renaissance'];
+  const sets = ['basic', 'intrigue', 'seaside', 'alchemy', 'prosperity', 'cornucopia', 'guilds', 'hinterlands', 'darkages', 'adventures', 'adventures-events', 'empires', 'empires-landmarks', 'empires-events', 'renaissance', 'renaissance-projects', 'promo2-pack', 'random', 'random-promo', 'random-seaside', 'random-alchemy', 'random-prosperity', 'random-cornucopia', 'random-guilds', 'random-hinterlands', 'random-darkages', 'random-adventures', 'random-empires', 'random-renaissance',
+    'menagerie', 'menagerie-ways', 'random-menagerie'];
   let allOk = true;
   for (const setId of sets) {
     for (let sd = 0; sd < 3; sd++) {
@@ -131,8 +133,9 @@ console.log('=== カード保存則: 出荷セット（固定/ランダム各種
       const lm = DOM.landmarksForSet ? DOM.landmarksForSet(setId) : []; // 帝国：empires-landmarks は横型ランドマーク2枚付き
       const ev = DOM.eventsForSet ? DOM.eventsForSet(setId) : [];       // 帝国：empires-events は横型イベント2枚付き
       const pr = DOM.projectsForSet ? DOM.projectsForSet(setId) : [];   // ルネサンス：renaissance-projects は横型プロジェクト2枚付き
-      const r = runGame(k, mkPlayers(2 + (sd % 3), sd), lm, ev, pr);
-      if (!r.okp) { allOk = false; console.log('    ' + setId + ' sd' + sd + ' [' + lm.join(',') + '][' + ev.join(',') + '][' + pr.join(',') + ']: ' + r.why); }
+      const wy = DOM.waysForSet ? DOM.waysForSet(setId) : [];           // 移動動物園：menagerie-ways は習性2枚付き
+      const r = runGame(k, mkPlayers(2 + (sd % 3), sd), lm, ev, pr, wy);
+      if (!r.okp) { allOk = false; console.log('    ' + setId + ' sd' + sd + ' [' + lm.join(',') + '][' + ev.join(',') + '][' + pr.join(',') + '][' + wy.join(',') + ']: ' + r.why); }
     }
   }
   ok(allOk, '出荷セット各種すべて保存則・不変条件を満たし終局');

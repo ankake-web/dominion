@@ -812,6 +812,7 @@
   const LS_KIND_LABEL = {
     landmark: 'ランドマーク / Landmark', event: 'イベント / Event',
     project: 'プロジェクト / Project', artifact: 'アーティファクト / Artifact',
+    way: '習性 / Way', // 移動動物園：買わない横型（アクションの記載効果の代わりに使う）
   };
   // 横型ランドマークは DOM.CARDS に無い（DOM.LANDSCAPES が正本・cardEl/viewSheet は使えない）ので専用のミニ表示＋拡大を持つ。
   function landmarkMini(id) {
@@ -900,9 +901,13 @@
     addC('王国カード（帝国）', P.empires ? byCost(P.empires) : null);
     addC('城（帝国・混合山）', P.castles ? P.castles.slice() : null);
     addC('王国カード（ルネサンス）', P.renaissance ? byCost(P.renaissance) : null);
+    addC('王国カード（移動動物園）', P.menagerie ? byCost(P.menagerie) : null);
+    addC('馬（移動動物園・非サプライ）', P.horse ? P.horse.slice() : null);
     addL('ランドマーク（帝国・横型）', DOM.LANDMARKS_EMPIRES);
     addL('イベント（帝国・横型・購入フェイズに買う）', DOM.EVENTS_EMPIRES);
     addL('イベント（冒険・横型・購入フェイズに買う）', DOM.EVENTS_ADVENTURES);
+    addL('イベント（移動動物園・横型・購入フェイズに買う）', DOM.EVENTS_MENAGERIE);
+    addL('習性（移動動物園・横型・アクションの効果の代わりに使う）', DOM.WAYS_MENAGERIE);
     addL('プロジェクト（ルネサンス・横型・1人2つまで）', DOM.PROJECTS_RENAISSANCE);
     addL('アーティファクト（ルネサンス・横型・1人だけが持てる）', DOM.ARTIFACTS_RENAISSANCE);
     addC('プロモカード', P.promo ? byCost(P.promo) : null);
@@ -1338,11 +1343,33 @@
               h('span', { class: 'muted', style: 'font-size:12px;margin-left:8px' }, (af.text || '').replace(/\n/g, ' ')));
           })))
       : null;
+    // 移動動物園：習性（Way）＝買わない横型。アクションを使うとき「記載効果の代わり」に選べる。
+    //   ハツカネズミの習性は脇に置いた1枚（state.mouseCard）も併記する。
+    const wayBlock = (state.ways && state.ways.length)
+      ? h('div', { class: 'supply-section' },
+          h('div', { class: 'sup-title' }, '習性（横型・アクションの効果の代わりに使う）'),
+          h('div', { class: 'mats' }, state.ways.map((id) => {
+            const wy = (DOM.LANDSCAPES || {})[id] || { name: id, text: '' };
+            const extra = (id === 'way_of_the_mouse' && state.mouseCard)
+              ? '（脇：' + ((DOM.CARDS[state.mouseCard] || {}).name || state.mouseCard) + '）' : '';
+            return h('div', { class: 'mat-row way-row', title: (wy.text || '') },
+              h('img', { class: 'landmark-thumb', src: 'asset/cards/' + id + '.webp', alt: wy.name, loading: 'lazy',
+                style: 'height:40px;width:60px;object-fit:cover;border-radius:4px;flex:0 0 auto;cursor:pointer',
+                onclick: () => openLandmarkZoom(id),
+                onerror: function () { this.style.display = 'none'; } }),
+              h('span', { class: 'mat-label', role: 'button', tabindex: '0', style: 'cursor:pointer',
+                  onclick: () => openLandmarkZoom(id),
+                  onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLandmarkZoom(id); } } },
+                '🐾 ' + wy.name + extra),
+              h('span', { class: 'muted', style: 'font-size:12px;margin-left:8px' }, (wy.text || '').replace(/\n/g, ' ')));
+          })))
+      : null;
     const supply = h('div', null,
       landscapeBlock,
       eventBlock,
       projectBlock,
       artifactBlock,
+      wayBlock,
       // 財宝・勝利点は基本カード。デスクトップでは横並びにして縦スペースを節約。
       h('div', { class: 'supply-basics' },
         supSection('財宝', treasureRow, 'small'),
@@ -1370,6 +1397,14 @@
       me.tavern.map((id) => h('span', { class: 'chip-card ' + typeClass(id) }, DOM.CARDS[id].name))));
     if ((me.nativeVillageMat || []).length) matRows.push(h('div', { class: 'mat-row' },
       h('span', { class: 'mat-label' }, '🛖 原住民の村マット: ' + me.nativeVillageMat.length + '枚')));
+    // 移動動物園：追放マット（公開・自分のカード＝得点にも数える。同名を獲得すると好きな枚数を捨て札に戻せる）
+    if ((me.exile || []).length) {
+      const ex = {}; me.exile.forEach((id) => { ex[id] = (ex[id] || 0) + 1; });
+      matRows.push(h('div', { class: 'mat-row' },
+        h('span', { class: 'mat-label' }, '🚫 追放マット: '),
+        Object.keys(ex).map((id) => h('span', { class: 'chip-card ' + typeClass(id) },
+          DOM.CARDS[id].name + (ex[id] > 1 ? '×' + ex[id] : '')))));
+    }
     // 繁栄：勝利点トークン（司教・記念碑・収集・投資。終了時に得点へ加算）
     if (me.vpTokens) matRows.push(h('div', { class: 'mat-row' },
       h('span', { class: 'mat-label' }, '⭐ 勝利点トークン: ' + me.vpTokens + ' 点')));
@@ -1489,7 +1524,13 @@
     const c = DOM.CARDS[id];
     const t = state.turn;
     if (interactive && !state.pending && t.phase === 'action' && (c.types.includes('action') || inheritedEstate(state, id)) && t.actions > 0) {
-      showSheet(id, { label: '使う', cls: 'btn-primary', on: () => dispatch({ type: 'PLAY_ACTION', card: id }) });
+      // 移動動物園：習性（Way）が採用されていれば「記載効果の代わりに習性で使う」ボタンも並べる。
+      const wayList = (state.ways || []).filter((w) => (DOM.LANDSCAPES || {})[w]);
+      const btns = [{ label: wayList.length ? '使う（カードの効果）' : '使う', cls: 'btn-primary', on: () => dispatch({ type: 'PLAY_ACTION', card: id }) }];
+      wayList.forEach((w) => {
+        btns.push({ label: '「' + DOM.LANDSCAPES[w].name + '」で使う', on: () => dispatch({ type: 'PLAY_ACTION', card: id, way: w }) });
+      });
+      showSheet(id, btns.length > 1 ? btns : btns[0]);
     } else if (interactive && !state.pending && t.phase === 'buy' && isTreasureNow(state, id) && !t.treasuresLocked) {
       showSheet(id, { label: '財宝を出す', cls: 'btn-primary', on: () => dispatch({ type: 'PLAY_TREASURE', card: id }) });
     } else {
@@ -1758,6 +1799,137 @@
     if (pd.type === 'sprawling_castle') return modalOptions('広大な城 — 獲得', '公領1枚か屋敷3枚を獲得します。', [
       { label: '公領1枚を獲得（3点・1枚）', cls: 'btn-primary', on: () => dispatch({ type: 'SPRAWLING_CASTLE_CHOOSE', choice: 'duchy' }) },
       { label: '屋敷3枚を獲得（3点・3枚）', on: () => dispatch({ type: 'SPRAWLING_CASTLE_CHOOSE', choice: 'estates' }) },
+    ]);
+    /* ===== 移動動物園（Menagerie）===== */
+    // 追放マットの払い戻し＝同名のカードを獲得したので、追放してあるぶんを好きな枚数 捨て札に戻せる（任意）。
+    if (pd.type === 'exile_discard') {
+      const have = DOM.engine.exileCount(state.players[pd.player], pd.card);
+      const nm = (DOM.CARDS[pd.card] || {}).name || pd.card;
+      return modalAmount('追放マット — 捨て札に戻す', '「' + nm + '」を獲得しました。追放マットにある「' + nm + '」を好きな枚数、捨て札に戻せます（戻さなくてもかまいません）。',
+        have, 0, (n) => (n > 0 ? n + '枚を捨て札に戻す' : '戻さない'),
+        (n) => dispatch({ type: 'EXILE_DISCARD', n }));
+    }
+    // 艀＝「今」か「次の自分のターンの開始時」に +3カード +1購入。
+    if (pd.type === 'barge_choose') return modalOptions('艀 — いつ受け取るか', '+3 カード と +1 購入 を、今すぐ受け取るか、次の自分のターンの開始時に受け取るかを選びます。', [
+      { label: '次のターンの開始時に受け取る', cls: 'btn-primary', on: () => dispatch({ type: 'BARGE_CHOOSE', choice: 'next' }) },
+      { label: '今すぐ受け取る（+3 カード +1 購入）', on: () => dispatch({ type: 'BARGE_CHOOSE', choice: 'now' }) },
+    ]);
+    // 賞金稼ぎ＝手札1枚を追放（強制）。追放マットに同名が無ければ +$3。
+    if (pd.type === 'bounty_hunter_exile') return modalSingleHand(p, '賞金稼ぎ — 追放', '手札から1枚を追放します。追放マットに同名のカードが無ければ +3 コイン。',
+      () => true, (card) => dispatch({ type: 'BOUNTY_HUNTER_EXILE', card }), false, '追放する');
+    // ラクダの隊列＝サプライから勝利点でないカード1枚を追放（強制）。
+    if (pd.type === 'camel_train_exile') return modalGainSupply(state, 'ラクダの隊列 — 追放', 'サプライから勝利点でないカード1枚を追放します（獲得ではありません）。',
+      (id) => !DOM.isType(id, 'victory') && DOM.engine.exilableSupplyIds(state).indexOf(id) >= 0,
+      (id) => dispatch({ type: 'CAMEL_TRAIN_EXILE', card: id }), false, false, '追放する');
+    // 黒猫／枢機卿／魔女の集会（アタック）。
+    if (pd.type === 'black_cat' && pd.stage === 'react') return modalOptions('黒猫を受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'BLACK_CAT_REACT' }));
+    if (pd.type === 'cardinal' && pd.stage === 'react') return modalOptions('枢機卿を受ける', '山札の上2枚を公開し、コスト3〜6コインの1枚が追放されます。', reactOptions(p, pd, { type: 'CARDINAL_REACT' }));
+    if (pd.type === 'cardinal' && pd.stage === 'pick') return modalOptions('枢機卿 — 追放するカードを選ぶ', '公開した2枚のうち、追放する1枚を選びます（残りは捨て札になります）。',
+      (pd.cands || []).map((id) => ({ label: DOM.CARDS[id].name + 'を追放する', on: () => dispatch({ type: 'CARDINAL_PICK', card: id }) })));
+    if (pd.type === 'coven' && pd.stage === 'react') return modalOptions('魔女の集会を受ける', 'サプライから呪い1枚を追放します（できない場合、追放マットの呪いをすべて捨て札にします）。', reactOptions(p, pd, { type: 'COVEN_REACT' }));
+    // 強制退去＝手札1枚を追放 → それより最大2コイン高い「名前の異なる」カードを獲得。
+    if (pd.type === 'displace_exile') return modalSingleHand(p, '強制退去 — 追放', '手札から1枚を追放します（そのあと、それより最大2コイン高い別のカードを獲得します）。',
+      () => true, (card) => dispatch({ type: 'DISPLACE_EXILE', card }), false, '追放する');
+    if (pd.type === 'displace_gain') return modalGainSupply(state, '強制退去 — 獲得', '追放したカードより最大2コイン高い、名前の異なるカード1枚を獲得します。',
+      (id) => id !== pd.from && canUpTo(state, id, pd.maxCost, { pot: pd.pot, debt: pd.debt }), (id) => dispatch({ type: 'DISPLACE_GAIN', card: id }));
+    // 鷹匠＝これより安いカード1枚を手札に獲得。
+    if (pd.type === 'falconer_gain') return modalGainSupply(state, '鷹匠 — 獲得', '鷹匠より安いカード1枚を手札に獲得します。',
+      (id) => DOM.engine.costUnder(state, id, pd.under), (id) => dispatch({ type: 'FALCONER_GAIN', card: id }));
+    if (pd.type === 'falconer_react') return modalOptions('鷹匠 — 使いますか', '種別を2つ以上持つカードが獲得されました。手札の鷹匠を使用できます（アクション権は使いません）。', [
+      { label: '鷹匠を使用する', cls: 'btn-primary', on: () => dispatch({ type: 'FALCONER_REACT', play: true }) },
+      { label: '使用しない', on: () => dispatch({ type: 'FALCONER_REACT', play: false }) },
+    ]);
+    // ヤギ飼い＝手札1枚を廃棄してもよい。
+    if (pd.type === 'goatherd_trash') return modalSingleHand(p, 'ヤギ飼い — 廃棄', '手札から1枚を廃棄してもよい（しなくてもかまいません）。',
+      () => true, (card) => dispatch({ type: 'GOATHERD_TRASH', card }), true);
+    // 馬丁＝$4以下を獲得（種別ごとにボーナス）。
+    if (pd.type === 'groom_gain') return modalGainSupply(state, '馬丁 — 獲得', 'コスト4コイン以下のカード1枚を獲得します（アクション＝馬1枚／財宝＝銀貨1枚／勝利点＝+1カード +1アクション）。',
+      (id) => canUpTo(state, id, 4), (id) => dispatch({ type: 'GROOM_GAIN', card: id }));
+    // 旅籠（獲得時）＝手札の財宝を好きな枚数捨てて、その枚数の馬を獲得。
+    if (pd.type === 'hostelry_discard') return modalMultiHand(p, '旅籠 — 財宝を捨てる',
+      '手札の財宝を好きな枚数 公開して捨て、その枚数だけ馬を獲得します（0枚でもかまいません）。',
+      (n) => '確定（' + n + '枚 捨てて 馬' + n + '枚）', true, (cards) => dispatch({ type: 'HOSTELRY_DISCARD', cards }), null,
+      (id) => isTreasureNow(state, id));
+    // 狩猟小屋＝手札を全部捨てて +5カード してもよい。
+    if (pd.type === 'hunting_lodge_choose') return modalOptions('狩猟小屋 — 引き直しますか', '手札（' + p.hand.length + '枚）をすべて捨てて、+5 カード を引くことができます。', [
+      { label: '手札を捨てて +5 カード', cls: 'btn-primary', on: () => dispatch({ type: 'HUNTING_LODGE_CHOOSE', discard: true }) },
+      { label: 'そのままにする', on: () => dispatch({ type: 'HUNTING_LODGE_CHOOSE', discard: false }) },
+    ]);
+    // 首謀者＝手札のアクション1枚を3回使用してよい。
+    if (pd.type === 'mastermind_play') return modalSingleHand(p, '首謀者 — 3回使用', '手札のアクションカード1枚を3回使用できます（使わなくてもかまいません）。',
+      (id) => DOM.isType(id, 'action') || inheritedEstate(state, id),
+      (card) => dispatch({ type: 'MASTERMIND_PLAY', card }), true, '3回使用する');
+    // 聖域＝手札1枚を追放してもよい。
+    if (pd.type === 'sanctuary_exile') return modalSingleHand(p, '聖域 — 追放', '手札から1枚を追放してもよい（しなくてもかまいません）。追放したカードは追放マットに置かれ、同名を獲得したときに戻せます。',
+      () => true, (card) => dispatch({ type: 'SANCTUARY_EXILE', card }), true, '追放する');
+    // がらくた＝手札1枚を廃棄 → そのコスト分だけ異なる効果を選ぶ。
+    if (pd.type === 'scrap_trash') return modalSingleHand(p, 'がらくた — 廃棄', '手札から1枚を廃棄します。そのコスト1コインにつき1つ、異なる効果を選べます。',
+      () => true, (card) => dispatch({ type: 'SCRAP_TRASH', card }), false, '廃棄する');
+    if (pd.type === 'scrap_choose') {
+      const OPTS = [{ k: 'card', label: '+1 カード' }, { k: 'action', label: '+1 アクション' }, { k: 'buy', label: '+1 購入' },
+        { k: 'coin', label: '+1 コイン' }, { k: 'silver', label: '銀貨1枚を獲得' }, { k: 'horse', label: '馬1枚を獲得' }];
+      const need = Math.min(pd.count || 0, OPTS.length);
+      if (!Array.isArray(UI.selection)) UI.selection = [];
+      const chips = OPTS.map((o, i) => h('button', {
+        class: 'btn' + (UI.selection.indexOf(i) >= 0 ? ' btn-primary' : ''), style: 'margin:4px',
+        onclick: () => {
+          const at = UI.selection.indexOf(i);
+          if (at >= 0) UI.selection.splice(at, 1); else if (UI.selection.length < need) UI.selection.push(i);
+          render();
+        },
+      }, o.label));
+      const footer = h('button', { class: 'btn btn-primary btn-block', disabled: UI.selection.length !== need ? 'disabled' : null,
+        onclick: () => { const picks = UI.selection.map((i) => OPTS[i].k); UI.selection = []; dispatch({ type: 'SCRAP_CHOOSE', choices: picks }); } },
+        '確定（' + UI.selection.length + '/' + need + '）');
+      return modalShell('がらくた — 効果を選ぶ', '異なる効果を ' + need + '個 選びます。', chips, footer);
+    }
+    // 牧羊犬＝獲得したときに手札から使用してよい。
+    if (pd.type === 'sheepdog_react') return modalOptions('牧羊犬 — 使いますか', 'カードを獲得しました。手札の牧羊犬を使用できます（+2 カード。アクション権は使いません）。', [
+      { label: '牧羊犬を使用する（+2 カード）', cls: 'btn-primary', on: () => dispatch({ type: 'SHEEPDOG_REACT', play: true }) },
+      { label: '使用しない', on: () => dispatch({ type: 'SHEEPDOG_REACT', play: false }) },
+    ]);
+    // そり＝これを捨てて、獲得したカードを手札か山札の上へ。
+    if (pd.type === 'sleigh_react') return modalOptions('そり — 使いますか',
+      '「' + ((DOM.CARDS[pd.card] || {}).name || pd.card) + '」を獲得しました。そりを捨て札にすると、このカードを手札に加えるか山札の上に置けます。', [
+        { label: '手札に加える（そりを捨てる）', cls: 'btn-primary', on: () => dispatch({ type: 'SLEIGH_REACT', where: 'hand' }) },
+        { label: '山札の上に置く（そりを捨てる）', on: () => dispatch({ type: 'SLEIGH_REACT', where: 'deck' }) },
+        { label: '使わない', on: () => dispatch({ type: 'SLEIGH_REACT', where: null }) },
+      ]);
+    // 村有緑地＝「今」か「次のターンの開始時」に +1カード +2アクション／捨て札にしたときの使用。
+    if (pd.type === 'village_green_choose') return modalOptions('村有緑地 — いつ受け取るか', '+1 カード と +2 アクション を、今すぐ受け取るか、次のターンの開始時に受け取るかを選びます。', [
+      { label: '次のターンの開始時に受け取る', cls: 'btn-primary', on: () => dispatch({ type: 'VILLAGE_GREEN_CHOOSE', choice: 'next' }) },
+      { label: '今すぐ受け取る（+1 カード +2 アクション）', on: () => dispatch({ type: 'VILLAGE_GREEN_CHOOSE', choice: 'now' }) },
+    ]);
+    if (pd.type === 'village_green_react') return modalOptions('村有緑地 — 使いますか', '捨て札にした村有緑地を使用できます（クリンナップ以外で捨てたとき）。', [
+      { label: '村有緑地を使用する', cls: 'btn-primary', on: () => dispatch({ type: 'VILLAGE_GREEN_REACT', play: true }) },
+      { label: '使用しない', on: () => dispatch({ type: 'VILLAGE_GREEN_REACT', play: false }) },
+    ]);
+    // 行人＝銀貨1枚を獲得してもよい。
+    if (pd.type === 'wayfarer_gain') return modalOptions('行人 — 銀貨', '銀貨1枚を獲得できます。', [
+      { label: '銀貨を獲得する', cls: 'btn-primary', on: () => dispatch({ type: 'WAYFARER_GAIN', gain: true }) },
+      { label: '獲得しない', on: () => dispatch({ type: 'WAYFARER_GAIN', gain: false }) },
+    ]);
+    // 炉＝いま使ったカードの解決前に、同じカードを獲得してもよい。
+    if (pd.type === 'kiln_gain') return modalOptions('炉 — コピーを獲得しますか',
+      '「' + ((DOM.CARDS[pd.card] || {}).name || pd.card) + '」を使用します。解決する前に、同じカード1枚を獲得できます。', [
+        { label: '「' + ((DOM.CARDS[pd.card] || {}).name || pd.card) + '」を獲得する', cls: 'btn-primary', on: () => dispatch({ type: 'KILN_GAIN', gain: true }) },
+        { label: '獲得しない', on: () => dispatch({ type: 'KILN_GAIN', gain: false }) },
+      ]);
+    /* ===== 移動動物園：習性（Way）の選択待ち ===== */
+    if (pd.type === 'way_butterfly') return modalOptions('チョウの習性', '「' + ((DOM.CARDS[pd.card] || {}).name || pd.card) + '」をその山に戻すと、ちょうど1コイン高いカード1枚を獲得できます。', [
+      { label: '山に戻して 1コイン高いカードを獲得', cls: 'btn-primary', on: () => dispatch({ type: 'WAY_BUTTERFLY', ret: true }) },
+      { label: '戻さない（何も起きない）', on: () => dispatch({ type: 'WAY_BUTTERFLY', ret: false }) },
+    ]);
+    if (pd.type === 'way_butterfly_gain') return modalGainSupply(state, 'チョウの習性 — 獲得', '戻したカードよりちょうど1コイン高いカード1枚を獲得します。',
+      (id) => canExact(state, id, pd.exactCost, pd.pot, pd.debt), (id) => dispatch({ type: 'WAY_BUTTERFLY_GAIN', card: id }));
+    if (pd.type === 'way_goat_trash') return modalSingleHand(p, 'ヤギの習性 — 廃棄', '手札から1枚を廃棄します。',
+      () => true, (card) => dispatch({ type: 'WAY_GOAT_TRASH', card }), false, '廃棄する');
+    if (pd.type === 'way_rat_discard') return modalSingleHand(p, 'ドブネズミの習性 — 財宝を捨てる',
+      '手札の財宝1枚を捨て札にすると、「' + ((DOM.CARDS[pd.card] || {}).name || pd.card) + '」をもう1枚獲得できます（しなくてもかまいません）。',
+      (id) => isTreasureNow(state, id), (card) => dispatch({ type: 'WAY_RAT_DISCARD', card }), true, '捨てて獲得する');
+    if (pd.type === 'way_seal_topdeck') return modalOptions('アザラシの習性', '「' + ((DOM.CARDS[pd.card] || {}).name || pd.card) + '」を獲得しました。山札の上に置けます。', [
+      { label: '山札の上に置く', cls: 'btn-primary', on: () => dispatch({ type: 'WAY_SEAL_TOPDECK', top: true }) },
+      { label: 'そのまま（捨て札へ）', on: () => dispatch({ type: 'WAY_SEAL_TOPDECK', top: false }) },
     ]);
     if (pd.type === 'nobles') return modalOptions('貴族', '次から1つを選びます。', [
       { label: '+3 カード', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'cards' }) },
@@ -2417,6 +2589,7 @@
     if (pd.type === 'bridge_troll' && pd.stage === 'react') return modalOptions('橋の下のトロルを受ける', '-$1トークンを受け取ります（次の購入フェイズに使えるコインが$1減ります）。', reactOptions(p, pd, { type: 'BRIDGE_TROLL_REACT' }));
     if (pd.type === 'haunted_woods' && pd.stage === 'react') return modalOptions('呪いの森を受ける', '相手の次の手番まで、あなたがカードを購入すると手札を全て山札の上に置きます（堀を公開すればこの持続から免疫）。', reactOptions(p, pd, { type: 'LINGER_REACT' }));
     if (pd.type === 'swamp_hag' && pd.stage === 'react') return modalOptions('沼の妖婆を受ける', '相手の次の手番まで、あなたがカードを購入すると呪い1枚を獲得します（堀を公開すればこの持続から免疫）。', reactOptions(p, pd, { type: 'LINGER_REACT' }));
+    if (pd.type === 'gatekeeper' && pd.stage === 'react') return modalOptions('門番を受ける', '相手の次の手番まで、あなたが「追放マットに同名の無いアクション／財宝」を獲得すると、それが追放されます（堀を公開すればこの持続から免疫）。', reactOptions(p, pd, { type: 'LINGER_REACT' }));
     if (pd.type === 'enchantress' && pd.stage === 'react') return modalOptions('女魔術師を受ける', 'あなたの次の手番で最初にプレイするアクションは、記載の効果の代わりに +1カード +1アクション になります（堀を公開すれば無効化）。', reactOptions(p, pd, { type: 'ENCHANTRESS_REACT' }));
     if (pd.type === 'marauder' && pd.stage === 'react') return modalOptions('略奪者を受ける', '廃墟を1枚獲得します。', reactOptions(p, pd, { type: 'MARAUDER_REACT' }));
     if (pd.type === 'cultist' && pd.stage === 'react') return modalOptions('狂信者を受ける', '廃墟を1枚獲得します。', reactOptions(p, pd, { type: 'CULTIST_REACT' }));
@@ -3021,7 +3194,9 @@
           h('div', { class: 'zoom-text' }, c.text || ''),
           UI.beginner ? h('div', { class: 'beginner-tip' }, '🔰 ' + beginnerTip(id)) : null,
           remain != null ? h('div', { class: 'zoom-remain' }, 'サプライ残り ' + remain + ' 枚') : null),
-        p ? h('button', { class: 'btn ' + (p.cls || '') + ' btn-block', onclick: p.on }, p.label) : null));
+        // primary は1個でも配列でもよい（移動動物園：習性を使う選択肢を並べる）。
+        p ? (Array.isArray(p) ? p : [p]).map((b) =>
+          h('button', { class: 'btn ' + (b.cls || '') + ' btn-block', style: 'margin-top:6px', onclick: b.on }, b.label)) : null));
   }
 
   /* ---------- 勝敗画面 ---------- */
@@ -3134,16 +3309,18 @@
     const kingdom = opts.kingdom || (DOM.kingdomForSet ? DOM.kingdomForSet(UI.setup.kingdomSet) : DOM.KINGDOM);
     // 横型ランドスケープ（ランドマーク/イベント/プロジェクト）もこの場で確定して以後固定。
     //   **必ず landscapesForSet（3種を一度に決める唯一の入口）を使う**＝mix モードで「合計最大2枚」を守るため。
-    const ls = (DOM.landscapesForSet ? DOM.landscapesForSet(UI.setup.kingdomSet) : { landmarks: [], events: [], projects: [] });
+    const ls = (DOM.landscapesForSet ? DOM.landscapesForSet(UI.setup.kingdomSet) : { landmarks: [], events: [], projects: [], ways: [] });
     const landmarks = opts.landmarks || ls.landmarks;
     const events = opts.events || ls.events;
     const projects = opts.projects || ls.projects;
+    const ways = opts.ways || ls.ways || [];   // 移動動物園：習性（買わない横型）
     UI.lastConfigs = configs;
     UI.lastKingdom = kingdom;
     UI.lastLandmarks = landmarks;
     UI.lastEvents = events;
     UI.lastProjects = projects;
-    const st = E().createInitialState(configs, kingdom, { landmarks, events, projects });
+    UI.lastWays = ways;
+    const st = E().createInitialState(configs, kingdom, { landmarks, events, projects, ways });
     UI.mode = 'local'; UI.mySeat = null; UI.localViewer = firstHuman(st);
     UI._noAutoSkipOnce = false; // 前の対局で「1手もどす」を押した名残を持ち越さない
     UI.store = DOM.LocalStore(st);
@@ -3154,7 +3331,7 @@
   function restartLocal() {
     const st = E().createInitialState(UI.lastConfigs, UI.lastKingdom, { landmarks: UI.lastLandmarks || [], events: UI.lastEvents || [], projects: UI.lastProjects || [] });
     UI.localViewer = firstHuman(st);
-    UI.store.dispatch({ type: 'NEW_GAME', players: UI.lastConfigs, kingdom: UI.lastKingdom, landmarks: UI.lastLandmarks || [], events: UI.lastEvents || [], projects: UI.lastProjects || [] });
+    UI.store.dispatch({ type: 'NEW_GAME', players: UI.lastConfigs, kingdom: UI.lastKingdom, landmarks: UI.lastLandmarks || [], events: UI.lastEvents || [], projects: UI.lastProjects || [], ways: UI.lastWays || [] });
   }
 
   /* ---------- オンライン（WebSocket / サーバ権威） ---------- */

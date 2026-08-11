@@ -63,11 +63,13 @@ const SKIN = {
   landmark:   { base: [26, 96, 92] },
   project:    { base: [150, 62, 46] },
   artifact:   { base: [72, 84, 104] },
+  way:        { base: [74, 104, 44] },  // 移動動物園：習性＝深い黄緑（ランドマークの青緑と混ざらない色）
 };
-const WITH_COIN = { event: true, project: true, landmark: false, artifact: false };
+const WITH_COIN = { event: true, project: true, landmark: false, artifact: false, way: false };
 const KIND_LABEL = {
   event: 'イベント / Event', landmark: 'ランドマーク / Landmark',
   project: 'プロジェクト / Project', artifact: 'アーティファクト / Artifact',
+  way: '習性 / Way',
 };
 
 const W = 1536, H = 1024;             // 合成解像度（縦型 1024×1536 の 90度相当）

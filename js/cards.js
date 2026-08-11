@@ -815,6 +815,78 @@
                  text: '+3 コイン\n以下から1つを選ぶ:\n・手札の財宝カード1枚を廃棄する\n・廃棄置き場から財宝カード1枚を獲得し、手札に加える\n・鍵を受け取る' },
     villain: { id: 'villain', name: '悪党', cost: 5, types: ['action', 'attack'],
                  text: '+2 財源\n手札が5枚以上の他のプレイヤーは各自、手札からコスト2コイン以上のカード1枚を捨て札にする\n（できない場合、手札を公開する）。' },
+
+    /* ---------- 移動動物園（Menagerie）王国30種＋馬 ----------
+       新機構＝追放(Exile＝`p.exile` マット・公開・所有者の得点に数える)／
+       馬(Horse＝非サプライ30枚・使用したら山へ戻る＝獲得でも廃棄でもない)／
+       習性(Way＝横型 DOM.LANDSCAPES の kind:'way'＝アクションの記載効果の代わりに使う)。
+       夜フェイズ・負債・ポーション・分割山・混合山は無い。テキストは現行（2025エラッタ後）。
+       コスト欄に * が付く5枚（馬/動物見本市/デストリエ/漁師/行人）は「別の払い方がある」「コストが動く」の
+       目印であって cost 成分ではない＝cost は素の数値を入れる。
+       正本＝docs/research/menagerie_rules.md */
+    animal_fair:     { id: 'animal_fair', name: '動物見本市', cost: 7, types: ['action'],
+                 text: '+4 コイン\n空のサプライの山1つにつき、+1 購入。\n————\nこれのコストを支払う代わりに、手札のアクションカード1枚を廃棄してもよい。' },
+    barge:           { id: 'barge', name: '艀', cost: 5, types: ['action', 'duration'],
+                 text: '今、または次の自分のターンの開始時に、+3 カード、+1 購入。' },
+    black_cat:       { id: 'black_cat', name: '黒猫', cost: 2, types: ['action', 'attack', 'reaction'],
+                 text: '+2 カード\n自分のターンでない場合、他のプレイヤーは各自、呪い1枚を獲得する。\n————\n他のプレイヤーが勝利点カードを獲得したとき、これを手札から使用してもよい。' },
+    bounty_hunter:   { id: 'bounty_hunter', name: '賞金稼ぎ', cost: 4, types: ['action'],
+                 text: '+1 アクション\n手札1枚を追放する。それと同名のカードが追放マットに無かった場合、+3 コイン。' },
+    camel_train:     { id: 'camel_train', name: 'ラクダの隊列', cost: 3, types: ['action'],
+                 text: 'サプライから勝利点カード以外のカード1枚を追放する。\n————\nこれを獲得したとき、サプライから金貨1枚を追放する。' },
+    cardinal:        { id: 'cardinal', name: '枢機卿', cost: 4, types: ['action', 'attack'],
+                 text: '+2 コイン\n他のプレイヤーは各自、山札の上から2枚を公開し、コスト3コインから6コインのカード1枚を追放し、残りを捨て札にする。' },
+    cavalry:         { id: 'cavalry', name: '騎兵隊', cost: 4, types: ['action'],
+                 text: '馬2枚を獲得する。\n————\nこれを獲得したとき、+2 カード、+1 購入。自分の購入フェイズ中なら、アクションフェイズに戻る。' },
+    coven:           { id: 'coven', name: '魔女の集会', cost: 5, types: ['action', 'attack'],
+                 text: '+1 アクション\n+2 コイン\n他のプレイヤーは各自、サプライから呪い1枚を追放する。できない場合、そのプレイヤーは追放マットの呪いをすべて捨て札にする。' },
+    destrier:        { id: 'destrier', name: 'デストリエ', cost: 6, types: ['action'],
+                 text: '+2 カード\n+1 アクション\n————\n自分のターン中、これはこのターンに獲得したカード1枚につきコストが1コイン安くなる。' },
+    displace:        { id: 'displace', name: '強制退去', cost: 5, types: ['action'],
+                 text: '手札1枚を追放する。それよりコストが最大2コイン高い、名前の異なるカード1枚を獲得する。' },
+    falconer:        { id: 'falconer', name: '鷹匠', cost: 5, types: ['action', 'reaction'],
+                 text: 'これより安いカード1枚を手札に獲得する。\n————\n誰かが種別（アクション、アタックなど）を2つ以上持つカード1枚を獲得したとき、手札からこれを使用してもよい。' },
+    fisherman:       { id: 'fisherman', name: '漁師', cost: 5, types: ['action'],
+                 text: '+1 カード\n+1 アクション\n+1 コイン\n————\nあなたのターン中、あなたの捨て札置き場にカードが1枚もない場合、これのコストは3コイン安くなる。' },
+    gatekeeper:      { id: 'gatekeeper', name: '門番', cost: 5, types: ['action', 'duration', 'attack'],
+                 text: 'あなたの次のターンの開始時に、+3 コイン。それまでの間、他のプレイヤーは各自、自分の追放マットに同名のカードがないアクションカードか財宝カード1枚を獲得したとき、それを追放する。' },
+    goatherd:        { id: 'goatherd', name: 'ヤギ飼い', cost: 3, types: ['action'],
+                 text: '+1 アクション\n手札のカード1枚を廃棄してもよい。\n右隣のプレイヤーが自分の直前のターンに廃棄したカード1枚につき、+1 カード。' },
+    groom:           { id: 'groom', name: '馬丁', cost: 4, types: ['action'],
+                 text: 'コスト4コイン以下のカード1枚を獲得する。獲得したカードが……\nアクションカードの場合、馬1枚を獲得する。\n財宝カードの場合、銀貨1枚を獲得する。\n勝利点カードの場合、+1 カード、+1 アクション。' },
+    hostelry:        { id: 'hostelry', name: '旅籠', cost: 4, types: ['action'],
+                 text: '+1 カード\n+2 アクション\n————\nこれを獲得したとき、手札から好きな枚数の財宝カードを公開して捨て札にしてもよい。そうした場合、捨て札にした枚数と同じ枚数の馬を獲得する。' },
+    hunting_lodge:   { id: 'hunting_lodge', name: '狩猟小屋', cost: 5, types: ['action'],
+                 text: '+1 カード\n+2 アクション\n手札をすべて捨て札にしてもよい。そうした場合、+5 カード。' },
+    kiln:            { id: 'kiln', name: '炉', cost: 5, types: ['action'],
+                 text: '+2 コイン\nこのターン、次にカード1枚を使用するとき、その解決前に、それと同じカード1枚を獲得してもよい。' },
+    livery:          { id: 'livery', name: '貸し馬屋', cost: 5, types: ['action'],
+                 text: '+3 コイン\nこのターン、あなたがコスト4コイン以上のカード1枚を獲得したとき、馬1枚を獲得する。' },
+    mastermind:      { id: 'mastermind', name: '首謀者', cost: 5, types: ['action', 'duration'],
+                 text: 'あなたの次のターンの開始時に、手札のアクションカード1枚を3回使用してもよい。' },
+    paddock:         { id: 'paddock', name: 'パドック', cost: 5, types: ['action'],
+                 text: '+2 コイン\n馬2枚を獲得する。\n空のサプライの山1つにつき、+1 アクション。' },
+    sanctuary:       { id: 'sanctuary', name: '聖域', cost: 5, types: ['action'],
+                 text: '+1 カード\n+1 アクション\n+1 購入\n手札1枚を追放してよい。' },
+    scrap:           { id: 'scrap', name: 'がらくた', cost: 3, types: ['action'],
+                 text: '手札1枚を廃棄する。そのコスト1コインにつき1つ、以下から異なるものを選ぶ：\n+1 カード／+1 アクション／+1 購入／+1 コイン／銀貨1枚を獲得する／馬1枚を獲得する。' },
+    sheepdog:        { id: 'sheepdog', name: '牧羊犬', cost: 3, types: ['action', 'reaction'],
+                 text: '+2 カード\n————\nあなたがカードを獲得したとき、これを手札から使用してもよい。' },
+    sleigh:          { id: 'sleigh', name: 'そり', cost: 2, types: ['action', 'reaction'],
+                 text: '馬2枚を獲得する。\n————\nあなたがカードを獲得したとき、これを捨て札にしてもよい。そうした場合、獲得したカードを手札に加えるか山札の上に置く。' },
+    snowy_village:   { id: 'snowy_village', name: '雪深い村', cost: 3, types: ['action'],
+                 text: '+1 カード\n+4 アクション\n+1 購入\nこのターン、これ以降に得る +アクション をすべて無視する。' },
+    stockpile:       { id: 'stockpile', name: '備蓄品', cost: 3, types: ['treasure'], coin: 3,
+                 text: '+3 コイン\n+1 購入\nこれを追放する。' },
+    supplies:        { id: 'supplies', name: '配給品', cost: 2, types: ['treasure'], coin: 1,
+                 text: '+1 コイン\n馬1枚を獲得し、山札の上に置く。' },
+    village_green:   { id: 'village_green', name: '村有緑地', cost: 4, types: ['action', 'duration', 'reaction'],
+                 text: '今、または次のターンの開始時に、+1 カード および +2 アクション。\n————\nクリンナップフェイズ以外でこれを捨て札にしたとき、これを使用してもよい。' },
+    wayfarer:        { id: 'wayfarer', name: '行人', cost: 6, types: ['action'],
+                 text: '+3 カード\n銀貨1枚を獲得してもよい。\n————\nこれのコストは、このターンに獲得された直前の他のカード1枚と同じになる。' },
+    // 馬（Horse）＝非サプライ30枚。「馬を獲得する」効果でのみ得られる（購入・汎用獲得の対象外）。
+    horse:           { id: 'horse', name: '馬', cost: 3, types: ['action'],
+                 text: '+2 カード\n+1 アクション\nこれをその山に戻す。' },
   };
 
   /* ---------- 王国カードのセット ----------
@@ -949,6 +1021,24 @@
   DOM.POOLS.renaissance = ['border_guard', 'ducat', 'lackeys', 'acting_troupe', 'cargo_ship', 'experiment', 'improve',
                            'flag_bearer', 'hideout', 'inventor', 'mountain_village', 'patron', 'priest', 'research', 'silk_merchant',
                            'old_witch', 'recruiter', 'scepter', 'scholar', 'sculptor', 'seer', 'spices', 'swashbuckler', 'treasurer', 'villain'];
+  // 移動動物園（Menagerie）＝王国30種（抽選母集団）。特殊山は「馬」だけ＝POOLS.horse に分離（非サプライ）。
+  //   イベント20種・習性20種は「カードではない横型」＝DOM.LANDSCAPES 側（POOLS には入れない）。
+  DOM.POOLS.menagerie = ['animal_fair', 'barge', 'black_cat', 'bounty_hunter', 'camel_train', 'cardinal', 'cavalry', 'coven',
+                         'destrier', 'displace', 'falconer', 'fisherman', 'gatekeeper', 'goatherd', 'groom', 'hostelry',
+                         'hunting_lodge', 'kiln', 'livery', 'mastermind', 'paddock', 'sanctuary', 'scrap', 'sheepdog',
+                         'sleigh', 'snowy_village', 'stockpile', 'supplies', 'village_green', 'wayfarer'];
+  // 移動動物園：馬＝非サプライ30枚（「馬を獲得する」効果でのみ得る）。賞品/トラベラー成長先と同型で
+  //   ランダム抽選の母集団には入れない。整合性テストの「全カードがどれかのプールに属す」は満たす。
+  DOM.POOLS.horse = ['horse'];
+  // 移動動物園の固定10種（自作 showcase）。追放（ラクダの隊列）・馬（そり/騎兵隊/馬丁/貸し馬屋）・
+  //   持続（艀/村有緑地）・アタック（魔女の集会）・獲得に反応するリアクション（牧羊犬/村有緑地）を一通り味わえる。
+  //   コスト分布＝$2×1／$3×3／$4×3／$5×3。
+  DOM.KINGDOM_MENAGERIE = ['sleigh', 'camel_train', 'scrap', 'sheepdog', 'cavalry', 'groom', 'village_green',
+                           'barge', 'coven', 'livery'];
+  // 馬の山（30枚）を準備するかの判定＝「馬を獲得する」王国カード／イベント（公式：馬を使うカードがある場合だけ用意）。
+  //   習性のハツカネズミで脇に置いたカードが馬を使う場合もあるので、engine 側は脇カードも見る。
+  DOM.HORSE_GIVERS = ['cavalry', 'groom', 'hostelry', 'livery', 'paddock', 'scrap', 'sleigh', 'supplies',
+                      'bargain', 'demand', 'ride', 'stampede'];
   // 画面で選べるセット（id はサーバ検証・保存にも使う）。
   //   kingdom 固定 … おすすめ10種をそのまま使う
   //   randomFrom  … 指定した拡張プールを合わせた中から毎回10種を抽選
@@ -983,6 +1073,10 @@
     { id: 'renaissance',     kind: 'standard', name: 'ルネサンスセット', desc: '村人・財源・アーティファクト（奪い合う）', kingdom: DOM.KINGDOM_RENAISSANCE },
     // ルネサンス＋プロジェクト（横型）。固定10王国に、プロジェクト20種から2枚を無作為に付ける（1人2つまで買える永続効果）。
     { id: 'renaissance-projects', kind: 'standard', name: 'ルネサンス＋プロジェクト', desc: 'ルネサンス10種＋プロジェクト2枚（買うと永続する横型・1人2つまで）', kingdom: DOM.KINGDOM_RENAISSANCE, projectsFrom: 'renaissance' },
+    // 移動動物園セット（固定10種）。追放マット（Exile）と馬（非サプライ30枚）の2機構。
+    { id: 'menagerie',       kind: 'standard', name: '移動動物園セット', desc: '追放マット・馬・獲得した瞬間に反応するカード', kingdom: DOM.KINGDOM_MENAGERIE },
+    // 移動動物園＋習性（横型）。固定10王国に、習性20種から2枚を無作為に付ける（アクションの効果を置き換える）。
+    { id: 'menagerie-ways',  kind: 'standard', name: '移動動物園＋習性', desc: '移動動物園10種＋習性2枚（アクションの効果を置き換える横型・買わない）', kingdom: DOM.KINGDOM_MENAGERIE, waysFrom: 'menagerie' },
     // ---- おすすめ（テーマ別・固定10種）----
     { id: 'big-money',       kind: 'recommend', name: 'ビッグマネー', desc: 'お金を伸ばして属州を狙う王道',
       kingdom: ['chapel', 'moneylender', 'harbinger', 'throne_room', 'bureaucrat', 'poacher', 'market', 'mine', 'laboratory', 'sentry'] },
@@ -1021,6 +1115,7 @@
     // 帝国から＝POOLS.empires（29枠）。分割山の下段は randomKingdom が上段へ正規化し、城は 'castles' の1枠で抽選される。
     { id: 'random-empires',  kind: 'random', name: '帝国から',     randomFrom: ['empires'] },
     { id: 'random-renaissance', kind: 'random', name: 'ルネサンスから', randomFrom: ['renaissance'] },
+    { id: 'random-menagerie', kind: 'random', name: '移動動物園から', randomFrom: ['menagerie'] },
     { id: 'random-intrigue', kind: 'random', name: '陰謀のみから',   randomFrom: ['intrigue'] },
     { id: 'random-basic',    kind: 'random', name: '基本のみから',   randomFrom: ['basic'] },
     { id: 'random-promo',    kind: 'random', name: 'プロモ込みから',  randomFrom: ['basic', 'intrigue', 'promo'] },
@@ -1060,7 +1155,7 @@
   DOM.MIX_KINGDOM_POOLS = {
     basic: '基本', intrigue: '陰謀', seaside: '海辺', alchemy: '錬金術', prosperity: '繁栄',
     cornucopia: '収穫祭', guilds: 'ギルド', hinterlands: '異郷', darkages: '暗黒時代',
-    adventures: '冒険', empires: '帝国', renaissance: 'ルネサンス', promo: 'プロモ',
+    adventures: '冒険', empires: '帝国', renaissance: 'ルネサンス', menagerie: '移動動物園', promo: 'プロモ',
   };
   // mix で選べる横型プール（kind ごとに分けて選べる）。
   DOM.MIX_LANDSCAPE_POOLS = {
@@ -1068,6 +1163,7 @@
     'ev-empires': { label: 'イベント（帝国）', get: () => DOM.EVENTS_EMPIRES || [] },
     'ev-adventures': { label: 'イベント（冒険）', get: () => DOM.EVENTS_ADVENTURES || [] },
     'pj-renaissance': { label: 'プロジェクト（ルネサンス）', get: () => DOM.PROJECTS_RENAISSANCE || [] },
+    'way-menagerie': { label: '習性（移動動物園）', get: () => DOM.WAYS_MENAGERIE || [] },
   };
   DOM.isMixSet = function (setId) { return typeof setId === 'string' && setId.indexOf('mix:') === 0; };
   // mix セットIDを分解する。不正なプール名は捨てる（サーバ側の検証と同じ挙動）。
@@ -1124,6 +1220,7 @@
   DOM.eventPoolFor = function (expansion) {
     if (expansion === 'empires') return DOM.EVENTS_EMPIRES || [];
     if (expansion === 'adventures') return DOM.EVENTS_ADVENTURES || [];
+    if (expansion === 'menagerie') return DOM.EVENTS_MENAGERIE || [];
     return [];
   };
   DOM.eventsForSet = function (setId) {
@@ -1141,13 +1238,23 @@
     if (set && set.projectsFrom) return DOM.pickLandmarks(2, DOM.projectPoolFor(set.projectsFrom));
     return [];
   };
+  // セットID → 使用する習性id列（横型・0〜2枚）。習性は**買わない**のでコスト/購入まわりの配線は不要。
+  DOM.wayPoolFor = function (expansion) {
+    if (expansion === 'menagerie') return DOM.WAYS_MENAGERIE || [];
+    return [];
+  };
+  DOM.waysForSet = function (setId) {
+    const set = DOM.CARD_SETS.find((s) => s.id === setId);
+    if (set && set.waysFrom) return DOM.pickLandmarks(2, DOM.wayPoolFor(set.waysFrom));
+    return [];
+  };
   /* セットID → 使用する横型3種を**一度に**確定する唯一の入口（ui.js の startConfigured／server の startGame が呼ぶ）。
      ※ landmarksForSet / eventsForSet / projectsForSet を別々に呼ぶと mix で「合計最大2枚」を超えてしまう
        （3つとも独立に2枚ずつ引いてしまう）。**mix では必ずこの関数を使うこと**。 */
   DOM.landscapesForSet = function (setId) {
     if (DOM.isMixSet(setId)) {
       const m = DOM.parseMixSet(setId);
-      const out = { landmarks: [], events: [], projects: [] };
+      const out = { landmarks: [], events: [], projects: [], ways: [] };
       if (!m.count || !m.lsPools.length) return out;
       // 選んだ横型プールを1つの束にまとめてシャッフルし、合計 count 枚だけ引く（公式：横型は合算で最大2枚）。
       let bag = [];
@@ -1157,6 +1264,7 @@
         if (kind === 'landmark') out.landmarks.push(id);
         else if (kind === 'event') out.events.push(id);
         else if (kind === 'project') out.projects.push(id);
+        else if (kind === 'way') out.ways.push(id);
       });
       return out;
     }
@@ -1164,6 +1272,7 @@
       landmarks: DOM.landmarksForSet(setId),
       events: DOM.eventsForSet(setId),
       projects: DOM.projectsForSet(setId),
+      ways: DOM.waysForSet(setId),
     };
   };
   // 表示名（mix はプール名から組み立てる。ロビー/セット選択の見出しに使う）。
@@ -1373,6 +1482,92 @@
       text: 'あなたが使用する国境警備隊は、カードを3枚公開して2枚を捨て札にする。\n（角笛を受け取るには、3枚すべてがアクションカードである必要がある。）' },
     treasure_chest: { name: '宝箱', nameEn: 'Treasure Chest', kind: 'artifact', expansion: 'renaissance', cost: 0, debt: 0, grantedBy: ['swashbuckler'],
       text: 'あなたの購入フェイズの開始時、金貨1枚を獲得する。' },
+
+    /* ---------- 移動動物園（Menagerie）イベント20種 ---------- */
+    alliance: { name: '同盟', nameEn: 'Alliance', kind: 'event', expansion: 'menagerie', cost: 10, debt: 0,
+      text: '属州、公領、屋敷、金貨、銀貨、銅貨 各1枚を獲得する。' },
+    banish: { name: '放逐', nameEn: 'Banish', kind: 'event', expansion: 'menagerie', cost: 4, debt: 0,
+      text: '手札から同じ名前のカードを好きな枚数追放する。' },
+    bargain: { name: '特価品', nameEn: 'Bargain', kind: 'event', expansion: 'menagerie', cost: 4, debt: 0,
+      text: 'コスト5コイン以下の勝利点でないカード1枚を獲得する。\n他のプレイヤーは各自、馬1枚を獲得する。' },
+    commerce: { name: '商売', nameEn: 'Commerce', kind: 'event', expansion: 'menagerie', cost: 5, debt: 0,
+      text: 'このターンにあなたが獲得したカードの異なる名前1種類につき、金貨1枚を獲得する。' },
+    delay: { name: '遅延', nameEn: 'Delay', kind: 'event', expansion: 'menagerie', cost: 0, debt: 0,
+      text: '手札からアクションカード1枚を脇に置いてもよい。\nあなたの次のターンの開始時、それを使用する。' },
+    demand: { name: '要求', nameEn: 'Demand', kind: 'event', expansion: 'menagerie', cost: 5, debt: 0,
+      text: '馬1枚とコスト4コイン以下のカード1枚を獲得し、2枚ともあなたの山札の上に置く。' },
+    desperation: { name: '絶望', nameEn: 'Desperation', kind: 'event', expansion: 'menagerie', cost: 0, debt: 0,
+      text: '1ターンに1回：呪い1枚を獲得してもよい。\nそうした場合、+1 購入、+2 コイン。' },
+    enclave: { name: '包領', nameEn: 'Enclave', kind: 'event', expansion: 'menagerie', cost: 8, debt: 0,
+      text: '金貨1枚を獲得する。サプライから公領1枚を追放する。' },
+    enhance: { name: '増大', nameEn: 'Enhance', kind: 'event', expansion: 'menagerie', cost: 3, debt: 0,
+      text: '手札から勝利点でないカード1枚を廃棄してもよい。\nそうした場合、そのカードよりコストが最大2コイン多いカード1枚を獲得する。' },
+    gamble: { name: '博打', nameEn: 'Gamble', kind: 'event', expansion: 'menagerie', cost: 2, debt: 0,
+      text: '+1 購入\n山札の一番上のカードを捨て札にする。\nそれがアクションカードか財宝カードの場合、それを使用してもよい。' },
+    invest: { name: '投資', nameEn: 'Invest', kind: 'event', expansion: 'menagerie', cost: 4, debt: 0,
+      text: 'サプライからアクションカード1枚を追放する。\nそのカードが追放されている間、他のプレイヤーがそれと同じカード1枚を獲得または投資したとき、+2 カード。' },
+    march: { name: '進軍', nameEn: 'March', kind: 'event', expansion: 'menagerie', cost: 3, debt: 0,
+      text: '捨て札置き場を見る。\nその中のアクションカード1枚を使用してもよい。' },
+    populate: { name: '植民', nameEn: 'Populate', kind: 'event', expansion: 'menagerie', cost: 10, debt: 0,
+      text: 'サプライのアクションカードの山それぞれから、カード1枚を獲得する。' },
+    pursue: { name: '追求', nameEn: 'Pursue', kind: 'event', expansion: 'menagerie', cost: 2, debt: 0,
+      text: '+1 購入\nカード名を1つ指定する。山札の上から4枚を公開する。\nそのうち指定したカードを山札の上に戻し、残りを捨て札にする。' },
+    reap: { name: '刈り入れ', nameEn: 'Reap', kind: 'event', expansion: 'menagerie', cost: 7, debt: 0,
+      text: '金貨1枚を獲得し、それを脇に置く。\n次のあなたの手番開始時、それを使用する。' },
+    ride: { name: '乗馬', nameEn: 'Ride', kind: 'event', expansion: 'menagerie', cost: 2, debt: 0,
+      text: '馬1枚を獲得する。' },
+    seize_the_day: { name: '今を生きる', nameEn: 'Seize the Day', kind: 'event', expansion: 'menagerie', cost: 4, debt: 0,
+      text: 'ゲーム中に1回：このターンの後に、追加のターンを1回行う。' },
+    stampede: { name: '暴走', nameEn: 'Stampede', kind: 'event', expansion: 'menagerie', cost: 5, debt: 0,
+      text: '場にあるあなたのカードが5枚以下の場合、馬5枚を獲得し、山札の上に置く。' },
+    toil: { name: '苦労', nameEn: 'Toil', kind: 'event', expansion: 'menagerie', cost: 2, debt: 0,
+      text: '+1 購入\n手札からアクションカード1枚を使用してもよい。' },
+    transport: { name: '輸送', nameEn: 'Transport', kind: 'event', expansion: 'menagerie', cost: 3, debt: 0,
+      text: '次から1つを選ぶ：\n・サプライからアクションカード1枚を追放する\n・追放されているあなたのアクションカード1枚を山札の上に置く' },
+
+    /* ---------- 移動動物園（Menagerie）習性（Way）20種 ----------
+       買わない横型。**アクションカードを使用するとき、その記載効果の代わりに習性の効果を使ってよい**
+       （区切り線の下のテキストは影響を受けない）。コスト欄は無い。 */
+    way_of_the_butterfly: { name: 'チョウの習性', nameEn: 'Way of the Butterfly', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
+      text: 'これをこのカードの山に戻してもよい。そうした場合、これよりコストがちょうど1コイン多いカード1枚を獲得する。' },
+    way_of_the_camel: { name: 'ラクダの習性', nameEn: 'Way of the Camel', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
+      text: 'サプライから金貨1枚を追放する。' },
+    way_of_the_chameleon: { name: 'カメレオンの習性', nameEn: 'Way of the Chameleon', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
+      text: 'このカードの指示に従う。ただしこのターン、それにより「+カード」を得るなら、代わりに同じ数の「+コイン」を得る。逆も同様。' },
+    way_of_the_frog: { name: 'カエルの習性', nameEn: 'Way of the Frog', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
+      text: '+1 アクション\nこのターン、これを場から捨て札にするとき、これを山札の上に置く。' },
+    way_of_the_goat: { name: 'ヤギの習性', nameEn: 'Way of the Goat', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
+      text: '手札からカード1枚を廃棄する。' },
+    way_of_the_horse: { name: '馬の習性', nameEn: 'Way of the Horse', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
+      text: '+2 カード\n+1 アクション\nこれをこのカードの山に戻す。' },
+    way_of_the_mole: { name: 'モグラの習性', nameEn: 'Way of the Mole', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
+      text: '+1 アクション\n手札をすべて捨て札にする。+3 カード。' },
+    way_of_the_monkey: { name: 'サルの習性', nameEn: 'Way of the Monkey', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
+      text: '+1 購入\n+1 コイン' },
+    way_of_the_mouse: { name: 'ハツカネズミの習性', nameEn: 'Way of the Mouse', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
+      text: '脇に置かれているカードを使用する。そのカードは脇に置いたままにする。\n————\n準備：このゲームで使わない、コスト2コインまたは3コインの、持続でないアクションの王国カード1枚を脇に置く。' },
+    way_of_the_mule: { name: 'ラバの習性', nameEn: 'Way of the Mule', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
+      text: '+1 アクション\n+1 コイン' },
+    way_of_the_otter: { name: 'カワウソの習性', nameEn: 'Way of the Otter', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
+      text: '+2 カード' },
+    way_of_the_owl: { name: 'フクロウの習性', nameEn: 'Way of the Owl', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
+      text: '手札が6枚になるまで引く。' },
+    way_of_the_ox: { name: '雄牛の習性', nameEn: 'Way of the Ox', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
+      text: '+2 アクション' },
+    way_of_the_pig: { name: '豚の習性', nameEn: 'Way of the Pig', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
+      text: '+1 カード\n+1 アクション' },
+    way_of_the_rat: { name: 'ドブネズミの習性', nameEn: 'Way of the Rat', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
+      text: '財宝カード1枚を捨て札にしてもよい。そうした場合、これと同じカード1枚を獲得する。' },
+    way_of_the_seal: { name: 'アザラシの習性', nameEn: 'Way of the Seal', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
+      text: '+1 コイン\nこのターン、カード1枚を獲得したとき、それを山札の上に置いてもよい。' },
+    way_of_the_sheep: { name: '羊の習性', nameEn: 'Way of the Sheep', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
+      text: '+2 コイン' },
+    way_of_the_squirrel: { name: 'リスの習性', nameEn: 'Way of the Squirrel', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
+      text: 'このターンの終了時に、+2 カード。' },
+    way_of_the_turtle: { name: 'ウミガメの習性', nameEn: 'Way of the Turtle', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
+      text: 'これを脇に置く。脇に置いた場合、次のターンの開始時にそれを使用する。' },
+    way_of_the_worm: { name: 'ミミズの習性', nameEn: 'Way of the Worm', kind: 'way', expansion: 'menagerie', cost: 0, debt: 0,
+      text: 'サプライの屋敷1枚を追放する。' },
   };
   // 帝国ランドマーク21種（抽選元）。イベントは未実装（docs/research/landscape_cards.md §2 にデータあり）。
   DOM.LANDMARKS_EMPIRES = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'landmark');
@@ -1380,6 +1575,10 @@
   DOM.EVENTS_EMPIRES = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'event' && DOM.LANDSCAPES[id].expansion === 'empires');
   // 冒険イベント20種（抽選元）。負債は無し＝コインのみ。トークン中心。
   DOM.EVENTS_ADVENTURES = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'event' && DOM.LANDSCAPES[id].expansion === 'adventures');
+  // 移動動物園イベント20種（抽選元）。負債は無し＝コインのみ。追放・馬・追加ターンが中心。
+  DOM.EVENTS_MENAGERIE = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'event' && DOM.LANDSCAPES[id].expansion === 'menagerie');
+  // 移動動物園 習性（Way）20種（抽選元）。買わない横型＝アクションの記載効果の代わりに使う。
+  DOM.WAYS_MENAGERIE = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'way');
   // ルネサンス プロジェクト20種（抽選元）。買う横型＝BUY_PROJECT で発火（1人2つまで・同じものは1回だけ）。
   DOM.PROJECTS_RENAISSANCE = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'project' && DOM.LANDSCAPES[id].expansion === 'renaissance');
   // ルネサンス アーティファクト5種（抽選しない＝付与カードが王国にあれば自動で盤面に出る）。

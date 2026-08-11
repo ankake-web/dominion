@@ -60,6 +60,12 @@
     'old_witch', 'scholar', 'swashbuckler', 'recruiter', 'treasurer', 'seer', 'sculptor', 'villain', 'scepter', 'spices',
     'research', 'silk_merchant', 'patron', 'priest', 'inventor', 'mountain_village', 'hideout', 'flag_bearer',
     'cargo_ship', 'improve', 'experiment', 'acting_troupe', 'lackeys', 'ducat', 'border_guard',
+    // 移動動物園（実プレイ＝段階2）＝強さ/コストの目安順。供給があるときだけ効く（bestEngineBuy/bestGain が参照）。
+    'animal_fair', 'wayfarer', 'destrier',
+    'mastermind', 'barge', 'coven', 'gatekeeper', 'livery', 'paddock', 'hunting_lodge', 'displace', 'falconer', 'sanctuary', 'fisherman', 'kiln',
+    'cavalry', 'village_green', 'groom', 'hostelry', 'cardinal', 'bounty_hunter',
+    'snowy_village', 'sheepdog', 'scrap', 'goatherd', 'camel_train', 'stockpile',
+    'black_cat', 'sleigh', 'supplies',
     'pawn', 'lurker', 'moat', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke',
     // 追加拡張（収穫祭/異郷/暗黒時代）＝孤立プールで実サプライに出ないため並び順はCPU挙動に無影響
     // （新プロモ6種は実プレイ化済み＝上の実強度順の位置に配置済み）
@@ -69,6 +75,8 @@
     // 段階1追加（冒険＋帝国。CARD_SETS 未参照＝実際には獲得されないが GAIN_ORDER=全カードの整合性を満たす）
     'coin_of_the_realm', 'page', 'peasant', 'ratcatcher', 'raze', 'amulet', 'caravan_guard', 'dungeon', 'gear', 'guide', 'duplicate', 'magpie', 'messenger', 'miser', 'port', 'ranger', 'transmogrify', 'artificer', 'bridge_troll', 'distant_lands', 'giant', 'haunted_woods', 'lost_city', 'relic', 'royal_carriage', 'storyteller', 'swamp_hag', 'treasure_trove', 'wine_merchant', 'hireling', 'treasure_hunter', 'warrior', 'hero', 'champion', 'soldier', 'fugitive', 'disciple', 'teacher',
     'engineer', 'city_quarter', 'overlord', 'royal_blacksmith', 'farmers_market', 'chariot_race', 'enchantress', 'sacrifice', 'temple', 'villa', 'archive', 'capital', 'charm', 'forum', 'groundskeeper', 'legionary', 'wild_hunt', 'crown', 'encampment', 'plunder', 'patrician', 'emporium', 'settlers', 'bustling_village', 'catapult', 'rocks', 'gladiator', 'fortune', 'castles', 'humble_castle', 'crumbling_castle', 'small_castle', 'haunted_castle', 'opulent_castle', 'sprawling_castle', 'grand_castle', 'kings_castle',
+    // 移動動物園：馬＝非サプライ（「馬を獲得する」効果でのみ得る）＝汎用獲得は選ばない（NON_SUPPLY_SET）。
+    'horse',
     'copper', 'curse'];
   // 収穫祭：賞品(Prize)は馬上槍試合でのみ獲得する非サプライ札＝汎用の獲得効果(bestGain/bestGainExact)は
   // 絶対に賞品を選ばない（豊穣の角等で$0賞品を不正獲得しない／賞品を拒否する reducer と噛み合って無限ループしない）。
@@ -76,8 +84,9 @@
   // 暗黒時代：戦利品/狂人/傭兵も非サプライ＝汎用獲得(bestGain等)や獲得系pendingから除外する
   //（engine の NON_SUPPLY 拒否と噛み合い、提案し続けて無限ループするのを防ぐ）。
   // 冒険：トラベラーの成長先8種も非サプライ（page/peasant の交換でのみ得る）＝汎用獲得や獲得系pendingから除外。
+  // 移動動物園：馬（horse）も非サプライ＝「馬を獲得する」効果でのみ得る（購入も汎用獲得もできない）。
   const NON_SUPPLY_SET = new Set([...PRIZE_SET, 'spoils', 'madman', 'mercenary',
-    'treasure_hunter', 'warrior', 'hero', 'champion', 'soldier', 'fugitive', 'disciple', 'teacher']);
+    'treasure_hunter', 'warrior', 'hero', 'champion', 'soldier', 'fugitive', 'disciple', 'teacher', 'horse']);
   // 新プロモ：サウナ/アヴァント分割山＝上のサウナが残る間はアヴァントを獲得できない
   // （engine の gain/canBuyCard 拒否と必ずセット＝提案すると強制獲得と噛み合い無限ループ）。
   function splitBlocked(state, id) { const top = (DOM.SPLIT_PILES || {})[id]; return !!(top && sup(state, top) > 0); }
@@ -102,6 +111,21 @@
   const isTreasureNow = (state, id) => (DOM.engine && DOM.engine.isTreasureFor)
     ? DOM.engine.isTreasureFor(state, id) : isTreasure(id);
   // 「コスト$N以下」の最善獲得。opts = { treasureOnly, noVictory, pot, debt }
+  /* 移動動物園：このアクションを「習性」で使うか（使わないなら null）。engine の isUsableWay と同じ集合を見る。 */
+  function chooseWay(state, p, card) {
+    const ways = state.ways || [];
+    if (!ways.length) return null;
+    const t = state.turn;
+    const txt = (C()[card] && C()[card].text) || '';
+    const givesAction = /\+\s*\d+\s*アクション/.test(txt);
+    const givesCards = /\+\s*\d+\s*カード/.test(txt);
+    const otherActions = p.hand.filter((c) => c !== card && DOM.isType(c, 'action')).length;
+    // ターミナル（+アクションが無い）を使うと手が止まるが、手札にまだアクションが残っている → 雄牛（+2アクション）。
+    if (!givesAction && t.actions <= 1 && otherActions >= 2 && ways.indexOf('way_of_the_ox') >= 0) return 'way_of_the_ox';
+    // ドローを持たないカードで手札が細い → カワウソ（+2カード）。
+    if (!givesCards && p.hand.length <= 2 && ways.indexOf('way_of_the_otter') >= 0) return 'way_of_the_otter';
+    return null;
+  }
   function bestGain(state, maxCost, opts) {
     opts = opts || {};
     return firstGainable(state, (id) => costUpTo(state, id, maxCost, opts) &&
@@ -1567,6 +1591,7 @@
         return { type: 'BRIDGE_TROLL_REACT' };
       case 'haunted_woods': // 呪いの森：堀で免疫、無ければそのまま受ける（購入時に手札が山札の上へ）
       case 'swamp_hag':     // 沼の妖婆：堀で免疫、無ければそのまま受ける（購入時に呪い獲得）
+      case 'gatekeeper':    // 移動動物園：門番＝堀で免疫、無ければ受ける（獲得したアクション/財宝が追放される）
         if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
         return { type: 'LINGER_REACT' };
       // 冒険：トラベラー（page/peasant＋成長先）
@@ -1728,6 +1753,120 @@
       case 'sprawling_castle':
         // 公領（1枚3点・デッキ圧迫少）を優先。公領が無ければ屋敷3枚。
         return { type: 'SPRAWLING_CASTLE_CHOOSE', choice: sup(state, 'duchy') > 0 ? 'duchy' : 'estates' };
+
+      /* ===== 拡張: 移動動物園（Menagerie）===== */
+      // 追放マットの払い戻し＝同名を獲得したので、追放してあるぶんを捨て札に戻すか。
+      //   デッキに入れたくない札（呪い/廃墟/避難所）は追放したままにするのが得＝戻さない。それ以外は全部戻す。
+      case 'exile_discard': {
+        const junk = DOM.isType(pd.card, 'curse') || DOM.isType(pd.card, 'ruins') || DOM.isType(pd.card, 'shelter');
+        return { type: 'EXILE_DISCARD', n: junk ? 0 : DOM.engine.exileCount(state.players[pd.player], pd.card) };
+      }
+      // 艀＝次のターンに持ち越す（先引き5枚＋3枚で強い手番になる）。終盤で今すぐ買い足したいときだけ「今」。
+      case 'barge_choose':
+        return { type: 'BARGE_CHOOSE', choice: (sup(state, 'province') <= 2 || state.turn.phase === 'buy') ? 'now' : 'next' };
+      // 賞金稼ぎ＝追放マットに同名が無い札のうち、最も要らないものを追放する（+$3 が付く）。
+      case 'bounty_hunter_exile': {
+        const ex = (c) => DOM.engine.exileCount(p, c) > 0;
+        const fresh = p.hand.filter((c) => !ex(c));
+        const pool = fresh.length ? fresh : p.hand;
+        return { type: 'BOUNTY_HUNTER_EXILE', card: pool.slice().sort((a, b) => keepValue(a) - keepValue(b))[0] };
+      }
+      // ラクダの隊列＝金貨を追放しておく（後で金貨を獲得したときにまとめて回収できる）。
+      case 'camel_train_exile': {
+        const ids = DOM.engine.exilableSupplyIds(state).filter((id) => !DOM.isType(id, 'victory'));
+        if (!ids.length) return null;
+        const pref = ['gold', 'silver'];
+        const pick = pref.find((id) => ids.indexOf(id) >= 0) || ids.slice().sort((a, b) => cost(state, b) - cost(state, a))[0];
+        return { type: 'CAMEL_TRAIN_EXILE', card: pick };
+      }
+      // 黒猫／枢機卿／魔女の集会のアタックを受ける（堀があれば公開して無効化）。
+      case 'black_cat':
+        return p.hand.includes('moat') ? { type: 'MOAT_REVEAL' } : { type: 'BLACK_CAT_REACT' };
+      case 'cardinal':
+        if (pd.stage === 'react') return p.hand.includes('moat') ? { type: 'MOAT_REVEAL' } : { type: 'CARDINAL_REACT' };
+        // 追放されるのは自分のカード＝一番惜しくない方を選ぶ。
+        return { type: 'CARDINAL_PICK', card: (pd.cands || []).slice().sort((a, b) => keepValue(a) - keepValue(b))[0] };
+      case 'coven':
+        return p.hand.includes('moat') ? { type: 'MOAT_REVEAL' } : { type: 'COVEN_REACT' };
+      // 強制退去＝要らない手札を追放して、その +$2 で買えるものを取る。
+      case 'displace_exile':
+        return { type: 'DISPLACE_EXILE', card: p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0] };
+      case 'displace_gain': {
+        const c = firstGainable(state, (id) => id !== pd.from && costUpTo(state, id, pd.maxCost, { pot: pd.pot, debt: pd.debt }));
+        return { type: 'DISPLACE_GAIN', card: c };
+      }
+      // 鷹匠＝これより安いカードを手札に獲得（強いものを優先）。
+      case 'falconer_gain':
+        return { type: 'FALCONER_GAIN', card: bestGainUnder(state, pd.under) };
+      case 'falconer_react':
+        return { type: 'FALCONER_REACT', play: true };
+      // ヤギ飼い＝要らない札があれば廃棄（呪い・銅貨・屋敷）。無ければ廃棄しない。
+      case 'goatherd_trash': {
+        const junk = p.hand.filter((c) => c === 'curse' || c === 'copper' || c === 'estate' || DOM.isType(c, 'ruins'));
+        return { type: 'GOATHERD_TRASH', card: junk.length ? junk.sort((a, b) => keepValue(a) - keepValue(b))[0] : null };
+      }
+      // 馬丁＝$4以下で一番強いものを獲得（アクションなら馬・財宝なら銀貨も付く）。
+      case 'groom_gain':
+        return { type: 'GROOM_GAIN', card: bestGain(state, 4) };
+      // 旅籠（獲得時）＝銅貨だけを捨てて馬に変える（銀貨/金貨は残す）。
+      case 'hostelry_discard':
+        return { type: 'HOSTELRY_DISCARD', cards: p.hand.filter((c) => c === 'copper') };
+      // 狩猟小屋＝手札が細いときだけ引き直す。
+      case 'hunting_lodge_choose':
+        return { type: 'HUNTING_LODGE_CHOOSE', discard: p.hand.length <= 2 };
+      // 首謀者＝手札で一番強いアクションを3回使う。
+      case 'mastermind_play': {
+        const acts = p.hand.filter((c) => DOM.isType(c, 'action'));
+        if (!acts.length) return { type: 'MASTERMIND_PLAY', card: null };
+        return { type: 'MASTERMIND_PLAY', card: acts.slice().sort((a, b) => throneValue(b) - throneValue(a))[0] };
+      }
+      // 聖域＝要らない札を追放（デッキから消える＝圧縮）。無ければ追放しない。
+      case 'sanctuary_exile': {
+        const junk = p.hand.filter((c) => c === 'curse' || c === 'copper' || c === 'estate' || DOM.isType(c, 'ruins'));
+        return { type: 'SANCTUARY_EXILE', card: junk.length ? junk.sort((a, b) => keepValue(a) - keepValue(b))[0] : null };
+      }
+      // がらくた＝一番要らない札を廃棄し、コスト分だけ効果を選ぶ。
+      case 'scrap_trash':
+        return { type: 'SCRAP_TRASH', card: p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0] };
+      case 'scrap_choose': {
+        // 有用な順（引く→アクション→コイン→銀貨→馬→購入）に、必要な個数だけ選ぶ。
+        const order = ['card', 'action', 'coin', 'silver', 'horse', 'buy'];
+        return { type: 'SCRAP_CHOOSE', choices: order.slice(0, Math.min(pd.count, 6)) };
+      }
+      // 牧羊犬＝+2カードは常に得。
+      case 'sheepdog_react':
+        return { type: 'SHEEPDOG_REACT', play: true };
+      // そり＝強いカードを獲得したときだけ、そりを捨てて山札の上に置く（次の手番で使える）。
+      case 'sleigh_react':
+        return { type: 'SLEIGH_REACT', where: cost(state, pd.card) >= 5 ? 'deck' : null };
+      // 村有緑地＝次のターンに持ち越す（自分の手番の頭で +1カード +2アクション）。
+      case 'village_green_choose':
+        return { type: 'VILLAGE_GREEN_CHOOSE', choice: 'next' };
+      case 'village_green_react':
+        return { type: 'VILLAGE_GREEN_REACT', play: true };
+      // 行人＝銀貨は取っておく。
+      case 'wayfarer_gain':
+        return { type: 'WAYFARER_GAIN', gain: true };
+      // 炉＝いま使ったカードが$3以上ならコピーを獲得する。
+      case 'kiln_gain':
+        return { type: 'KILN_GAIN', gain: cost(state, pd.card) >= 3 };
+      /* --- 習性（Way）の選択待ち --- */
+      // チョウ＝山に戻して1コイン高いカードを取れるなら常に得。
+      case 'way_butterfly':
+        return { type: 'WAY_BUTTERFLY', ret: true };
+      case 'way_butterfly_gain':
+        return { type: 'WAY_BUTTERFLY_GAIN', card: bestGainExact(state, pd.exactCost, { pot: pd.pot, debt: pd.debt }) };
+      // ヤギ＝一番要らない手札を廃棄（強制）。
+      case 'way_goat_trash':
+        return { type: 'WAY_GOAT_TRASH', card: p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0] };
+      // ドブネズミ＝銅貨を捨てて同じカードをもう1枚もらえるなら得。銅貨が無ければ見送る。
+      case 'way_rat_discard': {
+        const t2 = p.hand.filter((c) => isTreasureNow(state, c)).sort((a, b) => keepValue(a) - keepValue(b))[0];
+        return { type: 'WAY_RAT_DISCARD', card: (t2 === 'copper') ? t2 : null };
+      }
+      // アザラシ＝強いカードなら山札の上に置いて次の手番で使う。
+      case 'way_seal_topdeck':
+        return { type: 'WAY_SEAL_TOPDECK', top: cost(state, pd.card) >= 4 };
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
       case 'warehouse':
@@ -2504,9 +2643,11 @@
     }
     const t = state.turn;
     const subj = state.players[t.active]; // 手番の主体（支配中は被支配者）の手札を操作する
+    /* 移動動物園：習性（Way）＝アクションの記載効果の「代わり」に使う。使いすぎると弱くなるので、
+       CPU は「記載効果が今は活きない」局面だけ使う（engine/UI と違い候補を出す側なので保守的に）。 */
     if (t.phase === 'action') {
       const a = chooseAction(state, subj);
-      if (a) return { type: 'PLAY_ACTION', card: a };
+      if (a) return { type: 'PLAY_ACTION', card: a, way: chooseWay(state, subj, a) };
       /* ルネサンス：村人（Villagers）＝アクション権が尽きたが手札にまだ使えるアクションがあるなら、村人を1人使う。
          engine は「アクションフェイズ・所持数以内・1個以上」でしか受理しないので、その条件下でだけ返す＝非ループ
          （村人は有限＝毎回1人ずつ減るので必ず終端する）。 */
