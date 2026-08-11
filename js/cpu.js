@@ -3087,7 +3087,12 @@
     //   ※ 一度でも購入すると engine は財宝プレイを拒否する（公式ルール）。拒否される手を返すと無限ループになるので
     //     t.treasuresLocked を必ず見る（イベントの効果で財宝が手札に入るケースがある）。
     //   ルネサンス：資本主義で「財宝になったアクション」も engine の isTreasureFor が受理する＝同じ述語を見る。
-    if (!t.treasuresLocked && subj.hand.some((c) => (DOM.engine.isTreasureFor ? DOM.engine.isTreasureFor(state, c) : isTreasure(c)))) return { type: 'PLAY_ALL_TREASURES' };
+    //   夜想曲：呪われた金貨は「財宝を全部出す」の対象外（出すと必ず呪いを獲得する＝ボタン1つで事故になるため）。
+    //     engine が出さない札を PLAY_ALL_TREASURES で出そうとすると**状態が変わらず無限ループ**になるので、
+    //     CPU は 1枚ずつの PLAY_TREASURE で出す（+3コインの価値はあるので出す判断自体は同じ）。
+    const isTre = (c) => (DOM.engine.isTreasureFor ? DOM.engine.isTreasureFor(state, c) : isTreasure(c));
+    if (!t.treasuresLocked && subj.hand.some((c) => isTre(c) && c !== 'cursed_gold')) return { type: 'PLAY_ALL_TREASURES' };
+    if (!t.treasuresLocked && subj.hand.includes('cursed_gold')) return { type: 'PLAY_TREASURE', card: 'cursed_gold' };
     // 帝国：負債があるとカードを購入できない。財宝を出し切った後、コインで可能な限り返済する。
     //   返済しきれない（コイン0）なら購入不可＝END_TURN（負債は次ターンに持ち越し。財宝を出せば返せる＝非ループ）。
     if ((subj.debt || 0) > 0) {

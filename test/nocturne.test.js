@@ -1167,6 +1167,34 @@ console.log('\n=== N4: 取り替え子／ネクロマンサー＋ゾンビ／幽
   ok(!(t.players[0].ghostSetAside || []).length, '脇なし');
 }
 
+console.log('\n=== 回帰: 呪われた金貨は「財宝を全部出す」で勝手に出さない ===');
+{
+  const s = mk(king(['pooka']));
+  me(s).hand = ['cursed_gold', 'copper', 'silver'];
+  s.turn.phase = 'buy';
+  const t = reduce(s, { type: 'PLAY_ALL_TREASURES' });
+  ok(!me(t).inPlay.includes('cursed_gold') && me(t).hand.includes('cursed_gold'),
+    '呪われた金貨は「財宝を全部出す」の対象外（出すと必ず呪いを獲得するため）');
+  ok(!me(t).discard.includes('curse'), '勝手に呪いを獲得しない');
+  ok(t.turn.coins === 3, '他の財宝は普通に出る（銅貨1＋銀貨2）');
+  // 1枚ずつなら出せる
+  const u = reduce(t, { type: 'PLAY_TREASURE', card: 'cursed_gold' });
+  ok(u.turn.coins === 6 && me(u).discard.includes('curse'), '個別にタップすれば出せる（+3コイン＋呪い）');
+}
+
+console.log('\n=== 回帰: 山札から捨てられた忠犬も脇に置ける（捨て札トリガー） ===');
+{
+  // 夜警＝山札の上5枚を見て捨てる。そこに忠犬があれば脇に置く窓が開く（公式：手札からとは限らない）
+  const s = mk(king(['night_watchman', 'faithful_hound']));
+  me(s).hand = ['night_watchman'];
+  me(s).deck = ['faithful_hound', 'copper', 'copper', 'estate', 'estate'];
+  let t = reduce(reduce(s, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'night_watchman' });
+  t = reduce(t, { type: 'LOOK_ARRANGE_RESOLVE', discard: ['faithful_hound'], top: ['copper', 'copper', 'estate', 'estate'] });
+  ok(t.pending && t.pending.type === 'faithful_hound_react',
+    '山札から捨てた忠犬でも脇に置く窓が開く pending=' + (t.pending && t.pending.type));
+}
+
 console.log('\n=== 回帰: 祝福/呪詛の解決中に「再演」を割り込ませない ===');
 {
   /* 玉座の間×迫害者（3人戦）＝1人目の呪詛（対話つき）を解決した瞬間に runReplays が2回目の迫害者を

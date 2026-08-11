@@ -286,6 +286,9 @@
      ② 商人の「このターン最初の銀貨」を確実に拾うため銀貨を早めに。
      ③ 帝国：大金（fortune）は最後（このターン最初の大金でコインが2倍＝合計を最大化）。 */
   const PLAY_TWICE_TREASURES = { tiara: 1, crown: 1, counterfeit: 1 };
+  /* 夜想曲：「財宝を全部出す」で機械的に出してはいけない財宝（出すとデメリットが確定する）。
+     呪われた金貨＝+3コインだが**必ず呪い1枚を獲得する**。1枚ずつタップして出す。 */
+  const PLAY_ALL_EXCLUDE = new Set(['cursed_gold']);
   function playAllOrder(a, b) {
     const rank = (c) => (PLAY_TWICE_TREASURES[c] ? -2 : c === 'silver' ? -1 : c === 'fortune' ? 1 : 0);
     return rank(a) - rank(b);
@@ -5786,7 +5789,7 @@
         }
         if (rev.length || found) reveal(state, pi, (found ? rev.concat([found]) : rev).slice(-8), '幽霊');
         rev.forEach((c) => p.discard.push(c));
-        if (rev.length) triggerOnDiscard(state, pi, rev, true);
+        if (rev.length) triggerOnDiscard(state, pi, rev);
         if (found) {
           (p.ghostSetAside = p.ghostSetAside || []).push(found);
           armDuration(state, pi, 'ghost', { setAsideCard: found });
@@ -7200,7 +7203,7 @@
         p.deck = shuffle(p.deck.concat(rest));
         placeStash(p);
         log(state, `${p.name} は飢饉でアクション ${acts.length}枚 を捨て、残りを山札に混ぜた。`);
-        if (acts.length) triggerOnDiscard(state, pi, acts, true);
+        if (acts.length) triggerOnDiscard(state, pi, acts);
         break;
       }
       case 'locusts': { // 山札の一番上を廃棄。銅貨か屋敷なら呪い／そうでなければ「同じ種別を持ちコストが少ないカード」を獲得
@@ -7235,7 +7238,7 @@
         rev.forEach((c) => p.discard.push(c));
         if (found) { trashCard(state, pi, found); log(state, `${p.name} は戦争で「${C()[found].name}」を廃棄した。`); }
         else log(state, `${p.name} は戦争でコスト3〜4のカードを見つけられなかった（廃棄なし）。`);
-        if (rev.length) triggerOnDiscard(state, pi, rev, true);
+        if (rev.length) triggerOnDiscard(state, pi, rev);
         break;
       }
       default: break;
@@ -8539,7 +8542,10 @@
         if (t.phase !== 'buy') return state;
         if (t.treasuresLocked) return state;
         // 並び順は playAllOrder が正本（ティアラ/冠/偽造通貨を最初・銀貨を早め・大金を最後）。
-        const treasures = me.hand.filter((c) => isTreasureFor(state, c)).sort(playAllOrder);
+        /* 夜想曲：**呪われた金貨（家宝）は「財宝を全部出す」の対象から外す**。
+           出すと必ず呪い1枚を獲得する＝ボタン1つで事故になるため、1枚ずつタップして出してもらう
+           （公式でも財宝を出すかどうかは1枚ずつの任意。PROGRESS に許容簡略化として記録）。 */
+        const treasures = me.hand.filter((c) => isTreasureFor(state, c) && !PLAY_ALL_EXCLUDE.has(c)).sort(playAllOrder);
         // 繁栄：金床/投資/水晶玉/ティアラ/ペテン師(堀)は使ったとき選択が出る。pending が立ったら残りは止める。
         //   止まった残りは reduce 末尾の playAllResume が、選択の解決後に自動で出し切る。
         //   **残りは「ボタンを押した時点の手札」で固定する**（再開時に手札を再スキャンすると、
@@ -14655,7 +14661,8 @@
         for (let i = top.length - 1; i >= 0; i--) pl.deck.unshift(top[i]); // top[0] が一番上
         log(state, `${pl.name} は${lsName(pd.source) || ''}（${disc.length}枚 捨て、${top.length}枚 を山札の上へ）。`);
         state.pending = null;
-        if (disc.length) triggerOnDiscard(state, pd.player, disc, true);
+        // **山札から捨てられても捨て札トリガーは誘発する**（忠犬は夜警で捨てられても脇に置ける＝公式）。
+        if (disc.length) triggerOnDiscard(state, pd.player, disc);
         return state;
       }
       // 呪詛のリアクション窓＝「受ける」。**全員ぶん閉じてから呪詛を1枚めくる**（dealHex）。
