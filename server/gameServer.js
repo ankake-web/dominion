@@ -150,8 +150,10 @@ function broadcastState(room) {
   if (!room.state) return;
   for (const m of room.members) {
     if (!m.connected) continue;
-    // canUndo＝この席が今「1手もどす」を頼めるか（クライアントのボタン表示用。判定の正本はサーバ）
-    send(m.ws, { t: 'state', state: E.maskStateFor(room.state, m.seat), canUndo: canUndoSeat(room, m.seat) });
+    // canUndo＝この席が今「1手もどす」を頼めるか。undoFree＝相手の同意なしで戻せるか（買い物だけ）。
+    //   どちらもクライアントのボタン表示用で、判定の正本はサーバ（受理時に必ず再判定する）。
+    const can = canUndoSeat(room, m.seat);
+    send(m.ws, { t: 'state', state: E.maskStateFor(room.state, m.seat), canUndo: can, undoFree: can && isNoConsentUndoableBuy(room, m.seat) });
   }
   persistRoom(room);
 }
@@ -169,10 +171,46 @@ const UNDO_MAX = 12;
 let UNDO_VOTE_MS = 45000;    // 承認待ちのタイムアウト(ms)
 
 // prevState＝reduce に渡す**前**の state（＝戻り先）。呼び出し側が「実際に局面が変わったとき」だけ積む。
-function pushUndoPoint(room, seat, prevState) {
+function pushUndoPoint(room, seat, prevState, action) {
   if (!room.history) room.history = [];
-  room.history.push({ state: prevState, seat });
+  room.history.push({ state: prevState, seat, action });
   if (room.history.length > UNDO_MAX) room.history.shift();
+}
+
+/* 「買い物（カードの購入）だけは相手の同意なしで戻せる」判定。
+   購入が安全なのは3つの性質による：
+   ① **乱数を消費しない**＝獲得した札は捨て札に置くだけ。ドローもシャッフルも起きないので、
+      戻して買い直しても山札は変わらない（シャッフルは片付け＝END_TURN の中で起きる）。
+   ② **情報が増えない**＝サプライは公開情報、自分のコインも自分の情報。金貨→銀貨に買い換えても何も分からない。
+   ③ **購入では終局しない**＝`gameOver` が立つのは cleanupAndAdvance の中だけ。最後の属州を買っても
+      その場で結果画面（＝`result.deckCards` による全員のデッキ公開）は出ないので、覗いて戻すことができない。
+   ただし購入でも例外がある（愚者の黄金＝相手に選択を投げる／幽霊城・不正利得＝相手の札が動く／
+   宿屋＝自分の捨て札をシャッフルする）。**カード名を列挙すると新カードで漏れる**ので、
+   「相手に一切触っていない・自分の山札も手札も動いていない」ことを**その場で証明**する方式にする。
+   証明できないものは従来どおり承認制へ落ちる（拒否ではない）。 */
+function isNoConsentUndoableBuy(room, seat) {
+  const h = room.history && room.history[room.history.length - 1];
+  if (!h || h.seat !== seat) return false;
+  if (!h.action || h.action.type !== 'BUY') return false; // カードの購入のみ（イベント/プロジェクトは対象外）
+  const cur = room.state, prev = h.state;
+  if (!cur || !prev || !cur.turn || !prev.turn) return false;
+  if (cur.gameOver || prev.gameOver) return false;
+  if (cur.pending || prev.pending) return false;          // 誰かに何かを聞いている最中は不可
+  if ((cur.onGainQueue || []).length || (cur.onTrashQueue || []).length) return false;
+  // 同じターン・同じフェイズの中に留まっていること（END_TURN をまたぐと片付けで引き直しになる／
+  // ヴィラのように購入フェイズから戻る札も対象外にする）
+  if (cur.turn.active !== prev.turn.active || cur.turn.phase !== prev.turn.phase) return false;
+  if (!Array.isArray(cur.players) || cur.players.length !== prev.players.length) return false;
+  for (let i = 0; i < cur.players.length; i++) {
+    if (i === seat) {
+      // 自分：山札と手札が1枚も動いていないこと（動いていたらシャッフル or 山札上への配置＝乱数/情報が絡む）
+      if (JSON.stringify(cur.players[i].deck) !== JSON.stringify(prev.players[i].deck)) return false;
+      if (JSON.stringify(cur.players[i].hand) !== JSON.stringify(prev.players[i].hand)) return false;
+    } else if (JSON.stringify(cur.players[i]) !== JSON.stringify(prev.players[i])) {
+      return false; // 相手に一切影響していないこと（呪いの配布・手札を山札の上へ 等はここで弾かれる）
+    }
+  }
+  return true;
 }
 function undoTopSeat(room) {
   const h = room.history && room.history[room.history.length - 1];
@@ -552,7 +590,7 @@ function handleConnection(ws) {
         // engine は「無効な操作」を **state を変えずに** 返す（throw しない）。それを巻き戻し地点に積むと
         //   「押しても何も戻らない undo」が積み上がり、相手の承認を無駄に消費し、履歴メモリも食う。
         //   → **局面が実際に変わったときだけ**積む（reduce は毎回 clone を返すので参照比較は使えない）。
-        if (JSON.stringify(nextState) !== JSON.stringify(prevState)) pushUndoPoint(room, me.seat, prevState);
+        if (JSON.stringify(nextState) !== JSON.stringify(prevState)) pushUndoPoint(room, me.seat, prevState, action);
         room.state = nextState;
         broadcastState(room);
         scheduleCpuTick(room, room.cpuStepMs);
@@ -565,14 +603,17 @@ function handleConnection(ws) {
         if (room.undoReq) { send(ws, { t: 'error', message: '取り消しの確認中です' }); return; }
         if (!canUndoSeat(room, me.seat)) { send(ws, { t: 'error', message: 'いまは1手もどせません' }); return; }
         const others = otherHumanSeats(room, me.seat);
-        // 席が人間のまま残っている相手が切断中なら、承認を取りようがないので**受理しない**。
-        //   （猶予が切れて CPU に引き継がれれば expired=true になり、自動的に承認不要へ落ちる）
-        if (others.some((m) => !m.connected)) { send(ws, { t: 'error', message: '相手の再接続を待っています' }); return; }
-        if (others.length === 0) {
-          if (applyUndo(room, me.seat)) sendAll(room, { t: 'undoDone', by: me.seat, name: me.name });
+        // 「買い物だけ」＝相手にも乱数にも一切触っていないと証明できる購入は、同意なしで即戻す
+        //   （相手が切断中でも構わない＝その相手の状態は1ビットも変わらないため）。
+        const free = isNoConsentUndoableBuy(room, me.seat);
+        if (free || others.length === 0) {
+          if (applyUndo(room, me.seat)) sendAll(room, { t: 'undoDone', by: me.seat, name: me.name, free });
           else send(ws, { t: 'error', message: 'いまは1手もどせません' });
           return;
         }
+        // 席が人間のまま残っている相手が切断中なら、承認を取りようがないので**受理しない**。
+        //   （猶予が切れて CPU に引き継がれれば expired=true になり、自動的に承認不要へ落ちる）
+        if (others.some((m) => !m.connected)) { send(ws, { t: 'error', message: '相手の再接続を待っています' }); return; }
         const req = { seat: me.seat, need: others.map((m) => m.seat), yes: [], timer: null };
         req.timer = setTimeout(() => {
           try {

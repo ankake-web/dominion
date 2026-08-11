@@ -249,6 +249,60 @@ function mkClient(url) {
       h1.send({ t: 'action', action: { type: 'BUY', card: 'province' } }); // コイン不足＝engine が state 不変で拒否
       await sleep(120);
       ok(rooms.get(h1j.code).history.length === before, '無効な操作は巻き戻し地点を積まない（実 ' + rooms.get(h1j.code).history.length + '/' + before + '）');
+      // 買い物（カードの購入）だけは相手の同意なしで戻せる（乱数を消費せず・情報も増えず・終局もしないため）
+      {
+        // 購入できる局面を作る：手番を席0のアクションフェイズに戻し、コインを持たせる
+        const rm3 = rooms.get(h1j.code);
+        rm3.state.turn.phase = 'buy'; rm3.state.turn.coins = 3; rm3.state.turn.buys = 1;
+        const silverBefore = rm3.state.supply.silver;
+        const discardBefore = rm3.state.players[0].discard.length;
+        h1.send({ t: 'action', action: { type: 'BUY', card: 'silver' } });
+        const bought = await h1.waitFor((m) => m.t === 'state' && m.state.supply.silver === silverBefore - 1, 2000);
+        ok(!!bought, '前提：銀貨を購入できた');
+        ok(bought.undoFree === true, '購入の直後は undoFree=true（同意なしで戻せると配信される）');
+        // ゲスト（相手）は接続中だが、承認を聞かれずに巻き戻るはず
+        h1.send({ t: 'undo' });
+        const undone = await h1.waitFor((m) => m.t === 'state' && m.state.supply.silver === silverBefore, 2000);
+        ok(!!undone, '同意なしで購入が巻き戻る（銀貨が山に戻る）');
+        ok(rooms.get(h1j.code).state.players[0].discard.length === discardBefore, '捨て札も元に戻る');
+        const done2 = await h1.waitFor((m) => m.t === 'undoDone', 2000);
+        ok(done2.free === true, 'undoDone に free=true が付く');
+        ok(!rooms.get(h1j.code).undoReq, '承認待ちは発生していない');
+      }
+      // 対照【重要】：購入でも「相手に触る」ものは同意なしにしない。
+      //   不正利得＝獲得すると他の各プレイヤーが呪いを獲得する＝相手の捨て札が動くので承認制へ落ちる。
+      //   （カード名を列挙せず「相手の状態が1ビットも変わっていない」ことを証明する方式なので、
+      //    新しいカードが増えても自動的に守られる。）
+      {
+        const rm5 = rooms.get(h1j.code);
+        rm5.state.turn.phase = 'buy'; rm5.state.turn.coins = 5; rm5.state.turn.buys = 1;
+        rm5.state.supply.ill_gotten_gains = 5;
+        const curseBefore = rm5.state.supply.curse;
+        h1.send({ t: 'action', action: { type: 'BUY', card: 'ill_gotten_gains' } });
+        const igg = await h1.waitFor((m) => m.t === 'state' && m.state.supply.ill_gotten_gains === 4, 2000);
+        ok(rooms.get(h1j.code).state.supply.curse === curseBefore - 1, '前提：不正利得の購入で相手が呪いを獲得した');
+        ok(igg.undoFree === false, '相手に影響する購入は undoFree=false（同意なしにはしない）');
+        h1.send({ t: 'undo' });
+        const ask3 = await g1.waitFor((m) => m.t === 'undoAsk', 2000);
+        ok(!!ask3, '相手に影響する購入はきちんと承認を求める');
+        g1.send({ t: 'undoVote', ok: true });
+        await h1.waitFor((m) => m.t === 'undoDone', 2000);
+        ok(rooms.get(h1j.code).state.supply.curse === curseBefore, '承認後は呪いも元に戻る');
+      }
+      // 対照：購入以外（フェイズ移行）は同意なしにはならず、従来どおり承認制になる
+      {
+        const rm4 = rooms.get(h1j.code);
+        rm4.state.turn.phase = 'action';
+        h1.send({ t: 'action', action: { type: 'END_ACTION_PHASE' } });
+        const s2 = await h1.waitFor((m) => m.t === 'state' && m.state.turn.phase === 'buy', 2000);
+        ok(s2.undoFree === false, '購入以外は undoFree=false');
+        h1.send({ t: 'undo' });
+        const ask2 = await g1.waitFor((m) => m.t === 'undoAsk', 2000);
+        ok(!!ask2, '購入以外はこれまでどおり相手に承認を求める');
+        g1.send({ t: 'undoVote', ok: true });
+        await h1.waitFor((m) => m.t === 'undoDone', 2000);
+      }
+
       // 回帰【high】：相手が「猶予内の切断」中は、承認を取りようがないので undo を受理しない
       //   （ここを接続中判定にすると、相手のバックグラウンド落ち中に承認ゼロで何手でも巻き戻せてしまう）
       //   ※ h1/g1 の部屋は後続テストで使うので、専用の部屋を立てて検証する。

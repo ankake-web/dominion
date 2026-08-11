@@ -61,6 +61,7 @@
     _noAutoSkipOnce: false, // 「1手もどす」直後に自動スキップを1回だけ抑止する（対局をまたいで残さない）
     deckView: null,     // 終局後にデッキ内訳を見ている席（null=閉じている）
     netCanUndo: false,  // オンライン：サーバが「この席は今1手もどせる」と言っているか
+    netUndoFree: false, // オンライン：その巻き戻しは相手の同意なしで通せるか（＝買い物だけ）
     undoPending: false, // オンライン：自分の要求が相手の返事待ちか
     undoAskOpen: false, // オンライン：相手から頼まれた確認を出しているか
     // オンライン(WebSocket)用
@@ -346,7 +347,9 @@
   // 盤面ヘッダ／選択モーダルに出す「1手もどす」ボタン（出せないときは null）
   function undoBtn(state, viewer, interactive, cls) {
     if (!canUndoNow(state, viewer, interactive)) return null;
-    const label = (UI.mode === 'online')
+    // オンラインは基本「相手に確認」。ただし**買い物（カードの購入）だけは同意なしで戻せる**ので、
+    //   その場合はローカルと同じ文言にする（サーバが undoFree で教えてくれる）。
+    const label = (UI.mode === 'online' && !UI.netUndoFree)
       ? (UI.undoPending ? '↩ 相手の返事を待っています…' : '↩ 1手もどす（相手に確認）')
       : '↩ 1手もどす';
     return h('button', {
@@ -3228,7 +3231,7 @@
       case 'started':
         UI.connecting = null; UI.reconnecting = false; UI._reconnectTries = 0; stopReconnect();
         UI.mySeat = msg.you;
-        UI.netCanUndo = !!msg.canUndo; UI.undoPending = false; UI.undoAskOpen = false;
+        UI.netCanUndo = !!msg.canUndo; UI.netUndoFree = !!msg.undoFree; UI.undoPending = false; UI.undoAskOpen = false;
         UI.store.setState(msg.state);
         UI.view = 'game';
         saveSession();
@@ -3236,7 +3239,8 @@
         break;
       case 'state':
         // canUndo＝サーバが判定した「この席が今1手もどすを頼めるか」（判定の正本はサーバ）
-        UI.netCanUndo = !!msg.canUndo;
+        // undoFree＝相手の同意なしで戻せるか（＝買い物だけ。ボタンの文言に使う）
+        UI.netCanUndo = !!msg.canUndo; UI.netUndoFree = !!msg.undoFree;
         UI.store.setState(msg.state);
         if (msg.state && msg.state.gameOver) clearSession(); // 対戦終了→以後の自動復帰は不要
         else touchSession();
@@ -3343,7 +3347,7 @@
     UI.netClient = null; UI.store = null; UI.mode = 'local';
     UI.mySeat = null; UI.roomCode = null; UI.isHost = false; UI.lobby = null;
     UI.netToken = null; UI.reconnecting = false; UI._reconnectTries = 0; UI.connecting = null;
-    UI.netCanUndo = false; UI.undoPending = false; UI.undoAskOpen = false; // 1手もどす（オンライン）の状態も戻す
+    UI.netCanUndo = false; UI.netUndoFree = false; UI.undoPending = false; UI.undoAskOpen = false; // 1手もどす（オンライン）の状態も戻す
   }
   function clearGameTimers() {
     if (UI._cpuTimer) { clearTimeout(UI._cpuTimer); UI._cpuTimer = null; }
