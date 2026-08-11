@@ -2338,6 +2338,55 @@
       return modalGainSupply(state, '願い — 手札に獲得', 'コスト6以下のカード1枚を獲得し、手札に加えます。',
         (id) => DOM.engine.costUpTo(state, id, 6), (id) => dispatch({ type: 'WISH_GAIN', card: id }));
     }
+    if (pd.type === 'changeling_gain') {
+      const cand = [...new Set(p.inPlay.concat(p.durationCards || []))];
+      return modalPickIds('取り替え子 — 場のカードのコピーを獲得', '場に出ているカード1枚と同じカードを獲得します（サプライの山に無いカードを選んでも何も得られません）。',
+        cand, (id) => dispatch({ type: 'CHANGELING_GAIN', card: id }), '獲得する',
+        { label: '獲得しない', on: () => dispatch({ type: 'CHANGELING_GAIN', card: null }) }, state);
+    }
+    if (pd.type === 'changeling_exchange') {
+      const nm = DOM.CARDS[pd.card] ? DOM.CARDS[pd.card].name : '';
+      return modalOptions('取り替え子と交換しますか？', '獲得した「' + nm + '」を山に戻して、代わりに取り替え子1枚を捨て札に得られます（交換は獲得ではありません）。', [
+        { label: '取り替え子と交換する', cls: 'btn-primary', on: () => dispatch({ type: 'CHANGELING_EXCHANGE', exchange: true }) },
+        { label: 'そのままにする', on: () => dispatch({ type: 'CHANGELING_EXCHANGE', exchange: false }) }]);
+    }
+    if (pd.type === 'bat_trash') {
+      return modalMultiHand(p, 'コウモリ — 最大2枚を廃棄', '手札から最大2枚を廃棄します。1枚以上廃棄すると、このコウモリを吸血鬼と交換します。',
+        (n) => (n > 0 ? '確定（' + n + '枚 廃棄して吸血鬼と交換）' : '廃棄しない'), true,
+        (cards) => dispatch({ type: 'BAT_TRASH', cards }), 2);
+    }
+    if (pd.type === 'vampire_gain') {
+      return modalGainSupply(state, '吸血鬼 — 獲得', 'コスト5以下の（吸血鬼以外の）カード1枚を獲得します。その後、吸血鬼をコウモリと交換します。',
+        (id) => DOM.engine.costUpTo(state, id, 5) && id !== 'vampire', (id) => dispatch({ type: 'VAMPIRE_GAIN', card: id }));
+    }
+    if (pd.type === 'necromancer') {
+      const idxs = DOM.engine.necromancerTargets(state);
+      const chips = idxs.map((i) => cardEl(state.trash[i], { size: 'sm', extra: 'selectable',
+        onClick: () => openPickZoom(state.trash[i], '使用する', () => dispatch({ type: 'NECROMANCER_PLAY', index: i })) }));
+      return modalShell('ネクロマンサー — 廃棄置き場から使用', '廃棄置き場にある「表向き・持続でない」アクションカード1枚を、廃棄置き場に置いたまま使用します（このターンは裏向きになります）。', chips, null);
+    }
+    if (pd.type === 'ghost_play') {
+      const nm = DOM.CARDS[pd.card] ? DOM.CARDS[pd.card].name : '';
+      return modalOptions('幽霊 — 2度使用する', '脇に置いた「' + nm + '」を2度使用します（強制）。', [
+        { label: '「' + nm + '」を2度使用する', cls: 'btn-primary', on: () => dispatch({ type: 'GHOST_PLAY' }) }]);
+    }
+    if (pd.type === 'zombie_apprentice') {
+      return modalSingleHand(p, 'ゾンビの弟子 — アクションを廃棄', '手札のアクションカード1枚を廃棄すると +3カード +1アクション（しなくてもよい）。',
+        (id) => DOM.isType(id, 'action'), (card) => dispatch({ type: 'ZOMBIE_APPRENTICE', card }),
+        { label: '廃棄しない', on: () => dispatch({ type: 'ZOMBIE_APPRENTICE', card: null }) });
+    }
+    if (pd.type === 'zombie_mason_gain') {
+      return modalGainSupply(state, 'ゾンビの石工 — 獲得', '廃棄したカードより最大1コイン高いカード1枚を獲得できます（しなくてもよい）。',
+        (id) => DOM.engine.costUpTo(state, id, pd.coin, { pot: pd.pot || 0, debt: pd.debt || 0 }),
+        (id) => dispatch({ type: 'ZOMBIE_MASON_GAIN', card: id }),
+        () => dispatch({ type: 'ZOMBIE_MASON_GAIN', card: null }), true);
+    }
+    if (pd.type === 'zombie_spy') {
+      const nm = DOM.CARDS[pd.card] ? DOM.CARDS[pd.card].name : '';
+      return modalOptions('ゾンビの密偵 — 山札の一番上', '山札の一番上は「' + nm + '」です。捨てるか、そのまま戻します。', [
+        { label: '捨てる', cls: 'btn-primary', on: () => dispatch({ type: 'ZOMBIE_SPY', discard: true }) },
+        { label: 'そのまま戻す', on: () => dispatch({ type: 'ZOMBIE_SPY', discard: false }) }]);
+    }
     if (pd.type === 'idol' && pd.stage === 'react') {
       return modalOptions('偶像を受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'IDOL_REACT' }));
     }

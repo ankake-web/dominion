@@ -475,6 +475,8 @@
     if (has('poor_house')) return 'poor_house';             // +$4（手札の財宝で減）
     if (has('squire')) return 'squire';                     // +$1＋選択
     if (has('beggar')) return 'beggar';                     // 銅貨3枚を手札に
+    // 夜想曲：ネクロマンサー＝廃棄置き場に使えるアクションがあるときだけ（ゾンビ3枚は常にある）
+    if (has('necromancer') && DOM.engine.necromancerTargets(state).length) return 'necromancer';
     // 夜想曲：ターミナル（アタック＞ドロー＞コイン＋祝福）
     if (has('werewolf') && t.phase === 'action') return 'werewolf'; // アクションフェイズなら +3カード（夜なら呪詛）
     if (has('tormentor')) return 'tormentor';               // +2コイン＋全員に呪詛（場が空ならインプ）
@@ -2244,6 +2246,44 @@
       }
       case 'wish_gain': // 願い＝コスト6以下を手札に獲得（強制）
         return { type: 'WISH_GAIN', card: bestGain(state, 6) };
+      /* ---- 夜想曲 N4：交換・廃棄置き場からのプレイ・2度使用 ---- */
+      case 'changeling_gain': { // 取り替え子＝場のカードで一番良いものを獲得（山から取れるものを優先）
+        const cand = [...new Set(p.inPlay.concat(p.durationCards || []))];
+        if (!cand.length) return { type: 'CHANGELING_GAIN', card: null };
+        const ok = cand.filter((id) => gainableBase(state, id)).sort((a, b) => cost(state, b) - cost(state, a));
+        return { type: 'CHANGELING_GAIN', card: ok[0] != null ? ok[0] : cand[0] };
+      }
+      case 'changeling_exchange': { // 取り替え子＝いらない獲得（呪い以外の安い札）だけ交換する
+        const c = pd.card;
+        const worse = c === 'copper' || c === 'estate' || isType(c, 'curse') ||
+          (!isType(c, 'victory') && !isTreasureNow(state, c) && cost(state, c) <= 3);
+        return { type: 'CHANGELING_EXCHANGE', exchange: !!worse };
+      }
+      case 'bat_trash': { // コウモリ＝不要札を最大2枚廃棄して吸血鬼に交換する
+        const junk = p.hand.filter((c) => trashValue(c) <= 2).slice(0, 2);
+        return { type: 'BAT_TRASH', cards: junk };
+      }
+      case 'vampire_gain': // 吸血鬼＝コスト5以下（吸血鬼以外）で一番良いもの（強制）
+        return { type: 'VAMPIRE_GAIN', card: firstGainable(state, (id) => costUpTo(state, id, 5) && id !== 'vampire') };
+      case 'necromancer': { // ネクロマンサー＝廃棄置き場の一番強いアクションを使う
+        const cand = DOM.engine.necromancerTargets(state);
+        if (!cand.length) return { type: 'NECROMANCER_PLAY', index: null };
+        const best = cand.slice().sort((a, b) => cost(state, state.trash[b]) - cost(state, state.trash[a]))[0];
+        return { type: 'NECROMANCER_PLAY', index: best };
+      }
+      case 'ghost_play': // 幽霊＝強制（脇のアクションを2度使う）
+        return { type: 'GHOST_PLAY' };
+      case 'zombie_apprentice': { // ゾンビの弟子＝不要なアクションがあれば廃棄して +3カード+1アクション
+        const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => trashValue(a) - trashValue(b));
+        const pick = acts.find((c) => trashValue(c) <= 50) || null;
+        return { type: 'ZOMBIE_APPRENTICE', card: pick };
+      }
+      case 'zombie_mason_gain':
+        return { type: 'ZOMBIE_MASON_GAIN', card: bestGain(state, pd.coin, { pot: pd.pot || 0, debt: pd.debt || 0 }) };
+      case 'zombie_spy': { // ゾンビの密偵＝山札の上が不要札なら捨てる
+        const top = pd.card;
+        return { type: 'ZOMBIE_SPY', discard: top != null && isDead(top) };
+      }
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
       case 'warehouse':

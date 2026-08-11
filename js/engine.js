@@ -5759,6 +5759,82 @@
         if (t.phase === 'night') startHexAttack(state, pi, othersInOrder(state, pi));
         else draw(state, pi, 3);
         break;
+      /* 取り替え子（夜行）＝これを廃棄し、**場に出ているカード**と同じカード1枚を獲得する。
+         獲得できるのは「サプライの山の一番上が同名」のときだけ（非サプライ/空山/分割山の下段は選べても何も獲得しない）。
+         廃棄は必ず起きる（獲得できなくても）。 */
+      case 'changeling': {
+        if (takeSelf(state, pi, 'changeling')) {
+          trashCard(state, pi, 'changeling');
+          log(state, `${p.name} は取り替え子を廃棄した。`);
+        }
+        const cand = [...new Set(p.inPlay.concat(p.durationCards || []))];
+        if (cand.length) state.pending = { type: 'changeling_gain', player: pi };
+        break;
+      }
+      /* 幽霊（夜行・持続・精霊）＝アクションが公開されるまでデッキを上から公開し、そのアクションを脇に置いて
+         残りを捨てる。次の自分のターン開始時にそのアクションを**2度使用する**（強制）。
+         アクションが見つからなければ持続にならない（そのターンの片付けで捨て札）。 */
+      case 'ghost': {
+        const rev = [];
+        let found = null, guard = 0;
+        while (guard++ < 200) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
+          if (p.deck.length === 0) break;
+          const c = p.deck.shift();
+          if (DOM.isType(c, 'action')) { found = c; break; }
+          rev.push(c);
+        }
+        if (rev.length || found) reveal(state, pi, (found ? rev.concat([found]) : rev).slice(-8), '幽霊');
+        rev.forEach((c) => p.discard.push(c));
+        if (rev.length) triggerOnDiscard(state, pi, rev, true);
+        if (found) {
+          (p.ghostSetAside = p.ghostSetAside || []).push(found);
+          armDuration(state, pi, 'ghost', { setAsideCard: found });
+          log(state, `${p.name} は幽霊で「${C()[found].name}」を脇に置いた（次のターンに2度使用する）。`);
+        } else log(state, `${p.name} は幽霊でアクションカードを見つけられなかった。`);
+        break;
+      }
+      /* 吸血鬼（夜行・アタック・不運）＝他プレイヤー全員が次の呪詛を受ける → コスト5以下の吸血鬼以外を1枚獲得 →
+         これをコウモリ1枚と交換する。 */
+      case 'vampire':
+        t.vampireAfterHex = (t.vampireAfterHex || []).concat([pi]); // 呪詛の解決後に「獲得→交換」へ進む（再開網）
+        startHexAttack(state, pi, othersInOrder(state, pi));
+        break;
+      /* コウモリ（夜行・非サプライ）＝手札から最大2枚を廃棄する。1枚以上廃棄したらこれを吸血鬼と交換する。 */
+      case 'bat':
+        state.pending = { type: 'bat_trash', player: pi };
+        break;
+      /* ネクロマンサー＝廃棄置き場の「表向き・持続でない」アクション1枚を選び、**裏返してから**
+         廃棄置き場に置いたまま使用する（2021エラッタ＝無限ループ防止）。
+         ⚠ ネクロマンサーは Command 種別を**持たない**ので、廃棄置き場の大君主/はみだし者/船長/王子も使える。 */
+      case 'necromancer':
+        if (necromancerTargets(state).length) state.pending = { type: 'necromancer', player: pi };
+        break;
+      /* ===== 夜想曲：ゾンビ3種（準備で廃棄置き場に置かれる。ネクロマンサーでのみ使われる） ===== */
+      // ゾンビの弟子＝手札のアクション1枚を廃棄して +3カード +1アクション を得てもよい。
+      case 'zombie_apprentice':
+        if (p.hand.some((c) => DOM.isType(c, 'action'))) state.pending = { type: 'zombie_apprentice', player: pi };
+        break;
+      // ゾンビの石工＝山札の一番上を廃棄し、それより最大 $1 高いカード1枚を獲得してもよい。
+      case 'zombie_mason': {
+        if (p.deck.length === 0 && p.discard.length) reshuffleDeck(p);
+        if (!p.deck.length) { log(state, `${p.name} はゾンビの石工を使ったが山札が空だった。`); break; }
+        const top = p.deck.shift();
+        trashCard(state, pi, top);
+        log(state, `${p.name} はゾンビの石工で「${C()[top].name}」を廃棄した。`);
+        const ref = costOf(state, top);
+        if (anyGainable(state, (id) => costUpTo(state, id, ref.coin + 1, { pot: ref.pot, debt: ref.debt }))) {
+          state.pending = { type: 'zombie_mason_gain', player: pi, coin: ref.coin + 1, pot: ref.pot, debt: ref.debt };
+        }
+        break;
+      }
+      // ゾンビの密偵＝+1カード +1アクション、山札の一番上を見て捨てるか戻す。
+      case 'zombie_spy': {
+        draw(state, pi, 1); addActions(t, 1);
+        if (p.deck.length === 0 && p.discard.length) reshuffleDeck(p);
+        if (p.deck.length) state.pending = { type: 'zombie_spy', player: pi, card: p.deck[0] };
+        break;
+      }
       /* ===== 夜想曲：非サプライのアクション（精霊2種＋願い） ===== */
       // ウィル・オ・ウィスプ（精霊）＝+1カード+1アクション、山札の上を公開しコスト2以下なら手札へ。
       case 'will_o_wisp': {
@@ -6134,6 +6210,13 @@
     cobbler: (s, pi) => {
       if (anyGainable(s, (id) => costUpTo(s, id, 4))) s.turn.startQueue.push({ type: 'cobbler_gain', player: pi });
     },
+    /* 夜想曲：幽霊＝次の自分のターン開始時、脇に置いたアクションカードを**2度使用する**（強制）。
+       カードは場に出る＝玉座の2回目と同じ扱い（命令ではない）。 */
+    ghost: (s, pi, e) => {
+      const p = s.players[pi];
+      const card = e.setAsideCard;
+      if (card && removeOne(p.ghostSetAside || [], card)) s.turn.startQueue.push({ type: 'ghost_play', player: pi, card });
+    },
     /* 夜想曲：納骨堂＝脇に残っている限り、**あなたの各ターンの開始時**に1枚を手札に加える
        （納骨堂1枚につき1束＝予約に残り枚数 n を持たせ、残っていれば再武装する）。 */
     crypt: (s, pi, e) => {
@@ -6315,6 +6398,12 @@
     //     RGG は彫刻家×遊牧民の野営地で「手札に入る」と明記）。
     if (cardId === 'nomad_camp' && dest !== 'hand') { const z = zoneOf(gp, dest); if (removeOne(z, 'nomad_camp')) { gp.deck.unshift('nomad_camp'); log(state, `${gp.name} は遊牧民の野営地を山札の上に置いた。`); } }
     /* ===== 夜想曲：獲得時の効果 ===== */
+    /* 取り替え子＝取り替え子を使うゲームでは、**コスト$3以上のカードを獲得したとき**それを取り替え子と
+       交換してよい（全プレイヤー・自分のターン以外でも・任意）。公式は「同時に起きる効果の順番は選べる」ので
+       **交換の窓を先に開く**（後に回すとヴィラ/暗躍者/望楼が先に動いて lose-track で交換できなくなる）。 */
+    if (changelingCanExchange(state, pIndex, cardId, dest)) {
+      (state.onGainQueue = state.onGainQueue || []).unshift({ type: 'changeling_exchange', player: pIndex, card: cardId, dest: dest || 'discard' });
+    }
     // 暗躍者：これを獲得したとき、金貨1枚を獲得する（あらゆる獲得経路。獲得の窓が2段になる）。
     if (cardId === 'skulk') { if (gain(state, pIndex, 'gold', 'discard')) log(state, `${gp.name} は暗躍者の獲得で金貨1枚を獲得した。`); }
     // 呪われた村：これを獲得したとき、**獲得した本人**が呪詛を1つ受ける（相手のターンの獲得でも）。
@@ -7166,6 +7255,45 @@
     const inPlay = new Set(p.inPlay.concat(p.durationCards || []));
     return [...new Set(p.hand.filter((c) => (DOM.isType(c, 'action') || inheritedEstate(p, c)) && !inPlay.has(c)))];
   }
+  /* ===== 夜想曲：交換（exchange）＝**獲得でも廃棄でもない** =====
+     - `triggerOnGain` も `triggerOnTrash` も呼ばない（望楼/そり/追跡者/追放の払い戻し等は発火しない）。
+     - ただし `supply` は増減する＝**3山終了には影響する**。
+     - 「戻す山が無いカード」は交換できない（闇市場で買った札／家宝／ゾンビ）。
+     戻り値＝交換できたか。 */
+  function exchangeCard(state, pi, fromId, toId, zone) {
+    if (state.supply[fromId] == null) return false;   // 戻す山が無い＝交換できない
+    if ((state.supply[toId] || 0) <= 0) return false; // 交換先の山が空
+    if (zone && !removeOne(zone, fromId)) return false;
+    state.supply[fromId] += 1;
+    state.supply[toId] -= 1;
+    state.players[pi].discard.push(toId);             // 交換で得たカードは**どこから交換しても捨て札へ**
+    log(state, `${state.players[pi].name} は「${C()[fromId].name}」を「${C()[toId].name}」と交換した。`);
+    return true;
+  }
+  /* 取り替え子の交換窓＝「取り替え子を使うゲームで、**コスト$3以上**のカードを獲得したとき、
+     それを取り替え子と交換してもよい」（全プレイヤー・自分のターン以外でも）。
+     成立条件は3つとも必要：①獲得したカードがまだ獲得先にある ②由来する山に戻せる ③取り替え子の在庫がある。
+     コスト判定は**獲得した瞬間**の実コストのコイン成分が3以上か（ポーション/負債は常に0以上＝コインだけ見れば同値）。 */
+  function changelingCanExchange(state, pi, cardId, dest) {
+    if ((state.supply.changeling || 0) <= 0) return false;
+    if (cardId === 'changeling') return false;
+    if (state.supply[cardId] == null) return false; // 山を持たない（家宝/ゾンビ/闇市場由来）＝戻せない
+    if (cardCost(state, cardId) < 3) return false;
+    const z = zoneOf(state.players[pi], dest);
+    return !!z && z.indexOf(cardId) >= 0;           // 獲得先にまだあること（stop-moving）
+  }
+  /* ネクロマンサーの対象＝廃棄置き場の「**表向き**・持続でない」アクションカード（インデックス列を返す）。
+     裏向きフラグは**廃棄置き場の物理カード1枚ずつ**に付く（同名が2枚あれば片方だけ裏向きにできる）。 */
+  function necromancerTargets(state) {
+    const fd = state.trashFaceDown || [];
+    const out = [];
+    (state.trash || []).forEach((c, i) => {
+      if (fd.indexOf(i) >= 0) return;
+      if (!DOM.isType(c, 'action') || DOM.isType(c, 'duration')) return;
+      out.push(i);
+    });
+    return out;
+  }
   /* 悪魔祓い＝「廃棄したカードより**厳密に安い**精霊カード」の候補（engine/CPU/UI が必ずこれを見る）。
      ⚠ 精霊は**非サプライ**なので `costUnder`（＝`gainableBase` を含む）では常に候補ゼロになる。
         それに気づかず CPU が null を返し続けて本番 livelock になった（fuzz が検出）。 */
@@ -7215,6 +7343,8 @@
   function cleanupAndAdvance(state) {
     state.replay = []; // 玉座の間の保留分が万一残っても次手番に持ち越さない
     state.reveals = {}; state.revealLatest = null; // 公開表示は手番をまたいで持ち越さない
+    // 夜想曲：ネクロマンサーで裏返した廃棄置き場のカードは**ターン終了時にすべて表向きに戻す**（毎ターン使える）。
+    state.trashFaceDown = [];
     const pi = state.turn.active;
     const p = state.players[pi];
     // 帝国：女魔術師の enchanted（「その手番で最初のアクションが置換」）は、その相手の手番が終われば消える。
@@ -8068,6 +8198,18 @@
       runHexQueue(state);
       state = runReplays(state);
     }
+    /* 夜想曲：吸血鬼＝呪詛の配布が終わってから「コスト5以下（吸血鬼以外）を1枚獲得 → これをコウモリと交換」。 */
+    if (!state.pending && !state.gameOver && state.turn && (state.turn.vampireAfterHex || []).length &&
+        !state.turn.hexQueue && !(state.hexSelfQueue && state.hexSelfQueue.length)) {
+      const seat = state.turn.vampireAfterHex.shift();
+      if (anyGainable(state, (id) => costUpTo(state, id, 5) && id !== 'vampire')) {
+        state.pending = { type: 'vampire_gain', player: seat };
+      } else {
+        // 獲得できるものが無くても交換は行う（獲得と交換は独立した指示）。
+        exchangeCard(state, seat, 'vampire', 'bat', state.players[seat].inPlay);
+      }
+      state = runReplays(state);
+    }
     /* 夜想曲：呪詛の配布中に「自分が呪詛を受ける」が起きたぶん（呪われた村を蝗害で獲得した等）を後から解決する。 */
     if (!state.pending && !state.gameOver && state.turn && !state.turn.currentHex &&
         state.hexSelfQueue && state.hexSelfQueue.length) {
@@ -8253,6 +8395,10 @@
         // 帝国：冠（アクションモード）＝玉座と同じくもう一度使う（アクション権は消費しない）。
         state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
         log(state, `${state.players[r.player].name} は冠で「${C()[r.card].name}」をもう一度使った。`);
+      } else if (r.label === 'ghost') {
+        // 夜想曲：幽霊＝脇に置いたアクションを2度使用する（2回目。命令ではないのでカードは場に出たまま）。
+        state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
+        log(state, `${state.players[r.player].name} は幽霊で「${C()[r.card].name}」をもう一度使った。`);
       } else {
         state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
         log(state, `${state.players[r.player].name} は玉座の間で「${C()[r.card].name}」をもう一度使った。`);
@@ -14890,6 +15036,138 @@
         if (gain(state, pd.player, id, 'hand')) log(state, `${state.players[pd.player].name} は願いで「${C()[id].name}」を手札に獲得した。`);
         return state;
       }
+      /* ===== 夜想曲 N4：交換・廃棄置き場からのプレイ・2度使用 ===== */
+      // 取り替え子＝場に出ているカードと同じカード1枚を獲得する（サプライの山の一番上が同名のときだけ実際に得られる）。
+      case 'CHANGELING_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'changeling_gain') return state;
+        const pl = state.players[pd.player];
+        const cand = [...new Set(pl.inPlay.concat(pl.durationCards || []))];
+        if (!cand.length) { state.pending = null; return state; } // 終端保証
+        const id = action.card;
+        state.pending = null;
+        if (id == null) return state;               // 場のカードが全部「山が無い」ときは何も得られない
+        if (cand.indexOf(id) < 0) { state.pending = pd; return state; }
+        if (gainableBase(state, id)) {
+          if (gain(state, pd.player, id, 'discard')) log(state, `${pl.name} は取り替え子で「${C()[id].name}」を獲得した。`);
+        } else log(state, `${pl.name} は取り替え子で「${C()[id].name}」を選んだが山から獲得できなかった。`);
+        return state;
+      }
+      // 取り替え子＝獲得したカード（コスト$3以上）を取り替え子と交換してもよい（任意・獲得ではない）。
+      case 'CHANGELING_EXCHANGE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'changeling_exchange') return state;
+        state.pending = null;
+        if (!action.exchange) return state;
+        if (!changelingCanExchange(state, pd.player, pd.card, pd.dest)) return state; // 条件が崩れていたら不発
+        exchangeCard(state, pd.player, pd.card, 'changeling', zoneOf(state.players[pd.player], pd.dest));
+        return state;
+      }
+      // コウモリ＝手札から最大2枚を廃棄。1枚以上廃棄したらこれを吸血鬼と交換する。
+      case 'BAT_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'bat_trash') return state;
+        const pl = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length > 2) return state;
+        const copy = pl.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        state.pending = null;
+        cards.forEach((c) => removeOne(pl.hand, c));
+        cards.forEach((c) => trashCard(state, pd.player, c));
+        if (cards.length) {
+          log(state, `${pl.name} はコウモリで ${cards.length}枚 を廃棄した。`);
+          exchangeCard(state, pd.player, 'bat', 'vampire', pl.inPlay);
+        }
+        return state;
+      }
+      // 吸血鬼＝コスト5以下（吸血鬼以外）を1枚獲得 → これをコウモリと交換する（獲得は強制）。
+      case 'VAMPIRE_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'vampire_gain') return state;
+        const okId = (id) => costUpTo(state, id, 5) && id !== 'vampire';
+        if (!anyGainable(state, okId)) {
+          state.pending = null;
+          exchangeCard(state, pd.player, 'vampire', 'bat', state.players[pd.player].inPlay);
+          return state;
+        }
+        const id = action.card;
+        if (!id || !okId(id)) return state;
+        state.pending = null;
+        if (gain(state, pd.player, id, 'discard')) log(state, `${state.players[pd.player].name} は吸血鬼で「${C()[id].name}」を獲得した。`);
+        exchangeCard(state, pd.player, 'vampire', 'bat', state.players[pd.player].inPlay);
+        return state;
+      }
+      /* ネクロマンサー＝廃棄置き場の表向き・持続でないアクション1枚を選び、**先に裏返してから**
+         廃棄置き場に置いたまま使用する（2021エラッタ＝無限ループ防止）。 */
+      case 'NECROMANCER_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'necromancer') return state;
+        const cand = necromancerTargets(state);
+        if (!cand.length) { state.pending = null; return state; } // 終端保証
+        const idx = action.index;
+        if (idx == null || cand.indexOf(idx) < 0) return state;
+        const card = state.trash[idx];
+        state.pending = null;
+        (state.trashFaceDown = state.trashFaceDown || []).push(idx); // **裏返してから**使用する
+        log(state, `${state.players[pd.player].name} はネクロマンサーで廃棄置き場の「${C()[card].name}」を使用した。`);
+        // ⚠ ネクロマンサーは Command 種別を持たない＝「命令は命令をプレイできない」ガードを適用しない。
+        //    カードは動かさないので「これ」の自己移動は失敗する（＝命令機構の _cmd をそのまま使う）。
+        playAsCommand(state, pd.player, 'necromancer', card);
+        return state;
+      }
+      // 幽霊＝脇に置いたアクションカードを2度使用する（強制・アクション権を消費しない）。
+      case 'GHOST_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ghost_play') return state;
+        const pl = state.players[pd.player];
+        state.pending = null;
+        const card = pd.card;
+        if (!card) { popStartQueue(state); return state; }
+        // 2回目は玉座の2回目と同じ扱い（`state.replay`）＝命令ではないのでカードは場に出る。
+        (state.replay = state.replay || []).push({ label: 'ghost', player: pd.player, card });
+        playCardNoAction(state, pd.player, card, [card], '幽霊で');
+        return state;
+      }
+      // ゾンビの弟子＝手札のアクション1枚を廃棄して +3カード +1アクション（任意）。
+      case 'ZOMBIE_APPRENTICE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'zombie_apprentice') return state;
+        const pl = state.players[pd.player];
+        const c = action.card;
+        if (c == null) { state.pending = null; return state; }
+        if (pl.hand.indexOf(c) < 0 || !DOM.isType(c, 'action')) return state;
+        if (!trashFromHand(state, pd.player, [c], 1, 'をゾンビの弟子で廃棄した。')) return state;
+        state.pending = null;
+        draw(state, pd.player, 3); addActions(state.turn, 1);
+        return state;
+      }
+      // ゾンビの石工＝廃棄したカードより最大 $1 高いカード1枚を獲得してもよい。
+      case 'ZOMBIE_MASON_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'zombie_mason_gain') return state;
+        const okId = (id) => costUpTo(state, id, pd.coin, { pot: pd.pot || 0, debt: pd.debt || 0 });
+        if (!anyGainable(state, okId)) { state.pending = null; return state; }
+        const id = action.card;
+        if (id == null) { state.pending = null; return state; } // 任意
+        if (!okId(id)) return state;
+        state.pending = null;
+        if (gain(state, pd.player, id, 'discard')) log(state, `${state.players[pd.player].name} はゾンビの石工で「${C()[id].name}」を獲得した。`);
+        return state;
+      }
+      // ゾンビの密偵＝山札の一番上を見て、捨てるか元に戻す。
+      case 'ZOMBIE_SPY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'zombie_spy') return state;
+        const pl = state.players[pd.player];
+        state.pending = null;
+        if (!action.discard || !pl.deck.length) return state;
+        const c = pl.deck.shift();
+        pl.discard.push(c);
+        log(state, `${pl.name} はゾンビの密偵で「${C()[c].name}」を捨てた。`);
+        triggerOnDiscard(state, pd.player, [c]);
+        return state;
+      }
       // 偶像（財宝アタック）のリアクション窓＝「受ける」。
       case 'IDOL_REACT': {
         const pd = state.pending;
@@ -15166,6 +15444,9 @@
     'COBBLER_GAIN', 'CRYPT_SETASIDE', 'CRYPT_PICK', 'DEVILS_WORKSHOP_GAIN',
     'EXORCIST_TRASH', 'EXORCIST_GAIN', 'MONASTERY_TRASH', 'RAIDER_REACT', 'RAIDER_DISCARD',
     'IMP_PLAY', 'WISH_GAIN',
+    // 夜想曲：交換／廃棄置き場からのプレイ／2度使用
+    'CHANGELING_GAIN', 'CHANGELING_EXCHANGE', 'BAT_TRASH', 'VAMPIRE_GAIN', 'NECROMANCER_PLAY', 'GHOST_PLAY',
+    'ZOMBIE_APPRENTICE', 'ZOMBIE_MASON_GAIN', 'ZOMBIE_SPY',
   ]);
 
   /* ---------- 公開API ---------- */
@@ -15214,6 +15495,8 @@
     sharesType,        // 蝗害＝2枚が種別を1つ以上共有するか（獲得候補の絞り込みに CPU/UI も使う）
     conclaveTargets,   // コンクラーベ／インプ＝「場に同名が無い手札のアクション」（engine/CPU/UI が同じ候補を見る）
     exorcistSpirits,   // 悪魔祓い＝廃棄したカードより安い精霊の候補（**非サプライなので costUnder では取れない**）
+    necromancerTargets, // ネクロマンサー＝廃棄置き場の「表向き・持続でない」アクションの位置（engine/CPU/UI 共通）
+    changelingCanExchange, // 取り替え子＝この獲得を取り替え子と交換できるか（engine/CPU/UI 共通）
     improveTargets,    // ルネサンス：増築の廃棄対象（engine/CPU/UI が同じ候補を参照）
     isTreasureFor,     // ルネサンス：資本主義を含む「今この状態で財宝か」＝**財宝判定の正本**（engine/CPU/UI が同じ述語）
     capitalismTreasures, // ルネサンス：資本主義で財宝になるアクションの集合（整合性テストで固定する）

@@ -1021,6 +1021,152 @@ const mkN = (k, n) => (n === 3 ? mk3(king(k)) : mk(king(k)));
   ok(t.players[0].hand.includes('gold'), '手札に獲得');
 }
 
+
+console.log('\n=== N4: 取り替え子／ネクロマンサー＋ゾンビ／幽霊／吸血鬼↔コウモリ ===');
+{ // 取り替え子＝これを廃棄して場のカードのコピーを獲得
+  let s = mkN(['changeling']); s.players[0].hand = ['changeling']; s.players[0].inPlay = ['gold', 'village'];
+  let t = night(s);
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'changeling' });
+  ok(t.trash.includes('changeling'), '廃棄=' + t.trash);
+  ok(t.pending && t.pending.type === 'changeling_gain', 'pending=' + (t.pending && t.pending.type));
+  t = reduce(t, { type: 'CHANGELING_GAIN', card: 'gold' });
+  ok(t.players[0].discard.includes('gold'), '金貨を獲得');
+}
+{ // 取り替え子＝交換（獲得ではない）
+  let s = mkN(['changeling']); s.turn.phase = 'buy'; s.turn.coins = 6;
+  const before = s.supply.changeling;
+  let t = reduce(s, { type: 'BUY', card: 'gold' });
+  ok(t.pending && t.pending.type === 'changeling_exchange', 'pending=' + (t.pending && t.pending.type));
+  t = reduce(t, { type: 'CHANGELING_EXCHANGE', exchange: true });
+  ok(t.players[0].discard.includes('changeling'), '取り替え子を得る discard=' + t.players[0].discard);
+  ok(!t.players[0].discard.includes('gold'), '金貨は山に戻る');
+  ok(t.supply.changeling === before - 1, '取り替え子の山が1枚減る');
+}
+{ // 取り替え子＝コスト$3未満は交換できない
+  let s = mkN(['changeling']); s.turn.phase = 'buy'; s.turn.coins = 3;
+  let t = reduce(s, { type: 'BUY', card: 'silver' });
+  ok(t.pending && t.pending.type === 'changeling_exchange', '銀貨($3)は交換できる');
+  s = mkN(['changeling']); s.turn.phase = 'buy'; s.turn.coins = 3;
+  t = reduce(s, { type: 'BUY', card: 'copper' });
+  ok(!t.pending, '銅貨($0)は交換できない');
+}
+{ // 取り替え子＝交換は獲得時トリガーを発火させない
+  // 暗躍者を獲得→金貨も獲得（暗躍者の on-gain）。交換しても on-gain は既に済んでいる（交換自体は獲得ではない）
+  let s = mkN(['changeling', 'skulk']); s.turn.phase = 'buy'; s.turn.coins = 4;
+  let t = reduce(s, { type: 'BUY', card: 'skulk' });
+  // 暗躍者の獲得時効果（金貨）も交換の窓を開く＝直前に開いた窓（金貨）が先に出る
+  ok(t.pending && t.pending.type === 'changeling_exchange' && t.pending.card === 'gold',
+    '金貨の交換の窓 pending=' + JSON.stringify(t.pending && t.pending.card));
+  t = reduce(t, { type: 'CHANGELING_EXCHANGE', exchange: true });
+  ok(t.players[0].discard.includes('changeling'), '取り替え子');
+  ok(t.players[0].discard.includes('skulk'), '暗躍者はそのまま（金貨のほうを交換した）discard=' + t.players[0].discard);
+}
+{ // 吸血鬼→コウモリ
+  let s = mkN(['vampire']); s.players[0].hand = ['vampire']; s.hexes.deck = ['greed'];
+  const batBefore = s.supply.bat, vampBefore = s.supply.vampire;
+  let t = night(s);
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'vampire' });
+  ok(t.players[1].deck[0] === 'copper', '相手が呪詛を受ける');
+  ok(t.pending && t.pending.type === 'vampire_gain', 'pending=' + (t.pending && t.pending.type));
+  t = reduce(t, { type: 'VAMPIRE_GAIN', card: 'silver' });
+  ok(t.players[0].discard.includes('silver'), '獲得');
+  ok(t.players[0].discard.includes('bat'), 'コウモリと交換 discard=' + t.players[0].discard);
+  ok(t.supply.bat === batBefore - 1 && t.supply.vampire === vampBefore + 1, '山が入れ替わる');
+}
+{ // コウモリ→吸血鬼
+  let s = mkN(['vampire']); s.players[0].hand = ['bat', 'curse', 'copper'];
+  const batBefore = s.supply.bat, vampBefore = s.supply.vampire;
+  let t = night(s);
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'bat' });
+  ok(t.pending && t.pending.type === 'bat_trash', 'pending');
+  t = reduce(t, { type: 'BAT_TRASH', cards: ['curse', 'copper'] });
+  ok(t.trash.includes('curse') && t.trash.includes('copper'), '2枚廃棄');
+  ok(t.players[0].discard.includes('vampire'), '吸血鬼と交換');
+  ok(t.supply.bat === batBefore + 1 && t.supply.vampire === vampBefore - 1, '山が入れ替わる');
+}
+{ // コウモリ＝0枚廃棄なら交換しない
+  let s = mkN(['vampire']); s.players[0].hand = ['bat'];
+  let t = night(s);
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'bat' });
+  t = reduce(t, { type: 'BAT_TRASH', cards: [] });
+  ok(!t.players[0].discard.includes('vampire'), '交換しない');
+  ok(t.players[0].inPlay.includes('bat'), 'コウモリは場に残る');
+}
+{ // ネクロマンサー＝廃棄置き場から使用
+  let s = mkN(['necromancer']); s.players[0].hand = ['necromancer']; s.players[0].deck = ['gold', 'gold', 'gold'];
+  ok(s.trash.length === 3, 'ゾンビ3枚');
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'necromancer' });
+  ok(t.pending && t.pending.type === 'necromancer', 'pending=' + (t.pending && t.pending.type));
+  const idx = t.trash.indexOf('zombie_spy');
+  t = reduce(t, { type: 'NECROMANCER_PLAY', index: idx });
+  ok(t.trashFaceDown.includes(idx), '裏返した');
+  ok(t.trash.length === 3, '廃棄置き場に残る');
+  ok(t.players[0].hand.length === 1, '+1カード hand=' + t.players[0].hand.length);
+  if (t.pending && t.pending.type === 'zombie_spy') t = reduce(t, { type: 'ZOMBIE_SPY', discard: false });
+  // 同じカードは同ターン中もう使えない
+  const cand = E.necromancerTargets(t);
+  ok(cand.indexOf(idx) < 0, '裏向きは選べない');
+  // ターン終了で表向きに戻る
+  t = reduce(reduce(t, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+  ok(t.trashFaceDown.length === 0, 'ターン終了で全部表向き');
+}
+{ // ネクロマンサー＝持続カードは選べない
+  let s = mkN(['necromancer']); s.players[0].hand = ['necromancer'];
+  s.trash.push('fishing_village');
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'necromancer' });
+  const cand = E.necromancerTargets(t);
+  ok(cand.indexOf(t.trash.indexOf('fishing_village')) < 0, '持続は対象外');
+}
+{ // ゾンビの弟子
+  let s = mkN(['necromancer']); s.players[0].hand = ['necromancer', 'village']; s.players[0].deck = ['gold', 'gold', 'gold', 'gold'];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'necromancer' });
+  t = reduce(t, { type: 'NECROMANCER_PLAY', index: t.trash.indexOf('zombie_apprentice') });
+  ok(t.pending && t.pending.type === 'zombie_apprentice', 'pending=' + (t.pending && t.pending.type));
+  t = reduce(t, { type: 'ZOMBIE_APPRENTICE', card: 'village' });
+  ok(t.players[0].hand.length === 3, '+3カード hand=' + t.players[0].hand.length);
+  ok(t.turn.actions === 1, '+1アクション actions=' + t.turn.actions);
+}
+{ // ゾンビの石工
+  let s = mkN(['necromancer']); s.players[0].hand = ['necromancer']; s.players[0].deck = ['estate'];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'necromancer' });
+  t = reduce(t, { type: 'NECROMANCER_PLAY', index: t.trash.indexOf('zombie_mason') });
+  ok(t.trash.includes('estate'), '山札の上を廃棄');
+  ok(t.pending && t.pending.type === 'zombie_mason_gain' && t.pending.coin === 3, 'コスト+1 pending=' + JSON.stringify(t.pending && t.pending.coin));
+  t = reduce(t, { type: 'ZOMBIE_MASON_GAIN', card: 'silver' });
+  ok(t.players[0].discard.includes('silver'), '獲得');
+}
+{ // ゾンビの密偵
+  let s = mkN(['necromancer']); s.players[0].hand = ['necromancer']; s.players[0].deck = ['gold', 'curse'];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'necromancer' });
+  t = reduce(t, { type: 'NECROMANCER_PLAY', index: t.trash.indexOf('zombie_spy') });
+  ok(t.players[0].hand.includes('gold'), '+1カード');
+  ok(t.pending && t.pending.type === 'zombie_spy' && t.pending.card === 'curse', 'pending=' + JSON.stringify(t.pending && t.pending.card));
+  t = reduce(t, { type: 'ZOMBIE_SPY', discard: true });
+  ok(t.players[0].discard.includes('curse'), '捨てた');
+}
+{ // 幽霊＝次のターンにアクションを2度使用
+  let s = mkN(['cemetery']); s.players[0].hand = ['ghost'];
+  s.players[0].deck = ['copper', 'copper', 'village', 'gold', 'gold', 'gold', 'gold', 'gold'];
+  let t = night(s);
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'ghost' });
+  ok(t.players[0].ghostSetAside.includes('village'), '脇=' + t.players[0].ghostSetAside);
+  ok(t.players[0].discard.filter((c) => c === 'copper').length === 2, '手前は捨て札');
+  t = reduce(t, { type: 'END_TURN' });
+  t = reduce(reduce(t, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+  ok(t.pending && t.pending.type === 'ghost_play', 'pending=' + (t.pending && t.pending.type));
+  t = reduce(t, { type: 'GHOST_PLAY' });
+  ok(t.turn.actions === 1 + 2 + 2 - 0, '村を2回＝+4アクション actions=' + t.turn.actions);
+  ok(t.players[0].inPlay.includes('village'), '村は場に出る');
+  ok(!t.players[0].ghostSetAside.length, '脇から出た');
+}
+{ // 幽霊＝アクションが見つからなければ持続にならない
+  let s = mkN(['cemetery']); s.players[0].hand = ['ghost']; s.players[0].deck = ['copper', 'copper'];
+  let t = night(s);
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'ghost' });
+  ok(!t.players[0].delayedEffects.length, '持続にならない');
+  ok(!(t.players[0].ghostSetAside || []).length, '脇なし');
+}
+
 console.log('\n=== N0b: CPU が夜フェイズで詰まらない ===');
 {
   const s = mk(king(['guardian', 'monastery']));
