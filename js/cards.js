@@ -1057,6 +1057,13 @@
   //   公開リアクション(パトロン)／アタック(老魔女)／山に戻る(実験)。
   DOM.KINGDOM_RENAISSANCE = ['border_guard', 'ducat', 'lackeys', 'experiment', 'improve',
                              'patron', 'research', 'old_witch', 'swashbuckler', 'treasurer'];
+  /* 夜想曲 推奨10種（自作＝公式の固定10種は確認できていない）。夜想曲の新機構6系統をひと通り味わえる構成：
+       夜フェイズ（守護者/取り替え子/納骨堂/吸血鬼）／家宝（ピクシー＝ヤギ・墓地＝呪いの鏡）／
+       幸運→祝福（ドルイド＝準備で3枚脇／ピクシー／詩人）／不運→呪詛→状態（暗躍者／吸血鬼）／
+       非サプライ山（墓地＝幽霊／吸血鬼＝コウモリ／幸運＝ウィル・オ・ウィスプ／ネクロマンサー＝ゾンビ3枚）／
+       交換（取り替え子＝$3以上の獲得すべてに窓・吸血鬼↔コウモリ）。 */
+  DOM.KINGDOM_NOCTURNE = ['druid', 'guardian', 'pixie', 'changeling', 'bard',
+                          'necromancer', 'cemetery', 'skulk', 'crypt', 'vampire'];
   // 初版（第二版で廃止されたカードを含む懐かしのセット）
   DOM.KINGDOM_1E = ['cellar', 'chancellor', 'woodcutter', 'feast', 'militia',
                     'spy', 'thief', 'council_room', 'adventurer', 'market'];
@@ -1212,6 +1219,7 @@
     { id: 'renaissance-projects', kind: 'standard', name: 'ルネサンス＋プロジェクト', desc: 'ルネサンス10種＋プロジェクト2枚（買うと永続する横型・1人2つまで）', kingdom: DOM.KINGDOM_RENAISSANCE, projectsFrom: 'renaissance' },
     // 移動動物園セット（固定10種）。追放マット（Exile）と馬（非サプライ30枚）の2機構。
     { id: 'menagerie',       kind: 'standard', name: '移動動物園セット', desc: '追放マット・馬・獲得した瞬間に反応するカード', kingdom: DOM.KINGDOM_MENAGERIE },
+    { id: 'nocturne',        kind: 'standard', name: '夜想曲セット', desc: '夜フェイズ・家宝・祝福/呪詛・精霊', kingdom: DOM.KINGDOM_NOCTURNE },
     // 移動動物園＋習性（横型）。固定10王国に、習性20種から2枚を無作為に付ける（アクションの効果を置き換える）。
     { id: 'menagerie-ways',  kind: 'standard', name: '移動動物園＋習性', desc: '移動動物園10種＋習性2枚（アクションの効果を置き換える横型・買わない）', kingdom: DOM.KINGDOM_MENAGERIE, waysFrom: 'menagerie' },
     // 移動動物園＋イベント（横型）。固定10王国に、移動動物園イベント20種から2枚を無作為に付ける（購入フェイズに買う横型）。
@@ -1254,6 +1262,7 @@
     // 帝国から＝POOLS.empires（29枠）。分割山の下段は randomKingdom が上段へ正規化し、城は 'castles' の1枠で抽選される。
     { id: 'random-empires',  kind: 'random', name: '帝国から',     randomFrom: ['empires'] },
     { id: 'random-renaissance', kind: 'random', name: 'ルネサンスから', randomFrom: ['renaissance'] },
+    { id: 'random-nocturne', kind: 'random', name: '夜想曲から',     randomFrom: ['nocturne'] },
     { id: 'random-menagerie', kind: 'random', name: '移動動物園から', randomFrom: ['menagerie'] },
     { id: 'random-intrigue', kind: 'random', name: '陰謀のみから',   randomFrom: ['intrigue'] },
     { id: 'random-basic',    kind: 'random', name: '基本のみから',   randomFrom: ['basic'] },
@@ -1294,7 +1303,8 @@
   DOM.MIX_KINGDOM_POOLS = {
     basic: '基本', intrigue: '陰謀', seaside: '海辺', alchemy: '錬金術', prosperity: '繁栄',
     cornucopia: '収穫祭', guilds: 'ギルド', hinterlands: '異郷', darkages: '暗黒時代',
-    adventures: '冒険', empires: '帝国', renaissance: 'ルネサンス', menagerie: '移動動物園', promo: 'プロモ',
+    adventures: '冒険', empires: '帝国', renaissance: 'ルネサンス', menagerie: '移動動物園',
+    nocturne: '夜想曲', promo: 'プロモ',
   };
   // mix で選べる横型プール（kind ごとに分けて選べる）。
   DOM.MIX_LANDSCAPE_POOLS = {
