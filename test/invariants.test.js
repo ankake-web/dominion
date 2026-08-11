@@ -73,12 +73,17 @@ function runGame(kingdom, players, landmarks, events, projects, ways) {
       s.players.forEach((p) => { (p.boonsInFront || []).forEach((b) => seen.add(b)); (p.boonsHeld || []).forEach((b) => seen.add(b)); });
       ((s.turn && s.turn.boonChoice && s.turn.boonChoice.boons) || []).forEach((b) => seen.add(b));
       if (seen.size !== 12) return { okp: false, why: '祝福が消えた step' + step + ' 種類数=' + seen.size };
+      // 「山＋捨て札＋ドルイドの脇」には同じ祝福が2枚あってはいけない（複製の検出。集合の大きさでは捕まらない）。
+      const own = [].concat(bo.deck, bo.discard, bo.druid || []);
+      if (own.length !== new Set(own).size) return { okp: false, why: '祝福が複製された step' + step + ' 枚数=' + own.length };
     }
     const hx = s.hexes;
     if (hx) {
       const seen = new Set([].concat(hx.deck, hx.discard));
       if (s.turn && s.turn.currentHex) seen.add(s.turn.currentHex);
       if (seen.size !== 12) return { okp: false, why: '呪詛が消えた step' + step + ' 種類数=' + seen.size };
+      const own2 = [].concat(hx.deck, hx.discard);
+      if (own2.length !== new Set(own2).size) return { okp: false, why: '呪詛が複製された step' + step + ' 枚数=' + own2.length };
     }
     if (hasBack(s)) return { okp: false, why: 'back混入 step' + step };
     if (s.players.some((p) => (p.vpTokens || 0) < 0)) return { okp: false, why: 'vpTokens負 step' + step };

@@ -7007,7 +7007,7 @@
     removeOne(b.deck, boon); removeOne(b.discard, boon);
     state.players.forEach((p) => {
       if (p.boonsInFront) removeOne(p.boonsInFront, boon);
-      if (p.boonHeld === boon) p.boonHeld = null;
+      if (p.boonsHeld) removeOne(p.boonsHeld, boon);
     });
   }
   // 祝福の山から1枚めくる（空なら捨て札をシャッフルして作り直す。両方空なら null＝受けられない）。
