@@ -2387,6 +2387,10 @@
         { label: '捨てる', cls: 'btn-primary', on: () => dispatch({ type: 'ZOMBIE_SPY', discard: true }) },
         { label: 'そのまま戻す', on: () => dispatch({ type: 'ZOMBIE_SPY', discard: false }) }]);
     }
+    if (pd.type === 'attack_window' && pd.stage === 'react') {
+      return modalOptions('アタックを受ける', '相手がアタックカードを使いました（このアタック自体はあなたに何もしませんが、リアクションは使えます）。',
+        reactOptions(p, pd, { type: 'ATTACK_WINDOW_REACT' }));
+    }
     if (pd.type === 'idol' && pd.stage === 'react') {
       return modalOptions('偶像を受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'IDOL_REACT' }));
     }

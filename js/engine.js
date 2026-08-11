@@ -624,7 +624,9 @@
   function initSupply(numPlayers, kingdom) {
     const v = numPlayers <= 2 ? 8 : 12; // 勝利点の山（2人=8, 3-4人=12）
     const supply = {
-      copper: 60 - 7 * numPlayers,
+      // 夜想曲：家宝は開始デッキの銅貨と置き換わる。**入れ替えた銅貨はサプライの山に戻す**（公式）ので、
+      //   配らなかったぶんだけ銅貨の山が増える（createInitialState の開始デッキ算出と同じ数を使う）。
+      copper: 60 - (7 - Object.keys(DOM.HEIRLOOM_OF || {}).filter((k) => kingdom.indexOf(k) >= 0).length) * numPlayers,
       silver: 40,
       gold: 30,
       estate: v,
@@ -794,6 +796,7 @@
            脇札2種（幽霊/納骨堂）だけは物理カード＝allCards と保存則に数える。 */
         boonsInFront: [],  // 田畑/森/川の恵み＝解決後もそのターンの片付けまで自分の前に置く祝福id（公開・非カード）
         boonsHeld: [],     // 恵みの村で保留した祝福id（次の自分のターン開始時に受ける。公開・非カード・複数可）
+        riverDraws: 0,     // 川の恵みを受けた回数（このターンの終了時に引く枚数。非カード）
         houndsAside: 0,    // 夜想曲：脇に置いた忠犬の枚数（カード自体は p.setAside＝物理カード。ターン終了時に手札へ戻す）
         deluded: false,    // 状態：錯乱（**持っているだけでは効かない**＝購入フェイズ開始時に返して初めて発動）
         envious: false,    // 状態：嫉妬（同上。錯乱とは排他＝両面カード1枚）
@@ -1700,6 +1703,8 @@
     hex:           { onMoat: (s, pd) => hexReactEnter(s, pd.source, pd.queue, pd.accepted || []) },
     idol:          { onMoat: (s, pd) => idolEnterVictim(s, pd.source, pd.queue) },
     raider:        { onMoat: (s, pd) => raiderEnterVictim(s, pd.source, pd.queue) },
+    // 「アタックを使用した」ことだけに反応する窓（人狼のドロー側／迫害者のインプ側）。堀は無意味だが公開はできる。
+    attack_window: { onMoat: (s, pd) => attackWindowEnter(s, pd.source, pd.queue, pd.after) },
     // 冒険：遺物（-1カードトークン）・巨人（公開廃棄/呪い）・橋の下のトロル（-$1トークン）。
     relic:         { onMoat: (s, pd) => relicEnterVictim(s, pd.source, pd.queue) },
     giant:         { onMoat: (s, pd) => giantEnterVictim(s, pd.source, pd.queue) },
@@ -5677,10 +5682,12 @@
          そうでなければ他のプレイヤーは全員「次の呪詛」を1つ受ける。 */
       case 'tormentor': {
         addCoins(state, 2);
-        const othersInPlay = p.inPlay.filter((c) => c !== 'tormentor').length + (p.durationCards || []).length;
-        if (othersInPlay === 0) {
-          if (gain(state, pi, 'imp', 'discard')) log(state, `${p.name} は迫害者でインプ1枚を獲得した。`);
-        } else startHexAttack(state, pi, othersInOrder(state, pi));
+        // **「使用したその迫害者以外のカードが場にあるか」で判定する**（同名か否かは関係ない）。
+        //   今プレイした1枚は inPlay の末尾にあるので、枚数から1を引くだけでよい。
+        const othersInPlay = Math.max(0, p.inPlay.length - 1) + (p.durationCards || []).length;
+        // インプを獲得する側でも「アタックカードを使用した」ことへのリアクション窓は開く（公式）。
+        if (othersInPlay === 0) attackWindowEnter(state, pi, othersInOrder(state, pi), 'tormentor_imp');
+        else startHexAttack(state, pi, othersInOrder(state, pi));
         break;
       }
       /* 追跡者（幸運）＝+1コイン。**このターン**、カードを獲得したとき山札の上に置いてよい（2022エラッタ）。
@@ -5759,8 +5766,9 @@
       /* 人狼（アクション・夜行・アタック・不運）＝**あなたの夜フェイズなら**他プレイヤー全員が次の呪詛を受ける。
          そうでなければ +3カード。 */
       case 'werewolf':
+        // 夜フェイズ以外（+3カード）でも**アタックカードなのでリアクション窓は開く**（公式）。窓はドローより前。
         if (t.phase === 'night') startHexAttack(state, pi, othersInOrder(state, pi));
-        else draw(state, pi, 3);
+        else attackWindowEnter(state, pi, othersInOrder(state, pi), 'werewolf_draw');
         break;
       /* 取り替え子（夜行）＝これを廃棄し、**場に出ているカード**と同じカード1枚を獲得する。
          獲得できるのは「サプライの山の一番上が同名」のときだけ（非サプライ/空山/分割山の下段は選べても何も獲得しない）。
@@ -5846,7 +5854,9 @@
         if (p.deck.length) {
           const top = p.deck[0];
           reveal(state, pi, [top], 'ウィル・オ・ウィスプ');
-          if (cardCost(state, top) <= 2 && potionCost(top) === 0) {
+          // **3成分で比較する**（公式FAQ："Cards with [P] or [D] in the cost … do not cost [$2] or less."）。
+          //   `costUpTo` は非サプライ除外＋在庫>0 を含むのでここでは使わない（山札の上のカードはサプライと無関係）。
+          if (costLE(costOf(state, top), { coin: 2, pot: 0, debt: 0 })) {
             p.deck.shift(); p.hand.push(top);
             log(state, `${p.name} はウィル・オ・ウィスプで「${C()[top].name}」を手札に加えた。`);
           }
@@ -5876,8 +5886,11 @@
           if (takeSelf(state, pi, 'tragic_hero')) {
             trashCard(state, pi, 'tragic_hero');
             log(state, `${p.name} は悲劇のヒーローを廃棄した（手札8枚以上）。`);
-            if (anyGainable(state, (id) => gainableBase(state, id) && isTreasureFor(state, id))) state.pending = { type: 'tragic_hero_gain', player: pi };
           }
+          /* **財宝の獲得は廃棄の成否に条件づかない**（ルールブック逐語 "If you cannot trash Tragic Hero …
+             you still gain the Treasure."）＝ネクロマンサー／玉座・幽霊の2回目でも獲得する。
+             倒壊・死の荷車の pendingSelf パターンとは**逆**なので self を持ち回らないこと。 */
+          if (anyGainable(state, (id) => gainableBase(state, id) && isTreasureFor(state, id))) state.pending = { type: 'tragic_hero_gain', player: pi };
         }
         break;
 
@@ -7045,13 +7058,18 @@
       case 'the_seas_gift': // +1 カード
         draw(state, pi, 1);
         break;
+      /* ターン資源（+アクション/+コイン/+購入）は**手番プレイヤーが受けたときだけ**入る
+         （聖なる木立ちで他プレイヤーが受けても手番プレイヤーの資源にしない）。 */
       case 'the_fields_gift': // +1 アクション +1 コイン（クリンナップまで前に置く）
-        addActions(t, 1); addCoins(state, 1);
+        if (pi === t.active) { addActions(t, 1); addCoins(state, 1); }
         break;
       case 'the_forests_gift': // +1 購入 +1 コイン（クリンナップまで前に置く）
-        t.buys += 1; addCoins(state, 1);
+        if (pi === t.active) { t.buys += 1; addCoins(state, 1); }
         break;
-      case 'the_rivers_gift': // このターンの終了時 +1カード（＝**次の手札を先引きした後**に引く。cleanupAndAdvance で処理）
+      /* 川の恵み＝「このターンの終了時 +1カード」。**受けた回数**で数える（非カードのカウンタ）＝
+         ドルイドで脇から受けた場合（前に置かない）やピクシーで2回受けた場合も正しく効く。 */
+      case 'the_rivers_gift':
+        p.riverDraws = (p.riverDraws || 0) + 1;
         break;
       case 'the_mountains_gift': // 銀貨1枚を獲得
         if (gain(state, pi, 'silver', 'discard')) log(state, `${p.name} は山の恵みで銀貨1枚を獲得した。`);
@@ -7232,8 +7250,9 @@
           if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
           if (p.deck.length === 0) break;
           const c = p.deck.shift();
-          const cc = cardCost(state, c);
-          if (cc === 3 || cc === 4) { found = c; break; }
+          const cc = costOf(state, c);
+          // ポーション費用/負債コストを持つカードは「コスト$3/$4」ではない（成分別に比較する）。
+          if ((cc.coin === 3 || cc.coin === 4) && cc.pot === 0 && cc.debt === 0) { found = c; break; }
           rev.push(c);
         }
         if (rev.length || found) reveal(state, pi, (found ? rev.concat([found]) : rev).slice(-8), '戦争');
@@ -7318,6 +7337,29 @@
   function idolCurse(state, source, victim, queue) {
     if (gain(state, victim, 'curse', 'discard')) log(state, `${state.players[victim].name} は呪いを獲得した（偶像）。`);
     idolEnterVictim(state, source, queue);
+  }
+  /* 「アタックカードを使用した」こと自体に反応するリアクション（番犬/隊商の護衛/物乞い/馬商人/外交官）は、
+     そのアタックが**相手に何もしない場合でも**窓が開く（公式）。人狼をアクションフェイズで使う（+3カード）／
+     迫害者が場が空でインプを獲得する ケースがこれに当たる。窓を全部閉じてから本体の効果を解決する。 */
+  function attackWindowEnter(state, source, queue, after) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    while (queue.length) {
+      const v = queue[0];
+      if (hasReaction(state.players[v])) {
+        state.pending = { type: 'attack_window', stage: 'react', player: v, source, victim: v, queue: queue.slice(1), after };
+        return;
+      }
+      queue = queue.slice(1);
+    }
+    state.pending = null;
+    finishAttackWindow(state, source, after);
+  }
+  function finishAttackWindow(state, source, after) {
+    const p = state.players[source];
+    if (after === 'werewolf_draw') draw(state, source, 3);
+    else if (after === 'tormentor_imp') {
+      if (gain(state, source, 'imp', 'discard')) log(state, `${p.name} は迫害者でインプ1枚を獲得した。`);
+    }
   }
   /* 夜襲（夜行・持続・アタック）＝手札5枚以上の他プレイヤーは「使用者の場にあるカードと同名の1枚」を捨てる。
      捨てられなければ手札を公開する（**本物の「捨てる」**＝忠犬/坑道などの捨て札トリガーが誘発する）。 */
@@ -7501,7 +7543,8 @@
        聖なる木立ちで**他のプレイヤーも持ち得る**（公式：あなたと同時に引く）ので全員ぶん見る。
        引き終えたら、前に置かれている祝福（田畑/森/川）を全員ぶん祝福の捨て札へ戻す＝「クリンナップまで持つ」の終わり。 */
     state.players.forEach((pl, idx) => {
-      const n = (pl.boonsInFront || []).filter((b) => b === 'the_rivers_gift').length;
+      const n = pl.riverDraws || 0;
+      pl.riverDraws = 0;
       for (let i = 0; i < n; i++) {
         const got = draw(state, idx, 1);
         if (got.length) log(state, `${pl.name} は川の恵みで +1カード（ターンの終了時）。`);
@@ -8064,8 +8107,13 @@
      夜フェイズに入ったら END_TURN をもう一度受けて endBuyTailBaths（片付け開始時の効果）へ進む。 */
   function maybeEnterNight(state, pi) {
     const p = state.players[pi];
-    if (state.turn.phase !== 'night' && p.hand.some((c) => DOM.isType(c, 'night'))) {
-      state.turn.phase = 'night';
+    const wasNight = state.turn.phase === 'night';
+    /* **夜フェイズは常に存在する**（公式）。ここで必ず phase を 'night' にすることで、
+       この後に走る「片付け開始時の効果」（増築の格上げ獲得など）が**購入フェイズ扱いにならない**
+       ＝公会堂/列柱/汚された神殿/徴税/行商人のコスト が誤発火しない。
+       止まる（＝人間/CPU の入力を待つ）のは手札に夜行カードがあるときだけ。 */
+    state.turn.phase = 'night';
+    if (!wasNight && p.hand.some((c) => DOM.isType(c, 'night'))) {
       log(state, `${p.name} の夜フェイズ。`);
       return;
     }
@@ -8302,7 +8350,10 @@
     // 冒険：アクションを解決した直後の呼び出し窓（法貨＝+2アクション／御料車＝再演）。
     //   afterActionCard が立っていて呼べる Reserve が酒場マットにあれば after_action pending を開く。
     //   呼び出しは afterActionCard を保持したまま（再演/複数コール対応）、辞退か候補ゼロで消す。
-    if (!state.pending && !state.gameOver && state.turn && state.turn.afterActionCard && state.turn.phase === 'action') {
+    // 夜想曲：**夜フェイズの人狼**でもこの窓は開く（`t.afterActionCard` は PLAY_NIGHT でも
+    //   「アクションでもある夜行カード」のときだけ立つ＝純粋な夜行カードでは開かない）。
+    if (!state.pending && !state.gameOver && state.turn && state.turn.afterActionCard &&
+        (state.turn.phase === 'action' || state.turn.phase === 'night')) {
       const pi2 = state.turn.active, p2 = state.players[pi2], ac = state.turn.afterActionCard;
       const callable = (p2.tavern || []).some((c) => c === 'coin_of_the_realm' || (c === 'royal_carriage' && p2.inPlay.includes(ac)));
       if (callable) state.pending = { type: 'after_action', player: pi2, card: ac };
@@ -8507,20 +8558,45 @@
         const ncard = action.card;
         if (!DOM.isType(ncard, 'night')) return state;
         if (me.hand.indexOf(ncard) < 0) return state;
+        /* **アクションでもある夜行カード（人狼）は「アクションカードを使用した」でもある**（公式）。
+           習性(Way)・女魔術師の置換・御料車の呼び出し窓・浮浪児のトラップ・チャンピオン・山トークン は
+           すべて「アクションカードの使用」に反応するので、夜フェイズでも同じように働かせる。
+           純粋な夜行カード（アクションでないもの）では働かせない。 */
+        const nIsAction = DOM.isType(ncard, 'action');
+        const nWay = nIsAction && isUsableWay(state, action.way) ? action.way : null;
+        // 帝国：女魔術師＝そのターン最初に使うアクションカードは記載効果の代わりに +1カード +1アクション。
+        if (nIsAction && me.enchanted) {
+          me.enchanted = false;
+          removeOne(me.hand, ncard); me.inPlay.push(ncard);
+          t.nightPlayed = (t.nightPlayed || 0) + 1;
+          t.actionsPlayed = (t.actionsPlayed || 0) + 1;
+          draw(state, pi, 1); addActions(t, 1);
+          log(state, `${me.name} は女魔術師の効果で 記載効果の代わりに +1カード +1アクション（夜フェイズ）。`);
+          return state;
+        }
+        // 暗黒時代：浮浪児＝場に浮浪児があるときに**別のアタック**を使うと、解決前に廃棄して傭兵を獲得できる。
+        if (DOM.isType(ncard, 'attack') && maybeUrchinTrap(state, ncard, pi)) {
+          state.pending.deferredNight = ncard; // 解決は URCHIN_TRASH の後（PLAY_NIGHT 経路であることを覚える）
+          removeOne(me.hand, ncard);
+          return state;
+        }
         removeOne(me.hand, ncard);
         me.inPlay.push(ncard);
         t.nightPlayed = (t.nightPlayed || 0) + 1;
-        if (DOM.isType(ncard, 'action')) {
+        if (nIsAction) {
           t.actionsPlayed = (t.actionsPlayed || 0) + 1; // 共謀者の「このターンに使ったアクション数」
+          t.afterActionCard = ncard; // 冒険：御料車/法貨の「アクション解決直後」の呼び出し窓（人狼が唯一の合法経路）
           const champs = me.inPlay.filter((c) => c === 'champion').length +
             (me.durationCards || []).filter((c) => c === 'champion').length;
           if (champs > 0) { addActions(t, champs); log(state, `${me.name} はチャンピオンで +${champs}アクション。`); }
         }
         applyPileTokens(state, pi, ncard); // 冒険：山トークン（その山のカードを使ったときのボーナス）
         log(state, `${me.name} は「${C()[ncard].name}」を使った（夜フェイズ）。`);
+        if (nWay) log(state, `${me.name} は「${DOM.LANDSCAPES[nWay].name}」を使う。`);
         // 移動動物園：炉＝「このターン次に使うカードの解決前に同名を獲得してよい」＝夜行カードも「カードの使用」。
-        if (maybeKiln(state, ncard, pi, 'night', null)) return state;
-        applyEffect(state, ncard, pi);
+        if (maybeKiln(state, ncard, pi, nWay ? 'action' : 'night', nWay)) return state;
+        if (nWay) applyWay(state, nWay, ncard, pi);
+        else applyEffect(state, ncard, pi);
         return state;
       }
 
@@ -10985,6 +11061,21 @@
           if (gain(state, pd.player, 'mercenary', 'discard')) log(state, `${p.name} は浮浪児を廃棄して傭兵を獲得した。`);
         }
         state.pending = null;
+        /* 夜想曲：夜フェイズの人狼/吸血鬼/夜襲から来た場合は、**カードを場に出してから**効果を解決する
+           （PLAY_NIGHT は浮浪児の窓を開く時点でまだ場に出していない）。 */
+        if (pd.deferredNight) {
+          const t2 = state.turn;
+          p.inPlay.push(pd.deferredNight);
+          t2.nightPlayed = (t2.nightPlayed || 0) + 1;
+          if (DOM.isType(pd.deferredNight, 'action')) {
+            t2.actionsPlayed = (t2.actionsPlayed || 0) + 1;
+            t2.afterActionCard = pd.deferredNight;
+          }
+          applyPileTokens(state, pd.player, pd.deferredNight);
+          log(state, `${p.name} は「${C()[pd.deferredNight].name}」を使った（夜フェイズ）。`);
+          applyEffect(state, pd.deferredNight, pd.player);
+          return state;
+        }
         applyEffect(state, pd.deferred, pd.player); // 保留していたアタックの効果を解決
         return state;
       }
@@ -14831,12 +14922,17 @@
         if (!pd || pd.type !== 'secret_cave') return state;
         const pl = state.players[pd.player];
         if (action.cards == null) { state.pending = null; return state; }
+        /* **手札が3枚未満でも「3枚捨てる」を選べる**（公式：残りを全部捨てるが +3コイン は得られない）。
+           捨て札トリガー（坑道/忠犬/村有緑地）を狙って捨てる選択肢を engine が奪ってはいけない。 */
+        const want = Math.min(3, pl.hand.length);
         const cards = Array.isArray(action.cards) ? action.cards : [];
-        if (cards.length !== 3) return state; // 3枚ちょうど（手札が3枚未満なら捨てられない＝辞退のみ）
-        if (!discardFromHand(state, pd.player, cards, 3, 'を捨てた（秘密の洞窟）。')) return state;
+        if (cards.length !== want) return state;
+        if (!discardFromHand(state, pd.player, cards, want, 'を捨てた（秘密の洞窟）。')) return state;
         state.pending = null;
-        armDuration(state, pd.player, 'secret_cave');
-        log(state, `${pl.name} は秘密の洞窟で手札3枚を捨てた（次のターン開始時 +3コイン）。`);
+        if (cards.length === 3) {
+          armDuration(state, pd.player, 'secret_cave');
+          log(state, `${pl.name} は秘密の洞窟で手札3枚を捨てた（次のターン開始時 +3コイン）。`);
+        } else log(state, `${pl.name} は手札が3枚未満だったので +3コイン は得られない（秘密の洞窟）。`);
         triggerOnDiscard(state, pd.player, cards);
         return state;
       }
@@ -14852,9 +14948,11 @@
         if (cards.length) {
           reveal(state, pd.player, cards.slice(), '羊飼い');
           discardFromHand(state, pd.player, cards, cards.length, 'を捨てた（羊飼い）。');
+          // **順序厳守**：捨て札トリガー（坑道の金貨獲得など）を全部解決してから引く。
+          //   逆にすると坑道で得た金貨がリシャッフルに入らない（公式裁定）。
+          triggerOnDiscard(state, pd.player, cards);
           draw(state, pd.player, cards.length * 2);
           log(state, `${pl.name} は羊飼いで勝利点${cards.length}枚を捨てて +${cards.length * 2}カード。`);
-          triggerOnDiscard(state, pd.player, cards);
         }
         return state;
       }
@@ -15010,6 +15108,13 @@
         const left = (pd.remaining || 1) - 1;
         state.pending = (left > 0 && (pl.hand.length || pl.inPlay.includes('copper')))
           ? { type: 'monastery', player: pd.player, remaining: left } : null;
+        return state;
+      }
+      // 「アタックを使用した」ことだけに反応する窓（人狼のドロー側／迫害者のインプ側）＝受ける。
+      case 'ATTACK_WINDOW_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'attack_window' || pd.stage !== 'react') return state;
+        attackWindowEnter(state, pd.source, pd.queue, pd.after);
         return state;
       }
       // 夜襲＝リアクション窓（受ける）。
@@ -15468,7 +15573,7 @@
     // 夜想曲：夜行カードと非サプライのアクション
     'COBBLER_GAIN', 'CRYPT_SETASIDE', 'CRYPT_PICK', 'DEVILS_WORKSHOP_GAIN',
     'EXORCIST_TRASH', 'EXORCIST_GAIN', 'MONASTERY_TRASH', 'RAIDER_REACT', 'RAIDER_DISCARD',
-    'IMP_PLAY', 'WISH_GAIN',
+    'IMP_PLAY', 'WISH_GAIN', 'ATTACK_WINDOW_REACT',
     // 夜想曲：交換／廃棄置き場からのプレイ／2度使用
     'CHANGELING_GAIN', 'CHANGELING_EXCHANGE', 'BAT_TRASH', 'VAMPIRE_GAIN', 'NECROMANCER_PLAY', 'GHOST_PLAY',
     'ZOMBIE_APPRENTICE', 'ZOMBIE_MASON_GAIN', 'ZOMBIE_SPY',

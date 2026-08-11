@@ -201,11 +201,21 @@ function isNoConsentUndoableBuy(room, seat) {
   // ヴィラのように購入フェイズから戻る札も対象外にする）
   if (cur.turn.active !== prev.turn.active || cur.turn.phase !== prev.turn.phase) return false;
   if (!Array.isArray(cur.players) || cur.players.length !== prev.players.length) return false;
+  /* 夜想曲：祝福/呪詛/状態は「カード」ではないので山札・手札の比較では捕まらない。
+     呪われた村を買うと**自分が呪詛を受ける**（生活苦 -2VP／錯乱／嫉妬／祝福デッキの消費）ので、
+     これらが1ビットでも動いていたら同意なしの巻き戻しは認めない（見てから無料でやり直せてしまう）。 */
+  if (JSON.stringify(cur.boons || null) !== JSON.stringify(prev.boons || null)) return false;
+  if (JSON.stringify(cur.hexes || null) !== JSON.stringify(prev.hexes || null)) return false;
+  if ((cur.lostInTheWoods == null ? -1 : cur.lostInTheWoods) !== (prev.lostInTheWoods == null ? -1 : prev.lostInTheWoods)) return false;
+  const NOCTURNE_STATE = ['deluded', 'envious', 'misery', 'boonsInFront', 'boonsHeld', 'riverDraws', 'guardianActive', 'houndsAside'];
   for (let i = 0; i < cur.players.length; i++) {
     if (i === seat) {
       // 自分：山札と手札が1枚も動いていないこと（動いていたらシャッフル or 山札上への配置＝乱数/情報が絡む）
       if (JSON.stringify(cur.players[i].deck) !== JSON.stringify(prev.players[i].deck)) return false;
       if (JSON.stringify(cur.players[i].hand) !== JSON.stringify(prev.players[i].hand)) return false;
+      for (const k of NOCTURNE_STATE) {
+        if (JSON.stringify(cur.players[i][k] || null) !== JSON.stringify(prev.players[i][k] || null)) return false;
+      }
     } else if (JSON.stringify(cur.players[i]) !== JSON.stringify(prev.players[i])) {
       return false; // 相手に一切影響していないこと（呪いの配布・手札を山札の上へ 等はここで弾かれる）
     }

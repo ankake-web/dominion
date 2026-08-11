@@ -839,7 +839,11 @@
   function bestPotionBuy(state, real, potions) {
     const cands = (state.kingdom || []).filter((id) =>
       sup(state, id) > 0 && (C()[id].potion || 0) > 0 && (C()[id].potion || 0) <= potions &&
-      cost(state, id) <= real && id !== 'possession'); // 支配はCPUが扱いにくいので自動購入しない
+      cost(state, id) <= real && id !== 'possession' && // 支配はCPUが扱いにくいので自動購入しない
+      // **engine が拒否する手を返さない**（この経路は chooseBuy の最終ガードを early return で飛び越えるため、
+      //   ここで見ないと本番 livelock になる）。夜想曲の錯乱＝アクションカードを購入できない、が実例。
+      !splitBlocked(state, id) &&
+      (!DOM.engine || !DOM.engine.canBuyCard || DOM.engine.canBuyCard(state, state.turn.active, id)));
     for (const id of GAIN_ORDER) { if (cands.includes(id)) return id; }
     return cands[0] || null;
   }
@@ -1627,7 +1631,9 @@
         if (state.turn.noBuyCards) return { type: 'BLACK_MARKET_SKIP' }; // 冒険：使節団の追加ターンはカード購入不可（闇市場も購入）＝見送る
         const coins = state.turn.coins;
         // 負債カード（元手/技術者 等）は闇市場で買わない（余計な負債を負わない）。
-        const aff = pd.revealed.filter((id) => cost(state, id) <= coins && !isType(id, 'curse') && !((C()[id] && C()[id].debt) > 0));
+        // 夜想曲：錯乱を返したターンは闇市場でもアクションカードを買えない（engine が拒否＝提案すると無限ループ）。
+        const aff = pd.revealed.filter((id) => cost(state, id) <= coins && !isType(id, 'curse') && !((C()[id] && C()[id].debt) > 0) &&
+          !(state.turn.cantBuyActions && pd.player === state.turn.active && isType(id, 'action')));
         const premium = GAIN_ORDER.slice(0, GAIN_ORDER.indexOf('silver'));
         let pick = null;
         for (const id of premium) { if (aff.includes(id)) { pick = id; break; } }
@@ -2200,6 +2206,9 @@
       case 'idol': // 偶像（財宝アタック）のリアクション窓
         if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
         return { type: 'IDOL_REACT' };
+      case 'attack_window': // 「アタックを使用した」ことだけに反応する窓（人狼のドロー側／迫害者のインプ側）
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'ATTACK_WINDOW_REACT' };
       /* ---- 夜想曲：夜行カード ---- */
       case 'cobbler_gain': // カブラー＝コスト4以下を手札に獲得（強制）
         return { type: 'COBBLER_GAIN', card: bestGain(state, 4) };

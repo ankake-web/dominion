@@ -1167,6 +1167,217 @@ console.log('\n=== N4: 取り替え子／ネクロマンサー＋ゾンビ／幽
   ok(!(t.players[0].ghostSetAside || []).length, '脇なし');
 }
 
+/* ============================================================
+   敵対レビュー（多エージェント6観点・各 finding を node 再現で確定）の回帰テスト
+   ============================================================ */
+console.log('\n=== 敵対レビュー回帰: 単体カードの裁定 ===');
+{
+  // 悲劇のヒーロー＝**廃棄できなくても財宝は獲得する**（ネクロマンサー／玉座・幽霊の2回目）
+  const s = mk(king(['tragic_hero', 'necromancer']));
+  s.trash.push('tragic_hero');
+  me(s).hand = ['necromancer', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  me(s).deck = ['estate', 'estate', 'estate'];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'necromancer' });
+  t = reduce(t, { type: 'NECROMANCER_PLAY', index: t.trash.indexOf('tragic_hero') });
+  ok(me(t).hand.length >= 8, '手札8枚以上になる');
+  ok(t.pending && t.pending.type === 'tragic_hero_gain', '廃棄できなくても財宝の獲得は起きる');
+}
+{
+  // 迫害者＝「使用したその迫害者以外のカードが場にあるか」（同名かどうかは関係ない）
+  const s = mk(king(['tormentor']));
+  me(s).inPlay = ['tormentor']; me(s).hand = ['tormentor'];
+  s.hexes.deck = ['greed'];
+  const before = s.supply.imp;
+  const t = reduce(s, { type: 'PLAY_ACTION', card: 'tormentor' });
+  ok(t.supply.imp === before, '場に別の迫害者があればインプは獲得しない');
+  ok(foe(t).deck[0] === 'copper', '呪詛を配る');
+}
+{
+  // 羊飼い＝捨て札トリガー（坑道の金貨）を解決してから引く
+  const s = mk(king(['shepherd', 'tunnel']));
+  me(s).hand = ['shepherd', 'tunnel', 'estate'];
+  me(s).deck = []; me(s).discard = [];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'shepherd' });
+  t = reduce(t, { type: 'SHEPHERD_DISCARD', cards: ['tunnel', 'estate'] });
+  ok(me(t).hand.includes('gold'), '坑道の金貨がシャッフルに入って引ける hand=' + me(t).hand);
+}
+{
+  // ウィル・オ・ウィスプ＝コストは3成分（負債コストの札は「$2以下」ではない）
+  const s = mk(['will_o_wisp', 'engineer'].concat(FILLER).slice(0, 10));
+  s.supply.will_o_wisp = 12;
+  me(s).hand = ['will_o_wisp']; me(s).deck = ['copper', 'engineer', 'estate'];
+  const t = reduce(s, { type: 'PLAY_ACTION', card: 'will_o_wisp' });
+  ok(!me(t).hand.includes('engineer') && me(t).deck[0] === 'engineer',
+    '負債コストのカードは手札に加えない（$0+負債4 は $2以下ではない）');
+  const u = mk(king(['leprechaun']));
+  u.players[0].hand = ['will_o_wisp']; u.players[0].deck = ['copper', 'wish'];
+  const v = reduce(u, { type: 'PLAY_ACTION', card: 'will_o_wisp' });
+  ok(v.players[0].hand.includes('wish'), '非サプライの願い($0)は手札に加えられる（costUpTo を使ってはいけない）');
+}
+{
+  // 秘密の洞窟＝手札3枚未満でも「捨てる」を選べる（全部捨てるがボーナスは無い）
+  const s = mk(king(['secret_cave', 'tunnel']));
+  me(s).hand = ['secret_cave', 'tunnel']; me(s).deck = [];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'secret_cave' });
+  t = reduce(t, { type: 'SECRET_CAVE_DISCARD', cards: ['tunnel'] });
+  ok(!t.pending && !me(t).delayedEffects.length, '3枚未満でも捨てられる（持続にはならない）');
+  ok(me(t).discard.includes('gold'), '捨て札トリガー（坑道）は起きる');
+}
+{
+  // 家宝に置き換えた銅貨はサプライの銅貨の山に戻る
+  const a = E.createInitialState(['a', 'b'], king(['village']), { startActive: 0 });
+  const b = E.createInitialState(['a', 'b'], DOM.KINGDOM_NOCTURNE.slice(), { startActive: 0 });
+  ok(a.supply.copper === 46, '家宝なし＝60-7×2=46');
+  ok(b.supply.copper === 50, '家宝2種＝置き換えた銅貨2枚が山に戻る（60-5×2=50）');
+}
+{
+  // 戦争＝ポーション費用/負債コストのカードは「コスト$3か$4」ではない
+  const s = mk(['skulk', 'transmute'].concat(FILLER).slice(0, 10));
+  me(s).hand = ['skulk']; s.hexes.deck = ['war'];
+  foe(s).deck = ['transmute', 'village', 'copper'];
+  const t = reduce(s, { type: 'PLAY_ACTION', card: 'skulk' });
+  ok(t.trash.includes('village') && !t.trash.includes('transmute'),
+    '変成（$0+ポーション）は飛ばして村（$3）を廃棄する');
+}
+{
+  // 川の恵み＝ドルイドで脇から受けても「ターン終了時 +1カード」が働く
+  const s = mk(king(['druid']));
+  me(s).hand = ['druid'];
+  me(s).deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'gold'];
+  s.boons.druid = ['the_rivers_gift', 'the_seas_gift', 'the_moons_gift'];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'druid' });
+  t = reduce(t, { type: 'DRUID_BOON', boon: 'the_rivers_gift' });
+  ok(me(t).riverDraws === 1, 'ドルイドで受けても川の恵みを数える');
+  t = reduce(reduce(t, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+  ok(me(t).hand.length === 6, '先引き5枚の後に +1カード（計6枚）');
+}
+{
+  // ピクシーで川の恵みを2回受けたら2枚引く
+  const s = mk(king(['pixie']));
+  me(s).hand = ['pixie'];
+  me(s).deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'gold', 'gold'];
+  s.boons.deck = ['the_rivers_gift'];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'pixie' });
+  t = reduce(t, { type: 'PIXIE_TRASH', trash: true });
+  ok(me(t).riverDraws === 2, '2回受けたら2回ぶん数える');
+}
+
+console.log('\n=== 敵対レビュー回帰: 夜フェイズの横断影響 ===');
+{
+  // 人狼＝夜フェイズでも習性(Way)を使える（アクションカードだから）
+  const s = mk(king(['werewolf']), { ways: ['way_of_the_otter'] });
+  me(s).hand = ['werewolf']; me(s).deck = ['copper', 'copper', 'silver', 'gold'];
+  foe(s).hand = ['copper', 'copper'];
+  let t = reduce(reduce(s, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'werewolf', way: 'way_of_the_otter' });
+  ok(me(t).hand.length === 2 && (!t.hexes || t.hexes.discard.length === 0),
+    '夜フェイズの人狼に習性を使うと記載効果（呪詛）ではなく習性が働く');
+}
+{
+  // 人狼＝夜フェイズでも御料車（アクション解決直後の呼び出し窓）が開く
+  const s = mk(king(['werewolf', 'royal_carriage']));
+  me(s).hand = ['werewolf']; me(s).tavern = ['royal_carriage'];
+  foe(s).hand = ['copper', 'copper', 'copper'];
+  let t = reduce(reduce(s, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'werewolf' });
+  let g = 0;
+  while (t.pending && t.pending.type !== 'after_action' && g++ < 8) {
+    const a = CPU.decide(t, t.pending.player); if (!a) break; t = reduce(t, a);
+  }
+  ok(t.pending && t.pending.type === 'after_action', '御料車の呼び出し窓が開く');
+}
+{
+  // 女魔術師（帝国）の置換は夜フェイズの人狼にも効く
+  const s = mk(king(['werewolf', 'enchantress']));
+  me(s).hand = ['werewolf']; me(s).deck = ['silver', 'silver'];
+  me(s).enchanted = true;
+  foe(s).hand = ['copper', 'copper'];
+  let t = reduce(reduce(s, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'werewolf' });
+  ok(me(t).hand.length === 1 && me(t).enchanted === false,
+    '記載効果の代わりに +1カード +1アクション（呪詛は配らない）');
+  ok(!t.hexes || t.hexes.discard.length === 0, '呪詛はめくらない');
+}
+{
+  // 浮浪児（暗黒時代）は夜フェイズのアタックでも傭兵に化ける
+  const s = mk(king(['werewolf', 'urchin']));
+  s.supply.mercenary = 10;
+  me(s).hand = ['werewolf']; me(s).inPlay = ['urchin'];
+  foe(s).hand = ['copper', 'copper', 'copper', 'copper', 'copper'];
+  let t = reduce(reduce(s, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+  t = reduce(t, { type: 'PLAY_NIGHT', card: 'werewolf' });
+  ok(t.pending && t.pending.type === 'urchin_trash', '浮浪児のトラップが開く');
+  t = reduce(t, { type: 'URCHIN_TRASH', trash: true });
+  ok(me(t).discard.includes('mercenary') && me(t).inPlay.includes('werewolf'),
+    '傭兵を獲得し、人狼は場に出て効果を解決する');
+}
+{
+  // 人狼をアクションフェイズで使ってもアタックのリアクション窓は開く
+  const s = mk(king(['werewolf', 'guard_dog']));
+  me(s).hand = ['werewolf']; me(s).deck = ['silver', 'silver', 'silver', 'gold'];
+  foe(s).hand = ['guard_dog', 'moat', 'copper', 'copper', 'copper'];
+  foe(s).deck = ['silver', 'silver', 'silver', 'silver'];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'werewolf' });
+  ok(t.pending && t.pending.type === 'attack_window', 'アタック誘発リアクションの窓が開く');
+  ok(me(t).hand.length === 0, '窓はドローより前に開く');
+  t = reduce(t, { type: 'ATTACK_WINDOW_REACT' });
+  ok(me(t).hand.length === 3 && !t.pending, '窓を閉じてから +3カード');
+}
+{
+  // 迫害者がインプを獲得する側でもリアクション窓は開く
+  const s = mk(king(['tormentor', 'guard_dog']));
+  me(s).hand = ['tormentor'];
+  foe(s).hand = ['guard_dog', 'copper', 'copper', 'copper', 'copper'];
+  const before = s.supply.imp;
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'tormentor' });
+  ok(t.pending && t.pending.type === 'attack_window', 'インプ側でも窓が開く');
+  ok(t.supply.imp === before, '窓を閉じるまでインプは獲得しない');
+  t = reduce(t, { type: 'ATTACK_WINDOW_REACT' });
+  ok(t.supply.imp === before - 1, '窓を閉じてからインプを獲得');
+}
+{
+  // 片付け開始時の効果は「購入フェイズ」ではない（夜行カードの有無で結果が変わらない）
+  const run = (withNight) => {
+    const s = mk(king(['improve', 'peddler', 'guardian']));
+    s.landmarks = ['basilica']; s.landmarkVP = { basilica: 12 };
+    me(s).hand = withNight ? ['guardian'] : [];
+    me(s).inPlay = ['improve', 'village', 'village', 'village'];
+    s.turn.improvePlays = 1;
+    let t = reduce(s, { type: 'END_ACTION_PHASE' });
+    t.turn.coins = 5;
+    t = reduce(t, { type: 'END_TURN' });
+    if (withNight) t = reduce(t, { type: 'END_TURN' });
+    const cost = E.cardCost(t, 'peddler');
+    t = reduce(t, { type: 'IMPROVE_TRASH', card: 'village' });
+    t = reduce(t, { type: 'IMPROVE_GAIN', card: 'militia' });
+    return { cost, vp: me(t).vpTokens || 0 };
+  };
+  const a = run(false), b = run(true);
+  ok(a.cost === b.cost && a.vp === b.vp,
+    '手札の夜行カードの有無で片付け開始時の結果が変わらない（cost ' + a.cost + '/' + b.cost + ' vp ' + a.vp + '/' + b.vp + '）');
+  ok(a.vp === 0, '片付け開始時の獲得は購入フェイズの獲得ではない（公会堂は発火しない）');
+}
+
+console.log('\n=== 敵対レビュー回帰: CPU が錯乱で無限ループしない ===');
+{
+  const K = ['alchemist', 'skulk', 'bard', 'tracker', 'ghost_town', 'cursed_village', 'crypt', 'village', 'market', 'smithy'];
+  let s = E.createInitialState([{ name: 'C0', isCpu: true, level: 'normal' }, { name: 'C1', isCpu: true, level: 'normal' }], K, { startActive: 0 });
+  s.players[0].deluded = true;
+  s.players[0].hand = ['copper', 'copper', 'copper', 'potion'];
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper'];
+  s = reduce(s, { type: 'END_ACTION_PHASE' });
+  s = reduce(s, { type: 'PLAY_ALL_TREASURES' });
+  ok(E.canBuyCard(s, 0, 'alchemist') === false, '錯乱中はポーション費用のアクションも買えない');
+  let changed = false;
+  for (let i = 0; i < 5; i++) {
+    const a = CPU.decide(s);
+    const before = JSON.stringify(s);
+    s = reduce(s, a);
+    if (JSON.stringify(s) !== before) { changed = true; break; }
+  }
+  ok(changed, 'CPU は engine が拒否する購入を出し続けない（ポーション経路のガード）');
+}
+
 console.log('\n=== 回帰: 呪いの森を受けて購入すると夜行カードを1枚も使えない ===');
 {
   /* 正本「実装前に必読」1 が名指しする経路：呪いの森（冒険）を受けた状態で購入すると手札が山札に載る
