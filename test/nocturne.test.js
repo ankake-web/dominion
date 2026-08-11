@@ -1099,7 +1099,7 @@ console.log('\n=== N4: 取り替え子／ネクロマンサー＋ゾンビ／幽
   ok(t.pending && t.pending.type === 'necromancer', 'pending=' + (t.pending && t.pending.type));
   const idx = t.trash.indexOf('zombie_spy');
   t = reduce(t, { type: 'NECROMANCER_PLAY', index: idx });
-  ok(t.trashFaceDown.includes(idx), '裏返した');
+  ok((t.trashFaceDown['zombie_spy'] || 0) === 1, '裏返した（id→枚数で持つ＝廃棄置き場が動いてもズレない）');
   ok(t.trash.length === 3, '廃棄置き場に残る');
   ok(t.players[0].hand.length === 1, '+1カード hand=' + t.players[0].hand.length);
   if (t.pending && t.pending.type === 'zombie_spy') t = reduce(t, { type: 'ZOMBIE_SPY', discard: false });
@@ -1108,7 +1108,7 @@ console.log('\n=== N4: 取り替え子／ネクロマンサー＋ゾンビ／幽
   ok(cand.indexOf(idx) < 0, '裏向きは選べない');
   // ターン終了で表向きに戻る
   t = reduce(reduce(t, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
-  ok(t.trashFaceDown.length === 0, 'ターン終了で全部表向き');
+  ok(Object.keys(t.trashFaceDown).length === 0, 'ターン終了で全部表向き');
 }
 { // ネクロマンサー＝持続カードは選べない
   let s = mkN(['necromancer']); s.players[0].hand = ['necromancer'];

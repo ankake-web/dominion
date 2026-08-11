@@ -941,7 +941,7 @@
       castles,  // 帝国：城の混合山（実カードid配列・昇順。無ければ null）。supply.castles と長さ同期。
       baneCard, // 収穫祭：若き魔女の災いカード（無ければ null）
       trash,    // 廃棄置き場（夜想曲：ネクロマンサーがあればゾンビ3枚が最初から入っている）
-      trashFaceDown: [], // 夜想曲：ネクロマンサーで裏返した廃棄置き場のカードの位置（trash のインデックス列。ターン終了で全解除）
+      trashFaceDown: {}, // 夜想曲：ネクロマンサーで裏返した廃棄置き場のカード（id→枚数。ターン終了で全解除）
       blackMarket, // 闇市場デッキ（無ければ null）
       boons,          // 夜想曲：祝福デッキ {deck, discard, druid}（非カード。幸運が無ければ null）
       hexes,          // 夜想曲：呪詛デッキ {deck, discard}（非カード。不運が無ければ null）
@@ -7159,7 +7159,10 @@
   function receiveHex(state, pi) {
     const t = state.turn;
     if (!state.hexes) return;
-    if (t && t.currentHex) { (state.hexSelfQueue = state.hexSelfQueue || []).push(pi); return; }
+    /* 別の呪詛の配布中（currentHex）や**獲得の処理中**（_gainDepth>0＝呪われた村の獲得時など）は、
+       その場で pending を立てると同じ獲得で開くはずの窓（望楼/そり/取り替え子の交換…）を握りつぶす。
+       reduce 末尾の再開網に譲る（§0-26 の教訓）。 */
+    if ((t && t.currentHex) || (state._gainDepth || 0) > 0) { (state.hexSelfQueue = state.hexSelfQueue || []).push(pi); return; }
     const hex = takeHex(state);
     if (!hex) return;
     log(state, `呪詛「${lsName(hex)}」がめくられた。`);
@@ -7256,9 +7259,10 @@
           rev.push(c);
         }
         if (rev.length || found) reveal(state, pi, (found ? rev.concat([found]) : rev).slice(-8), '戦争');
-        rev.forEach((c) => p.discard.push(c));
+        // 公式の順序＝「そのカードを廃棄し、残りを捨てる」（廃棄時ドローの結果が変わる）。
         if (found) { trashCard(state, pi, found); log(state, `${p.name} は戦争で「${C()[found].name}」を廃棄した。`); }
         else log(state, `${p.name} は戦争でコスト3〜4のカードを見つけられなかった（廃棄なし）。`);
+        rev.forEach((c) => p.discard.push(c));
         if (rev.length) triggerOnDiscard(state, pi, rev);
         break;
       }
@@ -7309,11 +7313,18 @@
   /* ネクロマンサーの対象＝廃棄置き場の「**表向き**・持続でない」アクションカード（インデックス列を返す）。
      裏向きフラグは**廃棄置き場の物理カード1枚ずつ**に付く（同名が2枚あれば片方だけ裏向きにできる）。 */
   function necromancerTargets(state) {
-    const fd = state.trashFaceDown || [];
+    /* 裏向きフラグは**廃棄置き場の物理カード1枚ずつ**に付くが、`state.trash` は id 配列で、
+       墓暴き/待ち伏せ/盗賊/城塞 などで**途中から抜ける**ため「添字」で覚えるとズレる
+       （ズレると同じゾンビを同一ターンに2回使えてしまう）。**id ごとの枚数**で持つ。 */
+    const fd = state.trashFaceDown || {};
+    const used = {};
     const out = [];
     (state.trash || []).forEach((c, i) => {
-      if (fd.indexOf(i) >= 0) return;
       if (!DOM.isType(c, 'action') || DOM.isType(c, 'duration')) return;
+      const down = fd[c] || 0;
+      const seen = used[c] || 0;
+      used[c] = seen + 1;
+      if (seen < down) return; // このidの裏向きぶんを先に消費する
       out.push(i);
     });
     return out;
@@ -7391,7 +7402,7 @@
     state.replay = []; // 玉座の間の保留分が万一残っても次手番に持ち越さない
     state.reveals = {}; state.revealLatest = null; // 公開表示は手番をまたいで持ち越さない
     // 夜想曲：ネクロマンサーで裏返した廃棄置き場のカードは**ターン終了時にすべて表向きに戻す**（毎ターン使える）。
-    state.trashFaceDown = [];
+    state.trashFaceDown = {};
     const pi = state.turn.active;
     const p = state.players[pi];
     // 帝国：女魔術師の enchanted（「その手番で最初のアクションが置換」）は、その相手の手番が終われば消える。
@@ -15237,7 +15248,8 @@
         if (idx == null || cand.indexOf(idx) < 0) return state;
         const card = state.trash[idx];
         state.pending = null;
-        (state.trashFaceDown = state.trashFaceDown || []).push(idx); // **裏返してから**使用する
+        state.trashFaceDown = state.trashFaceDown || {};
+        state.trashFaceDown[card] = (state.trashFaceDown[card] || 0) + 1; // **裏返してから**使用する
         log(state, `${state.players[pd.player].name} はネクロマンサーで廃棄置き場の「${C()[card].name}」を使用した。`);
         // ⚠ ネクロマンサーは Command 種別を持たない＝「命令は命令をプレイできない」ガードを適用しない。
         //    カードは動かさないので「これ」の自己移動は失敗する（＝命令機構の _cmd をそのまま使う）。

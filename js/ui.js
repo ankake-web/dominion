@@ -1086,8 +1086,9 @@
         ? '🔰 夜フェーズ：光っている夜行カードをタップして使えます（何枚でも使えます）。終わったら「ターンを終える」。'
         : '🔰 夜フェーズ：使える夜行カードはありません。「ターンを終える」で片付けに進みます。';
     }
-    const hasTreasure = me.hand.some((c) => DOM.CARDS[c].types.includes('treasure'));
+    const hasTreasure = me.hand.some((c) => DOM.CARDS[c].types.includes('treasure') && c !== 'cursed_gold');
     if (hasTreasure) return '🔰 購入フェーズ：まず「財宝を全部出す」でコインを出しましょう。';
+    if (me.hand.includes('cursed_gold')) return '🔰 購入フェーズ：呪われた金貨は「財宝を全部出す」では出ません（出すと呪いを1枚獲得します）。カードをタップして使います。';
     if (t.buys > 0) {
       const recs = recommendedBuys(state);
       return recs.length
@@ -1254,7 +1255,9 @@
       : null;
     // 非サプライの数値キー山（購入不可＝交換/専用獲得のみ）：冒険のトラベラー成長先・収穫祭の賞品・暗黒時代の戦利品/狂人/傭兵。
     //   王国枠に無く供給されている（state.supply に在る）ものを表示して、残枚数を可視化する。
-    const nonSupplyIds = [].concat((DOM.POOLS && DOM.POOLS.travellers) || [], (DOM.POOLS && DOM.POOLS.prizes) || [], (DOM.POOLS && DOM.POOLS.darkages_np) || [])
+    //   夜想曲の精霊3種／願い／コウモリ、移動動物園の馬も同じ扱い（残枚数が見えないと戦略が立たない）。
+    const nonSupplyIds = [].concat((DOM.POOLS && DOM.POOLS.travellers) || [], (DOM.POOLS && DOM.POOLS.prizes) || [],
+      (DOM.POOLS && DOM.POOLS.darkages_np) || [], (DOM.POOLS && DOM.POOLS.nocturne_np) || [], (DOM.POOLS && DOM.POOLS.horse) || [])
       .filter((id) => state.supply[id] != null);
     const nonSupplyPile = nonSupplyIds.length
       ? h('div', { class: 'supply-section' }, h('div', { class: 'sup-title' }, '非サプライ（交換・専用で獲得／購入不可）'),
@@ -1446,6 +1449,44 @@
     if ((me.princes || []).length && me !== active) matRows.push(h('div', { class: 'mat-row' },
       h('span', { class: 'mat-label' }, '👑 王子の脇: '),
       me.princes.map((id) => h('span', { class: 'chip-card ' + typeClass(id) }, DOM.CARDS[id].name))));
+    /* 夜想曲：状態（錯乱/嫉妬/生活苦/二重苦/森の迷子）・受け手の前に置かれた祝福・保持中の祝福・
+       脇札（幽霊＝公開／納骨堂＝所有者のみ枚数）を可視化する。どれも非カードだが盤面の判断材料になる。 */
+    const lsName = (id) => ((DOM.LANDSCAPES || {})[id] || {}).name || id;
+    state.players.forEach((pl, idx) => {
+      const bits = [];
+      if (pl.deluded) bits.push('🌀 錯乱');
+      if (pl.envious) bits.push('😖 嫉妬');
+      if (pl.misery === 1) bits.push('💀 生活苦(-2点)');
+      else if (pl.misery >= 2) bits.push('💀 二重苦(-4点)');
+      if (state.lostInTheWoods === idx) bits.push('🌲 森の迷子');
+      (pl.boonsInFront || []).forEach((b) => bits.push('✨ ' + lsName(b)));
+      (pl.boonsHeld || []).forEach((b) => bits.push('🎁 ' + lsName(b) + '（次のターンに受ける）'));
+      if ((pl.ghostSetAside || []).length) bits.push('👻 幽霊の脇: ' + pl.ghostSetAside.map((c) => DOM.CARDS[c].name).join('・'));
+      if ((pl.cryptSetAside || []).length) {
+        bits.push('⚰️ 納骨堂の脇: ' + (idx === viewer ? pl.cryptSetAside.map((c) => DOM.CARDS[c].name).join('・') : pl.cryptSetAside.length + '枚'));
+      }
+      if (bits.length) matRows.push(h('div', { class: 'mat-row' },
+        h('span', { class: 'mat-label' }, pl.name + ': '),
+        bits.map((b) => h('span', { class: 'chip-card' }, b))));
+    });
+    // 夜想曲：祝福/呪詛の山の残枚数と、捨て札の一番上（公開情報）。
+    if (state.boons || state.hexes) {
+      const bits = [];
+      if (state.boons) {
+        bits.push('✨ 祝福 山' + state.boons.deck.length + '・捨' + state.boons.discard.length);
+        const top = state.boons.discard[state.boons.discard.length - 1];
+        if (top && top !== 'back') bits.push('直前: ' + lsName(top));
+        (state.boons.druid || []).forEach((b) => bits.push('🌿 ' + lsName(b)));
+      }
+      if (state.hexes) {
+        bits.push('☠️ 呪詛 山' + state.hexes.deck.length + '・捨' + state.hexes.discard.length);
+        const top = state.hexes.discard[state.hexes.discard.length - 1];
+        if (top && top !== 'back') bits.push('直前: ' + lsName(top));
+      }
+      matRows.push(h('div', { class: 'mat-row' },
+        h('span', { class: 'mat-label' }, '祝福／呪詛: '),
+        bits.map((b) => h('span', { class: 'chip-card' }, b))));
+    }
     const matsBlock = matRows.length ? h('div', { class: 'mats' }, matRows) : null;
 
     // 手札（種類でグループ化・重ね表示）。支配中は操作対象（被支配者）の手札を出す。
@@ -1634,7 +1675,8 @@
     // 支配中は操作対象（被支配者=t.active）の手札で判定する（財宝を出すのも engine では被支配者の手札）。
     const hp = (t.possessedBy != null && t.possessedBy === viewer) ? state.players[t.active] : state.players[viewer];
     // 公式：一度でも購入（カード/イベント）したら、そのターンはもう財宝を出せない（engine が拒否する＝ボタンも無効化）。
-    const hasTreasure = hp.hand.some((c) => isTreasureNow(state, c)) && !t.treasuresLocked;
+    // 夜想曲：呪われた金貨は engine 側で「財宝を全部出す」の対象外（出すと呪いを獲得する）＝ボタン条件も揃える。
+    const hasTreasure = hp.hand.some((c) => isTreasureNow(state, c) && c !== 'cursed_gold') && !t.treasuresLocked;
     // ギルド：財源(Coffers)を持っていれば「財源を使う」ボタン（購入フェイズ・1枚=+1コイン）。
     const cofferBtn = (t.active === viewer && (state.players[viewer].coffers || 0) > 0)
       ? h('button', { class: 'btn btn-block', style: 'background:#b8860b;color:#fff', onclick: () => { UI.coffersOpen = true; UI.amount = null; render(); } }, '💰 財源を使う（' + state.players[viewer].coffers + '）')
@@ -3557,9 +3599,11 @@
     const coins = state.turn.coins;
     const inDebt = (p.debt || 0) > 0; // 帝国：負債があると闇市場でも購入不可
     const noBuy = !!state.turn.noBuyCards; // 冒険：使節団の追加ターンはカードを購入できない（闇市場の購入も購入）
+    // 夜想曲：錯乱を返したターンは闇市場でもアクションカードを買えない（engine が拒否＝押せるチップにしない）。
+    const noAct = !!state.turn.cantBuyActions && pd.player === state.turn.active;
     const chips = pd.revealed.length ? pd.revealed.map((id) => {
       const cst = effCost(state, id);
-      const can = cst <= coins && !inDebt && !noBuy;
+      const can = cst <= coins && !inDebt && !noBuy && !(noAct && DOM.isType(id, 'action'));
       return h('div', { class: 'pick-supply' },
         cardEl(id, { size: 'sm', extra: can ? 'selectable' : 'disabled', onClick: can ? () => openPickZoom(id, '購入する（$' + cst + '）', () => dispatch({ type: 'BLACK_MARKET_BUY', card: id })) : null }),
         h('div', { class: 'pick-remain' }, '$' + cst));

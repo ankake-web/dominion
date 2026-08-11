@@ -237,6 +237,57 @@ try {
     showAs(s, 0);
     ok(actionable(), '修道院＝手札が空でも閉じられる');
   }
+  console.log('\n=== 敵対レビュー回帰: 盤面表示と押せないボタン ===');
+  {
+    // 非サプライ5山（精霊3／願い／コウモリ）が盤面に出る
+    const s = mk(['exorcist', 'vampire', 'leprechaun']);
+    showAs(s, 0);
+    ok(byText('.sup-title', '非サプライ'), '非サプライの節が出る');
+    const pile = (id) => $all('.pile').find((e) => e.getAttribute('data-pile') === id);
+    ['will_o_wisp', 'imp', 'ghost', 'wish', 'bat'].forEach((id) => ok(!!pile(id), id + ' の山が盤面に出る'));
+  }
+  {
+    // 状態・保持中の祝福・脇札が盤面に出る
+    const s = mk(['bard', 'skulk', 'crypt', 'cemetery']);
+    s.players[0].deluded = true; s.players[0].misery = 2;
+    s.players[0].boonsInFront = ['the_fields_gift'];
+    s.players[0].boonsHeld = ['the_seas_gift'];
+    s.players[0].ghostSetAside = ['village'];
+    s.players[0].cryptSetAside = ['gold'];
+    s.lostInTheWoods = 0;
+    showAs(s, 0);
+    ok(!runtimeError, '状態つきの盤面が例外なく描画される');
+    ok(byText('.mat-row', '錯乱') && byText('.mat-row', '二重苦'), '状態が盤面に出る');
+    ok(byText('.mat-row', '森の迷子'), '森の迷子が盤面に出る');
+    ok(byText('.mat-row', '田畑の恵み') && byText('.mat-row', '次のターンに受ける'), '祝福（前に置く/保持）が盤面に出る');
+    ok(byText('.mat-row', '幽霊の脇') && byText('.mat-row', '納骨堂の脇'), '脇札が盤面に出る');
+    ok(byText('.mat-row', '祝福 山') && byText('.mat-row', '呪詛 山'), '祝福/呪詛の山の残枚数が出る');
+  }
+  {
+    // 呪われた金貨しか無いときは「財宝を全部出す」を押せない（engine が出さない＝押せても何も起きない）
+    const s = mk(['pooka']);
+    s.players[0].hand = ['cursed_gold'];
+    s.turn.phase = 'buy';
+    showAs(s, 0);
+    const btn = byText('.actions-bar button', '財宝を全部出す');
+    ok(btn && btn.disabled, '呪われた金貨だけなら「財宝を全部出す」は押せない');
+    UI.beginner = true; showAs(s, 0);
+    ok(byText('.coach-bar', '呪われた金貨'), '初心者モードの案内が「タップして使う」に切り替わる');
+    UI.beginner = false;
+  }
+  {
+    // 錯乱中は闇市場のアクションカードも押せない
+    const s = mk(['black_market', 'village']);
+    s.turn.cantBuyActions = true; s.turn.coins = 8;
+    s.pending = { type: 'black_market', stage: 'play', player: 0, revealed: ['village', 'silver'] };
+    showAs(s, 0);
+    ok(actionable(), '闇市場のモーダルは閉じられる');
+    // 押せないチップは onClick が付かない＝aria-label も無いので、公開順（村・銀貨）とクラスで見る
+    const chips = $all('.modal .pick-supply .card');
+    ok(chips.length === 2 && chips[0].className.indexOf('disabled') >= 0,
+      '錯乱中は闇市場のアクションカード（村）が押せない');
+    ok(chips[1].className.indexOf('selectable') >= 0, '銀貨は買える');
+  }
   {
     // 錯乱＝アクションカードの購入ボタンを出さない（engine 拒否とUIを揃える）
     const s = mk(['bard', 'skulk']);
