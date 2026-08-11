@@ -939,6 +939,56 @@
     if (buyable('alms') && !p.inPlay.some((c) => isTreasure(c)) && firstGainable(state, (id) => costUpTo(state, id, 4))) return 'alms';
     if (buyable('scouting_party') && coins >= 2 && cardBuy == null) return 'scouting_party';
     // 保存/移動遊園地/使節団/渡し船/立案/探索 は CPU は買わない（価値が読みにくい／効果が薄い＝skip）。
+
+    /* ---- 移動動物園イベント（負債なし・馬/追放/追加ターン）---- */
+    // 同盟（$10）＝属州+公領+屋敷+金貨+銀貨+銅貨を一気に獲得（VP局面なら属州1枚より強い）。
+    if (buyable('alliance') && wantVP && sup(state, 'province') > 0) return 'alliance';
+    // 植民（$10）＝アクションの山それぞれから1枚ずつ。大量獲得＝3山切れが一気に近づくので終盤にリードしていれば強い。
+    if (buyable('populate') && (DOM.engine.populatePiles(state) || []).length >= 4 &&
+        !(cardBuy && cost(state, cardBuy) >= 8)) return 'populate';
+    // 包領（$8）＝金貨＋公領を追放（3点を確保しつつデッキを汚さない）。VP局面で。
+    if (buyable('enclave') && wantVP && sup(state, 'duchy') > 0 && !(cardBuy && cost(state, cardBuy) >= 8)) return 'enclave';
+    // 今を生きる（$4）＝1ゲーム1回の追加ターン。終盤（属州が減ってきたら）に取ると1手番ぶん得。
+    if (buyable('seize_the_day') && sup(state, 'province') <= 5 && !(cardBuy && cost(state, cardBuy) >= 5)) return 'seize_the_day';
+    // 刈り入れ（$7）＝次のターンの頭に金貨1枚が場に出る（実質 金貨＋前借り）。金貨を買う局面より上。
+    if (buyable('reap') && coins >= 7 && !(cardBuy && cost(state, cardBuy) >= 8)) return 'reap';
+    // 商売（$5）＝今ターン獲得した異なる名前の数だけ金貨。3種類以上獲得しているときだけ買う。
+    {
+      const distinct = [];
+      (t.gainedThisTurn || []).forEach((c) => { if (distinct.indexOf(c) < 0) distinct.push(c); });
+      if (buyable('commerce') && distinct.length >= 3 && sup(state, 'gold') > 0) return 'commerce';
+    }
+    // 特価品（$4）＝$5以下の非勝利点を1枚（相手に馬を配るのが難点なので、良い$5が取れるときだけ）。
+    if (buyable('bargain') && coins >= 4 && coins < 5 &&
+        firstGainable(state, (id) => costUpTo(state, id, 5) && notVictory(id) && cost(state, id) === 5)) return 'bargain';
+    // 要求（$5）＝馬＋$4以下を山札の上に（次の手番が強くなる）。金貨に届かない$5で。
+    if (buyable('demand') && coins >= 5 && coins < 6 && sup(state, 'horse') > 0) return 'demand';
+    // 暴走（$5）＝場が5枚以下なら馬5枚を山札の上に（次の手番が爆発する）。
+    if (buyable('stampede') && (p.inPlay.length + (p.durationCards || []).length) <= 5 &&
+        sup(state, 'horse') >= 5 && !wantVP) return 'stampede';
+    // 増大（$3）＝要らない札を $2 高いカードに変える（圧縮＋強化）。
+    if (buyable('enhance') && coins >= 3 && cardBuy == null &&
+        p.hand.some((c) => c === 'copper' || c === 'estate' || isType(c, 'curse'))) return 'enhance';
+    // 進軍（$3）＝捨て札の強いアクションをもう一度使う。
+    if (buyable('march') && coins >= 3 && cardBuy == null &&
+        p.discard.filter((c) => isType(c, 'action')).length >= 2) return 'march';
+    // 輸送（$3）＝追放マットのアクションを山札の上に回収できるときだけ。
+    if (buyable('transport') && coins >= 3 && cardBuy == null &&
+        (p.exile || []).some((c) => isType(c, 'action'))) return 'transport';
+    // 苦労（$2）＝手札に余ったアクションを使う（+1購入も付くので購入権は減らない）。
+    if (buyable('toil') && coins >= 2 && cardBuy == null && p.hand.some((c) => isType(c, 'action'))) return 'toil';
+    // 乗馬（$2）＝余りコインで馬1枚（次の手番が +2カード +1アクション）。
+    if (buyable('ride') && coins >= 2 && cardBuy == null && sup(state, 'horse') > 0) return 'ride';
+    // 博打（$2）＝+1購入つきで山札の上を1枚めくって使う（購入権は差し引きゼロ）。余りコインで。
+    if (buyable('gamble') && coins >= 2 && cardBuy == null) return 'gamble';
+    // 追求（$2）＝+1購入つき。金貨が多いデッキなら次の手番が強くなる。余りコインで。
+    if (buyable('pursue') && coins >= 2 && cardBuy == null) return 'pursue';
+    // 絶望（$0）＝呪いを増やすので、コインが $2 増えて「今ちょうど欲しい札」に届くときだけ（decidePending 側でも判断）。
+    if (buyable('desperation') && sup(state, 'curse') > 0 && (p.turns || 0) <= 10 &&
+        cardBuy == null && (coins + 2) >= 5) return 'desperation';
+    // 遅延（$0）＝手札に余ったアクションを次のターンの頭で使う。余った購入権で。
+    if (buyable('delay') && cardBuy == null && t.buys >= 2 && p.hand.some((c) => isType(c, 'action'))) return 'delay';
+    // 放逐/投資 は CPU は買わない（追放の使いどころが読みにくい＝skip）。
     return null;
   }
   function E() { return DOM.engine; }
@@ -1867,6 +1917,96 @@
       // アザラシ＝強いカードなら山札の上に置いて次の手番で使う。
       case 'way_seal_topdeck':
         return { type: 'WAY_SEAL_TOPDECK', top: cost(state, pd.card) >= 4 };
+
+      /* --- 移動動物園：イベント20種の選択待ち（すべて終端保証＝engine が拒否しない値を返す） --- */
+      // 特価品＝$5以下の勝利点でないカードで一番強いものを獲得（強制。候補ゼロなら engine 側で窓が開かない）。
+      case 'bargain_gain':
+        return { type: 'BARGAIN_GAIN', card: firstGainable(state, (id) => DOM.engine.bargainCanGain(state, id)) };
+      // 要求＝$4以下で一番強いものを山札の上に獲得（強制）。
+      case 'demand_gain':
+        return { type: 'DEMAND_GAIN', card: bestGain(state, 4) };
+      // 絶望＝呪い1枚と引き換えに +1購入 +$2。**そのコインで今すぐ買い足せるときだけ**取る（無駄な呪いを増やさない）。
+      case 'desperation': {
+        const t2 = state.turn;
+        const want = (t2.coins + 2) >= 6 || ((t2.coins + 2) >= 3 && t2.coins < 3);
+        return { type: 'DESPERATION', gain: !!want && (p.turns || 0) <= 12 };
+      }
+      // 放逐＝手札の一番要らない札（呪い/銅貨/屋敷/廃墟）を全部まとめて追放する（デッキ圧縮）。無ければ追放しない。
+      case 'banish': {
+        const junk = p.hand.filter((c) => c === 'curse' || c === 'copper' || c === 'estate' || DOM.isType(c, 'ruins'));
+        if (!junk.length) return { type: 'BANISH_EXILE', card: null };
+        const pick = junk.slice().sort((a, b) => keepValue(a) - keepValue(b))[0];
+        return { type: 'BANISH_EXILE', card: pick, n: p.hand.filter((c) => c === pick).length };
+      }
+      // 投資＝相手が使いそうな（＝相手のデッキに入りやすい）強いアクションに投資する。
+      case 'invest': {
+        const ids = DOM.engine.exilableSupplyIds(state).filter((id) => DOM.isType(id, 'action'));
+        if (!ids.length) return null; // engine は候補ゼロで窓を開かない（保険）
+        return { type: 'INVEST_EXILE', card: ids.slice().sort((a, b) => cost(state, b) - cost(state, a))[0] };
+      }
+      // 輸送＝追放マットに自分のアクションがあれば山札の上に回収、無ければサプライから強いアクションを追放。
+      case 'transport': {
+        if (pd.stage === 'mode') {
+          const mine = (p.exile || []).some((c) => DOM.isType(c, 'action'));
+          return { type: 'TRANSPORT_MODE', mode: mine ? 'return' : 'exile' };
+        }
+        if (pd.stage === 'return') {
+          const mine = (p.exile || []).filter((c) => DOM.isType(c, 'action'));
+          return { type: 'TRANSPORT_PICK', card: mine.slice().sort((a, b) => cost(state, b) - cost(state, a))[0] };
+        }
+        const ids = DOM.engine.exilableSupplyIds(state).filter((id) => DOM.isType(id, 'action'));
+        if (!ids.length) return null;
+        return { type: 'TRANSPORT_PICK', card: ids.slice().sort((a, b) => cost(state, b) - cost(state, a))[0] };
+      }
+      // 苦労＝手札で一番強いアクションを使う（アクション権を消費しない）。
+      case 'toil': {
+        const acts = p.hand.filter((c) => DOM.isType(c, 'action'));
+        if (!acts.length) return { type: 'TOIL_PLAY', card: null };
+        return { type: 'TOIL_PLAY', card: acts.slice().sort((a, b) => throneValue(b) - throneValue(a))[0] };
+      }
+      // 進軍＝捨て札で一番強いアクションを使う。
+      case 'march': {
+        const acts = p.discard.filter((c) => DOM.isType(c, 'action'));
+        if (!acts.length) return { type: 'MARCH_PLAY', card: null };
+        return { type: 'MARCH_PLAY', card: acts.slice().sort((a, b) => throneValue(b) - throneValue(a))[0] };
+      }
+      // 博打＝めくれたアクション/財宝は基本的に使う（購入フェイズなので財宝はそのままコインになる）。
+      case 'gamble':
+        return { type: 'GAMBLE_PLAY', play: true };
+      // 遅延＝手札で一番強いアクションを脇に置く（次のターンの頭でアクション権を使わずに使える）。
+      case 'delay': {
+        const acts = p.hand.filter((c) => DOM.isType(c, 'action'));
+        if (!acts.length) return { type: 'DELAY_SETASIDE', card: null };
+        return { type: 'DELAY_SETASIDE', card: acts.slice().sort((a, b) => throneValue(b) - throneValue(a))[0] };
+      }
+      // 遅延／刈り入れ＝ターン開始時の強制プレイ（選択なし）。
+      case 'event_play':
+        return { type: 'EVENT_PLAY' };
+      // 増大＝要らない札を廃棄して $2 高いカードに変える。廃棄する価値が無ければ見送る。
+      case 'enhance': {
+        if (pd.stage === 'gain') {
+          return { type: 'ENHANCE_GAIN', card: bestGain(state, pd.maxCost, { pot: pd.pot, debt: pd.debt }) };
+        }
+        const cands = p.hand.filter((c) => !DOM.isType(c, 'victory'));
+        if (!cands.length) return { type: 'ENHANCE_TRASH', card: null };
+        const pick = cands.slice().sort((a, b) => keepValue(a) - keepValue(b))[0];
+        // 廃棄しても「+$2 で取れる何か」がある場合だけ廃棄する（無ければ丸損）。
+        const ref = DOM.engine.costOf(state, pick);
+        const got = firstGainable(state, (id) => costUpTo(state, id, ref.coin + 2, { pot: ref.pot, debt: ref.debt }));
+        return { type: 'ENHANCE_TRASH', card: (got && keepValue(pick) <= 40) ? pick : null };
+      }
+      // 追求＝自分のデッキで一番多い「強い札」を指名する（山札の上4枚から拾える確率が高い）。
+      case 'pursue': {
+        const owned = allCards(p);
+        const cand = ['gold', 'province', 'silver'].concat(owned.filter((c) => DOM.isType(c, 'action')));
+        const cnt = {};
+        owned.forEach((c) => { cnt[c] = (cnt[c] || 0) + 1; });
+        const pick = cand.filter((c) => cnt[c]).sort((a, b) => (keepValue(b) * 100 + cnt[b]) - (keepValue(a) * 100 + cnt[a]))[0];
+        return { type: 'PURSUE_NAME', card: pick || 'gold' };
+      }
+      // 植民＝残りをまとめて獲得する（獲得順にこだわらない＝engine が高コスト順に処理する）。
+      case 'populate':
+        return { type: 'POPULATE_GAIN', auto: true };
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
       case 'warehouse':

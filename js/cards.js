@@ -1077,6 +1077,8 @@
     { id: 'menagerie',       kind: 'standard', name: '移動動物園セット', desc: '追放マット・馬・獲得した瞬間に反応するカード', kingdom: DOM.KINGDOM_MENAGERIE },
     // 移動動物園＋習性（横型）。固定10王国に、習性20種から2枚を無作為に付ける（アクションの効果を置き換える）。
     { id: 'menagerie-ways',  kind: 'standard', name: '移動動物園＋習性', desc: '移動動物園10種＋習性2枚（アクションの効果を置き換える横型・買わない）', kingdom: DOM.KINGDOM_MENAGERIE, waysFrom: 'menagerie' },
+    // 移動動物園＋イベント（横型）。固定10王国に、移動動物園イベント20種から2枚を無作為に付ける（購入フェイズに買う横型）。
+    { id: 'menagerie-events', kind: 'standard', name: '移動動物園＋イベント', desc: '移動動物園10種＋イベント2枚（購入フェイズに買う横型・馬/追放/追加ターン）', kingdom: DOM.KINGDOM_MENAGERIE, eventsFrom: 'menagerie' },
     // ---- おすすめ（テーマ別・固定10種）----
     { id: 'big-money',       kind: 'recommend', name: 'ビッグマネー', desc: 'お金を伸ばして属州を狙う王道',
       kingdom: ['chapel', 'moneylender', 'harbinger', 'throne_room', 'bureaucrat', 'poacher', 'market', 'mine', 'laboratory', 'sentry'] },
@@ -1164,6 +1166,7 @@
     'ev-adventures': { label: 'イベント（冒険）', get: () => DOM.EVENTS_ADVENTURES || [] },
     'pj-renaissance': { label: 'プロジェクト（ルネサンス）', get: () => DOM.PROJECTS_RENAISSANCE || [] },
     'way-menagerie': { label: '習性（移動動物園）', get: () => DOM.WAYS_MENAGERIE || [] },
+    'ev-menagerie': { label: 'イベント（移動動物園）', get: () => DOM.EVENTS_MENAGERIE || [] },
   };
   DOM.isMixSet = function (setId) { return typeof setId === 'string' && setId.indexOf('mix:') === 0; };
   // mix セットIDを分解する。不正なプール名は捨てる（サーバ側の検証と同じ挙動）。

@@ -136,8 +136,10 @@ console.log('\n=== M2: 追放マットの払い戻し（同名を獲得したと
   ok(me(s3).exile.length === 0 && me(s3).discard.filter((c) => c === 'gold').length === 3, '2枚とも捨て札に戻る（獲得したぶんと合わせて3枚）');
   const s4 = reduce(s2, { type: 'EXILE_DISCARD', n: 0 });
   ok(me(s4).exile.length === 2, '0枚（戻さない）も選べる');
+  // 公式ルールブック "You cannot discard just one of them." ＝「全部」か「1枚も」の二択。
   const s5 = reduce(s2, { type: 'EXILE_DISCARD', n: 1 });
-  ok(me(s5).exile.length === 1, '好きな枚数だけ戻せる');
+  ok(me(s5).exile.length === 2 && s5.pending && s5.pending.type === 'exile_discard',
+    '一部だけ（2枚のうち1枚）は戻せない＝状態不変で拒否し、窓は開いたまま');
 }
 
 console.log('\n=== M2: 雪深い村＝これ以降の +アクション をすべて無視 ===');
@@ -556,6 +558,352 @@ function playWay(s, card, way) {
   ok((mc.cost === 2 || mc.cost === 3) && mc.types.indexOf('action') >= 0 && mc.types.indexOf('duration') < 0,
     '脇のカードは $2/$3 の 持続でないアクション（2025エラッタ）');
   ok(s.supply[s.mouseCard] === undefined || KING.indexOf(s.mouseCard) < 0, '脇のカードはサプライの王国10種には入らない');
+}
+
+/* ============================================================
+   M4＝イベント20種（横型・購入して使う）。正本＝docs/research/menagerie_rules.md §4
+   ============================================================ */
+// イベント付きの盤面（購入フェイズ・コインたっぷり）
+function evt(events, kingdom) {
+  const s = E.createInitialState(['あなた', '相手'], (kingdom || KING).slice(), { startActive: 0, events: events.slice() });
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.turn.phase = 'buy'; s.turn.buys = 9; s.turn.coins = 30;
+  return s;
+}
+const buyEv = (s, id) => reduce(s, { type: 'BUY_EVENT', event: id });
+
+console.log('\n=== M4: 単純なイベント（同盟／乗馬／商売／包領／暴走） ===');
+{
+  const s = evt(['alliance']);
+  const s2 = buyEv(s, 'alliance');
+  ['province', 'duchy', 'estate', 'gold', 'silver', 'copper'].forEach((c) => {
+    ok(me(s2).discard.indexOf(c) >= 0, '同盟＝' + c + ' を獲得する');
+  });
+  ok(s2.turn.coins === 30 - 10 && s2.turn.buys === 8, '同盟＝$10 と 購入権1 を消費する');
+  // 山が空の種類は飛ばすだけ（残りは通常どおり獲得する）
+  const s3 = evt(['alliance']); s3.supply.province = 0;
+  const s4 = buyEv(s3, 'alliance');
+  ok(me(s4).discard.indexOf('province') < 0 && me(s4).discard.indexOf('gold') >= 0, '空の山は飛ばして残りは獲得する');
+}
+{
+  const s = evt(['ride']);
+  const before = s.supply.horse;
+  const s2 = buyEv(s, 'ride');
+  ok(before === 30 && s2.supply.horse === 29 && me(s2).discard.indexOf('horse') >= 0, '乗馬＝馬1枚を獲得（馬の山が用意される）');
+}
+{
+  // 商売＝このターンに獲得した「異なる名前」の数だけ金貨（先に数えてからまとめて獲得する）
+  const s = evt(['commerce']);
+  s.turn.gainedThisTurn = ['silver', 'silver', 'estate', 'horse'];
+  const s2 = buyEv(s, 'commerce');
+  ok(me(s2).discard.filter((c) => c === 'gold').length === 3, '商売＝異なる名前3種→金貨3枚（銀貨2枚は1種類）');
+  const s3 = buyEv(evt(['commerce']), 'commerce');
+  ok(me(s3).discard.length === 0, '1枚も獲得していないターンなら金貨を1枚も獲得しない');
+}
+{
+  const s = evt(['enclave']);
+  const d0 = s.supply.duchy;
+  const s2 = buyEv(s, 'enclave');
+  ok(me(s2).discard.indexOf('gold') >= 0, '包領＝金貨1枚を獲得');
+  ok(me(s2).exile.indexOf('duchy') >= 0 && s2.supply.duchy === d0 - 1, '包領＝サプライから公領1枚を追放（山が1枚減る）');
+  ok((s2.turn.gainedThisTurn || []).indexOf('duchy') < 0, 'サプライからの追放は「獲得」ではない');
+}
+{
+  const s = evt(['stampede']);
+  me(s).inPlay = ['copper', 'copper', 'copper'];
+  const s2 = buyEv(s, 'stampede');
+  ok(me(s2).deck.slice(0, 5).every((c) => c === 'horse'), '暴走＝場が5枚以下なら馬5枚を山札の上に獲得');
+  const s3 = evt(['stampede']);
+  me(s3).inPlay = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  const s4 = buyEv(s3, 'stampede');
+  ok(me(s4).deck.length === 0 && s4.supply.horse === 30, '場が6枚以上なら馬は1枚も得られない（購入は成立する）');
+  // 持続カードも「場にあるカード」に数える
+  const s5 = evt(['stampede']);
+  me(s5).inPlay = ['copper', 'copper', 'copper'];
+  me(s5).durationCards = ['barge', 'barge', 'barge'];
+  const s6 = buyEv(s5, 'stampede');
+  ok(me(s6).deck.length === 0, '持続カードも場のカードに数える（3+3=6枚→馬なし）');
+}
+
+console.log('\n=== M4: 特価品／要求（馬を配る・山札の上に置く） ===');
+{
+  const s = evt(['bargain']);
+  const s2 = buyEv(s, 'bargain');
+  ok(s2.pending && s2.pending.type === 'bargain_gain', '特価品＝$5以下の非勝利点を獲得する窓が開く');
+  ok(reduce(s2, { type: 'BARGAIN_GAIN', card: 'duchy' }).pending, '勝利点カードは獲得できない（拒否）');
+  ok(reduce(s2, { type: 'BARGAIN_GAIN', card: 'gold' }).pending, '$6のカードは獲得できない（拒否）');
+  const s3 = reduce(s2, { type: 'BARGAIN_GAIN', card: 'silver' });
+  ok(me(s3).discard.indexOf('silver') >= 0 && !s3.pending, '$5以下の非勝利点を獲得できる');
+  ok(foe(s3).discard.indexOf('horse') >= 0, '他のプレイヤーは各自 馬1枚を獲得する');
+}
+{
+  const s = evt(['demand']);
+  const s2 = buyEv(s, 'demand');
+  ok(me(s2).deck[0] === 'horse', '要求＝まず馬1枚を山札の上に獲得する');
+  ok(s2.pending && s2.pending.type === 'demand_gain', '続けて $4以下のカードを選ぶ');
+  const s3 = reduce(s2, { type: 'DEMAND_GAIN', card: 'silver' });
+  ok(me(s3).deck[0] === 'silver' && me(s3).deck[1] === 'horse', '$4以下のカードが一番上・馬がその下');
+  ok(reduce(s2, { type: 'DEMAND_GAIN', card: 'gold' }).pending, '$6のカードは獲得できない（拒否）');
+}
+
+console.log('\n=== M4: 絶望（1ターン1回）／今を生きる（1ゲーム1回・追加ターン） ===');
+{
+  const s = evt(['desperation']);
+  const s2 = buyEv(s, 'desperation');
+  ok(s2.pending && s2.pending.type === 'desperation', '絶望＝呪いを獲得するかの窓が開く');
+  const no = reduce(s2, { type: 'DESPERATION', gain: false });
+  ok(no.turn.buys === 8 && no.turn.coins === 30, '獲得しなければ +1購入 も +$2 も得ない');
+  const yes = reduce(s2, { type: 'DESPERATION', gain: true });
+  ok(me(yes).discard.indexOf('curse') >= 0 && yes.turn.buys === 9 && yes.turn.coins === 32,
+    '呪いを獲得したなら +1購入 +$2');
+  ok(E.canBuyEvent(yes, 0, 'desperation') === false, '絶望は1ターンに1回しか買えない');
+  ok(buyEv(yes, 'desperation') === yes || JSON.stringify(buyEv(yes, 'desperation')) === JSON.stringify(yes),
+    '2回目の購入は状態不変で拒否される（購入権を無駄にしない）');
+  // 呪いの山が空なら窓自体が開かない（+1購入 +$2 も得られない）
+  const s3 = evt(['desperation']); s3.supply.curse = 0;
+  const s4 = buyEv(s3, 'desperation');
+  ok(!s4.pending && s4.turn.buys === 8 && s4.turn.coins === 30, '呪いの山が空なら何も得られない');
+}
+{
+  const s = evt(['seize_the_day']);
+  const s2 = buyEv(s, 'seize_the_day');
+  ok(me(s2).seizedTheDay === true && me(s2).seizeExtra === true, '今を生きる＝追加ターンを予約する');
+  ok(E.canBuyEvent(s2, 0, 'seize_the_day') === false, '1ゲームに1回しか買えない');
+  const s3 = reduce(s2, { type: 'END_TURN' });
+  ok(s3.turn.active === 0 && s3.turn.isExtraTurn && s3.turn.seizeTurn, 'このターンの後に自分の追加ターンが来る');
+  ok(me(s3).seizeExtra === false, '追加ターンを消化したら旗は消える');
+  // タイブレークには数えない（追加ターンを終えた時点で freeTurns が1つ増える）
+  const s4 = reduce(reduce(s3, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+  const sc = E.scoreGame(s4);
+  ok(me(s4).freeTurns === 1 && sc.scores[0].turns - sc.scores[0].tieTurns === 1,
+    '今を生きるの追加ターンは同点時のターン数に数えない');
+}
+
+console.log('\n=== M4: 放逐／投資／輸送（追放） ===');
+{
+  const s = evt(['banish']);
+  me(s).hand = ['estate', 'estate', 'copper'];
+  const s2 = buyEv(s, 'banish');
+  ok(s2.pending && s2.pending.type === 'banish', '放逐＝追放するカードを選ぶ窓が開く');
+  const s3 = reduce(s2, { type: 'BANISH_EXILE', card: 'estate', n: 2 });
+  ok(me(s3).exile.filter((c) => c === 'estate').length === 2 && me(s3).hand.length === 1,
+    '同じ名前のカードを好きな枚数まとめて追放できる');
+  ok(reduce(s2, { type: 'BANISH_EXILE', card: 'estate', n: 3 }).pending, '手札にある枚数を超えては追放できない（拒否）');
+  const s4 = reduce(s2, { type: 'BANISH_EXILE', card: null });
+  ok(me(s4).exile.length === 0 && !s4.pending, '0枚（追放しない）も選べる');
+}
+{
+  // 投資＝他のプレイヤーがその同名を獲得すると +2カード（自分の獲得では誘発しない）
+  const s = evt(['invest'], ['village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'harbinger', 'vassal', 'workshop', 'bandit']);
+  me(s).deck = ['copper', 'copper', 'copper', 'copper'];
+  const s2 = buyEv(s, 'invest');
+  ok(s2.pending && s2.pending.type === 'invest', '投資＝サプライのアクションを選ぶ窓が開く');
+  ok(reduce(s2, { type: 'INVEST_EXILE', card: 'silver' }).pending, 'アクションでないカードは投資できない（拒否）');
+  const v0 = s2.supply.village;
+  let s3 = reduce(s2, { type: 'INVEST_EXILE', card: 'village' });
+  ok(me(s3).exile.indexOf('village') >= 0 && s3.supply.village === v0 - 1, 'サプライから追放される（山が1枚減る）');
+  ok(E.investCount(me(s3), 'village') === 1, '「投資したコピー」として記録される');
+  // 自分が村を獲得しても引かない
+  const self = reduce(s3, { type: 'BUY', card: 'village' });
+  ok(me(self).hand.length === 0, '自分の獲得では +2カード しない');
+  // 相手が村を獲得すると +2カード
+  let s4 = reduce(s3, { type: 'END_TURN' });
+  me(s4).deck = ['copper', 'copper', 'copper'];
+  const handBefore = me(s4).hand.length;
+  s4.turn.phase = 'buy'; s4.turn.coins = 10; s4.turn.buys = 1;
+  const s5 = reduce(s4, { type: 'BUY', card: 'village' });
+  ok(me(s5).hand.length === handBefore + 2, '他のプレイヤーが同名を獲得すると +2カード（相手のターン中に引く）');
+  // 追放マットから同名を戻すと以後は誘発しない
+  const back = reduce(s3, { type: 'BUY', card: 'village' });
+  const back2 = back.pending && back.pending.type === 'exile_discard'
+    ? reduce(back, { type: 'EXILE_DISCARD', n: E.exileCount(me(back), 'village') }) : back;
+  ok(E.investCount(me(back2), 'village') === 0, '追放マットから戻すと投資も解除される');
+}
+{
+  // 投資＝他のプレイヤーが「同じカードに投資」しても +2カード
+  const s = evt(['invest'], ['village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'harbinger', 'vassal', 'workshop', 'bandit']);
+  me(s).exile = ['village'];
+  me(s).exileInvested = { village: 1 };
+  let a = reduce(s, { type: 'END_TURN' });
+  me(a).deck = ['copper', 'copper', 'copper'];
+  a.turn.phase = 'buy'; a.turn.coins = 10; a.turn.buys = 2;
+  a.events = ['invest'];
+  const before = me(a).hand.length;
+  let b = buyEv(a, 'invest');
+  b = reduce(b, { type: 'INVEST_EXILE', card: 'village' });
+  ok(me(b).hand.length === before + 2, '他のプレイヤーが同じカードに投資しても +2カード');
+}
+{
+  const s = evt(['transport'], ['village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'harbinger', 'vassal', 'workshop', 'bandit']);
+  const s2 = buyEv(s, 'transport');
+  ok(s2.pending && s2.pending.type === 'transport' && s2.pending.stage === 'mode', '輸送＝二択の窓が開く');
+  const ex = reduce(s2, { type: 'TRANSPORT_MODE', mode: 'exile' });
+  const ex2 = reduce(ex, { type: 'TRANSPORT_PICK', card: 'village' });
+  ok(me(ex2).exile.indexOf('village') >= 0, '①サプライからアクション1枚を追放できる');
+  ok(E.investCount(me(ex2), 'village') === 0, '輸送での追放は「投資」ではない（+2カードは付かない）');
+  // ②追放マットのアクションを山札の上に置く
+  const s3 = evt(['transport'], ['village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'harbinger', 'vassal', 'workshop', 'bandit']);
+  me(s3).exile = ['village', 'estate'];
+  const r = reduce(buyEv(s3, 'transport'), { type: 'TRANSPORT_MODE', mode: 'return' });
+  ok(r.pending && r.pending.stage === 'return', '②追放マットから戻す窓');
+  ok(reduce(r, { type: 'TRANSPORT_PICK', card: 'estate' }).pending, 'アクションでないカードは戻せない（拒否）');
+  const r2 = reduce(r, { type: 'TRANSPORT_PICK', card: 'village' });
+  ok(me(r2).deck[0] === 'village' && me(r2).exile.indexOf('village') < 0, '追放マットのアクションを山札の上に置ける');
+  // 投資したコピーと投資していないコピーが両方あるなら「投資していない方」を動かす（投資を維持）
+  const s4 = evt(['transport'], ['village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'harbinger', 'vassal', 'workshop', 'bandit']);
+  me(s4).exile = ['village', 'village']; me(s4).exileInvested = { village: 1 };
+  const t2 = reduce(reduce(buyEv(s4, 'transport'), { type: 'TRANSPORT_MODE', mode: 'return' }), { type: 'TRANSPORT_PICK', card: 'village' });
+  ok(E.investCount(me(t2), 'village') === 1, '投資していないコピーの方を戻す（投資は維持される）');
+}
+
+console.log('\n=== M4: 苦労／進軍／博打（アクション権を使わない使用） ===');
+{
+  const s = evt(['toil']);
+  me(s).hand = ['village', 'copper'];
+  me(s).deck = ['gold', 'gold'];
+  const s2 = buyEv(s, 'toil');
+  ok(s2.turn.buys === 9, '苦労＝+1購入（1消費して+1）');
+  ok(s2.pending && s2.pending.type === 'toil', '手札のアクションを使う窓が開く');
+  const s3 = reduce(s2, { type: 'TOIL_PLAY', card: 'village' });
+  ok(me(s3).inPlay.indexOf('village') >= 0 && me(s3).hand.indexOf('gold') >= 0, '手札のアクションを使用できる');
+  ok(s3.turn.actions === 1 + 2, 'アクション権を消費しない（村の +2アクション だけ増える）');
+  const s4 = reduce(s2, { type: 'TOIL_PLAY', card: null });
+  ok(!s4.pending && me(s4).inPlay.length === 0, '使わないことも選べる');
+}
+{
+  const s = evt(['march']);
+  me(s).discard = ['village', 'copper'];
+  me(s).deck = ['gold', 'gold'];
+  const s2 = buyEv(s, 'march');
+  ok(s2.pending && s2.pending.type === 'march', '進軍＝捨て札のアクションを使う窓が開く');
+  ok(reduce(s2, { type: 'MARCH_PLAY', card: 'copper' }).pending === null && true, '財宝は選べない（拒否されて何も起きない）');
+  const s3 = reduce(s2, { type: 'MARCH_PLAY', card: 'village' });
+  ok(me(s3).inPlay.indexOf('village') >= 0 && me(s3).discard.indexOf('village') < 0, '捨て札のアクションを使用できる');
+}
+{
+  const s = evt(['gamble']);
+  me(s).deck = ['village', 'copper'];
+  me(s).hand = [];
+  const s2 = buyEv(s, 'gamble');
+  ok(s2.turn.buys === 9, '博打＝+1購入');
+  ok(me(s2).discard.indexOf('village') >= 0, '山札の一番上を捨て札にする（先に捨てる＝2025エラッタ）');
+  ok(s2.pending && s2.pending.type === 'gamble' && s2.pending.card === 'village', 'アクション/財宝なら使う窓が開く');
+  const s3 = reduce(s2, { type: 'GAMBLE_PLAY', play: true });
+  ok(me(s3).inPlay.indexOf('village') >= 0, '捨て札から使用できる');
+  const s4 = reduce(s2, { type: 'GAMBLE_PLAY', play: false });
+  ok(me(s4).discard.indexOf('village') >= 0 && me(s4).inPlay.length === 0, '使わなければ捨て札のまま残る');
+  // 勝利点カードなら窓は開かない
+  const s5 = evt(['gamble']); me(s5).deck = ['estate'];
+  const s6 = buyEv(s5, 'gamble');
+  ok(!s6.pending && me(s6).discard.indexOf('estate') >= 0, 'アクションでも財宝でもなければ捨てるだけ');
+}
+
+console.log('\n=== M4: 遅延／刈り入れ（脇に置いて次のターン開始時に使用） ===');
+{
+  const s = evt(['delay']);
+  me(s).hand = ['village'];
+  const s2 = buyEv(s, 'delay');
+  ok(s2.pending && s2.pending.type === 'delay', '遅延＝脇に置くアクションを選ぶ窓');
+  const s3 = reduce(s2, { type: 'DELAY_SETASIDE', card: 'village' });
+  ok(me(s3).eventSetAside.indexOf('village') >= 0 && me(s3).hand.length === 0, '手札のアクションを脇に置く');
+  // 次の自分のターン開始時に使用する
+  let a = reduce(s3, { type: 'END_TURN' });
+  while (a.turn.active !== 0 && !a.gameOver) {
+    const act2 = CPU.decide(a, a.pending ? a.pending.player : a.turn.active);
+    a = reduce(a, act2 || { type: 'END_TURN' });
+  }
+  ok(a.pending && a.pending.type === 'event_play', '次の自分のターン開始時に「使用する」窓が開く');
+  const a2 = reduce(a, { type: 'EVENT_PLAY' });
+  ok(me(a2).inPlay.indexOf('village') >= 0 && (me(a2).eventSetAside || []).length === 0, '脇のカードを使用する');
+  ok(a2.turn.actions === 1 + 2, 'アクション権を消費しない');
+}
+{
+  const s = evt(['reap']);
+  const g0 = s.supply.gold;
+  const s2 = buyEv(s, 'reap');
+  ok((me(s2).eventSetAside || []).indexOf('gold') >= 0 && s2.supply.gold === g0 - 1,
+    '刈り入れ＝金貨を獲得して脇に置く（2025エラッタ＝捨て札を経由しない）');
+  ok(me(s2).discard.indexOf('gold') < 0, '捨て札置き場には入らない');
+  let a = reduce(s2, { type: 'END_TURN' });
+  while (a.turn.active !== 0 && !a.gameOver) {
+    const act2 = CPU.decide(a, a.pending ? a.pending.player : a.turn.active);
+    a = reduce(a, act2 || { type: 'END_TURN' });
+  }
+  ok(a.pending && a.pending.type === 'event_play', '次のターン開始時に使用する窓');
+  const a2 = reduce(a, { type: 'EVENT_PLAY' });
+  ok(me(a2).inPlay.indexOf('gold') >= 0 && a2.turn.coins === 3, '脇の金貨を使用して +$3');
+}
+
+console.log('\n=== M4: 増大／追求／植民 ===');
+{
+  const s = evt(['enhance']);
+  me(s).hand = ['silver', 'estate'];
+  const s2 = buyEv(s, 'enhance');
+  ok(s2.pending && s2.pending.type === 'enhance' && s2.pending.stage === 'trash', '増大＝廃棄する窓が開く');
+  ok(reduce(s2, { type: 'ENHANCE_TRASH', card: 'estate' }).pending.stage === 'trash', '勝利点カードは廃棄できない（拒否）');
+  const s3 = reduce(s2, { type: 'ENHANCE_TRASH', card: 'silver' });
+  ok(s3.trash.indexOf('silver') >= 0 && s3.pending.stage === 'gain' && s3.pending.maxCost === 5,
+    '銀貨($3)を廃棄→最大$5まで獲得できる');
+  ok(reduce(s3, { type: 'ENHANCE_GAIN', card: 'gold' }).pending, '$6は獲得できない（拒否）');
+  const s4 = reduce(s3, { type: 'ENHANCE_GAIN', card: 'duchy' });
+  ok(me(s4).discard.indexOf('duchy') >= 0, '獲得側は勝利点カードでもよい');
+  const s5 = reduce(s2, { type: 'ENHANCE_TRASH', card: null });
+  ok(!s5.pending && s5.trash.length === 0, '廃棄しないことも選べる');
+  // 手札が勝利点だけなら窓が開かない
+  const s6 = evt(['enhance']); me(s6).hand = ['estate'];
+  ok(!buyEv(s6, 'enhance').pending, '手札が勝利点だけなら何も起きない');
+}
+{
+  const s = evt(['pursue']);
+  me(s).deck = ['gold', 'copper', 'gold', 'estate', 'silver'];
+  const s2 = buyEv(s, 'pursue');
+  ok(s2.turn.buys === 9 && s2.pending && s2.pending.type === 'pursue', '追求＝+1購入・カード名を指定する窓');
+  const s3 = reduce(s2, { type: 'PURSUE_NAME', card: 'gold' });
+  ok(me(s3).deck.length === 3 && me(s3).deck[0] === 'gold' && me(s3).deck[1] === 'gold',
+    '指定した名前だけ山札の上に戻る（金貨2枚＋残っていた銀貨1枚）');
+  ok(me(s3).discard.filter((c) => c === 'copper' || c === 'estate').length === 2, '残りは捨て札になる');
+  // ゲームに無い名前を指定すると4枚とも捨て札
+  const s4 = evt(['pursue']); me(s4).deck = ['gold', 'copper', 'gold', 'estate'];
+  const s5 = reduce(buyEv(s4, 'pursue'), { type: 'PURSUE_NAME', card: 'witch' });
+  ok(me(s5).deck.length === 0 && me(s5).discard.length === 4, '一致しなければ4枚とも捨て札になる');
+}
+{
+  const kingdom = ['village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'harbinger', 'vassal', 'workshop', 'bandit'];
+  const s = evt(['populate'], kingdom);
+  const piles = E.populatePiles(s);
+  ok(piles.length === 10 && kingdom.every((k) => piles.indexOf(k) >= 0), '植民＝アクションのサプライ山10種が対象');
+  ok(piles.indexOf('silver') < 0 && piles.indexOf('estate') < 0, '財宝/勝利点の山は対象外');
+  ok(piles.indexOf('horse') < 0, '非サプライ山（馬）は対象外');
+  const s2 = buyEv(s, 'populate');
+  ok(s2.pending && s2.pending.type === 'populate', '植民＝獲得する山を選ぶ窓が開く');
+  const s3 = reduce(s2, { type: 'POPULATE_GAIN', pile: 'village' });
+  ok(me(s3).discard.indexOf('village') >= 0, '選んだ山から1枚獲得する');
+  ok(s3.pending && s3.pending.type === 'populate' && (s3.turn.populateQueue || []).length === 9, '残りの山の窓が続けて開く');
+  const s4 = reduce(s2, { type: 'POPULATE_GAIN', auto: true });
+  ok(me(s4).discard.length === 10 && !s4.pending, 'おまかせで残り全部をまとめて獲得できる');
+  ok(kingdom.every((k) => me(s4).discard.indexOf(k) >= 0), '10種すべてを1枚ずつ獲得する');
+}
+{
+  // 城の山は勝利点の山なので対象外／廃墟はアクションの山なので対象
+  const s = evt(['populate'], ['castles', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'harbinger', 'vassal', 'workshop']);
+  ok(E.populatePiles(s).indexOf('castles') < 0, '城の混合山（勝利点の山）は植民の対象外');
+}
+
+console.log('\n=== M4: イベントの共通ルール（財宝ロック・コスト軽減を受けない） ===');
+{
+  const s = evt(['ride']);
+  me(s).hand = ['copper'];
+  const s2 = buyEv(s, 'ride');
+  ok(s2.turn.treasuresLocked === true, 'イベントを買った後はそのターン財宝を出せない');
+  const s3 = reduce(s2, { type: 'PLAY_TREASURE', card: 'copper' });
+  ok(me(s3).hand.indexOf('copper') >= 0, '財宝を出す操作は拒否される');
+}
+{
+  // 橋（コスト軽減）はイベントのコストを下げない
+  const s = evt(['ride']);
+  s.turn.costReduction = 2; s.turn.coins = 1;
+  const s2 = buyEv(s, 'ride');
+  ok(s2.turn.coins === 1 && s2.supply.horse === 30, 'コインが足りなければ買えない（イベントはコスト軽減を受けない）');
 }
 
 console.log('\n=== CPU: 全 pending が終端する（無限ループしない） ===');

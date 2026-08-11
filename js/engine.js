@@ -302,6 +302,31 @@
     if (maybeKiln(state, card, pIndex, 'treasure')) return;
     applyTreasureEffect(state, pIndex, card);
   }
+  /* 移動動物園：イベントで「アクション権を消費せずにカードを使用する」共通入口
+     （苦労 Toil／進軍 March／博打 Gamble／遅延 Delay・刈り入れ Reap のターン開始時の使用）。
+     - zone から card を取り除いて場に出し、効果を適用する。使用したカードは通常どおり片付けで捨て札になる
+       （持続カードなら場に残る）。
+     - **習性（Way）を指定できる**（公式：アクションカードを使用するときはいつでも代わりに習性を使える）。
+     - 炉（kiln）の「次に使うカードの解決前に同名を獲得」も通す＝これも「カードの使用」だから。 */
+  function playCardNoAction(state, pi, card, zone, note, way) {
+    const p = state.players[pi];
+    if (!removeOne(zone, card)) return false;
+    p.inPlay.push(card);
+    const isAct = DOM.isType(card, 'action');
+    if (isAct) state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1; // 共謀者などの「このターンに使ったアクション数」
+    log(state, `${p.name} は${note}「${C()[card].name}」を使った。`);
+    if (isAct) {
+      const useWay = isUsableWay(state, way) ? way : null;
+      if (useWay) log(state, `${p.name} は「${DOM.LANDSCAPES[useWay].name}」を使う。`);
+      if (maybeKiln(state, card, pi, 'action', useWay)) return true;
+      if (useWay) applyWay(state, useWay, card, pi);
+      else applyEffect(state, card, pi);
+    } else {
+      if (maybeKiln(state, card, pi, 'treasure')) return true;
+      applyTreasureEffect(state, pi, card);
+    }
+    return true;
+  }
   // 移動動物園：炉（kiln）の窓。「次に使うカード1枚」ぶんの権利は、獲得しなくても・獲得できなくても消費する。
   //   サプライに無いカード（非サプライ札・在庫切れ・ロック中の分割山下段）では窓を開かない。
   function maybeKiln(state, card, pi, kind, way) {
@@ -615,6 +640,8 @@
       travellingFair: false, // 移動遊園地＝このターン、獲得したカードを山札の上に置いてよい
       savedCard: null,    // 保存（Save）＝脇に置いた1枚（片付けで次の手札を引いた「後」に手札へ戻す）
       noBuyCards: !!extra.noBuyCards, // 使節団（Mission）の追加ターン＝カードを購入できない（イベントは買える）
+      seizeTurn: !!extra.seizeTurn, // 移動動物園：今を生きるの追加ターン（同点時のタイブレークに数えない）
+      populateQueue: null, populatePlayer: null, // 移動動物園：植民＝獲得が残っている山キー（reduce 末尾の再開網が使う）
       treasuresLocked: false, // 公式：一度でも購入（カード/イベント/闇市場）したら、そのターンはもう財宝を出せない
 
       gainedThisTurn: [], outpostUsed: false, isExtraTurn: !!isExtraTurn, startQueue: null,
@@ -684,6 +711,11 @@
         exile: [],         // 移動動物園：追放（Exile）マット。**公開**・所有者のカード（得点に数える＝allCards に入る）。
                            //   サプライから追放しても「獲得」ではない（獲得時能力は誘発しない）。同名のカードを獲得したとき、
                            //   ここから好きな枚数を捨て札にしてよい（一般ルール＝exile_discard の窓）。
+        exileInvested: {}, // 移動動物園：投資（Invest）で追放したコピーの枚数（id→枚数）。**非カード**（保存則に数えない）。
+                           //   公式は「投資したコピーはマットの下半分に差して区別せよ」＝他手段で追放した同名とは別管理。
+                           //   投資したコピーが追放されている間だけ「他プレイヤーの獲得/投資」で +2カード。
+        eventSetAside: [], // 移動動物園：遅延/刈り入れで脇に置いたカード（**公開**・物理カード＝allCards と保存則に数える）。
+                           //   次の自分のターン開始時に「使用する」（強制）。
         inherited: [],     // 冒険：相続（Inheritance）で脇に置いたカード（＝屋敷トークンを載せたカード。公開・1枚だけ）。
                            //   「獲得」ではないが、得点計算では自分のデッキに数える（公式）＝allCards に入れる。
         stashPlacement: 'top', // プロモ：へそくり(Stash)のシャッフル時配置方針 'top'|'mix'|'bottom'（本人がいつでも変更可）。
@@ -1018,6 +1050,8 @@
     if (dest === 'hand') p.hand.push(realId);
     else if (dest === 'deck') p.deck.unshift(realId);
     else if (dest === 'setAside') p.setAside.push(realId); // 海辺：封鎖＝獲得して脇に置く（捨て札ではない）
+    // 移動動物園：刈り入れ＝金貨を「獲得と同時に」脇へ（2025エラッタで捨て札置き場を経由しなくなった）。
+    else if (dest === 'eventSetAside') (p.eventSetAside = p.eventSetAside || []).push(realId);
     else p.discard.push(realId);
     // 移動動物園：行人（wayfarer）＝「このターンに獲得された直前の**他の**カード」と同じコストになる。
     //   誰の獲得でも記録する（相手のターン中に自分が獲得した場合も含む＝公式は "the last other card gained this turn"）。
@@ -1151,6 +1185,9 @@
     return true;
   }
   // 追放マットから同名を n 枚 捨て札にする（「捨てる」＝ on-discard を通す）。実際に捨てた枚数を返す。
+  //   投資（Invest）で追放したコピーも同名なら一緒に捨てる＝その枚数ぶん exileInvested を減らす
+  //   （＝以後その名前では「他プレイヤーの獲得で +2カード」が起きなくなる）。**捨てるのは投資していないコピーが先**
+  //   （公式は全部捨てる/1枚も捨てない の二択なので、部分的に捨てるのは輸送(Transport)だけ）。
   function discardFromExile(state, pi, cardId, n) {
     const p = state.players[pi];
     let cnt = 0;
@@ -1159,12 +1196,34 @@
       p.discard.push(cardId); cnt++;
     }
     if (cnt > 0) {
+      // 残った追放枚数より投資枚数が多くなったら、そのぶん投資も消える（投資したコピーを捨てた）。
+      const left = exileCount(p, cardId);
+      if (investCount(p, cardId) > left) setInvestCount(p, cardId, left);
       log(state, `${p.name} は追放マットの「${C()[cardId].name}」を${cnt}枚 捨て札にした。`);
       triggerOnDiscard(state, pi, new Array(cnt).fill(cardId));
     }
     return cnt;
   }
   function exileCount(p, cardId) { return (p.exile || []).filter((c) => c === cardId).length; }
+  /* 移動動物園：投資（Invest）＝「投資で追放したコピー」の枚数を名前ごとに持つ（非カードのスカラーマップ）。
+     公式は「投資したコピーはマットの下半分に差して区別する」＝他手段で追放した同名コピーは +2カード を生まない。 */
+  function investCount(p, cardId) { return ((p.exileInvested || {})[cardId] || 0); }
+  function setInvestCount(p, cardId, n) {
+    p.exileInvested = p.exileInvested || {};
+    if (n > 0) p.exileInvested[cardId] = n; else delete p.exileInvested[cardId];
+  }
+  // 「他のプレイヤーがそのカードを獲得した／そのカードに投資した」ときの +2カード（強制・累積）。
+  //   actorIdx＝獲得/投資した人。その人以外で、その名前に投資しているプレイヤー全員が 2×投資枚数 引く。
+  function triggerInvest(state, actorIdx, cardId) {
+    if (!cardId) return;
+    state.players.forEach((op, oi) => {
+      if (oi === actorIdx) return;
+      const n = investCount(op, cardId);
+      if (n <= 0) return;
+      const got = draw(state, oi, 2 * n);
+      if (got.length) log(state, `${op.name} は投資（${C()[cardId].name}）で +${got.length}カード。`);
+    });
+  }
   // 「サプライから追放できる」候補（＝各山の一番上）。engine拒否・CPU候補・UIフィルタが同じ関数を見る。
   //   非サプライ山（馬/賞品/戦利品/トラベラー成長先）は「サプライにある」ではない＝対象外。
   //   ロック中の分割山の下段も対象外（availableInSupply）。混合山は一番上の実カードだけを候補に足す。
@@ -1192,6 +1251,7 @@
     if (dest === 'hand') return p.hand;
     if (dest === 'deck') return p.deck;
     if (dest === 'setAside') return p.setAside;
+    if (dest === 'eventSetAside') return (p.eventSetAside = p.eventSetAside || []);
     return p.discard;
   }
   // 条件に合う獲得可能なカードがサプライに1枚でもあるか
@@ -5431,6 +5491,7 @@
       p.durationCards || [], p.setAside || [], p.islandMat || [], p.nativeVillageMat || [],
       p.princes || [], p.tavern || [], // 冒険：酒場マット（Reserve/守銭奴の銅貨。公開・所有カードに数える）
       p.inherited || [],  // 冒険：相続の脇置き（獲得ではないが「得点計算時は自分のデッキに含める」＝公式）
+      p.eventSetAside || [], // 移動動物園：遅延/刈り入れの脇置き（次の手番開始時に使用する。所有カード）
       p.exile || [],      // 移動動物園：追放マット（公開・所有カード＝VPに数える。ゲーム終了時もデッキに含める＝公式）
       p.cargo || [],      // ルネサンス：貨物船の脇置き（表向き＝公開。所有カード＝VPに数える）
       ...((p.archives || []).map((a) => a.cards || []))); // 帝国：資料庫の脇置き（所有カード＝VPに数える）
@@ -5545,9 +5606,11 @@
       });
       const lmVp = landmarkScore(state, i); // 帝国：ランドマーク得点（負にもなり得る）
       // deckSize は庭園の得点表示用（デッキ10枚につき1点）
-      return { name: p.name, vp: vpOf(p) + lmVp, landmarkVp: lmVp, turns: p.turns, vpCards, deckCards, deckSize: cards.length };
+      // tieTurns＝同点時のタイブレーク用のターン数。移動動物園「今を生きる」の追加ターンは数えない（公式）。
+      return { name: p.name, vp: vpOf(p) + lmVp, landmarkVp: lmVp, turns: p.turns,
+        tieTurns: p.turns - (p.freeTurns || 0), vpCards, deckCards, deckSize: cards.length };
     });
-    // 勝者判定：勝利点が多い → 同点ならターン数が少ない
+    // 勝者判定：勝利点が多い → 同点ならターン数が少ない（今を生きるの追加ターンは数えない＝tieTurns）
     let best = null;
     let winners = [];
     state.players.forEach((p, i) => {
@@ -5555,11 +5618,11 @@
       if (
         !best ||
         s.vp > best.vp ||
-        (s.vp === best.vp && s.turns < best.turns)
+        (s.vp === best.vp && s.tieTurns < best.tieTurns)
       ) {
         best = s;
         winners = [i];
-      } else if (s.vp === best.vp && s.turns === best.turns) {
+      } else if (s.vp === best.vp && s.tieTurns === best.tieTurns) {
         winners.push(i);
       }
     });
@@ -5618,6 +5681,9 @@
     (p.princes || []).forEach((card, i) => {
       state.turn.startQueue.push({ type: 'prince_play', player: pi, idx: i, card });
     });
+    // 移動動物園：遅延／刈り入れ＝脇に置いたカードを、このターンの開始時に使用する（強制・アクション権不要）。
+    //   脇（p.eventSetAside）から1枚ずつ。使用するとカードは場に出る（持続なら通常どおり場に残る）。
+    (p.eventSetAside || []).forEach(() => { state.turn.startQueue.push({ type: 'event_play', player: pi }); });
     // 帝国：資料庫＝脇にカードが残っている各資料庫につき、手番開始時に脇から1枚を手札へ（対話＝startQueueへ）。
     (p.archives || []).forEach((a) => { if (a.cards && a.cards.length) state.turn.startQueue.push({ type: 'archive_pick', player: pi, archiveId: a.id }); });
     // 繁栄：会計士＝手番開始時、手札の会計士を（アクションを消費せず）使ってよい。startQueue の最後に積む。
@@ -6043,6 +6109,9 @@
     if (state.turn && pIndex === state.turn.active && exileCount(gp, cardId) > 0) {
       (state.onGainQueue = state.onGainQueue || []).push({ type: 'exile_discard', player: pIndex, card: cardId });
     }
+    // 移動動物園：投資（Invest・イベント）＝**他の**プレイヤーがそのカードを獲得したとき、投資した人が +2カード（強制・累積）。
+    //   自分の獲得では誘発しない。追放は獲得ではないので、追放（門番/ラクダの隊列など）では誘発しない。
+    triggerInvest(state, pIndex, cardId);
     // 役人：獲得したとき、場のすべての財宝を山札の上に置く（置いた順＝そのまま／簡略に選択なし）。
     if (cardId === 'mandarin') { const tre = gp.inPlay.filter((c) => isTreasureFor(state, c)); tre.forEach((c) => { removeOne(gp.inPlay, c); gp.deck.unshift(c); }); if (tre.length) log(state, `${gp.name} は役人で場の財宝 ${tre.length}枚 を山札の上に置いた。`); }
     // 大釜：自分の手番にアクションを獲得した回数を数え、3回目で（大釜が場にあれば）各相手が呪いを獲得。
@@ -6498,6 +6567,11 @@
     //   前哨地と同時に立った場合は前哨地を優先し、使節団ぶんは不発（＝3連続ターンにはできない・公式）。
     const missionExtra = !!p.missionExtra && !extra;
     p.missionExtra = false;
+    // 移動動物園：今を生きる＝1ゲーム1回の追加ターン。前哨地/使節団が先に発動したら**旗は消さず**次のターンへ持ち越す
+    //   （公式：今を生きるは「直前が他プレイヤーのターンか」を見ない＝3連続ターンも認められている）。
+    //   このターンは同点時のタイブレーク（ターン数）に数えない＝freshTurn に seizeTurn を立てる。
+    const seizeExtra = !!p.seizeExtra && !extra && !missionExtra;
+    if (seizeExtra) p.seizeExtra = false;
     // 冒険：-1カードトークン（遺物）は draw() 内で「次のドロー」に効く（この先引きが次のドローなら1枚減）。
     //   冒険：探検（Expedition）＝このターンに買ったぶんだけ追加で引く（累積・前哨地の3枚にも加算）。
     //   ルネサンス：旗（Flag・アーティファクト）＝**手札を引くとき +1カード**（＝この片付けの先引きと前哨地の3枚引き）。
@@ -6516,6 +6590,8 @@
       if (got.length) log(state, `${p.name} はリスの習性で +${got.length}カード（ターンの終了時）。`);
     }
     p.turns += 1;
+    // 移動動物園：今を生きるの追加ターンは同点時のタイブレーク（ターン数の少なさ）に数えない（公式）。
+    if (state.turn.seizeTurn) p.freeTurns = (p.freeTurns || 0) + 1;
 
     /* ルネサンス：艦隊（Fleet・プロジェクト）＝**ゲームの終了後**、艦隊を持つプレイヤーは全員、追加の1ターンを得る。
        - 追加ラウンドは通常の手番順で**1周だけ**（艦隊を持たない人は飛ばす）。開始席＝ゲームを終わらせた
@@ -6548,18 +6624,20 @@
     }
     // 次の手番を決める：1)前哨地=同一プレイヤー 2)支配などの追加ターン待ち行列 3)通常=rotationSeatの次。
     const anchor = state.turn.rotationSeat != null ? state.turn.rotationSeat : pi;
-    let next, isExtra = false, possessedBy = null, rotationSeat, noBuyCards = false;
+    let next, isExtra = false, possessedBy = null, rotationSeat, noBuyCards = false, seizeTurn = false;
     if (extra) {
       next = pi; isExtra = true; rotationSeat = anchor;
     } else if (missionExtra) {
       next = pi; isExtra = true; rotationSeat = anchor; noBuyCards = true; // 冒険：使節団の追加ターン（カード購入不可・イベントは可）
+    } else if (seizeExtra) {
+      next = pi; isExtra = true; rotationSeat = anchor; seizeTurn = true;  // 移動動物園：今を生きるの追加ターン（通常のターンと同じ）
     } else if (state.extraTurns && state.extraTurns.length) {
       const et = state.extraTurns.shift();
       next = et.seat; isExtra = true; possessedBy = et.possessedBy; rotationSeat = et.rotationSeat;
     } else {
       next = (anchor + 1) % n; rotationSeat = next;
     }
-    state.turn = freshTurn(next, isExtra, { rotationSeat, possessedBy, noBuyCards });
+    state.turn = freshTurn(next, isExtra, { rotationSeat, possessedBy, noBuyCards, seizeTurn });
     // ルネサンス：鍵（Key・アーティファクト）＝あなたのターンの開始時 +$1（取ったターンには恩恵なし＝開始時は過ぎている）。
     if (hasArtifact(state, next, 'key')) {
       addCoins(state, 1);
@@ -6569,7 +6647,8 @@
       ? `${state.players[possessedBy].name} が ${state.players[next].name} の追加ターンを操作します（支配）。`
       : (extra ? `${state.players[next].name} の追加ターンです（前哨地）。`
         : (missionExtra ? `${state.players[next].name} の追加ターンです（使節団：カードは購入できません）。`
-          : `${state.players[next].name} の番です。`)));
+          : (seizeTurn ? `${state.players[next].name} の追加ターンです（今を生きる）。`
+            : `${state.players[next].name} の番です。`))));
     // 海辺：次の手番開始時の予約効果を解決（非対話は即適用、対話は startQueue→pending）。
     resolveDurationStartEffects(state, next);
   }
@@ -6587,12 +6666,17 @@
   }
   // 冒険：1ターンに1回しか買えないイベント（施し/借入/保存/巡礼）＝2回目の購入は engine が拒否する
   //   （公式ルールブック "You can only buy this once per turn."＝購入自体ができない＝購入権を無駄にしない）。
-  const ONCE_PER_TURN_EVENTS = new Set(['alms', 'borrow', 'save', 'pilgrimage', 'mission']);
-  // 相続は1ゲーム1回（既に脇置きを持っていれば買えない）。
+  //   移動動物園：絶望（desperation）も同じ "Once per turn:" 前置句を持つ＝同じ枠に載せる。
+  //   （※一次資料の扱い：施し/保存/借入/巡礼は公式FAQに "You can only buy this once per turn." が明記されているが、
+  //     絶望の個別FAQには同文が無い。カード文が完全に同一テンプレートなので同じ解釈を採用した。
+  //     反対解釈＝「買えるが2回目は空振り」でも購入権1つを無駄にするだけの差＝どちらでも致命的な差は出ない。）
+  const ONCE_PER_TURN_EVENTS = new Set(['alms', 'borrow', 'save', 'pilgrimage', 'mission', 'desperation']);
+  // 相続は1ゲーム1回（既に脇置きを持っていれば買えない）。移動動物園：今を生きる（seize_the_day）も1ゲーム1回。
   function canBuyEvent(state, pi, id) {
     const t = state.turn, p = state.players[pi];
     if (ONCE_PER_TURN_EVENTS.has(id) && (t.eventsBought || []).indexOf(id) >= 0) return false;
     if (id === 'inheritance' && (p.inherited || []).length > 0) return false;
+    if (id === 'seize_the_day' && p.seizedTheDay) return false;
     return true;
   }
   function applyEventEffect(state, pi, id) {
@@ -6786,8 +6870,192 @@
         if (inheritanceTargets(state).length) state.pending = { type: 'inheritance', player: pi };
         break;
       }
+      /* ========== 移動動物園（Menagerie）イベント 20種 ==========
+         負債コストは無い（すべてコインのみ）。基盤（BUY_EVENT／canBuyEvent／treasuresLocked／buysMade）は
+         帝国・冒険と完全に共通で、Menagerie 固有の新しい購入ルールは無い（公式ルールブック）。
+         主な機構＝追放（Exile）／馬（Horse・非サプライ30枚）／「アクション権を消費しないカードの使用」／
+         脇に置いて次のターン開始時に使用（p.eventSetAside）。 */
+      // 同盟（$10）＝属州・公領・屋敷・金貨・銀貨・銅貨を各1枚 獲得する。
+      //   強制・記載順に1枚ずつ（望楼などで山札の上に置くと 銅貨が一番上になる）。空の山は飛ばすだけ。
+      case 'alliance': {
+        ['province', 'duchy', 'estate', 'gold', 'silver', 'copper'].forEach((cid) => gain(state, pi, cid, 'discard'));
+        log(state, `${me.name} は同盟で 属州/公領/屋敷/金貨/銀貨/銅貨 を獲得した（サプライにあるもの）。`);
+        break;
+      }
+      // 乗馬（$2）＝馬1枚を獲得する。
+      case 'ride': { if (gainHorse(state, pi)) log(state, `${me.name} は乗馬で馬1枚を獲得した。`); break; }
+      // 商売（$5）＝このターンに獲得したカードの「異なる名前」1種類につき金貨1枚を獲得する。
+      //   **先に数えてからまとめて獲得する**（獲得した金貨で増えた分は数えない＝公式FAQ）。
+      case 'commerce': {
+        const names = [];
+        (t.gainedThisTurn || []).forEach((c) => { if (names.indexOf(c) < 0) names.push(c); });
+        let cg = 0;
+        for (let i = 0; i < names.length; i++) if (gain(state, pi, 'gold', 'discard')) cg++;
+        log(state, `${me.name} は商売で金貨 ${cg}枚 を獲得した（今ターン獲得の異なる名前 ${names.length}種）。`);
+        break;
+      }
+      // 包領（$8）＝金貨1枚を獲得し、サプライから公領1枚を追放する（独立した2処理・どちらも強制）。
+      //   サプライからの追放は「獲得」ではない＝獲得時能力は誘発しないが、公領の山は1枚減る（3山終了に影響）。
+      case 'enclave': {
+        gain(state, pi, 'gold', 'discard');
+        exileFromSupply(state, pi, 'duchy');
+        break;
+      }
+      // 特価品（$4）＝コスト$5以下の勝利点でないカード1枚を獲得（強制）。その後、他の各プレイヤーが馬1枚を獲得する。
+      //   アタックではない（堀・灯台で防げない）。馬は購入者の左隣から手番順（山が足りなければ先着）。
+      case 'bargain': {
+        if (anyGainable(state, (cid) => bargainCanGain(state, cid))) state.pending = { type: 'bargain_gain', player: pi };
+        else bargainHorses(state, pi);
+        break;
+      }
+      // 要求（$5）＝馬1枚とコスト$4以下のカード1枚を獲得し、2枚とも山札の上に置く（強制）。
+      //   **馬が先**＝$4以下のカードが一番上になる。馬を先に獲得するのでデストリエ（獲得枚数でコストが下がる）の
+      //   コストは馬の獲得を反映した後で判定する（公式）。
+      case 'demand': {
+        if (gainHorse(state, pi, 'deck')) log(state, `${me.name} は要求で馬1枚を山札の上に獲得した。`);
+        if (anyGainable(state, (cid) => upToCanGain(state, cid, 4))) state.pending = { type: 'demand_gain', player: pi };
+        break;
+      }
+      // 絶望（$0）＝呪い1枚を獲得してもよい。獲得したなら +1購入 +$2（呪いが無くて獲得できなければ何も得ない）。
+      //   "Once per turn:" ＝ canBuyEvent の「1ターン1回」枠（2回目の購入自体を拒否＝購入権を無駄にしない）。
+      case 'desperation': {
+        if ((state.supply.curse || 0) > 0) state.pending = { type: 'desperation', player: pi };
+        break;
+      }
+      // 今を生きる（$4）＝1ゲーム1回。このターンの後に追加のターンを1回行う。
+      //   前哨地/使節団と違い「直前が他プレイヤーのターンか」を見ない＝3連続ターンもあり得る（公式）。
+      //   終了条件のチェックは追加ターンより前に行う（cleanupAndAdvance が isGameOver を先に見る）＝終局なら追加ターンは無い。
+      //   この追加ターンは同点時のタイブレーク（ターン数）に数えない（p.freeTurns）。
+      case 'seize_the_day': {
+        me.seizedTheDay = true;
+        me.seizeExtra = true;
+        log(state, `${me.name} は今を生きるで追加ターンを得る（1ゲーム1回）。`);
+        break;
+      }
+      // 暴走（$5）＝場にある自分のカードが5枚以下なら、馬5枚を獲得して山札の上に置く。
+      //   判定は「購入した時点で場にある枚数」（このターンに何枚プレイしたかではない）。持続カードも場のカードに数える。
+      case 'stampede': {
+        const inPlayN = me.inPlay.length + (me.durationCards || []).length;
+        if (inPlayN <= 5) {
+          let sg = 0; for (let i = 0; i < 5; i++) if (gainHorse(state, pi, 'deck')) sg++;
+          log(state, `${me.name} は暴走で馬 ${sg}枚 を山札の上に獲得した。`);
+        } else log(state, `${me.name} は暴走を買ったが、場のカードが ${inPlayN}枚（6枚以上）なので馬を得られない。`);
+        break;
+      }
+      // 放逐（$4）＝手札から「同じ名前」のカードを好きな枚数 追放する（0枚でもよい／2種類は不可）。
+      case 'banish': {
+        if (me.hand.length > 0) state.pending = { type: 'banish', stage: 'pick', player: pi };
+        break;
+      }
+      // 投資（$4）＝サプライからアクションカード1枚を追放する。そのカードが追放されている間、
+      //   **他の**プレイヤーがその同名を獲得/投資したとき +2カード（強制・累積・相手のターン中に引く）。
+      //   投資で追放したコピーだけが対象＝他の手段で追放した同名とは別管理（p.exileInvested）。
+      case 'invest': {
+        if (anyExilableSupply(state, (cid) => DOM.isType(cid, 'action'))) state.pending = { type: 'invest', player: pi };
+        break;
+      }
+      // 輸送（$3）＝二択。①サプライからアクション1枚を追放する ②追放マットの自分のアクション1枚を山札の上に置く。
+      //   ドミニオンの原則どおり**実行できない選択肢も選べる**（engine は拒否せず、何も起きないだけ）。
+      case 'transport': { state.pending = { type: 'transport', stage: 'mode', player: pi }; break; }
+      // 苦労（$2）＝+1購入。手札からアクションカード1枚を使用してよい（アクション権を消費しない）。
+      case 'toil': {
+        t.buys += 1;
+        if (me.hand.some((c) => DOM.isType(c, 'action') || inheritedEstate(me, c))) state.pending = { type: 'toil', player: pi };
+        break;
+      }
+      // 進軍（$3）＝捨て札置き場を見て、その中のアクションカード1枚を使用してよい（アクション権を消費しない）。
+      case 'march': {
+        if (me.discard.some((c) => DOM.isType(c, 'action'))) state.pending = { type: 'march', player: pi };
+        break;
+      }
+      // 博打（$2・2025エラッタ）＝+1購入。山札の一番上を**公開せずに**捨て札にし、
+      //   それがアクションか財宝なら使用してよい（アクション権を消費しない）。
+      //   ・先に捨てるので捨て札トリガー（坑道/村有緑地/忠犬/織工）が誘発する。
+      //   ・「公開」ではないのでパトロン等の公開トリガーは誘発しない（そもそも購入フェイズなので元から誘発しない）。
+      //   ・使用しない場合はそのまま捨て札に残る。
+      case 'gamble': {
+        t.buys += 1;
+        if (me.deck.length === 0 && me.discard.length > 0) reshuffleDeck(me);
+        if (me.deck.length > 0) {
+          const top = me.deck.shift();
+          me.discard.push(top);
+          log(state, `${me.name} は博打で山札の上の「${C()[top].name}」を捨てた。`);
+          triggerOnDiscard(state, pi, [top]);
+          // 捨て札トリガーが選択待ちを開いていることがあるので、使用の窓はキューに積む（順序も公式どおり後）。
+          if (DOM.isType(top, 'action') || isTreasureFor(state, top)) {
+            (state.onGainQueue = state.onGainQueue || []).push({ type: 'gamble', player: pi, card: top });
+          }
+        }
+        break;
+      }
+      // 遅延（$0）＝手札からアクションカード1枚を脇に置いてもよい。次の自分のターン開始時、それを使用する（強制）。
+      case 'delay': {
+        if (me.hand.some((c) => DOM.isType(c, 'action'))) state.pending = { type: 'delay', player: pi };
+        break;
+      }
+      // 刈り入れ（$7・2025エラッタ）＝金貨1枚を獲得し**そのまま脇に置く**（捨て札置き場を経由しない）。
+      //   次の自分のターン開始時、それを使用する。金貨の山が空なら何も起きない。
+      case 'reap': {
+        if (gain(state, pi, 'gold', 'eventSetAside')) log(state, `${me.name} は刈り入れで金貨1枚を獲得して脇に置いた（次のターン開始時に使用する）。`);
+        break;
+      }
+      // 増大（$3）＝手札から勝利点でないカード1枚を廃棄してもよい。廃棄したら、それより最大$2高いカード1枚を獲得（強制）。
+      case 'enhance': {
+        if (me.hand.some((c) => !DOM.isType(c, 'victory'))) state.pending = { type: 'enhance', stage: 'trash', player: pi };
+        break;
+      }
+      // 追求（$2）＝+1購入。カード名を1つ指定し、山札の上4枚を公開。指定した名前のカードを山札の上に戻し、残りを捨てる。
+      //   名前の指定は公開の**前**に行う（ゲームに無い名前も指定できる）。
+      case 'pursue': { t.buys += 1; state.pending = { type: 'pursue', player: pi }; break; }
+      // 植民（$10）＝サプライの「アクションの山」それぞれから1枚ずつ獲得する（獲得順はプレイヤーが選ぶ）。
+      //   山がアクションの山かは**山の種別**で決まる（今の一番上のカードの種別ではない）＝分割山は上段で判定し、
+      //   上段が尽きていれば下段（財宝でも）を獲得する。城の山は勝利点の山なので対象外。廃墟/騎士はアクションの山。
+      case 'populate': {
+        const piles = populatePiles(state);
+        if (piles.length) {
+          t.populateQueue = piles;
+          t.populatePlayer = pi;
+          state.pending = { type: 'populate', player: pi };
+        }
+        break;
+      }
       default: break;
     }
+  }
+  // 特価品＝コスト$5以下の勝利点でないカード（勝利点と兼ねるカードも不可）。
+  function bargainCanGain(state, cid) { return costUpTo(state, cid, 5) && !DOM.isType(cid, 'victory'); }
+  // 特価品＝他の各プレイヤーが馬1枚を獲得する（購入者の左隣から手番順）。アタックではない。
+  function bargainHorses(state, pi) {
+    const n = state.players.length;
+    for (let k = 1; k < n; k++) {
+      const o = (pi + k) % n;
+      if (gainHorse(state, o)) log(state, `${state.players[o].name} は特価品で馬1枚を獲得した。`);
+    }
+  }
+  /* 植民（Populate）＝獲得元になる「アクションのサプライ山」の一覧（山キー）。
+     - 山の種別で判定する（分割山は**上段カード**の種別＝上段が尽きていても下段を獲得する）。
+     - 混合山：廃墟/騎士はアクションの山（一番上の1枚を獲得）／城は勝利点の山＝対象外。
+     - 非サプライ山（馬/賞品/戦利品/トラベラー成長先）は対象外。空の山は対象外。 */
+  function populatePiles(state) {
+    const out = [];
+    Object.keys(state.supply).forEach((id) => {
+      if (NON_SUPPLY.has(id)) return;
+      if ((state.supply[id] || 0) <= 0) return;
+      if (SPLIT_TOP[id]) return;                       // 分割山の下段は独立した山ではない（上段キーで1山）
+      if (MIXED_PILE_KEYS.indexOf(id) >= 0) return;    // 混合山は下で扱う
+      if (!C()[id] || !DOM.isType(id, 'action')) return;
+      out.push(id);
+    });
+    // 分割山：上段が尽きて下段だけ残っている山も「アクションの山」（上段がアクションなら）＝下段を獲得する。
+    Object.keys(SPLIT_TOP).forEach((bottom) => {
+      const top = SPLIT_TOP[bottom];
+      if (!C()[top] || !DOM.isType(top, 'action')) return;
+      if ((state.supply[top] || 0) > 0) return;        // 上段が残っていれば上のループで拾っている
+      if ((state.supply[bottom] || 0) > 0) out.push(bottom);
+    });
+    if (Array.isArray(state.ruins) && state.ruins.length) out.push('ruins');
+    if (Array.isArray(state.knights) && state.knights.length) out.push('knights');
+    return out;
   }
   // コスト$N以下の獲得候補（負債/ポーション費用は除外＝成分ごと比較の公式ルール）。
   function upToCanGain(state, cid, max) { return costUpTo(state, cid, max); }
@@ -6978,6 +7246,18 @@
     //   獲得すると（remodel/工房等の *_GAIN 経由）その場で立てられないため onGainQueue に貯め、選択待ちが無くなったら 1件ずつ pending 化する。
     if (!state.pending && !state.gameOver && state.onGainQueue && state.onGainQueue.length) {
       state.pending = state.onGainQueue.shift();
+      state = runReplays(state);
+    }
+    // 移動動物園：植民（Populate）＝アクションのサプライ山それぞれから1枚ずつ獲得する。
+    //   1枚獲得するたびに獲得時対話（望楼/そり/追放の払い戻し等）が挟まるので、それを解決してから次の選択待ちを開く。
+    //   空になった山・獲得できなくなった山はここで落とす（残りゼロなら窓を閉じる）。
+    if (!state.pending && !state.gameOver && state.turn && state.turn.populateQueue && state.turn.populateQueue.length) {
+      const t3 = state.turn;
+      const left = t3.populateQueue.filter((k) => populatePiles(state).indexOf(k) >= 0);
+      if (left.length && t3.populatePlayer != null) {
+        t3.populateQueue = left;
+        state.pending = { type: 'populate', player: t3.populatePlayer };
+      } else t3.populateQueue = null;
       state = runReplays(state);
     }
     // ルネサンス：増築の廃棄/獲得が誘発した対話（技術革新/下水道/貨物船/ドゥカート）を解決し終えたら、
@@ -12546,15 +12826,16 @@
       }
 
       /* ===== 移動動物園（Menagerie）===== */
-      // 追放マットの払い戻し（一般ルール）＝獲得したカードと同名のカードを、追放マットから好きな枚数 捨て札にしてよい。
-      //   n 省略＝全部。0 も正当（1枚も戻さない）。
+      // 追放マットの払い戻し（一般ルール）＝獲得したカードと同名のカードを、追放マットから捨て札にしてよい。
+      //   **「全部捨てる」か「1枚も捨てない」の二択**（公式ルールブック "You cannot discard just one of them."）。
+      //   n 省略＝全部。0＝戻さない。中途半端な枚数は状態不変で拒否する。
       case 'EXILE_DISCARD': {
         const pd = state.pending;
         if (!pd || pd.type !== 'exile_discard') return state;
         const have = exileCount(state.players[pd.player], pd.card);
         const n = (action.n == null) ? have : (action.n | 0);
-        if (n < 0 || n > have) return state; // 不正な枚数は状態不変で拒否
-        state.pending = null;                // 先に閉じる（捨て札が坑道/村有緑地の窓を開け得るため）
+        if (n !== 0 && n !== have) return state; // 一部だけ捨てることはできない
+        state.pending = null;                    // 先に閉じる（捨て札が坑道/村有緑地の窓を開け得るため）
         if (n > 0) discardFromExile(state, pd.player, pd.card, n);
         return state;
       }
@@ -12942,6 +13223,242 @@
         return state;
       }
 
+      /* ===== 移動動物園：イベント20種の選択待ち ===== */
+      // 特価品＝コスト$5以下の勝利点でないカード1枚を獲得（強制）。その後、他の各プレイヤーが馬1枚を獲得する。
+      case 'BARGAIN_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'bargain_gain') return state;
+        const id = action.card;
+        if (!id || !bargainCanGain(state, id)) return state;
+        state.pending = null;
+        gain(state, pd.player, id, 'discard');
+        bargainHorses(state, pd.player);
+        return state;
+      }
+      // 要求＝コスト$4以下のカード1枚を山札の上に獲得（強制。馬は購入時に獲得済み＝この1枚が一番上になる）。
+      case 'DEMAND_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'demand_gain') return state;
+        const id = action.card;
+        if (!id || !upToCanGain(state, id, 4)) return state;
+        state.pending = null;
+        gain(state, pd.player, id, 'deck');
+        return state;
+      }
+      // 絶望＝呪い1枚を獲得してもよい。獲得したなら +1購入 +$2。
+      case 'DESPERATION': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'desperation') return state;
+        state.pending = null;
+        if (!action.gain) return state;
+        // 支配（Possession）中は獲得するのが支配者＝購入した本人は「獲得していない」ので +1購入 +$2 を得ない（公式）。
+        const possessed = (t.possessedBy != null && pd.player === t.active);
+        if (gain(state, pd.player, 'curse', 'discard') && !possessed) {
+          t.buys += 1; addCoins(state, 2); applyCoinPenalty(state);
+          log(state, `${state.players[pd.player].name} は絶望で呪い1枚を獲得し +1購入 +$2。`);
+        }
+        return state;
+      }
+      // 放逐＝手札から「同じ名前」のカードを好きな枚数 追放する（0枚＝追放しないも可／2種類は不可）。
+      case 'BANISH_EXILE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'banish') return state;
+        const pl = state.players[pd.player];
+        const id = action.card;
+        if (id == null) { state.pending = null; return state; } // 追放しない
+        const have = pl.hand.filter((c) => c === id).length;
+        const n = (action.n == null) ? have : (action.n | 0);
+        if (have <= 0 || n < 1 || n > have) return state;
+        state.pending = null;
+        for (let i = 0; i < n; i++) exileFromZone(state, pd.player, id, pl.hand);
+        return state;
+      }
+      // 投資＝サプライからアクション1枚を追放する（強制）。以後、他プレイヤーがその同名を獲得/投資すると +2カード。
+      case 'INVEST_EXILE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'invest') return state;
+        const id = action.card;
+        if (!id || !DOM.isType(id, 'action') || exilableSupplyIds(state).indexOf(id) < 0) return state;
+        const pl = state.players[pd.player];
+        state.pending = null;
+        if (exileFromSupply(state, pd.player, id)) {
+          setInvestCount(pl, id, investCount(pl, id) + 1);
+          log(state, `${pl.name} は「${C()[id].name}」に投資した（他プレイヤーがこれを獲得/投資すると +2カード）。`);
+          // 「他のプレイヤーがそのカードを**投資**したとき」も +2カード（公式）。
+          triggerInvest(state, pd.player, id);
+        }
+        return state;
+      }
+      // 輸送＝二択（実行できない選択肢も選べる＝公式）。
+      case 'TRANSPORT_MODE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'transport' || pd.stage !== 'mode') return state;
+        if (action.mode !== 'exile' && action.mode !== 'return') return state;
+        const pl = state.players[pd.player];
+        if (action.mode === 'exile') {
+          if (!anyExilableSupply(state, (cid) => DOM.isType(cid, 'action'))) { state.pending = null; return state; }
+          state.pending = { type: 'transport', stage: 'exile', player: pd.player };
+        } else {
+          if (!(pl.exile || []).some((c) => DOM.isType(c, 'action'))) { state.pending = null; return state; }
+          state.pending = { type: 'transport', stage: 'return', player: pd.player };
+        }
+        return state;
+      }
+      case 'TRANSPORT_PICK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'transport' || (pd.stage !== 'exile' && pd.stage !== 'return')) return state;
+        const pl = state.players[pd.player];
+        const id = action.card;
+        if (!id || !DOM.isType(id, 'action')) return state;
+        if (pd.stage === 'exile') {
+          if (exilableSupplyIds(state).indexOf(id) < 0) return state;
+          state.pending = null;
+          exileFromSupply(state, pd.player, id);
+        } else {
+          if (!removeOne(pl.exile || [], id)) return state;
+          state.pending = null;
+          pl.deck.unshift(id);
+          // 投資したコピーと投資していないコピーが両方あるなら「投資していない方」を動かす
+          //   （公式はどちらか選べるが、投資を残すほうが常に得なので自動で最善を選ぶ）。
+          const left = exileCount(pl, id);
+          if (investCount(pl, id) > left) setInvestCount(pl, id, left);
+          log(state, `${pl.name} は輸送で追放マットの「${C()[id].name}」を山札の上に置いた。`);
+        }
+        return state;
+      }
+      // 苦労＝手札のアクション1枚を使用してよい（アクション権を消費しない）。
+      case 'TOIL_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'toil') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        state.pending = null;
+        if (card == null) return state;
+        if (pl.hand.indexOf(card) < 0) return state;
+        if (!DOM.isType(card, 'action') && !inheritedEstate(pl, card)) return state;
+        playCardNoAction(state, pd.player, card, pl.hand, '苦労で', action.way);
+        return state;
+      }
+      // 進軍＝捨て札置き場のアクション1枚を使用してよい（アクション権を消費しない）。
+      case 'MARCH_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'march') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        state.pending = null;
+        if (card == null) return state;
+        if (pl.discard.indexOf(card) < 0 || !DOM.isType(card, 'action')) return state;
+        playCardNoAction(state, pd.player, card, pl.discard, '進軍で', action.way);
+        return state;
+      }
+      // 博打＝捨てたカードがアクション/財宝なら使用してよい（アクション権を消費しない）。
+      case 'GAMBLE_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'gamble') return state;
+        const pl = state.players[pd.player];
+        state.pending = null;
+        if (!action.play) return state;
+        if (pl.discard.indexOf(pd.card) < 0) return state; // 既に動かされていたら使えない（lose track）
+        playCardNoAction(state, pd.player, pd.card, pl.discard, '博打で', action.way);
+        return state;
+      }
+      // 遅延＝手札のアクション1枚を脇に置いてもよい（次の自分のターン開始時に使用する）。
+      case 'DELAY_SETASIDE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'delay') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        state.pending = null;
+        if (card == null) return state;
+        if (pl.hand.indexOf(card) < 0 || !DOM.isType(card, 'action')) return state;
+        removeOne(pl.hand, card);
+        (pl.eventSetAside = pl.eventSetAside || []).push(card);
+        log(state, `${pl.name} は遅延で「${C()[card].name}」を脇に置いた（次のターン開始時に使用する）。`);
+        return state;
+      }
+      // 遅延／刈り入れ＝ターン開始時に脇のカードを使用する（強制・アクション権を消費しない）。
+      case 'EVENT_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'event_play') return state;
+        const pl = state.players[pd.player];
+        const card = (pl.eventSetAside || [])[0];
+        state.pending = null; // 先に閉じる（使用が新たな選択待ちを立てることがある）
+        if (card == null) { popStartQueue(state); return state; }
+        playCardNoAction(state, pd.player, card, pl.eventSetAside, '脇に置いた', action.way);
+        return state; // 残りの開始時キューは reduce 末尾の startQueue 安全網が進める
+      }
+      // 増大＝手札から勝利点でないカード1枚を廃棄してもよい → 廃棄したら、それより最大$2高いカード1枚を獲得（強制）。
+      case 'ENHANCE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'enhance' || pd.stage !== 'trash') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        if (card == null) { state.pending = null; return state; } // 廃棄しない
+        if (pl.hand.indexOf(card) < 0 || DOM.isType(card, 'victory')) return state;
+        const ref = costOf(state, card); // 廃棄時点の現在コスト（橋/街道/行商人の影響を受ける）
+        removeOne(pl.hand, card);
+        trashCard(state, pd.player, card);
+        const max = { coin: ref.coin + 2, pot: ref.pot, debt: ref.debt };
+        if (anyGainable(state, (cid) => costUpTo(state, cid, max.coin, { pot: max.pot, debt: max.debt }))) {
+          state.pending = { type: 'enhance', stage: 'gain', player: pd.player, maxCost: max.coin, pot: max.pot, debt: max.debt };
+        } else state.pending = null;
+        return state;
+      }
+      case 'ENHANCE_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'enhance' || pd.stage !== 'gain') return state;
+        const id = action.card;
+        if (!id || !costUpTo(state, id, pd.maxCost, { pot: pd.pot, debt: pd.debt })) return state;
+        state.pending = null;
+        gain(state, pd.player, id, 'discard');
+        return state;
+      }
+      // 追求＝カード名を1つ指定 → 山札の上4枚を公開 → 指定した名前を山札の上に戻し、残りを捨てる。
+      case 'PURSUE_NAME': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'pursue') return state;
+        const named = action.card;
+        if (!named || !C()[named]) return state; // ゲームに無い名前も指定できるが、実在するカード名であること
+        const pl = state.players[pd.player];
+        state.pending = null;
+        const look = [];
+        for (let i = 0; i < 4; i++) {
+          if (pl.deck.length === 0) { if (pl.discard.length === 0) break; reshuffleDeck(pl); }
+          if (pl.deck.length === 0) break;
+          look.push(pl.deck.shift());
+        }
+        log(state, `${pl.name} は追求で「${C()[named].name}」を指定した。`);
+        if (!look.length) return state;
+        reveal(state, pd.player, look, '追求で山札の上4枚を公開');
+        const keep = look.filter((c) => c === named);
+        const rest = look.filter((c) => c !== named);
+        for (let i = keep.length - 1; i >= 0; i--) pl.deck.unshift(keep[i]); // 公開順のまま山札の上へ戻す
+        rest.forEach((c) => pl.discard.push(c));
+        log(state, `${pl.name} は ${keep.length}枚 を山札の上に戻し、${rest.length}枚 を捨て札にした。`);
+        if (rest.length) triggerOnDiscard(state, pd.player, rest);
+        return state;
+      }
+      // 植民＝アクションのサプライ山それぞれから1枚ずつ獲得する（獲得順はプレイヤーが選ぶ／おまかせも可）。
+      case 'POPULATE_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'populate') return state;
+        const avail = populatePiles(state);
+        const q = (t.populateQueue || []).filter((k) => avail.indexOf(k) >= 0);
+        if (!q.length) { state.pending = null; t.populateQueue = null; return state; }
+        if (action.auto) { // 残りをまとめて獲得（コストの高い山から）。獲得時対話は onGainQueue が拾う。
+          state.pending = null; t.populateQueue = null;
+          q.slice().sort((a, b) => cardCost(state, b) - cardCost(state, a))
+            .forEach((k) => { if (populatePiles(state).indexOf(k) >= 0) gain(state, pd.player, k, 'discard'); });
+          return state;
+        }
+        const pile = action.pile;
+        if (q.indexOf(pile) < 0) return state;
+        state.pending = null;
+        t.populateQueue = q.filter((k) => k !== pile);
+        gain(state, pd.player, pile, 'discard');
+        return state; // 残りは reduce 末尾の再開網が（獲得時対話を解決してから）次の選択待ちを開く
+      }
+
       default:
         return state;
     }
@@ -13163,6 +13680,10 @@
     'WAYFARER_GAIN', 'KILN_GAIN',
     // 移動動物園：習性（Way）＝横型・買わない（PLAY_ACTION に action.way を添えて使う）
     'WAY_BUTTERFLY', 'WAY_BUTTERFLY_GAIN', 'WAY_GOAT_TRASH', 'WAY_RAT_DISCARD', 'WAY_SEAL_TOPDECK',
+    // 移動動物園：イベント20種（横型・購入して使う）
+    'BARGAIN_GAIN', 'DEMAND_GAIN', 'DESPERATION', 'BANISH_EXILE', 'INVEST_EXILE',
+    'TRANSPORT_MODE', 'TRANSPORT_PICK', 'TOIL_PLAY', 'MARCH_PLAY', 'GAMBLE_PLAY',
+    'DELAY_SETASIDE', 'EVENT_PLAY', 'ENHANCE_TRASH', 'ENHANCE_GAIN', 'PURSUE_NAME', 'POPULATE_GAIN',
   ]);
 
   /* ---------- 公開API ---------- */
@@ -13201,6 +13722,10 @@
     availableInSupply, // 「今サプライから取れる（＝山の一番上にある）」か。追放・サプライ廃棄の候補選びの正本
     exilableSupplyIds, // 「サプライから追放できる」候補id列（非サプライ山・ロック中の分割山下段を除く）
     exileCount,        // そのプレイヤーの追放マットにある同名カードの枚数
+    investCount,       // 移動動物園：投資（Invest）で追放したコピーの枚数（表示用・+2カードの判定はengine内）
+    bargainCanGain,    // 移動動物園：特価品の獲得候補（$5以下・勝利点でない）
+    populatePiles,     // 移動動物園：植民で獲得できる「アクションのサプライ山」の一覧（engine/CPU/UI が同じ候補を参照）
+    isUsableWay,       // 移動動物園：その習性がこの対局で採用されているか（イベントの「使用」でも習性を選べる）
     improveTargets,    // ルネサンス：増築の廃棄対象（engine/CPU/UI が同じ候補を参照）
     isTreasureFor,     // ルネサンス：資本主義を含む「今この状態で財宝か」＝**財宝判定の正本**（engine/CPU/UI が同じ述語）
     capitalismTreasures, // ルネサンス：資本主義で財宝になるアクションの集合（整合性テストで固定する）

@@ -24,7 +24,8 @@ const ZONES = ['deck', 'hand', 'discard', 'inPlay', 'durationCards', 'setAside',
   'tavern', // 冒険：酒場マット（Reserve カード・守銭奴の銅貨。公開ゾーン）
   'inherited', // 冒険：相続で脇に置いたカード（サプライから抜いて脇に置く＝物理カードなので保存則に数える）
   'cargo', // ルネサンス：貨物船の脇置き（表向き＝公開ゾーン。次の手番開始時に手札へ）
-  'exile']; // 移動動物園：追放マット（公開ゾーン。所有者のカード＝得点にも数える）
+  'exile', // 移動動物園：追放マット（公開ゾーン。所有者のカード＝得点にも数える）
+  'eventSetAside']; // 移動動物園：遅延/刈り入れの脇置き（次の自分のターン開始時に使用する。公開ゾーン）
 function tally(s) {
   const t = {}; const add = (id) => { if (id != null) t[id] = (t[id] || 0) + 1; };
   Object.keys(s.supply).forEach((id) => {
@@ -124,7 +125,7 @@ console.log('=== カード保存則: 全プール混成ランダム王国 ===');
 console.log('=== カード保存則: 出荷セット（固定/ランダム各種） ===');
 {
   const sets = ['basic', 'intrigue', 'seaside', 'alchemy', 'prosperity', 'cornucopia', 'guilds', 'hinterlands', 'darkages', 'adventures', 'adventures-events', 'empires', 'empires-landmarks', 'empires-events', 'renaissance', 'renaissance-projects', 'promo2-pack', 'random', 'random-promo', 'random-seaside', 'random-alchemy', 'random-prosperity', 'random-cornucopia', 'random-guilds', 'random-hinterlands', 'random-darkages', 'random-adventures', 'random-empires', 'random-renaissance',
-    'menagerie', 'menagerie-ways', 'random-menagerie'];
+    'menagerie', 'menagerie-ways', 'menagerie-events', 'random-menagerie'];
   let allOk = true;
   for (const setId of sets) {
     for (let sd = 0; sd < 3; sd++) {
@@ -268,6 +269,50 @@ console.log('=== カード保存則: 冒険イベント（買う横型・全20�
     if (!r.okp) { allOk = false; console.log('    AE-EMP' + g + ' [' + ev.join(',') + ']: ' + r.why); }
   }
   ok(allOk, '冒険イベント各種すべて保存則・不変条件を満たし終局（相続の脇置きはカード／山トークンは非カード）');
+}
+
+// E5) 移動動物園：横型イベント20種（買う横型）。遅延/刈り入れの脇置き（p.eventSetAside）はカード＝tally に数える。
+//     追放マット（p.exile）もカード。投資の枚数（p.exileInvested）は非カード。馬は非サプライ＝3山終了に数えない。
+//     今を生きるの追加ターン・植民の大量獲得でも CPU が膠着しないことを確認する。
+console.log('=== カード保存則: 移動動物園イベント（買う横型・全20種）===');
+{
+  const EV_PAIRS = [
+    ['alliance', 'banish'], ['bargain', 'commerce'], ['delay', 'demand'],
+    ['desperation', 'enclave'], ['enhance', 'gamble'], ['invest', 'march'],
+    ['populate', 'pursue'], ['reap', 'ride'], ['seize_the_day', 'stampede'],
+    ['toil', 'transport'], ['invest', 'transport'], ['populate', 'seize_the_day'],
+  ];
+  const K = DOM.KINGDOM_MENAGERIE;
+  let allOk = true;
+  for (let i = 0; i < EV_PAIRS.length; i++) {
+    for (let sd = 0; sd < 3; sd++) {
+      const r = runGame(K, mkPlayers(2 + (sd % 3), sd), [], EV_PAIRS[i]);
+      if (!r.okp) { allOk = false; console.log('    ME ' + EV_PAIRS[i].join('+') + ' sd' + sd + ': ' + r.why); }
+    }
+  }
+  // 全20種を同時に付けて（CPUがどれを買っても）保存則・終局・非ループを確認。
+  for (let sd = 0; sd < 6; sd++) {
+    const r = runGame(K, mkPlayers(2 + (sd % 3), sd), [], DOM.EVENTS_MENAGERIE.slice());
+    if (!r.okp) { allOk = false; console.log('    ME-ALL sd' + sd + ': ' + r.why); }
+  }
+  // イベント × 習性の同居（アクション権を使わない使用で習性を選べる／カメレオン・雪深い村との相互作用）。
+  for (let sd = 0; sd < 6; sd++) {
+    const wy = DOM.pickLandmarks(2, DOM.WAYS_MENAGERIE);
+    const r = runGame(K, mkPlayers(2 + (sd % 3), 50 + sd), [], DOM.EVENTS_MENAGERIE.slice(), [], wy);
+    if (!r.okp) { allOk = false; console.log('    ME-WAY sd' + sd + ' [' + wy.join(',') + ']: ' + r.why); }
+  }
+  // 全プール混成王国に移動動物園イベントを付けて fuzz（植民×分割山/混合山・投資×非サプライ・追放×他拡張）。
+  for (let g = 0; g < 12; g++) {
+    const ev = DOM.pickLandmarks(2, DOM.EVENTS_MENAGERIE);
+    const r = runGame(randK(), mkPlayers(2 + (g % 3), g), [], ev);
+    if (!r.okp) { allOk = false; console.log('    ME-MIX' + g + ' [' + ev.join(',') + ']: ' + r.why); }
+  }
+  // 植民（Populate）を必ず含む混成＝アクションの山を一気に減らすので3山終了・混合山・分割山の判定を重点検査。
+  for (let g = 0; g < 6; g++) {
+    const r = runGame(randK(), mkPlayers(2 + (g % 3), 200 + g), [], ['populate', 'invest']);
+    if (!r.okp) { allOk = false; console.log('    ME-POP' + g + ': ' + r.why); }
+  }
+  ok(allOk, '移動動物園イベント各種すべて保存則・不変条件を満たし終局（脇置き/追放はカード・投資枚数は非カード）');
 }
 
 // D) 支配(Possession)を強制して保存則検証（CPUは支配を買わないので手で発動させ、被支配ターンを操作させる）。

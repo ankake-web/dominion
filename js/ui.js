@@ -1405,6 +1405,15 @@
         Object.keys(ex).map((id) => h('span', { class: 'chip-card ' + typeClass(id) },
           DOM.CARDS[id].name + (ex[id] > 1 ? '×' + ex[id] : '')))));
     }
+    // 移動動物園：投資（Invest）で追放したカード（他プレイヤーがそれを獲得/投資すると +2カード）。
+    if (Object.keys(me.exileInvested || {}).length) matRows.push(h('div', { class: 'mat-row' },
+      h('span', { class: 'mat-label' }, '📈 投資: '),
+      Object.keys(me.exileInvested).map((id) => h('span', { class: 'chip-card ' + typeClass(id) },
+        ((DOM.CARDS[id] || {}).name || id) + (me.exileInvested[id] > 1 ? '×' + me.exileInvested[id] : '')))));
+    // 移動動物園：遅延／刈り入れで脇に置いたカード（次の自分のターン開始時に使用する。公開）
+    if ((me.eventSetAside || []).length) matRows.push(h('div', { class: 'mat-row' },
+      h('span', { class: 'mat-label' }, '⏳ 次のターン開始時に使う: '),
+      me.eventSetAside.map((id) => h('span', { class: 'chip-card ' + typeClass(id) }, (DOM.CARDS[id] || {}).name || id))));
     // 繁栄：勝利点トークン（司教・記念碑・収集・投資。終了時に得点へ加算）
     if (me.vpTokens) matRows.push(h('div', { class: 'mat-row' },
       h('span', { class: 'mat-label' }, '⭐ 勝利点トークン: ' + me.vpTokens + ' 点')));
@@ -1805,9 +1814,12 @@
     if (pd.type === 'exile_discard') {
       const have = DOM.engine.exileCount(state.players[pd.player], pd.card);
       const nm = (DOM.CARDS[pd.card] || {}).name || pd.card;
-      return modalAmount('追放マット — 捨て札に戻す', '「' + nm + '」を獲得しました。追放マットにある「' + nm + '」を好きな枚数、捨て札に戻せます（戻さなくてもかまいません）。',
-        have, 0, (n) => (n > 0 ? n + '枚を捨て札に戻す' : '戻さない'),
-        (n) => dispatch({ type: 'EXILE_DISCARD', n }));
+      // 公式：「全部捨てる」か「1枚も捨てない」の二択（一部だけは捨てられない）。
+      return modalOptions('追放マット — 捨て札に戻す',
+        '「' + nm + '」を獲得しました。追放マットにある「' + nm + '」' + have + '枚を、すべて捨て札に戻せます（一部だけは戻せません）。', [
+        { label: have + '枚すべてを捨て札に戻す', cls: 'btn-primary', on: () => dispatch({ type: 'EXILE_DISCARD', n: have }) },
+        { label: '戻さない（追放したままにする）', on: () => dispatch({ type: 'EXILE_DISCARD', n: 0 }) },
+      ]);
     }
     // 艀＝「今」か「次の自分のターンの開始時」に +3カード +1購入。
     if (pd.type === 'barge_choose') return modalOptions('艀 — いつ受け取るか', '+3 カード と +1 購入 を、今すぐ受け取るか、次の自分のターンの開始時に受け取るかを選びます。', [
@@ -1818,9 +1830,11 @@
     if (pd.type === 'bounty_hunter_exile') return modalSingleHand(p, '賞金稼ぎ — 追放', '手札から1枚を追放します。追放マットに同名のカードが無ければ +3 コイン。',
       () => true, (card) => dispatch({ type: 'BOUNTY_HUNTER_EXILE', card }), false, '追放する');
     // ラクダの隊列＝サプライから勝利点でないカード1枚を追放（強制）。
-    if (pd.type === 'camel_train_exile') return modalGainSupply(state, 'ラクダの隊列 — 追放', 'サプライから勝利点でないカード1枚を追放します（獲得ではありません）。',
-      (id) => !DOM.isType(id, 'victory') && DOM.engine.exilableSupplyIds(state).indexOf(id) >= 0,
-      (id) => dispatch({ type: 'CAMEL_TRAIN_EXILE', card: id }), false, false, '追放する');
+    // ※混合山（廃墟/騎士/城）の一番上は state.supply にキーが無く modalGainSupply では出せないので modalPickIds を使う
+    //   （これらしか候補が無い局面で「選択肢ゼロの閉じられないモーダル」になるのを防ぐ）。
+    if (pd.type === 'camel_train_exile') return modalPickIds('ラクダの隊列 — 追放', 'サプライから勝利点でないカード1枚を追放します（獲得ではありません）。',
+      DOM.engine.exilableSupplyIds(state).filter((id) => !DOM.isType(id, 'victory')),
+      (id) => dispatch({ type: 'CAMEL_TRAIN_EXILE', card: id }), '追放する');
     // 黒猫／枢機卿／魔女の集会（アタック）。
     if (pd.type === 'black_cat' && pd.stage === 'react') return modalOptions('黒猫を受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'BLACK_CAT_REACT' }));
     if (pd.type === 'cardinal' && pd.stage === 'react') return modalOptions('枢機卿を受ける', '山札の上2枚を公開し、コスト3〜6コインの1枚が追放されます。', reactOptions(p, pd, { type: 'CARDINAL_REACT' }));
@@ -1931,6 +1945,112 @@
       { label: '山札の上に置く', cls: 'btn-primary', on: () => dispatch({ type: 'WAY_SEAL_TOPDECK', top: true }) },
       { label: 'そのまま（捨て札へ）', on: () => dispatch({ type: 'WAY_SEAL_TOPDECK', top: false }) },
     ]);
+    /* ===== 移動動物園：イベント20種の選択待ち ===== */
+    // 特価品＝$5以下の勝利点でないカード1枚を獲得（強制）。そのあと他の各プレイヤーが馬1枚を獲得する。
+    if (pd.type === 'bargain_gain') return modalGainSupply(state, '特価品 — 獲得',
+      'コスト5コイン以下の、勝利点でないカード1枚を獲得します（そのあと、他のプレイヤーは各自 馬1枚を獲得します）。',
+      (id) => DOM.engine.bargainCanGain(state, id), (id) => dispatch({ type: 'BARGAIN_GAIN', card: id }));
+    // 要求＝$4以下のカード1枚を山札の上に獲得（馬は既に山札の上に置かれている）。
+    if (pd.type === 'demand_gain') return modalGainSupply(state, '要求 — 獲得',
+      'コスト4コイン以下のカード1枚を、山札の上に獲得します（馬はすでに山札の上に置きました＝このカードが一番上になります）。',
+      (id) => canUpTo(state, id, 4), (id) => dispatch({ type: 'DEMAND_GAIN', card: id }));
+    // 絶望＝呪い1枚を獲得してもよい。獲得したなら +1購入 +$2。
+    if (pd.type === 'desperation') return modalOptions('絶望 — 呪いを獲得しますか', '呪い1枚を獲得すると、+1 購入 と +2 コイン を得ます。', [
+      { label: '呪いを獲得する（+1 購入 +2 コイン）', cls: 'btn-primary', on: () => dispatch({ type: 'DESPERATION', gain: true }) },
+      { label: '獲得しない（何も得ない）', on: () => dispatch({ type: 'DESPERATION', gain: false }) },
+    ]);
+    // 放逐＝手札から同じ名前のカードを好きな枚数 追放する（2種類は不可）。
+    if (pd.type === 'banish') {
+      const names = [];
+      p.hand.forEach((c) => { if (names.indexOf(c) < 0) names.push(c); });
+      if (UI.selection && typeof UI.selection === 'string' && names.indexOf(UI.selection) < 0) UI.selection = null;
+      if (typeof UI.selection === 'string') { // 2段目＝枚数を選ぶ
+        const nm = UI.selection;
+        const have = p.hand.filter((c) => c === nm).length;
+        return modalAmount('放逐 — 枚数', '「' + ((DOM.CARDS[nm] || {}).name || nm) + '」を何枚 追放しますか（追放マットに置きます）。',
+          have, 1, (n) => n + '枚を追放する',
+          (n) => { UI.selection = null; dispatch({ type: 'BANISH_EXILE', card: nm, n }); });
+      }
+      const chips = names.map((id) => cardEl(id, { size: 'sm', extra: 'selectable',
+        onClick: () => { UI.selection = id; render(); } }));
+      const footer = h('button', { class: 'btn btn-block', onclick: () => { UI.selection = null; dispatch({ type: 'BANISH_EXILE', card: null }); } }, '追放しない');
+      return modalShell('放逐 — 追放するカード', '手札から「同じ名前」のカードを好きな枚数 追放します（2種類はまとめられません）。', chips, footer);
+    }
+    // 投資＝サプライからアクション1枚を追放する（以後、他プレイヤーがそれを獲得/投資すると +2カード）。
+    if (pd.type === 'invest') return modalPickIds('投資 — 追放',
+      'サプライからアクションカード1枚を追放します（獲得ではありません）。追放されている間、他のプレイヤーがそれと同名のカードを獲得または投資すると、あなたは +2 カード を引きます。',
+      DOM.engine.exilableSupplyIds(state).filter((id) => DOM.isType(id, 'action')),
+      (id) => dispatch({ type: 'INVEST_EXILE', card: id }), '投資する');
+    // 輸送＝二択（実行できない方も選べる＝公式）。
+    if (pd.type === 'transport' && pd.stage === 'mode') return modalOptions('輸送 — どちらかを選ぶ', '次から1つを選びます。', [
+      { label: 'サプライからアクション1枚を追放する', cls: 'btn-primary', on: () => dispatch({ type: 'TRANSPORT_MODE', mode: 'exile' }) },
+      { label: '追放してあるアクション1枚を山札の上に置く', on: () => dispatch({ type: 'TRANSPORT_MODE', mode: 'return' }) },
+    ]);
+    if (pd.type === 'transport' && pd.stage === 'exile') return modalPickIds('輸送 — 追放',
+      'サプライからアクションカード1枚を追放します（獲得ではありません）。',
+      DOM.engine.exilableSupplyIds(state).filter((id) => DOM.isType(id, 'action')),
+      (id) => dispatch({ type: 'TRANSPORT_PICK', card: id }), '追放する');
+    if (pd.type === 'transport' && pd.stage === 'return') {
+      const names = [];
+      (p.exile || []).forEach((c) => { if (DOM.isType(c, 'action') && names.indexOf(c) < 0) names.push(c); });
+      const chips = names.length
+        ? names.map((id) => cardEl(id, { size: 'sm', extra: 'selectable', onClick: () => openPickZoom(id, '山札の上に置く', () => dispatch({ type: 'TRANSPORT_PICK', card: id })) }))
+        : [h('p', { class: 'muted' }, '対象のカードがありません')];
+      return modalShell('輸送 — 山札の上に置く', '追放マットにある自分のアクションカード1枚を、山札の上に置きます。', chips, null);
+    }
+    // 苦労／進軍／博打／脇に置いたカード＝「アクション権を消費しない使用」（習性を選べる）。
+    if (pd.type === 'toil') return modalPlayCardEvent(state, p, '苦労 — アクションを使う',
+      '手札からアクションカード1枚を使用できます（アクション権は使いません）。', p.hand,
+      (id) => DOM.isType(id, 'action') || inheritedEstate(state, id), 'TOIL_PLAY',
+      { label: '使用しない', on: () => dispatch({ type: 'TOIL_PLAY', card: null }) });
+    if (pd.type === 'march') return modalPlayCardEvent(state, p, '進軍 — 捨て札から使う',
+      '捨て札置き場を見て、その中のアクションカード1枚を使用できます（アクション権は使いません）。', p.discard,
+      (id) => DOM.isType(id, 'action'), 'MARCH_PLAY',
+      { label: '使用しない', on: () => dispatch({ type: 'MARCH_PLAY', card: null }) });
+    if (pd.type === 'gamble') {
+      const nm = (DOM.CARDS[pd.card] || {}).name || pd.card;
+      const ways = (state.ways || []).filter((w) => (DOM.LANDSCAPES || {})[w] && DOM.isType(pd.card, 'action'));
+      const btns = [{ label: '「' + nm + '」を使う', cls: 'btn-primary', on: () => dispatch({ type: 'GAMBLE_PLAY', play: true }) }];
+      ways.forEach((w) => btns.push({ label: '「' + DOM.LANDSCAPES[w].name + '」で使う', on: () => dispatch({ type: 'GAMBLE_PLAY', play: true, way: w }) }));
+      btns.push({ label: '使わない（捨て札のまま）', on: () => dispatch({ type: 'GAMBLE_PLAY', play: false }) });
+      return modalOptions('博打 — 使いますか', '山札の上の「' + nm + '」を捨て札にしました。これを使用できます（アクション権は使いません）。', btns);
+    }
+    // 遅延＝手札のアクション1枚を脇に置いてもよい（次のターン開始時に使用する）。
+    if (pd.type === 'delay') return modalSingleHand(p, '遅延 — 脇に置く',
+      '手札からアクションカード1枚を脇に置けます。次の自分のターンの開始時に、それを（アクション権を使わずに）使用します。',
+      (id) => DOM.isType(id, 'action'), (card) => dispatch({ type: 'DELAY_SETASIDE', card }),
+      { label: '脇に置かない', on: () => dispatch({ type: 'DELAY_SETASIDE', card: null }) }, '脇に置く');
+    // 遅延／刈り入れ＝ターン開始時に脇のカードを使用する（強制）。
+    if (pd.type === 'event_play') {
+      const card = (p.eventSetAside || [])[0];
+      const nm = (DOM.CARDS[card] || {}).name || card;
+      const ways = (state.ways || []).filter((w) => (DOM.LANDSCAPES || {})[w] && DOM.isType(card, 'action'));
+      const btns = [{ label: '「' + nm + '」を使う', cls: 'btn-primary', on: () => dispatch({ type: 'EVENT_PLAY' }) }];
+      ways.forEach((w) => btns.push({ label: '「' + DOM.LANDSCAPES[w].name + '」で使う', on: () => dispatch({ type: 'EVENT_PLAY', way: w }) }));
+      return modalOptions('脇に置いたカードを使う', '遅延／刈り入れで脇に置いた「' + nm + '」を使用します（アクション権は使いません）。', btns);
+    }
+    // 増大＝勝利点でない手札1枚を廃棄してもよい → それより最大$2高いカード1枚を獲得（強制）。
+    if (pd.type === 'enhance' && pd.stage === 'trash') return modalSingleHand(p, '増大 — 廃棄',
+      '手札から勝利点でないカード1枚を廃棄できます。廃棄したら、それより最大2コイン高いカード1枚を獲得します。',
+      (id) => !DOM.isType(id, 'victory'), (card) => dispatch({ type: 'ENHANCE_TRASH', card }),
+      { label: '廃棄しない', on: () => dispatch({ type: 'ENHANCE_TRASH', card: null }) }, '廃棄する');
+    if (pd.type === 'enhance' && pd.stage === 'gain') return modalGainSupply(state, '増大 — 獲得',
+      '廃棄したカードより最大2コイン高いカード1枚を獲得します。',
+      (id) => canUpTo(state, id, pd.maxCost, { pot: pd.pot, debt: pd.debt }), (id) => dispatch({ type: 'ENHANCE_GAIN', card: id }));
+    // 追求＝カード名を1つ指定（山札の上4枚のうち、その名前だけを山札の上に戻す）。
+    if (pd.type === 'pursue') return modalGainSupply(state, '追求 — カード名を指定', 'カード名を1つ指定します。山札の上4枚を公開し、指定した名前のカードだけを山札の上に戻し、残りを捨て札にします。',
+      (id) => true, (id) => dispatch({ type: 'PURSUE_NAME', card: id }), false, false, '指定する', true);
+    // 植民＝アクションのサプライ山それぞれから1枚ずつ獲得（獲得順は自分で選べる／おまかせも可）。
+    if (pd.type === 'populate') {
+      const piles = (state.turn.populateQueue || []).filter((k) => (DOM.engine.populatePiles(state) || []).indexOf(k) >= 0);
+      const chips = piles.map((k) => {
+        const shown = (k === 'ruins' || k === 'knights') ? ((state[k] || [])[0] || k) : k;
+        return cardEl(shown, { size: 'sm', extra: 'selectable', onClick: () => dispatch({ type: 'POPULATE_GAIN', pile: k }) });
+      });
+      const footer = h('button', { class: 'btn btn-primary btn-block', onclick: () => dispatch({ type: 'POPULATE_GAIN', auto: true }) },
+        'おまかせで残り ' + piles.length + '枚 を獲得');
+      return modalShell('植民 — 獲得する山を選ぶ', 'アクションのサプライ山それぞれから1枚ずつ獲得します（残り ' + piles.length + '山）。獲得する順番は選べます。', chips, footer);
+    }
     if (pd.type === 'nobles') return modalOptions('貴族', '次から1つを選びます。', [
       { label: '+3 カード', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'cards' }) },
       { label: '+2 アクション', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'actions' }) },
@@ -2952,6 +3072,33 @@
     return modalShell(title, desc, chips, btn);
   }
 
+  /* 指定した id 群から1枚選ぶモーダル。**サプライの山キーに無いカードも出せる**のが modalGainSupply との違い
+     （混合山＝廃墟/騎士/城 の一番上は state.supply にキーが無いため、追放の候補に出せず人間が詰むことがある）。 */
+  function modalPickIds(title, desc, ids, onPick, pickLabel, skip) {
+    const chips = (ids || []).length
+      ? ids.map((id) => cardEl(id, { size: 'sm', extra: 'selectable', onClick: () => openPickZoom(id, pickLabel || '選ぶ', () => onPick(id)) }))
+      : [h('p', { class: 'muted' }, '対象のカードがありません')];
+    const btn = skip ? h('button', { class: 'btn btn-block', onclick: skip.on }, skip.label) : null;
+    return modalShell(title, desc, chips, btn);
+  }
+
+  /* 移動動物園：苦労（Toil）／進軍（March）＝「アクション権を消費せずにアクション1枚を使用する」選択モーダル。
+     zone（手札 or 捨て札）から使えるカードを名前ごとに1枚ずつ並べ、タップで拡大→確定。
+     習性（Way）が採用されていれば「記載効果の代わりに習性で使う」も選べる（公式：カードを使用するときはいつでも選べる）。 */
+  function modalPlayCardEvent(state, p, title, desc, zone, filter, actionType, skip) {
+    const names = [];
+    (zone || []).forEach((c) => { if (DOM.CARDS[c] && filter(c) && names.indexOf(c) < 0) names.push(c); });
+    const wayList = (state.ways || []).filter((w) => (DOM.LANDSCAPES || {})[w]);
+    const chips = names.length
+      ? names.map((id) => cardEl(id, { size: 'sm', extra: 'selectable', onClick: () => openPickZoom(id,
+          wayList.length ? '使う（カードの効果）' : '使う',
+          () => dispatch({ type: actionType, card: id }),
+          wayList.map((w) => ({ label: '「' + DOM.LANDSCAPES[w].name + '」で使う', on: () => dispatch({ type: actionType, card: id, way: w }) }))) }))
+      : [h('p', { class: 'muted' }, '対象のカードがありません')];
+    const btn = skip ? h('button', { class: 'btn btn-block', onclick: skip.on }, skip.label) : null;
+    return modalShell(title, desc, chips, btn);
+  }
+
   /* ---------- 拡張用の選択モーダル ---------- */
   // 選択肢ボタンを縦に並べる（執事・男爵・鉱山の村・貴族など）
   function modalOptions(title, desc, buttons) {
@@ -3159,7 +3306,8 @@
         footer || null));
   }
   // 廃棄/獲得のカードを拡大して確認してから確定する
-  function openPickZoom(id, label, onConfirm) { UI.pickZoom = { id, label, onConfirm }; render(); }
+  // extra＝追加の選択肢ボタン（移動動物園：習性で使う／苦労・進軍の「習性で使う」）。省略可。
+  function openPickZoom(id, label, onConfirm, extra) { UI.pickZoom = { id, label, onConfirm, extra: extra || null }; render(); }
   function viewPickZoom() {
     const pz = UI.pickZoom;
     const c = DOM.CARDS[pz.id];
@@ -3170,6 +3318,7 @@
           h('div', { class: 'zoom-fallback' }, c.name)),
         h('div', { class: 'pickzoom-actions' },
           h('button', { class: 'btn btn-primary btn-block', onclick: () => { const f = pz.onConfirm; UI.pickZoom = null; if (f) f(); } }, (pz.label || 'これにする') + 'を確定'),
+          ...(pz.extra || []).map((b) => h('button', { class: 'btn btn-block', style: 'margin-top:8px', onclick: () => { const f = b.on; UI.pickZoom = null; if (f) f(); } }, b.label)),
           h('button', { class: 'btn btn-ghost btn-block', style: 'margin-top:8px', onclick: () => { UI.pickZoom = null; render(); } }, 'もどる'))));
   }
 
