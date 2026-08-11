@@ -16,7 +16,14 @@
   // 冒険：トラベラーの成長先8種は非サプライ（各5枚・page/peasant が場にあるときだけ登場・購入不可・交換でのみ得る）。
   const TRAVELLER_GROWTH = ['treasure_hunter', 'warrior', 'hero', 'champion', 'soldier', 'fugitive', 'disciple', 'teacher'];
   const PRIZE_SET = new Set(PRIZES); // 馬上槍試合でのみ獲得できる「賞品」5種（NON_SUPPLY の部分集合＝混同すると mix で pending が閉じない）
-  const NON_SUPPLY = new Set([].concat(PRIZES, ['spoils', 'madman', 'mercenary'], TRAVELLER_GROWTH, ['horse'])); // supply の数値キーだが「山」としては数えない/買えないもの（賞品＋暗黒時代の戦利品/狂人/傭兵＋冒険のトラベラー成長先＋移動動物園の馬）
+  // 夜想曲：精霊3種＋願い＋コウモリ＝非サプライ山（枚数は人数によらない。専用の効果でのみ得る）。
+  const SPIRITS = ['will_o_wisp', 'imp', 'ghost'];
+  const NOCTURNE_NP = [].concat(SPIRITS, ['wish', 'bat']);
+  // 夜想曲：家宝7種＝**山そのものが無い**（開始デッキの銅貨と置き換わるだけ）／ゾンビ3種＝準備で廃棄置き場へ。
+  //   どちらも購入・汎用獲得・闇市場デッキの対象外＝NON_SUPPLY に入れて4系統から一括で除外する。
+  const HEIRLOOMS = ['cursed_gold', 'goat', 'haunted_mirror', 'lucky_coin', 'magic_lamp', 'pasture', 'pouch'];
+  const ZOMBIES = ['zombie_apprentice', 'zombie_mason', 'zombie_spy'];
+  const NON_SUPPLY = new Set([].concat(PRIZES, ['spoils', 'madman', 'mercenary'], TRAVELLER_GROWTH, ['horse'], NOCTURNE_NP, HEIRLOOMS, ZOMBIES)); // supply の数値キーだが「山」としては数えない/買えないもの（賞品＋暗黒時代の戦利品/狂人/傭兵＋冒険のトラベラー成長先＋移動動物園の馬＋夜想曲の精霊/願い/コウモリ/家宝/ゾンビ）
   // 分割山（Split pile）：下段は上段が尽きるまで購入/獲得できない。正本は DOM.SPLIT_PILES（下段id→上段id）。
   const SPLIT_TOP = DOM.SPLIT_PILES || {};              // 下段id → 上段id（例 avanto→sauna）
   const SPLIT_BOTTOM = {}; Object.keys(SPLIT_TOP).forEach((b) => { SPLIT_BOTTOM[SPLIT_TOP[b]] = b; }); // 上段id → 下段id
@@ -617,6 +624,13 @@
     //   購入不可（canBuyCard）・3山終了に数えない（emptyPileCount）・獲得は「場から捨てる時の交換」のみ。
     if (kingdom.includes('page')) ['treasure_hunter', 'warrior', 'hero', 'champion'].forEach((id) => (supply[id] = 5));
     if (kingdom.includes('peasant')) ['soldier', 'fugitive', 'disciple', 'teacher'].forEach((id) => (supply[id] = 5));
+    // 夜想曲：非サプライ山（**枚数は人数によらない**＝賞品/戦利品と同じ）。正本＝docs/research/nocturne_rules.md §6-2。
+    //   ウィル・オ・ウィスプは「幸運(Fate)が1枚でもあれば」置く（沼の恵みの獲得先）／悪魔祓いは精霊3山すべてを要求する。
+    if (kingdom.some((k) => DOM.isType(k, 'fate')) || kingdom.includes('exorcist')) supply.will_o_wisp = 12;
+    if (kingdom.some((k) => ['devils_workshop', 'tormentor', 'exorcist'].includes(k))) supply.imp = 13;
+    if (kingdom.includes('cemetery') || kingdom.includes('exorcist')) supply.ghost = 6;
+    if (kingdom.includes('leprechaun') || kingdom.includes('secret_cave')) supply.wish = 12;
+    if (kingdom.includes('vampire')) supply.bat = 10;
     return supply;
   }
 
@@ -644,6 +658,13 @@
       seizeTurn: !!extra.seizeTurn, // 移動動物園：今を生きるの追加ターン（同点時のタイブレークに数えない）
       populateQueue: null, populatePlayer: null, // 移動動物園：植民＝獲得が残っている山キー（reduce 末尾の再開網が使う）
       treasuresLocked: false, // 公式：一度でも購入（カード/イベント/闇市場）したら、そのターンはもう財宝を出せない
+      /* 夜想曲。錯乱/嫉妬は「持っている＝効いている」ではない：**購入フェイズの開始時に返して初めて発動**し、
+         そのターンの残り全部に効く。END_ACTION_PHASE は1ターンに複数回走り得る（ヴィラ/騎兵）ので、
+         毎回 p.deluded / p.envious を見て返すが、**一度立った下の旗は同じターン中に下ろさない**。 */
+      cantBuyActions: false, // 錯乱を返した＝このターンはアクションカードを購入できない
+      enviousActive: false,  // 嫉妬を返した＝このターン、銀貨と金貨は $1 しか生まない
+      currentHex: null,      // 配布中の呪詛id（リアクションを全部閉じてから1回だけ確定し、全員に同じ1枚を適用する）
+      nightPlayed: 0,        // このターンに使用した夜行カードの枚数（ログ/CPU用）
 
       gainedThisTurn: [], outpostUsed: false, isExtraTurn: !!isExtraTurn, startQueue: null,
       corsairTrashed: false, // 私掠船：このターンに最初の銀/金を廃棄済みか（被害者ごと）
@@ -672,9 +693,15 @@
     const isFixedDarkages = Array.isArray(DOM.KINGDOM_DARKAGES) && kingdom.length === DOM.KINGDOM_DARKAGES.length &&
       DOM.KINGDOM_DARKAGES.every((id) => kingdom.indexOf(id) >= 0);
     const useShelters = !!opts.shelters || isFixedDarkages;
+    // 夜想曲：家宝（Heirloom）＝王国に対応するカードがあれば、開始デッキの**銅貨1枚**をその家宝に置き換える。
+    //   複数該当すれば複数枚（例：愚者＋ピクシー＝銅貨5枚＋幸運のコイン＋ヤギ）。避難所（屋敷3枚の置換）と同時に成立する。
+    //   家宝は山を持たない＝サプライには一切現れない（NON_SUPPLY で購入/汎用獲得/闇市場から除外済み）。
+    const heirlooms = Object.keys(DOM.HEIRLOOM_OF || {})
+      .filter((k) => kingdom.indexOf(k) >= 0).map((k) => DOM.HEIRLOOM_OF[k]).sort();
     const players = cfgs.map((cfg, i) => {
       const start = [];
-      for (let n = 0; n < 7; n++) start.push('copper');
+      for (let n = 0; n < 7 - heirlooms.length; n++) start.push('copper');
+      heirlooms.forEach((id) => start.push(id));
       if (useShelters) start.push('hovel', 'necropolis', 'overgrown_estate');
       else for (let n = 0; n < 3; n++) start.push('estate');
       const deck = shuffle(start);
@@ -724,6 +751,16 @@
         journeyDown: false, // 旅トークンの向き（false=表向き／true=裏向き。山守/巨人が共有＝プレイのたびに裏返す）。
         minusCard: false,   // -1カードトークン（遺物）：次に1枚以上引くドローで1枚少なく引く（draw() 冒頭で消化）。
         minusCoin: false,   // -$1トークン（橋の下のトロル）：次の購入フェイズで最初の$1に食い込む（coinPenalty へ変換して消化）。
+        /* 夜想曲。**祝福・呪詛・状態は「カード」ではない**＝allCards にも保存則 tally にも入れない
+           （所有カードに数えないので庭園/品評会/絹の道/壁/博物館にも影響しない）。
+           脇札2種（幽霊/納骨堂）だけは物理カード＝allCards と保存則に数える。 */
+        boonsInFront: [],  // 田畑/森/川の恵み＝解決後もそのターンの片付けまで自分の前に置く祝福id（公開・非カード）
+        boonHeld: null,    // 恵みの村で保留した祝福id（次の自分のターン開始時に受ける。公開・非カード）
+        deluded: false,    // 状態：錯乱（**持っているだけでは効かない**＝購入フェイズ開始時に返して初めて発動）
+        envious: false,    // 状態：嫉妬（同上。錯乱とは排他＝両面カード1枚）
+        misery: 0,         // 状態：0=なし / 1=生活苦(-2VP) / 2=二重苦(-4VP)
+        ghostSetAside: [], // 幽霊の脇札（**公開**＝公開しながら掘るので全員が見ている。物理カード）
+        cryptSetAside: [], // 納骨堂の脇札（**所有者のみ可視**＝裏向き。物理カード。納骨堂1枚につき1束だが枚数だけで足りる）
       };
     });
     // ギルド：パン屋（Baker）のセットアップ＝ゲーム開始時、各プレイヤーは財源1枚を得る。
@@ -834,6 +871,23 @@
     const artifacts = {};
     (DOM.artifactsForKingdom ? DOM.artifactsForKingdom(kingdom) : []).forEach((id) => { artifacts[id] = null; });
 
+    /* 夜想曲：祝福(Boon)／呪詛(Hex) のデッキ。**カードではない**（保存則 tally に数えない）。
+       - 祝福＝王国に幸運(Fate)が1枚でもあれば12枚をシャッフル。ドルイドがあれば上から3枚を表向きで脇に置く（山は9枚）。
+       - 呪詛＝王国に不運(Doom)が1枚でもあれば12枚をシャッフル。
+       - 山の中身は**全員に対して完全に秘密**、捨て札は**一番上の1枚だけ**が公開情報（maskStateFor が担保）。 */
+    let boons = null, hexes = null;
+    if (kingdom.some((k) => DOM.isType(k, 'fate'))) {
+      const deck = shuffle((DOM.BOONS_NOCTURNE || []).slice());
+      // ドルイド＝準備で祝福3枚を表向きに脇へ（そのゲーム中ずっと使う3つ。山には戻らない）。
+      const druid = kingdom.includes('druid') ? deck.splice(0, 3) : [];
+      boons = { deck, discard: [], druid };
+    }
+    if (kingdom.some((k) => DOM.isType(k, 'doom'))) hexes = { deck: shuffle((DOM.HEXES_NOCTURNE || []).slice()), discard: [] };
+    // 夜想曲：森の迷子（Lost in the Woods）＝ゲーム中1枚だけの状態。持ち主の席番号（誰も持っていなければ null）。
+    // 夜想曲：ネクロマンサー＝準備でゾンビ3枚を**廃棄置き場に置く**（「廃棄」ではない＝墓所/下水道/青空市場は誘発しない）。
+    //   廃棄置き場は既に保存則 tally の対象なので、総カード枚数が3枚増える。
+    const trash = kingdom.includes('necromancer') ? ZOMBIES.slice() : [];
+
     return {
       version: 0,
       kingdom,
@@ -843,8 +897,12 @@
       knights,  // 暗黒時代：騎士の混合山（実カードid配列。無ければ null）。supply.knights と長さ同期。
       castles,  // 帝国：城の混合山（実カードid配列・昇順。無ければ null）。supply.castles と長さ同期。
       baneCard, // 収穫祭：若き魔女の災いカード（無ければ null）
-      trash: [],
+      trash,    // 廃棄置き場（夜想曲：ネクロマンサーがあればゾンビ3枚が最初から入っている）
+      trashFaceDown: [], // 夜想曲：ネクロマンサーで裏返した廃棄置き場のカードの位置（trash のインデックス列。ターン終了で全解除）
       blackMarket, // 闇市場デッキ（無ければ null）
+      boons,          // 夜想曲：祝福デッキ {deck, discard, druid}（非カード。幸運が無ければ null）
+      hexes,          // 夜想曲：呪詛デッキ {deck, discard}（非カード。不運が無ければ null）
+      lostInTheWoods: null, // 夜想曲：森の迷子（状態）の持ち主の席番号（誰も持っていなければ null・非カード）
       pileVP, // 帝国：集合（Gathering）＝サプライ山の上に置かれた勝利点トークン数 {[pileId]:個数}（公開・非カード＝保存則に無関係）。水道橋/汚された神殿の準備分もここ。
       pileDebt, // 帝国：徴税（Tax）＝サプライ山の上に置かれた負債トークン数 {[pileId]:個数}（公開・非カード＝保存則に無関係）。
       landmarks,      // 帝国：使用中のランドマークid列（横型・公開・対局中不変）
@@ -5510,6 +5568,8 @@
       p.eventSetAside || [], // 移動動物園：遅延/刈り入れの脇置き（次の手番開始時に使用する。所有カード）
       p.exile || [],      // 移動動物園：追放マット（公開・所有カード＝VPに数える。ゲーム終了時もデッキに含める＝公式）
       p.cargo || [],      // ルネサンス：貨物船の脇置き（表向き＝公開。所有カード＝VPに数える）
+      p.ghostSetAside || [], // 夜想曲：幽霊の脇札（公開。幽霊が場を離れても孤児化するだけで所有カードのまま）
+      p.cryptSetAside || [], // 夜想曲：納骨堂の脇札（所有者のみ可視。同上）
       ...((p.archives || []).map((a) => a.cards || []))); // 帝国：資料庫の脇置き（所有カード＝VPに数える）
   }
   function vpOf(p) {
@@ -7149,6 +7209,19 @@
       me.villagers = (me.villagers || 0) + 1;
       log(state, `${me.name} は探査で +1財源+1村人（この購入フェイズにカードを獲得しなかった）。`);
     }
+    maybeEnterNight(state, pi);
+  }
+  /* 夜想曲：購入フェイズの**後**に夜フェイズがある（アクション→購入→**夜**→片付け）。
+     手札に夜行カードが1枚も無ければ夜フェイズで出来ることが何も無いので、止めずに片付けへ進む
+     （公式でも夜フェイズ自体は常に存在するが、何もしないなら通過するだけ）。
+     夜フェイズに入ったら END_TURN をもう一度受けて endBuyTailBaths（片付け開始時の効果）へ進む。 */
+  function maybeEnterNight(state, pi) {
+    const p = state.players[pi];
+    if (state.turn.phase !== 'night' && p.hand.some((c) => DOM.isType(c, 'night'))) {
+      state.turn.phase = 'night';
+      log(state, `${p.name} の夜フェイズ。`);
+      return;
+    }
     endBuyTailBaths(state, pi);
   }
   function endBuyTailBaths(state, pi) {
@@ -7484,6 +7557,35 @@
         if (maybeKiln(state, card, pi, 'action', useWay)) return state;
         if (useWay) { applyWay(state, useWay, card, pi); return state; }
         applyEffect(state, card, pi);
+        return state;
+      }
+
+      /* ---- 夜想曲：夜フェイズに夜行（Night）カードを使う ----
+         夜フェイズは購入フェイズの**後**にあり、**アクション権も購入権も消費しない**（何枚でも使える）。
+         夜行カードは普通に場に出るので、持続なら持ち越し・そうでなければ片付けで捨て札になる（既存の仕分けがそのまま働く）。
+         「アクションカードを使用したとき」の外部トリガー（共謀者の数え／チャンピオンの +1アクション／山トークン）は、
+         人狼のように **Action でもある**夜行カードを夜に使った場合には普通に働く（公式）。
+         習性（Way）は「アクションカードを使用するとき」なので夜行カードには使えない＝ここでは選ばせない。 */
+      case 'PLAY_NIGHT': {
+        if (state.pending) return state;
+        if (t.phase !== 'night') return state;
+        const ncard = action.card;
+        if (!DOM.isType(ncard, 'night')) return state;
+        if (me.hand.indexOf(ncard) < 0) return state;
+        removeOne(me.hand, ncard);
+        me.inPlay.push(ncard);
+        t.nightPlayed = (t.nightPlayed || 0) + 1;
+        if (DOM.isType(ncard, 'action')) {
+          t.actionsPlayed = (t.actionsPlayed || 0) + 1; // 共謀者の「このターンに使ったアクション数」
+          const champs = me.inPlay.filter((c) => c === 'champion').length +
+            (me.durationCards || []).filter((c) => c === 'champion').length;
+          if (champs > 0) { addActions(t, champs); log(state, `${me.name} はチャンピオンで +${champs}アクション。`); }
+        }
+        applyPileTokens(state, pi, ncard); // 冒険：山トークン（その山のカードを使ったときのボーナス）
+        log(state, `${me.name} は「${C()[ncard].name}」を使った（夜フェイズ）。`);
+        // 移動動物園：炉＝「このターン次に使うカードの解決前に同名を獲得してよい」＝夜行カードも「カードの使用」。
+        if (maybeKiln(state, ncard, pi, 'night', null)) return state;
+        applyEffect(state, ncard, pi);
         return state;
       }
 
@@ -7988,6 +8090,8 @@
       }
       case 'END_TURN': {
         if (state.pending) return state;
+        // 夜想曲：夜フェイズ中の「ターン終了」＝夜フェイズを終えて片付けへ進む（購入フェイズ終了時の効果は済んでいる）。
+        if (t.phase === 'night') { endBuyTailBaths(state, pi); return state; }
         if (t.phase !== 'buy') return state;
         // 冒険：ワイン商＝購入フェイズ終了時、未使用$2以上が残っていれば酒場マットから捨ててよい（呼び出し窓）。
         if (t.coins >= 2 && (me.tavern || []).includes('wine_merchant')) {
@@ -13557,7 +13661,10 @@
         delayedEffects: maskedDelayed,
         // 帝国：資料庫の脇置きは所有者だけが中身を見られる＝相手には伏せる（枚数=idは残す）。
         archives: (p.archives || []).map((a) => ({ id: a.id, cards: revealHand ? (a.cards || []).slice() : (a.cards || []).map(() => 'back') })),
-        // inPlay / durationCards / islandMat / princes（王子の脇＝公開）は表向き＝そのまま
+        // 夜想曲：納骨堂の脇札は裏向き＝所有者だけが見られる（公式逐語「other players may not」）。
+        //   幽霊の脇札は**公開**（公開しながら掘るので全員が見ている）＝伏せない。
+        cryptSetAside: revealHand ? (p.cryptSetAside || []).slice() : (p.cryptSetAside || []).map(() => 'back'),
+        // inPlay / durationCards / islandMat / princes（王子の脇＝公開）/ ghostSetAside は表向き＝そのまま
       });
     });
     // 闇市場デッキは伏せ札。中身は誰にも見えないよう枚数だけ残す（公開された3枚は pending.revealed 側に出る）。
@@ -13565,6 +13672,17 @@
     // 暗黒時代：混合山（廃墟/騎士）は一番上の1枚だけ公開情報。残りは裏向き（枚数のみ見せる）。
     if (Array.isArray(s.ruins)) s.ruins = s.ruins.map((c, i) => (i === 0 ? c : 'back'));
     if (Array.isArray(s.knights)) s.knights = s.knights.map((c, i) => (i === 0 ? c : 'back'));
+    /* 夜想曲：祝福/呪詛の山は**中身も順序も完全に秘密**（枚数だけ見せる）。捨て札は**一番上の1枚だけ**が
+       公開情報＝それ以外を見てはいけない（日本語wiki 逐語）。順序が漏れると残りの祝福/呪詛が全部読めてしまう。
+       ドルイドの脇3枚は表向き＝公開。 */
+    if (s.boons) {
+      s.boons.deck = new Array(s.boons.deck.length).fill('back');
+      s.boons.discard = s.boons.discard.map((c, i, a) => (i === a.length - 1 ? c : 'back'));
+    }
+    if (s.hexes) {
+      s.hexes.deck = new Array(s.hexes.deck.length).fill('back');
+      s.hexes.discard = s.hexes.discard.map((c, i, a) => (i === a.length - 1 ? c : 'back'));
+    }
     // 仮面舞踏会のパスは「同時・秘密」。逐次解決中の picks(他席が渡したカード)を
     // 後手席に配信すると情報優位になるため、自分の選択分以外は伏せる。
     if (s.pending && s.pending.type === 'masquerade' && s.pending.stage === 'pass' && s.pending.picks) {
@@ -13608,6 +13726,7 @@
      追加漏れ・綴り違いはテストで即わかる（オンラインだけ壊れる事故を防ぐ）。 */
   const PLAYER_ACTIONS = new Set([
     'PLAY_ACTION', 'PLAY_TREASURE', 'PLAY_ALL_TREASURES', 'BUY', 'END_ACTION_PHASE', 'END_TURN',
+    'PLAY_NIGHT', // 夜想曲：夜フェイズに夜行カードを使う（アクション権も購入権も消費しない）
     'CELLAR_RESOLVE', 'MILITIA_RESOLVE', 'MOAT_REVEAL',
     'MINE_TRASH', 'MINE_GAIN', 'REMODEL_TRASH', 'REMODEL_GAIN', 'WORKSHOP_GAIN',
     'COURTYARD_PUT', 'PAWN_RESOLVE', 'STEWARD_RESOLVE', 'STEWARD_TRASH',

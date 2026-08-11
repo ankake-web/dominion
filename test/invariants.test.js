@@ -25,7 +25,9 @@ const ZONES = ['deck', 'hand', 'discard', 'inPlay', 'durationCards', 'setAside',
   'inherited', // 冒険：相続で脇に置いたカード（サプライから抜いて脇に置く＝物理カードなので保存則に数える）
   'cargo', // ルネサンス：貨物船の脇置き（表向き＝公開ゾーン。次の手番開始時に手札へ）
   'exile', // 移動動物園：追放マット（公開ゾーン。所有者のカード＝得点にも数える）
-  'eventSetAside']; // 移動動物園：遅延/刈り入れの脇置き（次の自分のターン開始時に使用する。公開ゾーン）
+  'eventSetAside', // 移動動物園：遅延/刈り入れの脇置き（次の自分のターン開始時に使用する。公開ゾーン）
+  'ghostSetAside', // 夜想曲：幽霊の脇札（公開。幽霊が場を離れても孤児化するだけで所有カードのまま）
+  'cryptSetAside']; // 夜想曲：納骨堂の脇札（裏向き＝所有者のみ可視だが物理カードなので保存則に数える）
 function tally(s) {
   const t = {}; const add = (id) => { if (id != null) t[id] = (t[id] || 0) + 1; };
   Object.keys(s.supply).forEach((id) => {
@@ -54,7 +56,8 @@ function runGame(kingdom, players, landmarks, events, projects, ways) {
     const t = s.turn;
     if (t) {
       if (t.coins < 0 || t.buys < 0 || t.actions < 0 || (t.potions || 0) < 0) return { okp: false, why: '負リソース step' + step + ' coins/buys/actions/pot=' + [t.coins, t.buys, t.actions, t.potions || 0].join('/') };
-      if (!(t.active >= 0 && t.active < n) || (t.phase !== 'action' && t.phase !== 'buy')) return { okp: false, why: '手番/フェーズ不正 step' + step + ' active=' + t.active + ' phase=' + t.phase };
+      // 夜想曲：フェイズは アクション → 購入 → **夜** → 片付け の3値になった。
+      if (!(t.active >= 0 && t.active < n) || (t.phase !== 'action' && t.phase !== 'buy' && t.phase !== 'night')) return { okp: false, why: '手番/フェーズ不正 step' + step + ' active=' + t.active + ' phase=' + t.phase };
     }
     if (s.pending) continue;
     const d = diffTally(init, tally(s));

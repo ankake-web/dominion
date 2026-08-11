@@ -93,8 +93,12 @@
   //（engine の NON_SUPPLY 拒否と噛み合い、提案し続けて無限ループするのを防ぐ）。
   // 冒険：トラベラーの成長先8種も非サプライ（page/peasant の交換でのみ得る）＝汎用獲得や獲得系pendingから除外。
   // 移動動物園：馬（horse）も非サプライ＝「馬を獲得する」効果でのみ得る（購入も汎用獲得もできない）。
+  // 夜想曲：精霊3種/願い/コウモリ＝非サプライ山、家宝7種/ゾンビ3種＝山そのものが無い。いずれも汎用獲得の対象外。
   const NON_SUPPLY_SET = new Set([...PRIZE_SET, 'spoils', 'madman', 'mercenary',
-    'treasure_hunter', 'warrior', 'hero', 'champion', 'soldier', 'fugitive', 'disciple', 'teacher', 'horse']);
+    'treasure_hunter', 'warrior', 'hero', 'champion', 'soldier', 'fugitive', 'disciple', 'teacher', 'horse',
+    'will_o_wisp', 'imp', 'ghost', 'wish', 'bat',
+    'cursed_gold', 'goat', 'haunted_mirror', 'lucky_coin', 'magic_lamp', 'pasture', 'pouch',
+    'zombie_apprentice', 'zombie_mason', 'zombie_spy']);
   // 新プロモ：サウナ/アヴァント分割山＝上のサウナが残る間はアヴァントを獲得できない
   // （engine の gain/canBuyCard 拒否と必ずセット＝提案すると強制獲得と噛み合い無限ループ）。
   function splitBlocked(state, id) { const top = (DOM.SPLIT_PILES || {})[id]; return !!(top && sup(state, top) > 0); }
@@ -180,6 +184,24 @@
   }
 
   /* ---------- アクションフェーズ：使うカードを選ぶ ---------- */
+  /* 夜想曲：夜フェイズに使う夜行カードを1枚選ぶ（使うたびに手札から減る＝毎回呼ばれて終端する）。
+     夜行カードはアクション権も購入権も消費しないので、基本は「出せるものは全部出す」。
+     ただし空振りするだけの札（手札に廃棄したいものが無いコウモリ／場が空の取り替え子）は出さない。
+     カード個別の判断は各実装バッチで足す。 */
+  function chooseNight(state, p) {
+    const cand = p.hand.filter((c) => isType(c, 'night'));
+    if (!cand.length) return null;
+    const bad = (c) => {
+      if (c === 'bat') return !p.hand.some((h) => h === 'curse' || h === 'copper' || h === 'estate' || h === 'ruined_village');
+      if (c === 'changeling') return !(p.inPlay || []).some((x) => (C()[x] || {}).cost >= 4);
+      return false;
+    };
+    const good = cand.filter((c) => !bad(c));
+    if (!good.length) return null;
+    // 獲得系（悪魔の工房/カブラー/悪魔祓い/修道院）を先に、持続（次のターンに効く）を後に。
+    const rank = (c) => (isType(c, 'duration') ? 1 : 0);
+    return good.sort((a, b) => rank(a) - rank(b))[0];
+  }
   function chooseAction(state, p) {
     const t = state.turn;
     if (t.actions <= 0) return null;
@@ -2813,6 +2835,15 @@
         return { type: 'SPEND_VILLAGER', amount: 1 };
       }
       return { type: 'END_ACTION_PHASE' };
+    }
+    /* 夜想曲：夜フェイズ＝手札の夜行カードを使う（アクション権も購入権も消費しない＝出せるだけ出す）。
+       ここに分岐が無いと END_TURN を返し続けて夜行カードを一生使わない（＝カードが死ぬ）。
+       engine は phase==='night' でしか PLAY_NIGHT を受理しないので、拒否される手は返らない＝非ループ
+       （毎回1枚ずつ手札から減るので必ず終端する）。 */
+    if (t.phase === 'night') {
+      const n = chooseNight(state, subj);
+      if (n) return { type: 'PLAY_NIGHT', card: n };
+      return { type: 'END_TURN' };
     }
     // 購入フェーズ（支配中は被支配者の手札の財宝を出し、獲得は支配者が受け取る）
     //   ※ 一度でも購入すると engine は財宝プレイを拒否する（公式ルール）。拒否される手を返すと無限ループになるので

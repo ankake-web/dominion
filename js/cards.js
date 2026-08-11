@@ -1156,6 +1156,13 @@
                          'tragic_hero', 'vampire', 'werewolf'];
   // 家宝＝開始デッキの銅貨と置き換わる非サプライ財宝。**山が存在しない**（購入も汎用獲得も不可）。
   DOM.POOLS.heirlooms = ['cursed_gold', 'goat', 'haunted_mirror', 'lucky_coin', 'magic_lamp', 'pasture', 'pouch'];
+  /* 家宝（Heirloom）の対応表＝「この王国カードが使われていれば、各プレイヤーの開始デッキの銅貨1枚を
+     この家宝に置き換える」。複数該当すれば複数枚が置き換わる（銅貨7枚＋屋敷3枚が基本）。
+     家宝はサプライに山を作らない＝購入も汎用獲得もできない（engine の NON_SUPPLY で一括除外）。 */
+  DOM.HEIRLOOM_OF = {
+    cemetery: 'haunted_mirror', fool: 'lucky_coin', pixie: 'goat', pooka: 'cursed_gold',
+    secret_cave: 'magic_lamp', shepherd: 'pasture', tracker: 'pouch',
+  };
   // 精霊3種＋願い＋コウモリ＝非サプライ山（それぞれ専用の効果でのみ得る）。
   DOM.POOLS.nocturne_np = ['will_o_wisp', 'imp', 'ghost', 'wish', 'bat'];
   // ゾンビ3種＝ネクロマンサーを使うゲームの準備で廃棄置き場に置く（山ではない）。
