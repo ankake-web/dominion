@@ -906,6 +906,51 @@ console.log('\n=== M4: イベントの共通ルール（財宝ロック・コス
   ok(s2.turn.coins === 1 && s2.supply.horse === 30, 'コインが足りなければ買えない（イベントはコスト軽減を受けない）');
 }
 
+console.log('\n=== M4: CPU の終端保証（イベント20種の pending を CPU が必ず閉じる） ===');
+{
+  // CPU が普段は買わないイベント（放逐/投資/商売/遅延/絶望/輸送）も含め、全20種を強制的に買わせて
+  // 選択待ちが必ず閉じることを確認する（engine拒否×CPU提案の噛み合いによる livelock を防ぐ）。
+  let stuck = [];
+  DOM.EVENTS_MENAGERIE.forEach((ev) => {
+    let s = evt([ev], ['village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'harbinger', 'vassal', 'workshop', 'bandit']);
+    me(s).hand = ['curse', 'estate', 'copper', 'village', 'gold', 'silver', 'moat'];
+    me(s).discard = ['village', 'copper', 'smithy'];
+    me(s).deck = ['gold', 'copper', 'estate', 'silver', 'village'];
+    me(s).inPlay = ['copper', 'copper'];
+    me(s).exile = ['village', 'gold'];
+    s.turn.gainedThisTurn = ['silver', 'estate'];
+    s = buyEv(s, ev);
+    let g = 0;
+    while (s.pending && g++ < 60) { const a = CPU.decide(s, s.pending.player); if (!a) break; const nx = reduce(s, a); if (nx === s) break; s = nx; }
+    if (s.pending) stuck.push(ev + '/' + s.pending.type);
+  });
+  ok(stuck.length === 0, 'CPU：移動動物園イベント20種すべての pending を終端できる（残: ' + stuck.join(',') + '）');
+}
+{
+  // 出荷セット menagerie-events の CPU ソーク（2〜4人・全難易度）
+  let done = 0, stuckN = 0, err = 0, evBuys = 0;
+  for (let g = 0; g < 9; g++) {
+    const n = 2 + (g % 3);
+    const cfgs = []; for (let i = 0; i < n; i++) cfgs.push({ name: 'P' + i, isCpu: true, level: ['easy', 'normal', 'hard'][(g + i) % 3] });
+    const events = DOM.eventsForSet('menagerie-events');
+    let s = E.createInitialState(cfgs, DOM.kingdomForSet('menagerie-events'), { startActive: 0, events });
+    let guard = 0;
+    try {
+      while (!s.gameOver && guard++ < 8000) {
+        const a = CPU.decide(s, s.pending ? s.pending.player : s.turn.active);
+        if (!a) { stuckN++; break; }
+        if (a.type === 'BUY_EVENT') evBuys++;
+        const nx = reduce(s, a);
+        if (nx === s || JSON.stringify(nx) === JSON.stringify(s)) { stuckN++; break; }
+        s = nx;
+      }
+      if (guard >= 8000) stuckN++; else if (s.gameOver) done++;
+    } catch (e) { err++; console.log('   例外: ' + e.message); }
+  }
+  ok(done === 9 && stuckN === 0 && err === 0, 'menagerie-events の CPU戦が9局とも完走（完走' + done + '/膠着' + stuckN + '/例外' + err + '）');
+  ok(evBuys > 0, 'CPU がイベントを購入する（' + evBuys + '回）');
+}
+
 console.log('\n=== CPU: 全 pending が終端する（無限ループしない） ===');
 {
   // 移動動物園の全カードを混ぜた王国でCPU同士を回し、停止しないことを確認
