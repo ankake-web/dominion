@@ -1034,7 +1034,8 @@
     return frag;
   }
 
-  function phaseLabel(ph) { return ph === 'action' ? 'アクション フェーズ' : '購入 フェーズ'; }
+  // 夜想曲：夜フェイズ（購入フェイズの**後**）を足した。購入フェイズではないので買い物のUIは出さない。
+  function phaseLabel(ph) { return ph === 'action' ? 'アクション フェーズ' : ph === 'night' ? '夜 フェーズ' : '購入 フェーズ'; }
   // ギルド／ルネサンス：財源(Coffers)を使う王国か（財源を付与するカード/プロジェクトがあればバッジ/使用ボタンを出す）。
   const COFFERS_CARDS = ['candlestick_maker', 'plaza', 'baker', 'butcher', 'merchant_guild',
     'ducat', 'spices', 'patron', 'silk_merchant', 'swashbuckler', 'villain'];
@@ -1078,6 +1079,12 @@
       return playable
         ? '🔰 アクションフェーズ：光っているアクションカードをタップして使えます（残り ' + t.actions + '）。終わったら「購入フェーズへ ▶」。'
         : '🔰 使えるアクションはありません。「購入フェーズへ ▶」で買い物に進みましょう。';
+    }
+    // 夜想曲：夜フェイズ＝購入の後。夜行カードを好きなだけ使える（アクション権も購入権も要らない）。
+    if (t.phase === 'night') {
+      return me.hand.some((c) => DOM.isType(c, 'night'))
+        ? '🔰 夜フェーズ：光っている夜行カードをタップして使えます（何枚でも使えます）。終わったら「ターンを終える」。'
+        : '🔰 夜フェーズ：使える夜行カードはありません。「ターンを終える」で片付けに進みます。';
     }
     const hasTreasure = me.hand.some((c) => DOM.CARDS[c].types.includes('treasure'));
     if (hasTreasure) return '🔰 購入フェーズ：まず「財宝を全部出す」でコインを出しましょう。';
@@ -1453,6 +1460,10 @@
     if (hg.actions.length) handBlocks.push(h('div', { class: 'hand-group' },
       h('div', { class: 'hg-label' }, 'アクション'),
       h('div', { class: 'hand-cards big' }, hg.actions.map((id) => cardEl(id, { size: 'lg', count: hg.counts[id], dim: !handCardPlayable(state, id, interactive), onClick: () => onHandTap(state, id, interactive) })))));
+    // 夜想曲：夜行カード（アクションでない night）は専用群で大きく出す（夜フェイズでのみ光る）。
+    if (hg.nights.length) handBlocks.push(h('div', { class: 'hand-group' },
+      h('div', { class: 'hg-label' }, '夜行'),
+      h('div', { class: 'hand-cards big' }, hg.nights.map((id) => cardEl(id, { size: 'lg', count: hg.counts[id], dim: !handCardPlayable(state, id, interactive), onClick: () => onHandTap(state, id, interactive) })))));
     const compact = hg.coins.concat(hg.vp);
     if (compact.length) handBlocks.push(h('div', { class: 'hand-group' },
       h('div', { class: 'hg-label' }, '財宝・勝利点'),
@@ -1516,8 +1527,11 @@
       actions: present.filter((id) => DOM.isType(id, 'action')),
       // ※ここは「手札の表示グループ分け」＝静的種別でよい（資本主義でアクションが財宝になっても
       //   アクション群に入れて表示し、購入フェイズでは playable() が動的述語で光らせる）。state を持たない関数。
-      coins: present.filter((id) => DOM.isType(id, 'treasure') && !DOM.isType(id, 'action')),
-      vp: present.filter((id) => (DOM.isType(id, 'victory') || DOM.isType(id, 'curse')) && !DOM.isType(id, 'action') && !DOM.isType(id, 'treasure')),
+      // 夜想曲：純粋な夜行カード（アクションでない night）は上の3群のどれにも入らない＝**専用の群が無いと
+      //   手札に1枚も描画されず人間が操作不能**になる（人狼のようにアクションでもある夜行はアクション群に出る）。
+      nights: present.filter((id) => DOM.isType(id, 'night') && !DOM.isType(id, 'action')),
+      coins: present.filter((id) => DOM.isType(id, 'treasure') && !DOM.isType(id, 'action') && !DOM.isType(id, 'night')),
+      vp: present.filter((id) => (DOM.isType(id, 'victory') || DOM.isType(id, 'curse')) && !DOM.isType(id, 'action') && !DOM.isType(id, 'treasure') && !DOM.isType(id, 'night')),
     };
   }
 
@@ -1534,6 +1548,8 @@
     // 公式：一度でも購入したら、そのターンはもう財宝を出せない（t.treasuresLocked）。
     // ルネサンス：資本主義＝「+$を含むアクション」も自分のターン中は財宝＝engine の isTreasureFor が正本。
     if (t.phase === 'buy') return isTreasureNow(state, id) && !t.treasuresLocked;
+    // 夜想曲：夜フェイズは夜行カードだけ使える（アクション権も購入権も要らない＝何枚でも使える）。
+    if (t.phase === 'night') return DOM.isType(id, 'night');
     return false;
   }
   // engine と同じ財宝判定（資本主義の動的な財宝化を含む）。engine が拒否する手をUIに出さない。
@@ -1554,6 +1570,9 @@
       showSheet(id, btns.length > 1 ? btns : btns[0]);
     } else if (interactive && !state.pending && t.phase === 'buy' && isTreasureNow(state, id) && !t.treasuresLocked) {
       showSheet(id, { label: '財宝を出す', cls: 'btn-primary', on: () => dispatch({ type: 'PLAY_TREASURE', card: id }) });
+    } else if (interactive && !state.pending && t.phase === 'night' && DOM.isType(id, 'night')) {
+      // 夜想曲：夜フェイズの使用。習性（Way）は「アクションカードを使うとき」なので夜行カードには選ばせない。
+      showSheet(id, { label: '使う（夜）', cls: 'btn-primary', on: () => dispatch({ type: 'PLAY_NIGHT', card: id }) });
     } else {
       showSheet(id, null);
     }
@@ -1605,6 +1624,13 @@
         stashBtn,
         h('button', { class: 'btn btn-primary btn-block', onclick: () => endActionPhase(state, viewer) }, '購入フェーズへ ▶'));
     }
+    /* 夜想曲：夜フェイズ＝購入フェイズは終わっている。財宝/財源/負債返済/購入はできず、
+       できるのは「夜行カードを使う」（手札のカードをタップ）と「ターンを終える」だけ。 */
+    if (t.phase === 'night') {
+      return h('div', { class: 'actions-bar' },
+        stashBtn,
+        h('button', { class: 'btn btn-primary btn-block', onclick: () => endTurnTap(state, viewer) }, 'ターンを終える'));
+    }
     // 支配中は操作対象（被支配者=t.active）の手札で判定する（財宝を出すのも engine では被支配者の手札）。
     const hp = (t.possessedBy != null && t.possessedBy === viewer) ? state.players[t.active] : state.players[viewer];
     // 公式：一度でも購入（カード/イベント）したら、そのターンはもう財宝を出せない（engine が拒否する＝ボタンも無効化）。
@@ -1645,6 +1671,19 @@
     const t = state.turn;
     // 支配中は操作対象（被支配者=t.active）の手札で判定する（財宝を出すのも engine では被支配者の手札）。
     const hp = (t.possessedBy != null && t.possessedBy === viewer) ? state.players[t.active] : state.players[viewer];
+    // 夜想曲：夜フェイズの「ターンを終える」＝夜フェイズの終了。財宝/コインの案内は的外れなので、
+    //   まだ使える夜行カードが残っているときだけ確認する。
+    if (t.phase === 'night') {
+      if (hp.hand.some((c) => DOM.isType(c, 'night'))) {
+        UI.confirm = {
+          message: 'まだ夜行カードが使えます。使わずにターンを終えますか？',
+          yesLabel: 'ターンを終える',
+          onYes: () => { UI.confirm = null; dispatch({ type: 'END_TURN' }); },
+        };
+        render();
+      } else dispatch({ type: 'END_TURN' });
+      return;
+    }
     const hasTreasure = hp.hand.some((c) => DOM.CARDS[c].types.includes('treasure'));
     if (t.buys > 0 && (hasTreasure || t.coins >= 2)) {
       UI.confirm = {

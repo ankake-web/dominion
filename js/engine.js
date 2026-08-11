@@ -5603,8 +5603,14 @@
     // 冒険：遠隔地＝ゲーム終了時に酒場マットにあれば1枚4勝利点（マット以外にあれば0点＝固定vpは持たせない）。
     const distantOnMat = (p.tavern || []).filter((c) => c === 'distant_lands').length;
     if (distantOnMat) vp += distantOnMat * 4;
+    // 夜想曲：牧草地（家宝）＝所有する屋敷1枚につき1勝利点（牧草地1枚ごと）。
+    const pastures = cards.filter((c) => c === 'pasture').length;
+    if (pastures) vp += pastures * cards.filter((c) => c === 'estate').length;
     // 繁栄：VPトークン（司教・記念碑・収集・投資で貯めた勝利点）を加算
     vp += p.vpTokens || 0;
+    // 夜想曲：状態＝生活苦(-2) / 二重苦(-4)。**得点は負になり得る＝下限クランプ禁止**（misery は非カード）。
+    if (p.misery === 1) vp -= 2;
+    else if (p.misery >= 2) vp -= 4;
     return vp;
   }
   // 帝国：あるカードが「空になったサプライ山」に由来するか（塔の得点用）。

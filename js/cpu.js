@@ -607,7 +607,12 @@
     }
     const distantLands = (p.tavern || []).filter((c) => c === 'distant_lands').length; // 冒険：酒場マット上でのみ4点
     if (distantLands) vp += distantLands * 4;
+    const pastures = cards.filter((c) => c === 'pasture').length; // 夜想曲：牧草地＝屋敷1枚につき1点
+    if (pastures) vp += pastures * cards.filter((c) => c === 'estate').length;
     vp += p.vpTokens || 0; // 繁栄：VPトークン
+    // 夜想曲：生活苦(-2)/二重苦(-4)＝engine.vpOf と同じ式（片方だけだと「勝てると思って買って負ける」）。
+    if (p.misery === 1) vp -= 2;
+    else if (p.misery >= 2) vp -= 4;
     return vp;
   }
   // 混合山（暗黒時代=騎士／帝国=城）を買うと実際に手に入るのは「一番上の実カード」。それ以外は id のまま。
