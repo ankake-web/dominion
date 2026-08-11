@@ -7126,11 +7126,13 @@
       const v = t.hexQueue.shift();
       applyHexTo(state, v, t.currentHex);
     }
-    if (!state.pending && t.hexQueue && !t.hexQueue.length) finishHex(state);
+    // 被害者が尽きたら（キューが null でも）必ず後始末する＝currentHex が残ると再演が永久に止まる。
+    if (!state.pending && !(t.hexQueue && t.hexQueue.length)) finishHex(state);
   }
   function finishHex(state) {
     const t = state.turn;
-    if (t.currentHex && state.hexes) state.hexes.discard.push(t.currentHex);
+    if (!t.currentHex) { t.hexQueue = null; return; }
+    if (state.hexes) state.hexes.discard.push(t.currentHex);
     t.currentHex = null; t.hexQueue = null;
   }
   /* 「自分が呪詛を1つ受ける」（呪われた村の獲得時／レプラコーン＝非アタック）。
@@ -8197,7 +8199,7 @@
       state = runReplays(state);
     }
     /* 夜想曲：呪詛(Hex)を被害者へ順に適用する再開網（同じ1枚を手番順に適用し、全員終わったら捨て札へ）。 */
-    if (!state.pending && !state.gameOver && state.turn && state.turn.hexQueue) {
+    if (!state.pending && !state.gameOver && state.turn && (state.turn.hexQueue || state.turn.currentHex)) {
       runHexQueue(state);
       state = runReplays(state);
     }
