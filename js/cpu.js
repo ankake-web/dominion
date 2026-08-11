@@ -12,10 +12,15 @@
   const isTreasure = (id) => isType(id, 'treasure');
   const isDead = (id) => isType(id, 'victory') || isType(id, 'curse'); // 手札では死蔵
 
-  // engine.allCards と同じゾーンを数える（王子の脇置き・酒場マット・資料庫の脇置きも所有カード＝VP/枚数に効く）。
+  // 所有カード（全ゾーン）＝**engine の allCards をそのまま呼ぶ**。
+  //   ここで同じゾーン列挙を手書きすると、新しいゾーン（追放マット/相続の脇/貨物船/遅延・刈り入れの脇）を
+  //   足すたびに片方が漏れ、hard CPU の終局読みが engine の得点とずれる（＝勝てる終局を見送る／負ける終局を選ぶ）。
+  //   engine 未ロード時のフォールバックだけ残す（テストが cpu.js 単体を読む場合の保険）。
   function allCards(p) {
+    if (DOM.engine && DOM.engine.allCards) return DOM.engine.allCards(p);
     return [].concat(p.deck, p.hand, p.discard, p.inPlay, p.durationCards || [], p.setAside || [],
       p.islandMat || [], p.nativeVillageMat || [], p.princes || [], p.tavern || [],
+      p.inherited || [], p.exile || [], p.cargo || [], p.eventSetAside || [],
       ...((p.archives || []).map((a) => a.cards || [])));
   }
   function owned(p, id) { return allCards(p).filter((c) => c === id).length; }
@@ -613,12 +618,17 @@
     // （hypo.tavern に入れ直すと allCards で二重に数えてしまう＝庭園/品評会/絹の道/城が狂う。ここで加算するのが正しい。）
     const myVp = vpOfPlayer(hypo) + 4 * (me.tavern || []).filter((c) => c === 'distant_lands').length
       + landmarkVp(state, allCards(me).concat(id), seat); // 帝国：ランドマーク得点（engineと同一算出）
-    const myTurns = me.turns + 1; // 今のターンはクリーンアップで+1される
+    // 同点決勝は**タイブレーク用のターン数**で比べる（engine の scoreGame と同じ算出＝食い違うと
+    //   「勝てると思って買ったら負ける」/「勝てるのに買わない」が起きる）。
+    //   移動動物園「今を生きる」の追加ターンは数えない（p.freeTurns）。今まさにそのターンなら、
+    //   このターンぶんの +1 も数えない（クリーンアップで turns も freeTurns も同時に増えるため）。
+    const seizeNow = (state.turn && state.turn.seizeTurn && state.turn.active === seat) ? 1 : 0;
+    const myTurns = me.turns + 1 - (me.freeTurns || 0) - seizeNow; // 今のターンはクリーンアップで+1される
     return state.players.every((p, i) => {
       if (i === seat) return true;
       const v = vpOfPlayer(p) + landmarkVp(state, allCards(p), i);
       if (v > myVp) return false;
-      if (v === myVp && p.turns < myTurns) return false;
+      if (v === myVp && (p.turns - (p.freeTurns || 0)) < myTurns) return false;
       return true;
     });
   }
@@ -983,9 +993,10 @@
     if (buyable('gamble') && coins >= 2 && cardBuy == null) return 'gamble';
     // 追求（$2）＝+1購入つき。金貨が多いデッキなら次の手番が強くなる。余りコインで。
     if (buyable('pursue') && coins >= 2 && cardBuy == null) return 'pursue';
-    // 絶望（$0）＝呪いを増やすので、コインが $2 増えて「今ちょうど欲しい札」に届くときだけ（decidePending 側でも判断）。
-    if (buyable('desperation') && sup(state, 'curse') > 0 && (p.turns || 0) <= 10 &&
-        cardBuy == null && (coins + 2) >= 5) return 'desperation';
+    // 絶望（$0）＝呪い1枚と引き換えに +1購入 +$2。呪いはデッキを汚すので、**買うものが無い低コイン局面**
+    //   （$0〜$2＝+$2 で銀貨に届く）の序盤だけ。$3以上ある局面では素直に買う（呪いを増やさない）。
+    if (buyable('desperation') && sup(state, 'curse') > 0 && (p.turns || 0) <= 8 &&
+        cardBuy == null && coins < 3) return 'desperation';
     // 遅延（$0）＝手札に余ったアクションを次のターンの頭で使う。余った購入権で。
     if (buyable('delay') && cardBuy == null && t.buys >= 2 && p.hand.some((c) => isType(c, 'action'))) return 'delay';
     // 放逐/投資 は CPU は買わない（追放の使いどころが読みにくい＝skip）。
@@ -1824,7 +1835,9 @@
       // ラクダの隊列＝金貨を追放しておく（後で金貨を獲得したときにまとめて回収できる）。
       case 'camel_train_exile': {
         const ids = DOM.engine.exilableSupplyIds(state).filter((id) => !DOM.isType(id, 'victory'));
-        if (!ids.length) return null;
+        // 候補ゼロでも null を返さない（null は decide() の呼び出し側で TypeError になり、
+        //   オンラインでは CPU の手番が二度と進まなくなる）。engine 側に終端保証があるので送れば窓が閉じる。
+        if (!ids.length) return { type: 'CAMEL_TRAIN_EXILE', card: null };
         const pref = ['gold', 'silver'];
         const pick = pref.find((id) => ids.indexOf(id) >= 0) || ids.slice().sort((a, b) => cost(state, b) - cost(state, a))[0];
         return { type: 'CAMEL_TRAIN_EXILE', card: pick };
@@ -1927,9 +1940,10 @@
         return { type: 'DEMAND_GAIN', card: bestGain(state, 4) };
       // 絶望＝呪い1枚と引き換えに +1購入 +$2。**そのコインで今すぐ買い足せるときだけ**取る（無駄な呪いを増やさない）。
       case 'desperation': {
-        const t2 = state.turn;
-        const want = (t2.coins + 2) >= 6 || ((t2.coins + 2) >= 3 && t2.coins < 3);
-        return { type: 'DESPERATION', gain: !!want && (p.turns || 0) <= 12 };
+        // 呪い（-1VP＋死に札）を取るのは「+$2 で実際に買えるものが増える」ときだけ＝$3未満のとき。
+        //   $3以上なら既に銀貨が買えるので、+$2 のために呪いを増やす価値は薄い（判定はコインについて単調）。
+        const want = state.turn.coins < 3 && (p.turns || 0) <= 12;
+        return { type: 'DESPERATION', gain: !!want };
       }
       // 放逐＝手札の一番要らない札（呪い/銅貨/屋敷/廃墟）を全部まとめて追放する（デッキ圧縮）。無ければ追放しない。
       case 'banish': {
@@ -1941,7 +1955,7 @@
       // 投資＝相手が使いそうな（＝相手のデッキに入りやすい）強いアクションに投資する。
       case 'invest': {
         const ids = DOM.engine.exilableSupplyIds(state).filter((id) => DOM.isType(id, 'action'));
-        if (!ids.length) return null; // engine は候補ゼロで窓を開かない（保険）
+        if (!ids.length) return { type: 'INVEST_EXILE', card: null }; // 候補ゼロでも null を返さない（engine が窓を閉じる）
         return { type: 'INVEST_EXILE', card: ids.slice().sort((a, b) => cost(state, b) - cost(state, a))[0] };
       }
       // 輸送＝追放マットに自分のアクションがあれば山札の上に回収、無ければサプライから強いアクションを追放。
@@ -1955,7 +1969,7 @@
           return { type: 'TRANSPORT_PICK', card: mine.slice().sort((a, b) => cost(state, b) - cost(state, a))[0] };
         }
         const ids = DOM.engine.exilableSupplyIds(state).filter((id) => DOM.isType(id, 'action'));
-        if (!ids.length) return null;
+        if (!ids.length) return { type: 'TRANSPORT_PICK', card: null }; // 候補ゼロでも null を返さない（engine が窓を閉じる）
         return { type: 'TRANSPORT_PICK', card: ids.slice().sort((a, b) => cost(state, b) - cost(state, a))[0] };
       }
       // 苦労＝手札で一番強いアクションを使う（アクション権を消費しない）。

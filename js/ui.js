@@ -1405,11 +1405,16 @@
         Object.keys(ex).map((id) => h('span', { class: 'chip-card ' + typeClass(id) },
           DOM.CARDS[id].name + (ex[id] > 1 ? '×' + ex[id] : '')))));
     }
-    // 移動動物園：投資（Invest）で追放したカード（他プレイヤーがそれを獲得/投資すると +2カード）。
-    if (Object.keys(me.exileInvested || {}).length) matRows.push(h('div', { class: 'mat-row' },
-      h('span', { class: 'mat-label' }, '📈 投資: '),
-      Object.keys(me.exileInvested).map((id) => h('span', { class: 'chip-card ' + typeClass(id) },
-        ((DOM.CARDS[id] || {}).name || id) + (me.exileInvested[id] > 1 ? '×' + me.exileInvested[id] : '')))));
+    // 移動動物園：投資（Invest）で追放したカード（そのカードを**他プレイヤー**が獲得すると投資者が +2カード）。
+    //   **全員ぶんを出す**＝相手の投資は「自分がそのカードを買うと相手が2枚引く」＝購入判断を直接변える公開情報。
+    //   自分のぶんだけ出すと、買ってから相手が引いて初めて気づくことになる。
+    state.players.forEach((pl) => {
+      if (!Object.keys(pl.exileInvested || {}).length) return;
+      matRows.push(h('div', { class: 'mat-row' },
+        h('span', { class: 'mat-label' }, '📈 ' + (pl === me ? '投資' : pl.name + ' の投資') + '（獲得されると +2カード）: '),
+        Object.keys(pl.exileInvested).map((id) => h('span', { class: 'chip-card ' + typeClass(id) },
+          ((DOM.CARDS[id] || {}).name || id) + (pl.exileInvested[id] > 1 ? '×' + pl.exileInvested[id] : '')))));
+    });
     // 移動動物園：遅延／刈り入れで脇に置いたカード（次の自分のターン開始時に使用する。公開）
     if ((me.eventSetAside || []).length) matRows.push(h('div', { class: 'mat-row' },
       h('span', { class: 'mat-label' }, '⏳ 次のターン開始時に使う: '),
@@ -1834,7 +1839,7 @@
     //   （これらしか候補が無い局面で「選択肢ゼロの閉じられないモーダル」になるのを防ぐ）。
     if (pd.type === 'camel_train_exile') return modalPickIds('ラクダの隊列 — 追放', 'サプライから勝利点でないカード1枚を追放します（獲得ではありません）。',
       DOM.engine.exilableSupplyIds(state).filter((id) => !DOM.isType(id, 'victory')),
-      (id) => dispatch({ type: 'CAMEL_TRAIN_EXILE', card: id }), '追放する');
+      (id) => dispatch({ type: 'CAMEL_TRAIN_EXILE', card: id }), '追放する', null, state);
     // 黒猫／枢機卿／魔女の集会（アタック）。
     if (pd.type === 'black_cat' && pd.stage === 'react') return modalOptions('黒猫を受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'BLACK_CAT_REACT' }));
     if (pd.type === 'cardinal' && pd.stage === 'react') return modalOptions('枢機卿を受ける', '山札の上2枚を公開し、コスト3〜6コインの1枚が追放されます。', reactOptions(p, pd, { type: 'CARDINAL_REACT' }));
@@ -1967,9 +1972,16 @@
       if (typeof UI.selection === 'string') { // 2段目＝枚数を選ぶ
         const nm = UI.selection;
         const have = p.hand.filter((c) => c === nm).length;
-        return modalAmount('放逐 — 枚数', '「' + ((DOM.CARDS[nm] || {}).name || nm) + '」を何枚 追放しますか（追放マットに置きます）。',
+        // 誤タップから戻れるように「別のカードを選ぶ」を必ず出す（1段目は確認を挟まないため）。
+        const back = h('button', { class: 'btn btn-block', style: 'margin-top:8px',
+          onclick: () => { UI.selection = []; UI.amount = null; render(); } }, '別のカードを選ぶ／追放しない');
+        const body = modalAmount('放逐 — 枚数', '「' + ((DOM.CARDS[nm] || {}).name || nm) + '」を何枚 追放しますか（追放マットに置きます）。',
           have, 1, (n) => n + '枚を追放する',
-          (n) => { UI.selection = null; dispatch({ type: 'BANISH_EXILE', card: nm, n }); });
+          (n) => { UI.selection = []; dispatch({ type: 'BANISH_EXILE', card: nm, n }); });
+        // modalAmount の footer の下に「もどる」を差し込む
+        const modalEl = body.childNodes && body.childNodes[0];
+        if (modalEl && modalEl.appendChild) modalEl.appendChild(back);
+        return body;
       }
       const chips = names.map((id) => cardEl(id, { size: 'sm', extra: 'selectable',
         onClick: () => { UI.selection = id; render(); } }));
@@ -1980,7 +1992,7 @@
     if (pd.type === 'invest') return modalPickIds('投資 — 追放',
       'サプライからアクションカード1枚を追放します（獲得ではありません）。追放されている間、他のプレイヤーがそれと同名のカードを獲得または投資すると、あなたは +2 カード を引きます。',
       DOM.engine.exilableSupplyIds(state).filter((id) => DOM.isType(id, 'action')),
-      (id) => dispatch({ type: 'INVEST_EXILE', card: id }), '投資する');
+      (id) => dispatch({ type: 'INVEST_EXILE', card: id }), '投資する', null, state);
     // 輸送＝二択（実行できない方も選べる＝公式）。
     if (pd.type === 'transport' && pd.stage === 'mode') return modalOptions('輸送 — どちらかを選ぶ', '次から1つを選びます。', [
       { label: 'サプライからアクション1枚を追放する', cls: 'btn-primary', on: () => dispatch({ type: 'TRANSPORT_MODE', mode: 'exile' }) },
@@ -1989,7 +2001,7 @@
     if (pd.type === 'transport' && pd.stage === 'exile') return modalPickIds('輸送 — 追放',
       'サプライからアクションカード1枚を追放します（獲得ではありません）。',
       DOM.engine.exilableSupplyIds(state).filter((id) => DOM.isType(id, 'action')),
-      (id) => dispatch({ type: 'TRANSPORT_PICK', card: id }), '追放する');
+      (id) => dispatch({ type: 'TRANSPORT_PICK', card: id }), '追放する', null, state);
     if (pd.type === 'transport' && pd.stage === 'return') {
       const names = [];
       (p.exile || []).forEach((c) => { if (DOM.isType(c, 'action') && names.indexOf(c) < 0) names.push(c); });
@@ -2023,6 +2035,9 @@
     // 遅延／刈り入れ＝ターン開始時に脇のカードを使用する（強制）。
     if (pd.type === 'event_play') {
       const card = (p.eventSetAside || [])[0];
+      // 脇が空（他の効果で動かされた等）でも押せるボタンを出す＝engine 側が自己修復して窓を閉じる。
+      if (card == null) return modalOptions('脇に置いたカード', '脇に置いたカードはもうありません。', [
+        { label: '進む', cls: 'btn-primary', on: () => dispatch({ type: 'EVENT_PLAY' }) }]);
       const nm = (DOM.CARDS[card] || {}).name || card;
       const ways = (state.ways || []).filter((w) => (DOM.LANDSCAPES || {})[w] && DOM.isType(card, 'action'));
       const btns = [{ label: '「' + nm + '」を使う', cls: 'btn-primary', on: () => dispatch({ type: 'EVENT_PLAY' }) }];
@@ -2038,8 +2053,18 @@
       '廃棄したカードより最大2コイン高いカード1枚を獲得します。',
       (id) => canUpTo(state, id, pd.maxCost, { pot: pd.pot, debt: pd.debt }), (id) => dispatch({ type: 'ENHANCE_GAIN', card: id }));
     // 追求＝カード名を1つ指定（山札の上4枚のうち、その名前だけを山札の上に戻す）。
-    if (pd.type === 'pursue') return modalGainSupply(state, '追求 — カード名を指定', 'カード名を1つ指定します。山札の上4枚を公開し、指定した名前のカードだけを山札の上に戻し、残りを捨て札にします。',
-      (id) => true, (id) => dispatch({ type: 'PURSUE_NAME', card: id }), false, false, '指定する', true);
+    //   候補は「今このゲームに存在するカード名」＝サプライの山（空でも可）＋混合山（廃墟/騎士/城）の中身。
+    //   **混合山はプレースホルダ（'castles'/'knights'）が山キーなので、そのまま出すと絶対に一致しない死に指名になる**
+    //   （かつ本物の「粗末な城」等を指名できない）。中身を展開して出す。
+    if (pd.type === 'pursue') {
+      const names = [];
+      const push = (id) => { if (DOM.CARDS[id] && names.indexOf(id) < 0) names.push(id); };
+      Object.keys(state.supply).forEach((id) => { if (['ruins', 'knights', 'castles'].indexOf(id) < 0) push(id); });
+      ['ruins', 'knights', 'castles'].forEach((k) => { (state[k] || []).forEach(push); });
+      return modalPickIds('追求 — カード名を指定',
+        'カード名を1つ指定します。山札の上4枚を公開し、指定した名前のカードだけを山札の上に戻し、残りを捨て札にします。',
+        names, (id) => dispatch({ type: 'PURSUE_NAME', card: id }), '指定する');
+    }
     // 植民＝アクションのサプライ山それぞれから1枚ずつ獲得（獲得順は自分で選べる／おまかせも可）。
     if (pd.type === 'populate') {
       const piles = (state.turn.populateQueue || []).filter((k) => (DOM.engine.populatePiles(state) || []).indexOf(k) >= 0);
@@ -3074,9 +3099,20 @@
 
   /* 指定した id 群から1枚選ぶモーダル。**サプライの山キーに無いカードも出せる**のが modalGainSupply との違い
      （混合山＝廃墟/騎士/城 の一番上は state.supply にキーが無いため、追放の候補に出せず人間が詰むことがある）。 */
-  function modalPickIds(title, desc, ids, onPick, pickLabel, skip) {
+  function modalPickIds(title, desc, ids, onPick, pickLabel, skip, state) {
+    // state を渡すと山の残り枚数も出す（追放はサプライの山を1枚減らす＝3山終了に影響するので見えたほうがよい）。
+    const remainOf = (id) => {
+      if (!state) return null;
+      if ((state.supply[id] || 0) > 0) return state.supply[id];
+      const k = ['ruins', 'knights', 'castles'].find((m) => Array.isArray(state[m]) && state[m][0] === id);
+      return k ? state[k].length : null;
+    };
     const chips = (ids || []).length
-      ? ids.map((id) => cardEl(id, { size: 'sm', extra: 'selectable', onClick: () => openPickZoom(id, pickLabel || '選ぶ', () => onPick(id)) }))
+      ? ids.map((id) => {
+        const el = cardEl(id, { size: 'sm', extra: 'selectable', onClick: () => openPickZoom(id, pickLabel || '選ぶ', () => onPick(id)) });
+        const n = remainOf(id);
+        return n == null ? el : h('div', { class: 'pick-supply' }, el, h('div', { class: 'pick-remain' }, '残' + n));
+      })
       : [h('p', { class: 'muted' }, '対象のカードがありません')];
     const btn = skip ? h('button', { class: 'btn btn-block', onclick: skip.on }, skip.label) : null;
     return modalShell(title, desc, chips, btn);

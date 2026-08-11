@@ -258,6 +258,55 @@ try {
   }
 
   /* ============================================================
+     4b) 敵対レビューの回帰（UI の確定バグ）
+     ============================================================ */
+  console.log('=== 敵対レビューの回帰（UI）===');
+  {
+    // [medium] 相手の「投資」が盤面に出ず、買ってから相手が2枚引いて初めて気づいた
+    const s = mk({ events: ['invest'] });
+    s.turn.phase = 'buy'; s.turn.coins = 8; s.turn.buys = 1;
+    s.players[1].exile = ['silver']; s.players[1].exileInvested = { silver: 1 };
+    showAs(s, 0);
+    ok(byText('.mat-row', '相手 の投資'), '相手の投資が自分の盤面にも出る（購入前に見える）');
+    ok(byText('.mat-row', '銀貨'), '投資されているカード名が出る');
+  }
+  {
+    // [low] 追求が混合山のプレースホルダ（城/騎士）を指名候補に出し、本物を指名できなかった
+    const s = mkK(['castles', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'harbinger', 'vassal', 'workshop'],
+      { events: ['pursue'] });
+    s.pending = { type: 'pursue', player: 0 };
+    showAs(s, 0);
+    // 画像の src は必ずカードidを含むので、id 単位で判定する（表示名は「城」が部分一致してしまう）。
+    const ids = $all('.modal .chip-grid .card img').map((e) => (e.getAttribute('src') || '').replace(/^.*\//, '').replace('.webp', ''));
+    ok(ids.length > 0, '追求：候補チップが出る');
+    ok(ids.indexOf('castles') < 0, '追求：混合山のプレースホルダ（城の山）は候補に出ない');
+    const inPile = (s.castles || []);
+    ok(inPile.length > 0 && inPile.every((id) => ids.indexOf(id) >= 0), '追求：城の山の中身（実カード名）を指名できる');
+  }
+  {
+    // [low] 放逐の1段目に確認が無く、誤タップすると必ず1枚追放させられた（戻れなかった）
+    const s = mk({ events: ['banish'] });
+    s.players[0].hand = ['province', 'copper'];
+    s.pending = { type: 'banish', player: 0 };
+    showAs(s, 0);
+    UI.selection = 'province'; DOM.render();
+    ok(byText('.modal button', '別のカードを選ぶ'), '放逐：枚数選択から「別のカードを選ぶ／追放しない」で戻れる');
+  }
+  {
+    // [nit] 脇置きが空になっていても event_play のモーダルが押せる（engine が自己修復して閉じる）
+    const s = mk();
+    s.players[0].eventSetAside = [];
+    s.pending = { type: 'event_play', player: 0 };
+    showAs(s, 0);
+    ok(actionable() && !byText('.modal button', 'undefined'), '脇置きが空でも押せるボタンが出る（undefined と出ない）');
+  }
+  {
+    // [nit] 追放の候補に山の残り枚数が出る（追放は山を減らす＝3山終了に影響する）
+    showPend({ type: 'camel_train_exile', player: 0 });
+    ok($('.modal .pick-remain'), 'ラクダの隊列：候補に「残N」が出る');
+  }
+
+  /* ============================================================
      5) engine の PLAYER_ACTIONS と UI の網羅チェック
      ============================================================ */
   console.log('=== PLAYER_ACTIONS の網羅 ===');

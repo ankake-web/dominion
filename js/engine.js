@@ -312,7 +312,8 @@
     const p = state.players[pi];
     if (!removeOne(zone, card)) return false;
     p.inPlay.push(card);
-    const isAct = DOM.isType(card, 'action');
+    // 冒険：相続＝自分のターン中は屋敷もアクションとして使える（`applyEffect` の case 'estate' が脇札に委譲する）。
+    const isAct = DOM.isType(card, 'action') || inheritedEstate(p, card);
     if (isAct) state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1; // 共謀者などの「このターンに使ったアクション数」
     log(state, `${p.name} は${note}「${C()[card].name}」を使った。`);
     if (isAct) {
@@ -1205,6 +1206,16 @@
     return cnt;
   }
   function exileCount(p, cardId) { return (p.exile || []).filter((c) => c === cardId).length; }
+  // 門番（Gatekeeper）＝獲得したカードをそのまま追放マットへ移す（獲得ではない）。
+  //   **獲得後にカードが動いていたら失敗する**（公式の stop-moving ルール＝そりで手札に移されていた等）。
+  //   removeOne が false を返す＝もうその場所に無い、で自然に不発になる。
+  function applyGatekeeperExile(state, pi, cardId, dest) {
+    const gp = state.players[pi];
+    if (!removeOne(zoneOf(gp, dest), cardId)) return false;
+    (gp.exile = gp.exile || []).push(cardId);
+    log(state, `${gp.name} は門番により「${C()[cardId].name}」を追放した。`);
+    return true;
+  }
   /* 移動動物園：投資（Invest）＝「投資で追放したコピー」の枚数を名前ごとに持つ（非カードのスカラーマップ）。
      公式は「投資したコピーはマットの下半分に差して区別する」＝他手段で追放した同名コピーは +2カード を生まない。 */
   function investCount(p, cardId) { return ((p.exileInvested || {})[cardId] || 0); }
@@ -5886,6 +5897,9 @@
     //   ヴィラの獲得時効果はこの関数の途中で phase を 'buy'→'action' に変えるので、それより前の値を捕まえておく
     //   （さもないと購入フェイズ中のヴィラ獲得で公会堂/列柱/汚された神殿の呪い が発火しない＝過小得点）。
     const gainWasBuyPhase = !!(state.turn && state.turn.phase === 'buy');
+    // 移動動物園：**獲得した瞬間**に追放マットにあった同名の枚数。門番（追放するか）と
+    //   追放マットの払い戻し（同名を全部捨て札に戻せるか）は、どちらもこの値で判定する＝両者は排他になる。
+    const exiledBefore = exileCount(state.players[pIndex], cardId);
     for (let o = 0; o < n; o++) {
       const op = state.players[o];
       // サル：右隣（手番が自分の1つ前）の獲得ごとに +1カード
@@ -6076,17 +6090,12 @@
       (state.onGainQueue = state.onGainQueue || []).push({ type: 'hostelry_discard', player: pIndex });
     }
     // 門番（相手が使った持続アタック）＝「自分の追放マットに同名が無いアクション/財宝」を獲得したら、それを追放する（強制）。
-    if ((DOM.isType(cardId, 'action') || isTreasureFor(state, cardId)) && exileCount(gp, cardId) === 0) {
-      const guarded = state.players.some((op, o) => o !== pIndex &&
+    //   **条件（同名が追放マットに1枚も無い）は獲得した瞬間に見る**（公式：既に同名を追放していれば門番は働かず、
+    //   通常どおり「同名を全部捨て札に戻す」窓が開く＝両者は排他）。
+    //   **実行はそり/アザラシの窓の後**にする（公式の stop-moving ルール＝そりで手札に移すと門番は追放に失敗する）。
+    const gkExile = (DOM.isType(cardId, 'action') || isTreasureFor(state, cardId)) && exiledBefore === 0 &&
+      state.players.some((op, o) => o !== pIndex &&
         (op.delayedEffects || []).some((e) => e.type === 'gatekeeper' && !((e.immune || []).includes(pIndex))));
-      if (guarded) {
-        const z = zoneOf(gp, dest);
-        if (removeOne(z, cardId)) {
-          (gp.exile = gp.exile || []).push(cardId);
-          log(state, `${gp.name} は門番により「${C()[cardId].name}」を追放した。`);
-        }
-      }
-    }
     // 牧羊犬＝あなたがカードを獲得したとき、手札からこれを使用してよい（相手のターン中の獲得でも使える＝公式）。
     if (gp.hand.includes('sheepdog')) {
       (state.onGainQueue = state.onGainQueue || []).push({ type: 'sheepdog_react', player: pIndex });
@@ -6107,11 +6116,24 @@
     if (state.turn && state.turn.sealActive && pIndex === state.turn.active && dest !== 'deck') {
       (state.onGainQueue = state.onGainQueue || []).push({ type: 'way_seal_topdeck', player: pIndex, card: cardId, dest: dest || 'discard' });
     }
+    // 門番の追放をここで実行する。**獲得したカードを動かせる窓（そり/アザラシの習性）が先に積まれているなら、
+    //   それを解決してから**追放する（公式：そりで手札に移すと門番の追放は失敗する＝lose track）。
+    //   動かす窓が無ければその場で追放する（従来どおり）。キューの `gatekeeper_exile` は**非対話**＝
+    //   reduce 末尾のキュー消化がその場で適用する（pending にしない＝人間に無意味な確認を出さない）。
+    if (gkExile) {
+      const mover = (state.onGainQueue || []).some((q) =>
+        q.player === pIndex && (q.type === 'sleigh_react' || q.type === 'way_seal_topdeck'));
+      if (mover) state.onGainQueue.push({ type: 'gatekeeper_exile', player: pIndex, card: cardId, dest: dest || 'discard' });
+      else applyGatekeeperExile(state, pIndex, cardId, dest);
+    }
     // 一般ルール：**カードを獲得したとき、追放マットにある同名のカードを好きな枚数 捨て札にしてよい**（任意）。
     //   ラクダの隊列で追放した金貨を、金貨を獲得した瞬間にまとめて回収する、が典型。
     //   対話＝onGainQueue（工房/改築等の *_GAIN 経由の獲得でも取りこぼさない・複数の獲得時対話と共存できる）。
     //   ※相手のターン中に自分が獲得した場合（黒猫の呪いなど）は窓を開かない＝許容簡略化（呪いを戻したい場面が無い）。
-    if (state.turn && pIndex === state.turn.active && exileCount(gp, cardId) > 0) {
+    //   ※**門番が今まさに追放したカードは対象外**（`exiledBefore` ＝獲得した瞬間の枚数で判定する）。
+    //     ここで現在の枚数を見ると、門番が追放した1枚をその場で捨て札に戻せてしまい、門番のアタックが
+    //     自分の手番の購入に対して完全に無効化される（公式は "discard the **other** copies"＝門番のぶんは対象外）。
+    if (state.turn && pIndex === state.turn.active && exiledBefore > 0) {
       (state.onGainQueue = state.onGainQueue || []).push({ type: 'exile_discard', player: pIndex, card: cardId });
     }
     // 移動動物園：投資（Invest・イベント）＝**他の**プレイヤーがそのカードを獲得したとき、投資した人が +2カード（強制・累積）。
@@ -6920,7 +6942,13 @@
       //   コストは馬の獲得を反映した後で判定する（公式）。
       case 'demand': {
         if (gainHorse(state, pi, 'deck')) log(state, `${me.name} は要求で馬1枚を山札の上に獲得した。`);
-        if (anyGainable(state, (cid) => upToCanGain(state, cid, 4))) state.pending = { type: 'demand_gain', player: pi };
+        if (anyGainable(state, (cid) => upToCanGain(state, cid, 4))) {
+          // 馬の獲得が獲得時リアクション（望楼/ティアラ/交易商人）の窓を開いていることがある。
+          //   そこへ直接 pending を代入すると**その窓を握りつぶす**ので、開いていればキューに積む。
+          const pdDemand = { type: 'demand_gain', player: pi };
+          if (state.pending) (state.onGainQueue = state.onGainQueue || []).push(pdDemand);
+          else state.pending = pdDemand;
+        }
         break;
       }
       // 絶望（$0）＝呪い1枚を獲得してもよい。獲得したなら +1購入 +$2（呪いが無くて獲得できなければ何も得ない）。
@@ -7252,7 +7280,14 @@
     // 帝国：城の「獲得時の対話」（広大な城＝公領/屋敷3の選択／幽霊城＝相手の手札上げ）は、gainer 自身の pending 中に
     //   獲得すると（remodel/工房等の *_GAIN 経由）その場で立てられないため onGainQueue に貯め、選択待ちが無くなったら 1件ずつ pending 化する。
     if (!state.pending && !state.gameOver && state.onGainQueue && state.onGainQueue.length) {
-      state.pending = state.onGainQueue.shift();
+      // 移動動物園：門番の追放（gatekeeper_exile）は**非対話**＝pending にせずその場で適用して次へ進む。
+      //   キューに積むのは「獲得したカードを動かせる窓（そり/アザラシ）が先にある」ときだけなので、
+      //   ここまで来た時点でそれらは解決済み＝公式どおり「先に動かせば門番は失敗する」になる。
+      while (state.onGainQueue.length) {
+        const q = state.onGainQueue.shift();
+        if (q.type === 'gatekeeper_exile') { applyGatekeeperExile(state, q.player, q.card, q.dest); continue; }
+        state.pending = q; break;
+      }
       state = runReplays(state);
     }
     // 移動動物園：植民（Populate）＝アクションのサプライ山それぞれから1枚ずつ獲得する。
@@ -7802,9 +7837,10 @@
         state.pending = null;
         if (action.topdeck) {
           // 獲得先（dest）はヒント。ヴィラ等の獲得時効果が獲得先を変える（捨て札→手札）ので、
-          //   実際にカードが在るゾーンを 捨て札→手札 の順で探して移す（見つからなければ黙って不発＝lose track）。
-          const zones = pd.dest === 'hand' ? [p.hand, p.discard] : [p.discard, p.hand];
-          const zone = zones.find((z) => z.indexOf(pd.card) >= 0);
+          //   実際にカードが在るゾーンを 獲得先→捨て札→手札 の順で探して移す（見つからなければ黙って不発＝lose track）。
+          //   **`zoneOf(p, dest)` を先に見る**＝封鎖の 'setAside'／刈り入れの 'eventSetAside' に獲得した札も拾える。
+          const zones = [zoneOf(p, pd.dest), p.discard, p.hand];
+          const zone = zones.find((z) => z && z.indexOf(pd.card) >= 0);
           if (zone && removeOne(zone, pd.card)) { p.deck.unshift(pd.card); log(state, `${p.name} は移動遊園地で「${C()[pd.card].name}」を山札の上に置いた。`); }
         }
         return state;
@@ -12881,6 +12917,8 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'camel_train_exile') return state;
         const id = action.card;
+        // 終端保証：追放できる山が1つも無くなっていたら窓を閉じる（強制効果でも詰ませない）。
+        if (!anyExilableSupply(state, (cid) => !DOM.isType(cid, 'victory'))) { state.pending = null; return state; }
         if (!id || DOM.isType(id, 'victory') || exilableSupplyIds(state).indexOf(id) < 0) return state;
         exileFromSupply(state, pd.player, id);
         state.pending = null;
@@ -13287,6 +13325,8 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'invest') return state;
         const id = action.card;
+        // 終端保証：追放できるアクションが無くなっていたら窓を閉じる。
+        if (!anyExilableSupply(state, (cid) => DOM.isType(cid, 'action'))) { state.pending = null; return state; }
         if (!id || !DOM.isType(id, 'action') || exilableSupplyIds(state).indexOf(id) < 0) return state;
         const pl = state.players[pd.player];
         state.pending = null;
@@ -13318,6 +13358,11 @@
         if (!pd || pd.type !== 'transport' || (pd.stage !== 'exile' && pd.stage !== 'return')) return state;
         const pl = state.players[pd.player];
         const id = action.card;
+        // 終端保証：対象が無くなっていたら窓を閉じる（輸送は「実行できない選択肢も選べる」＝何も起きずに終わる）。
+        const stillOk = pd.stage === 'exile'
+          ? anyExilableSupply(state, (cid) => DOM.isType(cid, 'action'))
+          : (pl.exile || []).some((c) => DOM.isType(c, 'action'));
+        if (!stillOk) { state.pending = null; return state; }
         if (!id || !DOM.isType(id, 'action')) return state;
         if (pd.stage === 'exile') {
           if (exilableSupplyIds(state).indexOf(id) < 0) return state;
@@ -13730,6 +13775,8 @@
     // 移動動物園：追放（Exile）。engine/CPU/UI が同じ述語を見る（片側だけずれると CPU 無限ループ／人間が詰む）。
     availableInSupply, // 「今サプライから取れる（＝山の一番上にある）」か。追放・サプライ廃棄の候補選びの正本
     exilableSupplyIds, // 「サプライから追放できる」候補id列（非サプライ山・ロック中の分割山下段を除く）
+    allCards,          // そのプレイヤーの所有カード全部（全ゾーン）。**CPU の得点見積りはこれを使う**
+                       //   （CPU 側で同じゾーン列挙を手書きすると、新ゾーンを足すたびに片方が漏れて終局読みが狂う）
     exileCount,        // そのプレイヤーの追放マットにある同名カードの枚数
     investCount,       // 移動動物園：投資（Invest）で追放したコピーの枚数（表示用・+2カードの判定はengine内）
     bargainCanGain,    // 移動動物園：特価品の獲得候補（$5以下・勝利点でない）

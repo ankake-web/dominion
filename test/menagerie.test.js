@@ -560,6 +560,59 @@ function playWay(s, card, way) {
   ok(s.supply[s.mouseCard] === undefined || KING.indexOf(s.mouseCard) < 0, '脇のカードはサプライの王国10種には入らない');
 }
 
+console.log('\n=== M3: 門番（Gatekeeper）＝獲得したカードを追放する持続アタック ===');
+{
+  // 相手（席1）が門番を使い、自分（席0）の手番で獲得すると追放される。
+  const GK = ['gatekeeper', 'sleigh', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'harbinger', 'vassal'];
+  function armed() {
+    let s = E.createInitialState(['あなた', '相手'], GK.slice(), { startActive: 1 });
+    s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    foe(s).hand = ['gatekeeper'];
+    s = reduce(s, { type: 'PLAY_ACTION', card: 'gatekeeper' });
+    s = reduce(s, { type: 'END_ACTION_PHASE' });
+    s = reduce(s, { type: 'END_TURN' });          // 自分（席0）の手番へ
+    s.turn.phase = 'buy'; s.turn.coins = 10; s.turn.buys = 3;
+    return s;
+  }
+  {
+    const s = reduce(armed(), { type: 'BUY', card: 'village' });
+    ok(me(s).exile.indexOf('village') >= 0 && me(s).discard.indexOf('village') < 0, '門番：獲得したアクションを追放する');
+    // 【回帰】追放した「まさにその1枚」を払い戻す窓を開いてはいけない（開くと門番が完全に無効化される）。
+    ok(!s.pending, '門番が追放した1枚に対して「追放マットから戻す」窓は開かない');
+  }
+  {
+    // 既に同名を追放していれば門番は働かず、通常どおり払い戻しの窓が開く（両者は排他＝公式）。
+    const s0 = armed(); me(s0).exile = ['village'];
+    const s = reduce(s0, { type: 'BUY', card: 'village' });
+    ok(me(s).exile.length === 1 && me(s).discard.indexOf('village') >= 0, '既に同名が追放してあれば門番は追放しない');
+    ok(s.pending && s.pending.type === 'exile_discard', '通常どおり払い戻しの窓が開く');
+    const s2 = reduce(s, { type: 'EXILE_DISCARD', n: 1 });
+    ok(me(s2).exile.length === 0 && me(s2).discard.filter((c) => c === 'village').length === 2, '払い戻せる');
+  }
+  {
+    // そり（獲得したカードを動かす）は門番に勝つ＝stop-moving（公式）。
+    const s0 = armed(); me(s0).hand = ['sleigh'];
+    let s = reduce(s0, { type: 'BUY', card: 'smithy' });
+    ok(s.pending && s.pending.type === 'sleigh_react' && me(s).exile.length === 0,
+      '門番の追放より先に そり の窓が開く（まだ追放していない）');
+    s = reduce(s, { type: 'SLEIGH_REACT', where: 'hand' });
+    ok(me(s).hand.indexOf('smithy') >= 0 && me(s).exile.length === 0, 'そりで手札に移すと門番の追放は失敗する');
+  }
+  {
+    // そりを使わなければ、窓を閉じた後に門番が追放する。
+    const s0 = armed(); me(s0).hand = ['sleigh'];
+    let s = reduce(s0, { type: 'BUY', card: 'smithy' });
+    s = reduce(s, { type: 'SLEIGH_REACT', where: null });
+    ok(me(s).exile.indexOf('smithy') >= 0 && !s.pending, 'そりを使わなければ門番が追放する');
+  }
+  {
+    // 勝利点カードは追放しない／堀を公開した相手は影響を受けない（免疫）。
+    const s = reduce(armed(), { type: 'BUY', card: 'estate' });
+    ok(me(s).exile.length === 0 && me(s).discard.indexOf('estate') >= 0, '門番：勝利点カードは追放しない');
+  }
+}
+
 /* ============================================================
    M4＝イベント20種（横型・購入して使う）。正本＝docs/research/menagerie_rules.md §4
    ============================================================ */
@@ -904,6 +957,91 @@ console.log('\n=== M4: イベントの共通ルール（財宝ロック・コス
   s.turn.costReduction = 2; s.turn.coins = 1;
   const s2 = buyEv(s, 'ride');
   ok(s2.turn.coins === 1 && s2.supply.horse === 30, 'コインが足りなければ買えない（イベントはコスト軽減を受けない）');
+}
+
+console.log('\n=== M4: 敵対レビューの回帰（確定バグの再発防止） ===');
+{
+  // [medium] CPU の終局読みが tieTurns（今を生きるの追加ターンを除いたターン数）を見ていなかった
+  //   → 同点で負ける属州買いをしていた。engine の scoreGame と同じ算出で比べること。
+  const K2 = ['village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'harbinger', 'vassal', 'workshop', 'bandit'];
+  const s = E.createInitialState([{ name: 'CPU', isCpu: true, level: 'hard' }, { name: 'P', isCpu: true, level: 'hard' }],
+    K2.slice(), { startActive: 0 });
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.supply.province = 1;
+  me(s).turns = 9; me(s).discard = ['province', 'province', 'province', 'province', 'province']; // 30VP（買うと36）
+  foe(s).turns = 10; foe(s).freeTurns = 1;                                                        // tieTurns=9
+  foe(s).discard = ['province', 'province', 'province', 'province', 'province', 'province'];      // 36VP
+  s.turn.phase = 'buy'; s.turn.coins = 8; s.turn.buys = 1;
+  const a = CPU.decide(s, 0);
+  ok(!(a && a.type === 'BUY' && a.card === 'province'), 'CPU：同点で負ける属州買いをしない（tieTurns で比較する）');
+  const end = reduce(reduce(s, { type: 'BUY', card: 'province' }), { type: 'END_TURN' });
+  ok(end.result && end.result.winners.length === 1 && end.result.winners[0] === 1,
+    '（参考）その属州を買うと実際に負ける＝engine の判定と一致している');
+}
+{
+  // [low] 苦労（Toil）で「相続した屋敷」をアクションとして使えなかった（財宝として空振りしていた）
+  const K3 = ['peasant', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'harbinger', 'vassal', 'workshop'];
+  let s = evt(['inheritance', 'toil'], K3);
+  s = buyEv(s, 'inheritance');
+  s = reduce(s, { type: 'INHERITANCE_SET', card: 'smithy' });
+  me(s).hand = ['estate']; me(s).deck = ['copper', 'copper', 'copper', 'copper'];
+  s = buyEv(s, 'toil');
+  s = reduce(s, { type: 'TOIL_PLAY', card: 'estate' });
+  ok(me(s).hand.length === 3, '苦労：相続した屋敷をアクションとして使える（鍛冶屋＝+3カード）');
+  ok(s.turn.actionsPlayed >= 1, '相続の屋敷の使用が「アクションを使った回数」に数えられる');
+}
+{
+  // [medium] CPU の allCards が追放マットを数えておらず、hard CPU の終局読みが engine の得点とずれていた
+  //   → engine の allCards をそのまま呼ぶ（新ゾーンを足しても自動追従する）。
+  const s = act();
+  me(s).exile = ['province', 'province', 'estate'];
+  me(s).eventSetAside = ['gold'];
+  ok(E.allCards(me(s)).filter((c) => c === 'province').length === 2, 'engine.allCards が公開された');
+  const K4 = ['village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'harbinger', 'vassal', 'workshop', 'bandit'];
+  const s2 = E.createInitialState([{ name: 'CPU', isCpu: true, level: 'hard' }, { name: 'P', isCpu: true, level: 'hard' }],
+    K4.slice(), { startActive: 0 });
+  s2.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s2.supply.province = 1;
+  me(s2).exile = ['province', 'province', 'province'];   // 18VP（追放マット）→ 買うと24
+  foe(s2).discard = ['province', 'province'];             // 12VP
+  s2.turn.phase = 'buy'; s2.turn.coins = 8; s2.turn.buys = 1;
+  const a2 = CPU.decide(s2, 0);
+  ok(a2 && a2.type === 'BUY' && a2.card === 'province', 'CPU：追放マットの勝利点を数えて「勝てる属州買い」を選ぶ');
+}
+{
+  // [low] 要求＝馬の獲得で立った獲得時リアクションの窓（望楼など）を demand_gain が握りつぶしていた
+  const K5 = ['watchtower', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'harbinger', 'vassal', 'workshop'];
+  let s = evt(['demand'], K5);
+  me(s).hand = ['watchtower'];
+  s = buyEv(s, 'demand');
+  ok(s.pending && s.pending.type === 'watchtower', '要求：馬の獲得で望楼の窓が先に開く（握りつぶさない）');
+  s = reduce(s, { type: 'WATCHTOWER', choice: 'none' });
+  ok(s.pending && s.pending.type === 'demand_gain', '望楼を解決したあと $4以下の獲得窓が開く');
+}
+{
+  // [low] 強制の追放 pending は、対象が無くなっていたら窓を閉じる（オンラインで CPU が固まらない終端保証）
+  const s = act();
+  s.pending = { type: 'camel_train_exile', player: 0 };
+  Object.keys(s.supply).forEach((k) => { s.supply[k] = 0; });
+  ok(!reduce(s, { type: 'CAMEL_TRAIN_EXILE', card: null }).pending, 'ラクダの隊列：追放できる山が無ければ窓が閉じる');
+  const s2 = act();
+  s2.pending = { type: 'invest', player: 0 };
+  Object.keys(s2.supply).forEach((k) => { s2.supply[k] = 0; });
+  ok(!reduce(s2, { type: 'INVEST_EXILE', card: null }).pending, '投資：追放できるアクションが無ければ窓が閉じる');
+  const s3 = act();
+  s3.pending = { type: 'transport', stage: 'return', player: 0 };
+  ok(!reduce(s3, { type: 'TRANSPORT_PICK', card: null }).pending, '輸送：追放マットにアクションが無ければ窓が閉じる');
+}
+{
+  // [low] 移動遊園地（冒険）が新ゾーン eventSetAside を知らず、刈り入れの金貨を山札の上に置けなかった
+  let s = evt(['reap', 'travelling_fair']);
+  s = buyEv(s, 'travelling_fair');
+  s = buyEv(s, 'reap');
+  ok(s.pending && s.pending.type === 'travelling_fair' && s.pending.dest === 'eventSetAside',
+    '刈り入れの獲得にも移動遊園地の窓が開く');
+  const t = reduce(s, { type: 'TRAVELLING_FAIR_TOPDECK', topdeck: true });
+  ok(me(t).deck[0] === 'gold' && (me(t).eventSetAside || []).length === 0,
+    '移動遊園地で脇置きの金貨を山札の上に置ける（獲得先が脇でも拾える）');
 }
 
 console.log('\n=== M4: CPU の終端保証（イベント20種の pending を CPU が必ず閉じる） ===');
