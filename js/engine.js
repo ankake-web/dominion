@@ -512,6 +512,35 @@
     }
     // 帝国：冠（crown）＝「現在のフェイズ」で対象種別が変わる（applyEffect の case 'crown' と共通の入口）。
     if (card === 'crown') crownOpenPending(state, pIndex);
+    /* ===== 夜想曲：財宝（偶像＋家宝7種）。**効果は必ずここに書く**（applyEffect は財宝では呼ばれない） ===== */
+    /* 偶像（財宝・アタック・幸運）＝+2コイン（coin:2 で計上済み）。
+       **「場にある偶像の枚数」で判定する**（プレイした回数ではない＝偽造通貨で2回使っても場は1枚）。
+       奇数なら祝福を1つ受ける／偶数なら他のプレイヤー全員が呪いを獲得（アタック＝堀/灯台/守護者で防げる）。 */
+    if (card === 'idol') {
+      const idols = p.inPlay.filter((c) => c === 'idol').length + (p.durationCards || []).filter((c) => c === 'idol').length;
+      if (idols % 2 === 1) { log(state, `${p.name} は偶像（場に${idols}枚＝奇数）で祝福を受ける。`); receiveBoon(state, pIndex, 1); }
+      else { log(state, `${p.name} は偶像（場に${idols}枚＝偶数）で他のプレイヤーに呪いを配る。`); idolEnterVictim(state, pIndex, othersInOrder(state, pIndex)); }
+    }
+    // 呪われた金貨（家宝）＝+3コイン（coin:3）、呪い1枚を獲得する（強制）。
+    if (card === 'cursed_gold') { if (gain(state, pIndex, 'curse', 'discard')) log(state, `${p.name} は呪われた金貨で呪い1枚を獲得した。`); }
+    // 幸運のコイン（家宝）＝+1コイン（coin:1）、銀貨1枚を獲得する。
+    if (card === 'lucky_coin') { if (gain(state, pIndex, 'silver', 'discard')) log(state, `${p.name} は幸運のコインで銀貨1枚を獲得した。`); }
+    // 革袋（家宝）＝+1コイン（coin:1）+1購入。
+    if (card === 'pouch') t.buys += 1;
+    // ヤギ（家宝）＝+1コイン（coin:1）、手札1枚を廃棄してもよい。
+    if (card === 'goat' && p.hand.length) state.pending = { type: 'goat_trash', player: pIndex };
+    /* 魔法のランプ（家宝）＝+1コイン（coin:1）。**場にちょうど1枚だけ出ているカードが（これを含めて）6種類以上**なら
+       これを廃棄して願い3枚を獲得する。 */
+    if (card === 'magic_lamp') {
+      const cnt = {};
+      p.inPlay.concat(p.durationCards || []).forEach((c) => { cnt[c] = (cnt[c] || 0) + 1; });
+      const singles = Object.keys(cnt).filter((k) => cnt[k] === 1).length;
+      if (singles >= 6 && takeSelf(state, pIndex, 'magic_lamp')) {
+        trashCard(state, pIndex, 'magic_lamp');
+        let g = 0; for (let i = 0; i < 3; i++) if (gain(state, pIndex, 'wish', 'discard')) g++;
+        log(state, `${p.name} は魔法のランプを廃棄して願い ${g}枚 を獲得した（場に1枚だけのカードが${singles}種類）。`);
+      }
+    }
     // 海辺：私掠船マーク中なら、このターン最初の銀貨/金貨は出した後に廃棄される（コインは入る）。
     corsairOnPlayTreasure(state, pIndex, card);
     // 冒険：-$1トークンの相殺（購入フェイズでコインが増えたぶんに食い込む）。
@@ -761,7 +790,8 @@
            （所有カードに数えないので庭園/品評会/絹の道/壁/博物館にも影響しない）。
            脇札2種（幽霊/納骨堂）だけは物理カード＝allCards と保存則に数える。 */
         boonsInFront: [],  // 田畑/森/川の恵み＝解決後もそのターンの片付けまで自分の前に置く祝福id（公開・非カード）
-        boonHeld: null,    // 恵みの村で保留した祝福id（次の自分のターン開始時に受ける。公開・非カード）
+        boonsHeld: [],     // 恵みの村で保留した祝福id（次の自分のターン開始時に受ける。公開・非カード・複数可）
+        houndsAside: 0,    // 夜想曲：脇に置いた忠犬の枚数（カード自体は p.setAside＝物理カード。ターン終了時に手札へ戻す）
         deluded: false,    // 状態：錯乱（**持っているだけでは効かない**＝購入フェイズ開始時に返して初めて発動）
         envious: false,    // 状態：嫉妬（同上。錯乱とは排他＝両面カード1枚）
         misery: 0,         // 状態：0=なし / 1=生活苦(-2VP) / 2=二重苦(-4VP)
@@ -1073,6 +1103,8 @@
     } finally { delete state._gainOutside; }
   }
 
+  // 夜想曲：獲得したとき（捨て札に置く代わりに）手札に加えるカード。
+  const GAIN_TO_HAND = new Set(['den_of_sin', 'ghost_town', 'guardian', 'night_watchman']);
   // サプライから pIndex が dest('discard'|'hand'|'deck'|'setAside') にカードを獲得
   function gain(state, pIndex, cardId, dest) {
     // 暗黒時代：混合山（廃墟/騎士）は state[cardId]（実カード配列）の在庫で判定・供給する。
@@ -1087,6 +1119,10 @@
       if (splitLocked(state, cardId)) return false; // 分割山：下段は上段が尽きるまで獲得できない
     }
     const realId = isMixed ? state[cardId][0] : cardId;
+    /* 夜想曲：**既定の獲得先が手札**のカード（悪人のアジト／ゴーストタウン／守護者／夜警）。
+       「捨て札置き場に置く代わりに手札に加える」＝**捨て札に獲得する場合だけ**置き換える
+       （武器庫などで山札の上に獲得したときはそのまま＝公式）。相手のターンの獲得でも自分の手札に入る。 */
+    if (dest === 'discard' && GAIN_TO_HAND.has(realId)) dest = 'hand';
     const t = state.turn;
     // 帝国：負債コスト（debt）を持つカードは、購入でも効果での獲得でも、その数だけ負債トークンを負う。
     //   gain() は全ての獲得の一元入口なので、ここで付与すれば購入/工房/密輸人/命令 等どの経路でも効く。
@@ -1658,6 +1694,7 @@
     /* 夜想曲：呪詛（不運アタック＝暗躍者/迫害者/吸血鬼/人狼）の共通リアクション窓。
        堀を公開した被害者は accepted に入らない＝呪詛を受けない。**呪詛は全員の窓を閉じてから1枚だけめくる**。 */
     hex:           { onMoat: (s, pd) => hexReactEnter(s, pd.source, pd.queue, pd.accepted || []) },
+    idol:          { onMoat: (s, pd) => idolEnterVictim(s, pd.source, pd.queue) },
     // 冒険：遺物（-1カードトークン）・巨人（公開廃棄/呪い）・橋の下のトロル（-$1トークン）。
     relic:         { onMoat: (s, pd) => relicEnterVictim(s, pd.source, pd.queue) },
     giant:         { onMoat: (s, pd) => giantEnterVictim(s, pd.source, pd.queue) },
@@ -5551,6 +5588,114 @@
         t.buys += 1;
         startHexAttack(state, pi, othersInOrder(state, pi));
         break;
+      // 恵みの村（幸運）＝+1カード+2アクション。獲得時に祝福を1つ「取る」（triggerOnGain 側）。
+      case 'blessed_village':
+        draw(state, pi, 1); addActions(t, 2);
+        break;
+      /* コンクラーベ＝+2コイン、**場に同名が無い**アクション1枚を手札から使ってよい（アクション権不要）。
+         使ったら**その解決が全部終わった後で** +1アクション（雪深い村を使うと +1アクションは得られない＝公式）。 */
+      case 'conclave':
+        addCoins(state, 2);
+        if (conclaveTargets(state, pi).length) state.pending = { type: 'conclave', player: pi };
+        break;
+      // 呪われた村（不運）＝+2アクション、手札が6枚になるまで引く。獲得時に自分が呪詛を1つ受ける（triggerOnGain 側）。
+      case 'cursed_village':
+        addActions(t, 2);
+        while (p.hand.length < 6) { if (!draw(state, pi, 1).length) break; }
+        break;
+      /* ドルイド（幸運）＝+1購入、**脇に置かれた祝福3枚から1つを受ける**（その祝福は脇に置いたまま）。
+         強制。玉座で複数回使うと1回ごとに選び直せる（命令の commandAs 流儀は適用しない）。 */
+      case 'druid':
+        t.buys += 1;
+        if ((state.boons && state.boons.druid || []).length) state.pending = { type: 'druid_boon', player: pi };
+        break;
+      // 忠犬（リアクション）＝+2カード。捨て札にされたときの脇置きは triggerOnDiscard 側。
+      case 'faithful_hound':
+        draw(state, pi, 2);
+        break;
+      /* 愚者（幸運）＝森の迷子を持っていなければ、それを取り（相手からでも）、祝福3枚を取って好きな順番で受ける。
+         **すでに自分が持っていたら完全に空振り**（祝福も取らない）。 */
+      case 'fool': {
+        if (state.lostInTheWoods === pi) { log(state, `${p.name} はすでに森の迷子を持っている（愚者は何も起きない）。`); break; }
+        state.lostInTheWoods = pi;
+        log(state, `${p.name} は森の迷子を受け取った。`);
+        const three = [];
+        for (let i = 0; i < 3; i++) { const b = takeBoon(state); if (!b) break; three.push(b); }
+        if (three.length) { t.boonChoice = { player: pi, boons: three }; state.pending = { type: 'boon_choose', player: pi }; }
+        break;
+      }
+      /* レプラコーン（不運）＝金貨1枚を獲得。**その後**場のカードがちょうど7枚なら願い1枚、そうでなければ呪詛1つ。
+         枚数は「獲得時リアクション（牧羊犬など）を解決し終えてから」数える＝再開網に委ねる。 */
+      case 'leprechaun':
+        if (gain(state, pi, 'gold', 'discard')) log(state, `${p.name} はレプラコーンで金貨1枚を獲得した。`);
+        t.leprechaunCheck = (t.leprechaunCheck || []).concat([pi]);
+        break;
+      /* ピクシー（幸運）＝+1カード+1アクション。祝福の山の一番上を捨て、これを廃棄してその祝福を2回受けてもよい。
+         廃棄しなければ祝福は捨てられるだけで**受けない**。 */
+      case 'pixie': {
+        draw(state, pi, 1); addActions(t, 1);
+        const b = takeBoon(state);
+        if (b) {
+          if (state.boons) state.boons.discard.push(b);
+          log(state, `${p.name} はピクシーで祝福「${lsName(b)}」を捨てた。`);
+          state.pending = { type: 'pixie_trash', player: pi, boon: b };
+        }
+        break;
+      }
+      // プーカ＝手札から「呪われた金貨以外の財宝」1枚を廃棄してよい。そうしたら +4カード。
+      case 'pooka':
+        if (p.hand.some((c) => isTreasureFor(state, c) && c !== 'cursed_gold')) state.pending = { type: 'pooka_trash', player: pi };
+        break;
+      /* 聖なる木立ち（幸運）＝+1購入+3コイン、祝福を1つ受ける。
+         **その祝福が +コイン を与えないなら**、他のプレイヤーも全員それを受けてよい（任意・同じ1枚）。 */
+      case 'sacred_grove': {
+        t.buys += 1; addCoins(state, 3);
+        const b = takeBoon(state);
+        if (b) {
+          queueBoon(state, pi, b);
+          if (!BOON_GIVES_COIN.has(b)) t.groveShare = { boon: b, queue: othersInOrder(state, pi) };
+        }
+        break;
+      }
+      // 秘密の洞窟（持続）＝+1カード+1アクション。手札3枚を捨てたら、次のターン開始時に +3コイン。
+      case 'secret_cave':
+        draw(state, pi, 1); addActions(t, 1);
+        if (p.hand.length) state.pending = { type: 'secret_cave', player: pi };
+        break;
+      // 羊飼い＝+1アクション。好きな枚数の勝利点カードを公開して捨て、1枚につき +2カード。
+      case 'shepherd':
+        addActions(t, 1);
+        if (p.hand.some((c) => DOM.isType(c, 'victory'))) state.pending = { type: 'shepherd_discard', player: pi };
+        else log(state, `${p.name} は羊飼いで捨てる勝利点カードが無かった。`);
+        break;
+      /* 迫害者（不運・アタック）＝+2コイン。**他のカードが場に無ければ**インプ1枚を獲得、
+         そうでなければ他のプレイヤーは全員「次の呪詛」を1つ受ける。 */
+      case 'tormentor': {
+        addCoins(state, 2);
+        const othersInPlay = p.inPlay.filter((c) => c !== 'tormentor').length + (p.durationCards || []).length;
+        if (othersInPlay === 0) {
+          if (gain(state, pi, 'imp', 'discard')) log(state, `${p.name} は迫害者でインプ1枚を獲得した。`);
+        } else startHexAttack(state, pi, othersInOrder(state, pi));
+        break;
+      }
+      /* 追跡者（幸運）＝+1コイン。**このターン**、カードを獲得したとき山札の上に置いてよい（2022エラッタ）。
+         その後、祝福を1つ受ける。 */
+      case 'tracker':
+        addCoins(state, 1);
+        t.trackerTurn = true;
+        receiveBoon(state, pi, 1);
+        break;
+      /* 悲劇のヒーロー＝+3カード+1購入。**引いた後**に手札が8枚以上なら、これを廃棄して財宝1枚を獲得（強制）。 */
+      case 'tragic_hero':
+        draw(state, pi, 3); t.buys += 1;
+        if (p.hand.length >= 8) {
+          if (takeSelf(state, pi, 'tragic_hero')) {
+            trashCard(state, pi, 'tragic_hero');
+            log(state, `${p.name} は悲劇のヒーローを廃棄した（手札8枚以上）。`);
+            if (anyGainable(state, (id) => gainableBase(state, id) && isTreasureFor(state, id))) state.pending = { type: 'tragic_hero_gain', player: pi };
+          }
+        }
+        break;
 
       default:
         break;
@@ -5802,8 +5947,12 @@
     /* 夜想曲：森の迷子（状態・ゲーム中1枚）＝自分のターン開始時、手札1枚を捨てて祝福を1つ受けてもよい（任意）。
        愚者を持ち主自身が使っても何も起きない＝この窓だけが祝福の入口になる。 */
     if (state.lostInTheWoods === pi && p.hand.length > 0) state.turn.startQueue.push({ type: 'lost_in_the_woods', player: pi });
-    /* 夜想曲：恵みの村＝獲得時に取っておいた祝福を「次の自分のターンの開始時」に受ける。 */
-    if (p.boonHeld) { const b = p.boonHeld; p.boonHeld = null; queueBoon(state, pi, b); }
+    /* 夜想曲：恵みの村＝獲得時に取っておいた祝福を「次の自分のターンの開始時」に受ける（複数持ち得る）。 */
+    if ((p.boonsHeld || []).length) {
+      const held = p.boonsHeld.slice();
+      p.boonsHeld = [];
+      held.forEach((b) => queueBoon(state, pi, b));
+    }
     // ルネサンス：ターン開始時のプロジェクト（自動＝縁日/兵舎／対話＝大聖堂・城門・サイロ・悪巧み・輪作／ピアッツァ＝プレイ）。
     startOfTurnProjects(state, pi);
     // ピアッツァのプレイが選択待ちを立てた場合はそれを優先し、残りは reduce 末尾の startQueue 安全網が拾う。
@@ -5866,6 +6015,8 @@
   }
   // 各持続カードの「次の手番開始時」効果（カードidをキーに登録）。対話分は §手5/手6 で startQueue に積む。
   const DURATION_RESOLVERS = {
+    // 夜想曲：秘密の洞窟＝手札3枚を捨てたときだけ持続になり、次の自分のターン開始時に +3コイン。
+    secret_cave: (s, pi) => { addCoins(s, 3); log(s, `${s.players[pi].name} は秘密の洞窟の持続効果（+3コイン）。`); },
     fishing_village: (s, pi) => { addActions(s.turn, 1); addCoins(s, 1); log(s, `${s.players[pi].name} は漁村の持続効果（+1アクション +1コイン）。`); },
     caravan: (s, pi) => { draw(s, pi, 1); log(s, `${s.players[pi].name} は隊商の持続効果（+1カード）。`); },
     merchant_ship: (s, pi) => { addCoins(s, 2); log(s, `${s.players[pi].name} は商船の持続効果（+2コイン）。`); },
@@ -6037,9 +6188,24 @@
     //   ※「手札に獲得する」効果（彫刻家/出納官/職人 等）で得た場合は手札に残す（獲得置換が2つ競合＝獲得者が選ぶ。
     //     RGG は彫刻家×遊牧民の野営地で「手札に入る」と明記）。
     if (cardId === 'nomad_camp' && dest !== 'hand') { const z = zoneOf(gp, dest); if (removeOne(z, 'nomad_camp')) { gp.deck.unshift('nomad_camp'); log(state, `${gp.name} は遊牧民の野営地を山札の上に置いた。`); } }
-    /* ===== 夜想曲：獲得時の「自動」効果（対話不要＝pending を立てない）===== */
+    /* ===== 夜想曲：獲得時の効果 ===== */
     // 暗躍者：これを獲得したとき、金貨1枚を獲得する（あらゆる獲得経路。獲得の窓が2段になる）。
     if (cardId === 'skulk') { if (gain(state, pIndex, 'gold', 'discard')) log(state, `${gp.name} は暗躍者の獲得で金貨1枚を獲得した。`); }
+    // 呪われた村：これを獲得したとき、**獲得した本人**が呪詛を1つ受ける（相手のターンの獲得でも）。
+    if (cardId === 'cursed_village') receiveHex(state, pIndex);
+    /* 恵みの村：これを獲得したとき祝福を1つ「取る」（＝山から抜いて中身を見せる）→
+       今受けるか、次の自分のターンの開始時に受けるかを選ぶ。**取る時点で見せる**のが公式。 */
+    if (cardId === 'blessed_village') {
+      const b = takeBoon(state);
+      if (b) (state.onGainQueue = state.onGainQueue || []).push({ type: 'blessed_village_boon', player: pIndex, boon: b });
+    }
+    // 墓地：これを獲得したとき、手札から最大4枚を廃棄する（0枚でもよい・**まとめて同時に**廃棄する）。
+    if (cardId === 'cemetery') (state.onGainQueue = state.onGainQueue || []).push({ type: 'cemetery_trash', player: pIndex });
+    /* 追跡者：**このターン**、カードを獲得したとき山札の上に置いてよい（2022エラッタ＝「これが場にある間」ではない）。
+       移動遊園地と同じ窓＝onGainQueue に積む（既に山札の上に置かれた獲得は対象外）。 */
+    if (state.turn && state.turn.trackerTurn && pIndex === state.turn.active && dest !== 'deck') {
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'travelling_fair', player: pIndex, card: cardId, dest: dest || 'discard', src: 'tracker' });
+    }
     /* ===== ルネサンス：獲得時の「自動」効果（対話不要＝pending を立てない）===== */
     // 追従者：獲得したとき +2村人（購入以外の獲得でも・相手のターンの獲得でも）。
     if (cardId === 'lackeys') { gp.villagers = (gp.villagers || 0) + 2; log(state, `${gp.name} は追従者の獲得で +2村人。`); }
@@ -6443,6 +6609,11 @@
     if (!noPrompt) {
       const vg = (discardedCards || []).filter((c) => c === 'village_green').length;
       for (let i = 0; i < vg; i++) (state.onGainQueue = state.onGainQueue || []).push({ type: 'village_green_react', player: pIndex });
+      /* 夜想曲：忠犬＝**クリンナップ以外で**これを捨て札にするとき、脇に置いてよい（任意）。
+         そうしたら**そのターンの終了時**に手札に加える（＝相手のターンに捨てても、その相手のターンの終わりに戻る）。
+         手札からとは限らず山札から捨てられても誘発する（本アプリの捨て札トリガーの配線範囲＝§0-25 の既知簡略化）。 */
+      const fh = (discardedCards || []).filter((c) => c === 'faithful_hound').length;
+      for (let i = 0; i < fh; i++) (state.onGainQueue = state.onGainQueue || []).push({ type: 'faithful_hound_react', player: pIndex });
     }
   }
   // カードを廃棄したときのフック（誰の廃棄でも「持ち主」に発動）。trashCard から呼ぶ。
@@ -6451,6 +6622,11 @@
   function triggerOnTrash(state, pIndex, card, opts) {
     const p = state.players[pIndex];
     const fromSupply = !!(opts && opts.fromSupply); // サプライの山からの廃棄（塩まき/待ち伏せ/剣闘士）＝「あなたのカード」ではない
+    /* 夜想曲：呪いの鏡（家宝）＝これを廃棄したとき、手札のアクション1枚を捨てて幽霊1枚を獲得してもよい（任意）。
+       対話なので onTrashQueue に積む（アタック中の廃棄や、廃棄札の続きの獲得と競合させない）。 */
+    if (card === 'haunted_mirror' && !fromSupply && p.hand.some((c) => DOM.isType(c, 'action')) && (state.supply.ghost || 0) > 0) {
+      (state.onTrashQueue = state.onTrashQueue || []).push({ type: 'haunted_mirror', player: pIndex });
+    }
     // 異郷：遊牧民＝廃棄したとき +2コイン（自分の手番のときのみ意味がある）。
     if (card === 'nomads' && state.turn && pIndex === state.turn.active) {
       addCoins(state, 2);
@@ -6640,9 +6816,10 @@
     const pi = q.player, boon = q.boon, p = state.players[pi], t = state.turn;
     if (!p) return;
     if (!q.aside && q.place !== false) {
-      removeBoonAnywhere(state, boon);
+      // 聖なる木立ちの共有（q.share）＝**同じ1枚を複数人が受ける**ので、先に受けた人の前から取り上げない。
+      if (!q.share) removeBoonAnywhere(state, boon);
       if (BOON_KEEPERS.has(boon)) (p.boonsInFront = p.boonsInFront || []).push(boon);
-      else if (state.boons) state.boons.discard.push(boon);
+      else if (state.boons && !q.share) state.boons.discard.push(boon);
     }
     log(state, `${p.name} は祝福「${lsName(boon)}」を受けた。`);
     switch (boon) {
@@ -6737,12 +6914,16 @@
     if (t.currentHex && state.hexes) state.hexes.discard.push(t.currentHex);
     t.currentHex = null; t.hexQueue = null;
   }
-  // 「自分が呪詛を1つ受ける」（呪われた村の獲得時／レプラコーン＝非アタック）。
+  /* 「自分が呪詛を1つ受ける」（呪われた村の獲得時／レプラコーン＝非アタック）。
+     **別の呪詛の配布中に呼ばれ得る**（蝗害の獲得で呪われた村を取る等）ので、その場合は
+     `state.hexSelfQueue` に積んで reduce 末尾の再開網に譲る（現在の呪詛を上書きしない）。 */
   function receiveHex(state, pi) {
+    const t = state.turn;
+    if (!state.hexes) return;
+    if (t && t.currentHex) { (state.hexSelfQueue = state.hexSelfQueue || []).push(pi); return; }
     const hex = takeHex(state);
     if (!hex) return;
     log(state, `呪詛「${lsName(hex)}」がめくられた。`);
-    const t = state.turn;
     t.currentHex = hex; t.hexQueue = [pi];
     runHexQueue(state);
   }
@@ -6848,6 +7029,28 @@
   function sharesType(a, b) {
     const ta = (C()[a] && C()[a].types) || [], tb = (C()[b] && C()[b].types) || [];
     return ta.some((x) => tb.indexOf(x) >= 0);
+  }
+  /* コンクラーベ／インプ＝「あなたの場に**同名が出ていない**アクションカード1枚を手札から使用してもよい」。
+     - 判定は「今その名前が場にあるか」だけ（このターンに使ったかは無関係）。
+     - **前のターンから残っている持続カードも「場にある」**＝その名前は選べない。
+     - **持続アクションもプレイできる**（王子/船長/大君主/はみだし者/行進の non-Duration 制限を流用してはいけない）。 */
+  function conclaveTargets(state, pi) {
+    const p = state.players[pi];
+    const inPlay = new Set(p.inPlay.concat(p.durationCards || []));
+    return [...new Set(p.hand.filter((c) => (DOM.isType(c, 'action') || inheritedEstate(p, c)) && !inPlay.has(c)))];
+  }
+  // 偶像（財宝アタック）＝偶数枚なら他のプレイヤー全員が呪いを獲得。堀/灯台/守護者で防げる。
+  function idolEnterVictim(state, source, queue) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'idol', stage: 'react', player: victim, source, victim, queue: rest };
+    } else idolCurse(state, source, victim, rest);
+  }
+  function idolCurse(state, source, victim, queue) {
+    if (gain(state, victim, 'curse', 'discard')) log(state, `${state.players[victim].name} は呪いを獲得した（偶像）。`);
+    idolEnterVictim(state, source, queue);
   }
 
   /* ---------- クリーンアップ＆次の番へ ---------- */
@@ -7011,10 +7214,20 @@
         if (got.length) log(state, `${pl.name} は川の恵みで +1カード（ターンの終了時）。`);
       }
     });
+    /* 夜想曲：忠犬＝「このターンの終了時に手札へ」＝**先引きの後**（角笛は逆に先引きの前なので取り違えない）。
+       相手のターンに捨てた忠犬も**そのターンの終了時**に戻る＝全プレイヤーぶん回収する。 */
+    state.players.forEach((pl, idx) => {
+      let n = pl.houndsAside || 0;
+      while (n-- > 0) {
+        if (removeOne(pl.setAside || [], 'faithful_hound')) { pl.hand.push('faithful_hound'); log(state, `${pl.name} は忠犬を手札に戻した（ターンの終了時）。`); }
+      }
+      pl.houndsAside = 0;
+    });
     state.players.forEach((pl) => {
       while ((pl.boonsInFront || []).length) {
         const b = pl.boonsInFront.shift();
-        if (state.boons) state.boons.discard.push(b);
+        // 聖なる木立ちで複数人が同じ祝福を前に置いていることがある＝**祝福デッキに二重に戻さない**。
+        if (state.boons && state.boons.discard.indexOf(b) < 0 && state.boons.deck.indexOf(b) < 0) state.boons.discard.push(b);
       }
     });
     p.turns += 1;
@@ -7697,6 +7910,43 @@
       runHexQueue(state);
       state = runReplays(state);
     }
+    /* 夜想曲：呪詛の配布中に「自分が呪詛を受ける」が起きたぶん（呪われた村を蝗害で獲得した等）を後から解決する。 */
+    if (!state.pending && !state.gameOver && state.turn && !state.turn.currentHex &&
+        state.hexSelfQueue && state.hexSelfQueue.length) {
+      receiveHex(state, state.hexSelfQueue.shift());
+      state = runReplays(state);
+    }
+    /* 夜想曲：愚者＝取った祝福3枚を**好きな順番で**受ける（1つ解決してから次を選ぶ＝公式）。 */
+    if (!state.pending && !state.gameOver && state.turn && state.turn.boonChoice &&
+        (state.turn.boonChoice.boons || []).length && !(state.boonQueue || []).length) {
+      state.pending = { type: 'boon_choose', player: state.turn.boonChoice.player };
+    }
+    /* 夜想曲：聖なる木立ち＝受けた祝福が +コイン を与えないなら、他のプレイヤーも**同じ1枚**を受けてよい（任意）。
+       自分の祝福を解決し終えてから手番順に窓を開く。 */
+    if (!state.pending && !state.gameOver && state.turn && state.turn.groveShare &&
+        !(state.boonQueue || []).length) {
+      const gs = state.turn.groveShare;
+      if ((gs.queue || []).length) {
+        const seat = gs.queue.shift();
+        state.pending = { type: 'grove_offer', player: seat, boon: gs.boon };
+      } else state.turn.groveShare = null;
+      state = runReplays(state);
+    }
+    /* 夜想曲：レプラコーン＝**金貨の獲得（とその獲得時リアクション）を全部解決してから**場の枚数を数える。
+       ちょうど7枚なら願い1枚、そうでなければ呪詛1つ（牧羊犬が7枚目になる公式裁定に対応する）。 */
+    if (!state.pending && !state.gameOver && state.turn && (state.turn.leprechaunCheck || []).length &&
+        !(state.onGainQueue && state.onGainQueue.length)) {
+      const seat = state.turn.leprechaunCheck.shift();
+      const lp = state.players[seat];
+      const inPlayN = lp.inPlay.length + (lp.durationCards || []).length;
+      if (inPlayN === 7) {
+        if (gain(state, seat, 'wish', 'discard')) log(state, `${lp.name} はレプラコーン（場にちょうど7枚）で願い1枚を獲得した。`);
+      } else {
+        log(state, `${lp.name} はレプラコーン（場に${inPlayN}枚）で呪詛を受ける。`);
+        receiveHex(state, seat);
+      }
+      state = runReplays(state);
+    }
     // 暗黒時代：on-trash の「対話つき」効果（地下墓所＝安い獲得／狩場＝公領or屋敷3／従者＝アタック獲得）は
     //   トリガー時点で別の pending（アタック処理中・廃棄札の続きの獲得等）が走っていることがあるため、
     //   state.onTrashQueue に貯めておき、選択待ちが無くなったタイミングで1件ずつ pending 化する。
@@ -7798,6 +8048,13 @@
           state.pending = { type: 'procession_gain', player: r.player, exact: mx, pot: tref.pot, debt: tref.debt };
         }
         continue; // applyEffect は行わない（制御項目）。pending を立てたら while が停止する。
+      }
+      /* 夜想曲：コンクラーベ＝手札のアクションを使ったら**その解決が全部終わった後で** +1アクション（公式）。
+         `addActions` を通すので、コンクラーベで雪深い村を使った場合は +1アクションが無視される（＝公式どおり）。 */
+      if (r.label === 'conclave_bonus') {
+        addActions(state.turn, 1);
+        log(state, `${state.players[r.player].name} はコンクラーベで +1アクション。`);
+        continue;
       }
       if (r.label === 'treasure_replay') {
         // 帝国：冠／繁栄：ティアラ／暗黒時代：偽造通貨＝「手札の財宝1枚を2回使う」の2回目。
@@ -14142,6 +14399,195 @@
         if (gain(state, pd.player, id, 'discard')) log(state, `${state.players[pd.player].name} は蝗害で「${C()[id].name}」を獲得した。`);
         return state;
       }
+      // 恵みの村＝獲得時に取った祝福を「今受ける」か「次の自分のターンの開始時に受ける」か選ぶ（中身は見えている）。
+      case 'BLESSED_VILLAGE_BOON': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'blessed_village_boon') return state;
+        const pl = state.players[pd.player];
+        state.pending = null;
+        if (action.now) queueBoon(state, pd.player, pd.boon);
+        else { (pl.boonsHeld = pl.boonsHeld || []).push(pd.boon); log(state, `${pl.name} は祝福「${lsName(pd.boon)}」を次の自分のターンまで取っておいた。`); }
+        return state;
+      }
+      // 墓地＝獲得時に手札から最大4枚を廃棄する（0枚可・**まとめて同時に**廃棄する）。
+      case 'CEMETERY_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'cemetery_trash') return state;
+        const pl = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length > 4) return state;
+        const copy = pl.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        state.pending = null;
+        cards.forEach((c) => removeOne(pl.hand, c));           // 先に全部手札から抜く＝「同時に廃棄」
+        cards.forEach((c) => trashCard(state, pd.player, c));  // その後で廃棄時トリガーを解決する
+        if (cards.length) log(state, `${pl.name} は墓地の獲得で ${cards.length}枚 を廃棄した。`);
+        return state;
+      }
+      /* コンクラーベ＝場に同名が無いアクション1枚を手札から使用してよい（任意・アクション権不要）。
+         使ったら**解決が全部終わった後に** +1アクション（`state.replay` の 'conclave_bonus' で遅らせる）。 */
+      case 'CONCLAVE_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'conclave') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        state.pending = null;
+        if (card == null) return state;
+        if (conclaveTargets(state, pd.player).indexOf(card) < 0) return state;
+        (state.replay = state.replay || []).push({ label: 'conclave_bonus', player: pd.player });
+        playCardNoAction(state, pd.player, card, pl.hand, 'コンクラーベで', action.way);
+        return state;
+      }
+      // ドルイド＝脇に置かれた祝福3枚から1つを受ける（強制。祝福は脇に置いたまま）。
+      case 'DRUID_BOON': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'druid_boon') return state;
+        const set = (state.boons && state.boons.druid) || [];
+        if (!set.length) { state.pending = null; return state; } // 終端保証
+        const b = action.boon;
+        if (!b || set.indexOf(b) < 0) return state;
+        state.pending = null;
+        queueBoon(state, pd.player, b, { aside: true }); // 脇から動かさない
+        return state;
+      }
+      // 愚者＝取った祝福を1つずつ好きな順番で受ける（残りは reduce 末尾の再開網が再度開く）。
+      case 'BOON_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'boon_choose') return state;
+        const bc = t.boonChoice;
+        if (!bc || !(bc.boons || []).length) { state.pending = null; t.boonChoice = null; return state; }
+        const b = action.boon;
+        if (!b || bc.boons.indexOf(b) < 0) return state;
+        state.pending = null;
+        bc.boons = bc.boons.filter((x) => x !== b);
+        if (!bc.boons.length) t.boonChoice = null;
+        queueBoon(state, pd.player, b);
+        return state;
+      }
+      // 聖なる木立ち＝他のプレイヤーも同じ祝福を受けてよい（任意）。
+      case 'GROVE_OFFER': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'grove_offer') return state;
+        state.pending = null;
+        if (action.take) queueBoon(state, pd.player, pd.boon, { share: true });
+        return state;
+      }
+      // ピクシー＝これを廃棄して、捨てた祝福を2回受けてもよい（任意）。
+      case 'PIXIE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'pixie_trash') return state;
+        state.pending = null;
+        if (!action.trash) return state;
+        if (!takeSelf(state, pd.player, 'pixie')) return state; // 命令経由/再演では場に無い＝廃棄できない（lose track）
+        trashCard(state, pd.player, 'pixie');
+        log(state, `${state.players[pd.player].name} はピクシーを廃棄して祝福「${lsName(pd.boon)}」を2回受ける。`);
+        queueBoon(state, pd.player, pd.boon);
+        queueBoon(state, pd.player, pd.boon);
+        return state;
+      }
+      // プーカ＝手札から「呪われた金貨以外の財宝」1枚を廃棄してよい。そうしたら +4カード。
+      case 'POOKA_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'pooka_trash') return state;
+        const pl = state.players[pd.player];
+        const c = action.card;
+        if (c == null) { state.pending = null; return state; }
+        if (pl.hand.indexOf(c) < 0 || !isTreasureFor(state, c) || c === 'cursed_gold') return state;
+        if (!trashFromHand(state, pd.player, [c], 1, 'をプーカで廃棄した。')) return state;
+        state.pending = null;
+        draw(state, pd.player, 4);
+        return state;
+      }
+      // 秘密の洞窟＝手札3枚を捨ててよい。そうしたら次の自分のターン開始時に +3コイン（＝そのときだけ持続になる）。
+      case 'SECRET_CAVE_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'secret_cave') return state;
+        const pl = state.players[pd.player];
+        if (action.cards == null) { state.pending = null; return state; }
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length !== 3) return state; // 3枚ちょうど（手札が3枚未満なら捨てられない＝辞退のみ）
+        if (!discardFromHand(state, pd.player, cards, 3, 'を捨てた（秘密の洞窟）。')) return state;
+        state.pending = null;
+        armDuration(state, pd.player, 'secret_cave');
+        log(state, `${pl.name} は秘密の洞窟で手札3枚を捨てた（次のターン開始時 +3コイン）。`);
+        triggerOnDiscard(state, pd.player, cards);
+        return state;
+      }
+      // 羊飼い＝好きな枚数の勝利点カードを公開して捨て、1枚につき +2カード。
+      case 'SHEPHERD_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'shepherd_discard') return state;
+        const pl = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        const copy = pl.hand.slice();
+        for (const c of cards) { if (!DOM.isType(c, 'victory')) return state; if (!removeOne(copy, c)) return state; }
+        state.pending = null;
+        if (cards.length) {
+          reveal(state, pd.player, cards.slice(), '羊飼い');
+          discardFromHand(state, pd.player, cards, cards.length, 'を捨てた（羊飼い）。');
+          draw(state, pd.player, cards.length * 2);
+          log(state, `${pl.name} は羊飼いで勝利点${cards.length}枚を捨てて +${cards.length * 2}カード。`);
+          triggerOnDiscard(state, pd.player, cards);
+        }
+        return state;
+      }
+      // 悲劇のヒーロー＝廃棄したあと財宝カード1枚を獲得（強制）。
+      case 'TRAGIC_HERO_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'tragic_hero_gain') return state;
+        if (!anyGainable(state, (id) => gainableBase(state, id) && isTreasureFor(state, id))) { state.pending = null; return state; }
+        const id = action.card;
+        if (!id || !gainableBase(state, id) || !isTreasureFor(state, id)) return state;
+        state.pending = null;
+        if (gain(state, pd.player, id, 'discard')) log(state, `${state.players[pd.player].name} は悲劇のヒーローで「${C()[id].name}」を獲得した。`);
+        return state;
+      }
+      // ヤギ（家宝）＝手札1枚を廃棄してもよい。
+      case 'GOAT_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'goat_trash') return state;
+        const pl = state.players[pd.player];
+        const c = action.card;
+        if (c == null) { state.pending = null; return state; }
+        if (pl.hand.indexOf(c) < 0) return state;
+        if (!trashFromHand(state, pd.player, [c], 1, 'をヤギで廃棄した。')) return state;
+        state.pending = null;
+        return state;
+      }
+      // 呪いの鏡（家宝）＝これを廃棄したとき、手札のアクション1枚を捨てて幽霊1枚を獲得してもよい。
+      case 'HAUNTED_MIRROR_GHOST': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'haunted_mirror') return state;
+        const pl = state.players[pd.player];
+        const c = action.card;
+        if (c == null) { state.pending = null; return state; }
+        if (pl.hand.indexOf(c) < 0 || !DOM.isType(c, 'action')) return state;
+        if (!discardFromHand(state, pd.player, [c], 1, 'を捨てた（呪いの鏡）。')) return state;
+        state.pending = null;
+        if (gain(state, pd.player, 'ghost', 'discard')) log(state, `${pl.name} は呪いの鏡で幽霊1枚を獲得した。`);
+        triggerOnDiscard(state, pd.player, [c]);
+        return state;
+      }
+      // 忠犬＝クリンナップ以外で捨て札にしたとき、脇に置いてよい（このターンの終了時に手札へ戻る）。
+      case 'FAITHFUL_HOUND_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'faithful_hound_react') return state;
+        const pl = state.players[pd.player];
+        state.pending = null;
+        if (!action.setAside) return state;
+        if (!removeOne(pl.discard, 'faithful_hound')) return state; // 既に動いていたら不発（lose track）
+        (pl.setAside = pl.setAside || []).push('faithful_hound');
+        pl.houndsAside = (pl.houndsAside || 0) + 1;
+        log(state, `${pl.name} は忠犬を脇に置いた（このターンの終了時に手札へ戻る）。`);
+        return state;
+      }
+      // 偶像（財宝アタック）のリアクション窓＝「受ける」。
+      case 'IDOL_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'idol' || pd.stage !== 'react') return state;
+        idolCurse(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
       // 森の迷子＝ターン開始時、手札1枚を捨てて祝福を1つ受けてもよい（任意）。
       case 'LOST_IN_WOODS': {
         const pd = state.pending;
@@ -14403,6 +14849,10 @@
     'BOON_SKY_DISCARD', 'BOON_MOON_TOPDECK', 'LOOK_ARRANGE_RESOLVE',
     'HEX_REACT', 'HEX_POVERTY_DISCARD', 'HEX_FEAR_DISCARD', 'HEX_HAUNTING_TOPDECK', 'HEX_LOCUSTS_GAIN',
     'LOST_IN_WOODS',
+    // 夜想曲：王国カード（非夜行）＋家宝
+    'BLESSED_VILLAGE_BOON', 'CEMETERY_TRASH', 'CONCLAVE_PLAY', 'DRUID_BOON', 'BOON_CHOOSE', 'GROVE_OFFER',
+    'PIXIE_TRASH', 'POOKA_TRASH', 'SECRET_CAVE_DISCARD', 'SHEPHERD_DISCARD', 'TRAGIC_HERO_GAIN',
+    'GOAT_TRASH', 'HAUNTED_MIRROR_GHOST', 'FAITHFUL_HOUND_REACT', 'IDOL_REACT',
   ]);
 
   /* ---------- 公開API ---------- */
@@ -14449,6 +14899,7 @@
     isUsableWay,       // 移動動物園：その習性がこの対局で採用されているか（イベントの「使用」でも習性を選べる）
     // 夜想曲：祝福/呪詛/状態（CPU/UI が engine と同じ述語を見る）
     sharesType,        // 蝗害＝2枚が種別を1つ以上共有するか（獲得候補の絞り込みに CPU/UI も使う）
+    conclaveTargets,   // コンクラーベ／インプ＝「場に同名が無い手札のアクション」（engine/CPU/UI が同じ候補を見る）
     improveTargets,    // ルネサンス：増築の廃棄対象（engine/CPU/UI が同じ候補を参照）
     isTreasureFor,     // ルネサンス：資本主義を含む「今この状態で財宝か」＝**財宝判定の正本**（engine/CPU/UI が同じ述語）
     capitalismTreasures, // ルネサンス：資本主義で財宝になるアクションの集合（整合性テストで固定する）

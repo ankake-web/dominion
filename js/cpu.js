@@ -302,6 +302,11 @@
     if (has('encampment')) return 'encampment';           // +2カード+2アクション（金貨/鹵獲品公開で場に残す）
     if (has('patrician')) return 'patrician';             // +1カード+1アクション（山札上$5以上を手札へ）
     if (has('settlers')) return 'settlers';               // +1カード+1アクション（捨て札から銅貨）
+    // 夜想曲：非ターミナル（+アクション付き）
+    if (has('blessed_village')) return 'blessed_village'; // +1カード+2アクション（獲得時に祝福）
+    if (has('cursed_village')) return 'cursed_village';   // +2アクション＋手札6枚まで補充
+    if (has('secret_cave')) return 'secret_cave';         // +1カード+1アクション（3枚捨てて次ターン+3コイン）
+    if (has('pixie')) return 'pixie';                     // +1カード+1アクション（廃棄して祝福2回）
     // 冒険：非ターミナル（+アクション付き）
     if (has('lost_city')) return 'lost_city';             // +2カード+2アクション
     if (has('port')) return 'port';                       // +1カード+2アクション
@@ -470,9 +475,20 @@
     if (has('poor_house')) return 'poor_house';             // +$4（手札の財宝で減）
     if (has('squire')) return 'squire';                     // +$1＋選択
     if (has('beggar')) return 'beggar';                     // 銅貨3枚を手札に
-    // 夜想曲：ターミナル（アタック＞コイン＋祝福）
+    // 夜想曲：ターミナル（アタック＞ドロー＞コイン＋祝福）
+    if (has('werewolf') && t.phase === 'action') return 'werewolf'; // アクションフェイズなら +3カード（夜なら呪詛）
+    if (has('tormentor')) return 'tormentor';               // +2コイン＋全員に呪詛（場が空ならインプ）
     if (has('skulk')) return 'skulk';                       // +1購入＋全員に呪詛（獲得時に金貨）
+    if (has('tragic_hero') && p.hand.length >= 5) return 'tragic_hero'; // +3カード+1購入（手札8枚以上なら廃棄→財宝）
+    if (has('shepherd') && p.hand.some((c) => isType(c, 'victory'))) return 'shepherd'; // 勝利点を捨てて大量ドロー
+    if (has('pooka') && p.hand.some((c) => isTreasureNow(state, c) && c !== 'cursed_gold')) return 'pooka'; // 財宝を廃棄して +4カード
+    if (has('conclave') && DOM.engine.conclaveTargets(state, state.turn.active).length) return 'conclave';
+    if (has('leprechaun')) return 'leprechaun';             // 金貨＋（場7枚なら願い／そうでなければ呪詛）
     if (has('bard')) return 'bard';                         // +2コイン＋祝福を1つ受ける
+    if (has('fool')) return 'fool';                         // 森の迷子＋祝福3つ
+    if (has('faithful_hound')) return 'faithful_hound';     // +2カード（捨てられたら脇に置いて戻ってくる）
+    if (has('tracker')) return 'tracker';                   // +1コイン＋祝福（このターンの獲得を山札の上に）
+    if (has('druid')) return 'druid';                       // +1購入＋脇の祝福
     // 玉座の間: 2回使える別アクションが手札にあるときだけ（無駄打ち回避）
     if (has('throne_room') && p.hand.some((c) => isType(c, 'action') && c !== 'throne_room')) return 'throne_room';
     if (has('council_room')) return 'council_room'; // +4カード+1購入
@@ -1038,6 +1054,19 @@
   function E() { return DOM.engine; }
 
   /* ---------- 選択待ちの解決 ---------- */
+  /* 夜想曲：受ける祝福を選ぶときの優先順（ドルイド／愚者）。強い順。 */
+  const BOON_RANK = ['the_mountains_gift', 'the_swamps_gift', 'the_skys_gift', 'the_seas_gift',
+    'the_suns_gift', 'the_earths_gift', 'the_fields_gift', 'the_forests_gift', 'the_rivers_gift',
+    'the_moons_gift', 'the_flames_gift', 'the_winds_gift'];
+  function bestBoonOf(set) {
+    const list = (set || []).slice();
+    if (!list.length) return null;
+    list.sort((a, b) => {
+      const ia = BOON_RANK.indexOf(a), ib = BOON_RANK.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+    return list[0];
+  }
   function pickDiscards(hand, need) {
     const sorted = hand.map((c, i) => ({ c, i, v: keepValue(c) })).sort((a, b) => a.v - b.v);
     return sorted.slice(0, need).map((x) => x.c);
@@ -2110,6 +2139,65 @@
         const worth = junk != null && keepValue(junk) <= 40;
         return { type: 'LOST_IN_WOODS', card: worth ? junk : null };
       }
+      case 'blessed_village_boon': // 恵みの村＝今受ける（次のターンまで持ち越す価値の判断は難しいので即時）
+        return { type: 'BLESSED_VILLAGE_BOON', now: true };
+      case 'cemetery_trash': { // 墓地＝手札の不要札（呪い/銅貨/屋敷）を最大4枚まとめて廃棄
+        const junk = p.hand.filter((c) => trashValue(c) <= 2).slice(0, 4);
+        return { type: 'CEMETERY_TRASH', cards: junk };
+      }
+      case 'conclave': { // コンクラーベ＝場に同名が無いアクションを1枚使う（chooseAction の優先順で選ぶ）
+        const cand = DOM.engine.conclaveTargets(state, pd.player);
+        if (!cand.length) return { type: 'CONCLAVE_PLAY', card: null };
+        const hand = p.hand;
+        const fake = Object.assign({}, p, { hand: cand });
+        const pick = chooseAction(Object.assign({}, state, { turn: Object.assign({}, state.turn, { actions: 1 }) }), fake);
+        return { type: 'CONCLAVE_PLAY', card: (pick && cand.indexOf(pick) >= 0) ? pick : cand[0] };
+      }
+      case 'druid_boon': { // ドルイド＝脇の祝福3枚から1つ（強制）
+        const set = ((state.boons && state.boons.druid) || []);
+        return { type: 'DRUID_BOON', boon: bestBoonOf(set) };
+      }
+      case 'boon_choose': { // 愚者＝取った祝福を1つずつ好きな順で受ける
+        const set = ((state.turn.boonChoice && state.turn.boonChoice.boons) || []);
+        return { type: 'BOON_CHOOSE', boon: bestBoonOf(set) };
+      }
+      case 'grove_offer': // 聖なる木立ち＝相手が配る祝福は基本もらう（デメリットのある祝福は無い）
+        return { type: 'GROVE_OFFER', take: true };
+      case 'pixie_trash': { // ピクシー＝良い祝福（銀貨/ウィル・オ・ウィスプ/金貨）なら廃棄して2回受ける
+        const good = ['the_mountains_gift', 'the_swamps_gift', 'the_skys_gift', 'the_suns_gift', 'the_seas_gift'];
+        return { type: 'PIXIE_TRASH', trash: good.indexOf(pd.boon) >= 0 };
+      }
+      case 'pooka_trash': { // プーカ＝銅貨があれば廃棄して +4カード（呪われた金貨は対象外）
+        const cand = p.hand.filter((c) => isTreasureNow(state, c) && c !== 'cursed_gold')
+          .sort((a, b) => trashValue(a) - trashValue(b));
+        const pick = cand.find((c) => trashValue(c) <= 2) || null;
+        return { type: 'POOKA_TRASH', card: pick };
+      }
+      case 'secret_cave': { // 秘密の洞窟＝手札3枚がすべて安ければ捨てて次ターン +3コイン
+        if (p.hand.length < 3) return { type: 'SECRET_CAVE_DISCARD', cards: null };
+        const cards = pickDiscards(p.hand, 3);
+        const cheap = cards.every((c) => keepValue(c) <= 50);
+        return { type: 'SECRET_CAVE_DISCARD', cards: cheap ? cards : null };
+      }
+      case 'shepherd_discard': { // 羊飼い＝手札の勝利点カードを全部捨てて +2カード/枚
+        const vic = p.hand.filter((c) => isType(c, 'victory'));
+        return { type: 'SHEPHERD_DISCARD', cards: vic };
+      }
+      case 'tragic_hero_gain': // 悲劇のヒーロー＝最も良い財宝を獲得（強制）
+        return { type: 'TRAGIC_HERO_GAIN', card: bestGain(state, 99, { treasureOnly: true }) };
+      case 'goat_trash': { // ヤギ＝不要札があれば廃棄
+        const junk = p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0];
+        return { type: 'GOAT_TRASH', card: (junk != null && trashValue(junk) <= 2) ? junk : null };
+      }
+      case 'haunted_mirror': { // 呪いの鏡＝アクション1枚を捨てて幽霊（強い）を獲得する
+        const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => keepValue(a) - keepValue(b));
+        return { type: 'HAUNTED_MIRROR_GHOST', card: acts[0] != null ? acts[0] : null };
+      }
+      case 'faithful_hound_react': // 忠犬＝脇に置いてターン終了時に手札へ戻す（常に得）
+        return { type: 'FAITHFUL_HOUND_REACT', setAside: true };
+      case 'idol': // 偶像（財宝アタック）のリアクション窓
+        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        return { type: 'IDOL_REACT' };
 
       /* ===== 拡張: 海辺（Seaside 第二版）===== */
       case 'warehouse':

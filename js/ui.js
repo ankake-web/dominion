@@ -2197,6 +2197,92 @@
         (id) => DOM.engine.costUnder(state, id, pd.coin, { pot: pd.pot || 0, debt: pd.debt || 0 }) && DOM.engine.sharesType(id, pd.ref),
         (id) => dispatch({ type: 'HEX_LOCUSTS_GAIN', card: id }));
     }
+    if (pd.type === 'blessed_village_boon') {
+      const b = DOM.LANDSCAPES[pd.boon] || {};
+      return modalOptions('恵みの村 — 祝福「' + (b.name || '') + '」', (b.text || '') + '\n\n今すぐ受けるか、次のあなたのターンの開始時に受けるかを選びます。', [
+        { label: '今すぐ受ける', cls: 'btn-primary', on: () => dispatch({ type: 'BLESSED_VILLAGE_BOON', now: true }) },
+        { label: '次の自分のターンの開始時に受ける', on: () => dispatch({ type: 'BLESSED_VILLAGE_BOON', now: false }) }]);
+    }
+    if (pd.type === 'cemetery_trash') {
+      return modalMultiHand(p, '墓地 — 最大4枚を廃棄', '手札から最大4枚を選んで廃棄します（0枚でもよい＝廃棄しない）。',
+        (n) => (n > 0 ? '確定（' + n + '枚 廃棄する）' : '廃棄しない'), true,
+        (cards) => dispatch({ type: 'CEMETERY_TRASH', cards }), 4);
+    }
+    if (pd.type === 'conclave') {
+      const cand = DOM.engine.conclaveTargets(state, pd.player);
+      return modalSingleHand(p, 'コンクラーベ — 手札のアクションを使う', 'あなたの場に同じカードが出ていないアクションカード1枚を使えます（使えば +1アクション）。',
+        (id) => cand.indexOf(id) >= 0, (card) => dispatch({ type: 'CONCLAVE_PLAY', card }),
+        { label: '使わない', on: () => dispatch({ type: 'CONCLAVE_PLAY', card: null }) }, '使う');
+    }
+    if (pd.type === 'druid_boon' || pd.type === 'boon_choose') {
+      const isDruid = pd.type === 'druid_boon';
+      const set = isDruid ? ((state.boons && state.boons.druid) || [])
+        : ((state.turn.boonChoice && state.turn.boonChoice.boons) || []);
+      return modalOptions(isDruid ? 'ドルイド — 祝福を1つ受ける' : '愚者 — 受ける祝福を選ぶ',
+        isDruid ? '脇に置かれた3枚から1つを受けます（祝福はそのまま脇に残ります）。' : '取った祝福を好きな順番で1つずつ受けます。',
+        set.map((id) => ({
+          label: (DOM.LANDSCAPES[id] || {}).name + '：' + ((DOM.LANDSCAPES[id] || {}).text || '').replace(/\n/g, ' '),
+          on: () => dispatch({ type: isDruid ? 'DRUID_BOON' : 'BOON_CHOOSE', boon: id }),
+        })));
+    }
+    if (pd.type === 'grove_offer') {
+      const b = DOM.LANDSCAPES[pd.boon] || {};
+      return modalOptions('聖なる木立ち — 祝福「' + (b.name || '') + '」を受けますか？', (b.text || '') + '\n\n受けるかどうかは任意です。', [
+        { label: '受ける', cls: 'btn-primary', on: () => dispatch({ type: 'GROVE_OFFER', take: true }) },
+        { label: '受けない', on: () => dispatch({ type: 'GROVE_OFFER', take: false }) }]);
+    }
+    if (pd.type === 'pixie_trash') {
+      const b = DOM.LANDSCAPES[pd.boon] || {};
+      return modalOptions('ピクシー — 祝福「' + (b.name || '') + '」', (b.text || '') + '\n\nピクシーを廃棄すると、この祝福を2回受けられます。', [
+        { label: 'ピクシーを廃棄して2回受ける', cls: 'btn-primary', on: () => dispatch({ type: 'PIXIE_TRASH', trash: true }) },
+        { label: '廃棄しない（祝福は捨てられる）', on: () => dispatch({ type: 'PIXIE_TRASH', trash: false }) }]);
+    }
+    if (pd.type === 'pooka_trash') {
+      return modalSingleHand(p, 'プーカ — 財宝を廃棄', '呪われた金貨以外の財宝カード1枚を廃棄すると +4カード（しなくてもよい）。',
+        (id) => isTreasureNow(state, id) && id !== 'cursed_gold', (card) => dispatch({ type: 'POOKA_TRASH', card }),
+        { label: '廃棄しない', on: () => dispatch({ type: 'POOKA_TRASH', card: null }) });
+    }
+    if (pd.type === 'secret_cave') {
+      const chips = p.hand.map((id, idx) => {
+        const pos = UI.selection.indexOf(idx);
+        return cardEl(id, { size: 'sm', extra: pos >= 0 ? 'selected' : 'selectable', badge: pos >= 0 ? String(pos + 1) : null,
+          onClick: () => { const i = UI.selection.indexOf(idx); if (i >= 0) UI.selection.splice(i, 1); else if (UI.selection.length < 3) UI.selection.push(idx); render(); } });
+      });
+      const remain = 3 - UI.selection.length;
+      const footer = h('div', null,
+        h('button', { class: 'btn btn-primary btn-block', disabled: (remain === 0 && p.hand.length >= 3) ? null : 'disabled', style: 'margin-bottom:8px',
+          onclick: () => dispatch({ type: 'SECRET_CAVE_DISCARD', cards: UI.selection.map((i) => p.hand[i]) }) },
+          remain === 0 ? '確定（3枚捨てる → 次のターン +3コイン）' : (p.hand.length < 3 ? '手札が3枚未満です' : 'あと ' + remain + ' 枚')),
+        h('button', { class: 'btn btn-block', onclick: () => dispatch({ type: 'SECRET_CAVE_DISCARD', cards: null }) }, '捨てない'));
+      return modalShell('秘密の洞窟 — 3枚捨てる', '手札3枚を捨てると、次のあなたのターンの開始時に +3コイン になります。', chips, footer);
+    }
+    if (pd.type === 'shepherd_discard') {
+      return modalMultiHand(p, '羊飼い — 勝利点を捨てる', '手札の勝利点カードを好きな枚数、公開して捨てます（1枚につき +2カード）。',
+        (n) => (n > 0 ? '確定（' + n + '枚 捨てて +' + (n * 2) + 'カード）' : '捨てない'), true,
+        (cards) => dispatch({ type: 'SHEPHERD_DISCARD', cards }), null, (id) => DOM.isType(id, 'victory'));
+    }
+    if (pd.type === 'tragic_hero_gain') {
+      return modalGainSupply(state, '悲劇のヒーロー — 財宝を獲得', '財宝カード1枚を獲得します。',
+        (id) => DOM.engine.gainableBase(state, id) && isTreasureNow(state, id), (id) => dispatch({ type: 'TRAGIC_HERO_GAIN', card: id }));
+    }
+    if (pd.type === 'goat_trash') {
+      return modalSingleHand(p, 'ヤギ — 廃棄', '手札から1枚を廃棄できます（しなくてもよい）。', () => true,
+        (card) => dispatch({ type: 'GOAT_TRASH', card }),
+        { label: '廃棄しない', on: () => dispatch({ type: 'GOAT_TRASH', card: null }) });
+    }
+    if (pd.type === 'haunted_mirror') {
+      return modalSingleHand(p, '呪いの鏡 — アクションを捨てて幽霊', '手札のアクションカード1枚を捨てると幽霊1枚を獲得できます（しなくてもよい）。',
+        (id) => DOM.isType(id, 'action'), (card) => dispatch({ type: 'HAUNTED_MIRROR_GHOST', card }),
+        { label: '何もしない', on: () => dispatch({ type: 'HAUNTED_MIRROR_GHOST', card: null }) }, '捨てる');
+    }
+    if (pd.type === 'faithful_hound_react') {
+      return modalOptions('忠犬 — 脇に置きますか？', '捨て札にした忠犬を脇に置くと、このターンの終了時に手札へ戻ります。', [
+        { label: '脇に置く（ターン終了時に手札へ）', cls: 'btn-primary', on: () => dispatch({ type: 'FAITHFUL_HOUND_REACT', setAside: true }) },
+        { label: 'そのまま捨てる', on: () => dispatch({ type: 'FAITHFUL_HOUND_REACT', setAside: false }) }]);
+    }
+    if (pd.type === 'idol' && pd.stage === 'react') {
+      return modalOptions('偶像を受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'IDOL_REACT' }));
+    }
     if (pd.type === 'lost_in_the_woods') {
       return modalSingleHand(p, '森の迷子 — 捨てて祝福', '手札1枚を捨てると祝福を1つ受けられます（しなくてもよい）。', () => true,
         (card) => dispatch({ type: 'LOST_IN_WOODS', card }),

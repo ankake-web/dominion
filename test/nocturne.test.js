@@ -556,6 +556,283 @@ console.log('\n=== N1: CPU が祝福/呪詛の選択待ちで詰まらない ===
   ok(bad === 0, '呪詛12種すべてで CPU が選択待ちを閉じられる');
 }
 
+/* ============================================================
+   N2＝素直な王国カード（夜行でない17種）＋家宝7種
+   ============================================================ */
+console.log('\n=== N2: 幸運（Fate）の王国カード ===');
+{
+  // 恵みの村＝獲得時に祝福を「取る」（中身を見てから、今受けるか次のターンに受けるかを選ぶ）
+  const s = mk(king(['blessed_village']));
+  s.turn.phase = 'buy'; s.turn.coins = 4; s.boons.deck = ['the_seas_gift'];
+  let t = reduce(s, { type: 'BUY', card: 'blessed_village' });
+  ok(t.pending && t.pending.type === 'blessed_village_boon' && t.pending.boon === 'the_seas_gift',
+    '恵みの村の獲得で祝福を取る（中身が見えている）');
+  const later = reduce(t, { type: 'BLESSED_VILLAGE_BOON', now: false });
+  ok(later.players[0].boonsHeld.length === 1, '「次のターンに受ける」を選ぶと祝福を手元に持つ');
+  let n = reduce(reduce(later, { type: 'END_TURN' }), { type: 'END_ACTION_PHASE' });
+  n = reduce(n, { type: 'END_TURN' });
+  ok(me(n).boonsHeld.length === 0, '次の自分のターン開始時に受ける');
+  const now = reduce(t, { type: 'BLESSED_VILLAGE_BOON', now: true });
+  ok(!now.players[0].boonsHeld.length, '「今受ける」も選べる');
+}
+{
+  const s = mk(king(['druid']));
+  me(s).hand = ['druid'];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'druid' });
+  ok(t.pending && t.pending.type === 'druid_boon', 'ドルイド＝脇の祝福3枚から1つ（強制）');
+  const b = t.boons.druid[0];
+  t = reduce(t, { type: 'DRUID_BOON', boon: b });
+  ok(t.boons.druid.length === 3 && t.boons.druid.includes(b), '受けた祝福は脇に置いたまま（何度でも受けられる）');
+  ok(t.turn.buys === 2, '+1購入');
+}
+{
+  const s = mk(king(['fool']));
+  me(s).hand = ['fool'];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'fool' });
+  ok(t.lostInTheWoods === 0, '愚者＝森の迷子を受け取る');
+  ok(t.pending && t.pending.type === 'boon_choose' && t.turn.boonChoice.boons.length === 3,
+    '祝福3枚を取り、好きな順番で受ける');
+  let g = 0;
+  while (t.pending && g++ < 12) { const a = CPU.decide(t, t.pending.player); if (!a) break; t = reduce(t, a); }
+  ok(!t.pending && !t.turn.boonChoice, '3枚とも受け終わる');
+  const u = mk(king(['fool'])); u.players[0].hand = ['fool']; u.lostInTheWoods = 0;
+  const before = u.boons.deck.length;
+  const v = reduce(u, { type: 'PLAY_ACTION', card: 'fool' });
+  ok(v.boons.deck.length === before && !v.pending, 'すでに森の迷子を持っていたら完全に空振り（祝福も取らない）');
+}
+{
+  // ピクシー＝祝福を捨て、これを廃棄すればその祝福を2回受けられる
+  const s = mk(king(['pixie']));
+  me(s).hand = ['pixie']; me(s).deck = ['gold']; s.boons.deck = ['the_mountains_gift'];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'pixie' });
+  ok(t.pending && t.pending.type === 'pixie_trash', 'ピクシー＝廃棄するか選ぶ');
+  const no = reduce(t, { type: 'PIXIE_TRASH', trash: false });
+  ok(!me(no).discard.includes('silver') && no.boons.discard.includes('the_mountains_gift'),
+    '廃棄しなければ祝福は捨てられるだけで受けない');
+  t = reduce(t, { type: 'PIXIE_TRASH', trash: true });
+  ok(t.trash.includes('pixie'), 'ピクシーを廃棄する');
+  ok(me(t).discard.filter((c) => c === 'silver').length === 2, '同じ祝福を2回受ける（銀貨2枚）');
+}
+{
+  const s = mk(king(['tracker']));
+  me(s).hand = ['tracker']; s.boons.deck = ['the_mountains_gift'];
+  const t = reduce(s, { type: 'PLAY_ACTION', card: 'tracker' });
+  ok(t.turn.coins === 1 && t.turn.trackerTurn === true, '追跡者＝+1コイン、このターンの獲得を山札の上に置ける');
+  ok(t.pending && t.pending.type === 'travelling_fair', '祝福（山の恵み）の銀貨獲得で山札上に置く窓が開く');
+}
+{
+  // 聖なる木立ち＝+コインを与えない祝福なら他プレイヤーも受けてよい（同じ1枚）
+  let t = reduce(Object.assign(mk3(king(['sacred_grove'])), {}), { type: 'PLAY_ACTION', card: 'sacred_grove' });
+  ok(!t.players[0].inPlay.includes('sacred_grove'), '（手札に無ければ使えない）');
+  const s = mk3(king(['sacred_grove']));
+  s.players[0].hand = ['sacred_grove']; s.boons.deck = ['the_mountains_gift'];
+  t = reduce(s, { type: 'PLAY_ACTION', card: 'sacred_grove' });
+  ok(t.turn.coins === 3 && t.turn.buys === 2, '聖なる木立ち＝+1購入+3コイン');
+  ok(t.pending && t.pending.type === 'grove_offer' && t.pending.player === 1, '他プレイヤーに同じ祝福を提供する');
+  t = reduce(t, { type: 'GROVE_OFFER', take: true });
+  ok(t.players[1].discard.includes('silver'), '受けたプレイヤーは同じ祝福を得る');
+  t = reduce(t, { type: 'GROVE_OFFER', take: false });
+  ok(!t.players[2].discard.includes('silver') && !t.pending, '断ることもできる（任意）');
+  const u = mk3(king(['sacred_grove']));
+  u.players[0].hand = ['sacred_grove']; u.boons.deck = ['the_fields_gift'];
+  const v = reduce(u, { type: 'PLAY_ACTION', card: 'sacred_grove' });
+  ok(!v.pending && v.turn.coins === 4, '+コインを与える祝福（田畑/森の恵み）は共有しない');
+}
+{
+  // 偶像＝場の偶像が奇数なら祝福／偶数なら他プレイヤーに呪い（財宝＝applyTreasureEffect）
+  const s = mk(king(['idol']));
+  me(s).hand = ['idol']; s.turn.phase = 'buy'; s.boons.deck = ['the_mountains_gift'];
+  const t = reduce(s, { type: 'PLAY_TREASURE', card: 'idol' });
+  ok(t.turn.coins === 2 && me(t).discard.includes('silver'), '偶像1枚（奇数）＝祝福を受ける');
+  const u = mk(king(['idol']));
+  u.players[0].hand = ['idol']; u.players[0].inPlay = ['idol']; u.turn.phase = 'buy';
+  const v = reduce(u, { type: 'PLAY_TREASURE', card: 'idol' });
+  ok(v.players[1].discard.includes('curse'), '偶像2枚（偶数）＝他プレイヤーが呪いを獲得');
+  const w = mk(king(['idol']));
+  w.players[0].hand = ['idol']; w.players[0].inPlay = ['idol']; w.players[1].hand = ['moat']; w.turn.phase = 'buy';
+  let x = reduce(w, { type: 'PLAY_TREASURE', card: 'idol' });
+  ok(x.pending && x.pending.type === 'idol', '偶像はアタック＝リアクション窓が開く');
+  x = reduce(x, { type: 'MOAT_REVEAL' });
+  ok(!x.players[1].discard.includes('curse'), '堀で防げる');
+}
+
+console.log('\n=== N2: 不運（Doom）とその他の王国カード ===');
+{
+  const s = mk(king(['cursed_village']));
+  me(s).hand = ['cursed_village', 'copper'];
+  me(s).deck = ['gold', 'gold', 'gold', 'gold', 'gold', 'gold'];
+  const t = reduce(s, { type: 'PLAY_ACTION', card: 'cursed_village' });
+  ok(me(t).hand.length === 6 && t.turn.actions === 2, '呪われた村＝+2アクション、手札6枚になるまで引く');
+  const u = mk(king(['cursed_village']));
+  u.turn.phase = 'buy'; u.turn.coins = 5; u.hexes.deck = ['greed'];
+  const v = reduce(u, { type: 'BUY', card: 'cursed_village' });
+  ok(v.players[0].deck[0] === 'copper', '獲得したとき**自分が**呪詛を受ける（貪欲＝銅貨を山札の上に）');
+}
+{
+  const s = mk(king(['leprechaun']));
+  me(s).hand = ['leprechaun'];
+  me(s).inPlay = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  const t = reduce(s, { type: 'PLAY_ACTION', card: 'leprechaun' });
+  ok(me(t).discard.includes('gold'), 'レプラコーン＝金貨1枚を獲得');
+  ok(me(t).discard.includes('wish'), '**金貨の獲得後**に場がちょうど7枚なら願い1枚');
+  const u = mk(king(['leprechaun']));
+  u.players[0].hand = ['leprechaun']; u.hexes.deck = ['greed'];
+  const v = reduce(u, { type: 'PLAY_ACTION', card: 'leprechaun' });
+  ok(v.players[0].deck[0] === 'copper', '7枚でなければ呪詛を受ける');
+}
+{
+  const s = mk(king(['tormentor']));
+  me(s).hand = ['tormentor'];
+  const t = reduce(s, { type: 'PLAY_ACTION', card: 'tormentor' });
+  ok(t.turn.coins === 2 && me(t).discard.includes('imp'), '迫害者＝他のカードが場に無ければインプ1枚');
+  const u = mk(king(['tormentor']));
+  u.players[0].hand = ['tormentor']; u.players[0].inPlay = ['copper']; u.hexes.deck = ['greed'];
+  const v = reduce(u, { type: 'PLAY_ACTION', card: 'tormentor' });
+  ok(v.players[1].deck[0] === 'copper' && !v.players[0].discard.includes('imp'),
+    '他のカードが場にあれば他プレイヤー全員が呪詛を受ける');
+}
+{
+  // コンクラーベ＝場に同名が無いアクションを使う→**その解決の後で** +1アクション
+  const s = mk(king(['conclave']));
+  me(s).hand = ['conclave', 'village', 'smithy']; me(s).deck = ['gold', 'gold', 'gold', 'gold'];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'conclave' });
+  ok(t.turn.coins === 2 && t.pending && t.pending.type === 'conclave', 'コンクラーベ＝+2コイン＋手札のアクション');
+  t = reduce(t, { type: 'CONCLAVE_PLAY', card: 'village' });
+  ok(me(t).inPlay.includes('village') && t.turn.actions === 3, 'アクション権を使わずにプレイし、その後 +1アクション');
+  // 場に同名があるものは選べない
+  const u = mk(king(['conclave']));
+  u.players[0].hand = ['conclave', 'village']; u.players[0].inPlay = ['village'];
+  const v = reduce(u, { type: 'PLAY_ACTION', card: 'conclave' });
+  ok(!v.pending, '場に同名のカードしか無ければ選択待ちを開かない');
+  // 雪深い村＝以後の +アクション を無視する（コンクラーベの +1 は入らない）
+  const w = mk(king(['conclave', 'snowy_village']));
+  w.players[0].hand = ['conclave', 'snowy_village']; w.players[0].deck = ['gold', 'gold'];
+  let x = reduce(w, { type: 'PLAY_ACTION', card: 'conclave' });
+  x = reduce(x, { type: 'CONCLAVE_PLAY', card: 'snowy_village' });
+  ok(x.turn.actions === 4, 'コンクラーベで雪深い村を使うと +1アクションが無視される（4のまま）');
+}
+{
+  // 墓地＝獲得時に手札から最大4枚を「まとめて同時に」廃棄
+  const s = mk(king(['cemetery']));
+  me(s).hand = ['copper', 'estate', 'curse', 'gold'];
+  s.turn.phase = 'buy'; s.turn.coins = 4;
+  let t = reduce(s, { type: 'BUY', card: 'cemetery' });
+  ok(t.pending && t.pending.type === 'cemetery_trash', '墓地の獲得で廃棄の窓が開く');
+  ok(t.supply.ghost === 6, '墓地を使うゲームでは幽霊の山（6枚）を置く');
+  const zero = reduce(t, { type: 'CEMETERY_TRASH', cards: [] });
+  ok(!zero.pending && zero.trash.length === 0, '0枚でもよい');
+  t = reduce(t, { type: 'CEMETERY_TRASH', cards: ['copper', 'curse'] });
+  ok(t.trash.length === 2 && me(t).hand.length === 2, '選んだ枚数を廃棄する');
+  const s2 = E.createInitialState(['あなた', '相手'], king(['cemetery']), { startActive: 0 });
+  ok(E.allCards(s2.players[0]).includes('haunted_mirror'), '墓地の家宝＝呪いの鏡が開始デッキに入る');
+}
+{
+  const s = mk(king(['pooka']));
+  me(s).hand = ['pooka', 'copper', 'cursed_gold']; me(s).deck = ['gold', 'gold', 'gold', 'gold'];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'pooka' });
+  const bad = reduce(t, { type: 'POOKA_TRASH', card: 'cursed_gold' });
+  ok(bad.pending, 'プーカで呪われた金貨は廃棄できない');
+  t = reduce(t, { type: 'POOKA_TRASH', card: 'copper' });
+  ok(me(t).hand.length === 5 && t.trash.includes('copper'), '財宝を廃棄して +4カード');
+}
+{
+  const s = mk(king(['secret_cave']));
+  me(s).hand = ['secret_cave', 'copper', 'estate', 'curse']; me(s).deck = ['gold'];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'secret_cave' });
+  ok(t.pending && t.pending.type === 'secret_cave', '秘密の洞窟＝手札3枚を捨てるか選ぶ');
+  const no = reduce(t, { type: 'SECRET_CAVE_DISCARD', cards: null });
+  ok(!no.players[0].delayedEffects.length, '捨てなければ持続にならない');
+  t = reduce(t, { type: 'SECRET_CAVE_DISCARD', cards: ['copper', 'estate', 'curse'] });
+  t = reduce(reduce(t, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+  t = reduce(reduce(t, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+  ok(t.turn.coins === 3, '3枚捨てたら次の自分のターン開始時に +3コイン');
+}
+{
+  const s = mk(king(['shepherd']));
+  me(s).hand = ['shepherd', 'estate', 'duchy', 'copper'];
+  me(s).deck = ['gold', 'gold', 'gold', 'gold', 'gold'];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'shepherd' });
+  t = reduce(t, { type: 'SHEPHERD_DISCARD', cards: ['estate', 'duchy'] });
+  ok(me(t).hand.length === 5 && t.turn.actions === 1, '羊飼い＝勝利点2枚を捨てて +4カード');
+  const s2 = E.createInitialState(['あなた', '相手'], king(['shepherd']), { startActive: 0 });
+  ok(E.allCards(s2.players[0]).includes('pasture'), '羊飼いの家宝＝牧草地が開始デッキに入る');
+}
+{
+  const s = mk(king(['tragic_hero']));
+  me(s).hand = ['tragic_hero', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  me(s).deck = ['gold', 'gold', 'gold'];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'tragic_hero' });
+  ok(t.trash.includes('tragic_hero'), '悲劇のヒーロー＝引いた後に手札8枚以上ならこれを廃棄');
+  t = reduce(t, { type: 'TRAGIC_HERO_GAIN', card: 'gold' });
+  ok(me(t).discard.includes('gold'), '財宝1枚を獲得する');
+  const u = mk(king(['tragic_hero']));
+  u.players[0].hand = ['tragic_hero']; u.players[0].deck = ['gold', 'gold', 'gold'];
+  const v = reduce(u, { type: 'PLAY_ACTION', card: 'tragic_hero' });
+  ok(!v.trash.includes('tragic_hero') && v.turn.buys === 2, '手札が8枚未満なら廃棄しない（+3カード+1購入）');
+}
+{
+  // 忠犬＝クリンナップ以外で捨てられたら脇に置き、**そのターンの終了時（先引きの後）**に手札へ戻る
+  const s = mk(king(['faithful_hound', 'oasis']));
+  me(s).hand = ['oasis', 'faithful_hound']; me(s).deck = ['gold', 'gold'];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'oasis' });
+  t = reduce(t, { type: 'OASIS_RESOLVE', card: 'faithful_hound' });
+  ok(t.pending && t.pending.type === 'faithful_hound_react', '忠犬＝捨てられたら脇に置くか選ぶ');
+  const no = reduce(t, { type: 'FAITHFUL_HOUND_REACT', setAside: false });
+  ok(no.players[0].discard.includes('faithful_hound'), '脇に置かない選択もできる');
+  t = reduce(t, { type: 'FAITHFUL_HOUND_REACT', setAside: true });
+  ok(me(t).setAside.includes('faithful_hound'), '脇に置く');
+  t = reduce(reduce(t, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+  ok(me(t).hand.includes('faithful_hound') && !(me(t).setAside || []).includes('faithful_hound'),
+    'ターンの終了時＝**次の手札を先引きした後**に手札へ戻る');
+}
+
+console.log('\n=== N2: 家宝（Heirloom）7種 ===');
+{
+  const t2 = (kingdomCard, card, setup) => {
+    const s = mk(king([kingdomCard]));
+    me(s).hand = [card]; s.turn.phase = 'buy';
+    if (setup) setup(s);
+    return reduce(s, { type: 'PLAY_TREASURE', card });
+  };
+  let t = t2('pooka', 'cursed_gold');
+  ok(t.turn.coins === 3 && me(t).discard.includes('curse'), '呪われた金貨＝+3コイン＋呪い1枚');
+  t = t2('fool', 'lucky_coin');
+  ok(t.turn.coins === 1 && me(t).discard.includes('silver'), '幸運のコイン＝+1コイン＋銀貨1枚');
+  t = t2('tracker', 'pouch');
+  ok(t.turn.coins === 1 && t.turn.buys === 2, '革袋＝+1コイン+1購入');
+  t = t2('pixie', 'goat', (s) => { me(s).hand.push('curse'); });
+  ok(t.pending && t.pending.type === 'goat_trash', 'ヤギ＝手札1枚を廃棄してもよい');
+  t = reduce(t, { type: 'GOAT_TRASH', card: 'curse' });
+  ok(t.trash.includes('curse') && t.turn.coins === 1, 'ヤギの廃棄');
+  const sk = mk(king(['shepherd']));
+  me(sk).hand = ['pasture', 'estate', 'estate']; sk.turn.phase = 'buy';
+  ok(E.vpOf(me(sk)) === 2 + 2, '牧草地＝所有する屋敷1枚につき1勝利点');
+  // 魔法のランプ＝場に1枚だけのカードが6種類以上なら廃棄して願い3枚
+  const ml = mk(king(['secret_cave']));
+  me(ml).hand = ['magic_lamp']; me(ml).inPlay = ['copper', 'silver', 'gold', 'estate', 'village'];
+  ml.turn.phase = 'buy';
+  const mt = reduce(ml, { type: 'PLAY_TREASURE', card: 'magic_lamp' });
+  ok(mt.trash.includes('magic_lamp') && me(mt).discard.filter((c) => c === 'wish').length === 3,
+    '魔法のランプ＝1枚だけのカードが6種類以上なら廃棄して願い3枚');
+  const ml2 = mk(king(['secret_cave']));
+  me(ml2).hand = ['magic_lamp']; me(ml2).inPlay = ['copper', 'copper', 'silver'];
+  ml2.turn.phase = 'buy';
+  const mt2 = reduce(ml2, { type: 'PLAY_TREASURE', card: 'magic_lamp' });
+  ok(!mt2.trash.includes('magic_lamp') && mt2.turn.coins === 1, '条件を満たさなければ +1コインだけ');
+}
+{
+  // 呪いの鏡＝廃棄したとき、手札のアクション1枚を捨てて幽霊1枚を獲得してもよい
+  const s = mk(king(['cemetery', 'chapel']));
+  me(s).hand = ['chapel', 'haunted_mirror', 'village'];
+  let t = reduce(s, { type: 'PLAY_ACTION', card: 'chapel' });
+  t = reduce(t, { type: 'CHAPEL_RESOLVE', cards: ['haunted_mirror'] });
+  ok(t.pending && t.pending.type === 'haunted_mirror', '呪いの鏡の廃棄で窓が開く');
+  const no = reduce(t, { type: 'HAUNTED_MIRROR_GHOST', card: null });
+  ok(!no.players[0].discard.includes('ghost'), '任意（何もしなくてよい）');
+  t = reduce(t, { type: 'HAUNTED_MIRROR_GHOST', card: 'village' });
+  ok(me(t).discard.includes('ghost') && me(t).discard.includes('village'), 'アクションを捨てて幽霊1枚を獲得');
+}
+
 console.log('\n=== N0b: CPU が夜フェイズで詰まらない ===');
 {
   const s = mk(king(['guardian', 'monastery']));
