@@ -519,6 +519,19 @@
           片付けで普通に捨てられる。ライン下の能力（元手の負債）は働く。**累積しない**（1ターン1枚）。 */
     if (highwaymanBlocks(state, pIndex)) {
       log(state, `${p.name} の「${C()[card].name}」は追いはぎで何も起こらなかった（このターン最初の財宝）。`);
+      /* ⚠ 公式逐語＝`Highwayman does not change anything about the Treasure, just prevents on-play
+         instructions on the card from being carried out.` ＝**「そのカードを使った」という事実は残る**。
+         止まるのは**そのカード自身の記載効果**だけで、**他のカードの能力**（商人の「最初の銀貨で+$1」・
+         私掠船のマーク）や「何枚目か」のカウンタ（愚者の黄金）は普通に働く。
+         公式が名指しで例示＝`a blocked Fool's Gold will still let your other Fool's Gold make +[$4]`。 */
+      const tt = state.turn;
+      if (card === 'silver' && tt && !tt.silverPlayed) {
+        if (tt.merchants) { addCoins(state, tt.merchants); log(state, `${p.name} は商人の効果で +${tt.merchants} コイン。`); }
+        tt.silverPlayed = true;
+      }
+      if (card === 'fools_gold' && tt) tt.foolsGoldPlayed = true;
+      corsairOnPlayTreasure(state, pIndex, card);
+      applyCoinPenalty(state);
       return;
     }
     // ルネサンス：資本主義で「財宝になったアクション」を購入フェイズに出した場合＝**アクションの効果を全て解決する**
@@ -549,6 +562,10 @@
     const p = state.players[pi];
     const fromHand = zone === p.hand; // 同盟：航海の3枚制限は「**手札から**使用したカード」だけ数える
     if (fromHand && !canPlayFromHand(state, pi)) return false;
+    /* 同盟：将軍＝「場に2枚以上ある同名のアクションを**手札から**使用できない」。
+       ⚠ 公式FAQが玉座の間を名指しで禁止しているとおり、`PLAY_ACTION` 以外の「手札から使わせる」経路
+          （長老／専門家／王家のガレー船／市場の町／苦労・進軍）でも止まる。 */
+    if (fromHand && warlordBlocks(state, pi, card)) return false;
     if (!removeOne(zone, card)) return false;
     p.inPlay.push(card);
     if (fromHand) notePlayFromHand(state, pi);
@@ -569,6 +586,23 @@
       else applyEffect(state, card, pi);
     } else {
       if (maybeKiln(state, card, pi, 'treasure')) return true;
+      /* 同盟：追いはぎ＝「他のプレイヤーが**各ターンに最初に使用する財宝**は何もしない」。
+         公式FAQ逐語＝`Unlike Enchantress, this can affect a Treasure that another player plays during
+         your turn. So if you play Barbarian, trash their Gold, and they gain and play a Buried Treasure,
+         the Buried Treasure will do nothing` ＝**手札から購入フェイズに出した財宝に限らない**。
+         急使／専門家／薬草集め／博打／苦労 などの「アクション権を消費しない使用」もここを通る。 */
+      if (highwaymanBlocks(state, pi)) {
+        log(state, `${p.name} の「${C()[card].name}」は追いはぎで何も起こらなかった（このターン最初の財宝）。`);
+        const tt = state.turn;
+        if (card === 'silver' && tt && !tt.silverPlayed) {
+          if (tt.merchants) { addCoins(state, tt.merchants); log(state, `${p.name} は商人の効果で +${tt.merchants} コイン。`); }
+          tt.silverPlayed = true;
+        }
+        if (card === 'fools_gold' && tt) tt.foolsGoldPlayed = true;
+        corsairOnPlayTreasure(state, pi, card);
+        applyCoinPenalty(state);
+        return true;
+      }
       applyTreasureEffect(state, pi, card);
     }
     return true;
@@ -1626,7 +1660,18 @@
         hasMyProject(state, ownerIdx, 'sewers') && state.players[ownerIdx].hand.length > 0) {
       (state.onTrashQueue = state.onTrashQueue || []).push({ type: 'sewers_trash', player: ownerIdx });
     }
+    if (opts && opts.deferTrigger) return true; // 複数枚を同時に廃棄する経路（trashCardsTogether）が後でまとめて誘発する
     return triggerOnTrash(state, ownerIdx, card, opts); // 城塞は手札へ戻り false／nomads等の副次効果も発動
+  }
+  /* 複数枚を**同時に**廃棄する（＝**全部を廃棄置き場に入れてから** on-trash を解決する）。
+     公式逐語（同盟・リッチ）＝`Sentinel で Lich と Sycophant を同時に廃棄すると、Lich はその Sycophant を獲得できる`
+     ＝1枚ずつ `trashCard` を呼ぶと、送った配列の順番で結果が変わってしまう。
+     ⚠ **現状これを使っているのは歩哨だけ**。礼拝堂/神殿/平和的教団など他の複数枚廃棄は
+        従来どおり1枚ずつ on-trash を解決する（既存の横断挙動＝PROGRESS に許容簡略化として記録）。 */
+  function trashCardsTogether(state, ownerIdx, cards, opts) {
+    const list = (cards || []).slice();
+    list.forEach((c) => trashCard(state, ownerIdx, c, Object.assign({}, opts || {}, { deferTrigger: true })));
+    list.forEach((c) => triggerOnTrash(state, ownerIdx, c, opts));
   }
 
   // サプライの山から1枚を廃棄置き場へ（塩まき／待ち伏せ／剣闘士）。混合山（騎士/城/廃墟）は**一番上の実カード**を
@@ -6577,7 +6622,8 @@
          手札が空なら廃棄できず「これ(it)」も無い＝二択のうち +1カード+1アクション だけを出す（終端保証）。 */
       case 'modify':
         if (p.hand.length > 0) state.pending = { type: 'modify_trash', player: pi };
-        else state.pending = { type: 'modify_choose', player: pi, coin: -1, pot: 0, debt: 0, elder: elderOn(state, 'modify') };
+        // 手札が空＝廃棄できず「これ(it)」も存在しない＝二択は行うが**獲得は何も起きない**（`noTrash`）。
+        else state.pending = { type: 'modify_choose', player: pi, noTrash: true, coin: 0, pot: 0, debt: 0, elder: elderOn(state, 'modify') };
         break;
       /* 王家のガレー船（持続）：+1カード → 手札の**持続でない**アクション1枚を使用してよい（任意）。
          使ったカードを**完全に解決してから脇に置く**（＝reduce 末尾の `galleySetAside` 再開網）。
@@ -6588,7 +6634,7 @@
             本プロジェクトの方針では採らない。採る場合は脇置きを廃して `state.replay` に寄せるだけでよい。 */
       case 'royal_galley':
         draw(state, pi, 1);
-        if (p.hand.some((c) => (DOM.isType(c, 'action') || inheritedEstate(p, c)) && !DOM.isType(c, 'duration'))) {
+        if (p.hand.some((c) => (DOM.isType(c, 'action') || inheritedEstate(p, c)) && !DOM.isType(c, 'duration') && canPlayHandCard(state, pi, c))) {
           state.pending = { type: 'royal_galley_play', player: pi };
         }
         break;
@@ -6602,7 +6648,7 @@
          ⚠ **Command 種別を持たない**＝「命令は命令を使えない」ガードを適用しない／
             カードは手札から場へ普通に出る（＝「動かさずに使用」ではない）。 */
       case 'specialist':
-        if (p.hand.some((c) => DOM.isType(c, 'action') || isTreasureFor(state, c) || inheritedEstate(p, c))) {
+        if (p.hand.some((c) => (DOM.isType(c, 'action') || isTreasureFor(state, c) || inheritedEstate(p, c)) && canPlayHandCard(state, pi, c))) {
           state.pending = { type: 'specialist_play', player: pi };
         }
         break;
@@ -6611,7 +6657,7 @@
          ⚠ 長老は「1回だけ」使わせるので**持続を使わせても長老自身は場に残らない**（専門家とは逆）。 */
       case 'elder':
         addCoins(state, 2);
-        if (p.hand.some((c) => DOM.isType(c, 'action') || inheritedEstate(p, c))) {
+        if (p.hand.some((c) => (DOM.isType(c, 'action') || inheritedEstate(p, c)) && canPlayHandCard(state, pi, c))) {
           state.pending = { type: 'elder_play', player: pi };
         }
         break;
@@ -7096,7 +7142,7 @@
     if (state.ally === 'family_of_inventors' && fav >= 1 && favorPileTargets(state).length) {
       queueAllyWindow(state, { type: 'ally_inventors', player: pi });
     }
-    if (state.ally === 'market_towns' && fav >= 1 && allyHandHasAction(state, pi)) {
+    if (state.ally === 'market_towns' && fav >= 1 && allyHandHasAction(state, pi) && canPlayFromHand(state, pi)) {
       queueAllyWindow(state, { type: 'ally_market_towns', player: pi });
     }
     if (state.ally === 'peaceful_cult' && fav >= 1 && p.hand.length > 0) {
@@ -7224,6 +7270,11 @@
     const t = state.turn;
     if (t && t.voyageTurn && pi === t.active) t.handPlays = (t.handPlays || 0) + 1;
   }
+  /* 「その手札の1枚を今このプレイヤーが使えるか」＝航海の3枚制限 ＋ 将軍の同名2枚制限。
+     **engine のゲート・CPU の候補・UI のフィルタが必ずこれを見る**（片側だけだと死に選択肢／本番 livelock）。 */
+  function canPlayHandCard(state, pi, card) {
+    return canPlayFromHand(state, pi) && !warlordBlocks(state, pi, card);
+  }
   // ごますり＝3枚（手札が足りなければあるだけ）を同時に捨て、1枚以上捨てたら +3コイン。
   function sycophantDiscard(state, pi, cards) {
     const moved = alliesDiscardHand(state, pi, cards, 'ごますりで');
@@ -7234,7 +7285,9 @@
      `If you choose multiple things, you do those things in the order listed on the card` ／
      `Elder doesn't affect all choices, just ones that say "choose" and have a list of options`
      （工房の「何を獲得するか」のような選択は対象外）。
-     - `t.elderBoost` に「長老が使わせたカードid」を入れる（**このターン中**有効）。
+     - `t.elderBoost` に「長老が使わせたカードid」を入れる。**そのプレイにだけ**効かせるため、
+       `PLAY_ACTION`（自分でアクションを使い始めた）と `runReplays`（再演）で落とす
+       ＝同名の2枚目を普通に使っても追加選択は付かない／御料車・王笏の再演にも付かない（公式FAQ逐語）。
      - 各「選ぶ」pending は `elder: true` を持ち、**異なる2つ**を受け付ける。解決は必ず**カード記載順**。
      - 選択肢の1つが選択待ちを立てる場合（宿屋の主人の捨て札・改造の獲得）は、残りを `t.elderRest` に
        積んで reduce 末尾の再開網が続きを解決する。
@@ -7533,7 +7586,8 @@
     }
     if (kind === 'modify') {
       if (opt === 'cantrip') { draw(state, pi, 1); addActions(t, 1); log(state, `${nm} は改造で +1カード +1アクション。`); }
-      else if (ctx && anyGainable(state, modifyCanGain(state, ctx))) {
+      // ⚠ 手札が空で1枚も廃棄していないときは「これ(it)」が存在しない＝**何も獲得しない**（`noTrash`）。
+      else if (ctx && !ctx.noTrash && anyGainable(state, modifyCanGain(state, ctx))) {
         state.pending = { type: 'modify_gain', player: pi, coin: ctx.coin, pot: ctx.pot, debt: ctx.debt };
       }
       return;
@@ -8381,6 +8435,15 @@
   function triggerOnTrash(state, pIndex, card, opts) {
     const p = state.players[pIndex];
     const fromSupply = !!(opts && opts.fromSupply); // サプライの山からの廃棄（塩まき/待ち伏せ/剣闘士）＝「あなたのカード」ではない
+    /* 暗黒時代：青空市場（リアクション）＝**自分のカード**が廃棄されたとき、手札の青空市場を捨てて金貨を獲得してよい
+       （誰のターンでも・相手のアタックでの廃棄でも発動。1廃棄に複数枚反応可）。対話＝onTrashQueue へ。
+       **サプライの山からの廃棄（待ち伏せ/剣闘士/塩まき）は「自分のカード」ではない＝反応しない**（公式）。
+       ⚠ **この関数の先頭に置くこと**。城塞(fortress)／リッチ(lich) は「廃棄置き場に残らない」ので途中で
+          早期 return するが、**廃棄という事象自体は起きている**ので青空市場は反応する（公式の既知コンボ）。
+          末尾に置いていたため、出荷済みの darkages 固定セット（城塞と青空市場が同居）で今日まで反応しなかった。 */
+    if (!fromSupply && p.hand.includes('market_square') && (state.supply.gold || 0) > 0) {
+      (state.onTrashQueue = state.onTrashQueue || []).push({ type: 'market_square_react', player: pIndex });
+    }
     /* 夜想曲：呪いの鏡（家宝）＝これを廃棄したとき、手札のアクション1枚を捨てて幽霊1枚を獲得してもよい（任意）。
        対話なので onTrashQueue に積む（アタック中の廃棄や、廃棄札の続きの獲得と競合させない）。 */
     if (card === 'haunted_mirror' && !fromSupply && p.hand.some((c) => DOM.isType(c, 'action')) && (state.supply.ghost || 0) > 0) {
@@ -8457,12 +8520,6 @@
       p.vpTokens = (p.vpTokens || 0) + 1;
       const gs = gain(state, pIndex, 'silver', 'discard');
       log(state, `${p.name} は崩れた城の廃棄で +1勝利点${gs ? '＋銀貨1枚' : ''}。`);
-    }
-    // 暗黒時代：青空市場（リアクション）＝**自分のカード**が廃棄されたとき、手札の青空市場を捨てて金貨を獲得してよい
-    //   （誰のターンでも・相手のアタックでの廃棄でも発動。1廃棄に複数枚反応可）。対話＝onTrashQueue へ。
-    //   **サプライの山からの廃棄（待ち伏せ/剣闘士/塩まき）は「自分のカード」ではない＝反応しない**（公式）。
-    if (!fromSupply && p.hand.includes('market_square') && (state.supply.gold || 0) > 0) {
-      (state.onTrashQueue = state.onTrashQueue || []).push({ type: 'market_square_react', player: pIndex });
     }
     return true;
   }
@@ -9105,7 +9162,10 @@
        - 前哨地/使節団/今を生きる が先に立っていればそちらを優先し、航海のぶんは同じくここで消費する。 */
     let voyageExtra = false;
     if (p.voyageExtra > 0) {
-      p.voyageExtra -= 1;
+      /* ⚠ **そのターンぶんの予約はここで全部消費する**（`Take an extra turn after this one` ＝この片付けの話）。
+         公式FAQ逐語＝`If you play Voyage multiple times in one turn, ... all Voyages after the first will fail.`
+         1個ずつ減らすと、余りが後の通常ターンまで生き残って**本来存在しない追加ターン**が発生する。 */
+      p.voyageExtra = 0;
       voyageExtra = !extra && !missionExtra && !seizeExtra && (state.turn.chain || 1) < 2;
       if (!voyageExtra) log(state, `${p.name} の航海による追加ターンは発生しない（3ターン連続にはできない）。`);
     }
@@ -9240,7 +9300,11 @@
       sp.turns += 1;
       if (isExtra && next === pi && (seizeTurn || islandTurn || voyageTurn)) sp.freeTurns = (sp.freeTurns || 0) + 1;
       log(state, `${sp.name} はリッチで1ターンをスキップした。`);
-      if (isExtra && next === pi) {           // 飛ばしたのが追加ターン＝以降は通常の手順に戻る
+      /* 飛ばしたのが**追加ターン**なら、その種類を問わず以降は通常の手順に戻す。
+         ⚠ 支配(Possession)の追加ターンは `state.extraTurns` 由来で `next`（被支配者）≠ `pi`（支配者）なので、
+            `next === pi` を条件にすると `possessedBy` が残り、**無関係な第三者のターンが「支配された追加ターン」
+            として始まる**（敵対レビューで再現）。 */
+      if (isExtra) {
         isExtra = false; noBuyCards = false; seizeTurn = false; islandTurn = false; voyageTurn = false;
         possessedBy = null;
       }
@@ -10129,6 +10193,8 @@
     return false;
   }
   function runReplays(state) {
+    // 同盟：長老の追加選択は**再演では付かない**（公式FAQ逐語）＝ここでブーストを落とす。
+    if (state.turn && (state.replay || []).length) state.turn.elderBoost = null;
     let guard = 0;
     while (!state.pending && !nocturneQueueBusy(state) && state.replay && state.replay.length && !state.gameOver && guard++ < 200) {
       const r = state.replay.shift();
@@ -10231,6 +10297,9 @@
         if (!canPlayFromHand(state, pi)) return state; // 同盟：航海の追加ターン＝手札から3枚まで
         // 同盟：将軍＝場に2枚以上ある同名のアクションを手札から使用できない（engine拒否・CPU・UI の3面共通）。
         if (warlordBlocks(state, pi, action.card)) return state;
+        /* 同盟：長老の追加選択は「長老が使わせた**その1枚**」だけに効く（公式）。
+           自分でアクションを使い始めたらブーストを落とす（同名の2枚目に付かない／再演にも付かない）。 */
+        t.elderBoost = null;
         t.inStartPhase = false; // ルネサンス：自分でアクションを使い始めたら「ターン開始時効果」は終わり
         const card = action.card;
         // 冒険：相続＝自分のターン中、屋敷はアクション（命令）としてもプレイできる（脇のカードを動かさずに使用）。
@@ -11240,6 +11309,8 @@
         const p = state.players[pd.player];
         const card = action.card;
         if (p.hand.indexOf(card) < 0 || !DOM.isType(card, 'action')) return state;
+        // 同盟：将軍＝場に2枚以上ある同名のアクションは手札から使えない（公式FAQが玉座の間を名指しで禁止）。
+        if (warlordBlocks(state, pd.player, card)) return state;
         removeOne(p.hand, card);
         p.inPlay.push(card);
         notePlayFromHand(state, pd.player); // 同盟：航海＝玉座が選んだ手札のカードも数える（再演は数えない）
@@ -17176,6 +17247,9 @@
           const z = zoneOf(pl, pd.dest);
           if (z.indexOf(pd.card) < 0) { state.pending = null; return state; }
           if ((pl.favors || 0) < 2) return state;
+          /* ⚠ 同盟：**手札に直接獲得した**カードを使う場合だけ航海の3枚制限に掛かる（公式FAQ逐語）＝
+             使えないなら好意を払わせない。獲得先が捨て札/山札なら「手札からのプレイ」ではないので通る。 */
+          if (pd.dest === 'hand' && !canPlayHandCard(state, pd.player, pd.card)) { state.pending = null; return state; }
           spendFavors(state, pd.player, 2);
           state.pending = null;
           playCardNoAction(state, pd.player, pd.card, z, '都市国家で', action.way);
@@ -17299,6 +17373,10 @@
         if (pl.hand.indexOf(c) < 0) return state;
         if (!(DOM.isType(c, 'action') || inheritedEstate(pl, c))) return state;
         if ((pl.favors || 0) < 1) return state;
+        /* ⚠ 同盟：航海の3枚制限／将軍は「手札から使わせる能力」も上書きする（公式逐語＝
+           `Voyage's restriction will override any ability that lets you play cards from your hand
+           (such as Market Towns...)`）＝**使えないなら好意を払わせない**（払い損を作らない）。 */
+        if (!canPlayHandCard(state, pd.player, c)) return state;
         spendFavors(state, pd.player, 1);
         state.pending = null;
         playCardNoAction(state, pd.player, c, pl.hand, '市場の町で', action.way);
@@ -17463,7 +17541,9 @@
         if (tr.length > 2) return state;
         const rest = pd.cards.slice();
         for (const c of tr) if (!removeOne(rest, c)) return state;   // 見た5枚の部分集合のみ
-        tr.forEach((c) => trashCard(state, pd.player, c));           // ⚠ 廃棄でドローする札は「今の山札」から引く
+        // ⚠ **同時に廃棄する**（全部を廃棄置き場に入れてから on-trash＝リッチが同時廃棄の札を獲得できる＝公式例）。
+        //    廃棄でドローする札（ネズミ/狂信者）は「今の山札」から引く（見ている5枚は既に deck から抜いてある）。
+        trashCardsTogether(state, pd.player, tr);
         if (tr.length) log(state, `${state.players[pd.player].name} は歩哨で ${tr.length}枚 廃棄した。`);
         if (rest.length > 1) { state.pending = { type: 'sentinel', stage: 'order', player: pd.player, cards: rest }; return state; }
         if (rest.length === 1) state.players[pd.player].deck.unshift(rest[0]);
@@ -17778,7 +17858,7 @@
         const opts = normalizeChoices(pd, action, 'modify');
         if (!opts) return state;
         state.pending = null;
-        runChoiceOptions(state, 'modify', pd.player, opts, { coin: pd.coin, pot: pd.pot, debt: pd.debt });
+        runChoiceOptions(state, 'modify', pd.player, opts, { coin: pd.coin, pot: pd.pot, debt: pd.debt, noTrash: !!pd.noTrash });
         return state;
       }
       case 'MODIFY_GAIN': {
@@ -18262,7 +18342,8 @@
       ? s.turn.possessedBy : (s.pending ? s.pending.player : -1);
     // 冒険：偵察隊（scouting_party）の「山札の上5枚を見る」も私的な看破＝本人と支配者以外には伏せる。
     // 夜想曲：`look_arrange`（夜警＝山札の上5枚／太陽の恵み＝4枚）は「**見る**」＝本人だけの私的情報。
-    if (s.pending && (s.pending.type === 'sentry' || s.pending.type === 'lookout' || s.pending.type === 'catacombs' || s.pending.type === 'survivors' || s.pending.type === 'scouting_party' || s.pending.type === 'look_arrange') && Array.isArray(s.pending.cards) && seat !== s.pending.player && seat !== secretSeer) {
+    // 同盟：粉屋（山札の上4枚）／歩哨（上5枚）も「**見る**」＝私的看破なので相手には伏せる（§0-21/§0-28 と同型）。
+    if (s.pending && (s.pending.type === 'sentry' || s.pending.type === 'lookout' || s.pending.type === 'catacombs' || s.pending.type === 'survivors' || s.pending.type === 'scouting_party' || s.pending.type === 'look_arrange' || s.pending.type === 'miller_pick' || s.pending.type === 'sentinel') && Array.isArray(s.pending.cards) && seat !== s.pending.player && seat !== secretSeer) {
       // 暗黒時代：地下墓所/生存者の「山札の上N枚を見る」は私的（公開ではない）＝本人と支配者以外には伏せる。
       s.pending = Object.assign({}, s.pending, { cards: new Array(s.pending.cards.length).fill('back') });
     }
@@ -18523,6 +18604,7 @@
     lichTrashTargets,  // リッチ＝廃棄置き場からこれより安いカード（**サプライではない**＝cost述語を使わない）
     canPlayFromHand,   // 同盟：航海の追加ターン＝手札から3枚まで（engine拒否・CPU非提案・UI無効化の3面共通）
     warlordBlocks,     // 同盟：将軍＝場に2枚以上ある同名アクションを手札から使えない（同上・3面共通）
+    canPlayHandCard,   // 「その手札の1枚を今使えるか」＝航海の3枚制限＋将軍（engine/CPU/UI が同じ述語を見る）
     barbarianCanGain,  // 同盟：蛮族＝廃棄札と種別を共有しより安いカードの候補（連携/分割山種別も種別に数える）
     canReturnToPile,   // そのカードを元の山へ戻せるか（交換／交易商人／取り替え子が共通で見る）
     swapCanGain,       // 同盟：交換＝$5以下・名前の異なるアクション（混合山は一番上の実カード名で比べる）

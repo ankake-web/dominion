@@ -1454,7 +1454,13 @@
       nonSupplyPile);
 
     // 場（プレイ済み）＋持続カード（⏳付き・場に残る）＋王子の脇（👑・毎ターン開始時に使用）
-    const inPlayChips = active.inPlay.map((id) => h('div', { class: 'chip-card ' + typeClass(id) + coinClass(id) }, DOM.CARDS[id].name));
+    /* 同盟：駐屯地（garrison）の上に載ったトークン数を場のチップに出す（**好意ではない**＝自前のカウンタ）。
+       トークン1個＝次のターンの +1カード／0個ならそのターンの片付けで普通に捨てられる（条件つき持続）＝
+       公開情報なので見えないと人間が判断できない。 */
+    const gTok = (state.turn && state.turn.garrisonTokens) || [];
+    let gTokI = 0;
+    const inPlayChips = active.inPlay.map((id) => h('div', { class: 'chip-card ' + typeClass(id) + coinClass(id) },
+      DOM.CARDS[id].name + (id === 'garrison' && gTok[gTokI] != null ? ' ●' + gTok[gTokI++] : '')));
     const durChips = (active.durationCards || []).map((id) => h('div', { class: 'chip-card duration', title: '持続中（次の手番に効果）' }, '⏳ ' + DOM.CARDS[id].name));
     const princeChips = (active.princes || []).map((id) => h('div', { class: 'chip-card duration', title: '王子の脇（毎ターン開始時に使用）' }, '👑 ' + DOM.CARDS[id].name));
     const allPlayChips = inPlayChips.concat(durChips, princeChips);
@@ -1643,7 +1649,12 @@
   function handCardPlayable(state, id, interactive) {
     if (!interactive || state.pending) return false;
     const t = state.turn;
-    if (t.phase === 'action') return (DOM.CARDS[id].types.includes('action') || inheritedEstate(state, id)) && t.actions > 0;
+    /* 同盟：航海の追加ターン＝手札から3枚まで／将軍＝場に2枚以上ある同名のアクションは手札から使えない。
+       **engine拒否・CPU非提案・UI（見た目とタップの両方）が同じ述語を見る**（見た目だけ明るいと
+       「押したのに何も起きない＝バグ」に見える）。 */
+    if (DOM.engine.canPlayFromHand && !DOM.engine.canPlayFromHand(state, t.active)) return false;
+    if (t.phase === 'action') return (DOM.CARDS[id].types.includes('action') || inheritedEstate(state, id)) && t.actions > 0
+      && !(DOM.engine.warlordBlocks && DOM.engine.warlordBlocks(state, t.active, id));
     // 公式：一度でも購入したら、そのターンはもう財宝を出せない（t.treasuresLocked）。
     // ルネサンス：資本主義＝「+$を含むアクション」も自分のターン中は財宝＝engine の isTreasureFor が正本。
     if (t.phase === 'buy') return isTreasureNow(state, id) && !t.treasuresLocked;
@@ -2605,7 +2616,7 @@
       return modalPlayCardEvent(state, p, '市場の町 — アクションを使う',
         '好意1 を使って 手札のアクションカード1枚を使用できます（アクションフェイズには戻りません＝+アクションは無意味）。'
         + '好意 ' + (p.favors || 0) + ' 個。好きな回数くり返せます。',
-        p.hand, (id) => DOM.isType(id, 'action') || DOM.engine.inheritedEstate(p, id), 'ALLY_MARKET_TOWNS',
+        p.hand, (id) => (DOM.isType(id, 'action') || DOM.engine.inheritedEstate(p, id)) && DOM.engine.canPlayHandCard(state, pd.player, id), 'ALLY_MARKET_TOWNS',
         { label: 'やめる', on: () => dispatch({ type: 'ALLY_MARKET_TOWNS', card: null }) });
     }
     if (pd.type === 'ally_peaceful_cult') {
@@ -2850,10 +2861,19 @@
       return modalOptions('散兵を受ける', 'このターン、相手がアタックカードを獲得するたびに手札3枚になるように捨てます（今は何も起きません）。',
         reactOptions(p, pd, { type: 'SKIRMISHER_REACT' }));
     }
+    // 追いはぎ／将軍＝「相手のターンをフックする持続アタック」（呪いの森／沼の妖婆と同じ受理経路）。
+    if (pd.type === 'highwayman' && pd.stage === 'react') {
+      return modalOptions('追いはぎを受ける', '相手の次の手番まで、あなたが各ターンに最初に使用する財宝は何もしなくなります（堀を公開すればこの持続から免疫）。',
+        reactOptions(p, pd, { type: 'LINGER_REACT' }));
+    }
+    if (pd.type === 'warlord' && pd.stage === 'react') {
+      return modalOptions('将軍を受ける', '相手の次の手番まで、あなたは「場に2枚以上ある同名のアクションカード」を手札から使用できなくなります（堀を公開すればこの持続から免疫）。',
+        reactOptions(p, pd, { type: 'LINGER_REACT' }));
+    }
     if (pd.type === 'royal_galley_play') {
       return modalPlayCardEvent(state, p, '王家のガレー船 — カードを使う',
         '手札の**持続でない**アクションカード1枚を使用できます（脇に置き、次のターンの開始時にもう一度使用します）。しなくてもよい。',
-        p.hand, (id) => (DOM.isType(id, 'action') || DOM.engine.inheritedEstate(p, id)) && !DOM.isType(id, 'duration'),
+        p.hand, (id) => (DOM.isType(id, 'action') || DOM.engine.inheritedEstate(p, id)) && !DOM.isType(id, 'duration') && DOM.engine.canPlayHandCard(state, pd.player, id),
         'ROYAL_GALLEY_PLAY', { label: '使わない', on: () => dispatch({ type: 'ROYAL_GALLEY_PLAY', card: null }) });
     }
     if (pd.type === 'conjurer_gain') {
@@ -2874,7 +2894,7 @@
     if (pd.type === 'elder_play') {
       return modalPlayCardEvent(state, p, '長老 — アクションを使う',
         '手札のアクションカード1枚を使用できます（アクション権は使いません）。そのカードが「次から1つを選ぶ」なら、追加で異なるもの1つも選べます。しなくてもよい。',
-        p.hand, (id) => DOM.isType(id, 'action') || DOM.engine.inheritedEstate(p, id),
+        p.hand, (id) => (DOM.isType(id, 'action') || DOM.engine.inheritedEstate(p, id)) && DOM.engine.canPlayHandCard(state, pd.player, id),
         'ELDER_PLAY', { label: '使わない', on: () => dispatch({ type: 'ELDER_PLAY', card: null }) });
     }
     if (pd.type === 'modify_trash') {
@@ -2884,7 +2904,7 @@
     if (pd.type === 'modify_choose') {
       return modalChoice(pd, '改造', 'MODIFY_CHOOSE',
         [{ k: 'cantrip', label: '+1 カード と +1 アクション' },
-          { k: 'gain', label: (pd.coin >= 0 ? '廃棄したカードより最大2コイン高いカード1枚を獲得する' : '獲得する（廃棄していないので何も得られません）') }]);
+          { k: 'gain', label: (pd.noTrash ? '獲得する（廃棄していないので何も得られません）' : '廃棄したカードより最大2コイン高いカード1枚を獲得する') }]);
     }
     if (pd.type === 'modify_gain') {
       return modalGainSupply(state, '改造 — 獲得', '廃棄したカードよりコストが最大2コイン高いカード1枚を獲得します。',

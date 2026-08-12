@@ -3197,7 +3197,7 @@
       }
       case 'ally_market_towns': { // 市場の町＝好意1で手札のアクションを使う（購入フェイズなのでコインを増やす札を優先）
         if ((p.favors || 0) < 1) return { type: 'ALLY_MARKET_TOWNS', card: null };
-        const acts = p.hand.filter((c) => isType(c, 'action') || DOM.engine.inheritedEstate(p, c));
+        const acts = p.hand.filter((c) => (isType(c, 'action') || DOM.engine.inheritedEstate(p, c)) && DOM.engine.canPlayHandCard(state, pd.player, c));
         if (!acts.length) return { type: 'ALLY_MARKET_TOWNS', card: null };
         for (const id of GAIN_ORDER) if (acts.indexOf(id) >= 0) return { type: 'ALLY_MARKET_TOWNS', card: id };
         return { type: 'ALLY_MARKET_TOWNS', card: acts[0] };
@@ -3405,7 +3405,7 @@
         return p.hand.includes('moat') ? { type: 'MOAT_REVEAL' } : { type: 'LINGER_REACT' };
 
       case 'royal_galley_play': { // 王家のガレー船＝手札の持続でないアクションを1枚（次のターンにもう一度使える）
-        const cands = p.hand.filter((c) => isType(c, 'action') && !isType(c, 'duration'));
+        const cands = p.hand.filter((c) => isType(c, 'action') && !isType(c, 'duration') && DOM.engine.canPlayHandCard(state, pd.player, c));
         if (!cands.length) return { type: 'ROYAL_GALLEY_PLAY', card: null };
         for (const id of GAIN_ORDER) if (cands.indexOf(id) >= 0) return { type: 'ROYAL_GALLEY_PLAY', card: id };
         return { type: 'ROYAL_GALLEY_PLAY', card: cands[0] };
@@ -3416,7 +3416,7 @@
         return { type: 'CONJURER_GAIN', card: g };
       }
       case 'specialist_play': { // 専門家＝手札のアクション/財宝で一番強いもの（辞退可）
-        const cands = p.hand.filter((c) => (isType(c, 'action') || isTreasureNow(state, c)));
+        const cands = p.hand.filter((c) => (isType(c, 'action') || isTreasureNow(state, c)) && DOM.engine.canPlayHandCard(state, pd.player, c));
         if (!cands.length) return { type: 'SPECIALIST_PLAY', card: null };
         for (const id of GAIN_ORDER) if (cands.indexOf(id) >= 0) return { type: 'SPECIALIST_PLAY', card: id };
         return { type: 'SPECIALIST_PLAY', card: cands[0] };
@@ -3427,7 +3427,7 @@
         return { type: 'SPECIALIST_CHOOSE', choices: (pd.elder && canCopy) ? ['again', 'copy'] : [main] };
       }
       case 'elder_play': { // 長老＝手札のアクションで一番強いもの（辞退可）
-        const cands = p.hand.filter((c) => isType(c, 'action'));
+        const cands = p.hand.filter((c) => isType(c, 'action') && DOM.engine.canPlayHandCard(state, pd.player, c));
         if (!cands.length) return { type: 'ELDER_PLAY', card: null };
         for (const id of GAIN_ORDER) if (cands.indexOf(id) >= 0) return { type: 'ELDER_PLAY', card: id };
         return { type: 'ELDER_PLAY', card: cands[0] };
@@ -3439,7 +3439,7 @@
         return { type: 'MODIFY_TRASH', card: order[0] };
       }
       case 'modify_choose': { // 改造＝格上げできるなら獲得、できなければキャントリップ
-        const canG = (pd.coin || 0) >= 0 && firstGainable(state, DOM.engine.modifyCanGain(state, pd));
+        const canG = !pd.noTrash && firstGainable(state, DOM.engine.modifyCanGain(state, pd));
         const main = canG ? 'gain' : 'cantrip';
         return { type: 'MODIFY_CHOOSE', choices: (pd.elder && canG) ? ['cantrip', 'gain'] : [main] };
       }

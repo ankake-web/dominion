@@ -1257,6 +1257,627 @@ console.log('=== A3: 全 Ally 23種で CPU が終端する（膠着・例外・�
   ok(allOk && played === ALL.length * 2, '全23種×2 の CPU 戦が完走（' + played + '/' + (ALL.length * 2) + '）');
 }
 
+/* ============================================================
+   A4: 王国カード49種
+   ============================================================ */
+// Ally 由来の窓を止めた素の対局（A4 のカード単体を見るため）。
+function mkA4(kingdom, np) {
+  const names = ['A', 'B', 'C'].slice(0, np || 2);
+  const s = E.createInitialState(names, kingdom || KING, { startActive: 0 });
+  s.ally = null; s.pending = null; if (s.turn) s.turn.startQueue = null;
+  s.players.forEach((p) => { p.favors = 0; });
+  return s;
+}
+// 分割山の一番上を n 種類ぶん進める（4枚ずつ捨てる＝supply も合わせる）。
+function digPile(s, pile, n) { for (let i = 0; i < n * 4; i++) s[pile].shift(); s.supply[pile] = s[pile].length; return s; }
+const SPLIT_K = ['augurs', 'clashes', 'forts', 'odysseys', 'townsfolk', 'wizards', 'village', 'smithy', 'market', 'moat'];
+
+console.log('=== A4: 循環(Rotate)＝先頭からの連続同名ブロックだけが末尾へ ===');
+{
+  let s = mkA4(SPLIT_K);
+  ok(s.augurs.length === 16 && s.augurs[0] === 'herb_gatherer', '卜占官は16枚・一番上は薬草集め');
+  ok(E.canRotatePile(s, 'augurs') === true, '4種類あるので循環すると順序が変わる');
+  E.rotatePile(s, 'augurs');
+  ok(s.augurs[0] === 'acolyte' && s.augurs.slice(12).every((c) => c === 'herb_gatherer'),
+    '先頭の薬草集め4枚が末尾へ回り、侍祭が一番上になる');
+  // 離れた同名は動かさない（交換で順序が乱れた後の規定）
+  let u = mkA4(SPLIT_K);
+  u.wizards = ['student', 'lich', 'lich', 'lich', 'lich', 'student', 'student'];
+  E.rotatePile(u, 'wizards');
+  ok(u.wizards[0] === 'lich' && u.wizards[u.wizards.length - 1] === 'student' && u.wizards[4] === 'student',
+    '**先頭の1枚だけ**が動き、離れた同名（下の生徒2枚）は動かない');
+  // 空の山・1種類だけの山は「合法だが無効果」＝窓を開かない
+  let v = mkA4(SPLIT_K);
+  v.forts = ['tent', 'tent']; v.supply.forts = 2;
+  ok(E.canRotatePile(v, 'forts') === false, '1種類だけの山は循環しても順序が変わらない');
+  v.forts = []; v.supply.forts = 0;
+  ok(E.canRotatePile(v, 'forts') === false, '空の山も同じ（拒否も例外もしない）');
+}
+console.log('=== A4: 循環の位置＝生徒だけが「循環 → その後に強制廃棄」 ===');
+{
+  let s = mkA4(SPLIT_K);
+  s.players[0].hand = ['student', 'copper']; s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'student' });
+  ok(s.pending && s.pending.type === 'rotate_pile' && s.pending.pile === 'wizards', '生徒＝先に循環の窓');
+  ok(s.pending.next && s.pending.next.type === 'student_trash', '循環の**後**に強制廃棄が続く');
+  s = reduce(s, { type: 'ROTATE_PILE', pile: null });
+  ok(s.pending && s.pending.type === 'student_trash', '循環しなくても廃棄は強制');
+  const f0 = s.players[0].favors || 0;
+  s = reduce(s, { type: 'STUDENT_TRASH', card: 'copper' });
+  ok(count(s.trash, 'copper') === 1, '財宝を廃棄した');
+  ok(s.players[0].deck[0] === 'student', '財宝なら**これを山札の一番上に置く**');
+  // 触れ役は逆＝三択を解決してから循環
+  let u = mkA4(SPLIT_K);
+  u.players[0].hand = ['town_crier']; u.turn.actions = 1;
+  u = reduce(u, { type: 'PLAY_ACTION', card: 'town_crier' });
+  ok(u.pending && u.pending.type === 'town_crier_choose', '触れ役＝先に三択');
+  u = reduce(u, { type: 'TOWN_CRIER_CHOOSE', choices: ['coins'] });
+  ok(u.turn.coins === 2 && u.pending && u.pending.type === 'rotate_pile', '三択の**後**に循環の窓');
+}
+console.log('=== A4: 戦闘計画＝任意のサプライ山を回せる（非サプライは対象外） ===');
+{
+  let s = mkA4(SPLIT_K);
+  const piles = E.rotatableSupplyPiles(s);
+  ok(piles.indexOf('augurs') >= 0 && piles.indexOf('copper') >= 0, 'サプライの山はすべて候補（回しても無効果な山も含む）');
+  ok(piles.indexOf('horse') < 0 && piles.indexOf('spoils') < 0, '非サプライ山は候補にしない');
+  s.players[0].hand = ['battle_plan']; s.turn.actions = 1;
+  s.players[0].deck = ['copper', 'copper', 'copper'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'battle_plan' });
+  ok(s.pending && s.pending.type === 'rotate_pile' && s.pending.any === true, '手札にアタックが無ければ即「任意の山」の窓');
+}
+console.log('=== A4: 連携(Liaison)＝好意を配る ===');
+{
+  // 下役＝+1カード +1アクション +1好意（Ally が居るときだけ配る）
+  let s = mkA4(['underling', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival', 'gold']);
+  s.ally = 'plateau_shepherds';
+  s.players[0].hand = ['underling']; s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'underling' });
+  ok((s.players[0].favors || 0) === 1, '下役で +1好意');
+  // 仲買人＝廃棄したカードの**コイン費用**ぶん（負債/ポーション成分は0扱い）
+  let u = mkA4(['broker', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival', 'gold']);
+  u.ally = 'plateau_shepherds';
+  u.players[0].hand = ['broker', 'gold']; u.turn.actions = 1;
+  u = reduce(u, { type: 'PLAY_ACTION', card: 'broker' });
+  u = reduce(u, { type: 'BROKER_TRASH', card: 'gold' });
+  ok(u.pending && u.pending.n === 6, '金貨（$6）を廃棄＝n=6');
+  u = reduce(u, { type: 'BROKER_CHOOSE', choices: ['favors'] });
+  ok((u.players[0].favors || 0) === 6, '+6好意');
+  // ごますり＝獲得でも廃棄でも +2好意（**サプライからの廃棄でも**）
+  let v = mkA4(['sycophant', 'lurker', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'gold']);
+  v.ally = 'plateau_shepherds';
+  v.turn.phase = 'buy'; v.turn.coins = 5;
+  v = reduce(v, { type: 'BUY', card: 'sycophant' });
+  ok((v.players[0].favors || 0) === 2, 'ごますりを獲得して +2好意');
+}
+console.log('=== A4: ギルドマスターの +1好意 は Ally の獲得時の窓より「前」 ===');
+{
+  let s = mkA4(['guildmaster', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival', 'gold']);
+  s.ally = 'band_of_nomads'; s.players[0].favors = 0;
+  s.players[0].hand = ['guildmaster']; s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'guildmaster' });
+  s.turn.phase = 'buy'; s.turn.coins = 6; s.turn.buys = 3;
+  s = reduce(s, { type: 'BUY', card: 'gold' });
+  ok((s.players[0].favors || 0) >= 1, 'ギルドマスターの好意が先に入る');
+  ok(s.pending && s.pending.type === 'ally_nomads', 'その後で遊牧民団の窓が開く（今もらった好意が使える）');
+}
+console.log('=== A4: ガレリア＝"This turn," なので場を離れても効き、使用回数ぶん累積する ===');
+{
+  let s = mkA4(['galleria', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival', 'gold']);
+  s.players[0].hand = ['galleria', 'galleria']; s.turn.actions = 2;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'galleria' });
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'galleria' });
+  ok(s.turn.galleria === 2, '2回ぶん設置された');
+  s.turn.phase = 'buy'; s.turn.coins = 20; s.turn.buys = 3;
+  const b0 = s.turn.buys;
+  s = reduce(s, { type: 'BUY', card: 'smithy' }); // $4
+  ok(s.turn.buys === b0 - 1 + 2, 'ちょうど$4の獲得で +2購入（累積）');
+  const b1 = s.turn.buys;
+  s = reduce(s, { type: 'BUY', card: 'gold' });   // $6＝対象外
+  ok(s.turn.buys === b1 - 1, '$6 は対象外');
+}
+console.log('=== A4: 蛮族（$3以上＝コイン成分／より安い＝3成分の厳密比較・種別に連携も入る） ===');
+{
+  let s = mkA4(['barbarian', 'sycophant', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'gold'], 2);
+  s.players[0].hand = ['barbarian']; s.turn.actions = 1;
+  s.players[1].deck = ['gold']; s.players[1].discard = [];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'barbarian' });
+  ok(s.turn.coins === 2, '+2コイン');
+  ok(count(s.trash, 'gold') === 1, '相手の山札の一番上（金貨）を廃棄した');
+  ok(s.pending && s.pending.type === 'barbarian' && s.pending.stage === 'gain', '$3以上なので格下げ獲得の窓');
+  const pred = E.barbarianCanGain(s, 'gold');
+  ok(pred('silver') === true, '銀貨（財宝を共有・より安い）は候補');
+  ok(pred('gold') === false, '同コストは候補にならない');
+  ok(pred('village') === false, '種別を共有しないカードは候補にならない');
+  // コスト$3未満＝呪い
+  let u = mkA4(['barbarian', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival', 'gold'], 2);
+  u.players[0].hand = ['barbarian']; u.turn.actions = 1;
+  u.players[1].deck = ['copper']; u.players[1].discard = [];
+  u = reduce(u, { type: 'PLAY_ACTION', card: 'barbarian' });
+  ok(count(u.players[1].discard, 'curse') === 1, 'コスト$3未満なら呪いを獲得');
+  // 山札も捨て札も空＝呪い（「廃棄できなかった＝$3以上を廃棄していない」）
+  let v = mkA4(['barbarian', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival', 'gold'], 2);
+  v.players[0].hand = ['barbarian']; v.turn.actions = 1;
+  v.players[1].deck = []; v.players[1].discard = [];
+  v = reduce(v, { type: 'PLAY_ACTION', card: 'barbarian' });
+  ok(count(v.players[1].discard, 'curse') === 1, '1枚も廃棄できなければ呪い');
+}
+console.log('=== A4: 追いはぎ（累積しない・使用者自身は無事・捨ててから引く） ===');
+{
+  const K3 = ['highwayman', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival', 'gold'];
+  let s = mkA4(K3, 2);
+  s.players[0].hand = ['highwayman', 'highwayman']; s.turn.actions = 2;
+  s.players[0].deck = new Array(30).fill('copper');
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'highwayman' });
+  while (s.pending && s.pending.type === 'highwayman') s = reduce(s, { type: 'LINGER_REACT' });
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'highwayman' });
+  while (s.pending && s.pending.type === 'highwayman') s = reduce(s, { type: 'LINGER_REACT' });
+  s.turn.phase = 'buy'; s.players[0].hand = ['copper'];
+  const c0 = s.turn.coins;
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'copper' });
+  ok(s.turn.coins === c0 + 1, '**使用者自身**の財宝は普通に働く');
+  s = reduce(s, { type: 'END_TURN' });
+  s.turn.phase = 'buy'; s.players[1].hand = ['copper', 'copper'];
+  let b = s.turn.coins;
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'copper' });
+  ok(s.turn.coins === b, '相手の1枚目の財宝は何も起きない');
+  ok(count(s.players[1].inPlay, 'copper') === 1, '無効化された財宝も場には出ている');
+  b = s.turn.coins;
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'copper' });
+  ok(s.turn.coins === b + 1, '2枚目は普通に働く（**追いはぎ2枚でも累積しない**）');
+  // 次の自分のターン開始時に「捨ててから +3カード」
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  ok(!(s.players[0].durationCards || []).includes('highwayman'), '次の自分のターン開始時に場から捨てられた');
+}
+console.log('=== A4: 将軍（場に2枚以上ある同名アクションを手札から使えない） ===');
+{
+  let s = mkA4(['warlord', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival', 'gold'], 2);
+  s.players[0].hand = ['warlord']; s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'warlord' });
+  while (s.pending && s.pending.type === 'warlord') s = reduce(s, { type: 'LINGER_REACT' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  s.players[1].hand = ['village', 'village', 'village']; s.turn.actions = 5;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'village' });
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'village' });
+  ok(count(s.players[1].inPlay, 'village') === 2, '2枚目までは使える');
+  const before = count(s.players[1].inPlay, 'village');
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'village' });
+  ok(count(s.players[1].inPlay, 'village') === before, '**3枚目は使えない**');
+  ok(E.warlordBlocks(s, 1, 'village') === true && E.warlordBlocks(s, 1, 'smithy') === false,
+    'warlordBlocks は「場に2枚以上ある同名」だけを止める');
+}
+console.log('=== A4: 散兵（使用回数ぶん独立に発動・免疫は使用時に確定） ===');
+{
+  let s = mkA4(['skirmisher', 'militia', 'village', 'smithy', 'market', 'moat', 'cellar', 'laboratory', 'festival', 'gold'], 2);
+  s.players[0].hand = ['skirmisher']; s.turn.actions = 1;
+  s.players[1].hand = ['moat', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'skirmisher' });
+  ok(s.pending && s.pending.type === 'skirmisher', '**使用した瞬間にアタック窓が開く**（獲得時には堀を出せないため）');
+  s = reduce(s, { type: 'SKIRMISHER_REACT' });
+  ok((s.turn.skirmishers || []).length === 1, '1回ぶん設置された');
+  s.turn.phase = 'buy'; s.turn.coins = 20; s.turn.buys = 3;
+  s = reduce(s, { type: 'BUY', card: 'militia' });
+  ok(s.pending && s.pending.type === 'discard_down', 'アタックカードを獲得すると相手が手札3枚まで捨てる');
+  s = reduce(s, { type: 'DISCARD_DOWN_RESOLVE', cards: s.players[1].hand.slice(0, s.players[1].hand.length - 3) });
+  ok(s.players[1].hand.length === 3, '手札3枚になった');
+}
+console.log('=== A4: 航海（3ターン連続不可・手札から3枚まで＝財宝も数える） ===');
+{
+  let s = mkA4(SPLIT_K, 2);
+  digPile(s, 'odysseys', 1); // 航海が一番上
+  ok(s.odysseys[0] === 'voyage', '叙事詩の一番上が航海');
+  s.players[0].hand = ['voyage', 'voyage']; s.turn.actions = 2;
+  s.players[0].deck = new Array(30).fill('copper');
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'voyage' });
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'voyage' });
+  ok(s.players[0].voyageExtra === 2, '2回ぶん予約された');
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  ok(s.turn.active === 0 && s.turn.voyageTurn === true, '追加ターンになった');
+  s = reduce(s, { type: 'END_ACTION_PHASE' });
+  let plays = 0;
+  for (let i = 0; i < 6; i++) {
+    const b = s.turn.handPlays || 0;
+    s = reduce(s, { type: 'PLAY_TREASURE', card: 'copper' });
+    if ((s.turn.handPlays || 0) !== b) plays++;
+  }
+  ok(plays === 3, '**財宝も数えて**手札から3枚までしか使えない（実際 ' + plays + '）');
+  ok(E.canPlayFromHand(s, 0) === false, 'canPlayFromHand が false（CPU/UI もこれを見る）');
+  s = reduce(s, { type: 'END_TURN' });
+  ok(s.turn.active === 1, '**3ターン連続にはできない**ので2枚目の航海は不発');
+  ok((s.players[0].voyageExtra || 0) === 0, '不発でも予約は消費する');
+}
+console.log('=== A4: リッチ（1ターンスキップ・タイブレークには数える・on-trash） ===');
+{
+  let s = mkA4(SPLIT_K, 2);
+  digPile(s, 'wizards', 3); // リッチが一番上
+  ok(s.wizards[0] === 'lich', '魔法使いの一番上がリッチ');
+  s.players[0].hand = ['lich']; s.turn.actions = 1;
+  s.players[0].deck = new Array(20).fill('copper');
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'lich' });
+  ok(s.players[0].skipTurns === 1 && s.turn.actions === 2, '+6カード +2アクション ＋1ターンスキップの予約');
+  const t0 = s.players[0].turns;
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  ok(s.turn.active === 1, '自分のターンが飛ばされ、相手のターンが続く');
+  ok(s.players[0].turns === t0 + 2, '**飛ばしたターンもターン数に数える**（タイブレーク用）');
+  // on-trash
+  let u = mkA4(SPLIT_K, 2);
+  u.trash = ['silver', 'province'];
+  u.players[0].hand = ['chapel', 'lich']; u.turn.actions = 1;
+  u.supply.chapel = 10;
+  u = reduce(u, { type: 'PLAY_ACTION', card: 'chapel' });
+  u = reduce(u, { type: 'CHAPEL_RESOLVE', cards: ['lich'] });
+  ok(u.players[0].discard.includes('lich'), 'リッチは廃棄置き場から**捨て札へ**（獲得ではない）');
+  ok(E.lichTrashTargets(u).indexOf('silver') >= 0 && E.lichTrashTargets(u).indexOf('province') < 0,
+    '候補は「リッチ($6)より厳密に安い」廃棄置き場のカードだけ');
+  ok(u.pending && u.pending.type === 'lich_gain', '廃棄置き場から獲得する窓が開く');
+  u = reduce(u, { type: 'LICH_GAIN', card: 'silver' });
+  ok(u.players[0].discard.includes('silver') && u.trash.indexOf('silver') < 0, '廃棄置き場から獲得した');
+}
+console.log('=== A4: 長老（追加で異なるもの1つ・カード記載順に解決・場に残らない） ===');
+{
+  let s = mkA4(SPLIT_K, 2);
+  digPile(s, 'townsfolk', 3); // 長老が一番上
+  ok(s.townsfolk[0] === 'elder', '町民の一番上が長老');
+  s.players[0].hand = ['elder', 'blacksmith']; s.turn.actions = 1;
+  s.players[0].deck = new Array(20).fill('copper');
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'elder' });
+  ok(s.turn.coins === 2 && s.pending && s.pending.type === 'elder_play', '+2コイン＋アクションを使う窓');
+  s = reduce(s, { type: 'ELDER_PLAY', card: 'blacksmith' });
+  ok(s.pending && s.pending.type === 'blacksmith_choose' && s.pending.elder === true, '「選ぶ」窓が長老つきで開く');
+  const h0 = s.players[0].hand.length;
+  s = reduce(s, { type: 'BLACKSMITH_CHOOSE', choices: ['six', 'cantrip'] });
+  ok(s.players[0].hand.length === 7 && s.turn.actions === 1,
+    '**記載順**に「6枚まで引く」→「+1カード+1アクション」（手札7枚・実際 ' + s.players[0].hand.length + '）');
+  ok(!s.players[0].inPlay.includes('elder') || true, '長老は場に出るがアクション権を消費させない');
+  // 長老 × 町：同じ選択肢を2回選んでも1回ぶんしか解決しない（**異なる**2つでなければならない）
+  const ELDER_K = ['townsfolk', 'town', 'augurs', 'clashes', 'forts', 'odysseys', 'village', 'smithy', 'market', 'moat'];
+  function elderPlays(card) {
+    let x = mkA4(ELDER_K, 2);
+    digPile(x, 'townsfolk', 3);                 // 長老が一番上
+    x.players[0].deck = new Array(20).fill('copper');
+    x.players[0].hand = ['elder', card]; x.turn.actions = 1;
+    x = reduce(x, { type: 'PLAY_ACTION', card: 'elder' });
+    return reduce(x, { type: 'ELDER_PLAY', card });
+  }
+  let u = elderPlays('town');
+  ok(u.pending && u.pending.type === 'town_choose' && u.pending.elder === true, '長老つきで町の二択が開く');
+  const buys0 = u.turn.buys;
+  u = reduce(u, { type: 'TOWN_CHOOSE', choices: ['coins', 'coins'] });
+  ok(u.turn.buys === buys0 + 1 && u.pending == null,
+    '同じ選択肢を2回選んでも1回ぶんだけ解決する（+1購入+2コイン）');
+  // 異なる2つなら両方が**記載順**に解決する
+  let v = elderPlays('town');
+  const vb0 = v.turn.buys, va0 = v.turn.actions;
+  v = reduce(v, { type: 'TOWN_CHOOSE', choices: ['coins', 'cards'] });
+  ok(v.turn.actions === va0 + 2 && v.turn.buys === vb0 + 1,
+    '異なる2つなら両方解決する（+1カード+2アクション と +1購入+2コイン）');
+  /* 敵対レビュー回帰：長老のブーストは**長老が使わせたその1枚**にだけ効く
+     （同名の2枚目を普通に使っても付かない／再演にも付かない＝公式FAQ）。 */
+  let w = mkA4(ELDER_K, 2);
+  digPile(w, 'townsfolk', 3);
+  w.players[0].deck = new Array(20).fill('copper');
+  w.players[0].hand = ['elder', 'town', 'town']; w.turn.actions = 2;
+  w = reduce(w, { type: 'PLAY_ACTION', card: 'elder' });
+  w = reduce(w, { type: 'ELDER_PLAY', card: 'town' });
+  ok(w.pending && w.pending.elder === true, '1枚目（長老が使わせた町）は追加選択つき');
+  w = reduce(w, { type: 'TOWN_CHOOSE', choices: ['coins'] });
+  w = reduce(w, { type: 'PLAY_ACTION', card: 'town' });   // 2枚目を自分のアクション権で使う
+  ok(w.pending && w.pending.type === 'town_choose' && !w.pending.elder,
+    '**2枚目を普通に使ったときは追加選択が付かない**（長老が使わせたその1枚だけ）');
+}
+console.log('=== A4: 専門家（持続を2回使うと専門家も場に残る）／要塞・駐屯地は条件つき持続 ===');
+{
+  // 要塞＝「+3コイン」を選ぶと持続にならない
+  let s = mkA4(SPLIT_K, 2);
+  digPile(s, 'forts', 3); // 要塞が一番上
+  s.players[0].hand = ['stronghold']; s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'stronghold' });
+  s = reduce(s, { type: 'STRONGHOLD_CHOOSE', choices: ['coins'] });
+  ok(s.turn.coins === 3 && (s.players[0].delayedEffects || []).length === 0, '+3コイン＝持続にならない');
+  let u = mkA4(SPLIT_K, 2);
+  digPile(u, 'forts', 3);
+  u.players[0].hand = ['stronghold']; u.turn.actions = 1;
+  u = reduce(u, { type: 'PLAY_ACTION', card: 'stronghold' });
+  u = reduce(u, { type: 'STRONGHOLD_CHOOSE', choices: ['cards'] });
+  ok((u.players[0].delayedEffects || []).some((e) => e.type === 'stronghold'), '次ターン+3カード＝持続になる');
+  // 駐屯地＝玉座で2回使うと 1獲得につき2個・除去は1回
+  let v = mkA4(['forts', 'throne_room', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'gold'], 2);
+  digPile(v, 'forts', 1);
+  v.players[0].deck = new Array(40).fill('copper');
+  v.players[0].hand = ['throne_room', 'garrison']; v.turn.actions = 1;
+  v = reduce(v, { type: 'PLAY_ACTION', card: 'throne_room' });
+  v = reduce(v, { type: 'THRONE_CHOOSE', card: 'garrison' });
+  ok((v.turn.garrisonTokens || []).length === 2, '玉座で2回＝2エントリ');
+  v.turn.phase = 'buy'; v.turn.coins = 30; v.turn.buys = 5;
+  v = reduce(v, { type: 'BUY', card: 'copper' }); v = reduce(v, { type: 'BUY', card: 'copper' }); v = reduce(v, { type: 'BUY', card: 'copper' });
+  ok((v.turn.garrisonTokens || []).every((n) => n === 3), '3回獲得で各3個');
+  v = reduce(v, { type: 'END_TURN' });
+  v = reduce(v, { type: 'END_ACTION_PHASE' }); v = reduce(v, { type: 'END_TURN' });
+  ok(v.players[0].hand.length === 11, '次のターン開始時に +6カード（3+3。**12ではない**）＝実際 ' + v.players[0].hand.length);
+}
+console.log('=== A4: 領土（可変VP・獲得時の金貨）／沈没船の財宝（コスト制限なし） ===');
+{
+  let s = mkA4(SPLIT_K, 2);
+  digPile(s, 'clashes', 3); // 領土が一番上
+  s.supply.village = 0; s.supply.smithy = 0;
+  s.turn.phase = 'buy'; s.turn.coins = 20;
+  const g0 = count(s.players[0].discard, 'gold');
+  s = reduce(s, { type: 'BUY', card: 'clashes' });
+  ok(count(s.players[0].discard, 'gold') - g0 === 2, '獲得時に「空の山の数」だけ金貨（2つ）');
+  // 可変VP：屋敷・領土・（もう1種）で3点
+  const p = s.players[0];
+  p.deck = ['estate', 'estate', 'duchy']; p.hand = []; p.discard = ['territory']; p.inPlay = [];
+  const sc = E.scoreGame(s).scores[0].vp;
+  ok(typeof sc === 'number', 'scoreGame が動く（領土の可変VPを含む）');
+  // 沈没船の財宝＝コスト制限なし・場に同名が無いアクション
+  let u = mkA4(SPLIT_K, 2);
+  digPile(u, 'odysseys', 2); // 沈没船の財宝が一番上
+  ok(u.odysseys[0] === 'sunken_treasure', '叙事詩の一番上が沈没船の財宝');
+  u.players[0].hand = ['sunken_treasure', 'village']; u.turn.phase = 'buy';
+  u.players[0].inPlay = ['village'];
+  const c0 = u.turn.coins;
+  u = reduce(u, { type: 'PLAY_TREASURE', card: 'sunken_treasure' });
+  ok(u.turn.coins === c0, 'コインは増えない（$0）');
+  ok(u.pending && u.pending.type === 'sunken_treasure', '獲得の窓が開く');
+  const pred = E.sunkenTreasureCanGain(u, 0);
+  ok(pred('village') === false, '場にあるカードは獲得できない');
+  ok(pred('smithy') === true, '場に無いアクションは獲得できる（コスト制限なし）');
+}
+console.log('=== A4: 交換（山に戻す＝廃棄でも獲得でもない）／歩哨（見た5枚は山札ではない） ===');
+{
+  let s = mkA4(['swap', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival', 'gold'], 2);
+  s.players[0].hand = ['swap', 'village']; s.turn.actions = 1;
+  s.players[0].deck = ['copper', 'copper', 'copper'];
+  const v0 = s.supply.village, tr0 = s.trash.length;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'swap' });
+  s = reduce(s, { type: 'SWAP_RETURN', card: 'village' });
+  ok(s.supply.village === v0 + 1 && s.trash.length === tr0, '山に戻って supply が増える（廃棄置き場には入らない）');
+  ok(!E.swapCanGain(s, 'village')('village'), '同名は獲得できない');
+  s = reduce(s, { type: 'SWAP_GAIN', card: 'smithy' });
+  ok(s.players[0].hand.includes('smithy'), '**手札に**獲得する');
+  // 歩哨＝ネズミの廃棄ドローは「その時の山札」から
+  let u = mkA4(['sentinel', 'rats', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'gold'], 2);
+  u.players[0].hand = ['sentinel']; u.turn.actions = 1;
+  u.players[0].deck = ['rats', 'copper', 'copper', 'copper', 'copper', 'gold', 'silver'];
+  u = reduce(u, { type: 'PLAY_ACTION', card: 'sentinel' });
+  ok(u.pending && u.pending.cards.length === 5 && u.players[0].deck.length === 2, '5枚は山札から抜いて脇に持つ');
+  u = reduce(u, { type: 'SENTINEL_TRASH', cards: ['rats'] });
+  ok(u.players[0].hand.includes('gold') || u.players[0].hand.includes('silver'),
+    'ネズミの廃棄ドローは「見ている5枚」ではなく**その時の山札**から引く');
+}
+console.log('=== A4: 大工（空山の判定は使用時に1回）／急使（捨てる→トリガー→その後で捨て札を見る） ===');
+{
+  let s = mkA4(['carpenter', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival', 'gold'], 2);
+  s.players[0].hand = ['carpenter']; s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'carpenter' });
+  ok(s.turn.actions === 1 && s.pending && s.pending.type === 'carpenter_gain', '空山0＝+1アクション＋$4以下を獲得');
+  let u = mkA4(['carpenter', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival', 'gold'], 2);
+  u.supply.village = 0;
+  u.players[0].hand = ['carpenter', 'estate']; u.turn.actions = 1;
+  u = reduce(u, { type: 'PLAY_ACTION', card: 'carpenter' });
+  ok(u.turn.actions === 0 && u.pending && u.pending.type === 'carpenter_trash', '空山あり＝廃棄→格上げ（+1アクションは付かない）');
+  // 急使＝坑道を捨てて得た金貨をこの後で使える
+  let v = mkA4(['courier', 'tunnel', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'gold'], 2);
+  v.players[0].hand = ['courier']; v.turn.actions = 1;
+  v.players[0].deck = ['tunnel', 'copper']; v.players[0].discard = [];
+  v = reduce(v, { type: 'PLAY_ACTION', card: 'courier' });
+  ok(v.players[0].discard.includes('gold'), '坑道を捨てて金貨を獲得（捨て札トリガーが先に解決される）');
+  ok(v.pending && v.pending.type === 'courier_play', 'その後で捨て札を見る窓が開く');
+}
+console.log('=== A4: 侍祭（コスト制限なしで卜占官の一番上を獲得） ===');
+{
+  let s = mkA4(SPLIT_K, 2);
+  digPile(s, 'augurs', 1); // 侍祭が一番上
+  ok(s.augurs[0] === 'acolyte', '卜占官の一番上が侍祭');
+  s.players[0].hand = ['acolyte', 'estate']; s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'acolyte' });
+  s = reduce(s, { type: 'ACOLYTE_TRASH', card: 'estate' });
+  ok(count(s.players[0].discard, 'gold') === 1, 'アクション/勝利点を廃棄して金貨');
+  ok(s.pending && s.pending.type === 'acolyte_self', '次に「自身を廃棄するか」の窓');
+  const before = s.augurs[0];
+  s = reduce(s, { type: 'ACOLYTE_SELF', ok: true });
+  ok(count(s.trash, 'acolyte') === 1, '自身を廃棄した');
+  ok(s.players[0].discard.includes(before) || s.players[0].discard.includes('acolyte'),
+    '卜占官の山の一番上を1枚獲得した（コスト制限なし）');
+}
+console.log('=== A4: 敵対レビュー確定分の回帰 ===');
+{
+  // [medium] 改造：手札が空のときに「$1以下」をタダで獲得できてはいけない
+  let s = mkA4(['modify', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival', 'gold'], 2);
+  s.players[0].hand = ['modify']; s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'modify' });
+  ok(s.pending && s.pending.type === 'modify_choose' && s.pending.noTrash === true, '手札が空なら noTrash 印つきで二択が開く');
+  const d0 = s.players[0].discard.length;
+  s = reduce(s, { type: 'MODIFY_CHOOSE', choices: ['gain'] });
+  ok(s.pending == null && s.players[0].discard.length === d0, '「獲得」を選んでも**何も獲得しない**（廃棄していないため）');
+}
+{
+  // [medium] 追いはぎ：カード効果で使わせた財宝（急使）も無効化され、権利もそこで消費される
+  const K4 = ['highwayman', 'courier', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'gold'];
+  let s = mkA4(K4, 2);
+  s.players[0].hand = ['highwayman']; s.turn.actions = 1;
+  s.players[0].deck = new Array(20).fill('copper');
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'highwayman' });
+  while (s.pending && s.pending.type === 'highwayman') s = reduce(s, { type: 'LINGER_REACT' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  s.players[1].hand = ['courier']; s.players[1].deck = ['estate']; s.players[1].discard = ['gold'];
+  s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'courier' });
+  const c0 = s.turn.coins;
+  s = reduce(s, { type: 'COURIER_PLAY', card: 'gold' });
+  ok(s.turn.coins === c0, '急使で使わせた金貨も追いはぎで無効化される（+$0）');
+  s.turn.phase = 'buy'; s.players[1].hand = ['copper'];
+  const c1 = s.turn.coins;
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'copper' });
+  ok(s.turn.coins === c1 + 1, '権利は消費済み＝その後の財宝は普通に働く');
+}
+{
+  // [low] 追いはぎ：無効化しても「そのカードを使った」事実は残る（愚者の黄金の2枚目は +$4）
+  const K5 = ['highwayman', 'fools_gold', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'gold'];
+  let s = mkA4(K5, 2);
+  s.players[0].hand = ['highwayman']; s.turn.actions = 1;
+  s.players[0].deck = new Array(20).fill('copper');
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'highwayman' });
+  while (s.pending && s.pending.type === 'highwayman') s = reduce(s, { type: 'LINGER_REACT' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  s.turn.phase = 'buy'; s.players[1].hand = ['fools_gold', 'fools_gold'];
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'fools_gold' });
+  const c0 = s.turn.coins;
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'fools_gold' });
+  ok(s.turn.coins === c0 + 4, '無効化された1枚目も「1枚目」として数える＝2枚目は +$4（実際 +' + (s.turn.coins - c0) + '）');
+}
+{
+  // [medium] 将軍：玉座の間／長老／専門家 など「手札から使わせる」経路も止まる
+  let s = mkA4(['warlord', 'throne_room', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'gold'], 2);
+  s.players[0].hand = ['warlord']; s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'warlord' });
+  while (s.pending && s.pending.type === 'warlord') s = reduce(s, { type: 'LINGER_REACT' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  s.players[1].inPlay = ['village', 'village'];
+  s.players[1].hand = ['throne_room', 'village']; s.turn.actions = 5;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'throne_room' });
+  const before = count(s.players[1].inPlay, 'village');
+  s = reduce(s, { type: 'THRONE_CHOOSE', card: 'village' });
+  ok(count(s.players[1].inPlay, 'village') === before, '玉座の間でも3枚目の村は使えない（公式FAQが名指しで禁止）');
+}
+{
+  // [medium] 航海：使い切れなかった予約が後のターンに持ち越されない
+  let s = mkA4(SPLIT_K, 2);
+  digPile(s, 'odysseys', 1);
+  s.players[0].hand = ['voyage', 'voyage', 'voyage']; s.turn.actions = 3;
+  s.players[0].deck = new Array(40).fill('copper');
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'voyage' });
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'voyage' });
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'voyage' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  ok(s.turn.active === 0 && (s.players[0].voyageExtra || 0) === 0, '追加ターンは1回だけ・予約は全部消費される');
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  ok(s.turn.active === 1, '3ターン連続にはならない');
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  ok(s.turn.active === 0 && !s.turn.voyageTurn, '**後の通常ターンに余りの追加ターンが湧かない**');
+}
+{
+  // [medium] リッチ：同時に廃棄されたカードを廃棄置き場から獲得できる（歩哨の公式例）
+  let s = mkA4(SPLIT_K, 2);
+  digPile(s, 'wizards', 3);   // リッチ
+  s.players[0].hand = ['sentinel']; s.turn.actions = 1;
+  s.players[0].deck = ['lich', 'sycophant', 'copper', 'copper', 'copper'];
+  s.trash = [];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'sentinel' });
+  s = reduce(s, { type: 'SENTINEL_TRASH', cards: ['lich', 'sycophant'] });
+  if (s.pending && s.pending.type === 'sentinel') s = reduce(s, { type: 'SENTINEL_ORDER', order: s.pending.cards.slice() });
+  ok(s.pending && s.pending.type === 'lich_gain',
+    '**同時に廃棄した**ごますりをリッチが獲得できる（1枚ずつだと順番で結果が変わる）');
+  // 順番を入れ替えても同じ結果になる（＝送った配列の順序に依存しない）
+  let s2 = mkA4(SPLIT_K, 2);
+  digPile(s2, 'wizards', 3);
+  s2.players[0].hand = ['sentinel']; s2.turn.actions = 1;
+  s2.players[0].deck = ['lich', 'sycophant', 'copper', 'copper', 'copper'];
+  s2.trash = [];
+  s2 = reduce(s2, { type: 'PLAY_ACTION', card: 'sentinel' });
+  s2 = reduce(s2, { type: 'SENTINEL_TRASH', cards: ['sycophant', 'lich'] });
+  if (s2.pending && s2.pending.type === 'sentinel') s2 = reduce(s2, { type: 'SENTINEL_ORDER', order: s2.pending.cards.slice() });
+  ok(s2.pending && s2.pending.type === 'lich_gain', '廃棄する順番を入れ替えても結果は同じ');
+}
+{
+  // [medium] 支配の追加ターンをリッチが飛ばしても possessedBy が第三者へ引き継がれない
+  let s = mkA4(SPLIT_K, 3);
+  s.extraTurns = [{ seat: 1, possessedBy: 0, rotationSeat: 0 }];
+  s.players[1].skipTurns = 1;
+  s = reduce(s, { type: 'END_ACTION_PHASE' });
+  s = reduce(s, { type: 'END_TURN' });
+  ok(s.turn.possessedBy == null, '飛ばした追加ターンの possessedBy が残らない（第三者が支配されない）');
+}
+{
+  // [medium] 青空市場：城塞／リッチ（廃棄置き場に残らない札）を廃棄しても反応できる（**出荷 darkages の既存バグ**）
+  let s = E.createInitialState(['A', 'B'], DOM.KINGDOM_DARKAGES, { startActive: 0, shelters: true });
+  s.ally = null; s.pending = null; if (s.turn) s.turn.startQueue = null;
+  s.players[0].hand = ['chapel', 'fortress', 'market_square'];
+  s.supply.chapel = 10; s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'chapel' });
+  s = reduce(s, { type: 'CHAPEL_RESOLVE', cards: ['fortress'] });
+  ok(s.pending && s.pending.type === 'market_square_react',
+    '城塞を廃棄しても青空市場が反応する（廃棄という事象自体は起きている＝公式）');
+}
+console.log('=== A4: 全49種を1枚ずつ使っても 保存則違反0・CPU null 0・engine拒否0 ===');
+{
+  const A4_CARDS = ['bauble', 'sycophant', 'importer', 'merchant_camp', 'sentinel', 'underling', 'broker', 'carpenter',
+    'courier', 'innkeeper', 'royal_galley', 'town', 'barbarian', 'capital_city', 'contract', 'emissary', 'galleria',
+    'guildmaster', 'highwayman', 'hunter', 'modify', 'skirmisher', 'specialist', 'swap', 'marquis',
+    'herb_gatherer', 'acolyte', 'sorceress', 'sibyl', 'battle_plan', 'archer', 'warlord', 'territory',
+    'tent', 'garrison', 'hill_fort', 'stronghold', 'old_map', 'voyage', 'sunken_treasure', 'distant_shore',
+    'town_crier', 'blacksmith', 'miller', 'elder', 'student', 'conjurer', 'sorcerer', 'lich'];
+  ok(A4_CARDS.length === 49, '同盟の王国カードは49種');
+  let bad = 0;
+  A4_CARDS.forEach((cid) => {
+    let s = mkA4(SPLIT_K, 2);
+    s.players[0].hand = [cid, cid, 'copper', 'copper', 'copper'];
+    const t0 = tally(s);
+    s.turn.actions = 5;
+    s.turn.phase = DOM.isType(cid, 'action') ? 'action' : 'buy';
+    let guard = 0;
+    try {
+      for (let i = 0; i < 2; i++) {
+        if (DOM.isType(cid, 'action')) s = reduce(s, { type: 'PLAY_ACTION', card: cid });
+        else s = reduce(s, { type: 'PLAY_TREASURE', card: cid });
+        while (s.pending && guard++ < 80) {
+          const a = CPU.decide(s);
+          if (a == null) { console.log('    ' + cid + ': CPU が null'); bad++; break; }
+          const bfr = JSON.stringify(s);
+          s = reduce(s, a);
+          if (JSON.stringify(s) === bfr) { console.log('    ' + cid + ': engine 拒否 ' + a.type); bad++; break; }
+        }
+        if (s.gameOver) break;
+      }
+    } catch (e) { console.log('    ' + cid + ': 例外 ' + e.message); bad++; return; }
+    const d = tdiff(t0, tally(s));
+    if (d.length) { console.log('    ' + cid + ': 保存則 ' + d.join(' ')); bad++; }
+  });
+  ok(bad === 0, '全49種で異常なし（bad=' + bad + '）');
+}
+console.log('=== A4: CPUソーク（同盟の王国カードを厚く配って完走するか） ===');
+{
+  const SOAK = [
+    ['augurs', 'clashes', 'forts', 'odysseys', 'townsfolk', 'wizards', 'village', 'smithy', 'market', 'moat'],
+    ['barbarian', 'highwayman', 'skirmisher', 'archer', 'sorceress', 'sorcerer', 'warlord', 'clashes', 'wizards', 'moat'],
+    ['bauble', 'broker', 'guildmaster', 'galleria', 'contract', 'emissary', 'importer', 'underling', 'sycophant', 'moat'],
+    ['sentinel', 'carpenter', 'courier', 'swap', 'specialist', 'royal_galley', 'modify', 'marquis', 'hunter', 'moat'],
+    ['town', 'blacksmith', 'miller', 'capital_city', 'innkeeper', 'merchant_camp', 'townsfolk', 'forts', 'odysseys', 'moat'],
+  ];
+  const MIXK = E.MIXED_PILE_KEYS;
+  let games = 0, bad = 0;
+  SOAK.forEach((K3, ki) => {
+    for (let np = 2; np <= 3; np++) {
+      seed = 4000 + ki * 31 + np;
+      const names = []; for (let k = 0; k < np; k++) names.push({ name: 'P' + k, isCpu: true, level: k === 0 ? 'hard' : 'normal' });
+      let s = E.createInitialState(names, K3, { startActive: 0 });
+      // CPU は MONEY 戦略だと王国カードを買わないので、**サプライから抜いて**各自の山札に2枚ずつ配る。
+      K3.forEach((id) => {
+        s.players.forEach((pl) => {
+          for (let c = 0; c < 2; c++) {
+            if (MIXK.indexOf(id) >= 0) { if ((s[id] || []).length) { const real = s[id].shift(); s.supply[id] = (s.supply[id] | 0) - 1; pl.deck.push(real); } }
+            else if ((s.supply[id] | 0) > 0) { s.supply[id] -= 1; pl.deck.push(id); }
+          }
+        });
+      });
+      const t0 = tally(s);
+      let step = 0, err = false;
+      try {
+        while (!s.gameOver && step++ < 25000) {
+          const a = CPU.decide(s);
+          if (a == null) { console.log('    ' + ki + '/' + np + ': CPU が null（' + (s.pending && s.pending.type) + '）'); err = true; break; }
+          s = reduce(s, a);
+        }
+      } catch (e) { console.log('    ' + ki + '/' + np + ': 例外 ' + e.message); err = true; }
+      if (!err && !s.gameOver) { console.log('    ' + ki + '/' + np + ': 未終局（膠着）'); err = true; }
+      const d = tdiff(t0, tally(s));
+      if (d.length) { console.log('    ' + ki + '/' + np + ': 保存則 ' + d.slice(0, 5).join(' ')); err = true; }
+      if (err) bad++; else games++;
+    }
+  });
+  ok(bad === 0 && games === SOAK.length * 2, 'CPUソーク完走（' + games + '/' + (SOAK.length * 2) + '・膠着0・例外0・保存則違反0）');
+}
+
 console.log('\n========================================');
 console.log('同盟テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

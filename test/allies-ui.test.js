@@ -210,6 +210,137 @@ try {
     ok(btn && btn.textContent.indexOf('廃棄しない') >= 0, '何も選んでいない状態では「廃棄しない」が既定（勝手に廃棄しない）');
   }
 
+  /* ===== A4：王国カード49種の全 pending にモーダルと「押せる選択肢」があるか =====
+     強制の窓なら候補が空でないこと／任意の窓なら必ず辞退ボタンがあること。 */
+  console.log('=== A4 の全 pending にモーダルと「押せる選択肢」がある ===');
+  const SPLIT_K = ['augurs', 'clashes', 'forts', 'odysseys', 'townsfolk', 'wizards'];
+  function mkA4(kingdom) {
+    // 連携（生徒＝魔法使いの中）を入れて Ally も出るようにする
+    const k = (kingdom || SPLIT_K).concat(FILLER).slice(0, 10);
+    const s = E.createInitialState(['あなた', '相手'], k, { startActive: 0, ally: 'mountain_folk' });
+    s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+    return s;
+  }
+  const A4_CASES = [
+    ['rotate_pile(自分の山)', (s) => { s.pending = { type: 'rotate_pile', player: 0, pile: 'augurs', source: 'tent' }; }],
+    ['rotate_pile(任意のサプライ山)', (s) => { s.pending = { type: 'rotate_pile', player: 0, any: true, source: 'battle_plan' }; }],
+    ['town_choose', (s) => { s.pending = { type: 'town_choose', player: 0 }; }],
+    ['town_choose(長老つき)', (s) => { s.pending = { type: 'town_choose', player: 0, elder: true }; }],
+    ['blacksmith_choose', (s) => { s.pending = { type: 'blacksmith_choose', player: 0 }; }],
+    ['town_crier_choose', (s) => { s.pending = { type: 'town_crier_choose', player: 0 }; }],
+    ['innkeeper_choose', (s) => { s.pending = { type: 'innkeeper_choose', player: 0 }; }],
+    ['innkeeper_discard', (s) => { s.players[0].hand = ['copper', 'copper', 'copper', 'estate']; s.pending = { type: 'innkeeper_discard', player: 0, n: 3 }; }],
+    ['miller_pick', (s) => { s.pending = { type: 'miller_pick', player: 0, cards: ['copper', 'gold', 'estate'] }; }],
+    ['marquis_discard', (s) => { s.players[0].hand = new Array(12).fill('copper'); s.pending = { type: 'marquis_discard', player: 0 }; }],
+    ['sycophant_discard', (s) => { s.players[0].hand = ['copper', 'copper', 'copper', 'estate']; s.pending = { type: 'sycophant_discard', player: 0 }; }],
+    ['sibyl_place(top)', (s) => { s.players[0].hand = ['copper', 'gold']; s.pending = { type: 'sibyl_place', stage: 'top', player: 0 }; }],
+    ['sibyl_place(bottom)', (s) => { s.players[0].hand = ['copper']; s.pending = { type: 'sibyl_place', stage: 'bottom', player: 0 }; }],
+    ['capital_city(discard)', (s) => { s.players[0].hand = ['copper', 'estate', 'gold']; s.pending = { type: 'capital_city', stage: 'discard', player: 0 }; }],
+    ['capital_city(discard・手札0)', (s) => { s.players[0].hand = []; s.pending = { type: 'capital_city', stage: 'discard', player: 0 }; }],
+    ['capital_city(pay)', (s) => { s.turn.coins = 3; s.pending = { type: 'capital_city', stage: 'pay', player: 0 }; }],
+    ['hunter_pick', (s) => { s.pending = { type: 'hunter_pick', player: 0, stage: 'action', cards: ['village', 'smithy', 'copper'] }; }],
+    ['stronghold_choose', (s) => { s.pending = { type: 'stronghold_choose', player: 0 }; }],
+    ['hill_fort_gain', (s) => { s.pending = { type: 'hill_fort_gain', player: 0 }; }],
+    ['hill_fort_choose', (s) => { s.players[0].discard = ['silver']; s.pending = { type: 'hill_fort_choose', player: 0, card: 'silver', dest: 'discard' }; }],
+    ['allies_topdeck', (s) => { s.players[0].inPlay = ['tent', 'tent']; s.pending = { type: 'allies_topdeck', player: 0, cards: ['tent', 'tent'] }; }],
+    ['sunken_treasure', (s) => { s.turn.phase = 'buy'; s.pending = { type: 'sunken_treasure', player: 0 }; }],
+    ['bauble_choose', (s) => { s.turn.phase = 'buy'; s.pending = { type: 'bauble_choose', player: 0, picked: [] }; }],
+    ['contract_setaside', (s) => { s.players[0].hand = ['village', 'copper']; s.turn.phase = 'buy'; s.pending = { type: 'contract_setaside', player: 0 }; }],
+    ['contract_play', (s) => { s.players[0].contractSetAside = ['village']; s.pending = { type: 'contract_play', player: 0 }; }],
+    ['importer_gain', (s) => { s.pending = { type: 'importer_gain', player: 0 }; }],
+    ['broker_trash', (s) => { s.players[0].hand = ['copper', 'estate']; s.pending = { type: 'broker_trash', player: 0 }; }],
+    ['broker_choose', (s) => { s.pending = { type: 'broker_choose', player: 0, n: 3 }; }],
+    ['student_trash', (s) => { s.players[0].hand = ['copper', 'estate']; s.pending = { type: 'student_trash', player: 0 }; }],
+    ['herb_gatherer_play', (s) => { s.players[0].discard = ['gold', 'estate']; s.pending = { type: 'herb_gatherer_play', player: 0 }; }],
+    ['old_map_discard', (s) => { s.players[0].hand = ['copper', 'estate']; s.pending = { type: 'old_map_discard', player: 0 }; }],
+    ['battle_plan_reveal', (s) => { s.players[0].hand = ['militia', 'copper']; s.pending = { type: 'battle_plan_reveal', player: 0 }; }],
+    ['royal_galley_play', (s) => { s.players[0].hand = ['village', 'copper']; s.pending = { type: 'royal_galley_play', player: 0 }; }],
+    ['conjurer_gain', (s) => { s.pending = { type: 'conjurer_gain', player: 0 }; }],
+    ['specialist_play', (s) => { s.players[0].hand = ['village', 'copper']; s.pending = { type: 'specialist_play', player: 0 }; }],
+    ['specialist_choose', (s) => { s.pending = { type: 'specialist_choose', player: 0, card: 'village' }; }],
+    ['elder_play', (s) => { s.players[0].hand = ['village', 'copper']; s.pending = { type: 'elder_play', player: 0 }; }],
+    ['modify_trash', (s) => { s.players[0].hand = ['copper', 'estate']; s.pending = { type: 'modify_trash', player: 0 }; }],
+    ['modify_choose', (s) => { s.pending = { type: 'modify_choose', player: 0, coin: 3, pot: 0, debt: 0 }; }],
+    ['modify_gain', (s) => { s.pending = { type: 'modify_gain', player: 0, coin: 3, pot: 0, debt: 0 }; }],
+    ['lich_gain', (s) => { s.trash = ['silver', 'estate']; s.pending = { type: 'lich_gain', player: 0 }; }],
+    ['barbarian(react)', (s) => { s.players[0].hand = ['moat']; s.pending = { type: 'barbarian', stage: 'react', player: 0, source: 1, victim: 0, queue: [] }; }],
+    ['barbarian(gain)', (s) => { s.pending = { type: 'barbarian', stage: 'gain', player: 0, source: 1, victim: 0, queue: [], trashed: 'gold' }; }],
+    ['archer(react)', (s) => { s.players[0].hand = ['moat', 'copper', 'copper', 'copper', 'copper']; s.pending = { type: 'archer', stage: 'react', player: 0, source: 1, victim: 0, queue: [] }; }],
+    ['archer(hide)', (s) => { s.players[0].hand = ['copper', 'copper', 'copper', 'gold', 'estate']; s.pending = { type: 'archer', stage: 'hide', player: 0, source: 1, victim: 0, queue: [] }; }],
+    ['archer(pick)', (s) => { s.pending = { type: 'archer', stage: 'pick', player: 0, source: 0, victim: 1, queue: [], revealed: ['copper', 'gold'] }; }],
+    ['sorceress(name)', (s) => { s.pending = { type: 'sorceress', stage: 'name', player: 0 }; }],
+    ['sorceress(react)', (s) => { s.players[0].hand = ['moat']; s.pending = { type: 'sorceress', stage: 'react', player: 0, source: 1, victim: 0, queue: [] }; }],
+    ['sorcerer(react)', (s) => { s.players[0].hand = ['moat']; s.pending = { type: 'sorcerer', stage: 'react', player: 0, source: 1, victim: 0, queue: [] }; }],
+    ['sorcerer(name)', (s) => { s.pending = { type: 'sorcerer', stage: 'name', player: 0, source: 1, victim: 0, queue: [] }; }],
+    ['skirmisher(react)', (s) => { s.players[0].hand = ['moat']; s.pending = { type: 'skirmisher', stage: 'react', player: 0, source: 1, victim: 0, queue: [], skIdx: 0 }; }],
+    ['highwayman(react)', (s) => { s.players[0].hand = ['moat']; s.pending = { type: 'highwayman', stage: 'react', player: 0, source: 1, victim: 0, queue: [], rid: 1 }; }],
+    ['warlord(react)', (s) => { s.players[0].hand = ['moat']; s.pending = { type: 'warlord', stage: 'react', player: 0, source: 1, victim: 0, queue: [], rid: 1 }; }],
+    ['sentinel(trash)', (s) => { s.pending = { type: 'sentinel', stage: 'trash', player: 0, cards: ['copper', 'estate', 'gold', 'silver', 'curse'] }; }],
+    ['sentinel(order)', (s) => { s.pending = { type: 'sentinel', stage: 'order', player: 0, cards: ['copper', 'gold', 'silver'] }; }],
+    ['carpenter_gain', (s) => { s.pending = { type: 'carpenter_gain', player: 0 }; }],
+    ['carpenter_trash', (s) => { s.players[0].hand = ['copper', 'estate']; s.pending = { type: 'carpenter_trash', player: 0 }; }],
+    ['carpenter_upgrade', (s) => { s.pending = { type: 'carpenter_upgrade', player: 0, coin: 2, pot: 0, debt: 0 }; }],
+    ['courier_play', (s) => { s.players[0].discard = ['village', 'gold']; s.pending = { type: 'courier_play', player: 0 }; }],
+    ['swap_return', (s) => { s.players[0].hand = ['village', 'copper']; s.pending = { type: 'swap_return', player: 0 }; }],
+    ['swap_gain', (s) => { s.pending = { type: 'swap_gain', player: 0, returned: 'village' }; }],
+    ['acolyte_trash', (s) => { s.players[0].hand = ['estate', 'copper']; s.pending = { type: 'acolyte_trash', player: 0 }; }],
+    ['acolyte_self', (s) => { s.players[0].inPlay = ['acolyte']; s.pending = { type: 'acolyte_self', player: 0 }; }],
+  ];
+  A4_CASES.forEach(([name, setup]) => {
+    const s = mkA4();
+    setup(s);
+    showAs(s, 0);
+    ok(actionable(), 'A4: ' + name + ' のモーダルに押せる選択肢がある' + (runtimeError ? '（例外: ' + runtimeError + '）' : ''));
+  });
+
+  console.log('=== A4: CPU は全 pending で有効な action を返す（null を返さない） ===');
+  A4_CASES.forEach(([name, setup]) => {
+    const s = mkA4();
+    setup(s);
+    const a = DOM.cpu.decide(s);
+    ok(a && typeof a.type === 'string', 'A4: ' + name + ' で CPU が action を返す');
+  });
+
+  /* ===== A4 の回帰：選択（UI.selection）をターンをまたいで持ち越しても詰まないか =====
+     A3 の敵対レビューで [high] を踏んだ型（同じ pending キーで2回開くと前回のインデックスが残る）。 */
+  console.log('=== A4: 選択の持ち越しで詰まない（takeSelection / pruneSelection） ===');
+  {
+    const s = mkA4();
+    s.players[0].hand = new Array(12).fill('copper');
+    s.pending = { type: 'marquis_discard', player: 0 };
+    showAs(s, 0);
+    // 2枚選んで確定 → UI.selection が空になる
+    const chips = $all('.modal .chip-grid .card');
+    chips[0].dispatchEvent(new win.Event('click', { bubbles: true }));
+    chips[1].dispatchEvent(new win.Event('click', { bubbles: true }));
+    ok(UI.selection.length === 2, '2枚選べた');
+    const confirm = $all('.modal button').find((b) => !b.disabled);
+    if (confirm) confirm.dispatchEvent(new win.Event('click', { bubbles: true }));
+    ok((UI.selection || []).length === 0, '確定すると選択が捨てられる（takeSelection）');
+  }
+  {
+    // 範囲外のインデックスが残っていても描画で間引かれる（pruneSelection）
+    const s = mkA4();
+    s.players[0].hand = ['copper', 'copper', 'copper', 'estate'];
+    s.pending = { type: 'sycophant_discard', player: 0 };
+    UI.view = 'game'; UI.mode = 'local'; UI.localViewer = 0;
+    UI.store = DOM.LocalStore(s);
+    UI.selection = [9, 10, 11];   // 手札4枚に対して範囲外
+    DOM.render();
+    ok(UI.selection.every((i) => i < 4), '範囲外の選択インデックスが間引かれる');
+    ok(actionable(), '範囲外の選択が残っていても操作できる（詰まない）');
+  }
+  {
+    // 長老つきの2択モーダル（modalChoice）も選択を持ち越さない
+    const s = mkA4();
+    s.pending = { type: 'blacksmith_choose', player: 0, elder: true };
+    showAs(s, 0);
+    const opts = $all('.modal button').filter((b) => !b.disabled);
+    ok(opts.length >= 3, '長老つきの3択が全部押せる');
+    opts[0].dispatchEvent(new win.Event('click', { bubbles: true }));
+    ok(UI.selection.length === 1, '1つ目を選ぶと選択に入る');
+  }
+
   console.log('=== 発明家の家族：山の好意トークンと表示コスト ===');
   {
     const s = mk('family_of_inventors');
