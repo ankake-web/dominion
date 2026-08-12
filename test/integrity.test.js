@@ -140,7 +140,10 @@ console.log('=== 資本主義：財宝になるアクションの集合が固定
   //   移動動物園：強制退去(displace)は「それよりコストが最大2コイン高い」＝コスト参照であって +$ ではない。
   //   カタログ文を「コスト+2コイン以下」と書くと機械判定に誤ヒットするので、この2枚を番人として置く。
   ['coppersmith', 'transmogrify', 'inventor', 'village', 'smithy', 'chapel', 'upgrade', 'remake', 'develop', 'highway', 'raze', 'sculptor', 'seer', 'research', 'recruiter',
-    'displace', 'groom', 'destrier', 'wayfarer', 'sanctuary', 'snowy_village']
+    'displace', 'groom', 'destrier', 'wayfarer', 'sanctuary', 'snowy_village',
+    //   同盟：大工/改造も「それよりコストが最大2コイン高い」＝コスト参照であって +$ ではない（同じ罠の番人）。
+    //   薬草集め/堡塁/交換/専門家/侯爵/歩哨/狩人 も +$ を持たない。
+    'carpenter', 'modify', 'herb_gatherer', 'hill_fort', 'swap', 'specialist', 'marquis', 'sentinel', 'hunter']
     .forEach((id) => ok(set.indexOf(id) < 0, '資本主義：' + id + ' は財宝にならない（+$ 記号を持たない）'));
   // 「+$」を持つ代表例は必ず含まれる（機械判定ぶん＋明示リストぶん）
   ['market', 'militia', 'improve', 'festival', 'woodcutter', 'monument', 'poacher', 'steward', 'baron', 'clerk',
@@ -148,13 +151,17 @@ console.log('=== 資本主義：財宝になるアクションの集合が固定
     // 移動動物園（+$ を持つアクション10枚）。門番は持続の「次のターン開始時 +$3」だが カード文に +$ があるので対象。
     'animal_fair', 'bounty_hunter', 'cardinal', 'coven', 'fisherman', 'gatekeeper', 'kiln', 'livery', 'paddock', 'scrap',
     // 夜想曲（+$ を持つアクション6枚）。秘密の洞窟は持続の「次のターン開始時 +$3」だがカード文に +$ があるので対象。
-    'bard', 'conclave', 'sacred_grove', 'secret_cave', 'tormentor', 'tracker']
+    'bard', 'conclave', 'sacred_grove', 'secret_cave', 'tormentor', 'tracker',
+    // 同盟（+$ を持つアクション16枚）。仲買人は「そのコスト$1につき +$1」なので対象／
+    //   触れ役・町・要塞は「選ぶ」の選択肢に +$ があるので対象／天幕・駐屯地・要塞は分割山の中身。
+    'sycophant', 'merchant_camp', 'broker', 'courier', 'town', 'barbarian', 'capital_city', 'galleria',
+    'guildmaster', 'skirmisher', 'archer', 'tent', 'garrison', 'stronghold', 'town_crier', 'elder']
     .forEach((id) => ok(set.indexOf(id) >= 0, '資本主義：' + id + ' は財宝になる（+$ を持つ）'));
   // 夜想曲の夜行カード（守護者 +$1／夜襲 +$3）は**アクションではない**ので資本主義の対象にならない。
   ['guardian', 'raider', 'werewolf', 'vampire', 'changeling', 'monastery', 'night_watchman', 'exorcist', 'devils_workshop']
     .forEach((id) => ok(set.indexOf(id) < 0, '資本主義：' + id + ' は財宝にならない（夜行カード＝アクションではない）'));
   ok(set.every((id) => DOM.isType(id, 'action') && !DOM.isType(id, 'treasure')), '資本主義の対象は「財宝でないアクション」だけ');
-  ok(set.length === 114, '資本主義で財宝になるアクションは114枚（カタログ文を変えたらこの数を見直す。実: ' + set.length + '）');
+  ok(set.length === 130, '資本主義で財宝になるアクションは130枚（カタログ文を変えたらこの数を見直す。実: ' + set.length + '）');
 }
 
 console.log('\n========================================');

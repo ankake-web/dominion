@@ -85,6 +85,19 @@
     // 段階1追加（夜想曲。CARD_SETS 未参照＝実際には獲得されないが GAIN_ORDER=全カードの整合性を満たす）
     'bard', 'blessed_village', 'cemetery', 'changeling', 'cobbler', 'conclave', 'crypt', 'cursed_village', 'den_of_sin', 'devils_workshop', 'druid', 'exorcist', 'faithful_hound', 'fool', 'ghost_town', 'guardian', 'idol', 'leprechaun', 'monastery', 'necromancer', 'night_watchman', 'pixie', 'pooka', 'raider', 'sacred_grove', 'secret_cave', 'shepherd', 'skulk', 'tormentor', 'tracker', 'tragic_hero', 'vampire', 'werewolf',
     'cursed_gold', 'goat', 'haunted_mirror', 'lucky_coin', 'magic_lamp', 'pasture', 'pouch', 'will_o_wisp', 'imp', 'ghost', 'wish', 'bat', 'zombie_apprentice', 'zombie_mason', 'zombie_spy',
+    // 同盟（Allies）＝段階1（CARD_SETS 未参照＝実際には獲得されない。整合性テストの「GAIN_ORDER=全カード」を満たすためだけ）。
+    //   段階2で実プレイ化するときに、実強度順の正しい位置へ並べ直すこと。
+    //   ※分割山6組（augurs/clashes/forts/odysseys/townsfolk/wizards）は山キー、その下の24種は山の中身。
+    'marquis', 'barbarian', 'capital_city', 'contract', 'emissary', 'galleria', 'guildmaster',
+    'highwayman', 'hunter', 'modify', 'skirmisher', 'specialist', 'swap',
+    'broker', 'carpenter', 'courier', 'innkeeper', 'royal_galley', 'town',
+    'importer', 'merchant_camp', 'sentinel', 'underling', 'bauble', 'sycophant',
+    'augurs', 'herb_gatherer', 'acolyte', 'sorceress', 'sibyl',
+    'clashes', 'battle_plan', 'archer', 'warlord', 'territory',
+    'forts', 'tent', 'garrison', 'hill_fort', 'stronghold',
+    'odysseys', 'old_map', 'voyage', 'sunken_treasure', 'distant_shore',
+    'townsfolk', 'town_crier', 'blacksmith', 'miller', 'elder',
+    'wizards', 'student', 'conjurer', 'sorcerer', 'lich',
     'copper', 'curse'];
   // 収穫祭：賞品(Prize)は馬上槍試合でのみ獲得する非サプライ札＝汎用の獲得効果(bestGain/bestGainExact)は
   // 絶対に賞品を選ばない（豊穣の角等で$0賞品を不正獲得しない／賞品を拒否する reducer と噛み合って無限ループしない）。

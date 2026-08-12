@@ -1003,7 +1003,130 @@
                  text: 'あなたのデッキの一番上のカードを廃棄する。そのカードよりコストが最大1コイン多いカード1枚を獲得してもよい。' },
     zombie_spy:        { id: 'zombie_spy', name: 'ゾンビの密偵', cost: 3, types: ['action', 'zombie'],
                  text: '+1 カード\n+1 アクション\nあなたのデッキの一番上のカードを見る。そのカードを捨て札にするか元に戻す。' },
-  };
+
+    /* ---------- 同盟（Allies）王国49種＝非分割25種＋分割山6組（4種×4枚）24種 ＋ 山のプレースホルダ6種 ----------
+       正本＝docs/research/allies_rules.md（多エージェント22体の研究＋敵対検証で確定・現行＝2023年12月 第2刷）。
+       新種別＝連携(liaison)／町民(townsfolk)／卜占官(augur)／衝突(clash)／城砦(fort)／叙事詩(odyssey)／魔法使い(wizard)。
+       ⚠ 分割山は帝国の2段 DOM.SPLIT_PILES では表現できない（4種×4枚＝16枚）。混合山 castles/knights と同型にすること
+         （実カードid配列を state に持ち、一番上だけ購入/獲得可。「循環(Rotate)」で先頭の連続同名ブロックが末尾へ回る）。
+       ⚠ 山のコスト・種別は randomizer（＝最安カード）で固定。「買うときのコスト」＝今の一番上、とは別物。 */
+    // --- 非分割の王国カード25種 ---
+    bauble: { id: 'bauble', name: '道化棒', cost: 2, types: ['treasure', 'liaison'],
+                 text: '次から異なる2つを選ぶ：\n+1 購入／+1 コイン／+1 好意／このターン、あなたがカード1枚を獲得するとき、それを山札の一番上に置いてもよい。' },
+    sycophant: { id: 'sycophant', name: 'ごますり', cost: 2, types: ['action', 'liaison'],
+                 text: '+1 アクション\nカード3枚を捨て札にする。1枚以上を捨て札にした場合、+3 コイン。\n————\nこのカードを獲得または廃棄するとき、+2 好意。' },
+    importer: { id: 'importer', name: '輸入者', cost: 3, types: ['action', 'duration', 'liaison'],
+                 text: 'あなたの次のターンの開始時、コスト5以下のカード1枚を獲得する。\n————\n準備：各プレイヤーは +4 好意 を得る。' },
+    merchant_camp: { id: 'merchant_camp', name: '商人の野営地', cost: 3, types: ['action'],
+                 text: '+2 アクション\n+1 コイン\n————\nあなたがこのカードを場から捨て札にするとき、このカードを山札の一番上に置いてもよい。' },
+    sentinel: { id: 'sentinel', name: '歩哨', cost: 3, types: ['action'],
+                 text: 'あなたの山札の上から5枚のカードを見る。\nその中から最大2枚までを廃棄してもよい。\n残りを好きな順番で山札の上に戻す。' },
+    underling: { id: 'underling', name: '下役', cost: 3, types: ['action', 'liaison'],
+                 text: '+1 カード\n+1 アクション\n+1 好意' },
+    broker: { id: 'broker', name: '仲買人', cost: 4, types: ['action', 'liaison'],
+                 text: '手札1枚を廃棄する。次から1つを選ぶ：\n・そのコスト$1につき +1 カード\n・そのコスト$1につき +1 アクション\n・そのコスト$1につき +1 コイン\n・そのコスト$1につき +1 好意' },
+    carpenter: { id: 'carpenter', name: '大工', cost: 4, types: ['action'],
+                 text: '空のサプライの山が1つもない場合、+1 アクション、およびコスト4以下のカード1枚を獲得する。\nそうでない場合、あなたの手札からカード1枚を廃棄し、それよりコストが最大2コイン高いカード1枚を獲得する。' },
+    courier: { id: 'courier', name: '急使', cost: 4, types: ['action'],
+                 text: '+1 コイン\nあなたの山札の一番上のカードを捨て札にする。あなたの捨て札すべてを見る。その中のアクションカード1枚または財宝カード1枚を使用してもよい。' },
+    innkeeper: { id: 'innkeeper', name: '宿屋の主人', cost: 4, types: ['action'],
+                 text: '+1 アクション\n次から1つを選ぶ：\n・+1 カード\n・+3 カード、その後カード3枚を捨て札にする\n・+5 カード、その後カード6枚を捨て札にする' },
+    royal_galley: { id: 'royal_galley', name: '王家のガレー船', cost: 4, types: ['action', 'duration'],
+                 text: '+1 カード\nあなたの手札から持続ではないアクションカード1枚を使用してもよい。そのカードを脇に置く。そうした場合、あなたの次のターンの開始時、それを使用する。' },
+    town: { id: 'town', name: '町', cost: 4, types: ['action'],
+                 text: '次から1つを選ぶ：\n・+1 カード および +2 アクション\n・+1 購入 および +2 コイン' },
+    barbarian: { id: 'barbarian', name: '蛮族', cost: 5, types: ['action', 'attack'],
+                 text: '+2 コイン\n他のプレイヤーは全員、自分の山札の一番上のカードを廃棄する。そのカードのコストが3以上の場合、そのカードと同じ種別を1つ以上持ち、それよりコストが少ないカード1枚を獲得する。それ以外の場合、呪い1枚を獲得する。' },
+    capital_city: { id: 'capital_city', name: '首都', cost: 5, types: ['action'],
+                 text: '+1 カード\n+2 アクション\nカード2枚を捨て札にしてもよい。そうした場合、+2 コイン。\n2コインを支払ってもよい。そうした場合、+2 カード。' },
+    contract: { id: 'contract', name: '契約書', cost: 5, types: ['treasure', 'duration', 'liaison'], coin: 2,
+                 text: '+2 コイン\n+1 好意\n手札からアクションカード1枚を脇に置いてもよい。そうした場合、あなたの次のターンの開始時に、それを使用する。' },
+    emissary: { id: 'emissary', name: '密使', cost: 5, types: ['action', 'liaison'],
+                 text: '+3 カード\nこのカードで（少なくとも1枚のカードを）シャッフルした場合、+1 アクションと +2 好意。' },
+    galleria: { id: 'galleria', name: 'ガレリア', cost: 5, types: ['action'],
+                 text: '+3 コイン\nこのターン、コスト3または4のカード1枚を獲得するとき、+1 購入。' },
+    guildmaster: { id: 'guildmaster', name: 'ギルドマスター', cost: 5, types: ['action', 'liaison'],
+                 text: '+3 コイン\nこのターン、カード1枚を獲得するとき、+1 好意。' },
+    highwayman: { id: 'highwayman', name: '追いはぎ', cost: 5, types: ['action', 'duration', 'attack'],
+                 text: 'あなたの次のターンの開始時、このカードを捨て札にし、+3 カード。\nそれまでは、他のプレイヤーが各ターンに最初に使用する財宝は、何もしない。' },
+    hunter: { id: 'hunter', name: '狩人', cost: 5, types: ['action'],
+                 text: '+1 アクション\nあなたの山札の上から3枚を公開する。それらのカードからアクション1枚と財宝1枚と勝利点1枚をあなたの手札に加える。残りを捨て札にする。' },
+    modify: { id: 'modify', name: '改造', cost: 5, types: ['action'],
+                 text: 'あなたの手札から1枚を廃棄する。次から1つを選ぶ：\n・+1 カード と +1 アクション\n・廃棄したカードよりコストが最大2コイン高いカード1枚を獲得する' },
+    skirmisher: { id: 'skirmisher', name: '散兵', cost: 5, types: ['action', 'attack'],
+                 text: '+1 カード\n+1 アクション\n+1 コイン\nこのターン、あなたがアタックカード1枚を獲得するとき、他のプレイヤーは全員、手札が3枚になるように捨て札にする。' },
+    specialist: { id: 'specialist', name: '専門家', cost: 5, types: ['action'],
+                 text: 'あなたの手札からアクションカード1枚、または財宝カード1枚を使用してもよい。次から1つを選ぶ：\n・そのカードを再度使用する\n・そのカードと同じカード1枚を獲得する' },
+    swap: { id: 'swap', name: '交換', cost: 5, types: ['action'],
+                 text: '+1 カード\n+1 アクション\nあなたの手札からアクションカード1枚を、その山に戻してもよい。そうした場合、コスト5以下の、名前の異なるアクションカード1枚を獲得し、手札に加える。' },
+    marquis: { id: 'marquis', name: '侯爵', cost: 6, types: ['action'],
+                 text: '+1 購入\nあなたの手札1枚につき +1 カード。\n手札が10枚になるように捨て札にする。' },
+    // --- 卜占官（augurs）の分割山＝薬草集め$3→侍祭$4→女魔導士$5→女予言者$6 ---
+    augurs: { id: 'augurs', name: '卜占官', cost: 3, types: ['action', 'augur'],
+                 text: '（卜占官の山）\n薬草集め・侍祭・女魔導士・女予言者 を各4枚、この順（安い順）に積んだ16枚の分割山。一番上の1枚だけ購入・獲得できる。' },
+    herb_gatherer: { id: 'herb_gatherer', name: '薬草集め', cost: 3, types: ['action', 'augur'],
+                 text: '+1 購入\nあなたの山札を捨て札に置く。捨て札置き場を見て、その中から財宝カード1枚を使用してもよい。\nあなたは卜占官を循環させてもよい。' },
+    acolyte: { id: 'acolyte', name: '侍祭', cost: 4, types: ['action', 'augur'],
+                 text: 'あなたの手札からアクションカードまたは勝利点カード1枚を廃棄してもよい。そうした場合、金貨1枚を獲得する。\nあなたはこれを廃棄してもよい。そうした場合、卜占官1枚を獲得する。' },
+    sorceress: { id: 'sorceress', name: '女魔導士', cost: 5, types: ['action', 'attack', 'augur'],
+                 text: '+1 アクション\nカード1枚を指定する。あなたの山札の一番上のカードを公開し、あなたの手札に加える。\nそれが指定したカードの場合、他のプレイヤーは全員、呪い1枚を獲得する。' },
+    sibyl: { id: 'sibyl', name: '女予言者', cost: 6, types: ['action', 'augur'],
+                 text: '+4 カード\n+1 アクション\nあなたの手札からカード1枚を山札の一番上に置き、もう1枚を山札の一番下に置く。' },
+    // --- 衝突（clashes）の分割山＝戦闘計画$3→射手$4→将軍$5→領土$6 ---
+    clashes: { id: 'clashes', name: '衝突', cost: 3, types: ['action', 'clash'],
+                 text: '（衝突の山）\n戦闘計画・射手・将軍・領土 を各4枚、この順（安い順）に積んだ16枚の分割山。一番上の1枚だけ購入・獲得できる。' },
+    battle_plan: { id: 'battle_plan', name: '戦闘計画', cost: 3, types: ['action', 'clash'],
+                 text: '+1 カード\n+1 アクション\nあなたの手札からアタックカード1枚を公開してもよい。そうした場合、+1 カード。\nサプライのいずれかの山を循環させてもよい。' },
+    archer: { id: 'archer', name: '射手', cost: 4, types: ['action', 'attack', 'clash'],
+                 text: '+2 コイン\n手札が5枚以上の他のプレイヤーは全員、1枚を除きすべてのカードを公開し、その中の1枚をあなたが選んで捨て札にする。' },
+    warlord: { id: 'warlord', name: '将軍', cost: 5, types: ['action', 'duration', 'attack', 'clash'],
+                 text: '+1 アクション\nあなたの次のターンの開始時、+2 カード。\nそれまで、他のプレイヤーは全員、場に2枚以上同じカードがあるアクションカードを自分の手札から使用できない。' },
+    territory: { id: 'territory', name: '領土', cost: 6, types: ['victory', 'clash'],
+                 text: 'あなたが持つ異なる名前の勝利点カード1種類につき 1 勝利点。\n————\nあなたがこれを獲得するとき、サプライの空の山1つにつき金貨1枚を獲得する。' },
+    // --- 城砦（forts）の分割山＝天幕$3→駐屯地$4→堡塁$5→要塞$6 ---
+    forts: { id: 'forts', name: '城砦', cost: 3, types: ['action', 'fort'],
+                 text: '（城砦の山）\n天幕・駐屯地・堡塁・要塞 を各4枚、この順（安い順）に積んだ16枚の分割山。一番上の1枚だけ購入・獲得できる。' },
+    tent: { id: 'tent', name: '天幕', cost: 3, types: ['action', 'fort'],
+                 text: '+2 コイン\nあなたは城砦を循環させてもよい。\n————\nあなたがこのカードを場から捨て札にするとき、このカードを山札の一番上に置いてもよい。' },
+    garrison: { id: 'garrison', name: '駐屯地', cost: 4, types: ['action', 'duration', 'fort'],
+                 text: '+2 コイン\nこのターン、あなたがカード1枚を獲得するとき、ここにトークン1枚を加える。\nあなたの次のターンの開始時、この上のトークンをすべて取り除き、取り除いたトークン1枚につき +1 カード。' },
+    hill_fort: { id: 'hill_fort', name: '堡塁', cost: 5, types: ['action', 'fort'],
+                 text: 'コスト4以下のカード1枚を獲得する。次から1つを選ぶ：\n・それをあなたの手札に加える\n・+1 カード と +1 アクション' },
+    stronghold: { id: 'stronghold', name: '要塞', cost: 6, types: ['action', 'victory', 'duration', 'fort'], vp: 2,
+                 text: '次から1つを選ぶ：\n・+3 コイン\n・あなたの次のターンの開始時、+3 カード\n————\n2 勝利点' },
+    // --- 叙事詩（odysseys）の分割山＝古地図$3→航海$4→沈没船の財宝$5→遠い海岸$6 ---
+    odysseys: { id: 'odysseys', name: '叙事詩', cost: 3, types: ['action', 'odyssey'],
+                 text: '（叙事詩の山）\n古地図・航海・沈没船の財宝・遠い海岸 を各4枚、この順（安い順）に積んだ16枚の分割山。一番上の1枚だけ購入・獲得できる。' },
+    old_map: { id: 'old_map', name: '古地図', cost: 3, types: ['action', 'odyssey'],
+                 text: '+1 カード\n+1 アクション\nカード1枚を捨て札にする。\n+1 カード\nあなたは叙事詩を循環させてもよい。' },
+    voyage: { id: 'voyage', name: '航海', cost: 4, types: ['action', 'duration', 'odyssey'],
+                 text: '+1 アクション\nこのターンの後に追加の1ターンを得る（ただし、連続3ターンとなる場合は得られない）。そのターン、あなたが手札から使用できるカードは3枚までである。' },
+    sunken_treasure: { id: 'sunken_treasure', name: '沈没船の財宝', cost: 5, types: ['treasure', 'odyssey'], coin: 0,
+                 text: 'あなたが同じカードを場に出していないアクションカード1枚を獲得する。' },
+    distant_shore: { id: 'distant_shore', name: '遠い海岸', cost: 6, types: ['action', 'victory', 'odyssey'], vp: 2,
+                 text: '+2 カード\n+1 アクション\n屋敷1枚を獲得する。\n————\n2 勝利点' },
+    // --- 町民（townsfolk）の分割山＝触れ役$2→蹄鉄工$3→粉屋$4→長老$5 ---
+    townsfolk: { id: 'townsfolk', name: '町民', cost: 2, types: ['action', 'townsfolk'],
+                 text: '（町民の山）\n触れ役・蹄鉄工・粉屋・長老 を各4枚、この順（安い順）に積んだ16枚の分割山。一番上の1枚だけ購入・獲得できる。' },
+    town_crier: { id: 'town_crier', name: '触れ役', cost: 2, types: ['action', 'townsfolk'],
+                 text: '次から1つを選ぶ：\n・+2 コイン\n・銀貨1枚を獲得する\n・+1 カード と +1 アクション\nあなたは町民を循環させてもよい。' },
+    blacksmith: { id: 'blacksmith', name: '蹄鉄工', cost: 3, types: ['action', 'townsfolk'],
+                 text: '次から1つを選ぶ：\n・手札が6枚になるまで引く\n・+2 カード\n・+1 カード と +1 アクション' },
+    miller: { id: 'miller', name: '粉屋', cost: 4, types: ['action', 'townsfolk'],
+                 text: '+1 アクション\n山札の上から4枚を見る。その中の1枚を手札に加え、残りを捨て札にする。' },
+    elder: { id: 'elder', name: '長老', cost: 5, types: ['action', 'townsfolk'],
+                 text: '+2 コイン\n手札のアクションカード1枚を使用してもよい。それによりこのターンに（「選ぶ」という指示で）能力を選ぶとき、追加で異なるもの1つを選んでもよい。' },
+    // --- 魔法使い（wizards）の分割山＝生徒$3→霊術師$4→魔導士$5→リッチ$6 ---
+    wizards: { id: 'wizards', name: '魔法使い', cost: 3, types: ['action', 'wizard'],
+                 text: '（魔法使いの山）\n生徒・霊術師・魔導士・リッチ を各4枚、この順（安い順）に積んだ16枚の分割山。一番上の1枚だけ購入・獲得できる。' },
+    student: { id: 'student', name: '生徒', cost: 3, types: ['action', 'liaison', 'wizard'],
+                 text: '+1 アクション\nあなたは魔法使いを循環させてもよい。\n手札1枚を廃棄する。それが財宝カードの場合、+1 好意、そしてこれを山札の上に置く。' },
+    conjurer: { id: 'conjurer', name: '霊術師', cost: 4, types: ['action', 'duration', 'wizard'],
+                 text: 'コスト4以下のカード1枚を獲得する。\nあなたの次のターンの開始時、これを手札に加える。' },
+    sorcerer: { id: 'sorcerer', name: '魔導士', cost: 5, types: ['action', 'attack', 'wizard'],
+                 text: '+1 カード\n+1 アクション\n他のプレイヤーは全員、カード名を1つ指定し、その後に自分の山札の一番上のカードを公開する。それが指定したカードでない場合、そのプレイヤーは呪い1枚を獲得する。' },
+    lich: { id: 'lich', name: 'リッチ', cost: 6, types: ['action', 'wizard'],
+                 text: '+6 カード\n+2 アクション\n1ターンスキップする。\n————\nあなたがこれを廃棄するとき、これを捨て札にし、廃棄置き場からこれよりコストの低いカード1枚を獲得する。' },  };
 
   /* ---------- 王国カードのセット ----------
      第二版をデフォルトに。第二版で廃止された初版カードは実装を残し「初版」セットで遊べる。 */
@@ -1174,6 +1297,32 @@
   DOM.POOLS.nocturne_np = ['will_o_wisp', 'imp', 'ghost', 'wish', 'bat'];
   // ゾンビ3種＝ネクロマンサーを使うゲームの準備で廃棄置き場に置く（山ではない）。
   DOM.POOLS.zombies = ['zombie_apprentice', 'zombie_mason', 'zombie_spy'];
+
+  /* 同盟（Allies）＝段階1（画像・カタログのみ。CARD_SETS からは未参照＝実プレイには出ない）。
+     正本＝docs/research/allies_rules.md。王国の「山」は31個＝非分割25＋分割山6。
+     DOM.POOLS.allies が抽選/闇市場の母集団になる枠で、**分割山の中身24種は山にならない**ので別プールにする
+     （混合山 knights/ruins/castles と同じ扱い＝engine の mixedContents で闇市場からも除外する）。 */
+  DOM.POOLS.allies = ['bauble', 'sycophant', 'importer', 'merchant_camp', 'sentinel', 'underling',
+    'broker', 'carpenter', 'courier', 'innkeeper', 'royal_galley', 'town',
+    'barbarian', 'capital_city', 'contract', 'emissary', 'galleria', 'guildmaster',
+    'highwayman', 'hunter', 'modify', 'skirmisher', 'specialist', 'swap', 'marquis',
+    'augurs', 'clashes', 'forts', 'odysseys', 'townsfolk', 'wizards'];
+  // 分割山6組の中身（各4種×4枚＝16枚。一番上の1枚だけ購入/獲得できる）。**山の並び順そのもの**なので順序に意味がある。
+  DOM.ALLIES_SPLIT_PILES = {
+    augurs:    ['herb_gatherer', 'acolyte', 'sorceress', 'sibyl'],
+    clashes:   ['battle_plan', 'archer', 'warlord', 'territory'],
+    forts:     ['tent', 'garrison', 'hill_fort', 'stronghold'],
+    odysseys:  ['old_map', 'voyage', 'sunken_treasure', 'distant_shore'],
+    townsfolk: ['town_crier', 'blacksmith', 'miller', 'elder'],
+    wizards:   ['student', 'conjurer', 'sorcerer', 'lich'],
+  };
+  DOM.POOLS.allies_split = [].concat.apply([], Object.keys(DOM.ALLIES_SPLIT_PILES).map((k) => DOM.ALLIES_SPLIT_PILES[k]));
+  // 連携(Liaison)＝これが王国に1枚でもあると同盟(Ally)カードが1枚配られ、全員が好意を得る。
+  //   ⚠ 生徒(student) は魔法使い(wizards)の分割山の中に居る＝**山IDだけを見る判定では取りこぼす**。
+  DOM.ALLIES_LIAISONS = ['bauble', 'sycophant', 'importer', 'student', 'underling', 'broker', 'contract', 'emissary', 'guildmaster'];
+  // 段階1（効果が未実装）のプール＝闇市場デッキに入れない（買っても何も起きない死に札になるため）。
+  //   同盟を段階2（実プレイ）にするときに、この配列から 'allies' を消す。
+  DOM.STAGE1_POOLS = ['allies'];
   // 移動動物園の固定10種（自作 showcase）。追放（ラクダの隊列）・馬（そり/騎兵隊/馬丁/貸し馬屋）・
   //   持続（艀/村有緑地）・アタック（魔女の集会）・獲得に反応するリアクション（牧羊犬/村有緑地）を一通り味わえる。
   //   コスト分布＝$2×1／$3×3／$4×3／$5×3。
@@ -1792,6 +1941,57 @@
       text: '-4 勝利点' },
     lost_in_the_woods: { name: '森の迷子', nameEn: 'Lost in the Woods', kind: 'state', expansion: 'nocturne', cost: 0, debt: 0,
       text: 'あなたのターンの開始時、あなたは手札1枚を捨て札にして祝福を1つ受けてもよい。' },
+
+    /* ---------- 同盟（Allies）＝同盟(Ally)カード23種（横型・1ゲームに1枚だけ使う） ----------
+       王国に連携(Liaison)カードが1枚でもあるとき、23枚から1枚だけ無作為に決まる（横型の合計2枚制限には数えない）。
+       ⚠ 連携は分割山の中にも居る（生徒＝魔法使いの山）＝山IDだけ見ると Ally が出ないゲームになる。
+       ⚠ Ally が起こす攻撃は「アタックカードのプレイ」ではない＝堀で防げない（ATTACKS に登録してはいけない）。 */
+    architects_guild: { name: '建築家ギルド', nameEn: 'Architects\' Guild', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: 'あなたがカード1枚を獲得するとき、好意2を使ってもよい。\nそうした場合、そのカードよりコストの低い、勝利点でないカード1枚を獲得する。' },
+    band_of_nomads: { name: '遊牧民団', nameEn: 'Band of Nomads', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: 'あなたがコスト3コイン以上のカード1枚を獲得するとき、好意1を使ってもよい。\nそうした場合、+1 カード、または +1 アクション、または +1 購入。' },
+    cave_dwellers: { name: '穴居民', nameEn: 'Cave Dwellers', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: 'あなたのターンの開始時、好意1を使ってもよい。\nそうした場合、カード1枚を捨て札にして、カード1枚を引く。これを好きな回数繰り返す。' },
+    circle_of_witches: { name: '魔女の輪', nameEn: 'Circle of Witches', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: '連携カード1枚を使用した後、あなたは好意3を使ってもよい。\nそうした場合、他のプレイヤーは全員、呪い1枚を獲得する。' },
+    city_state: { name: '都市国家', nameEn: 'City-state', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: 'あなたが自分のターンにアクションカード1枚を獲得するとき、好意2を使ってもよい。\nそうした場合、それを使用する。' },
+    coastal_haven: { name: '沿岸の避難港', nameEn: 'Coastal Haven', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: 'クリーンアップにあなたの手札を捨て札にするとき、好きな数の好意を使ってもよい。\nそうした場合、使った好意と同じ枚数の手札を捨て札にせずに保持する（その後カード5枚を引く）。' },
+    crafters_guild: { name: '工芸家ギルド', nameEn: 'Crafters\' Guild', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: 'あなたのターンの開始時、好意2を使ってもよい。\nそうした場合、コスト4コイン以下のカード1枚を獲得し、あなたの山札の上に置く。' },
+    desert_guides: { name: '砂漠の案内人', nameEn: 'Desert Guides', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: 'あなたのターンの開始時、好意1を使ってもよい。\nそうした場合、あなたの手札をすべて捨て札にして、カード5枚を引く。これを好きな回数繰り返す。' },
+    family_of_inventors: { name: '発明家の家族', nameEn: 'Family of Inventors', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: 'あなたの購入フェイズの開始時、あなたの好意トークン1枚を、サプライの勝利点でない山1つの上に置いてもよい。\nカードのコストは、そのカードの山の上にある好意トークン1枚につき1コイン少なくなる。' },
+    fellowship_of_scribes: { name: '写本士の仲間たち', nameEn: 'Fellowship of Scribes', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: 'アクションカード1枚を使用した後、あなたの手札が4枚以下の場合、好意1を使ってもよい。\nそうした場合、+1 カード。' },
+    forest_dwellers: { name: '森の居住者', nameEn: 'Forest Dwellers', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: 'あなたのターンの開始時、好意1を使ってもよい。\nそうした場合、あなたの山札の上から3枚を見て、その中の好きな枚数を捨て札にし、残りを好きな順番で山札の上に戻す。' },
+    gang_of_pickpockets: { name: 'すり師団', nameEn: 'Gang of Pickpockets', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: 'あなたのターンの開始時、好意1を使わないかぎり、手札が4枚になるように捨て札にする。' },
+    island_folk: { name: '島民', nameEn: 'Island Folk', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: 'あなたのターンの終了時、好意5を使ってもよい。\nそうした場合、このターンの後に追加のターンを1回行う（3ターン連続にはできない）。' },
+    league_of_bankers: { name: '銀行家連盟', nameEn: 'League of Bankers', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: 'あなたの購入フェイズの開始時、あなたが持つ好意4につき +1 コイン（端数切捨て）。' },
+    league_of_shopkeepers: { name: '小売店主連盟', nameEn: 'League of Shopkeepers', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: '連携カード1枚を使用した後、あなたが好意を5以上持っている場合は +1 コイン、好意を10以上持っている場合は +1 アクション、+1 購入。' },
+    market_towns: { name: '市場の町', nameEn: 'Market Towns', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: 'あなたの購入フェイズの開始時、好意1を使ってもよい。そうした場合、あなたの手札からアクションカード1枚を使用する。\nこれを好きな回数繰り返す。' },
+    mountain_folk: { name: '山の民', nameEn: 'Mountain Folk', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: 'あなたのターンの開始時、好意5を使ってもよい。そうした場合、+3 カード。' },
+    order_of_astrologers: { name: '占星術師団', nameEn: 'Order of Astrologers', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: 'あなたがシャッフルするとき、あなたが使う好意1につきカード1枚を取り出してもよい。\nそうした場合、そのカードをシャッフルした束の一番上に置く。' },
+    order_of_masons: { name: 'メイソン団', nameEn: 'Order of Masons', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: 'あなたがシャッフルするとき、あなたが使う好意1につきカード2枚までを取り出してもよい。\nそうした場合、そのカードを捨て札置き場に置く。' },
+    peaceful_cult: { name: '平和的教団', nameEn: 'Peaceful Cult', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: 'あなたの購入フェイズの開始時、好きな数の好意を使ってもよい。\nそうした場合、あなたの手札から使った好意と同じ枚数のカードを廃棄する。' },
+    plateau_shepherds: { name: '高原の羊飼い', nameEn: 'Plateau Shepherds', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: '得点計算時、あなたの持つ好意1とコスト2コインのカード1枚のペア1組につき 2 勝利点。' },
+    trappers_lodge: { name: '罠師の小屋', nameEn: 'Trappers\' Lodge', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: 'あなたがカード1枚を獲得するとき、好意1を使ってもよい。そうした場合、そのカードを山札の上に置く。' },
+    woodworkers_guild: { name: '木工ギルド', nameEn: 'Woodworkers\' Guild', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
+      text: 'あなたの購入フェイズの開始時、好意1を使ってもよい。そうした場合、あなたの手札からアクションカード1枚を廃棄する。\n廃棄したなら、アクションカード1枚を獲得する。' },
   };
   // 帝国ランドマーク21種（抽選元）。イベントは未実装（docs/research/landscape_cards.md §2 にデータあり）。
   DOM.LANDMARKS_EMPIRES = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'landmark');
@@ -1809,6 +2009,9 @@
   DOM.HEXES_NOCTURNE = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'hex');
   // 夜想曲：状態5種（プレイヤーが「取る」横型。獲得ではない）。
   DOM.STATES_NOCTURNE = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'state');
+  // 同盟：同盟(Ally)カード23種（抽選元）。**王国に連携(Liaison)が1枚でもあるとき1枚だけ**選ばれる。
+  //   他の横型（イベント/ランドマーク/プロジェクト/習性）の「合計2枚まで」には数えない＝別デッキ。
+  DOM.ALLIES_ALLY = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'ally');
   // ルネサンス プロジェクト20種（抽選元）。買う横型＝BUY_PROJECT で発火（1人2つまで・同じものは1回だけ）。
   DOM.PROJECTS_RENAISSANCE = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'project' && DOM.LANDSCAPES[id].expansion === 'renaissance');
   // ルネサンス アーティファクト5種（抽選しない＝付与カードが王国にあれば自動で盤面に出る）。

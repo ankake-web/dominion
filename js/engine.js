@@ -858,9 +858,14 @@
       const universe = Array.from(new Set([].concat.apply([], Object.values(DOM.POOLS || {}))));
       const inSupply = (id) => Object.prototype.hasOwnProperty.call(supply, id);
       // 混合山の「中身」（騎士/廃墟/城の実カード）は単体の王国カードではない＝闇市場デッキに入れない（山の一番上でのみ得る）。
-      const mixedContents = new Set([].concat(DOM.POOLS.knights || [], DOM.POOLS.ruins || [], DOM.POOLS.castles || []));
+      //   同盟の分割山6組の中身24種も同じ（4種×4枚の山の一番上でのみ購入/獲得できる）。
+      const mixedContents = new Set([].concat(DOM.POOLS.knights || [], DOM.POOLS.ruins || [], DOM.POOLS.castles || [],
+        DOM.POOLS.allies_split || []));
+      // 段階1（カタログと画像だけで効果が未実装）のプールは闇市場デッキに入れない
+      //   ＝買っても何も起きない死に札になるため。実プレイ化（段階2）のときに DOM.STAGE1_POOLS から外す。
+      const stage1 = new Set([].concat.apply([], (DOM.STAGE1_POOLS || []).map((k) => DOM.POOLS[k] || [])));
       // 収穫祭：賞品(NON_SUPPLY)は王国カードではない＝闇市場デッキに絶対に入れない（$0で買える不正防止）。
-      blackMarket = shuffle(universe.filter((id) => DOM.CARDS[id] && id !== 'black_market' && !NON_SUPPLY.has(id) && !inSupply(id) && !mixedContents.has(id)));
+      blackMarket = shuffle(universe.filter((id) => DOM.CARDS[id] && id !== 'black_market' && !NON_SUPPLY.has(id) && !inSupply(id) && !mixedContents.has(id) && !stage1.has(id)));
     }
 
     // 帝国：横型ランドスケープ（ランドマーク）の準備。opts.landmarks で受け取る（DOM.LANDSCAPES にある id のみ）。

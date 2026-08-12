@@ -907,6 +907,9 @@
     addC('家宝（夜想曲・開始デッキの銅貨と置き換わる）', P.heirlooms ? byCost(P.heirlooms) : null);
     addC('非サプライ（夜想曲：精霊・願い・コウモリ）', P.nocturne_np ? byCost(P.nocturne_np) : null);
     addC('ゾンビ（夜想曲・準備で廃棄置き場に置く）', P.zombies ? byCost(P.zombies) : null);
+    // 同盟：分割山6組は「山」（augurs 等）と「中身24種」を分けて出す（中身は単体では買えない＝山の一番上のみ）。
+    addC('王国カード（同盟）', P.allies ? byCost(P.allies) : null);
+    addC('分割山の中身（同盟・4種×4枚。一番上の1枚だけ購入できる）', P.allies_split ? P.allies_split.slice() : null);
     addL('ランドマーク（帝国・横型）', DOM.LANDMARKS_EMPIRES);
     addL('イベント（帝国・横型・購入フェイズに買う）', DOM.EVENTS_EMPIRES);
     addL('イベント（冒険・横型・購入フェイズに買う）', DOM.EVENTS_ADVENTURES);
@@ -915,6 +918,7 @@
     addL('祝福（夜想曲・横型・幸運カードから受ける）', DOM.BOONS_NOCTURNE);
     addL('呪詛（夜想曲・横型・不運カードから受ける）', DOM.HEXES_NOCTURNE);
     addL('状態（夜想曲・横型・プレイヤーが取る）', DOM.STATES_NOCTURNE);
+    addL('同盟（同盟拡張・横型・1ゲームに1枚だけ／好意トークンの使い道を決める）', DOM.ALLIES_ALLY);
     addL('プロジェクト（ルネサンス・横型・1人2つまで）', DOM.PROJECTS_RENAISSANCE);
     addL('アーティファクト（ルネサンス・横型・1人だけが持てる）', DOM.ARTIFACTS_RENAISSANCE);
     addC('プロモカード', P.promo ? byCost(P.promo) : null);
