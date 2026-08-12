@@ -341,7 +341,7 @@ engine 内に散らばっていた `['ruins','knights','castles']` のリテラ�
 
 ---
 
-## 段階2 **A4＝王国カード49種＝実装完了**（2026-08-12・未push・`sw.js` v67）
+## 段階2 **A4＝王国カード49種＝完了・push済**（2026-08-12・`c0bddab..8a042d7`／8コミット・`sw.js` v67・本番反映を実機確認）
 
 **同盟の王国カード49種（非分割25＋分割山6組×4種24）をすべて実装した**。これで **同盟72種のうち Ally 23 と王国 49 の
 両方が動く**＝残るは **A5＝CARD_SET 昇格**（`DOM.STAGE1_POOLS` から `'allies'` を外す）と**絵72枚の回収**だけ。
@@ -483,7 +483,20 @@ engine 内に散らばっていた `['ruins','knights','castles']` のリテラ�
   **A4 の pending 52種すべてに到達**（Ally 23種もすべて出現）。
 - `verify:e2e` 9/9（webp 505/0）／`verify:visual` 320〜768px 全幅はみ出し0。`sw.js` v66→**v67**。
 - **同盟そのものはまだ本番に出ない**（CARD_SETS 未参照）。ただし上記 **9番は出荷済みの暗黒時代の挙動が変わる**
-  （城塞を廃棄したときに青空市場が反応するようになる＝公式へ寄せる方向）。
+  （城塞を廃棄したときに青空市場が反応するようになる＝公式へ寄せる方向。
+   `DOM.KINGDOM_DARKAGES` は城塞と青空市場を両方含むので**今日から効く**）。
+
+### ✅ push＝完了（2026-08-12・`c0bddab..8a042d7`／8コミット）＝本番反映を実機確認
+- **GitHub Pages**（Deploy ワークフロー success）：`sw.js` **v67**／
+  `js/engine.js`・`js/cpu.js`・`js/ui.js`・`js/cards.js` が**ローカルと sha1 完全一致**（改行を正規化して比較）／
+  本番ファイルに A4 のマーカー（`canPlayHandCard`・`trashCardsTogether`・`lichTrashTargets`・`warlordBlocks`・
+  `ELDER_CHOICE_ORDER`・`skipTurns`・`voyageTurn`・`garrisonTokens`）を確認／
+  `DOM.STAGE1_POOLS = ['allies']` のまま＝**同盟は実プレイにも闇市場にも出ない**。
+- **Render（オンライン）**：`GET /status` = `{"persist":true,"rooms":0}`。実 ws（`/ws`＋Origin 必須・`t:` キー・
+  部屋作成は `create`→`joined`、開始は `setCpu`/`setConfig`→`start`、盤面は `started`/`state`）で
+  `darkages` 対戦を開始し、**配信 state の `turn` に A4 で足した8フィールドが 8/8 揃っている**ことを確認
+  （`guildmasters` `galleria` `baubleTopdeck` `skirmishers` `garrisonTokens` `topdeckDone` `voyageTurn` `handPlays`）
+  ＝**サーバが新しい engine で動いている決定的な証拠**。`state.ally` は null・好意 0/0（同盟は登場しない）。
 
 ### 既知の許容簡略化（意図的・A4）
 - **長老で追加選択できるのは同盟の9種のみ**（町／蹄鉄工／触れ役／宿屋の主人／仲買人／要塞／堡塁／改造／専門家）。
@@ -1507,9 +1520,9 @@ mix を解禁すると、PROGRESS §6 / §0-10 に**「どの出荷 CARD_SET で
 ③**A1**（好意トークンと Ally 選定）④**A2**（分割山6組＝混合山モデル＋循環 Rotate）
 ⑤**A2b**（「カードの種別」を山の一番上で判定する横断修正）⑥**A3＝同盟(Ally)カード23種**
 ＝ここまで **push 済**（`sw.js` v66・本番反映を実機確認）。
-⑦**A4＝王国カード49種＝実装完了・未push**（`sw.js` **v67**）。
+⑦**A4＝王国カード49種＝完了・push済**（`sw.js` **v67**・本番反映を実機確認）。
 ＝**これで同盟72種（Ally 23＋王国 49）がすべて動く**。残るは **A5＝CARD_SET 昇格**（`js/cards.js` の
-`DOM.STAGE1_POOLS` から `'allies'` を外す）と **絵72枚の回収**だけ。
+`DOM.STAGE1_POOLS` から `'allies'` を外す）と **絵72枚の回収**だけ。**作業ツリーはクリーン／未pushなし。**
 **同盟はまだ CARD_SETS 未参照＝実プレイには出ない**（闇市場にも出ないよう `DOM.STAGE1_POOLS` で塞いである）。
 `npm test` **全40スイート緑**（整合性4763・不変条件12・**同盟429件**＋**同盟UI 231件**）／
 `verify:e2e` 9/9（webp 505/0）／`verify:visual` はみ出し0。
@@ -2376,7 +2389,7 @@ CPU序列 強vs弱100/強vs普通64/普通vs弱95）を確認**してから着�
 - **海辺の簡略化2点は本格実装済み**：封鎖の堀免疫窓・海賊の財宝獲得リアクション。on-gain対話は `!pending && _gainDepth===1` ゲートで安全側。
 
 ## 5. 未完了タスク（優先順。次セッションは 1. から）
-1. **【最優先】同盟（Allies）の段階2＝残りは A5 だけ**（A1/A2/A2b/A3 は push 済／**A4 は完了・未push**＝§0-29）。
+1. **【最優先】同盟（Allies）の段階2＝残りは A5 だけ**（A1/A2/A2b/A3/**A4 とも push 済**＝§0-29）。
    - ~~**A3＝Ally（同盟カード）23種**~~ ✅完了（盤面表示＋好意の使用窓＋全効果＋敵対レビュー7件の修正）。
    - ~~**A4＝王国カード49種**~~ ✅完了（5バッチ＋多エージェント敵対レビュー確定12件の修正）。詳細は §0-29 の A4 節。
    - **A5＝CARD_SET 昇格**（この順）：
