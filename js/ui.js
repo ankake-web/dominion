@@ -1659,6 +1659,11 @@
   function onHandTap(state, id, interactive) {
     const c = DOM.CARDS[id];
     const t = state.turn;
+    /* 同盟：航海（Voyage）の追加ターンは**手札から3枚まで**しか使えない（engine が拒否する手をUIに出さない）。 */
+    if (interactive && DOM.engine.canPlayFromHand && !DOM.engine.canPlayFromHand(state, t.active)) {
+      showSheet(id, null);
+      return;
+    }
     if (interactive && !state.pending && t.phase === 'action' && (c.types.includes('action') || inheritedEstate(state, id)) && t.actions > 0) {
       // 移動動物園：習性（Way）が採用されていれば「記載効果の代わりに習性で使う」ボタンも並べる。
       const wayList = (state.ways || []).filter((w) => (DOM.LANDSCAPES || {})[w]);
@@ -1750,7 +1755,9 @@
     const hp = (t.possessedBy != null && t.possessedBy === viewer) ? state.players[t.active] : state.players[viewer];
     // 公式：一度でも購入（カード/イベント）したら、そのターンはもう財宝を出せない（engine が拒否する＝ボタンも無効化）。
     // 夜想曲：呪われた金貨は engine 側で「財宝を全部出す」の対象外（出すと呪いを獲得する）＝ボタン条件も揃える。
-    const hasTreasure = hp.hand.some((c) => isTreasureNow(state, c) && c !== 'cursed_gold') && !t.treasuresLocked;
+    // 同盟：航海の追加ターンは手札から3枚まで（engine が拒否する手をボタンに出さない）。
+    const hasTreasure = hp.hand.some((c) => isTreasureNow(state, c) && c !== 'cursed_gold') && !t.treasuresLocked
+      && (!DOM.engine.canPlayFromHand || DOM.engine.canPlayFromHand(state, t.active));
     // ギルド：財源(Coffers)を持っていれば「財源を使う」ボタン（購入フェイズ・1枚=+1コイン）。
     const cofferBtn = (t.active === viewer && (state.players[viewer].coffers || 0) > 0)
       ? h('button', { class: 'btn btn-block', style: 'background:#b8860b;color:#fff', onclick: () => { UI.coffersOpen = true; UI.amount = null; render(); } }, '💰 財源を使う（' + state.players[viewer].coffers + '）')
@@ -2700,20 +2707,18 @@
     }
     if (pd.type === 'broker_choose') {
       const n = pd.n || 0;
-      return modalOptions('仲買人', '廃棄したカードのコストは $' + n + ' でした。次から1つを選びます。', [
-        { label: '+' + n + ' カード', cls: 'btn-primary', on: () => dispatch({ type: 'BROKER_CHOOSE', choice: 'cards' }) },
-        { label: '+' + n + ' アクション', on: () => dispatch({ type: 'BROKER_CHOOSE', choice: 'actions' }) },
-        { label: '+' + n + ' コイン', on: () => dispatch({ type: 'BROKER_CHOOSE', choice: 'coins' }) },
-        { label: '+' + n + ' 好意', on: () => dispatch({ type: 'BROKER_CHOOSE', choice: 'favors' }) }]);
+      return modalChoice(pd, '仲買人', 'BROKER_CHOOSE',
+        [{ k: 'cards', label: '+' + n + ' カード' }, { k: 'actions', label: '+' + n + ' アクション' },
+          { k: 'coins', label: '+' + n + ' コイン' }, { k: 'favors', label: '+' + n + ' 好意' }],
+        '廃棄したカードのコストは $' + n + ' でした。');
     }
     if (pd.type === 'student_trash') {
       return modalSingleHand(p, '生徒 — 廃棄', '手札から1枚を廃棄します（財宝なら +1 好意、そして生徒を山札の一番上に置きます）。',
         () => true, (card) => dispatch({ type: 'STUDENT_TRASH', card }));
     }
-    if (pd.type === 'town_crier_choose') return modalOptions('触れ役', '次から1つを選びます（その後、町民の山を循環させるか選べます）。', [
-      { label: '+2 コイン', cls: 'btn-primary', on: () => dispatch({ type: 'TOWN_CRIER_CHOOSE', choice: 'coins' }) },
-      { label: '銀貨1枚を獲得', on: () => dispatch({ type: 'TOWN_CRIER_CHOOSE', choice: 'silver' }) },
-      { label: '+1 カード と +1 アクション', on: () => dispatch({ type: 'TOWN_CRIER_CHOOSE', choice: 'cantrip' }) }]);
+    if (pd.type === 'town_crier_choose') return modalChoice(pd, '触れ役', 'TOWN_CRIER_CHOOSE',
+      [{ k: 'coins', label: '+2 コイン' }, { k: 'silver', label: '銀貨1枚を獲得' },
+        { k: 'cantrip', label: '+1 カード と +1 アクション' }], 'その後、町民の山を循環させるか選べます。');
     if (pd.type === 'herb_gatherer_play') {
       const names = [];
       (p.discard || []).forEach((c) => { if (DOM.engine.isTreasureFor(state, c) && names.indexOf(c) < 0) names.push(c); });
@@ -2730,13 +2735,55 @@
         (id) => DOM.isType(id, 'attack'), (card) => dispatch({ type: 'BATTLE_PLAN_REVEAL', card }),
         { label: '公開しない', on: () => dispatch({ type: 'BATTLE_PLAN_REVEAL', card: null }) }, '公開する');
     }
-    if (pd.type === 'town_choose') return modalOptions('町', '次から1つを選びます。', [
-      { label: '+1 カード と +2 アクション', cls: 'btn-primary', on: () => dispatch({ type: 'TOWN_CHOOSE', choice: 'cards' }) },
-      { label: '+1 購入 と +2 コイン', on: () => dispatch({ type: 'TOWN_CHOOSE', choice: 'coins' }) }]);
-    if (pd.type === 'blacksmith_choose') return modalOptions('蹄鉄工', '次から1つを選びます（今の手札 ' + p.hand.length + '枚）。', [
-      { label: '手札が6枚になるまで引く', cls: 'btn-primary', on: () => dispatch({ type: 'BLACKSMITH_CHOOSE', choice: 'six' }) },
-      { label: '+2 カード', on: () => dispatch({ type: 'BLACKSMITH_CHOOSE', choice: 'two' }) },
-      { label: '+1 カード と +1 アクション', on: () => dispatch({ type: 'BLACKSMITH_CHOOSE', choice: 'cantrip' }) }]);
+    if (pd.type === 'town_choose') return modalChoice(pd, '町', 'TOWN_CHOOSE',
+      [{ k: 'cards', label: '+1 カード と +2 アクション' }, { k: 'coins', label: '+1 購入 と +2 コイン' }]);
+    if (pd.type === 'blacksmith_choose') return modalChoice(pd, '蹄鉄工', 'BLACKSMITH_CHOOSE',
+      [{ k: 'six', label: '手札が6枚になるまで引く（今 ' + p.hand.length + '枚）' },
+        { k: 'two', label: '+2 カード' }, { k: 'cantrip', label: '+1 カード と +1 アクション' }]);
+    if (pd.type === 'royal_galley_play') {
+      return modalPlayCardEvent(state, p, '王家のガレー船 — カードを使う',
+        '手札の**持続でない**アクションカード1枚を使用できます（脇に置き、次のターンの開始時にもう一度使用します）。しなくてもよい。',
+        p.hand, (id) => (DOM.isType(id, 'action') || DOM.engine.inheritedEstate(p, id)) && !DOM.isType(id, 'duration'),
+        'ROYAL_GALLEY_PLAY', { label: '使わない', on: () => dispatch({ type: 'ROYAL_GALLEY_PLAY', card: null }) });
+    }
+    if (pd.type === 'conjurer_gain') {
+      return modalGainSupply(state, '霊術師 — 獲得', 'コスト4コイン以下のカード1枚を獲得します。',
+        (id) => DOM.engine.costUpTo(state, id, 4), (id) => dispatch({ type: 'CONJURER_GAIN', card: id }));
+    }
+    if (pd.type === 'specialist_play') {
+      return modalPlayCardEvent(state, p, '専門家 — カードを使う',
+        '手札のアクションカードまたは財宝カード1枚を使用できます（その後、もう一度使うか同じカードを獲得するかを選びます）。しなくてもよい。',
+        p.hand, (id) => DOM.isType(id, 'action') || DOM.engine.isTreasureFor(state, id) || DOM.engine.inheritedEstate(p, id),
+        'SPECIALIST_PLAY', { label: '使わない', on: () => dispatch({ type: 'SPECIALIST_PLAY', card: null }) });
+    }
+    if (pd.type === 'specialist_choose') {
+      const nm = ((DOM.CARDS[pd.card] || {}).name || pd.card);
+      return modalChoice(pd, '専門家', 'SPECIALIST_CHOOSE',
+        [{ k: 'again', label: '「' + nm + '」をもう一度使う' }, { k: 'copy', label: '「' + nm + '」1枚を獲得する' }]);
+    }
+    if (pd.type === 'elder_play') {
+      return modalPlayCardEvent(state, p, '長老 — アクションを使う',
+        '手札のアクションカード1枚を使用できます（アクション権は使いません）。そのカードが「次から1つを選ぶ」なら、追加で異なるもの1つも選べます。しなくてもよい。',
+        p.hand, (id) => DOM.isType(id, 'action') || DOM.engine.inheritedEstate(p, id),
+        'ELDER_PLAY', { label: '使わない', on: () => dispatch({ type: 'ELDER_PLAY', card: null }) });
+    }
+    if (pd.type === 'modify_trash') {
+      return modalSingleHand(p, '改造 — 廃棄', '手札から1枚を廃棄します（その後、キャントリップか格上げ獲得を選びます）。',
+        () => true, (card) => dispatch({ type: 'MODIFY_TRASH', card }));
+    }
+    if (pd.type === 'modify_choose') {
+      return modalChoice(pd, '改造', 'MODIFY_CHOOSE',
+        [{ k: 'cantrip', label: '+1 カード と +1 アクション' },
+          { k: 'gain', label: (pd.coin >= 0 ? '廃棄したカードより最大2コイン高いカード1枚を獲得する' : '獲得する（廃棄していないので何も得られません）') }]);
+    }
+    if (pd.type === 'modify_gain') {
+      return modalGainSupply(state, '改造 — 獲得', '廃棄したカードよりコストが最大2コイン高いカード1枚を獲得します。',
+        DOM.engine.modifyCanGain(state, pd), (id) => dispatch({ type: 'MODIFY_GAIN', card: id }));
+    }
+    if (pd.type === 'lich_gain') {
+      return modalPickIds('リッチ — 廃棄置き場から獲得', 'リッチよりコストの低いカード1枚を廃棄置き場から獲得します。',
+        DOM.engine.lichTrashTargets(state), (id) => dispatch({ type: 'LICH_GAIN', card: id }), '獲得する');
+    }
     if (pd.type === 'miller_pick') {
       return modalPickIds('粉屋 — 手札に加える', '山札の上から見た ' + pd.cards.length + '枚 から1枚を手札に加えます（残りは捨てます）。',
         pd.cards, (id) => dispatch({ type: 'MILLER_PICK', card: id }), '手札に加える');
@@ -2771,10 +2818,9 @@
         { label: '2 コインを払う（+2 カード）', cls: 'btn-primary', on: () => dispatch({ type: 'CAPITAL_CITY', ok: true }) },
         { label: '払わない', on: () => dispatch({ type: 'CAPITAL_CITY', ok: false }) }]);
     }
-    if (pd.type === 'innkeeper_choose') return modalOptions('宿屋の主人', '次から1つを選びます（引く前に選びます）。', [
-      { label: '+1 カード', cls: 'btn-primary', on: () => dispatch({ type: 'INNKEEPER_CHOOSE', choice: 'one' }) },
-      { label: '+3 カード、その後 3枚 捨てる', on: () => dispatch({ type: 'INNKEEPER_CHOOSE', choice: 'three' }) },
-      { label: '+5 カード、その後 6枚 捨てる', on: () => dispatch({ type: 'INNKEEPER_CHOOSE', choice: 'five' }) }]);
+    if (pd.type === 'innkeeper_choose') return modalChoice(pd, '宿屋の主人', 'INNKEEPER_CHOOSE',
+      [{ k: 'one', label: '+1 カード' }, { k: 'three', label: '+3 カード、その後 3枚 捨てる' },
+        { k: 'five', label: '+5 カード、その後 6枚 捨てる' }], '引く前に選びます。');
     if (pd.type === 'innkeeper_discard') {
       const need = Math.min(pd.n, p.hand.length);
       return modalSelectN(p, '宿屋の主人 — 手札を捨てる', 'カード ' + need + '枚 を選んで捨てます。',
@@ -2787,19 +2833,17 @@
       return modalPickIds('狩人 — ' + label + 'カードを手札に', '公開したカードから ' + label + 'カード1枚を手札に加えます（アクション→財宝→勝利点 の順）。',
         cands, (id) => dispatch({ type: 'HUNTER_PICK', card: id }), '手札に加える');
     }
-    if (pd.type === 'stronghold_choose') return modalOptions('要塞', '次から1つを選びます。', [
-      { label: '+3 コイン', cls: 'btn-primary', on: () => dispatch({ type: 'STRONGHOLD_CHOOSE', choice: 'coins' }) },
-      { label: '次のターンの開始時に +3 カード', on: () => dispatch({ type: 'STRONGHOLD_CHOOSE', choice: 'cards' }) }]);
+    if (pd.type === 'stronghold_choose') return modalChoice(pd, '要塞', 'STRONGHOLD_CHOOSE',
+      [{ k: 'coins', label: '+3 コイン' }, { k: 'cards', label: '次のターンの開始時に +3 カード' }]);
     if (pd.type === 'hill_fort_gain') {
       return modalGainSupply(state, '堡塁 — 獲得', 'コスト4コイン以下のカード1枚を獲得します。',
         (id) => DOM.engine.costUpTo(state, id, 4), (id) => dispatch({ type: 'HILL_FORT_GAIN', card: id }));
     }
     if (pd.type === 'hill_fort_choose') {
       const nm = pd.card ? ((DOM.CARDS[pd.card] || {}).name || pd.card) : null;
-      return modalOptions('堡塁', '次から1つを選びます。', [
-        { label: nm ? '「' + nm + '」を手札に加える' : '獲得したカードを手札に加える（獲得できていません）',
-          cls: 'btn-primary', on: () => dispatch({ type: 'HILL_FORT_CHOOSE', choice: 'hand' }) },
-        { label: '+1 カード と +1 アクション', on: () => dispatch({ type: 'HILL_FORT_CHOOSE', choice: 'cantrip' }) }]);
+      return modalChoice(pd, '堡塁', 'HILL_FORT_CHOOSE',
+        [{ k: 'hand', label: nm ? '「' + nm + '」を手札に加える' : '獲得したカードを手札に加える（獲得できていません）' },
+          { k: 'cantrip', label: '+1 カード と +1 アクション' }]);
     }
     if (pd.type === 'allies_topdeck') {
       const names = pd.cards.map((c) => (DOM.CARDS[c] || {}).name || c);
@@ -3778,6 +3822,31 @@
     const footer = skip
       ? h('div', null, confirm, h('button', { class: 'btn btn-block', onclick: () => { UI.selection = []; skip.on(); } }, skip.label))
       : confirm;
+    return modalShell(title, desc, chips, footer);
+  }
+  /* 「次から1つを選ぶ」の共通モーダル。同盟の長老(Elder)が付いている pending（`pd.elder`）では
+     **異なる2つ**を選ばせる（解決は engine がカード記載順に行う）。
+     opts = [{ k:'<選択肢キー>', label:'<表示>' }, ...]（カード記載順に並べること）。 */
+  function modalChoice(pd, title, actionType, opts, extraDesc) {
+    const desc = (pd.elder ? '長老の効果で、次から**異なる2つ**を選べます（カード記載順に解決します）。' : '次から1つを選びます。')
+      + (extraDesc ? extraDesc : '');
+    if (!pd.elder) {
+      return modalOptions(title, desc, opts.map((o, i) => ({
+        label: o.label, cls: i === 0 ? 'btn-primary' : '',
+        on: () => dispatch({ type: actionType, choices: [o.k] }),
+      })));
+    }
+    pruneSelection(opts.length);
+    const chips = opts.map((o, idx) => {
+      const pos = UI.selection.indexOf(idx);
+      return h('button', { class: 'btn btn-block ' + (pos >= 0 ? 'btn-primary' : ''), style: 'margin-bottom:6px',
+        onclick: () => { const i = UI.selection.indexOf(idx); if (i >= 0) UI.selection.splice(i, 1); else if (UI.selection.length < 2) UI.selection.push(idx); render(); } },
+      (pos >= 0 ? '✓ ' : '') + o.label);
+    });
+    const k = UI.selection.length;
+    const footer = h('button', { class: 'btn btn-primary btn-block', disabled: k >= 1 ? null : 'disabled',
+      onclick: () => dispatch({ type: actionType, choices: takeSelection(opts).map((o) => o.k) }) },
+    k === 0 ? '選んでください' : (k === 1 ? '1つだけで確定' : '2つで確定'));
     return modalShell(title, desc, chips, footer);
   }
   /* 任意の並び（手札とは限らない）から**部分集合**を選ぶ（同盟：天幕/商人の野営地の山札上置き）。

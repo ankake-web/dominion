@@ -3239,12 +3239,16 @@
         return { type: 'ROTATE_PILE', pile: better(pd.pile) ? pd.pile : null };
       }
 
-      case 'town_choose': // 町＝アクション権が残っていて手札にアクションがあれば村モード、無ければコイン
-        return { type: 'TOWN_CHOOSE', choice: p.hand.some((c) => isType(c, 'action')) ? 'cards' : 'coins' };
+      /* 「選ぶ」カードは長老(Elder)が付くと**異なる2つ**を選べる（`pd.elder`）。
+         CPU は主選択に加えて **2つ目を追加するだけ**（engine が記載順に解決する）。 */
+      case 'town_choose': {
+        const main = p.hand.some((c) => isType(c, 'action')) ? 'cards' : 'coins';
+        return { type: 'TOWN_CHOOSE', choices: pd.elder ? ['cards', 'coins'] : [main] };
+      }
       case 'blacksmith_choose': { // 蹄鉄工＝手札が少なければ「6枚まで」、多ければ +2カード
         const need = 6 - p.hand.length;
-        if (need >= 3) return { type: 'BLACKSMITH_CHOOSE', choice: 'six' };
-        return { type: 'BLACKSMITH_CHOOSE', choice: 'two' };
+        const main = need >= 3 ? 'six' : 'two';
+        return { type: 'BLACKSMITH_CHOOSE', choices: pd.elder ? [main, 'cantrip'] : [main] };
       }
       case 'miller_pick': { // 粉屋＝見た4枚から一番価値の高い1枚を手札へ（強制）
         const order = pd.cards.slice().sort((a, b) => keepValue(b) - keepValue(a));
@@ -3274,9 +3278,8 @@
         return { type: 'CAPITAL_CITY', ok: (state.turn.coins || 0) >= 5 };
       }
       case 'innkeeper_choose': { // 宿屋の主人＝手札が少なければ大きく引く（捨てるのは死蔵札）
-        if (p.hand.length <= 2) return { type: 'INNKEEPER_CHOOSE', choice: 'five' };
-        if (p.hand.length <= 4) return { type: 'INNKEEPER_CHOOSE', choice: 'three' };
-        return { type: 'INNKEEPER_CHOOSE', choice: 'one' };
+        const main = p.hand.length <= 2 ? 'five' : (p.hand.length <= 4 ? 'three' : 'one');
+        return { type: 'INNKEEPER_CHOOSE', choices: (pd.elder && main !== 'one') ? ['one', main] : [main] };
       }
       case 'innkeeper_discard': {
         const need = Math.min(pd.n, p.hand.length);
@@ -3289,15 +3292,19 @@
         const order = cands.slice().sort((a, b) => keepValue(b) - keepValue(a));
         return { type: 'HUNTER_PICK', card: order[0] || cands[0] || pd.cards[0] };
       }
-      case 'stronghold_choose': // 要塞＝今のコインが伸びていれば +3コイン（$8に届かせる）、そうでなければ次ターンの +3カード
-        return { type: 'STRONGHOLD_CHOOSE', choice: (state.turn.coins || 0) >= 3 ? 'coins' : 'cards' };
+      case 'stronghold_choose': { // 要塞＝今のコインが伸びていれば +3コイン（$8に届かせる）、そうでなければ次ターンの +3カード
+        const main = (state.turn.coins || 0) >= 3 ? 'coins' : 'cards';
+        return { type: 'STRONGHOLD_CHOOSE', choices: pd.elder ? ['coins', 'cards'] : [main] };
+      }
       case 'hill_fort_gain': { // 堡塁＝コスト4以下で一番良いカードを獲得（強制）
         const g = bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) ||
           firstGainable(state, (id) => DOM.engine.costUpTo(state, id, 4));
         return { type: 'HILL_FORT_GAIN', card: g };
       }
-      case 'hill_fort_choose': // 堡塁＝獲得したのがアクションで手札に欲しければ手札へ、そうでなければ cantrip
-        return { type: 'HILL_FORT_CHOOSE', choice: (pd.card && isType(pd.card, 'action')) ? 'hand' : 'cantrip' };
+      case 'hill_fort_choose': { // 堡塁＝獲得したのがアクションで手札に欲しければ手札へ、そうでなければ cantrip
+        const main = (pd.card && isType(pd.card, 'action')) ? 'hand' : 'cantrip';
+        return { type: 'HILL_FORT_CHOOSE', choices: pd.elder ? ['hand', 'cantrip'] : [main] };
+      }
       case 'allies_topdeck': { // 天幕/商人の野営地＝場から捨てる代わりに山札の上へ（常に得なので全部置く）
         return { type: 'ALLIES_TOPDECK', cards: (pd.cards || []).slice() };
       }
@@ -3306,6 +3313,54 @@
         return { type: 'SUNKEN_TREASURE_GAIN', card: g };
       }
 
+      case 'royal_galley_play': { // 王家のガレー船＝手札の持続でないアクションを1枚（次のターンにもう一度使える）
+        const cands = p.hand.filter((c) => isType(c, 'action') && !isType(c, 'duration'));
+        if (!cands.length) return { type: 'ROYAL_GALLEY_PLAY', card: null };
+        for (const id of GAIN_ORDER) if (cands.indexOf(id) >= 0) return { type: 'ROYAL_GALLEY_PLAY', card: id };
+        return { type: 'ROYAL_GALLEY_PLAY', card: cands[0] };
+      }
+      case 'conjurer_gain': { // 霊術師＝$4以下で一番良いカード（強制）
+        const g = bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) ||
+          firstGainable(state, (id) => DOM.engine.costUpTo(state, id, 4));
+        return { type: 'CONJURER_GAIN', card: g };
+      }
+      case 'specialist_play': { // 専門家＝手札のアクション/財宝で一番強いもの（辞退可）
+        const cands = p.hand.filter((c) => (isType(c, 'action') || isTreasureNow(state, c)));
+        if (!cands.length) return { type: 'SPECIALIST_PLAY', card: null };
+        for (const id of GAIN_ORDER) if (cands.indexOf(id) >= 0) return { type: 'SPECIALIST_PLAY', card: id };
+        return { type: 'SPECIALIST_PLAY', card: cands[0] };
+      }
+      case 'specialist_choose': { // 専門家＝もう一度使う（基本）／サプライに無ければ獲得も無意味なので again
+        const canCopy = !!pd.card && gainableBase(state, pd.card);
+        const main = 'again';
+        return { type: 'SPECIALIST_CHOOSE', choices: (pd.elder && canCopy) ? ['again', 'copy'] : [main] };
+      }
+      case 'elder_play': { // 長老＝手札のアクションで一番強いもの（辞退可）
+        const cands = p.hand.filter((c) => isType(c, 'action'));
+        if (!cands.length) return { type: 'ELDER_PLAY', card: null };
+        for (const id of GAIN_ORDER) if (cands.indexOf(id) >= 0) return { type: 'ELDER_PLAY', card: id };
+        return { type: 'ELDER_PLAY', card: cands[0] };
+      }
+      case 'modify_trash': { // 改造＝死蔵札があれば圧縮、無ければ一番安い札（強制）
+        const junk = p.hand.filter((c) => isDead(c) || c === 'copper').sort((a, b) => cost(state, b) - cost(state, a));
+        if (junk.length) return { type: 'MODIFY_TRASH', card: junk[0] };
+        const order = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b));
+        return { type: 'MODIFY_TRASH', card: order[0] };
+      }
+      case 'modify_choose': { // 改造＝格上げできるなら獲得、できなければキャントリップ
+        const canG = (pd.coin || 0) >= 0 && firstGainable(state, DOM.engine.modifyCanGain(state, pd));
+        const main = canG ? 'gain' : 'cantrip';
+        return { type: 'MODIFY_CHOOSE', choices: (pd.elder && canG) ? ['cantrip', 'gain'] : [main] };
+      }
+      case 'modify_gain': { // 改造＝廃棄した札より最大2コイン高いカードを1枚（強制）
+        const g = firstGainable(state, DOM.engine.modifyCanGain(state, pd));
+        return { type: 'MODIFY_GAIN', card: g };
+      }
+      case 'lich_gain': { // リッチ＝廃棄置き場からこれより安いカードで一番良いもの（強制）
+        const cands = DOM.engine.lichTrashTargets(state);
+        const order = cands.slice().sort((a, b) => keepValue(b) - keepValue(a));
+        return { type: 'LICH_GAIN', card: order[0] || cands[0] || null };
+      }
       case 'bauble_choose': { // 道化棒＝異なる2つ（購入フェイズなので +$1 と +1購入 を基本にする）
         const wantFavor = !!state.ally; // Ally が居るゲームなら好意にも価値がある
         return { type: 'BAUBLE_CHOOSE', picks: wantFavor ? ['coin', 'favor'] : ['coin', 'buy'] };
@@ -3329,11 +3384,10 @@
         return { type: 'BROKER_TRASH', card: order[0] };
       }
       case 'broker_choose': { // 仲買人＝アクション権が尽きていて手札にアクションがあれば+アクション、他はコイン
-        if (state.turn.phase === 'action' && (state.turn.actions || 0) === 0 && p.hand.some((c) => isType(c, 'action'))) {
-          return { type: 'BROKER_CHOOSE', choice: 'actions' };
-        }
-        if ((pd.n || 0) >= 3) return { type: 'BROKER_CHOOSE', choice: 'cards' };
-        return { type: 'BROKER_CHOOSE', choice: 'coins' };
+        let main = 'coins';
+        if (state.turn.phase === 'action' && (state.turn.actions || 0) === 0 && p.hand.some((c) => isType(c, 'action'))) main = 'actions';
+        else if ((pd.n || 0) >= 3) main = 'cards';
+        return { type: 'BROKER_CHOOSE', choices: pd.elder ? [main, main === 'coins' ? 'cards' : 'coins'] : [main] };
       }
       case 'student_trash': { // 生徒＝財宝を廃棄すると好意＋山札の上に戻る。銅貨があれば銅貨、無ければ死蔵札
         if (p.hand.includes('copper')) return { type: 'STUDENT_TRASH', card: 'copper' };
@@ -3343,8 +3397,8 @@
         return { type: 'STUDENT_TRASH', card: order[0] };
       }
       case 'town_crier_choose': { // 触れ役＝アクション権が残っていれば cantrip、そうでなければ +2コイン
-        if ((state.turn.actions || 0) > 0 && p.hand.some((c) => isType(c, 'action'))) return { type: 'TOWN_CRIER_CHOOSE', choice: 'cantrip' };
-        return { type: 'TOWN_CRIER_CHOOSE', choice: 'coins' };
+        const main = ((state.turn.actions || 0) > 0 && p.hand.some((c) => isType(c, 'action'))) ? 'cantrip' : 'coins';
+        return { type: 'TOWN_CRIER_CHOOSE', choices: pd.elder ? ['coins', 'cantrip'] : [main] };
       }
       case 'herb_gatherer_play': { // 薬草集め＝捨て札から一番強い財宝を使う
         const tre = (p.discard || []).filter((c) => isTreasureNow(state, c)).sort((a, b) => keepValue(b) - keepValue(a));
@@ -3385,8 +3439,11 @@
     const subj = state.players[t.active]; // 手番の主体（支配中は被支配者）の手札を操作する
     /* 移動動物園：習性（Way）＝アクションの記載効果の「代わり」に使う。使いすぎると弱くなるので、
        CPU は「記載効果が今は活きない」局面だけ使う（engine/UI と違い候補を出す側なので保守的に）。 */
+    /* 同盟：航海（Voyage）の追加ターンは**手札から3枚まで**しか使えない。engine が拒否する手を
+       返し続けると本番 livelock になるので、CPU も同じ述語（`canPlayFromHand`）を見る。 */
+    const canHandPlay = !DOM.engine.canPlayFromHand || DOM.engine.canPlayFromHand(state, t.active);
     if (t.phase === 'action') {
-      const a = chooseAction(state, subj);
+      const a = canHandPlay ? chooseAction(state, subj) : null;
       if (a) return { type: 'PLAY_ACTION', card: a, way: chooseWay(state, subj, a) };
       /* ルネサンス：村人（Villagers）＝アクション権が尽きたが手札にまだ使えるアクションがあるなら、村人を1人使う。
          engine は「アクションフェイズ・所持数以内・1個以上」でしか受理しないので、その条件下でだけ返す＝非ループ
@@ -3402,7 +3459,7 @@
        engine は phase==='night' でしか PLAY_NIGHT を受理しないので、拒否される手は返らない＝非ループ
        （毎回1枚ずつ手札から減るので必ず終端する）。 */
     if (t.phase === 'night') {
-      const n = chooseNight(state, subj);
+      const n = canHandPlay ? chooseNight(state, subj) : null;
       if (n) return { type: 'PLAY_NIGHT', card: n };
       return { type: 'END_TURN' };
     }
@@ -3414,8 +3471,8 @@
     //     engine が出さない札を PLAY_ALL_TREASURES で出そうとすると**状態が変わらず無限ループ**になるので、
     //     CPU は 1枚ずつの PLAY_TREASURE で出す（+3コインの価値はあるので出す判断自体は同じ）。
     const isTre = (c) => (DOM.engine.isTreasureFor ? DOM.engine.isTreasureFor(state, c) : isTreasure(c));
-    if (!t.treasuresLocked && subj.hand.some((c) => isTre(c) && c !== 'cursed_gold')) return { type: 'PLAY_ALL_TREASURES' };
-    if (!t.treasuresLocked && subj.hand.includes('cursed_gold')) return { type: 'PLAY_TREASURE', card: 'cursed_gold' };
+    if (canHandPlay && !t.treasuresLocked && subj.hand.some((c) => isTre(c) && c !== 'cursed_gold')) return { type: 'PLAY_ALL_TREASURES' };
+    if (canHandPlay && !t.treasuresLocked && subj.hand.includes('cursed_gold')) return { type: 'PLAY_TREASURE', card: 'cursed_gold' };
     // 帝国：負債があるとカードを購入できない。財宝を出し切った後、コインで可能な限り返済する。
     //   返済しきれない（コイン0）なら購入不可＝END_TURN（負債は次ターンに持ち越し。財宝を出せば返せる＝非ループ）。
     if ((subj.debt || 0) > 0) {
