@@ -798,6 +798,7 @@
       const pick = starChartPick(shuffled);
       if (pick != null && removeOne(shuffled, pick)) shuffled.unshift(pick);
     }
+    let masonsLeft = false;
     if (p.shuffleAlly === 'order_of_masons' && (p.favorShuffle || 0) > 0 && (p.favors || 0) > 0) {
       let uses = Math.min(p.favorShuffle, p.favors);
       let moved = 0;
@@ -811,17 +812,27 @@
           if (removeOne(shuffled, junk[k])) { p.discard.push(junk[k]); moved++; }
         }
       }
-      if (moved && state) log(state, `${p.name} はメイソン団で ${moved}枚 を捨て札置き場に残した（シャッフルに混ぜない）。`);
+      if (moved) {
+        masonsLeft = true;
+        if (state) log(state, `${p.name} はメイソン団で ${moved}枚 を捨て札置き場に残した（シャッフルに混ぜない）。`);
+      }
     }
     if (p.shuffleAlly === 'order_of_astrologers' && (p.favorShuffle || 0) > 0 && (p.favors || 0) > 0) {
       let uses = Math.min(p.favorShuffle, p.favors);
       const picks = [];
+      /* 星図（ルネサンスのプロジェクト）と併用できる（公式FAQ逐語＝「星図で1枚を無料で上に置いた**うえに**、
+         好意を払って**追加の**カードを上に置ける」）。星図は既に `shuffled.unshift(pick)` で束の先頭に
+         入れているので、**その1枚は候補から除外する**（除外しないと同じ最良札を選び直して好意を捨てるだけになる）。 */
+      const already = ((p.projects || []).indexOf('star_chart') >= 0 && shuffled.length > 0) ? shuffled[0] : null;
+      let skipped = null;
+      if (already != null) { shuffled.shift(); skipped = already; }
       while (uses-- > 0 && shuffled.length > 0) {
         const pick = starChartPick(shuffled);
         if (pick == null || shuffleCardRank(pick) < 5) break; // 銀貨/$3アクション未満を上に置くために好意は払わない
         if (!removeOne(shuffled, pick)) break;
         picks.push(pick); p.favors -= 1;
       }
+      if (skipped != null) shuffled.unshift(skipped); // 星図のぶんを戻す（好意で選んだ札はこの上に載せる）
       if (picks.length) {
         shuffled.unshift(...picks); // picks[0]（最良）がシャッフルした束の一番上
         if (state) log(state, `${p.name} は占星術師団で ${picks.length}枚 をシャッフルした束の上に置いた。`);
@@ -829,6 +840,11 @@
     }
     p.deck = p.deck.concat(shuffled);
     placeStash(p);
+    /* 公式FAQ逐語（メイソン団）＝`When you need to shuffle to access more cards from your deck, you only
+       shuffle one time, even if Order of Masons put some cards back in your discard pile.`
+       ＝**捨て札に残した札のために同じアクセス中にもう一度シャッフルしてはいけない**。呼び出し側
+       （draw のループ）がこの戻り値を見て、2回目のシャッフルを行わずに打ち切る。 */
+    return masonsLeft;
   }
 
   /* ---------- サプライ初期化 ----------
@@ -1202,7 +1218,7 @@
     //   廃棄置き場は既に保存則 tally の対象なので、総カード枚数が3枚増える。
     const trash = kingdom.includes('necromancer') ? ZOMBIES.slice() : [];
 
-    return Object.assign({
+    const initial = Object.assign({
       version: 0,
       kingdom,
       players,
@@ -1242,6 +1258,14 @@
       gameOver: false,
       result: null,
     }, alliesPiles); // 同盟：state.augurs / state.wizards … （混合山と同型のトップレベル配列）
+    /* 同盟：**ゲームの最初のターンにも「あなたのターンの開始時」は起きる**（公式：好意はゲームの
+       最初のターンから使える）。開始時の Ally 窓は `resolveDurationStartEffects` の末尾から開くが、
+       この関数は cleanupAndAdvance からしか呼ばれない＝先頭手番だけ素通りしていた
+       （すり師団を先手だけが1ターン免れる非対称／初期好意1をターン1で使えない＝敵対レビューで確定）。
+       持続カードもプロジェクトもターン1には存在し得ないので、ここでは Ally 窓だけを最小限で開く。 */
+    allyStartOfTurn(initial, startActive);
+    if (initial.turn.startQueue && initial.turn.startQueue.length) popStartQueue(initial);
+    return initial;
   }
 
   /* ---------- ログ ---------- */
@@ -1333,10 +1357,15 @@
     //   （cleanup先引きに限らず、手番開始の持続ドロー/ドローアクション等どの引きでも「次の1回」に効く）。
     if (p.minusCard && n > 0) { n -= 1; p.minusCard = false; log(state, `${p.name} は -1カードトークンで1枚少なく引く。`); }
     const drawn = [];
+    /* 同盟：メイソン団が「好意を払って捨て札に残した札」を、**同じアクセスの中で再シャッフルして
+       引き直してはいけない**（公式FAQ＝1回のアクセスにつきシャッフルは1回だけ）。残した瞬間に
+       このドロー指示ではもうシャッフルしない＝引けずに終わる。※1枚ずつ山札にアクセスするカード
+       （望楼/熟練工）は次の draw 呼び出しで改めてシャッフルするので、フラグの寿命はこの1回だけ。 */
+    let noMoreShuffle = false;
     for (let i = 0; i < n; i++) {
       if (p.deck.length === 0) {
-        if (p.discard.length === 0) break;
-        reshuffleDeck(p, state); // state はログ用（同盟：占星術師団/メイソン団）
+        if (p.discard.length === 0 || noMoreShuffle) break;
+        noMoreShuffle = reshuffleDeck(p, state) === true; // state はログ用（同盟：占星術師団/メイソン団）
       }
       if (p.deck.length === 0) break; // メイソン団が全部を捨て札に残した等（理論上は起きないが安全網）
       drawn.push(p.deck.shift());
@@ -2563,6 +2592,7 @@
     p.inPlay.push(first);
     state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1; // 使った扱い（共謀者等の「このターンに使ったアクション数」に数える）
     log(state, `${p.name} はゴーレムで「${C()[first].name}」を使った。`);
+    noteAllyPlay(state, pi, first); // 同盟：これも「カードの使用」＝Ally の窓が開く
     applyEffect(state, first, pi);
   }
 
@@ -3701,6 +3731,9 @@
   function playAsCommand(state, pi, commandId, card) {
     const prev = state._cmd;
     state._cmd = { player: pi, id: commandId, as: card };
+    /* 同盟：命令が「サプライに残したまま」プレイしても**プレイはプレイ**＝Ally の窓が開く。
+       ただし相続の屋敷は applyEffect の case 'estate' からの内部委譲＝呼び出し元が既に note 済み。 */
+    if (commandId !== 'estate') noteAllyPlay(state, pi, card);
     try { applyEffect(state, card, pi); }
     finally { if (prev) state._cmd = prev; else delete state._cmd; }
   }
@@ -4717,7 +4750,8 @@
       case 'wandering_minstrel': {
         // +1カード +2アクション。山札の上3枚を公開し、アクションを好きな順で山札の上へ戻し、残りを捨てる。
         draw(state, pi, 1); addActions(t, 2);
-        while (p.deck.length < 3 && p.discard.length > 0) reshuffleDeck(p);
+        // 同盟：メイソン団が捨て札に札を残したら、同じアクセスで再シャッフルしない（公式＝シャッフルは1回だけ）。
+        while (p.deck.length < 3 && p.discard.length > 0) { if (reshuffleDeck(p, state) === true) break; }
         const look = p.deck.splice(0, Math.min(3, p.deck.length));
         if (look.length) reveal(state, pi, look.slice(), '吟遊詩人');
         const acts = look.filter((c) => DOM.isType(c, 'action'));
@@ -5327,6 +5361,7 @@
             p.inPlay.push(top);
             t.actionsPlayed = (t.actionsPlayed || 0) + 1;
             log(state, `${p.name} は伝令官で「${C()[top].name}」をプレイした。`);
+            noteAllyPlay(state, pi, top); // 同盟：これも「カードの使用」＝Ally の窓が開く
             applyEffect(state, top, pi); // 別の選択待ちが立つこともある
           }
         }
@@ -6488,6 +6523,7 @@
           t.actionsPlayed = (t.actionsPlayed || 0) + 1;
           log(state, `${p.name} はピアッツァで「${C()[top].name}」を使用した（アクション権は消費しない）。`);
           maybeCitadel(state, pi, top); // 山砦：そのターン最初のアクション使用なら再演
+          noteAllyPlay(state, pi, top); // 同盟：これも「カードの使用」＝Ally の窓が開く
           applyEffect(state, top, pi);
         } else {
           log(state, `${p.name} はピアッツァ：山札の一番上は「${C()[top].name}」（アクションでないので山札に残す）。`);
@@ -7152,6 +7188,7 @@
         bp.inPlay.push('berserker');
         state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
         log(state, `${bp.name} は獲得した狂戦士を使った。`);
+        noteAllyPlay(state, pIndex, 'berserker'); // 同盟：これも「カードの使用」＝Ally の窓が開く
         applyEffect(state, 'berserker', pIndex);
       }
     }
@@ -8991,6 +9028,7 @@
         } else {
           applyTreasureEffect(state, r.player, r.card);
         }
+        noteAllyPlay(state, r.player, r.card); // 同盟：これも「カードの使用」＝Ally の窓が開く（2回目のプレイ）
         continue; // applyEffect（アクションの効果）は行わない
       }
       if (r.label === 'counterfeit_trash') {
@@ -10062,6 +10100,7 @@
         t.actionsPlayed = (t.actionsPlayed || 0) + 1;
         state.pending = null;
         log(state, `${p.name} は玉座の間で「${C()[card].name}」を使った（1回目）。`);
+        noteAllyPlay(state, pd.player, card);    // 同盟：これも「カードの使用」＝Ally の窓が開く
         applyEffect(state, card, pd.player);     // 1回目
         state.replay = state.replay || [];
         state.replay.push({ player: pd.player, card }); // 2回目は pending 解消後に runReplays が適用
@@ -10394,6 +10433,7 @@
           p.inPlay.push(pd.card);
           t.actionsPlayed = (t.actionsPlayed || 0) + 1;
           log(state, `${p.name} は家臣で「${C()[pd.card].name}」を使った。`);
+          noteAllyPlay(state, pd.player, pd.card); // 同盟：これも「カードの使用」＝Ally の窓が開く
           applyEffect(state, pd.card, pd.player); // 別の選択待ちが立つこともある
         }
         return state;
@@ -10909,6 +10949,7 @@
           p.inPlay.push(pd.next);
           t.actionsPlayed = (t.actionsPlayed || 0) + 1; // アクション権は消費しない（「使ってよい」）
           log(state, `${p.name} は${pd.next === 'avanto' ? 'サウナ' : 'アヴァント'}で「${C()[pd.next].name}」を使った。`);
+          noteAllyPlay(state, pd.player, pd.next); // 同盟：これも「カードの使用」＝Ally の窓が開く
           applyEffect(state, pd.next, pd.player);
         }
         return state;
@@ -11363,6 +11404,7 @@
         t.actionsPlayed = (t.actionsPlayed || 0) + 1;
         state.pending = null;
         log(state, `${p.name} は行進で「${C()[card].name}」を使った（1回目）。`);
+        noteAllyPlay(state, pd.player, card); // 同盟：これも「カードの使用」＝Ally の窓が開く
         applyEffect(state, card, pd.player); // 1回目
         state.replay = state.replay || [];
         state.replay.push({ player: pd.player, card, label: 'procession2' });       // 2回目
@@ -11483,6 +11525,7 @@
         t.actionsPlayed = (t.actionsPlayed || 0) + 1;
         state.pending = null;
         log(state, `${p.name} は門下生で「${C()[card].name}」を使った（1回目）。`);
+        noteAllyPlay(state, pd.player, card);           // 同盟：これも「カードの使用」＝Ally の窓が開く
         applyEffect(state, card, pd.player);            // 1回目
         state.replay = state.replay || [];
         state.replay.push({ player: pd.player, card }); // 2回目は pending 解消後に runReplays が適用
@@ -11528,6 +11571,7 @@
           state.pending = null;
           log(state, `${p.name} は狂信者を連鎖して使った（アクション消費なし）。`);
           // 浮浪児トリガー：連鎖した狂信者も「別アタックのプレイ」＝場の浮浪児を廃棄→傭兵の機会（効果は後で適用）。
+          noteAllyPlay(state, pd.player, 'cultist'); // 同盟：これも「カードの使用」＝Ally の窓が開く
           if (!maybeUrchinTrap(state, 'cultist', pd.player)) applyEffect(state, 'cultist', pd.player);
         } else { state.pending = null; }
         return state;
@@ -12103,6 +12147,7 @@
           if (removeOne(zone, pd.card)) {
             p.inPlay.push(pd.card); // 場へ。持続効果は applyEffect→armDuration で予約され、cleanup で durationCards へ移る
             log(state, `${p.name} は船乗りで獲得した「${C()[pd.card].name}」を使った。`);
+            noteAllyPlay(state, pd.player, pd.card); // 同盟：これも「カードの使用」＝Ally の窓が開く
             applyEffect(state, pd.card, pd.player);
           }
         }
@@ -12257,6 +12302,7 @@
           removeOne(p.hand, 'clerk'); p.inPlay.push('clerk');
           t.actionsPlayed = (t.actionsPlayed || 0) + 1;
           log(state, `${p.name} は手番開始時に会計士を使った。`);
+          noteAllyPlay(state, pd.player, 'clerk'); // 同盟：これも「カードの使用」＝Ally の窓が開く
           applyEffect(state, 'clerk', pd.player); // +2コイン＋アタック
           // 開始キューの進行は clerkEnterVictim の終端が popStartQueue で行う（アタックが pending を立てた
           // 場合はその解決後に、立たなければ即座に）。ここでは何もしない＝2枚目以降の会計士も確実に使える。
@@ -12398,6 +12444,7 @@
         t.actionsPlayed = (t.actionsPlayed || 0) + 1;
         state.pending = null;
         log(state, `${p.name} は王の宮廷で「${C()[card].name}」を使った（1回目）。`);
+        noteAllyPlay(state, pd.player, card); // 同盟：これも「カードの使用」＝Ally の窓が開く
         applyEffect(state, card, pd.player); // 1回目
         state.replay = state.replay || [];
         state.replay.push({ player: pd.player, card }); // 2回目
@@ -12537,6 +12584,7 @@
             p.inPlay.push(top);
             t.actionsPlayed = (t.actionsPlayed || 0) + 1;
             log(state, `${p.name} は水晶玉で「${C()[top].name}」を使った。`);
+            noteAllyPlay(state, pd.player, top); // 同盟：これも「カードの使用」＝Ally の窓が開く
             applyEffect(state, top, pd.player);
           }
         }
@@ -13034,6 +13082,7 @@
         t.actionsPlayed = (t.actionsPlayed || 0) + 1;
         log(state, `${pl.name} は技術革新で 獲得した「${C()[pd.card].name}」を使用した（アクション権は消費しない）。`);
         maybeCitadel(state, pd.player, pd.card);
+        noteAllyPlay(state, pd.player, pd.card); // 同盟：これも「カードの使用」＝Ally の窓が開く（公式FAQが技術革新を名指し）
         applyEffect(state, pd.card, pd.player);
         return state;
       }
@@ -13579,6 +13628,7 @@
             removeOne(p2.hand, card); p2.inPlay.push(card);
             t.actionsPlayed = (t.actionsPlayed || 0) + 1;
             log(state, `${p2.name} は冠で「${C()[card].name}」を使った（1回目）。`);
+            noteAllyPlay(state, pd.player, card); // 同盟：これも「カードの使用」＝Ally の窓が開く
             applyEffect(state, card, pd.player); // 1回目
             state.replay = state.replay || [];
             state.replay.push({ player: pd.player, card, label: 'crown' }); // 2回目は選択待ち解消後に runReplays が適用
@@ -14707,6 +14757,7 @@
         pl.inPlay.push('falconer');
         if (t && pd.player === t.active) t.actionsPlayed = (t.actionsPlayed || 0) + 1;
         log(state, `${pl.name} は鷹匠を手札から使用した。`);
+        noteAllyPlay(state, pd.player, 'falconer'); // 同盟：これも「カードの使用」＝Ally の窓が開く
         applyEffect(state, 'falconer', pd.player);
         return state;
       }
@@ -14781,6 +14832,7 @@
         removeOne(pl.hand, card); pl.inPlay.push(card);
         t.actionsPlayed = (t.actionsPlayed || 0) + 1;
         log(state, `${pl.name} は首謀者で「${C()[card].name}」を3回使用する。`);
+        noteAllyPlay(state, pd.player, card); // 同盟：これも「カードの使用」＝Ally の窓が開く
         applyEffect(state, card, pd.player);
         (state.replay = state.replay || []).push({ player: pd.player, card });
         state.replay.push({ player: pd.player, card });
@@ -14844,6 +14896,7 @@
         pl.inPlay.push('sheepdog');
         if (t && pd.player === t.active) t.actionsPlayed = (t.actionsPlayed || 0) + 1;
         log(state, `${pl.name} は牧羊犬を手札から使用した。`);
+        noteAllyPlay(state, pd.player, 'sheepdog'); // 同盟：これも「カードの使用」＝Ally の窓が開く
         applyEffect(state, 'sheepdog', pd.player);
         return state;
       }
@@ -14894,6 +14947,7 @@
         pl.inPlay.push('village_green');
         if (t && pd.player === t.active) t.actionsPlayed = (t.actionsPlayed || 0) + 1;
         log(state, `${pl.name} は捨て札にした村有緑地を使用した。`);
+        noteAllyPlay(state, pd.player, 'village_green'); // 同盟：これも「カードの使用」＝Ally の窓が開く
         applyEffect(state, 'village_green', pd.player);
         return state;
       }
@@ -15918,9 +15972,12 @@
           const dis = pl.hand.slice();
           pl.hand = [];
           dis.forEach((c) => pl.discard.push(c));
+          /* **順序厳守**：捨て札トリガー（坑道の金貨／織工／村有緑地／忠犬）を全部解決してから引く。
+             逆にすると引くためのリシャッフルで捨て札が山札へ移り、`removeOne(p.discard, ...)` に
+             依存するトリガーが黙って空振りする（§0-28 の羊飼いで踏んだのと同型＝敵対レビューで確定）。 */
+          if (dis.length) triggerOnDiscard(state, pd.player, dis);
           const got = draw(state, pd.player, 5); // 引く枚数は常に5（前哨地でも5枚）
           log(state, `${pl.name} は砂漠の案内人で 好意1 を使って手札${dis.length}枚を捨て +${got.length}カード。`);
-          if (dis.length) triggerOnDiscard(state, pd.player, dis);
           if ((pl.favors || 0) >= 1) queueAllyWindow(state, { type: 'ally_desert', player: pd.player }, true);
           return state;
         }

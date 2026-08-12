@@ -2261,6 +2261,7 @@
         (id) => DOM.engine.costUpTo(state, id, 4), (id) => dispatch({ type: 'BOON_EARTH_GAIN', card: id }));
     }
     if (pd.type === 'boon_sky') {
+      pruneSelection(p.hand.length);
       const n = Math.min(3, p.hand.length);
       const chips = p.hand.map((id, idx) => {
         const pos = UI.selection.indexOf(idx);
@@ -2270,7 +2271,7 @@
       const remain = n - UI.selection.length;
       const footer = h('div', null,
         h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled', style: 'margin-bottom:8px',
-          onclick: () => dispatch({ type: 'BOON_SKY_DISCARD', cards: UI.selection.map((i) => p.hand[i]) }) },
+          onclick: () => dispatch({ type: 'BOON_SKY_DISCARD', cards: takeSelection(p.hand) }) },
           remain === 0 ? (n === 3 ? '確定（3枚捨てて金貨を獲得）' : '確定（' + n + '枚捨てる／金貨は得られません）') : ('あと ' + remain + ' 枚')),
         h('button', { class: 'btn btn-block', onclick: () => dispatch({ type: 'BOON_SKY_DISCARD', cards: null }) }, '捨てない'));
       return modalShell('空の恵み — 3枚捨てて金貨', '手札を' + n + '枚選んで捨てると金貨1枚を獲得します（手札が3枚未満なら捨てるだけで金貨は得られません）。', chips, footer);
@@ -2283,13 +2284,14 @@
     }
     if (pd.type === 'look_arrange') {
       const cards = pd.cards || [];
+      pruneSelection(cards.length);
       const src = (DOM.LANDSCAPES[pd.source] && DOM.LANDSCAPES[pd.source].name) || (DOM.CARDS[pd.source] && DOM.CARDS[pd.source].name) || '';
       const chips = cards.map((id, idx) =>
         cardEl(id, { size: 'sm', extra: UI.selection.includes(idx) ? 'selected' : 'selectable',
           badge: UI.selection.includes(idx) ? '捨' : null,
           onClick: () => { const i = UI.selection.indexOf(idx); if (i >= 0) UI.selection.splice(i, 1); else UI.selection.push(idx); render(); } }));
       const footer = h('button', { class: 'btn btn-primary btn-block',
-        onclick: () => { const disc = UI.selection.map((i) => cards[i]); const top = cards.filter((c, i) => UI.selection.indexOf(i) < 0); dispatch({ type: 'LOOK_ARRANGE_RESOLVE', discard: disc, top }); } },
+        onclick: () => { const sel = UI.selection.slice(); UI.selection = []; const disc = sel.map((i) => cards[i]); const top = cards.filter((c, i) => sel.indexOf(i) < 0); dispatch({ type: 'LOOK_ARRANGE_RESOLVE', discard: disc, top }); } },
         '確定（' + UI.selection.length + '枚 捨て、残り ' + (cards.length - UI.selection.length) + '枚 を山札の上へ）');
       return modalShell(src + ' — 山札の上' + cards.length + '枚', 'タップして捨てるカードを選びます（選ばなかったカードはこの順のまま山札の上に戻ります）。', chips, footer);
     }
@@ -2361,6 +2363,7 @@
         { label: '廃棄しない', on: () => dispatch({ type: 'POOKA_TRASH', card: null }) });
     }
     if (pd.type === 'secret_cave') {
+      pruneSelection(p.hand.length);
       const chips = p.hand.map((id, idx) => {
         const pos = UI.selection.indexOf(idx);
         return cardEl(id, { size: 'sm', extra: pos >= 0 ? 'selected' : 'selectable', badge: pos >= 0 ? String(pos + 1) : null,
@@ -2369,7 +2372,7 @@
       const remain = 3 - UI.selection.length;
       const footer = h('div', null,
         h('button', { class: 'btn btn-primary btn-block', disabled: (remain === 0 && p.hand.length >= 3) ? null : 'disabled', style: 'margin-bottom:8px',
-          onclick: () => dispatch({ type: 'SECRET_CAVE_DISCARD', cards: UI.selection.map((i) => p.hand[i]) }) },
+          onclick: () => dispatch({ type: 'SECRET_CAVE_DISCARD', cards: takeSelection(p.hand) }) },
           remain === 0 ? '確定（3枚捨てる → 次のターン +3コイン）' : (p.hand.length < 3 ? '手札が3枚未満です' : 'あと ' + remain + ' 枚')),
         h('button', { class: 'btn btn-block', onclick: () => dispatch({ type: 'SECRET_CAVE_DISCARD', cards: null }) }, '捨てない'));
       return modalShell('秘密の洞窟 — 3枚捨てる', '手札3枚を捨てると、次のあなたのターンの開始時に +3コイン になります。', chips, footer);
@@ -2403,11 +2406,12 @@
         (id) => DOM.engine.costUpTo(state, id, 4), (id) => dispatch({ type: 'COBBLER_GAIN', card: id }));
     }
     if (pd.type === 'crypt_setaside') {
+      pruneSelection(p.inPlay.length);
       const elig = p.inPlay.map((id, idx) => ({ id, idx })).filter((x) => isTreasureNow(state, x.id) && !DOM.isType(x.id, 'duration'));
       const chips = elig.map((x) => cardEl(x.id, { size: 'sm', extra: UI.selection.includes(x.idx) ? 'selected' : 'selectable',
         onClick: () => { const i = UI.selection.indexOf(x.idx); if (i >= 0) UI.selection.splice(i, 1); else UI.selection.push(x.idx); render(); } }));
       const footer = h('button', { class: 'btn btn-primary btn-block',
-        onclick: () => dispatch({ type: 'CRYPT_SETASIDE', cards: UI.selection.map((i) => p.inPlay[i]) }) },
+        onclick: () => dispatch({ type: 'CRYPT_SETASIDE', cards: takeSelection(p.inPlay) }) },
         UI.selection.length ? '確定（' + UI.selection.length + '枚 を脇に置く）' : '脇に置かない');
       return modalShell('納骨堂 — 場の財宝を脇に置く', '場に出ている「持続でない財宝」を好きな枚数、裏向きで脇に置きます。以後あなたの各ターンの開始時に1枚ずつ手札へ加わります（0枚でもよい）。', chips, footer);
     }
@@ -3487,24 +3491,26 @@
   }
   // 異郷：地図職人＝山札の上4枚から捨てる札をタップで選ぶ（残りは公開順のまま山札の上へ）。
   function modalCartographer(pd) {
+    pruneSelection((pd.cards || []).length);
     const cards = pd.cards || [];
     const chips = cards.map((id, idx) =>
       cardEl(id, { size: 'sm', extra: UI.selection.includes(idx) ? 'selected' : 'selectable',
         badge: UI.selection.includes(idx) ? '捨' : null,
         onClick: () => { const i = UI.selection.indexOf(idx); if (i >= 0) UI.selection.splice(i, 1); else UI.selection.push(idx); render(); } }));
     const footer = h('button', { class: 'btn btn-primary btn-block',
-      onclick: () => { const discard = UI.selection.map((i) => cards[i]); const top = cards.filter((c, i) => UI.selection.indexOf(i) < 0); dispatch({ type: 'CARTOGRAPHER_RESOLVE', discard, top }); } },
+      onclick: () => { const sel = UI.selection.slice(); UI.selection = []; const discard = sel.map((i) => cards[i]); const top = cards.filter((c, i) => sel.indexOf(i) < 0); dispatch({ type: 'CARTOGRAPHER_RESOLVE', discard, top }); } },
       '確定（' + UI.selection.length + '枚 捨て、残り ' + (cards.length - UI.selection.length) + '枚 を山札の上へ）');
     return modalShell('地図職人 — 山札の上4枚', 'タップして捨てるカードを選びます（選ばなかったカードは公開順のまま山札の上に戻ります）。', chips, footer);
   }
   // 異郷：策謀＝場のアクション（非持続）を最大 max 枚、山札の上に置く（タップで選択・0枚でもよい）。
   function modalSchemeCleanup(p, max) {
+    pruneSelection(p.inPlay.length);
     const elig = p.inPlay.map((id, idx) => ({ id, idx })).filter((x) => DOM.isType(x.id, 'action') && !DOM.isType(x.id, 'duration'));
     const chips = elig.map((x) =>
       cardEl(x.id, { size: 'sm', extra: UI.selection.includes(x.idx) ? 'selected' : 'selectable',
         onClick: () => { const i = UI.selection.indexOf(x.idx); if (i >= 0) UI.selection.splice(i, 1); else if (UI.selection.length < max) UI.selection.push(x.idx); render(); } }));
     const footer = h('button', { class: 'btn btn-primary btn-block',
-      onclick: () => dispatch({ type: 'SCHEME_CLEANUP', cards: UI.selection.map((i) => p.inPlay[i]) }) },
+      onclick: () => dispatch({ type: 'SCHEME_CLEANUP', cards: takeSelection(p.inPlay) }) },
       '確定（' + UI.selection.length + '枚 を山札の上へ）');
     return modalShell('策謀 — 山札の上に置く', '最大 ' + max + ' 枚まで、場のアクションを山札の上に置けます（次のターンに引きます・0枚でもよい）。', chips, footer);
   }
@@ -3531,6 +3537,7 @@
   }
   // 暗黒時代：手札N枚まで捨てる汎用アタック（浮浪児/傭兵/サー・マイケル）。堀・馬商人・番犬で反応可。
   function modalDiscardDown(p, pd) {
+    pruneSelection(p.hand.length);
     const need = p.hand.length - Math.min(pd.down, p.hand.length);
     const hasMoat = p.hand.includes('moat');
     const chips = p.hand.map((id, idx) =>
@@ -3544,25 +3551,43 @@
       p.hand.includes('caravan_guard') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'CARAVAN_GUARD_REACT' }) }, '🛡 隊商の護衛を先にプレイ（+1カード／次手番+$1／攻撃は受ける）') : null,
       p.hand.includes('guard_dog') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'GUARD_DOG_REACT' }) }, '🐕 番犬を先に使う（+2〜4カード／攻撃は受ける）') : null,
       h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
-        onclick: () => dispatch({ type: 'DISCARD_DOWN_RESOLVE', cards: UI.selection.map((i) => p.hand[i]) }) },
+        onclick: () => dispatch({ type: 'DISCARD_DOWN_RESOLVE', cards: takeSelection(p.hand) }) },
         remain === 0 ? '確定（捨てる）' : 'あと ' + remain + ' 枚 選ぶ'));
     return modalShell('攻撃を受ける — 手札' + pd.down + '枚まで捨てる', '手札が' + pd.down + '枚になるまで捨てます。' + (hasMoat ? '「堀」で無効化もできます。' : ''), chips, footer);
   }
   // 暗黒時代：傭兵＝ちょうど2枚を廃棄すると効果発動（0枚＝廃棄しない）。
   function modalMercenaryTrash(p) {
+    pruneSelection(p.hand.length);
     const chips = p.hand.map((id, idx) =>
       cardEl(id, { size: 'sm', extra: UI.selection.includes(idx) ? 'selected' : 'selectable',
         onClick: () => { const i = UI.selection.indexOf(idx); if (i >= 0) UI.selection.splice(i, 1); else if (UI.selection.length < 2) UI.selection.push(idx); render(); } }));
     const k = UI.selection.length;
     const footer = h('div', null,
       h('button', { class: 'btn btn-primary btn-block', disabled: k >= 1 ? null : 'disabled', style: 'margin-bottom:8px',
-        onclick: () => dispatch({ type: 'MERCENARY_TRASH', cards: UI.selection.map((i) => p.hand[i]) }) },
+        onclick: () => dispatch({ type: 'MERCENARY_TRASH', cards: takeSelection(p.hand) }) },
         k === 2 ? '2枚廃棄（+2カード +$2＋アタック）' : (k === 1 ? '1枚だけ廃棄（効果は不発）' : '廃棄する2枚を選ぶ')),
       h('button', { class: 'btn btn-block', onclick: () => dispatch({ type: 'MERCENARY_TRASH', cards: [] }) }, '廃棄しない'));
     return modalShell('傭兵 — 廃棄', '手札からちょうど2枚を廃棄すると +2カード +$2、各相手が手札3枚まで捨てます（1枚だけの廃棄も可・その場合は効果なし・しなくてもよい）。', chips, footer);
   }
   // 手札から n 枚をタップ順に選ぶ（秘密の小部屋の戻し）。最初のタップが一番上。
+  /* 【重要】選択（UI.selection）は **確定した時点で必ず捨てる**。
+     `viewPendingModal` の選択リセットは「pending のキー（type+stage）が変わったとき」だけ走るので、
+     **毎ターン同じキーで開く窓**（同盟の 沿岸の避難港／平和的教団／すり師団、地下貯蔵庫 等）では
+     前回の**手札インデックス**が残る。手札の枚数はターンごとに変わるので、残ったインデックスが
+     範囲外になると「そのチップが描画されない＝外す手段が無い」うえ、送信すると `cards:[undefined]`
+     になって engine が状態不変で拒否し続ける＝**人間が完全に詰む**（A3 の敵対レビューで再現）。
+     modalAmount が `UI.amount = null` でやっているのと同じ扱いを、選択系すべてに揃える。
+     さらに描画時にも範囲外インデックスを間引く（旧スナップショット復元などの自己修復）。 */
+  function takeSelection(list) {
+    const v = (UI.selection || []).slice();
+    UI.selection = [];
+    return list ? v.map((i) => list[i]) : v;
+  }
+  function pruneSelection(len) {
+    UI.selection = (UI.selection || []).filter((i) => typeof i === 'number' && i >= 0 && i < len);
+  }
   function modalSelectN(p, title, desc, n, confirmLabel, onConfirm) {
+    pruneSelection(p.hand.length);
     const chips = p.hand.map((id, idx) => {
       const pos = UI.selection.indexOf(idx);
       return cardEl(id, { size: 'sm', extra: pos >= 0 ? 'selected' : 'selectable', badge: pos >= 0 ? String(pos + 1) : null,
@@ -3570,12 +3595,13 @@
     });
     const remain = n - UI.selection.length;
     const footer = h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
-      onclick: () => onConfirm(UI.selection.map((i) => p.hand[i])) }, remain === 0 ? confirmLabel : ('あと ' + remain + ' 枚'));
+      onclick: () => onConfirm(takeSelection(p.hand)) }, remain === 0 ? confirmLabel : ('あと ' + remain + ' 枚'));
     return modalShell(title, desc, chips, footer);
   }
 
   // 複数カードを「置く順」に並べ替える（斥候など）。最初にタップしたカードが一番上。
   function modalReorder(title, desc, cards, onConfirm) {
+    pruneSelection(cards.length);
     const chips = cards.map((id, idx) => {
       const pos = UI.selection.indexOf(idx);
       return cardEl(id, { size: 'sm', extra: pos >= 0 ? 'selected' : 'selectable',
@@ -3589,12 +3615,13 @@
     });
     const remain = cards.length - UI.selection.length;
     const footer = h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
-      onclick: () => onConfirm(UI.selection.map((i) => cards[i])) },
+      onclick: () => onConfirm(takeSelection(cards)) },
       remain === 0 ? '確定（上から順に戻す）' : 'あと ' + remain + ' 枚 順番を選ぶ');
     return modalShell(title, desc, chips, footer);
   }
 
   function modalMultiHand(p, title, desc, confirmLabel, allowZero, onConfirm, maxN, filter) {
+    pruneSelection(p.hand.length);
     const chips = p.hand.map((id, idx) => ({ id, idx })).filter((x) => !filter || filter(x.id)).map(({ id, idx }) =>
       cardEl(id, {
         size: 'sm',
@@ -3608,11 +3635,12 @@
     const n = UI.selection.length;
     return modalShell(title, desc, chips,
       h('button', { class: 'btn btn-primary btn-block', disabled: (!allowZero && n === 0) ? 'disabled' : null,
-        onclick: () => onConfirm(UI.selection.map((i) => p.hand[i])) }, confirmLabel(n)));
+        onclick: () => onConfirm(takeSelection(p.hand)) }, confirmLabel(n)));
   }
   // 任意のカード配列（手札に限らない・併合の捨て札など）から最大 maxN 枚を選ぶ。onConfirm には選んだカードid配列を渡す。
   //   requireN を渡すと「ちょうどその枚数」でないと確定できない（偵察隊＝3枚ちょうど捨てる）。
   function modalMultiCards(cards, title, desc, confirmLabel, maxN, onConfirm, requireN) {
+    pruneSelection(cards.length);
     const chips = cards.map((id, idx) =>
       cardEl(id, {
         size: 'sm',
@@ -3627,9 +3655,10 @@
     return modalShell(title, desc, body,
       h('button', { class: 'btn btn-primary btn-block',
         disabled: (requireN != null && UI.selection.length !== requireN) ? 'disabled' : null,
-        onclick: () => onConfirm(UI.selection.map((i) => cards[i])) }, confirmLabel(UI.selection.length)));
+        onclick: () => onConfirm(takeSelection(cards)) }, confirmLabel(UI.selection.length)));
   }
   function modalMilitia(p, need, hasMoat, hasSecret, hasDiplomat) {
+    pruneSelection(p.hand.length);
     const chips = p.hand.map((id, idx) =>
       cardEl(id, {
         size: 'sm',
@@ -3649,7 +3678,7 @@
       p.hand.includes('beggar') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'BEGGAR_REACT' }) }, '🥺 物乞いを捨てて銀貨2枚を獲得（1枚は山札の上／攻撃は受ける）') : null,
       p.hand.includes('caravan_guard') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'CARAVAN_GUARD_REACT' }) }, '🛡 隊商の護衛を先にプレイ（+1カード／次手番+$1／攻撃は受ける）') : null,
       h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
-        onclick: () => dispatch({ type: 'MILITIA_RESOLVE', cards: UI.selection.map((i) => p.hand[i]) }) },
+        onclick: () => dispatch({ type: 'MILITIA_RESOLVE', cards: takeSelection(p.hand) }) },
         remain === 0 ? '確定（捨てる）' : 'あと ' + remain + ' 枚 選ぶ'));
     return modalShell('民兵を受ける', '手札が3枚になるまで捨てます。' + (hasMoat ? '「堀」で無効化もできます。' : ''), chips, buttons);
   }
@@ -3760,6 +3789,7 @@
 
   // 風車: 手札2枚を捨てて+2コイン、または捨てない。
   function modalMill(p, onConfirm) {
+    pruneSelection(p.hand.length);
     const chips = p.hand.map((id, idx) =>
       cardEl(id, { size: 'sm', extra: UI.selection.includes(idx) ? 'selected' : 'selectable',
         onClick: () => {
@@ -3770,13 +3800,14 @@
     const k = UI.selection.length;
     const footer = h('div', null,
       h('button', { class: 'btn btn-primary btn-block', disabled: k === 2 ? null : 'disabled', style: 'margin-bottom:8px',
-        onclick: () => onConfirm(UI.selection.map((i) => p.hand[i])) }, k === 2 ? '2枚捨てて +2 コイン' : ('捨てる2枚を選ぶ（あと ' + (2 - k) + '）')),
+        onclick: () => onConfirm(takeSelection(p.hand)) }, k === 2 ? '2枚捨てて +2 コイン' : ('捨てる2枚を選ぶ（あと ' + (2 - k) + '）')),
       h('button', { class: 'btn btn-block', onclick: () => onConfirm([]) }, '捨てない'));
     return modalShell('風車', '手札を2枚捨てると +2 コイン（しなくてもよい）。', chips, footer);
   }
 
   // 衛兵: 山札の上2枚を「山札の上／捨て札／廃棄」に振り分ける（タップで切替）。
   function modalSentry(p, cards, onConfirm) {
+    pruneSelection((cards || []).length);
     if (!Array.isArray(UI.sentryChoice) || UI.sentryChoice.length !== cards.length) UI.sentryChoice = cards.map(() => 'top');
     const labelOf = (s) => (s === 'top' ? '山札の上' : (s === 'discard' ? '捨て札' : '廃棄'));
     const nextOf = (s) => (s === 'top' ? 'discard' : (s === 'discard' ? 'trash' : 'top'));
@@ -3819,6 +3850,7 @@
   }
   // 手札からちょうど n 枚を選んで廃棄
   function modalTrashHand(p, title, desc, n, onConfirm) {
+    pruneSelection(p.hand.length);
     const chips = p.hand.map((id, idx) =>
       cardEl(id, { size: 'sm', extra: UI.selection.includes(idx) ? 'selected' : 'selectable',
         onClick: () => {
@@ -3829,7 +3861,7 @@
         } }));
     const remain = n - UI.selection.length;
     const footer = h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
-      onclick: () => onConfirm(UI.selection.map((i) => p.hand[i])) },
+      onclick: () => onConfirm(takeSelection(p.hand)) },
       remain === 0 ? '確定（廃棄）' : 'あと ' + remain + ' 枚 選ぶ');
     return modalShell(title, desc, chips, footer);
   }
@@ -3849,6 +3881,7 @@
   }
   // 拷問人を受ける: 手札2枚を捨てる / 呪いを受け取る / 堀で無効化
   function modalTorturer(p, hasSecret, hasDiplomat) {
+    pruneSelection(p.hand.length);
     const need = Math.min(2, p.hand.length);
     const hasMoat = p.hand.includes('moat');
     const chips = p.hand.map((id, idx) =>
@@ -3868,7 +3901,7 @@
       p.hand.includes('beggar') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'BEGGAR_REACT' }) }, '🥺 物乞いを捨てて銀貨2枚を獲得（1枚は山札の上／攻撃は受ける）') : null,
       p.hand.includes('caravan_guard') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'CARAVAN_GUARD_REACT' }) }, '🛡 隊商の護衛を先にプレイ（+1カード／次手番+$1／攻撃は受ける）') : null,
       h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
-        onclick: () => dispatch({ type: 'TORTURER_RESOLVE', choice: 'discard', cards: UI.selection.map((i) => p.hand[i]) }) },
+        onclick: () => dispatch({ type: 'TORTURER_RESOLVE', choice: 'discard', cards: takeSelection(p.hand) }) },
         remain === 0 ? '手札を捨てる（確定）' : '捨てる ' + remain + ' 枚 を選ぶ'),
       h('button', { class: 'btn btn-block', style: 'margin-top:8px', onclick: () => dispatch({ type: 'TORTURER_RESOLVE', choice: 'curse' }) }, '☠️ 呪いを手札に受け取る'));
     return modalShell('拷問人を受ける', '手札を2枚捨てるか、呪い1枚を手札に受け取ります。' + (hasMoat ? '「堀」で無効化もできます。' : ''), chips, footer);

@@ -153,6 +153,63 @@ try {
     ok(!byText('.actions-bar button', 'シャッフルに使う好意'), 'シャッフル系でない Ally では方針ボタンを出さない');
   }
 
+  console.log('=== 敵対レビュー回帰：選択の持ち越しで詰まない ===');
+  {
+    /* [high] `viewPendingModal` の選択リセットは「pending のキー（type+stage）が変わったとき」だけ走るので、
+       **毎ターン同じキーで開く窓**（沿岸の避難港／平和的教団／すり師団）では前回の**手札インデックス**が残る。
+       残ったインデックスが範囲外になると、そのチップは描画されず＝外す手段が無く、送信しても
+       `cards:[undefined]` になって engine が状態不変で拒否し続ける＝人間が完全に詰む（敵対レビューで再現）。
+       ⚠ showAs() は毎回 UI.selection をリセットするので、**リセットせずに2回目を描く**形でしか検出できない。 */
+    const cases = [
+      ['ally_coastal_haven', 'coastal_haven', { type: 'ally_coastal_haven', player: 0 }, 'ALLY_COASTAL_HAVEN'],
+      ['ally_peaceful_cult', 'peaceful_cult', { type: 'ally_peaceful_cult', player: 0 }, 'ALLY_PEACEFUL_CULT'],
+      ['ally_gang(discard)', 'gang_of_pickpockets', { type: 'ally_gang', stage: 'discard', player: 0 }, 'ALLY_GANG'],
+    ];
+    cases.forEach(([name, ally, pd, actionType]) => {
+      const s = mk(ally);
+      s.players[0].favors = 5;
+      s.players[0].hand = ['gold', 'silver', 'copper', 'copper', 'copper'];
+      s.pending = JSON.parse(JSON.stringify(pd));
+      showAs(s, 0);
+      // 1回目＝5枚目（index 4）を選んで確定
+      const chips = $all('.modal .chip-grid .card');
+      ok(chips.length >= 5, name + '：1回目のモーダルに手札が並ぶ');
+      if (chips.length >= 5) chips[4].dispatchEvent(new win.Event('click', { bubbles: true }));
+      const confirm = $all('.modal button').filter((b) => !b.disabled)[0];
+      if (confirm) confirm.dispatchEvent(new win.Event('click', { bubbles: true }));
+      ok((UI.selection || []).length === 0, name + '：確定した時点で選択が捨てられる（持ち越さない）');
+      // 2回目＝手札が減った状態で同じキーの窓を開く（**UI.selection をリセットしない**）
+      const s2 = UI.store.state;
+      s2.players[0].hand = ['gold'];
+      s2.pending = JSON.parse(JSON.stringify(pd));
+      runtimeError = null;
+      DOM.render();
+      ok(!runtimeError, name + '：2回目の描画で例外が出ない');
+      const chips2 = $all('.modal .chip-grid .card');
+      const btns2 = $all('.modal button').filter((b) => !b.disabled);
+      ok(chips2.length + btns2.length > 0, name + '：2回目も押せる選択肢がある');
+      // 押した結果 engine が受理する（＝状態が動く＝詰まない）
+      const before = JSON.stringify(UI.store.state);
+      if (btns2.length) btns2[btns2.length - 1].dispatchEvent(new win.Event('click', { bubbles: true }));
+      ok(JSON.stringify(UI.store.state) !== before, name + '：2回目のボタンで局面が動く（状態不変で拒否されない）');
+    });
+  }
+  {
+    // 範囲外に残ったインデックスは描画時にも自己修復される（旧スナップショット復元などの保険）
+    const s = mk('peaceful_cult');
+    s.players[0].favors = 3;
+    s.players[0].hand = ['gold', 'province'];
+    s.pending = { type: 'ally_peaceful_cult', player: 0 };
+    showAs(s, 0);
+    UI.selection = [7]; // 範囲外（前ターンの手札インデックス）
+    UI._selKey = 'ally_peaceful_cult';
+    runtimeError = null;
+    DOM.render();
+    ok((UI.selection || []).length === 0, '範囲外のインデックスは描画時に間引かれる');
+    const btn = $all('.modal button').filter((b) => !b.disabled)[0];
+    ok(btn && btn.textContent.indexOf('廃棄しない') >= 0, '何も選んでいない状態では「廃棄しない」が既定（勝手に廃棄しない）');
+  }
+
   console.log('=== 発明家の家族：山の好意トークンと表示コスト ===');
   {
     const s = mk('family_of_inventors');

@@ -614,7 +614,9 @@ function declineAlly(s) {
   return reduce(s, { type: 'ALLY_SIMPLE', ok: false });
 }
 // 席0の次の手番開始まで進める（途中の Ally 窓はすべて辞退する）。
+// ※**ゲームの最初のターンにも開始時 Ally の窓が開く**ので、まずそれを閉じてから1周する。
 function toOwnTurnStart(s) {
+  let g0 = 0; while (s.pending && g0++ < 10) s = declineAlly(s);
   s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
   let g = 0;
   while (g++ < 60) {
@@ -638,6 +640,24 @@ console.log('=== A3: Ally の選定と好意の基盤 ===');
   const none = mk(['village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival', 'mine', 'workshop']);
   ok(none.ally == null && none.players.every((p) => (p.favors || 0) === 0), '連携が無ければ Ally も好意も登場しない');
   ok(E.hasAlly(s, 'mountain_folk') && !E.hasAlly(none, 'mountain_folk'), 'hasAlly が正しく判定する');
+}
+{
+  /* **ゲームの最初のターンにも「あなたのターンの開始時」は起きる**（公式：好意はゲームの最初のターンから使える）。
+     開始時 Ally の窓は cleanupAndAdvance からしか呼ばれない resolveDurationStartEffects の中にあるので、
+     先頭手番だけ素通りしていた（すり師団を先手だけが1ターン免れる非対称）＝敵対レビューで確定した穴。 */
+  ok(mkAlly('gang_of_pickpockets').pending != null, 'ターン1でも すり師団の窓が開く（先手だけ免れない）');
+  ok(mkAlly('cave_dwellers').pending != null, 'ターン1でも 穴居民の窓が開く（開始時の好意1をターン1から使える）');
+  ok(mkAlly('desert_guides').pending != null, 'ターン1でも 砂漠の案内人の窓が開く');
+  ok(mkAlly('forest_dwellers').pending != null, 'ターン1でも 森の居住者の窓が開く');
+  ok(mkAlly('mountain_folk').pending == null, '好意が足りない Ally（山の民＝5個必要）はターン1では開かない');
+  ok(mkAlly('league_of_bankers').pending == null, '購入フェイズ開始時の Ally はターン1の開始時には開かない');
+  const s0 = mkAlly('gang_of_pickpockets');
+  ok(s0.pending.type === 'ally_gang' && s0.pending.stage === 'pay' && s0.pending.player === 0, '先頭手番の席に開く');
+  const cpu = E.createInitialState([{ name: 'A', isCpu: true, level: 'hard' }, { name: 'B', isCpu: true, level: 'normal' }],
+    A3K, { startActive: 0, ally: 'gang_of_pickpockets' });
+  const a = CPU.decide(cpu);
+  ok(a && a.type === 'ALLY_GANG', 'ターン1の窓でも CPU が有効な action を返す');
+  ok(JSON.stringify(reduce(cpu, a)) !== JSON.stringify(cpu), 'engine が受理する（初手から膠着しない）');
 }
 
 console.log('=== A3: 山の民（好意5＝+3カード） ===');
@@ -1125,6 +1145,80 @@ console.log('=== A3: 占星術師団／メイソン団（常設方針＋自動�
   s = reduce(s, { type: 'END_TURN' });
   ok(count(s.players[0].discard, 'gold') === 0 || count(s.players[0].discard, 'gold') < 3,
     'メイソン団は坑道の金貨を誘発しない（捨てるではない）');
+}
+
+console.log('=== A3: 敵対レビュー回帰（確定7件） ===');
+{
+  /* [medium] 「カードを使用した後」に働く Ally が、別のカードの効果で起きた**1回目のプレイ**で誘発しなかった。
+     公式FAQ逐語＝好意3で玉座の間×下役なら +$1（＝1回目と2回目の両方が誘発したうえでの計算）。 */
+  const K3 = ['underling', 'throne_room', 'kings_court', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'festival'];
+  let s = mk(K3, { ally: 'league_of_shopkeepers' });
+  s.players[0].favors = 6; s.players[0].hand = ['throne_room', 'underling'];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'throne_room' });
+  s = reduce(s, { type: 'THRONE_CHOOSE', card: 'underling' });
+  ok(s.turn.coins === 2, '玉座の間×連携＝小売店主連盟が2回誘発する（+$2）: ' + s.turn.coins);
+  let k = mk(K3, { ally: 'league_of_shopkeepers' });
+  k.players[0].favors = 6; k.players[0].hand = ['kings_court', 'underling'];
+  k.turn.phase = 'action'; k.turn.actions = 1;
+  k = reduce(k, { type: 'PLAY_ACTION', card: 'kings_court' });
+  k = reduce(k, { type: 'KINGS_COURT_CHOOSE', card: 'underling' });
+  ok(k.turn.coins === 3, '王の宮廷×連携＝3回誘発する（+$3）: ' + k.turn.coins);
+  // 冠で財宝の連携（道化棒）を2回使う＝2回目のプレイでも窓が開く
+  let c = mk(['bauble', 'crown', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival'], { ally: 'league_of_shopkeepers' });
+  c.players[0].favors = 6; c.players[0].hand = ['crown', 'bauble'];
+  c.turn.phase = 'buy';
+  c = reduce(c, { type: 'PLAY_TREASURE', card: 'crown' });
+  c = reduce(c, { type: 'CROWN_CHOOSE', card: 'bauble' });
+  const shop = c.log.filter((l) => l.indexOf('小売店主連盟') >= 0).length;
+  ok(shop === 2, '冠×財宝の連携＝2回誘発する: ' + shop);
+  // 大君主（命令）が連携をプレイしても誘発する
+  let o = mk(['underling', 'overlord', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival'], { ally: 'league_of_shopkeepers' });
+  o.players[0].favors = 6; o.players[0].hand = ['overlord'];
+  o.turn.phase = 'action'; o.turn.actions = 1;
+  o = reduce(o, { type: 'PLAY_ACTION', card: 'overlord' });
+  o = reduce(o, { type: 'OVERLORD_PLAY', card: 'underling' });
+  ok(o.turn.coins === 1, '大君主が連携をプレイしても誘発する（+$1）: ' + o.turn.coins);
+}
+{
+  // [medium] 砂漠の案内人＝捨て札トリガーを**引く前に**解決する（坑道の金貨がリシャッフルに入らない問題）
+  const s0 = mk(['tunnel', 'bauble', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival'], { ally: 'desert_guides' });
+  const p = s0.players[0];
+  p.favors = 1; p.hand = ['tunnel', 'estate', 'estate']; p.deck = []; p.discard = ['copper', 'copper'];
+  s0.pending = { type: 'ally_desert', player: 0 };
+  const out = reduce(s0, { type: 'ALLY_SIMPLE', ok: true });
+  const allGold = [].concat(out.players[0].deck, out.players[0].hand, out.players[0].discard).filter((c) => c === 'gold').length;
+  ok(allGold === 1, '坑道の金貨を獲得する: ' + allGold);
+  ok(out.players[0].discard.indexOf('gold') < 0, '金貨は捨て札に取り残されずリシャッフルに入る');
+}
+{
+  // [medium] メイソン団＝1回のドロー指示で2度シャッフルしない（残した札を同じアクセスで引き直さない）
+  const s = mkAlly('order_of_masons');
+  const p = s.players[0];
+  p.favors = 1; p.favorShuffle = 1; p.shuffleAlly = 'order_of_masons';
+  p.deck = []; p.hand = ['smithy']; p.discard = ['curse', 'curse', 'gold'];
+  s.pending = null;
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  const out = reduce(s, { type: 'PLAY_ACTION', card: 'smithy' });
+  const q = out.players[0];
+  ok(q.hand.filter((c) => c === 'curse').length === 0, '捨て札に残した呪いを同じドローで引き直さない: ' + JSON.stringify(q.hand));
+  ok(q.discard.filter((c) => c === 'curse').length === 2, '呪い2枚は捨て札に残る');
+  ok(q.favors === 0, '好意の消費は上限どおり1個（多重消費しない）: ' + q.favors);
+}
+{
+  // [low] 星図 × 占星術師団＝星図が置いた1枚は選び直さない（好意で**追加の**1枚を上に置く）
+  const s = mkAlly('order_of_astrologers');
+  const p = s.players[0];
+  p.projects = ['star_chart']; s.projects = ['star_chart'];
+  p.favors = 3; p.favorShuffle = 1; p.shuffleAlly = 'order_of_astrologers';
+  p.deck = []; p.hand = []; p.inPlay = [];
+  p.discard = ['gold', 'silver', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s.pending = null;
+  let out = reduce(s, { type: 'END_ACTION_PHASE' });
+  out = reduce(out, { type: 'END_TURN' });
+  const h = out.players[0].hand;
+  ok(h.indexOf('gold') >= 0 && h.indexOf('silver') >= 0, '星図の金貨＋好意で銀貨＝2枚とも引ける: ' + JSON.stringify(h));
+  ok(out.players[0].favors === 2, '好意1だけ使う');
 }
 
 console.log('=== A3: 全 Ally 23種で CPU が終端する（膠着・例外・保存則違反ゼロ） ===');
