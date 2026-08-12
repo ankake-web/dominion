@@ -6447,6 +6447,71 @@
         if (anyGainable(state, (id) => costUpTo(state, id, 4))) state.pending = { type: 'hill_fort_gain', player: pi };
         else state.pending = { type: 'hill_fort_choose', player: pi, card: null, dest: null, elder: elderOn(state, 'hill_fort') };
         break;
+      /* 歩哨：山札の上から5枚を**見て**（公開ではない）、最大2枚を廃棄してよく、残りを好きな順で山札の上に戻す。
+         ⚠ **5枚は deck から抜いて脇に持つ**（見ている間は山札のカードではない）＝廃棄でドローする札
+            （ネズミ／狂信者）を廃棄したら「その時の山札」から引く（公式逐語）。 */
+      case 'sentinel': {
+        const look = [];
+        for (let i = 0; i < 5; i++) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p, state); }
+          if (p.deck.length === 0) break;
+          look.push(p.deck.shift());
+        }
+        if (look.length) state.pending = { type: 'sentinel', stage: 'trash', player: pi, cards: look };
+        break;
+      }
+      /* 大工：**空のサプライ山が1つも無ければ** +1アクション ＆ $4以下を1枚獲得。
+         そうでなければ 手札1枚を廃棄し、それより最大2コイン高いカードを1枚獲得（+1アクションは付かない）。
+         ⚠ 判定は**使用時に1回**（1段目の獲得で山が空になっても2段目に切り替わらない＝公式FAQ逐語）。
+         ⚠ 空山の数え方は `emptyPileCount` が正本（分割山は全部・混合山は集約キー・非サプライは数えない）。 */
+      case 'carpenter':
+        if (emptyPileCount(state) === 0) {
+          addActions(t, 1);
+          if (anyGainable(state, (id) => costUpTo(state, id, 4))) state.pending = { type: 'carpenter_gain', player: pi };
+        } else if (p.hand.length > 0) {
+          state.pending = { type: 'carpenter_trash', player: pi };
+        }
+        break;
+      /* 急使：+1コイン → **山札の一番上を捨てる**（シャッフルが要ればする。捨て札トリガーは誘発する）→
+         **その後**に捨て札置き場を見て、その中のアクション1枚または財宝1枚を使用してよい（任意）。
+         ⚠ 順序が公式で確定している（坑道を捨てて得た金貨をこの後で使える／村有緑地でシャッフルが起きると
+            捨て札が空になり何も使えない）。 */
+      case 'courier': {
+        addCoins(state, 1);
+        if (p.deck.length === 0 && p.discard.length > 0) reshuffleDeck(p, state);
+        if (p.deck.length) {
+          const top = p.deck.shift();
+          p.discard.push(top);
+          log(state, `${p.name} は急使で山札の一番上の「${C()[top].name}」を捨てた。`);
+          triggerOnDiscard(state, pi, [top]);
+        }
+        if (!state.pending && p.discard.some((c) => DOM.isType(c, 'action') || isTreasureFor(state, c))) {
+          state.pending = { type: 'courier_play', player: pi };
+        } else if (state.pending) {
+          (state.onGainQueue = state.onGainQueue || []).push({ type: 'courier_play', player: pi });
+        }
+        break;
+      }
+      /* 交換：+1カード +1アクション → 手札のアクション1枚を**その山に戻して**よい（任意・廃棄ではない）。
+         戻したら、コスト5以下で**名前の異なる**アクション1枚を**手札に**獲得する（強制）。
+         ⚠ 「戻す」は獲得でも廃棄でもない第3の移動＝`returnToPile`（supply が増える＝3山終了に影響）。
+         ⚠ **戻す → supply 更新 → 候補算出** の順を厳守（逆にすると engine拒否×CPU提案の livelock）。 */
+      case 'swap':
+        draw(state, pi, 1); addActions(t, 1);
+        if (p.hand.some((c) => DOM.isType(c, 'action') && canReturnToPile(state, c))) {
+          state.pending = { type: 'swap_return', player: pi };
+        }
+        break;
+      /* 侍祭（卜占官）：①手札のアクションまたは勝利点1枚を廃棄してよい（廃棄したら金貨1枚を獲得）／
+         ②これ（場の侍祭）を廃棄してよい（廃棄したら**卜占官の山の一番上**を1枚獲得）。2つは独立・順序は記載順。
+         ⚠ ②の獲得はコスト制限が無い（`costUpTo` を掛けない）＝自分を廃棄した後の一番上を取る。 */
+      case 'acolyte':
+        if (p.hand.some((c) => DOM.isType(c, 'action') || DOM.isType(c, 'victory'))) {
+          state.pending = { type: 'acolyte_trash', player: pi };
+        } else if (p.inPlay.indexOf('acolyte') >= 0) {
+          state.pending = { type: 'acolyte_self', player: pi };
+        }
+        break;
       /* 蛮族（アタック）：+2コイン。他の各プレイヤーは山札の一番上を廃棄し、
          コスト$3以上なら「種別を共有するより安いカード」を1枚獲得、そうでなければ呪いを獲得。 */
       case 'barbarian': {
@@ -7206,6 +7271,13 @@
      （ポーション・負債の成分はそのまま引き継ぐ＝戦争(war)と同型。engine拒否・CPU候補・UIフィルタ共通）。 */
   function modifyCanGain(state, ref) {
     return (id) => costUpTo(state, id, (ref.coin || 0) + 2, { pot: ref.pot || 0, debt: ref.debt || 0 });
+  }
+  /* 交換（Swap）＝「コスト$5以下」かつ「戻した札と**名前の異なる**アクションカード」の候補述語。
+     ⚠ 混合山は**一番上の実カードの名前**で比べる（公式例＝薬草集めを戻すと卜占官の一番上が薬草集めになり、
+        女魔導士は獲得できなくなる）。engine拒否・CPU候補・UIフィルタ共通。 */
+  function swapCanGain(state, returned) {
+    return (id) => costUpTo(state, id, 5) && isTypeSupply(state, id, 'action') &&
+      (mixedTopCard(state, id) || id) !== returned;
   }
   /* 送られてきた選択を検証してカード記載順に並べ替える。
      - 通常は1つだけ／`pd.elder` のときだけ**異なる2つ**まで受け付ける。
@@ -17383,6 +17455,149 @@
         if (state.pending === pd) state.pending = null;
         return state;
       }
+      /* 歩哨＝見た5枚から最大2枚を廃棄（任意）→ 残りを好きな順で山札の上に戻す。 */
+      case 'SENTINEL_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'sentinel' || pd.stage !== 'trash') return state;
+        const tr = Array.isArray(action.cards) ? action.cards : [];
+        if (tr.length > 2) return state;
+        const rest = pd.cards.slice();
+        for (const c of tr) if (!removeOne(rest, c)) return state;   // 見た5枚の部分集合のみ
+        tr.forEach((c) => trashCard(state, pd.player, c));           // ⚠ 廃棄でドローする札は「今の山札」から引く
+        if (tr.length) log(state, `${state.players[pd.player].name} は歩哨で ${tr.length}枚 廃棄した。`);
+        if (rest.length > 1) { state.pending = { type: 'sentinel', stage: 'order', player: pd.player, cards: rest }; return state; }
+        if (rest.length === 1) state.players[pd.player].deck.unshift(rest[0]);
+        if (state.pending === pd) state.pending = null;
+        return state;
+      }
+      case 'SENTINEL_ORDER': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'sentinel' || pd.stage !== 'order') return state;
+        const order = Array.isArray(action.order) ? action.order : [];
+        const want = pd.cards.slice().sort(), got = order.slice().sort();
+        if (got.length !== want.length || got.some((c, i) => c !== want[i])) return state; // 同じ多重集合のみ
+        const owner = state.players[pd.player];
+        for (let i = order.length - 1; i >= 0; i--) owner.deck.unshift(order[i]); // order[0] が一番上
+        log(state, `${owner.name} は歩哨で ${order.length}枚 を山札の上に戻した。`);
+        state.pending = null;
+        return state;
+      }
+      // 大工（空山0）＝コスト4以下を1枚獲得（強制）。
+      case 'CARPENTER_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'carpenter_gain') return state;
+        const card = action.card;
+        if (card == null || !costUpTo(state, card, 4)) return state;
+        state.pending = null;
+        gain(state, pd.player, card, 'discard');
+        log(state, `${state.players[pd.player].name} は大工で「${C()[mixedTopCard(state, card) || card].name}」を獲得した。`);
+        return state;
+      }
+      // 大工（空山あり）＝手札1枚を廃棄（強制）→ それより最大2コイン高いカードを1枚獲得（強制）。
+      case 'CARPENTER_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'carpenter_trash') return state;
+        const owner = state.players[pd.player];
+        const card = action.card;
+        if (card == null || owner.hand.indexOf(card) < 0) return state;
+        removeOne(owner.hand, card);
+        const ref = costOf(state, card);
+        trashCard(state, pd.player, card);
+        log(state, `${owner.name} は大工で「${C()[card].name}」を廃棄した。`);
+        state.pending = anyGainable(state, modifyCanGain(state, ref))
+          ? { type: 'carpenter_upgrade', player: pd.player, coin: ref.coin, pot: ref.pot, debt: ref.debt }
+          : null;
+        return state;
+      }
+      case 'CARPENTER_UPGRADE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'carpenter_upgrade') return state;
+        const card = action.card;
+        if (card == null || !modifyCanGain(state, pd)(card)) return state;
+        state.pending = null;
+        gain(state, pd.player, card, 'discard');
+        log(state, `${state.players[pd.player].name} は大工で「${C()[mixedTopCard(state, card) || card].name}」を獲得した。`);
+        return state;
+      }
+      /* 急使＝捨て札置き場からアクション1枚または財宝1枚を使用してよい（任意・アクション権を消費しない）。 */
+      case 'COURIER_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'courier_play') return state;
+        const owner = state.players[pd.player];
+        const card = action.card;
+        state.pending = null;
+        if (card == null) return state;
+        if (owner.discard.indexOf(card) < 0) return state;
+        if (!DOM.isType(card, 'action') && !isTreasureFor(state, card)) return state;
+        playCardNoAction(state, pd.player, card, owner.discard, '急使で捨て札から', action.way);
+        return state;
+      }
+      /* 交換＝手札のアクション1枚をその山に戻す（任意）→ 戻したら $5以下で名前の異なるアクション1枚を**手札に**獲得。 */
+      case 'SWAP_RETURN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'swap_return') return state;
+        const owner = state.players[pd.player];
+        const card = action.card;
+        state.pending = null;
+        if (card == null) return state;                       // 辞退
+        if (owner.hand.indexOf(card) < 0 || !DOM.isType(card, 'action')) return state;
+        if (!canReturnToPile(state, card)) return state;       // 山が無い札（家宝/闇市場デッキ由来）は戻せない
+        removeOne(owner.hand, card);
+        returnToPile(state, card);                             // ⚠ 廃棄でも獲得でもない（トリガーを呼ばない）
+        log(state, `${owner.name} は交換で「${C()[card].name}」を山に戻した。`);
+        // **戻した後**に候補を数える（分割山では戻した札が一番上に載るので候補が変わる）。
+        if (anyGainable(state, swapCanGain(state, card))) {
+          state.pending = { type: 'swap_gain', player: pd.player, returned: card };
+        }
+        return state;
+      }
+      case 'SWAP_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'swap_gain') return state;
+        const card = action.card;
+        if (card == null || !swapCanGain(state, pd.returned)(card)) return state; // 強制
+        state.pending = null;
+        gain(state, pd.player, card, 'hand');
+        log(state, `${state.players[pd.player].name} は交換で「${C()[mixedTopCard(state, card) || card].name}」を手札に獲得した。`);
+        return state;
+      }
+      /* 侍祭＝①手札のアクション/勝利点1枚を廃棄してよい（したら金貨）→ ②これを廃棄してよい（したら卜占官1枚）。 */
+      case 'ACOLYTE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'acolyte_trash') return state;
+        const owner = state.players[pd.player];
+        const card = action.card;
+        state.pending = null;
+        if (card != null) {
+          if (owner.hand.indexOf(card) < 0) return state;
+          if (!DOM.isType(card, 'action') && !DOM.isType(card, 'victory')) return state;
+          removeOne(owner.hand, card);
+          trashCard(state, pd.player, card);
+          log(state, `${owner.name} は侍祭で「${C()[card].name}」を廃棄した。`);
+          if (gain(state, pd.player, 'gold', 'discard')) log(state, `${owner.name} は侍祭で金貨1枚を獲得した。`);
+        }
+        const nxt = { type: 'acolyte_self', player: pd.player };
+        if (owner.inPlay.indexOf('acolyte') < 0) return state;   // 場に無い（命令経由など）＝②は起きない
+        if (state.pending) (state.onGainQueue = state.onGainQueue || []).push(nxt);
+        else state.pending = nxt;
+        return state;
+      }
+      case 'ACOLYTE_SELF': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'acolyte_self') return state;
+        const owner = state.players[pd.player];
+        state.pending = null;
+        if (!action.ok) return state;
+        if (!takeSelf(state, pd.player, 'acolyte')) return state; // 場に無ければ不発（lose track）
+        trashCard(state, pd.player, 'acolyte');
+        log(state, `${owner.name} は侍祭を廃棄した。`);
+        // **コスト制限は無い**＝卜占官の山の一番上（＝自分を廃棄した後の一番上）をそのまま獲得する。
+        if (Array.isArray(state.augurs) && state.augurs.length) {
+          gain(state, pd.player, 'augurs', 'discard');
+          log(state, `${owner.name} は侍祭で卜占官1枚を獲得した。`);
+        }
+        return state;
+      }
       /* ========== 同盟 A4：アタック7種の reducer ========== */
       // 蛮族＝アタックを受ける（堀を出さずに受ける）／格下げ獲得（被害者が選ぶ・強制）。
       case 'BARBARIAN_REACT': {
@@ -18148,6 +18363,8 @@
     'BAUBLE_CHOOSE', 'CONTRACT_SETASIDE', 'CONTRACT_PLAY', 'IMPORTER_GAIN', 'BROKER_TRASH', 'BROKER_CHOOSE',
     'STUDENT_TRASH', 'TOWN_CRIER_CHOOSE', 'HERB_GATHERER_PLAY', 'OLD_MAP_DISCARD', 'BATTLE_PLAN_REVEAL',
     'ROYAL_GALLEY_PLAY', 'CONJURER_GAIN', 'SPECIALIST_PLAY', 'SPECIALIST_CHOOSE', 'ELDER_PLAY',
+    'SENTINEL_TRASH', 'SENTINEL_ORDER', 'CARPENTER_GAIN', 'CARPENTER_TRASH', 'CARPENTER_UPGRADE',
+    'COURIER_PLAY', 'SWAP_RETURN', 'SWAP_GAIN', 'ACOLYTE_TRASH', 'ACOLYTE_SELF',
     'BARBARIAN_REACT', 'BARBARIAN_GAIN', 'ARCHER_REACT', 'ARCHER_HIDE', 'ARCHER_PICK',
     'SORCERESS_NAME', 'SORCERESS_REACT', 'SORCERER_REACT', 'SORCERER_NAME', 'SKIRMISHER_REACT',
     'MODIFY_TRASH', 'MODIFY_CHOOSE', 'MODIFY_GAIN', 'LICH_GAIN',
@@ -18307,6 +18524,8 @@
     canPlayFromHand,   // 同盟：航海の追加ターン＝手札から3枚まで（engine拒否・CPU非提案・UI無効化の3面共通）
     warlordBlocks,     // 同盟：将軍＝場に2枚以上ある同名アクションを手札から使えない（同上・3面共通）
     barbarianCanGain,  // 同盟：蛮族＝廃棄札と種別を共有しより安いカードの候補（連携/分割山種別も種別に数える）
+    canReturnToPile,   // そのカードを元の山へ戻せるか（交換／交易商人／取り替え子が共通で見る）
+    swapCanGain,       // 同盟：交換＝$5以下・名前の異なるアクション（混合山は一番上の実カード名で比べる）
     elderOn,           // 長老＝そのカードの「選ぶ」で追加の異なる1つを選べるか
     trashFromSupplyPile,  // サプライの山から1枚を廃棄（塩まき/待ち伏せ/剣闘士）。混合山は一番上の実カードを抜く
     // 同盟 A3：Ally カード23種（engine拒否・CPU候補・UIフィルタが同じ述語を見る）

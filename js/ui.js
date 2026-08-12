@@ -2743,6 +2743,71 @@
     if (pd.type === 'blacksmith_choose') return modalChoice(pd, '蹄鉄工', 'BLACKSMITH_CHOOSE',
       [{ k: 'six', label: '手札が6枚になるまで引く（今 ' + p.hand.length + '枚）' },
         { k: 'two', label: '+2 カード' }, { k: 'cantrip', label: '+1 カード と +1 アクション' }]);
+    /* ===== 同盟 A4：残り5種のモーダル ===== */
+    if (pd.type === 'sentinel' && pd.stage === 'trash') {
+      pruneSelection(pd.cards.length);
+      const chips = pd.cards.map((id, idx) => {
+        const pos = UI.selection.indexOf(idx);
+        return cardEl(id, { size: 'sm', extra: pos >= 0 ? 'selected' : 'selectable',
+          onClick: () => { const i = UI.selection.indexOf(idx); if (i >= 0) UI.selection.splice(i, 1); else if (UI.selection.length < 2) UI.selection.push(idx); render(); } });
+      });
+      const k = UI.selection.length;
+      const footer = h('button', { class: 'btn btn-primary btn-block',
+        onclick: () => dispatch({ type: 'SENTINEL_TRASH', cards: takeSelection(pd.cards) }) },
+      k === 0 ? '廃棄しない' : (k + '枚 廃棄する'));
+      return modalShell('歩哨 — 廃棄（最大2枚）', '山札の上から見た ' + pd.cards.length + '枚 から、最大2枚まで廃棄できます（残りは好きな順で山札の上に戻します）。', chips, footer);
+    }
+    if (pd.type === 'sentinel' && pd.stage === 'order') {
+      return modalReorder('歩哨 — 山札の上に戻す', '山札の上に戻す順番をタップで選びます（最初にタップ＝一番上）。',
+        pd.cards, (order) => dispatch({ type: 'SENTINEL_ORDER', order }));
+    }
+    if (pd.type === 'carpenter_gain') {
+      return modalGainSupply(state, '大工 — 獲得', '空のサプライの山が1つもないので、コスト4コイン以下のカード1枚を獲得します。',
+        (id) => DOM.engine.costUpTo(state, id, 4), (id) => dispatch({ type: 'CARPENTER_GAIN', card: id }));
+    }
+    if (pd.type === 'carpenter_trash') {
+      return modalSingleHand(p, '大工 — 廃棄', '空のサプライの山があるので、手札から1枚を廃棄し、それよりコストが最大2コイン高いカードを獲得します。',
+        () => true, (card) => dispatch({ type: 'CARPENTER_TRASH', card }));
+    }
+    if (pd.type === 'carpenter_upgrade') {
+      return modalGainSupply(state, '大工 — 獲得', '廃棄したカードよりコストが最大2コイン高いカード1枚を獲得します。',
+        DOM.engine.modifyCanGain(state, pd), (id) => dispatch({ type: 'CARPENTER_UPGRADE', card: id }));
+    }
+    if (pd.type === 'courier_play') {
+      const names = [];
+      (p.discard || []).forEach((c) => {
+        if ((DOM.isType(c, 'action') || DOM.engine.isTreasureFor(state, c)) && names.indexOf(c) < 0) names.push(c);
+      });
+      return modalPickIds('急使 — 捨て札から使う', '捨て札置き場からアクションカード1枚または財宝カード1枚を使用できます（しなくてもよい）。',
+        names, (id) => dispatch({ type: 'COURIER_PLAY', card: id }), '使う',
+        { label: '使わない', on: () => dispatch({ type: 'COURIER_PLAY', card: null }) });
+    }
+    if (pd.type === 'swap_return') {
+      return modalSingleHand(p, '交換 — 山に戻す',
+        '手札のアクションカード1枚をその山に戻せます（廃棄ではありません）。戻したら、コスト5コイン以下で名前の異なるアクションカード1枚を手札に獲得します。しなくてもよい。',
+        (id) => DOM.isType(id, 'action') && DOM.engine.canReturnToPile(state, id),
+        (card) => dispatch({ type: 'SWAP_RETURN', card }),
+        { label: '戻さない', on: () => dispatch({ type: 'SWAP_RETURN', card: null }) }, '山に戻す');
+    }
+    if (pd.type === 'swap_gain') {
+      const nm = ((DOM.CARDS[pd.returned] || {}).name || pd.returned);
+      return modalGainSupply(state, '交換 — 獲得', '「' + nm + '」とは名前の異なる、コスト5コイン以下のアクションカード1枚を手札に獲得します。',
+        DOM.engine.swapCanGain(state, pd.returned), (id) => dispatch({ type: 'SWAP_GAIN', card: id }));
+    }
+    if (pd.type === 'acolyte_trash') {
+      return modalSingleHand(p, '侍祭 — 廃棄（任意）', '手札のアクションカードまたは勝利点カード1枚を廃棄できます（廃棄したら金貨1枚を獲得）。',
+        (id) => DOM.isType(id, 'action') || DOM.isType(id, 'victory'),
+        (card) => dispatch({ type: 'ACOLYTE_TRASH', card }),
+        { label: '廃棄しない', on: () => dispatch({ type: 'ACOLYTE_TRASH', card: null }) });
+    }
+    if (pd.type === 'acolyte_self') {
+      const top = (state.augurs || [])[0];
+      const nm = top ? ((DOM.CARDS[top] || {}).name || top) : null;
+      return modalOptions('侍祭 — これを廃棄する？',
+        '侍祭自身を廃棄すると、卜占官の山の一番上を1枚獲得できます' + (nm ? '（廃棄後の一番上：' + nm + '）' : '（山が空です）') + '。', [
+        { label: '侍祭を廃棄して卜占官を獲得', cls: 'btn-primary', on: () => dispatch({ type: 'ACOLYTE_SELF', ok: true }) },
+        { label: '廃棄しない', on: () => dispatch({ type: 'ACOLYTE_SELF', ok: false }) }]);
+    }
     /* ===== 同盟 A4：アタック7種のモーダル ===== */
     if (pd.type === 'barbarian' && pd.stage === 'react') {
       return modalOptions('蛮族を受ける', '山札の一番上が廃棄されます（コスト$3以上なら種別を共有するより安いカードを獲得、そうでなければ呪い）。',

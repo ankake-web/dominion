@@ -3326,6 +3326,54 @@
         return { type: 'SUNKEN_TREASURE_GAIN', card: g };
       }
 
+      /* ===== 同盟 A4：残り5種 ===== */
+      case 'sentinel': {
+        if (pd.stage === 'trash') { // 死蔵札（呪い/銅貨/素の勝利点）を最大2枚まで廃棄
+          const junk = pd.cards.filter((c) => isDead(c) || c === 'copper').sort((a, b) => keepValue(a) - keepValue(b));
+          return { type: 'SENTINEL_TRASH', cards: junk.slice(0, 2) };
+        }
+        // 良い札から順に山札の上へ
+        return { type: 'SENTINEL_ORDER', order: pd.cards.slice().sort((a, b) => keepValue(b) - keepValue(a)) };
+      }
+      case 'carpenter_gain': {
+        const g = bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) ||
+          firstGainable(state, (id) => DOM.engine.costUpTo(state, id, 4));
+        return { type: 'CARPENTER_GAIN', card: g };
+      }
+      case 'carpenter_trash': {
+        const junk = p.hand.filter((c) => isDead(c) || c === 'copper').sort((a, b) => cost(state, b) - cost(state, a));
+        if (junk.length) return { type: 'CARPENTER_TRASH', card: junk[0] };
+        const order = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b));
+        return { type: 'CARPENTER_TRASH', card: order[0] };
+      }
+      case 'carpenter_upgrade':
+        return { type: 'CARPENTER_UPGRADE', card: firstGainable(state, DOM.engine.modifyCanGain(state, pd)) };
+      case 'courier_play': { // 急使＝捨て札から一番強いアクション/財宝を使う（辞退可）
+        const cands = (p.discard || []).filter((c) => isType(c, 'action') || isTreasureNow(state, c));
+        if (!cands.length) return { type: 'COURIER_PLAY', card: null };
+        for (const id of GAIN_ORDER) if (cands.indexOf(id) >= 0) return { type: 'COURIER_PLAY', card: id };
+        return { type: 'COURIER_PLAY', card: cands[0] };
+      }
+      case 'swap_return': { // 交換＝一番弱いアクションを山に戻す（強い札が獲得できるときだけ）
+        const acts = p.hand.filter((c) => isType(c, 'action') && DOM.engine.canReturnToPile(state, c))
+          .sort((a, b) => cost(state, a) - cost(state, b));
+        if (!acts.length) return { type: 'SWAP_RETURN', card: null };
+        const best = firstGainable(state, DOM.engine.swapCanGain(state, acts[0]));
+        if (!best || cost(state, best) <= cost(state, acts[0])) return { type: 'SWAP_RETURN', card: null };
+        return { type: 'SWAP_RETURN', card: acts[0] };
+      }
+      case 'swap_gain':
+        return { type: 'SWAP_GAIN', card: firstGainable(state, DOM.engine.swapCanGain(state, pd.returned)) };
+      case 'acolyte_trash': { // 侍祭＝手札の素の勝利点を廃棄して金貨（無ければ廃棄しない）
+        const vic = p.hand.filter((c) => (isType(c, 'victory') && !isType(c, 'action')) || isDead(c));
+        if (vic.length) return { type: 'ACOLYTE_TRASH', card: vic[0] };
+        return { type: 'ACOLYTE_TRASH', card: null };
+      }
+      case 'acolyte_self': { // 侍祭＝卜占官の一番上が侍祭より良ければ自身を廃棄して獲得
+        const top = (state.augurs || [])[0];
+        return { type: 'ACOLYTE_SELF', ok: !!top && cost(state, top) >= 4 };
+      }
+
       /* ===== 同盟 A4：アタック7種（堀があれば必ず公開して無効化する） ===== */
       case 'barbarian': {
         if (pd.stage === 'react') return p.hand.includes('moat') ? { type: 'MOAT_REVEAL' } : { type: 'BARBARIAN_REACT' };
