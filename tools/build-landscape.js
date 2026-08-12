@@ -68,13 +68,17 @@ const SKIN = {
   boon:       { base: [160, 124, 34] },
   hex:        { base: [86, 44, 110] },
   state:      { base: [96, 90, 80] },
+  // 同盟：Ally＝濃い藍（イベントの茶・ランドマークの青緑・アーティファクトの灰青のいずれとも混ざらない色）。
+  //   買わない横型なのでコスト円は描かない。
+  ally:       { base: [44, 62, 118] },
 };
-const WITH_COIN = { event: true, project: true, landmark: false, artifact: false, way: false, boon: false, hex: false, state: false };
+const WITH_COIN = { event: true, project: true, landmark: false, artifact: false, way: false, boon: false, hex: false, state: false, ally: false };
 const KIND_LABEL = {
   event: 'イベント / Event', landmark: 'ランドマーク / Landmark',
   project: 'プロジェクト / Project', artifact: 'アーティファクト / Artifact',
   way: '習性 / Way',
   boon: '祝福 / Boon', hex: '呪詛 / Hex', state: '状態 / State',
+  ally: '同盟 / Ally',
 };
 
 const W = 1536, H = 1024;             // 合成解像度（縦型 1024×1536 の 90度相当）

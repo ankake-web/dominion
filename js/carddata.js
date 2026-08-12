@@ -108,6 +108,13 @@
     if (types.includes('curse')) return 'curse';
     return 'action';
   }
+  // 同盟（Allies）の新種別＝連携(Liaison)＋分割山6組の専用種別（町民/卜占官/衝突/城砦/叙事詩/魔法使い）。
+  //   これらを持つカードは「types 配列の順にラベルを連ねる」汎用規則で表記する（本家の印刷順＝カタログの types 順）。
+  //   公式訳の出典＝日本語wiki（ホビージャパン印刷版）。docs/research/allies_rules.md §g11。
+  const ALLIES_TYPE_JP = { liaison: '連携', townsfolk: '町民', augur: '卜占官', clash: '衝突', fort: '城砦', odyssey: '叙事詩', wizard: '魔法使い' };
+  const ALLIES_TYPE_EN = { liaison: 'Liaison', townsfolk: 'Townsfolk', augur: 'Augur', clash: 'Clash', fort: 'Fort', odyssey: 'Odyssey', wizard: 'Wizard' };
+  const BASE_TYPE_JP = { action: 'アクション', treasure: '財宝', victory: '勝利点', curse: '呪い', attack: 'アタック', reaction: 'リアクション', duration: '持続' };
+  const BASE_TYPE_EN = { action: 'Action', treasure: 'Treasure', victory: 'Victory', curse: 'Curse', attack: 'Attack', reaction: 'Reaction', duration: 'Duration' };
   // 種別ラベル（日本語）
   function typeLabel(types) {
     const has = (t) => types.includes(t);
@@ -129,6 +136,9 @@
       return 'アクション・幸運';                                                         // 詩人/恵みの村/ドルイド/愚者/ピクシー/聖なる木立ち/追跡者
     }
     if (has('doom')) return has('attack') ? 'アクション・アタック・不運' : 'アクション・不運'; // 暗躍者・迫害者 / 呪われた村・レプラコーン
+    // 同盟：連携(Liaison)と分割山6種の専用種別。持続との複合が多い（輸入者/契約書/駐屯地/航海/将軍/要塞/霊術師）ので
+    //   duration 判定より前に決める（夜行/幸運/不運と同じ位置）。**types 配列の順＝本家の印刷順**をそのまま並べる。
+    if (types.some((t) => ALLIES_TYPE_JP[t])) return types.map((t) => ALLIES_TYPE_JP[t] || BASE_TYPE_JP[t] || t).join('・');
     // 海辺：持続の複合（本家の表記順に合わせる）
     if (has('duration')) {
       if (has('treasure') && has('reaction')) return '財宝・持続・リアクション'; // 海賊
@@ -196,6 +206,8 @@
       return 'Action - Fate';
     }
     if (has('doom')) return has('attack') ? 'Action - Attack - Doom' : 'Action - Doom';
+    // 同盟：連携＋分割山6種（日本語側と同じ規則＝types 配列の順に連ねる）
+    if (types.some((t) => ALLIES_TYPE_EN[t])) return types.map((t) => ALLIES_TYPE_EN[t] || BASE_TYPE_EN[t] || t).join(' - ');
     if (has('duration')) {
       if (has('treasure') && has('reaction')) return 'Treasure - Duration - Reaction'; // Pirate
       if (has('command')) return 'Action - Duration - Command';                        // Prince/Captain
