@@ -139,6 +139,53 @@
     const LI = DOM.ALLIES_LIAISONS || [];
     return (kingdom || []).some((id) => LI.indexOf(id) >= 0 || (ALLIES_SPLIT[id] || []).some((c) => LI.indexOf(c) >= 0));
   }
+  /* ========== 同盟（Allies）：Ally カード23種の共通基盤（A3） ==========
+     Ally は**カードではない**横型ランドスケープ（`DOM.LANDSCAPES` の `kind:'ally'`）。
+     1ゲームに**ちょうど1枚**だけ（王国に連携=Liaison があるときのみ）＝`state.ally`（対局中不変・公開）。
+     好意(Favor)＝`p.favors`（非カード・公開・上限なし・**得点にならない**［例外＝高原の羊飼い］）。
+     ⚠ **Ally が起こす攻撃は「アタックカードのプレイ」ではない＝堀で防げない**（魔女の輪・すり師団の公式FAQ逐語）。
+        → `ATTACKS` に登録しない／リアクション窓を開かない／`attackImmune` を通さない。
+     ⚠ **獲得したばかりの好意はその場で開いた窓に即使える**＝窓を開く前の値をスナップショットしない。
+     ⚠ **好意の支払いは常に任意**。「1回の誘発につき1回だけ」（`Repeat as desired.` のある
+        穴居民／砂漠の案内人／市場の町 だけが繰り返せる）。 */
+  function hasAlly(state, id) { return !!state && state.ally === id; }
+  // ALLY_SIMPLE（好意を使う／使わない だけの窓）が受け付ける pending 種別。
+  const ALLY_SIMPLE_PENDINGS = new Set([
+    'ally_mountain_folk', 'ally_desert', 'ally_scribes', 'ally_circle',
+    'ally_island_folk', 'ally_city_state', 'ally_trappers', 'ally_forest',
+  ]);
+  // 好意を n 個使う（足りなければ何もせず false）。使うかどうかを決めるのは常に呼び出し側（＝プレイヤー）。
+  function spendFavors(state, pi, n) {
+    const p = state.players[pi];
+    if ((p.favors || 0) < n) return false;
+    p.favors -= n;
+    return true;
+  }
+  /* 発明家の家族（Family of Inventors）＝購入フェイズの開始時、自分の好意トークン1個を
+     「勝利点でないサプライの山」の上に置いてよい（マットから山へ移動＝戻ってこない）。
+     ⚠ **判定は「山（randomizer）の種別」**であって今の一番上のカードの種別ではない（公式逐語＝
+        騎士の一番上がデイム・ジョセフィーヌでも置ける／同盟の6分割山には置けるが 城(Castles) には置けない）。
+     ※廃墟(ruins)の山は公式には置けるが、廃墟は $0 で購入もできず軽減が一切意味を持たない
+       （かつ 'ruins' はカタログに無い山キーなので UI で描画できない）＝候補から外す（許容簡略化）。 */
+  function favorPileTargets(state) {
+    const out = [];
+    Object.keys(state.supply || {}).forEach((id) => {
+      if (NON_SUPPLY.has(id)) return;
+      if (SPLIT_TOP[id]) return;             // 2段分割山の下段は上段キーで1山
+      if (!C()[id]) return;
+      if (DOM.isType(id, 'victory')) return; // ★山の種別（randomizer）で判定する
+      out.push(id);
+    });
+    return out;
+  }
+  /* 占星術師団／メイソン団の自動選択に使う札の評価。星図（star_chart）の評価関数を共有する
+     （§0-29 の決定＝「何個使うか」だけ本人が決め、どの札を選ぶかはエンジンが自動で最善を選ぶ）。 */
+  function shuffleCardRank(c) {
+    const card = C()[c] || {}; const ty = card.types || [];
+    if (ty.indexOf('curse') >= 0) return -100;
+    if (ty.indexOf('victory') >= 0 && ty.indexOf('action') < 0 && ty.indexOf('treasure') < 0) return -50 + (card.cost || 0);
+    return (card.cost || 0) * 2 + (ty.indexOf('action') >= 0 ? 1 : 0);
+  }
   // 冒険：トラベラーの成長系列（このカードを場から捨てる時、次の成長先と交換してよい）。champion/teacher は終端（次が無い）。
   const TRAVELLER_NEXT = { page: 'treasure_hunter', treasure_hunter: 'warrior', warrior: 'hero', hero: 'champion',
                            peasant: 'soldier', soldier: 'fugitive', fugitive: 'disciple', disciple: 'teacher' };
@@ -317,6 +364,10 @@
     //   「あなたのターン」＝手番プレイヤーが運河を買っているとき（他人の手番では元のコストに戻る）。
     //   ※イベント/プロジェクトは「カード」ではないので安くならない（BUY_EVENT/BUY_PROJECT は cardCost を通さない）。
     if (active && t && hasMyProject(state, t.active, 'canal')) base -= 1;
+    /* 同盟：発明家の家族（Family of Inventors）＝その山の上にある好意トークン1個につき $1 安い。
+       **全員に・常時・累積で**効く（トークンを置いた本人だけ／手番中だけ ではない＝公式）。
+       山キーは `pileKeyOf` で正規化する（分割山の中身も同じ山＝安くなる）。$0未満にはしない（末尾の Math.max）。 */
+    if (state.pileFavor) base -= (state.pileFavor[pileKeyOf(state, id)] || 0);
     const red = (t && t.costReduction) || 0;
     return Math.max(0, base - red);
   }
@@ -419,6 +470,8 @@
        make +[$1] when played.`（帝国の分割山も同型＝石／鹵獲品／大金が該当）。
        ※PLAY_ACTION 側と同じく「効果解決より前」に適用する。炉(kiln)で中断しても取りこぼさないよう先頭に置く。 */
     applyPileTokens(state, pIndex, card);
+    // 同盟：「カードを使用した後」に働く Ally（道化棒/契約書＝**財宝の連携**なので購入フェイズでも誘発する）。
+    noteAllyPlay(state, pIndex, card);
     // ルネサンス：資本主義で「財宝になったアクション」を購入フェイズに出した場合＝**アクションの効果を全て解決する**
     //   （アタックは発動しリアクション窓も開く／持続は場に残る）。アクション権は消費しない。
     //   「コインだけ加算」は必ず壊れる（公式）＝applyEffect を通す。
@@ -454,6 +507,7 @@
        ターン開始時の使用）も「カードの使用」なのでボーナスが乗る。PLAY_ACTION／playTreasureCard と同じく
        効果解決より前に適用する。相続の屋敷は「脇に置いたカードの山」のトークンを見る（公式）。 */
     applyPileTokens(state, pi, inheritedEstate(p, card) ? p.inherited[0] : card);
+    noteAllyPlay(state, pi, card); // 同盟：「カードを使用した後」に働く Ally
     log(state, `${p.name} は${note}「${C()[card].name}」を使った。`);
     if (isAct) {
       const useWay = isUsableWay(state, way) ? way : null;
@@ -719,23 +773,59 @@
      シャッフルは効果解決の途中で同期的に起きるため対話を挟めない（へそくり Stash と同じ難所）。
      → **最良の札を自動で選ぶ**（へそくりの常設方針 stashPlacement と同型の許容簡略化）。 */
   function starChartPick(cards) {
-    const rank = (c) => {
-      const card = C()[c] || {}; const ty = card.types || [];
-      if (ty.indexOf('curse') >= 0) return -100;
-      // 素の勝利点（アクション/財宝を兼ねない）は引きたくない
-      if (ty.indexOf('victory') >= 0 && ty.indexOf('action') < 0 && ty.indexOf('treasure') < 0) return -50 + (card.cost || 0);
-      return (card.cost || 0) * 2 + (ty.indexOf('action') >= 0 ? 1 : 0);
-    };
+    // 素の勝利点（アクション/財宝を兼ねない）は引きたくない＝shuffleCardRank が負にする。
     let best = null, bv = -Infinity;
-    (cards || []).forEach((c) => { const v = rank(c); if (v > bv) { bv = v; best = c; } });
+    (cards || []).forEach((c) => { const v = shuffleCardRank(c); if (v > bv) { bv = v; best = c; } });
     return best;
   }
-  function reshuffleDeck(p) {
+  /* 同盟：占星術師団(Order of Astrologers)／メイソン団(Order of Masons)＝**シャッフルするたび**に
+     好意を払って、シャッフルする札を全部見て選び出す Ally。公式は「払うたびに選び直せる」対話だが、
+     `reshuffleDeck` は同期・非対話（`draw()` の途中で起きる）＝星図/へそくりと同じ難所。
+     → **「1回のシャッフルに好意を何個まで使うか」だけを本人の常設方針 `p.favorShuffle` で決め、
+        どの札を選ぶかはエンジンが自動で最善を選ぶ**（§0-29 の決定＝許容簡略化。再議論しない）。
+     - 占星術師団＝好意1につき1枚を「**シャッフルした束の一番上**」へ（＝残り山札の**下**＝本エンジンの concat の前）。
+       `p.deck.unshift()` にすると公式より強くなるので**必ず `shuffled.unshift()`**（星図と同じ位置）。
+     - メイソン団＝好意1につき**最大2枚**を捨て札置き場に残す（シャッフルに混ぜない）。
+       **「捨て札置き場に置く」は「捨てる」ではない**＝`triggerOnDiscard`（村有緑地/坑道/忠犬）を通さない。
+       ⚠ 全部を捨て札に残すと同じドローの中でもう一度シャッフルが走るので**必ず1枚は残す**。
+     ※公式FAQ「密使(Emissary)・下役(Underling)は好意をくれる**前**にシャッフルを起こしうる＝
+       まだ持っていない好意はそのシャッフルには使えない」は、この位置（シャッフル時点の p.favors を見る）で自動的に守られる。
+     ※セットアップの初期山札シャッフルでは使えない（公式）＝createInitialState は reshuffleDeck を通さない。 */
+  function reshuffleDeck(p, state) {
     const shuffled = shuffle(p.discard);
     p.discard.length = 0;
     if ((p.projects || []).indexOf('star_chart') >= 0 && shuffled.length > 1) {
       const pick = starChartPick(shuffled);
       if (pick != null && removeOne(shuffled, pick)) shuffled.unshift(pick);
+    }
+    if (p.shuffleAlly === 'order_of_masons' && (p.favorShuffle || 0) > 0 && (p.favors || 0) > 0) {
+      let uses = Math.min(p.favorShuffle, p.favors);
+      let moved = 0;
+      while (uses-- > 0 && shuffled.length > 1) {
+        // ジャンク（呪い/銅貨/素の勝利点/廃墟）が無いなら好意を無駄にしない
+        const junk = shuffled.filter((c) => shuffleCardRank(c) <= 1);
+        if (!junk.length) break;
+        p.favors -= 1;
+        junk.sort((a, b) => shuffleCardRank(a) - shuffleCardRank(b));
+        for (let k = 0; k < 2 && shuffled.length > 1 && k < junk.length; k++) {
+          if (removeOne(shuffled, junk[k])) { p.discard.push(junk[k]); moved++; }
+        }
+      }
+      if (moved && state) log(state, `${p.name} はメイソン団で ${moved}枚 を捨て札置き場に残した（シャッフルに混ぜない）。`);
+    }
+    if (p.shuffleAlly === 'order_of_astrologers' && (p.favorShuffle || 0) > 0 && (p.favors || 0) > 0) {
+      let uses = Math.min(p.favorShuffle, p.favors);
+      const picks = [];
+      while (uses-- > 0 && shuffled.length > 0) {
+        const pick = starChartPick(shuffled);
+        if (pick == null || shuffleCardRank(pick) < 5) break; // 銀貨/$3アクション未満を上に置くために好意は払わない
+        if (!removeOne(shuffled, pick)) break;
+        picks.push(pick); p.favors -= 1;
+      }
+      if (picks.length) {
+        shuffled.unshift(...picks); // picks[0]（最良）がシャッフルした束の一番上
+        if (state) log(state, `${p.name} は占星術師団で ${picks.length}枚 をシャッフルした束の上に置いた。`);
+      }
     }
     p.deck = p.deck.concat(shuffled);
     placeStash(p);
@@ -821,7 +911,9 @@
       travellingFair: false, // 移動遊園地＝このターン、獲得したカードを山札の上に置いてよい
       savedCard: null,    // 保存（Save）＝脇に置いた1枚（片付けで次の手札を引いた「後」に手札へ戻す）
       noBuyCards: !!extra.noBuyCards, // 使節団（Mission）の追加ターン＝カードを購入できない（イベントは買える）
-      seizeTurn: !!extra.seizeTurn, // 移動動物園：今を生きるの追加ターン（同点時のタイブレークに数えない）
+      seizeTurn: !!extra.seizeTurn, // 移動動物園：今を生きる／同盟：島民 の追加ターン（同点時のタイブレークに数えない）
+      chain: extra.chain || 1,      // 同盟：島民の「3ターン連続にはできない」用＝同じ席が連続している回数（1=通常のターン）
+      allyPlayed: null,             // 同盟：「カードを使用した後」に働く Ally の未処理キュー（reduce 末尾の再開網が消化する）
       populateQueue: null, populatePlayer: null, // 移動動物園：植民＝獲得が残っている山キー（reduce 末尾の再開網が使う）
       treasuresLocked: false, // 公式：一度でも購入（カード/イベント/闇市場）したら、そのターンはもう財宝を出せない
       /* 夜想曲。錯乱/嫉妬は「持っている＝効いている」ではない：**購入フェイズの開始時に返して初めて発動**し、
@@ -971,6 +1063,13 @@
       if (ally) {
         const start = kingdom.includes('importer') ? 5 : 1;
         players.forEach((pl) => { pl.favors = start; });
+        /* 占星術師団／メイソン団＝シャッフルのたびに働く Ally。`reshuffleDeck` は非対話なので
+           「1回のシャッフルに何個まで使うか」の常設方針（p.favorShuffle）＋自動選択で表現する（§0-29）。
+           人間は既定 0（＝使わない。本人がいつでも FAVOR_SHUFFLE_SETTING で変更できる）／
+           CPU は既定 1（対話できないので既定値がそのまま方針になる。1個ぶんは常に得なので）。 */
+        if (ally === 'order_of_astrologers' || ally === 'order_of_masons') {
+          players.forEach((pl) => { pl.shuffleAlly = ally; pl.favorShuffle = pl.isCpu ? 1 : 0; });
+        }
       }
     }
     // プロモ/帝国：分割山＝1つの山枠（上段5＋下段5）。上段/下段どちらかが王国にあれば両方をサプライに
@@ -1115,6 +1214,9 @@
       baneCard, // 収穫祭：若き魔女の災いカード（無ければ null）
       ally,     // 同盟：このゲームの同盟(Ally)カードid（王国に連携が無ければ null）。**公開・対局中不変**。
                 //   好意(p.favors)の使い道はこの1枚が定める＝Ally が null なら好意は登場しない。
+      // 同盟：発明家の家族＝サプライ山の上に置かれた好意トークン数 {[山キー]:個数}（**非カード**・公開＝
+      //   state.pileVP / state.pileDebt と同型で保存則 tally に混ぜない）。その Ally のときだけ作る。
+      pileFavor: ally === 'family_of_inventors' ? {} : null,
       trash,    // 廃棄置き場（夜想曲：ネクロマンサーがあればゾンビ3枚が最初から入っている）
       trashFaceDown: {}, // 夜想曲：ネクロマンサーで裏返した廃棄置き場のカード（id→枚数。ターン終了で全解除）
       blackMarket, // 闇市場デッキ（無ければ null）
@@ -1234,8 +1336,9 @@
     for (let i = 0; i < n; i++) {
       if (p.deck.length === 0) {
         if (p.discard.length === 0) break;
-        reshuffleDeck(p);
+        reshuffleDeck(p, state); // state はログ用（同盟：占星術師団/メイソン団）
       }
+      if (p.deck.length === 0) break; // メイソン団が全部を捨て札に残した等（理論上は起きないが安全網）
       drawn.push(p.deck.shift());
     }
     p.hand.push(...drawn);
@@ -6249,9 +6352,10 @@
         if (DOM.isType(c, 'victory') || DOM.isType(c, 'curse')) vpCards[c] = (vpCards[c] || 0) + 1;
       });
       const lmVp = landmarkScore(state, i); // 帝国：ランドマーク得点（負にもなり得る）
+      const alVp = allyScoreForCards(state, cards, p); // 同盟：高原の羊飼い（好意×コスト$2ちょうどのカードのペア）
       // deckSize は庭園の得点表示用（デッキ10枚につき1点）
       // tieTurns＝同点時のタイブレーク用のターン数。移動動物園「今を生きる」の追加ターンは数えない（公式）。
-      return { name: p.name, vp: vpOf(p) + lmVp, landmarkVp: lmVp, turns: p.turns,
+      return { name: p.name, vp: vpOf(p) + lmVp + alVp, landmarkVp: lmVp, allyVp: alVp, turns: p.turns,
         tieTurns: p.turns - (p.freeTurns || 0), vpCards, deckCards, deckSize: cards.length };
     });
     // 勝者判定：勝利点が多い → 同点ならターン数が少ない（今を生きるの追加ターンは数えない＝tieTurns）
@@ -6346,6 +6450,8 @@
     }
     // ルネサンス：ターン開始時のプロジェクト（自動＝縁日/兵舎／対話＝大聖堂・城門・サイロ・悪巧み・輪作／ピアッツァ＝プレイ）。
     startOfTurnProjects(state, pi);
+    // 同盟：ターン開始時に働く Ally（穴居民/工芸家ギルド/砂漠の案内人/森の居住者/すり師団/山の民）。
+    allyStartOfTurn(state, pi);
     // ピアッツァのプレイが選択待ちを立てた場合はそれを優先し、残りは reduce 末尾の startQueue 安全網が拾う。
     if (!state.pending) popStartQueue(state);
   }
@@ -6403,6 +6509,156 @@
     t.citadelUsed = true;
     (state.replay = state.replay || []).push({ player: pi, card: card, label: 'citadel' });
     log(state, `${state.players[pi].name} は山砦で「${C()[card].name}」を再演する（このターン最初のアクション）。`);
+  }
+  /* ========== 同盟：Ally の誘発窓（1ゲームに Ally は1枚だけなので下の分岐はすべて排他）==========
+     窓はすべて `t.startQueue` に積む（＝reduce 末尾の安全網が「選択待ちが無くなったら1件ずつ pending 化」する）。
+     ターン開始時だけでなく購入フェイズ開始時の窓もここに積んでよい（キューは phase 非依存）。
+     ※**複数の開始時効果の解決順は公式ではプレイヤーが選べる**が、本エンジンは先入れ順の既存簡略化に従う
+       （すり師団だけは手札が少ないほど得なので **先頭に unshift** して最初に解決させる）。 */
+  function allyHandHasAction(state, pi) {
+    const p = state.players[pi];
+    return p.hand.some((c) => DOM.isType(c, 'action') || inheritedEstate(p, c));
+  }
+  function queueAllyWindow(state, pd, front) {
+    const t = state.turn;
+    if (!t) return;
+    if (!t.startQueue) t.startQueue = [];
+    if (front) t.startQueue.unshift(pd); else t.startQueue.push(pd);
+  }
+  // 自分のターンの開始時に開く Ally の窓。
+  function allyStartOfTurn(state, pi) {
+    if (!state.ally) return;
+    const p = state.players[pi];
+    const fav = p.favors || 0;
+    /* すり師団（Gang of Pickpockets）＝好意1を使わないかぎり手札4枚まで捨てる。
+       **アタックではない**（堀/灯台/リアクションで防げない）。既に4枚以下なら何も起きない。 */
+    if (state.ally === 'gang_of_pickpockets' && p.hand.length > 4) {
+      queueAllyWindow(state, fav >= 1
+        ? { type: 'ally_gang', stage: 'pay', player: pi }
+        : { type: 'ally_gang', stage: 'discard', player: pi }, true);
+      return;
+    }
+    if (state.ally === 'mountain_folk' && fav >= 5) queueAllyWindow(state, { type: 'ally_mountain_folk', player: pi }, true);
+    if (state.ally === 'cave_dwellers' && fav >= 1) queueAllyWindow(state, { type: 'ally_cave', player: pi }, true);
+    if (state.ally === 'desert_guides' && fav >= 1) queueAllyWindow(state, { type: 'ally_desert', player: pi }, true);
+    if (state.ally === 'forest_dwellers' && fav >= 1) queueAllyWindow(state, { type: 'ally_forest', player: pi }, true);
+    if (state.ally === 'crafters_guild' && fav >= 2 && anyGainable(state, (id) => costUpTo(state, id, 4))) {
+      queueAllyWindow(state, { type: 'ally_crafters', player: pi }, true);
+    }
+  }
+  /* 自分の購入フェイズの開始時に開く Ally の窓。**1ターンに複数回起こり得る**（ヴィラ/騎兵で
+     アクションフェイズに戻り再び購入フェイズに入るたび）＝1ターン1回のフラグを立てない（公式）。 */
+  function allyBuyPhaseStart(state, pi) {
+    if (!state.ally) return;
+    const p = state.players[pi];
+    const fav = p.favors || 0;
+    // 銀行家連盟（League of Bankers）＝好意4個につき +$1（端数切捨て）。**好意は消費しない**・強制（自動）。
+    if (state.ally === 'league_of_bankers') {
+      const add = Math.floor(fav / 4);
+      if (add > 0) { addCoins(state, add); log(state, `${p.name} は銀行家連盟で +$${add}（好意${fav}個）。`); }
+      return;
+    }
+    if (state.ally === 'family_of_inventors' && fav >= 1 && favorPileTargets(state).length) {
+      queueAllyWindow(state, { type: 'ally_inventors', player: pi });
+    }
+    if (state.ally === 'market_towns' && fav >= 1 && allyHandHasAction(state, pi)) {
+      queueAllyWindow(state, { type: 'ally_market_towns', player: pi });
+    }
+    if (state.ally === 'peaceful_cult' && fav >= 1 && p.hand.length > 0) {
+      queueAllyWindow(state, { type: 'ally_peaceful_cult', player: pi });
+    }
+    if (state.ally === 'woodworkers_guild' && fav >= 1 && allyHandHasAction(state, pi)) {
+      queueAllyWindow(state, { type: 'ally_woodworkers', stage: 'trash', player: pi });
+    }
+  }
+  /* 「カードを使用した後」に働く Ally（魔女の輪／小売店主連盟＝連携／写本士の仲間たち＝アクション）。
+     **そのカードのプレイを完全に解決してから**判定する（公式逐語）ので、`t.allyPlayed` に積んで
+     reduce 末尾の再開網が1件ずつ処理する（連携が選択待ちを出しても取りこぼさない）。
+     ※このエンジンは「同時に誘発した効果の解決順を選べない」（既存の横断簡略化）＝
+       小売店主連盟は御料車/山砦の再演より**先**に解決する（公式なら順番を選んで +$2 にできる＝許容簡略化）。 */
+  function noteAllyPlay(state, pi, card) {
+    const a = state.ally;
+    if (!a || !card) return;
+    const isLiaison = DOM.isType(card, 'liaison');
+    const isAction = DOM.isType(card, 'action') || inheritedEstate(state.players[pi], card);
+    if ((a === 'circle_of_witches' || a === 'league_of_shopkeepers') && !isLiaison) return;
+    if (a === 'fellowship_of_scribes' && !isAction) return;
+    if (a !== 'circle_of_witches' && a !== 'league_of_shopkeepers' && a !== 'fellowship_of_scribes') return;
+    const t = state.turn;
+    if (!t) return;
+    (t.allyPlayed = t.allyPlayed || []).push({ player: pi, card });
+  }
+  // reduce 末尾の再開網。選択待ちが立つまで1件ずつ消化する。
+  function drainAllyPlayed(state) {
+    let g = 0;
+    while (!state.pending && !state.gameOver && state.turn && (state.turn.allyPlayed || []).length && g++ < 40) {
+      runAllyPlayed(state);
+    }
+  }
+  // 1件ぶんの処理（選択待ちを立てたら drainAllyPlayed のループが止まる）。
+  function runAllyPlayed(state) {
+    const t = state.turn;
+    const e = t.allyPlayed.shift();
+    if (!t.allyPlayed.length) t.allyPlayed = null;
+    const pi = e.player, p = state.players[pi];
+    if (state.ally === 'league_of_shopkeepers') {
+      // 小売店主連盟＝好意5以上で +$1、10以上ならさらに +1アクション +1購入（**排他ではなく累積**）。好意は消費しない。
+      const fav = p.favors || 0;
+      if (fav >= 5) {
+        addCoins(state, 1);
+        if (fav >= 10) { addActions(t, 1); t.buys += 1; }
+        log(state, `${p.name} は小売店主連盟（好意${fav}個）で +$1${fav >= 10 ? ' +1アクション +1購入' : ''}。`);
+      }
+      return;
+    }
+    if (state.ally === 'circle_of_witches') {
+      // 魔女の輪＝好意3を使うと他の全員が呪いを獲得。**アタックではない＝堀で防げない**（公式逐語）。
+      if ((p.favors || 0) >= 3 && (state.supply.curse || 0) > 0) state.pending = { type: 'ally_circle', player: pi };
+      return;
+    }
+    if (state.ally === 'fellowship_of_scribes') {
+      // 写本士の仲間たち＝アクションを使い切った後、手札4枚以下なら好意1で +1カード。
+      if ((p.favors || 0) >= 1 && p.hand.length <= 4) state.pending = { type: 'ally_scribes', player: pi };
+    }
+  }
+  /* 木工ギルド＝廃棄したら「アクションカード1枚を獲得」＝**コストの上限が無い**（負債コスト[D]でも
+     ポーション費用[P]でもよい＝公式FAQ逐語）。`costUpTo`/`costIsPlainCoin` を掛けてはいけない。
+     昇進(Advance・帝国イベント)には $6以下の上限があるので「同型」と書き写すと静かに壊れる。 */
+  function woodworkersCanGain(state) {
+    return (id) => gainableBase(state, id) && isTypeSupply(state, id, 'action');
+  }
+  /* 建築家ギルド＝「獲得したカードより安い、勝利点でないカード」の候補述語（engine拒否・CPU候補・UIフィルタ共通）。
+     ⚠ 判定は「**2枚目を獲得しようとしている時点**」の1枚目のコスト（公式：捨て札に入ってコストが変わっていれば
+        変わった後のコストで比べる）＝窓を積むときではなく解決するときに測る。遊牧民団とは基準時点が逆。 */
+  function architectsCanGain(state, refCard) {
+    const ref = costOf(state, refCard);
+    return (id) => costUnder(state, id, ref.coin, { pot: ref.pot, debt: ref.debt }) && !isTypeSupply(state, id, 'victory');
+  }
+  /* 獲得時に開く Ally の窓が「まだ開けるか」。onGainQueue に積んでから解決するまでに好意が減る／
+     獲得した札が別の効果で動く（望楼/交易商人/そり）ことがあるので、**キューを消化する直前に再検査する**
+     （＝選択肢ゼロの窓を人間に出さない／CPU が null を返して詰まない）。 */
+  function allyGainWindowOpen(state, q) {
+    const p = state.players[q.player];
+    const fav = p.favors || 0;
+    if (q.type === 'ally_architects') return fav >= 2 && anyGainable(state, architectsCanGain(state, q.card));
+    if (q.type === 'ally_nomads') return fav >= 1;
+    if (q.type === 'ally_city_state') {
+      return fav >= 2 && !!state.turn && q.player === state.turn.active && zoneOf(p, q.dest).indexOf(q.card) >= 0;
+    }
+    if (q.type === 'ally_trappers') return fav >= 1 && zoneOf(p, q.dest).indexOf(q.card) >= 0;
+    return true;
+  }
+  /* 高原の羊飼い（Plateau Shepherds）＝得点計算時、好意1と「コストちょうど$2のカード」1枚のペア1組につき 2VP。
+     **好意は消費しない**（マット上の枚数をそのまま使う）。「ちょうど$2」は3成分の厳密一致
+     （薬草商＝$2+ポーション は数えない＝公式FAQ）。得点計算時はコスト軽減が効かない＝素のコストで判定する。
+     cards＝そのプレイヤーの全所持カード（allCards 相当。CPU は仮デッキを渡して engine と一致させる）。 */
+  function allyScoreForCards(state, cards, p) {
+    if (!state || state.ally !== 'plateau_shepherds') return 0;
+    const two = (cards || []).filter((c) => {
+      const cd = C()[c];
+      return cd && cd.cost === 2 && !cd.potion && !cd.debt;
+    }).length;
+    return 2 * Math.min(p.favors || 0, two);
   }
   // 各持続カードの「次の手番開始時」効果（カードidをキーに登録）。対話分は §手5/手6 で startQueue に積む。
   const DURATION_RESOLVERS = {
@@ -6995,6 +7251,34 @@
        既に山札の上に置かれた獲得（dest==='deck'）は対象外。 */
     if (state.turn && state.turn.travellingFair && pIndex === state.turn.active && dest !== 'deck') {
       (state.onGainQueue = state.onGainQueue || []).push({ type: 'travelling_fair', player: pIndex, card: cardId, dest: dest || 'discard' });
+    }
+    /* ===== 同盟：「カードを獲得したとき」に働く Ally（1ゲームに1枚だけなので下は排他）=====
+       獲得時の対話は**必ず `onGainQueue` に積む**（`state.pending` 直代入は望楼/牧羊犬/交易商人の窓を握りつぶす）。
+       ⚠ **その獲得で得た好意もその場で使える**（公式FAQ）＝窓を開く時点ではなく**解決時点**の p.favors を見る
+         （下の各 reducer が改めて枚数を検査する＝ここでは「使える可能性がある」ことだけを見る）。 */
+    if (state.ally) {
+      const myTurn = !!(state.turn && pIndex === state.turn.active);
+      /* 建築家ギルド＝好意2で「そのカードより安い、勝利点でないカード」1枚を獲得（**自己連鎖する**）。
+         判定するコストは「**2枚目を獲得しようとしている時点**」の1枚目のコスト（＝獲得先に入った後）＝
+         cardCost をここで焼き込まず、解決時に測り直す（遊牧民団とは基準時点が違う＝取り違えない）。
+         テキストに自ターン限定が無い＝相手のターン中の獲得でも使える。 */
+      if (state.ally === 'architects_guild') {
+        (state.onGainQueue = state.onGainQueue || []).push({ type: 'ally_architects', player: pIndex, card: cardId });
+      }
+      /* 遊牧民団＝**獲得した瞬間**のコストが$3以上なら好意1で +1カード / +1アクション / +1購入 のどれか1つ。
+         公式FAQ：後でコストが変わっても関係ない＝ここで焼き込む。相手のターン中でも使える（+アクション/+購入は無意味だが合法）。 */
+      if (state.ally === 'band_of_nomads' && cardCost(state, cardId) >= 3) {
+        (state.onGainQueue = state.onGainQueue || []).push({ type: 'ally_nomads', player: pIndex, card: cardId });
+      }
+      /* 都市国家＝**自分のターン中に**アクションカードを獲得したとき、好意2でそれを使用する（アクション権は消費しない）。
+         公式が名指しで「遊牧民団と違い自分のターンだけ」と対比している＝相手のターンでは絶対に開かない。 */
+      if (state.ally === 'city_state' && myTurn && DOM.isType(cardId, 'action')) {
+        (state.onGainQueue = state.onGainQueue || []).push({ type: 'ally_city_state', player: pIndex, card: cardId, dest: dest || 'discard' });
+      }
+      // 罠師の小屋＝好意1で、獲得したカードを山札の上に置く（望楼/移動遊園地と同型。相手のターンの獲得でも使える）。
+      if (state.ally === 'trappers_lodge' && dest !== 'deck') {
+        (state.onGainQueue = state.onGainQueue || []).push({ type: 'ally_trappers', player: pIndex, card: cardId, dest: dest || 'discard' });
+      }
     }
     state._gainDepth--;
   }
@@ -7702,10 +7986,14 @@
       p.deck.unshift('border_guard');
       log(state, `${p.name} は角笛で国境警備隊を山札の上に置いた。`);
     }
+    /* 同盟：沿岸の避難港＝好意を払って残した手札は**捨てない**（この後の先引き5枚に合流して手札7枚等になる）。
+       引く枚数は変わらない（前哨地の3枚でも3枚引いて、残した札はそれに加算される＝公式）。 */
+    const coastalKeep = [];
+    (state.turn.coastalKeep || []).forEach((c) => { if (removeOne(p.hand, c)) coastalKeep.push(c); });
     p.discard.push(...restInPlay, ...p.hand);
     p.durationCards = newDur;
     p.inPlay = [];
-    p.hand = [];
+    p.hand = coastalKeep;
 
     // 支配：この手番が被支配ターンなら精算する。
     //   獲得したカード → 支配者の捨て札へ（支配者が受け取る）／廃棄したカード → 被支配者の捨て札へ戻す（実際には廃棄されない）。
@@ -7776,8 +8064,27 @@
         if (state.boons && state.boons.discard.indexOf(b) < 0 && state.boons.deck.indexOf(b) < 0) state.boons.discard.push(b);
       }
     });
+    /* 同盟：島民（Island Folk）＝**あなたのターンの終了時**、好意5を使って追加のターンを行ってよい
+       （2023年12月の第2刷で「直前が自分のターンでなければ」→「**ただし3ターン連続にはできない**」に変更。
+        日本語版カードは旧文面だが本アプリは現行を採用する）。
+       公式「**次の手札を見てから決めてよい**」＝このエンジンの「片付けで次の手札を先引きする」構造では
+       **先引きの後**に窓を開くのが正しい（§0-25 のリス／§0-21 の保存と同じ位置）。
+       前哨地/使節団/今を生きる が既に立っているときは offer しない（それらが優先＝3連続を作らない）。 */
+    if (hasAlly(state, 'island_folk') && (p.favors || 0) >= 5 && !extra && !missionExtra && !seizeExtra &&
+        (state.turn.chain || 1) < 2 && !state.turn.islandAsked && !isGameOver(state)) {
+      state.turn.islandAsked = true;
+      state.turn.advanceCtx = { pi, extra, missionExtra, seizeExtra };
+      state.pending = { type: 'ally_island_folk', player: pi };
+      return;
+    }
+    finishTurnAdvance(state, pi, extra, missionExtra, seizeExtra, false);
+  }
+  /* 片付けの最後（手番数の加算 → 艦隊 → 次の手番の決定）。同盟：島民の窓を挟むために cleanupAndAdvance から切り出した。
+     islandExtra＝島民で好意5を払った（＝この人がもう1ターン行う。**同点時のタイブレークには数えない**）。 */
+  function finishTurnAdvance(state, pi, extra, missionExtra, seizeExtra, islandExtra) {
+    const p = state.players[pi];
     p.turns += 1;
-    // 移動動物園：今を生きるの追加ターンは同点時のタイブレーク（ターン数の少なさ）に数えない（公式）。
+    // 移動動物園：今を生きる／同盟：島民 の追加ターンは同点時のタイブレーク（ターン数の少なさ）に数えない（公式）。
     if (state.turn.seizeTurn) p.freeTurns = (p.freeTurns || 0) + 1;
 
     /* ルネサンス：艦隊（Fleet・プロジェクト）＝**ゲームの終了後**、艦隊を持つプレイヤーは全員、追加の1ターンを得る。
@@ -7811,20 +8118,25 @@
     }
     // 次の手番を決める：1)前哨地=同一プレイヤー 2)支配などの追加ターン待ち行列 3)通常=rotationSeatの次。
     const anchor = state.turn.rotationSeat != null ? state.turn.rotationSeat : pi;
-    let next, isExtra = false, possessedBy = null, rotationSeat, noBuyCards = false, seizeTurn = false;
+    const prevChain = state.turn.chain || 1;
+    let next, isExtra = false, possessedBy = null, rotationSeat, noBuyCards = false, seizeTurn = false, islandTurn = false;
     if (extra) {
       next = pi; isExtra = true; rotationSeat = anchor;
     } else if (missionExtra) {
       next = pi; isExtra = true; rotationSeat = anchor; noBuyCards = true; // 冒険：使節団の追加ターン（カード購入不可・イベントは可）
     } else if (seizeExtra) {
       next = pi; isExtra = true; rotationSeat = anchor; seizeTurn = true;  // 移動動物園：今を生きるの追加ターン（通常のターンと同じ）
+    } else if (islandExtra) {
+      next = pi; isExtra = true; rotationSeat = anchor; seizeTurn = true; islandTurn = true; // 同盟：島民（タイブレークに数えない）
     } else if (state.extraTurns && state.extraTurns.length) {
       const et = state.extraTurns.shift();
       next = et.seat; isExtra = true; possessedBy = et.possessedBy; rotationSeat = et.rotationSeat;
     } else {
       next = (anchor + 1) % n; rotationSeat = next;
     }
-    state.turn = freshTurn(next, isExtra, { rotationSeat, possessedBy, noBuyCards, seizeTurn });
+    // 同盟：島民の「3ターン連続にはできない」を数えるための連続手番カウンタ（同じ席が続いた回数。1=通常のターン）。
+    const chain = (isExtra && next === pi) ? prevChain + 1 : 1;
+    state.turn = freshTurn(next, isExtra, { rotationSeat, possessedBy, noBuyCards, seizeTurn, chain });
     // ルネサンス：鍵（Key・アーティファクト）＝あなたのターンの開始時 +$1（取ったターンには恩恵なし＝開始時は過ぎている）。
     if (hasArtifact(state, next, 'key')) {
       addCoins(state, 1);
@@ -7834,8 +8146,9 @@
       ? `${state.players[possessedBy].name} が ${state.players[next].name} の追加ターンを操作します（支配）。`
       : (extra ? `${state.players[next].name} の追加ターンです（前哨地）。`
         : (missionExtra ? `${state.players[next].name} の追加ターンです（使節団：カードは購入できません）。`
-          : (seizeTurn ? `${state.players[next].name} の追加ターンです（今を生きる）。`
-            : `${state.players[next].name} の番です。`))));
+          : (islandTurn ? `${state.players[next].name} の追加ターンです（島民）。`
+            : (seizeTurn ? `${state.players[next].name} の追加ターンです（今を生きる）。`
+              : `${state.players[next].name} の番です。`)))));
     // 海辺：次の手番開始時の予約効果を解決（非対話は即適用、対話は startQueue→pending）。
     resolveDurationStartEffects(state, next);
   }
@@ -8435,6 +8748,15 @@
       return;
     }
     state.turn.cleanupWaiting = null;
+    /* 同盟：沿岸の避難港（Coastal Haven）＝**クリンナップで手札を捨てるとき**、好きな数の好意を使って
+       同じ枚数を手札に残せる（残した札は捨てられない＝捨て札トリガーも起きない。引く枚数は変わらない）。
+       ⚠ **クリンナップの通常の手札捨てだけ**（戦術家/Sailor 等の「手札を捨てる」には使えない＝公式）。
+       本エンジンは片付けで次の手札を先引きするので、**捨てる直前**（＝ここ）に窓を開く。 */
+    if (hasAlly(state, 'coastal_haven') && (me.favors || 0) >= 1 && me.hand.length > 0 && !state.turn.coastalDone) {
+      state.turn.coastalDone = true;
+      state.pending = { type: 'ally_coastal_haven', player: pi };
+      return;
+    }
     cleanupAndAdvance(state);
   }
 
@@ -8450,7 +8772,13 @@
     if (!state.pending && !state.gameOver && state.turn && state.turn.storytellerResume) {
       storytellerStep(state, state.turn.storytellerResume.player);
     }
+    /* 同盟：「カードを使用した後」に働く Ally（魔女の輪／小売店主連盟／写本士の仲間たち）を
+       **そのプレイが完全に解決してから**1件ずつ処理する。runReplays（玉座の2回目）より前に置くのは、
+       「1回目のプレイの誘発 → 2回目のプレイ → その誘発」という公式の逐次順に合わせるため
+       （小売店主連盟×玉座の間＝好意3個からだと +$1 になる＝公式FAQと一致する）。 */
+    drainAllyPlayed(state);
     state = runReplays(state);
+    drainAllyPlayed(state); // 再演で新たに積まれたぶん
     // 開始時キューの安全網：選択待ちが無いのに startQueue に項目が残っていたら次を進める。
     // （王子/船長がターン開始時にアタック等を使うと、そのアタック連鎖の終端は pending=null で
     //   閉じるだけで popStartQueue を呼ばない＝後続の開始時効果が取り残されるのを防ぐ。
@@ -8539,6 +8867,8 @@
       while (state.onGainQueue.length) {
         const q = state.onGainQueue.shift();
         if (q.type === 'gatekeeper_exile') { applyGatekeeperExile(state, q.player, q.card, q.dest); continue; }
+        // 同盟：獲得時の Ally 窓は、積んでから解決までに条件が崩れることがある（好意が減った／札が動いた）＝再検査。
+        if (String(q.type).indexOf('ally_') === 0 && !allyGainWindowOpen(state, q)) continue;
         state.pending = q; break;
       }
       state = runReplays(state);
@@ -8695,6 +9025,9 @@
         state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
         log(state, `${state.players[r.player].name} は玉座の間で「${C()[r.card].name}」をもう一度使った。`);
       }
+      // 同盟：再演（玉座/王の宮廷/行進/御料車/冠/幽霊/山砦）も「カードの使用」＝Ally の窓が開く
+      //   （公式逐語 "once per **time you play** an Action card"）。ゴーレムの2枚目も新しいプレイ。
+      noteAllyPlay(state, r.player, r.card);
       // 命令（大君主/はみだし者）の「再演では選び直さない」判定に使う。
       //   ゴーレムの2枚目だけは「別カードの新しいプレイ」なので再演扱いにしない。
       state._replaying = (r.label !== 'golem');
@@ -8741,6 +9074,8 @@
         //   相続の屋敷でプレイする場合は「脇に置いたカードの山」のトークンを見る（公式）。
         applyPileTokens(state, pi, asInherited ? me.inherited[0] : card);
         t.afterActionCard = card; // 冒険：法貨/御料車の「アクション解決直後」の呼び出し窓の対象
+        // 同盟：「カードを使用した後」に働く Ally（魔女の輪／小売店主連盟／写本士の仲間たち）＝解決後に判定する。
+        noteAllyPlay(state, pi, asInherited ? 'estate' : card);
         log(state, `${me.name} は「${C()[card].name}」を使った。`);
         // 帝国：女魔術師（enchantress）＝この手番で最初にプレイしたアクションは、記載効果の代わりに +1カード +1アクション。
         //   （チャンピオン/教師トークンなどの「アクションをプレイしたとき」の外部トリガーは先に適用済み＝ラインより下の能力は機能する[公式]。
@@ -8813,6 +9148,7 @@
           if (champs > 0) { addActions(t, champs); log(state, `${me.name} はチャンピオンで +${champs}アクション。`); }
         }
         applyPileTokens(state, pi, ncard); // 冒険：山トークン（その山のカードを使ったときのボーナス）
+        noteAllyPlay(state, pi, ncard);    // 同盟：「使用した後」に働く Ally（人狼＝アクションでもある夜行カードだけ対象）
         log(state, `${me.name} は「${C()[ncard].name}」を使った（夜フェイズ）。`);
         if (nWay) log(state, `${me.name} は「${DOM.LANDSCAPES[nWay].name}」を使う。`);
         // 移動動物園：炉＝「このターン次に使うカードの解決前に同名を獲得してよい」＝夜行カードも「カードの使用」。
@@ -9330,6 +9666,9 @@
         }
         // 帝国：闘技場＝購入フェイズ開始時、手札のアクション1枚を捨ててよい（捨てたら +2勝利点）。
         maybeArena(state, pi);
+        /* 同盟：購入フェイズ開始時に働く Ally（銀行家連盟＝自動／発明家の家族・市場の町・平和的教団・木工ギルド＝窓）。
+           窓は startQueue に積む＝闘技場が pending を立てていても、それを解決してから reduce 末尾の安全網が開く。 */
+        allyBuyPhaseStart(state, pi);
         return state;
       }
       case 'END_TURN': {
@@ -15547,6 +15886,341 @@
         return state;
       }
 
+      /* ==========================================================================
+         同盟（Allies）A3：Ally カード23種の選択待ち reducer
+         ⚠ 好意の支払いは**常に任意**＝どの窓も必ず「使わない」で終端できること（CPU は null を返さない）。
+         ⚠ **Ally が起こす攻撃は「アタックカードのプレイ」ではない＝堀で防げない**（魔女の輪／すり師団）。
+            ATTACKS に登録しない／リアクション窓を開かない／attackImmune を通さない。
+         ========================================================================== */
+      // 単純な「好意を使う／使わない」の窓をまとめて処理する（Ally は1ゲーム1枚なので分岐は排他）。
+      case 'ALLY_SIMPLE': {
+        const pd = state.pending;
+        if (!pd || !ALLY_SIMPLE_PENDINGS.has(pd.type)) return state;
+        const pl = state.players[pd.player];
+        const ok = !!action.ok;
+        // 山の民＝好意ちょうど5で +3カード（4個以下では部分的にも使えない）。
+        if (pd.type === 'ally_mountain_folk') {
+          if (ok) {
+            if (!spendFavors(state, pd.player, 5)) return state;
+            const got = draw(state, pd.player, 3);
+            log(state, `${pl.name} は山の民で 好意5 を使って +${got.length}カード。`);
+          }
+          state.pending = null;
+          return state;
+        }
+        /* 砂漠の案内人＝好意1で手札を全部捨てて5枚引く。**Repeat as desired**（好意が続く限り）。
+           ⚠ 公式：**一度「やめる」と言ったら、他のターン開始時効果を解決した後に戻ってくることはできない**
+              （案内人 Guide と違う）＝辞退したら再オファーしない。 */
+        if (pd.type === 'ally_desert') {
+          if (!ok) { state.pending = null; return state; }
+          if (!spendFavors(state, pd.player, 1)) return state;
+          state.pending = null;
+          const dis = pl.hand.slice();
+          pl.hand = [];
+          dis.forEach((c) => pl.discard.push(c));
+          const got = draw(state, pd.player, 5); // 引く枚数は常に5（前哨地でも5枚）
+          log(state, `${pl.name} は砂漠の案内人で 好意1 を使って手札${dis.length}枚を捨て +${got.length}カード。`);
+          if (dis.length) triggerOnDiscard(state, pd.player, dis);
+          if ((pl.favors || 0) >= 1) queueAllyWindow(state, { type: 'ally_desert', player: pd.player }, true);
+          return state;
+        }
+        // 写本士の仲間たち＝アクションを使い切った後、手札4枚以下なら好意1で +1カード。
+        if (pd.type === 'ally_scribes') {
+          if (ok) {
+            if (pl.hand.length > 4) { state.pending = null; return state; }
+            if (!spendFavors(state, pd.player, 1)) return state;
+            const got = draw(state, pd.player, 1);
+            log(state, `${pl.name} は写本士の仲間たちで 好意1 を使って +${got.length}カード。`);
+          }
+          state.pending = null;
+          return state;
+        }
+        /* 魔女の輪＝連携を使い切った後、好意3で他の全員が呪いを獲得。
+           **アタックではない＝堀/灯台/チャンピオン/守護者で防げない**（公式逐語）。呪い山が尽きたら手番順に先着。 */
+        if (pd.type === 'ally_circle') {
+          if (ok) {
+            if (!spendFavors(state, pd.player, 3)) return state;
+            const n2 = state.players.length;
+            let g = 0;
+            for (let k = 1; k < n2; k++) {
+              const idx = (pd.player + k) % n2;
+              if ((state.supply.curse || 0) > 0 && gain(state, idx, 'curse', 'discard')) g++;
+            }
+            log(state, `${pl.name} は魔女の輪で 好意3 を使い、他のプレイヤー ${g}人 が呪いを獲得した（アタックではない）。`);
+          }
+          state.pending = null;
+          return state;
+        }
+        // 島民＝ターンの終了時、好意5で追加のターン（3ターン連続にはできない）。片付けの続きへ合流する。
+        if (pd.type === 'ally_island_folk') {
+          const ctx = (t && t.advanceCtx) || { pi: pd.player, extra: false, missionExtra: false, seizeExtra: false };
+          let island = false;
+          if (ok && spendFavors(state, pd.player, 5)) {
+            island = true;
+            log(state, `${pl.name} は島民で 好意5 を使って追加のターンを行う。`);
+          }
+          if (t) t.advanceCtx = null;
+          state.pending = null;
+          finishTurnAdvance(state, ctx.pi, ctx.extra, ctx.missionExtra, ctx.seizeExtra, island);
+          return state;
+        }
+        /* 都市国家＝自分のターンにアクションを獲得したとき、好意2でそれを**獲得した場所から**使用する
+           （アクション権は消費しない／「カードの使用」なので習性・炉・浮浪児のトラップ等は通常どおり働く）。
+           **既に別の効果で動かされていたら使えない**（lose track＝黙って不発）。 */
+        if (pd.type === 'ally_city_state') {
+          if (!ok) { state.pending = null; return state; }
+          const z = zoneOf(pl, pd.dest);
+          if (z.indexOf(pd.card) < 0) { state.pending = null; return state; }
+          if ((pl.favors || 0) < 2) return state;
+          spendFavors(state, pd.player, 2);
+          state.pending = null;
+          playCardNoAction(state, pd.player, pd.card, z, '都市国家で', action.way);
+          return state;
+        }
+        // 罠師の小屋＝獲得したカードを好意1で山札の上に置く（相手のターンの獲得でも使える）。
+        if (pd.type === 'ally_trappers') {
+          if (!ok) { state.pending = null; return state; }
+          const z = zoneOf(pl, pd.dest);
+          if ((pl.favors || 0) < 1 || z.indexOf(pd.card) < 0) { state.pending = null; return state; }
+          spendFavors(state, pd.player, 1);
+          removeOne(z, pd.card);
+          pl.deck.unshift(pd.card);
+          log(state, `${pl.name} は罠師の小屋で 好意1 を使って「${C()[pd.card].name}」を山札の上に置いた。`);
+          state.pending = null;
+          return state;
+        }
+        /* 森の居住者＝好意1で山札の上3枚を**見て**（公開ではない＝reveal を通さない）、
+           好きな枚数を捨て、残りを好きな順で山札の上に戻す＝汎用 look_arrange に委譲する。1ターン1回。 */
+        if (pd.type === 'ally_forest') {
+          if (!ok) { state.pending = null; return state; }
+          if (!spendFavors(state, pd.player, 1)) return state;
+          const look = [];
+          for (let i = 0; i < 3; i++) {
+            if (pl.deck.length === 0) { if (pl.discard.length === 0) break; reshuffleDeck(pl, state); }
+            if (pl.deck.length === 0) break;
+            look.push(pl.deck.shift());
+          }
+          log(state, `${pl.name} は森の居住者で 好意1 を使って山札の上${look.length}枚を見た。`);
+          state.pending = look.length ? { type: 'look_arrange', player: pd.player, cards: look, source: 'forest_dwellers' } : null;
+          return state;
+        }
+        return state;
+      }
+      /* すり師団＝ターン開始時、好意1を使わないかぎり手札4枚まで捨てる。**アタックではない**。 */
+      case 'ALLY_GANG': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ally_gang') return state;
+        const pl = state.players[pd.player];
+        if (pd.stage === 'pay') {
+          if (action.ok) {
+            if (!spendFavors(state, pd.player, 1)) return state;
+            log(state, `${pl.name} は好意1を使って すり師団の手札捨てを免れた。`);
+            state.pending = null;
+            return state;
+          }
+          if (pl.hand.length <= 4) { state.pending = null; return state; }
+          pd.stage = 'discard';
+          return state;
+        }
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        const target = Math.min(4, pl.hand.length);
+        if (pl.hand.length - cards.length !== target) return state;
+        const copy = pl.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        cards.forEach((c) => { removeOne(pl.hand, c); pl.discard.push(c); });
+        log(state, `${pl.name} はすり師団で 手札を ${cards.length}枚 捨てた。`);
+        state.pending = null;
+        if (cards.length) triggerOnDiscard(state, pd.player, cards);
+        return state;
+      }
+      /* 穴居民＝ターン開始時、好意1で「1枚捨てて1枚引く」。**Repeat as desired**。
+         ⚠ **手札が0枚でも好意を払えば1枚引ける**（公式FAQ "You draw a card even if you failed to discard one."）。
+         ⚠ **1枚ずつ交互に**（まとめて捨ててからまとめて引くのではない）＝捨て札トリガーと引いた札が相互作用する。 */
+      case 'ALLY_CAVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ally_cave') return state;
+        const pl = state.players[pd.player];
+        if (!action.ok) { state.pending = null; return state; }
+        if ((pl.favors || 0) < 1) return state;
+        const c = action.card;
+        if (pl.hand.length > 0 && (c == null || pl.hand.indexOf(c) < 0)) return state; // 手札があるなら捨てるのは強制
+        spendFavors(state, pd.player, 1);
+        state.pending = null;
+        if (c != null) { removeOne(pl.hand, c); pl.discard.push(c); }
+        if (c != null) triggerOnDiscard(state, pd.player, [c]);
+        const got = draw(state, pd.player, 1);
+        log(state, `${pl.name} は穴居民で 好意1 を使って ${c != null ? '1枚捨てて ' : ''}+${got.length}カード。`);
+        if ((pl.favors || 0) >= 1) queueAllyWindow(state, { type: 'ally_cave', player: pd.player }, true);
+        return state;
+      }
+      // 工芸家ギルド＝ターン開始時、好意2でコスト$4以下のカード1枚を**山札の上に**獲得する（捨て札を経由しない）。
+      case 'ALLY_CRAFTERS': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ally_crafters') return state;
+        const pl = state.players[pd.player];
+        const c = action.card;
+        if (c == null) { state.pending = null; return state; }
+        if (!costUpTo(state, c, 4)) return state;
+        if ((pl.favors || 0) < 2) return state;
+        const nm = (C()[mixedTopCard(state, c) || c] || {}).name || c;
+        spendFavors(state, pd.player, 2);
+        state.pending = null;
+        if (gain(state, pd.player, c, 'deck')) log(state, `${pl.name} は工芸家ギルドで 好意2 を使って「${nm}」を山札の上に獲得した。`);
+        return state;
+      }
+      /* 発明家の家族＝購入フェイズの開始時、自分の好意トークン1個を「勝利点でないサプライ山」の上に置く。
+         その山のカードは**全員に・常時・累積で** $1 安くなる（$0未満にはならない）。トークンは戻ってこない。 */
+      case 'ALLY_INVENTORS': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ally_inventors') return state;
+        const pl = state.players[pd.player];
+        const k = action.pile;
+        if (k == null) { state.pending = null; return state; }
+        if (favorPileTargets(state).indexOf(k) < 0) return state;
+        if (!spendFavors(state, pd.player, 1)) return state;
+        state.pileFavor = state.pileFavor || {};
+        state.pileFavor[k] = (state.pileFavor[k] || 0) + 1;
+        log(state, `${pl.name} は発明家の家族で 好意1 を「${(C()[k] || {}).name || k}」の山に置いた（この山のカードは全員に $${state.pileFavor[k]} 安い）。`);
+        state.pending = null;
+        return state;
+      }
+      /* 市場の町＝購入フェイズの開始時、好意1で手札のアクション1枚を使用する。**Repeat as desired**。
+         ⚠ **アクションフェイズに戻るわけではない**（`turn.phase` は 'buy' のまま）＝村などの +アクションは無意味。 */
+      case 'ALLY_MARKET_TOWNS': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ally_market_towns') return state;
+        const pl = state.players[pd.player];
+        const c = action.card;
+        if (c == null) { state.pending = null; return state; }
+        if (pl.hand.indexOf(c) < 0) return state;
+        if (!(DOM.isType(c, 'action') || inheritedEstate(pl, c))) return state;
+        if ((pl.favors || 0) < 1) return state;
+        spendFavors(state, pd.player, 1);
+        state.pending = null;
+        playCardNoAction(state, pd.player, c, pl.hand, '市場の町で', action.way);
+        // 途中で得た好意もそのまま使える（公式FAQ＝仲買人で好意を得たら続けて使ってよい）。
+        if ((pl.favors || 0) >= 1 && allyHandHasAction(state, pd.player)) {
+          queueAllyWindow(state, { type: 'ally_market_towns', player: pd.player }, true);
+        }
+        return state;
+      }
+      /* 平和的教団＝購入フェイズの開始時、好きな数の好意を使って同じ枚数を手札から廃棄する。
+         公式の順序＝①好意をまとめて払う ②廃棄する札を全部選ぶ ③まとめて廃棄 ④廃棄トリガーを解決。
+         ＝**廃棄の途中で増えた好意/手札は使えない**（枚数は最初に固定される）。 */
+      case 'ALLY_PEACEFUL_CULT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ally_peaceful_cult') return state;
+        const pl = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length === 0) { state.pending = null; return state; }
+        if (cards.length > (pl.favors || 0)) return state;
+        const copy = pl.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        spendFavors(state, pd.player, cards.length);
+        state.pending = null;
+        cards.forEach((c) => { removeOne(pl.hand, c); trashCard(state, pd.player, c); });
+        log(state, `${pl.name} は平和的教団で 好意${cards.length} を使って手札${cards.length}枚を廃棄した。`);
+        return state;
+      }
+      /* 木工ギルド＝購入フェイズの開始時、好意1で手札のアクション1枚を廃棄してよい。
+         廃棄したなら**アクションカード1枚を獲得**（**コスト上限なし**＝負債/ポーション費用でもよい＝公式FAQ）。 */
+      case 'ALLY_WOODWORKERS': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ally_woodworkers') return state;
+        const pl = state.players[pd.player];
+        if (pd.stage === 'trash') {
+          const c = action.card;
+          if (c == null) { state.pending = null; return state; }
+          if (pl.hand.indexOf(c) < 0) return state;
+          if (!(DOM.isType(c, 'action') || inheritedEstate(pl, c))) return state;
+          if (!spendFavors(state, pd.player, 1)) return state;
+          removeOne(pl.hand, c); trashCard(state, pd.player, c);
+          log(state, `${pl.name} は木工ギルドで 好意1 を使って「${C()[c].name}」を廃棄した。`);
+          state.pending = anyGainable(state, woodworkersCanGain(state))
+            ? { type: 'ally_woodworkers', stage: 'gain', player: pd.player } : null;
+          return state;
+        }
+        const g = action.card;
+        if (!anyGainable(state, woodworkersCanGain(state))) { state.pending = null; return state; } // 終端保証
+        if (g == null || !woodworkersCanGain(state)(g)) return state; // 廃棄したなら獲得は強制
+        const gn = (C()[mixedTopCard(state, g) || g] || {}).name || g;
+        state.pending = null;
+        if (gain(state, pd.player, g, 'discard')) log(state, `${pl.name} は木工ギルドで「${gn}」を獲得した。`);
+        return state;
+      }
+      /* 沿岸の避難港＝クリンナップで手札を捨てるとき、好きな数の好意を使って同じ枚数を手札に残す
+         （**引く枚数は変わらない**＝残した札は次の手札5枚に合流する）。残した札は「捨てていない」。 */
+      case 'ALLY_COASTAL_HAVEN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ally_coastal_haven') return state;
+        const pl = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length > (pl.favors || 0)) return state;
+        const copy = pl.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        if (cards.length) {
+          spendFavors(state, pd.player, cards.length);
+          t.coastalKeep = cards.slice();
+          log(state, `${pl.name} は沿岸の避難港で 好意${cards.length} を使って手札${cards.length}枚を残す。`);
+        }
+        state.pending = null;
+        cleanupAndAdvance(state);
+        return state;
+      }
+      /* 建築家ギルド＝カードを獲得したとき、好意2で「それより安い、勝利点でないカード」1枚を獲得。
+         **自己連鎖する**（属州→金貨→研究所→… 好意が続く限り）＝gain がまた同じ窓を積む。
+         判定するコストは「**2枚目を獲得しようとしている時点**」の1枚目のコスト（公式）。 */
+      case 'ALLY_ARCHITECTS': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ally_architects') return state;
+        const pl = state.players[pd.player];
+        const c = action.card;
+        if (c == null) { state.pending = null; return state; }
+        if (!architectsCanGain(state, pd.card)(c)) return state;
+        if ((pl.favors || 0) < 2) return state;
+        const nm = (C()[mixedTopCard(state, c) || c] || {}).name || c;
+        spendFavors(state, pd.player, 2);
+        state.pending = null;
+        if (gain(state, pd.player, c, 'discard')) log(state, `${pl.name} は建築家ギルドで 好意2 を使って「${nm}」を獲得した。`);
+        return state;
+      }
+      /* 遊牧民団＝**獲得した瞬間**のコストが$3以上のカードを獲得したとき、好意1で
+         +1カード / +1アクション / +1購入 のどれか1つ。相手のターン中の獲得でも使える
+         （その場合 +アクション/+購入 は無意味だが、選ぶこと自体は合法＝公式）。 */
+      case 'ALLY_NOMADS': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ally_nomads') return state;
+        const pl = state.players[pd.player];
+        const ch = action.choice;
+        if (ch == null) { state.pending = null; return state; }
+        if (ch !== 'card' && ch !== 'action' && ch !== 'buy') return state;
+        if (!spendFavors(state, pd.player, 1)) return state;
+        state.pending = null;
+        if (ch === 'card') {
+          const got = draw(state, pd.player, 1);
+          log(state, `${pl.name} は遊牧民団で 好意1 を使って +${got.length}カード。`);
+        } else if (t && pd.player === t.active) {
+          if (ch === 'action') addActions(t, 1); else t.buys += 1;
+          log(state, `${pl.name} は遊牧民団で 好意1 を使って +1${ch === 'action' ? 'アクション' : '購入'}。`);
+        } else {
+          log(state, `${pl.name} は遊牧民団で 好意1 を使った（相手のターン中なので +1${ch === 'action' ? 'アクション' : '購入'} は働かない）。`);
+        }
+        return state;
+      }
+      /* 同盟：占星術師団／メイソン団の常設方針＝「1回のシャッフルに好意を何個まで使うか」。
+         シャッフルは効果解決の途中で同期的に起きて対話を挟めないので、**何個使うかだけ**を本人が決め、
+         どの札を選ぶかはエンジンが自動で最善を選ぶ（§0-29 の決定＝許容簡略化）。STASH_SETTING と同型。 */
+      case 'FAVOR_SHUFFLE_SETTING': {
+        const actorSeat = state.pending ? state.pending.player : t.active;
+        if (action.player !== actorSeat) return state;
+        const pl = state.players[action.player];
+        const v = Math.floor(Number(action.value));
+        if (!pl || !isFinite(v) || v < 0 || v > 9) return state;
+        if ((pl.favorShuffle || 0) === v) return state;
+        pl.favorShuffle = v;
+        return state;
+      }
+
       default:
         return state;
     }
@@ -15722,6 +16396,10 @@
     'ALMS_GAIN', 'QUEST_MODE', 'QUEST_DISCARD', 'SAVE_SETASIDE', 'SCOUTING_DISCARD', 'SCOUTING_ORDER',
     'BONFIRE_TRASH', 'BALL_GAIN', 'SEAWAY_GAIN', 'TRADE_TRASH', 'PILGRIMAGE_GAIN', 'EVENT_TOKEN_PILE',
     'PLAN_TRASH', 'TRAVELLING_FAIR_TOPDECK', 'INHERITANCE_SET',
+    // 同盟（Allies）A3：Ally カード23種の窓＋占星術師団/メイソン団の常設方針
+    'ALLY_SIMPLE', 'ALLY_GANG', 'ALLY_CAVE', 'ALLY_CRAFTERS', 'ALLY_INVENTORS', 'ALLY_MARKET_TOWNS',
+    'ALLY_PEACEFUL_CULT', 'ALLY_WOODWORKERS', 'ALLY_COASTAL_HAVEN', 'ALLY_ARCHITECTS', 'ALLY_NOMADS',
+    'FAVOR_SHUFFLE_SETTING',
     // ルネサンス（Renaissance）：村人（アクションフェイズ）／プロジェクト（買う横型・1人2つまで）／王国カード
     'SPEND_VILLAGER', 'BUY_PROJECT',
     'HIDEOUT_TRASH', 'INVENTOR_GAIN', 'MOUNTAIN_VILLAGE_TAKE', 'PRIEST_TRASH', 'RECRUITER_TRASH',
@@ -15871,6 +16549,12 @@
     rotatePile,        // 循環＝先頭からの「連続」同名ブロックを末尾へ（空の山・1種類だけの山でも合法＝無効果）
     rotatableSupplyPiles, // 戦闘計画＝「任意のサプライ山」を回す候補（engine拒否・CPU候補・UIフィルタが共有）
     trashFromSupplyPile,  // サプライの山から1枚を廃棄（塩まき/待ち伏せ/剣闘士）。混合山は一番上の実カードを抜く
+    // 同盟 A3：Ally カード23種（engine拒否・CPU候補・UIフィルタが同じ述語を見る）
+    hasAlly,             // このゲームの Ally がその1枚か
+    favorPileTargets,    // 発明家の家族：好意トークンを置ける山（**randomizer の種別**で判定＝勝利点の山は不可）
+    architectsCanGain,   // 建築家ギルド：獲得したカードより安い・勝利点でないカードの候補（解決時に測り直す）
+    woodworkersCanGain,  // 木工ギルド：獲得できるアクション（**コスト上限なし**＝負債/ポーション費用でもよい）
+    allyScoreForCards,   // 高原の羊飼い：得点計算（CPU も同じ算出を使う）
     returnToPile,         // 獲得しかけたカードを山へ戻す（交易商人）。混合山は一番上に載せる
     improveTargets,    // ルネサンス：増築の廃棄対象（engine/CPU/UI が同じ候補を参照）
     isTreasureFor,     // ルネサンス：資本主義を含む「今この状態で財宝か」＝**財宝判定の正本**（engine/CPU/UI が同じ述語）

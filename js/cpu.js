@@ -679,6 +679,12 @@
   function landmarkVp(state, cards, seat) {
     return (DOM.engine && DOM.engine.landmarkScoreForCards) ? DOM.engine.landmarkScoreForCards(state, cards, seat) : 0;
   }
+  /* 同盟：高原の羊飼い（好意×コストちょうど$2のカードのペア）も engine の正本で見積る
+     （engine と CPU で算出が違うと「勝てると思って買って負ける」＝§0-26 で踏んだのと同型）。
+     favors は仮デッキではなく**実プレイヤー**から読む（好意はカードではないので hypo に入らない）。 */
+  function allyVp(state, cards, pl) {
+    return (DOM.engine && DOM.engine.allyScoreForCards) ? DOM.engine.allyScoreForCards(state, cards, pl) : 0;
+  }
   // seat が id を獲得して即終了した場合に勝てる（同点の共同勝利を含む）か
   function winsIfEnds(state, seat, id) {
     // 獲得する1枚を加えた仮デッキで再計算（庭園のデッキ増・公爵の動的得点も反映）
@@ -688,7 +694,8 @@
     // vpOfPlayer では 0 点になる。相手は実オブジェクト（tavern あり）で評価されるため、足さないと自分だけ過小評価になる。
     // （hypo.tavern に入れ直すと allCards で二重に数えてしまう＝庭園/品評会/絹の道/城が狂う。ここで加算するのが正しい。）
     const myVp = vpOfPlayer(hypo) + 4 * (me.tavern || []).filter((c) => c === 'distant_lands').length
-      + landmarkVp(state, allCards(me).concat(id), seat); // 帝国：ランドマーク得点（engineと同一算出）
+      + landmarkVp(state, allCards(me).concat(id), seat) // 帝国：ランドマーク得点（engineと同一算出）
+      + allyVp(state, allCards(me).concat(id), me);      // 同盟：高原の羊飼い（engineと同一算出）
     // 同点決勝は**タイブレーク用のターン数**で比べる（engine の scoreGame と同じ算出＝食い違うと
     //   「勝てると思って買ったら負ける」/「勝てるのに買わない」が起きる）。
     //   移動動物園「今を生きる」の追加ターンは数えない（p.freeTurns）。今まさにそのターンなら、
@@ -697,7 +704,7 @@
     const myTurns = me.turns + 1 - (me.freeTurns || 0) - seizeNow; // 今のターンはクリーンアップで+1される
     return state.players.every((p, i) => {
       if (i === seat) return true;
-      const v = vpOfPlayer(p) + landmarkVp(state, allCards(p), i);
+      const v = vpOfPlayer(p) + landmarkVp(state, allCards(p), i) + allyVp(state, allCards(p), p);
       if (v > myVp) return false;
       if (v === myVp && (p.turns - (p.freeTurns || 0)) < myTurns) return false;
       return true;
@@ -3072,6 +3079,98 @@
         if (!hasKey) return { type: 'TREASURER_CHOOSE', mode: 'key' };
         if (p.hand.includes('copper')) return { type: 'TREASURER_CHOOSE', mode: 'trash' };
         return { type: 'TREASURER_CHOOSE', mode: 'key' }; // 既に持っていても選べる＝実質no-op（engineは拒否しない）
+      }
+
+      /* ========== 同盟（Allies）A3：Ally カード23種の窓 ==========
+         ⚠ どの窓も **null を返さない**（オンラインで reduce(state,null) が TypeError → 部屋が固まる）。
+         ⚠ engine が拒否する選択を返し続けると本番 livelock ＝ engine の述語（DOM.engine.*）をそのまま使う。 */
+      case 'ally_mountain_folk': // 山の民＝好意5で +3カード（常に得なので使う）
+        return { type: 'ALLY_SIMPLE', ok: (p.favors || 0) >= 5 };
+      case 'ally_desert': {
+        // 砂漠の案内人＝好意1で引き直す。手札が弱い（死蔵札が多い／枚数が少ない）ときだけ使う。
+        const dead = p.hand.filter((c) => isDead(c)).length;
+        return { type: 'ALLY_SIMPLE', ok: (p.favors || 0) >= 1 && (p.hand.length <= 3 || dead >= 3) };
+      }
+      case 'ally_scribes': // 写本士の仲間たち＝手札4枚以下で好意1→+1カード（常に得）
+        return { type: 'ALLY_SIMPLE', ok: (p.favors || 0) >= 1 && p.hand.length <= 4 };
+      case 'ally_circle': // 魔女の輪＝好意3で他の全員に呪い（呪いが残っていれば常に撃つ）
+        return { type: 'ALLY_SIMPLE', ok: (p.favors || 0) >= 3 && (state.supply.curse || 0) > 0 };
+      case 'ally_island_folk': // 島民＝好意5で追加ターン（常に得）
+        return { type: 'ALLY_SIMPLE', ok: (p.favors || 0) >= 5 };
+      case 'ally_city_state': // 都市国家＝好意2で獲得したアクションを即使用（ターミナル過多でなければ使う）
+        return { type: 'ALLY_SIMPLE', ok: (p.favors || 0) >= 2 };
+      case 'ally_trappers': { // 罠師の小屋＝好意1で獲得札を山札の上へ（良い札のときだけ）
+        const good = keepValue(pd.card) >= keepValue('silver') || isType(pd.card, 'action');
+        return { type: 'ALLY_SIMPLE', ok: (p.favors || 0) >= 1 && good && !isDead(pd.card) };
+      }
+      case 'ally_forest': // 森の居住者＝好意1で山札の上3枚を整理（常に得）
+        return { type: 'ALLY_SIMPLE', ok: (p.favors || 0) >= 1 };
+      case 'ally_gang': { // すり師団＝好意1を払って手札4枚捨てを免れる（好意があれば必ず払う）
+        if (pd.stage === 'pay') return { type: 'ALLY_GANG', ok: (p.favors || 0) >= 1 };
+        const drop = Math.max(0, p.hand.length - 4);
+        const order = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b));
+        return { type: 'ALLY_GANG', cards: order.slice(0, drop) };
+      }
+      case 'ally_cave': { // 穴居民＝好意1で「1枚捨てて1枚引く」。死蔵札があるときだけ回す
+        const junk = p.hand.filter((c) => isDead(c) || c === 'copper').sort((a, b) => keepValue(a) - keepValue(b));
+        if ((p.favors || 0) < 1 || !junk.length) return { type: 'ALLY_CAVE', ok: false };
+        return { type: 'ALLY_CAVE', ok: true, card: junk[0] };
+      }
+      case 'ally_crafters': { // 工芸家ギルド＝好意2でコスト$4以下を山札の上に獲得（強いので常に使う）
+        const g = bestGain(state, 4, { noVictory: true }) || bestGain(state, 4);
+        return { type: 'ALLY_CRAFTERS', card: (p.favors || 0) >= 2 ? g : null };
+      }
+      case 'ally_inventors': { // 発明家の家族＝好意1を山に置いてコストを恒久的に下げる（好意が余っているときだけ）
+        const targets = DOM.engine.favorPileTargets(state);
+        if ((p.favors || 0) < 2 || !targets.length) return { type: 'ALLY_INVENTORS', pile: null };
+        // GAIN_ORDER の上位（＝自分が欲しい山）に置く
+        for (const id of GAIN_ORDER) if (targets.indexOf(id) >= 0 && cost(state, id) >= 3) return { type: 'ALLY_INVENTORS', pile: id };
+        return { type: 'ALLY_INVENTORS', pile: null };
+      }
+      case 'ally_market_towns': { // 市場の町＝好意1で手札のアクションを使う（購入フェイズなのでコインを増やす札を優先）
+        if ((p.favors || 0) < 1) return { type: 'ALLY_MARKET_TOWNS', card: null };
+        const acts = p.hand.filter((c) => isType(c, 'action') || DOM.engine.inheritedEstate(p, c));
+        if (!acts.length) return { type: 'ALLY_MARKET_TOWNS', card: null };
+        for (const id of GAIN_ORDER) if (acts.indexOf(id) >= 0) return { type: 'ALLY_MARKET_TOWNS', card: id };
+        return { type: 'ALLY_MARKET_TOWNS', card: acts[0] };
+      }
+      case 'ally_peaceful_cult': { // 平和的教団＝好意で手札の死蔵札を廃棄（呪い/屋敷/銅貨を優先）
+        const junk = p.hand.filter((c) => isType(c, 'curse') || c === 'estate' || c === 'copper')
+          .sort((a, b) => keepValue(a) - keepValue(b));
+        const n = Math.min(junk.length, p.favors || 0);
+        return { type: 'ALLY_PEACEFUL_CULT', cards: junk.slice(0, n) };
+      }
+      case 'ally_woodworkers': { // 木工ギルド＝好意1で弱いアクションを廃棄して強いアクションを獲得
+        if (pd.stage === 'gain') {
+          const g = firstGainable(state, (id) => isTypeSup(state, id, 'action'));
+          return { type: 'ALLY_WOODWORKERS', card: g };
+        }
+        if ((p.favors || 0) < 1) return { type: 'ALLY_WOODWORKERS', card: null };
+        const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => cost(state, a) - cost(state, b));
+        const best = firstGainable(state, (id) => isTypeSup(state, id, 'action'));
+        if (!acts.length || !best) return { type: 'ALLY_WOODWORKERS', card: null };
+        // 廃棄する札より明確に良いアクションが獲得できるときだけ
+        return { type: 'ALLY_WOODWORKERS', card: cost(state, best) > cost(state, acts[0]) ? acts[0] : null };
+      }
+      case 'ally_coastal_haven': { // 沿岸の避難港＝好意で良い札を次のターンへ持ち越す（金貨/銀貨/アクションを残す）
+        const keep = p.hand.filter((c) => !isDead(c) && c !== 'copper')
+          .sort((a, b) => keepValue(b) - keepValue(a));
+        const n = Math.min(keep.length, p.favors || 0, 2); // 使いすぎない（好意は他でも要る）
+        return { type: 'ALLY_COASTAL_HAVEN', cards: keep.slice(0, n) };
+      }
+      case 'ally_architects': { // 建築家ギルド＝好意2で「より安い勝利点でないカード」を獲得（連鎖する）
+        if ((p.favors || 0) < 2) return { type: 'ALLY_ARCHITECTS', card: null };
+        const pred = DOM.engine.architectsCanGain(state, pd.card);
+        const g = firstGainable(state, pred);
+        return { type: 'ALLY_ARCHITECTS', card: g };
+      }
+      case 'ally_nomads': { // 遊牧民団＝好意1で +1カード/+1アクション/+1購入（相手のターン中は +カード 一択）
+        if ((p.favors || 0) < 1) return { type: 'ALLY_NOMADS', choice: null };
+        const myTurn = state.turn && state.turn.active === pd.player;
+        if (!myTurn) return { type: 'ALLY_NOMADS', choice: 'card' };
+        if (state.turn.phase === 'action' && (state.turn.actions || 0) === 0 &&
+            p.hand.some((c) => isType(c, 'action'))) return { type: 'ALLY_NOMADS', choice: 'action' };
+        return { type: 'ALLY_NOMADS', choice: 'card' };
       }
 
       default:

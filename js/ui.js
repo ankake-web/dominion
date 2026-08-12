@@ -279,6 +279,7 @@
       pileTokenBadge(state, id),
       pileVpBadge(state, id),
       pileDebtBadge(state, id),
+      pileFavorBadge(state, id),
       h('div', { class: 'pile-count' + (n <= 2 ? ' lo' : n <= 5 ? ' mid' : '') }, '残' + n)
     );
   }
@@ -293,6 +294,13 @@
     const n = (state.pileVP && state.pileVP[id]) || 0;
     if (n <= 0) return null;
     return h('div', { class: 'pile-vp', title: '山上の勝利点トークン' }, '⭐' + n);
+  }
+  /* 同盟：発明家の家族（Family of Inventors）＝山の上に置かれた好意トークン数（公開・全員共有）。
+     その山のカードは**全員に・常時・累積で** $1 安い（表示コストは effCost が cardCost 経由で既に反映している）。 */
+  function pileFavorBadge(state, id) {
+    const n = (state.pileFavor && state.pileFavor[id]) || 0;
+    if (n <= 0) return null;
+    return h('div', { class: 'pile-favor', title: '山上の好意トークン（この山のカードは全員に $' + n + ' 安い）' }, '🤝' + n);
   }
   // 冒険：山トークンを山に小さく表示（各プレイヤーのトークンは公開情報）。
   //   +1系4種＝教師／失われた技術・鍛錬・誘導・海路（プレイ時ボーナス）。
@@ -1074,6 +1082,9 @@
   }
   // 帝国：負債(Debt)を使う王国か（負債コストのカード or capital があれば負債バッジ/返済ボタンを出す）。
   function usesDebt(kingdom) { return (kingdom || []).some((id) => DOM.CARDS[id] && ((DOM.CARDS[id].debt || 0) > 0 || id === 'capital')); }
+  /* 同盟：好意(Favor)を使う対局か＝**同盟(Ally)カードが場に出ているゲームだけ**（王国に連携があるとき）。
+     好意は財源/村人とは完全に別枠（混ぜて使えない）。得点にならない（例外＝高原の羊飼い）。 */
+  function usesFavors(state) { return !!(state && state.ally); }
 
   /* ---------- 初心者モードの支援（案内・おすすめ買い物・カードのやさしい説明） ---------- */
   // 今のコインで買える中から、序盤に強い財宝＆勝ち筋を提案（盤面で黄色枠ハイライト）。
@@ -1218,6 +1229,10 @@
         // 帝国：負債(Debt)を使う王国 or 負債を持つときだけ 負債 を表示（オレンジ）。負債があると購入不可。
         (usesDebt(state.kingdom) || (active.debt || 0) > 0)
           ? h('div', { class: 'badge debt', style: 'background:#d2691e' }, h('div', { class: 'v' }, active.debt || 0), h('div', { class: 'k' }, '負債'))
+          : null,
+        // 同盟：好意(Favor)＝同盟カードがあるゲームだけ表示（財源/村人とは別枠・使い道は同盟カードが定める）。
+        usesFavors(state)
+          ? h('div', { class: 'badge favors', style: 'background:#7a5c2e' }, h('div', { class: 'v' }, active.favors || 0), h('div', { class: 'k' }, '好意'))
           : null)
     );
 
@@ -1402,7 +1417,29 @@
               h('span', { class: 'muted', style: 'font-size:12px;margin-left:8px' }, (wy.text || '').replace(/\n/g, ' ')));
           })))
       : null;
+    /* 同盟：Ally（横型・1ゲームに1枚だけ・買わない）＝好意トークンの使い道を定める。
+       王国に連携(Liaison)が1枚でもあるときだけ登場し、全員の好意の枚数もここに出す（公開情報）。 */
+    const allyBlock = state.ally
+      ? (() => {
+        const al = (DOM.LANDSCAPES || {})[state.ally] || { name: state.ally, text: '' };
+        const favs = state.players.map((pl) => pl.name + ' 🤝' + (pl.favors || 0)).join(' / ');
+        return h('div', { class: 'supply-section' },
+          h('div', { class: 'sup-title' }, '同盟（横型・好意トークンの使い道）'),
+          h('div', { class: 'mats' },
+            h('div', { class: 'mat-row ally-row', title: (al.text || '') },
+              h('img', { class: 'landmark-thumb', src: 'asset/cards/' + state.ally + '.webp', alt: al.name, loading: 'lazy',
+                style: 'height:40px;width:60px;object-fit:cover;border-radius:4px;flex:0 0 auto;cursor:pointer',
+                onclick: () => openLandmarkZoom(state.ally),
+                onerror: function () { this.style.display = 'none'; } }),
+              h('span', { class: 'mat-label', role: 'button', tabindex: '0', style: 'cursor:pointer',
+                  onclick: () => openLandmarkZoom(state.ally),
+                  onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLandmarkZoom(state.ally); } } },
+                '🤝 ' + al.name + '（' + favs + '）'),
+              h('span', { class: 'muted', style: 'font-size:12px;margin-left:8px' }, (al.text || '').replace(/\n/g, ' ')))));
+      })()
+      : null;
     const supply = h('div', null,
+      allyBlock,
       landscapeBlock,
       eventBlock,
       projectBlock,
@@ -1676,6 +1713,19 @@
       return h('button', { class: 'btn btn-block', onclick: () => dispatch({ type: 'STASH_SETTING', player: viewer, value: next[cur] }) },
         '🧧 へそくり配置: ' + label[cur] + '（タップで変更）');
     })();
+    /* 同盟：占星術師団／メイソン団＝**シャッフルのたび**に好意を払って札を選び出す Ally。
+       シャッフルは効果解決の途中で同期的に起きて対話を挟めないので（星図/へそくりと同じ難所）、
+       **「1回のシャッフルに好意を何個まで使うか」だけ**を常設方針として本人が決め、
+       どの札を選ぶかはエンジンが最善を自動で選ぶ（§0-29 の決定）。 */
+    const favorShuffleBtn = (() => {
+      if (t.active !== viewer) return null;
+      if (state.ally !== 'order_of_astrologers' && state.ally !== 'order_of_masons') return null;
+      const mp = state.players[viewer];
+      const cur = mp.favorShuffle || 0;
+      const nm = (DOM.LANDSCAPES[state.ally] || {}).name || state.ally;
+      return h('button', { class: 'btn btn-block', onclick: () => dispatch({ type: 'FAVOR_SHUFFLE_SETTING', player: viewer, value: (cur + 1) % 4 }) },
+        '🤝 ' + nm + '：1回のシャッフルに使う好意 ' + cur + '個（タップで変更・持っている好意 ' + (mp.favors || 0) + '）');
+    })();
     if (t.phase === 'action') {
       // ルネサンス：村人(Villagers)を持っていれば「村人を使う」ボタン（アクションフェイズ・1個=+1アクション）。
       const villagerBtn = (t.active === viewer && (state.players[viewer].villagers || 0) > 0)
@@ -1685,6 +1735,7 @@
       return h('div', { class: 'actions-bar' },
         villagerBtn,
         stashBtn,
+        favorShuffleBtn,
         h('button', { class: 'btn btn-primary btn-block', onclick: () => endActionPhase(state, viewer) }, '購入フェーズへ ▶'));
     }
     /* 夜想曲：夜フェイズ＝購入フェイズは終わっている。財宝/財源/負債返済/購入はできず、
@@ -1692,6 +1743,7 @@
     if (t.phase === 'night') {
       return h('div', { class: 'actions-bar' },
         stashBtn,
+        favorShuffleBtn,
         h('button', { class: 'btn btn-primary btn-block', onclick: () => endTurnTap(state, viewer) }, 'ターンを終える'));
     }
     // 支配中は操作対象（被支配者=t.active）の手札で判定する（財宝を出すのも engine では被支配者の手札）。
@@ -1713,6 +1765,7 @@
       repayBtn,
       cofferBtn,
       stashBtn,
+      favorShuffleBtn,
       h('button', { class: 'btn btn-primary btn-block', onclick: () => endTurnTap(state, viewer) }, 'ターンを終える'));
   }
   // ギルド：財源を何枚使うか選ぶ（購入フェイズの任意タイミング。1枚=+1コイン）。pending ではない独立オーバーレイ。
@@ -2451,6 +2504,131 @@
       return modalOptions('ゾンビの密偵 — 山札の一番上', '山札の一番上は「' + nm + '」です。捨てるか、そのまま戻します。', [
         { label: '捨てる', cls: 'btn-primary', on: () => dispatch({ type: 'ZOMBIE_SPY', discard: true }) },
         { label: 'そのまま戻す', on: () => dispatch({ type: 'ZOMBIE_SPY', discard: false }) }]);
+    }
+    /* ========== 同盟（Allies）A3：Ally カード23種の選択モーダル ==========
+       ⚠ **押せる選択肢が必ず1つ以上ある**こと（好意の支払いは常に任意＝「使わない」で必ず閉じられる）。
+       ⚠ Ally が起こす攻撃（魔女の輪／すり師団）は堀で防げない＝リアクションの選択肢は出さない。 */
+    if (pd.type === 'ally_mountain_folk') {
+      return modalOptions('山の民', '好意5 を使うと +3カード（好意 ' + (p.favors || 0) + ' 個）。', [
+        { label: '好意5を使う（+3カード）', cls: 'btn-primary', on: () => dispatch({ type: 'ALLY_SIMPLE', ok: true }) },
+        { label: '使わない', on: () => dispatch({ type: 'ALLY_SIMPLE', ok: false }) }]);
+    }
+    if (pd.type === 'ally_desert') {
+      return modalOptions('砂漠の案内人', '好意1 を使うと手札をすべて捨てて5枚引きます（好意が続く限り繰り返せますが、'
+        + '一度やめると このターンは戻れません）。現在の手札 ' + p.hand.length + '枚 ／ 好意 ' + (p.favors || 0) + ' 個。', [
+        { label: '好意1を使う（引き直す）', cls: 'btn-primary', on: () => dispatch({ type: 'ALLY_SIMPLE', ok: true }) },
+        { label: 'やめる', on: () => dispatch({ type: 'ALLY_SIMPLE', ok: false }) }]);
+    }
+    if (pd.type === 'ally_scribes') {
+      return modalOptions('写本士の仲間たち', '手札が ' + p.hand.length + '枚（4枚以下）です。好意1 を使うと +1カード。', [
+        { label: '好意1を使う（+1カード）', cls: 'btn-primary', on: () => dispatch({ type: 'ALLY_SIMPLE', ok: true }) },
+        { label: '使わない', on: () => dispatch({ type: 'ALLY_SIMPLE', ok: false }) }]);
+    }
+    if (pd.type === 'ally_circle') {
+      return modalOptions('魔女の輪', '好意3 を使うと 他のプレイヤー全員が呪い1枚を獲得します（アタックではないので堀で防げません）。', [
+        { label: '好意3を使う（全員に呪い）', cls: 'btn-primary', on: () => dispatch({ type: 'ALLY_SIMPLE', ok: true }) },
+        { label: '使わない', on: () => dispatch({ type: 'ALLY_SIMPLE', ok: false }) }]);
+    }
+    if (pd.type === 'ally_island_folk') {
+      return modalOptions('島民', '好意5 を使うと このターンの後にもう1回ターンを行えます（3ターン連続にはできません）。', [
+        { label: '好意5を使う（追加ターン）', cls: 'btn-primary', on: () => dispatch({ type: 'ALLY_SIMPLE', ok: true }) },
+        { label: '使わない', on: () => dispatch({ type: 'ALLY_SIMPLE', ok: false }) }]);
+    }
+    if (pd.type === 'ally_city_state') {
+      const nm = (DOM.CARDS[pd.card] || {}).name || pd.card;
+      const wayList = (state.ways || []).filter((w) => (DOM.LANDSCAPES || {})[w]);
+      return modalOptions('都市国家', '獲得した「' + nm + '」を、好意2 を使って今すぐ使用できます（アクション権は使いません）。',
+        [{ label: '好意2を使う（' + nm + 'を使用）', cls: 'btn-primary', on: () => dispatch({ type: 'ALLY_SIMPLE', ok: true }) }]
+          .concat(wayList.map((w) => ({ label: '好意2を使う（「' + DOM.LANDSCAPES[w].name + '」で使用）', on: () => dispatch({ type: 'ALLY_SIMPLE', ok: true, way: w }) })))
+          .concat([{ label: '使わない', on: () => dispatch({ type: 'ALLY_SIMPLE', ok: false }) }]));
+    }
+    if (pd.type === 'ally_trappers') {
+      const nm = (DOM.CARDS[pd.card] || {}).name || pd.card;
+      return modalOptions('罠師の小屋', '獲得した「' + nm + '」を、好意1 を使って山札の一番上に置けます。', [
+        { label: '好意1を使う（山札の上へ）', cls: 'btn-primary', on: () => dispatch({ type: 'ALLY_SIMPLE', ok: true }) },
+        { label: '使わない', on: () => dispatch({ type: 'ALLY_SIMPLE', ok: false }) }]);
+    }
+    if (pd.type === 'ally_forest') {
+      return modalOptions('森の居住者', '好意1 を使うと 山札の上3枚を見て、好きな枚数を捨て、残りを好きな順で山札の上に戻せます。', [
+        { label: '好意1を使う（上3枚を見る）', cls: 'btn-primary', on: () => dispatch({ type: 'ALLY_SIMPLE', ok: true }) },
+        { label: '使わない', on: () => dispatch({ type: 'ALLY_SIMPLE', ok: false }) }]);
+    }
+    if (pd.type === 'ally_gang') {
+      if (pd.stage === 'pay') {
+        return modalOptions('すり師団', '好意1 を使わないと 手札が4枚になるように捨てます（今の手札 ' + p.hand.length + '枚）。'
+          + 'アタックではないので堀では防げません。', [
+          { label: '好意1を使う（捨てない）', cls: 'btn-primary', on: () => dispatch({ type: 'ALLY_GANG', ok: true }) },
+          { label: '使わずに捨てる', on: () => dispatch({ type: 'ALLY_GANG', ok: false }) }]);
+      }
+      const need = Math.max(0, p.hand.length - 4);
+      return modalSelectN(p, 'すり師団 — 手札を捨てる', '手札が4枚になるように ' + need + '枚 を選んで捨てます。',
+        need, '捨てる', (cards) => dispatch({ type: 'ALLY_GANG', cards }));
+    }
+    if (pd.type === 'ally_cave') {
+      if (p.hand.length === 0) {
+        return modalOptions('穴居民', '手札がありません。好意1 を使うと（捨てられなくても）+1カード。', [
+          { label: '好意1を使う（+1カード）', cls: 'btn-primary', on: () => dispatch({ type: 'ALLY_CAVE', ok: true, card: null }) },
+          { label: 'やめる', on: () => dispatch({ type: 'ALLY_CAVE', ok: false }) }]);
+      }
+      return modalSingleHand(p, '穴居民 — 1枚捨てて1枚引く',
+        '好意1 を使って 手札1枚を捨て、1枚引きます（好意 ' + (p.favors || 0) + ' 個。好きな回数くり返せます）。',
+        () => true, (card) => dispatch({ type: 'ALLY_CAVE', ok: true, card }),
+        { label: 'やめる', on: () => dispatch({ type: 'ALLY_CAVE', ok: false }) }, '捨てる');
+    }
+    if (pd.type === 'ally_crafters') {
+      return modalGainSupply(state, '工芸家ギルド — 獲得', '好意2 を使って コスト4コイン以下のカード1枚を山札の上に獲得します（しなくてもよい）。',
+        (id) => DOM.engine.costUpTo(state, id, 4), (id) => dispatch({ type: 'ALLY_CRAFTERS', card: id }),
+        () => dispatch({ type: 'ALLY_CRAFTERS', card: null }), true);
+    }
+    if (pd.type === 'ally_inventors') {
+      const targets = DOM.engine.favorPileTargets(state);
+      return modalPickIds('発明家の家族 — 好意を山に置く',
+        '好意1 を 勝利点でないサプライの山1つに置けます（その山のカードは全員に $1 安くなります・戻ってきません）。',
+        targets, (id) => dispatch({ type: 'ALLY_INVENTORS', pile: id }), '置く',
+        { label: '置かない', on: () => dispatch({ type: 'ALLY_INVENTORS', pile: null }) }, state);
+    }
+    if (pd.type === 'ally_market_towns') {
+      return modalPlayCardEvent(state, p, '市場の町 — アクションを使う',
+        '好意1 を使って 手札のアクションカード1枚を使用できます（アクションフェイズには戻りません＝+アクションは無意味）。'
+        + '好意 ' + (p.favors || 0) + ' 個。好きな回数くり返せます。',
+        p.hand, (id) => DOM.isType(id, 'action') || DOM.engine.inheritedEstate(p, id), 'ALLY_MARKET_TOWNS',
+        { label: 'やめる', on: () => dispatch({ type: 'ALLY_MARKET_TOWNS', card: null }) });
+    }
+    if (pd.type === 'ally_peaceful_cult') {
+      return modalMultiHand(p, '平和的教団 — 廃棄', '好意1 につき手札1枚を廃棄できます（好意 ' + (p.favors || 0) + ' 個・0枚でもよい）。',
+        (n) => (n === 0 ? '廃棄しない' : '好意' + n + 'を使って' + n + '枚を廃棄'), true,
+        (cards) => dispatch({ type: 'ALLY_PEACEFUL_CULT', cards }), p.favors || 0);
+    }
+    if (pd.type === 'ally_woodworkers') {
+      if (pd.stage === 'trash') {
+        return modalSingleHand(p, '木工ギルド — 廃棄', '好意1 を使って 手札のアクションカード1枚を廃棄できます（廃棄したらアクションカード1枚を獲得）。',
+          (id) => DOM.isType(id, 'action') || DOM.engine.inheritedEstate(p, id),
+          (card) => dispatch({ type: 'ALLY_WOODWORKERS', card }),
+          { label: '使わない', on: () => dispatch({ type: 'ALLY_WOODWORKERS', card: null }) });
+      }
+      return modalGainSupply(state, '木工ギルド — 獲得', 'アクションカード1枚を獲得します（コストの上限はありません）。',
+        (id) => DOM.engine.woodworkersCanGain(state)(id), (id) => dispatch({ type: 'ALLY_WOODWORKERS', card: id }));
+    }
+    if (pd.type === 'ally_coastal_haven') {
+      return modalMultiHand(p, '沿岸の避難港 — 手札を残す',
+        '好意1 につき手札1枚を次のターンへ残せます（好意 ' + (p.favors || 0) + ' 個・引く枚数は変わりません）。',
+        (n) => (n === 0 ? '残さない' : '好意' + n + 'を使って' + n + '枚を残す'), true,
+        (cards) => dispatch({ type: 'ALLY_COASTAL_HAVEN', cards }), p.favors || 0);
+    }
+    if (pd.type === 'ally_architects') {
+      const nm = (DOM.CARDS[pd.card] || {}).name || pd.card;
+      return modalGainSupply(state, '建築家ギルド — 獲得',
+        '好意2 を使って「' + nm + '」より安い、勝利点でないカード1枚を獲得できます（しなくてもよい）。',
+        DOM.engine.architectsCanGain(state, pd.card), (id) => dispatch({ type: 'ALLY_ARCHITECTS', card: id }),
+        () => dispatch({ type: 'ALLY_ARCHITECTS', card: null }), true);
+    }
+    if (pd.type === 'ally_nomads') {
+      const nm = (DOM.CARDS[pd.card] || {}).name || pd.card;
+      return modalOptions('遊牧民団', '「' + nm + '」（コスト3コイン以上）を獲得しました。好意1 を使って次から1つを選べます。', [
+        { label: '+1 カード', cls: 'btn-primary', on: () => dispatch({ type: 'ALLY_NOMADS', choice: 'card' }) },
+        { label: '+1 アクション', on: () => dispatch({ type: 'ALLY_NOMADS', choice: 'action' }) },
+        { label: '+1 購入', on: () => dispatch({ type: 'ALLY_NOMADS', choice: 'buy' }) },
+        { label: '使わない', on: () => dispatch({ type: 'ALLY_NOMADS', choice: null }) }]);
     }
     if (pd.type === 'attack_window' && pd.stage === 'react') {
       return modalOptions('アタックを受ける', '相手がアタックカードを使いました（このアタック自体はあなたに何もしませんが、リアクションは使えます）。',
