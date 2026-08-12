@@ -360,6 +360,29 @@
       const inh = p.inherited[0];
       if (NONTERMINAL_INHERIT.has(inh)) return 'estate';
     }
+    /* 同盟（Allies）A4：非ターミナル（+アクションが必ず付く＝連鎖できる）。
+       ⚠ 「選ぶ」で +アクション を取れる札（町/触れ役/蹄鉄工/仲買人/改造）は decidePending 側の選択と揃える。 */
+    if (has('merchant_camp')) return 'merchant_camp';     // +2アクション+1コイン
+    if (has('capital_city')) return 'capital_city';       // +1カード+2アクション
+    if (has('underling')) return 'underling';             // +1カード+1アクション+1好意
+    if (has('distant_shore')) return 'distant_shore';     // +2カード+1アクション（屋敷を獲得）
+    if (has('sibyl')) return 'sibyl';                     // +4カード+1アクション
+    if (has('innkeeper')) return 'innkeeper';             // +1アクション（3択のドロー）
+    if (has('town')) return 'town';                       // 二択（+1カード+2アクションを取れる）
+    if (has('blacksmith')) return 'blacksmith';           // 三択（ドロー）
+    if (has('town_crier')) return 'town_crier';           // 三択（+1カード+1アクションを取れる）
+    if (has('miller')) return 'miller';                   // +1アクション（山札上4枚から1枚）
+    if (has('old_map')) return 'old_map';                 // +1カード+1アクション（1枚捨てて+1カード）
+    if (has('battle_plan')) return 'battle_plan';         // +1カード+1アクション（アタック公開で+1カード）
+    if (has('swap')) return 'swap';                       // +1カード+1アクション（山に戻して格上げ獲得）
+    if (has('skirmisher')) return 'skirmisher';           // +1カード+1アクション+1コイン（アタック獲得で攻撃）
+    if (has('sorcerer')) return 'sorcerer';               // +1カード+1アクション（相手に呪い）
+    if (has('sorceress')) return 'sorceress';             // +1アクション（当たれば相手に呪い）
+    if (has('hunter')) return 'hunter';                   // +1アクション（山札上3枚から種別ごとに1枚）
+    if (has('warlord')) return 'warlord';                 // +1アクション（持続アタック・次ターン+2カード）
+    if (has('student')) return 'student';                 // +1アクション（循環＋廃棄。財宝なら好意＋山札上へ）
+    if (has('sycophant')) return 'sycophant';             // +1アクション（3枚捨てて+3コイン）
+    if (has('voyage')) return 'voyage';                   // +1アクション（追加ターン・使用は3枚まで）
     // --- ターミナル（効果の大きい順）---
     // 新プロモ：王子＝良い対象（$4以下の持続/命令以外）が手札にあるときだけ（毎ターン無料再生＝最優先）。
     if (has('prince') && bestPrinceTarget(state, p)) return 'prince';
@@ -512,6 +535,31 @@
     if (has('faithful_hound')) return 'faithful_hound';     // +2カード（捨てられたら脇に置いて戻ってくる）
     if (has('tracker')) return 'tracker';                   // +1コイン＋祝福（このターンの獲得を山札の上に）
     if (has('druid')) return 'druid';                       // +1購入＋脇の祝福
+    /* 同盟（Allies）A4：ターミナル（アタック＞ドロー／獲得＞コイン）。 */
+    if (has('barbarian')) return 'barbarian';               // +2コイン＋相手の山札上を廃棄→格下げ or 呪い
+    if (has('highwayman')) return 'highwayman';             // 持続アタック（相手の最初の財宝を無効化・次ターン+3カード）
+    if (has('archer')) return 'archer';                     // +2コイン＋相手の手札から1枚捨てさせる
+    if (has('marquis')) return 'marquis';                   // +1購入＋手札枚数ぶんドロー
+    if (has('sentinel')) return 'sentinel';                 // 山札上5枚から最大2枚廃棄（圧縮）
+    if (has('conjurer')) return 'conjurer';                 // $4以下を獲得（次ターン手札に戻る）
+    if (has('carpenter')) return 'carpenter';               // 空山0なら$4以下を獲得、そうでなければ格上げ
+    if (has('hill_fort')) return 'hill_fort';               // $4以下を獲得＋二択
+    if (has('modify')) return 'modify';                     // 廃棄→二択（キャントリップ or 格上げ獲得）
+    if (has('broker')) return 'broker';                     // 廃棄→コスト$1につき1つ（カード/アクション/コイン/好意）
+    if (has('acolyte')) return 'acolyte';                   // 廃棄→金貨／自身を廃棄→卜占官
+    if (has('specialist') && p.hand.some((c) => (isType(c, 'action') || isTreasureNow(state, c)) && c !== 'specialist')) return 'specialist';
+    if (has('royal_galley') && p.hand.some((c) => isType(c, 'action') && !isType(c, 'duration'))) return 'royal_galley';
+    if (has('elder') && p.hand.some((c) => isType(c, 'action') && c !== 'elder')) return 'elder';
+    if (has('herb_gatherer')) return 'herb_gatherer';       // +1購入（山札を捨て札へ→財宝を1枚使う）
+    if (has('courier')) return 'courier';                   // +1コイン（捨て札からアクション/財宝を1枚使う）
+    if (has('guildmaster')) return 'guildmaster';           // +3コイン（獲得ごとに好意）
+    if (has('galleria')) return 'galleria';                 // +3コイン（$3/$4の獲得で+1購入）
+    if (has('tent')) return 'tent';                         // +2コイン（循環・山札の上に戻せる）
+    if (has('garrison')) return 'garrison';                 // +2コイン（獲得ごとにトークン→次ターンドロー）
+    if (has('stronghold')) return 'stronghold';             // 二択（+3コイン／次ターン+3カード）
+    if (has('importer')) return 'importer';                 // 持続（次ターン開始時に$5以下を獲得）
+    if (has('emissary')) return 'emissary';                 // +3カード（シャッフルすれば+1アクション+2好意）
+    if (has('lich')) return 'lich';                         // +6カード+2アクション（ただし1ターンスキップ）
     // 玉座の間: 2回使える別アクションが手札にあるときだけ（無駄打ち回避）
     if (has('throne_room') && p.hand.some((c) => isType(c, 'action') && c !== 'throne_room')) return 'throne_room';
     if (has('council_room')) return 'council_room'; // +4カード+1購入
@@ -651,6 +699,13 @@
     if (distantLands) vp += distantLands * 4;
     const pastures = cards.filter((c) => c === 'pasture').length; // 夜想曲：牧草地＝屋敷1枚につき1点
     if (pastures) vp += pastures * cards.filter((c) => c === 'estate').length;
+    // 同盟：領土＝異なる名前の勝利点カード1種類につき1点（engine.vpOf と同じ式）。
+    const territories = cards.filter((c) => c === 'territory').length;
+    if (territories) {
+      const vnames = new Set();
+      cards.forEach((c) => { if (C()[c] && isType(c, 'victory')) vnames.add(c); });
+      vp += territories * vnames.size;
+    }
     vp += p.vpTokens || 0; // 繁栄：VPトークン
     // 夜想曲：生活苦(-2)/二重苦(-4)＝engine.vpOf と同じ式（片方だけだと「勝てると思って買って負ける」）。
     if (p.misery === 1) vp -= 2;
@@ -3164,6 +3219,93 @@
         const g = firstGainable(state, pred);
         return { type: 'ALLY_ARCHITECTS', card: g };
       }
+      /* ========== 同盟（Allies）A4：王国カード49種 ========== */
+      /* 循環(Rotate)＝**常に任意**。「回した後に一番上に来る札」が GAIN_ORDER で今の一番上より上位のときだけ回す。
+         戦闘計画（pd.any）は任意のサプライ山が候補＝同じ基準で一番得をする山を選び、無ければ回さない。 */
+      case 'rotate_pile': {
+        const better = (pileId) => {
+          const arr = state[pileId];
+          if (!Array.isArray(arr) || !arr.length) return false;
+          const top = arr[0];
+          const nxt = arr.find((c) => c !== top);
+          if (!nxt) return false;
+          const ri = (c) => { const i = GAIN_ORDER.indexOf(c); return i < 0 ? 999 : i; };
+          return ri(nxt) < ri(top);
+        };
+        if (pd.any) {
+          const cands = DOM.engine.rotatableSupplyPiles(state).filter(better);
+          return { type: 'ROTATE_PILE', pile: cands.length ? cands[0] : null };
+        }
+        return { type: 'ROTATE_PILE', pile: better(pd.pile) ? pd.pile : null };
+      }
+
+      case 'town_choose': // 町＝アクション権が残っていて手札にアクションがあれば村モード、無ければコイン
+        return { type: 'TOWN_CHOOSE', choice: p.hand.some((c) => isType(c, 'action')) ? 'cards' : 'coins' };
+      case 'blacksmith_choose': { // 蹄鉄工＝手札が少なければ「6枚まで」、多ければ +2カード
+        const need = 6 - p.hand.length;
+        if (need >= 3) return { type: 'BLACKSMITH_CHOOSE', choice: 'six' };
+        return { type: 'BLACKSMITH_CHOOSE', choice: 'two' };
+      }
+      case 'miller_pick': { // 粉屋＝見た4枚から一番価値の高い1枚を手札へ（強制）
+        const order = pd.cards.slice().sort((a, b) => keepValue(b) - keepValue(a));
+        return { type: 'MILLER_PICK', card: order[0] };
+      }
+      case 'marquis_discard': { // 侯爵＝手札10枚まで、弱い札から捨てる
+        const need = Math.max(0, p.hand.length - 10);
+        const order = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b));
+        return { type: 'MARQUIS_DISCARD', cards: order.slice(0, need) };
+      }
+      case 'sycophant_discard': { // ごますり＝弱い札から3枚
+        const need = Math.min(3, p.hand.length);
+        const order = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b));
+        return { type: 'SYCOPHANT_DISCARD', cards: order.slice(0, need) };
+      }
+      case 'sibyl_place': { // 女予言者＝良い札を上に、弱い札を下に
+        const order = p.hand.slice().sort((a, b) => keepValue(b) - keepValue(a));
+        return { type: 'SIBYL_PLACE', card: pd.stage === 'top' ? order[0] : order[order.length - 1] };
+      }
+      case 'capital_city': { // 首都＝死蔵札が2枚あれば捨てて +2コイン／コインに余裕があれば +2カード
+        if (pd.stage === 'discard') {
+          const junk = p.hand.filter((c) => isDead(c) || c === 'copper').sort((a, b) => keepValue(a) - keepValue(b));
+          if (junk.length >= 2 && p.hand.length >= 2) return { type: 'CAPITAL_CITY', ok: true, cards: junk.slice(0, 2) };
+          return { type: 'CAPITAL_CITY', ok: false };
+        }
+        // 支払いは「$2 払っても買いたい札の水準が落ちない」ときだけ（素朴に $5 以上残るなら払う）
+        return { type: 'CAPITAL_CITY', ok: (state.turn.coins || 0) >= 5 };
+      }
+      case 'innkeeper_choose': { // 宿屋の主人＝手札が少なければ大きく引く（捨てるのは死蔵札）
+        if (p.hand.length <= 2) return { type: 'INNKEEPER_CHOOSE', choice: 'five' };
+        if (p.hand.length <= 4) return { type: 'INNKEEPER_CHOOSE', choice: 'three' };
+        return { type: 'INNKEEPER_CHOOSE', choice: 'one' };
+      }
+      case 'innkeeper_discard': {
+        const need = Math.min(pd.n, p.hand.length);
+        const order = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b));
+        return { type: 'INNKEEPER_DISCARD', cards: order.slice(0, need) };
+      }
+      case 'hunter_pick': { // 狩人＝その枠に合う中で一番価値の高い1枚（強制）
+        const cands = pd.cards.filter((c) => (pd.stage === 'treasure'
+          ? DOM.engine.isTreasureFor(state, c) : isType(c, pd.stage)));
+        const order = cands.slice().sort((a, b) => keepValue(b) - keepValue(a));
+        return { type: 'HUNTER_PICK', card: order[0] || cands[0] || pd.cards[0] };
+      }
+      case 'stronghold_choose': // 要塞＝今のコインが伸びていれば +3コイン（$8に届かせる）、そうでなければ次ターンの +3カード
+        return { type: 'STRONGHOLD_CHOOSE', choice: (state.turn.coins || 0) >= 3 ? 'coins' : 'cards' };
+      case 'hill_fort_gain': { // 堡塁＝コスト4以下で一番良いカードを獲得（強制）
+        const g = bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) ||
+          firstGainable(state, (id) => DOM.engine.costUpTo(state, id, 4));
+        return { type: 'HILL_FORT_GAIN', card: g };
+      }
+      case 'hill_fort_choose': // 堡塁＝獲得したのがアクションで手札に欲しければ手札へ、そうでなければ cantrip
+        return { type: 'HILL_FORT_CHOOSE', choice: (pd.card && isType(pd.card, 'action')) ? 'hand' : 'cantrip' };
+      case 'allies_topdeck': { // 天幕/商人の野営地＝場から捨てる代わりに山札の上へ（常に得なので全部置く）
+        return { type: 'ALLIES_TOPDECK', cards: (pd.cards || []).slice() };
+      }
+      case 'sunken_treasure': { // 沈没船の財宝＝場に同名が無いアクションを1枚獲得（強制・コスト制限なし）
+        const g = firstGainable(state, DOM.engine.sunkenTreasureCanGain(state, pd.player));
+        return { type: 'SUNKEN_TREASURE_GAIN', card: g };
+      }
+
       case 'ally_nomads': { // 遊牧民団＝好意1で +1カード/+1アクション/+1購入（相手のターン中は +カード 一択）
         if ((p.favors || 0) < 1) return { type: 'ALLY_NOMADS', choice: null };
         const myTurn = state.turn && state.turn.active === pd.player;

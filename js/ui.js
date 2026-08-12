@@ -2634,6 +2634,112 @@
         { label: '+1 購入', on: () => dispatch({ type: 'ALLY_NOMADS', choice: 'buy' }) },
         { label: '使わない', on: () => dispatch({ type: 'ALLY_NOMADS', choice: null }) }]);
     }
+    /* 同盟 A4：循環(Rotate)＝**常に任意**。一番上のカードとその直下の連続同名だけが山の一番下へ回る。
+       pd.any（戦闘計画）＝任意のサプライ山／それ以外＝自分の山を名指し（Yes/No）。 */
+    if (pd.type === 'rotate_pile') {
+      const nameOf = (id) => ((DOM.CARDS[id] || {}).name || id);
+      const topsOf = (pileId) => {
+        const arr = state[pileId];
+        if (!Array.isArray(arr) || !arr.length) return null;
+        return { top: arr[0], next: arr.find((c) => c !== arr[0]) || null };
+      };
+      if (pd.any) {
+        const piles = DOM.engine.rotatableSupplyPiles(state);
+        return modalPickIds('戦闘計画 — 山を循環させる',
+          'サプライの山を1つ循環させられます（一番上のカードと、その下に続く同名のカードが山の一番下へ回ります）。しなくてもよい。',
+          piles, (id) => dispatch({ type: 'ROTATE_PILE', pile: id }), '循環させる',
+          { label: '循環させない', on: () => dispatch({ type: 'ROTATE_PILE', pile: null }) }, state);
+      }
+      const tn = topsOf(pd.pile);
+      const detail = tn && tn.next
+        ? '今の一番上は「' + nameOf(tn.top) + '」です。循環させると「' + nameOf(tn.next) + '」が一番上になります。'
+        : '';
+      return modalOptions(nameOf(pd.pile) + ' — 山を循環させる',
+        '「' + nameOf(pd.pile) + '」の山を循環させられます（しなくてもよい）。' + detail, [
+        { label: '循環させる', cls: 'btn-primary', on: () => dispatch({ type: 'ROTATE_PILE', pile: pd.pile }) },
+        { label: '循環させない', on: () => dispatch({ type: 'ROTATE_PILE', pile: null }) }]);
+    }
+    /* ===== 同盟 A4：王国カード49種のモーダル ===== */
+    if (pd.type === 'town_choose') return modalOptions('町', '次から1つを選びます。', [
+      { label: '+1 カード と +2 アクション', cls: 'btn-primary', on: () => dispatch({ type: 'TOWN_CHOOSE', choice: 'cards' }) },
+      { label: '+1 購入 と +2 コイン', on: () => dispatch({ type: 'TOWN_CHOOSE', choice: 'coins' }) }]);
+    if (pd.type === 'blacksmith_choose') return modalOptions('蹄鉄工', '次から1つを選びます（今の手札 ' + p.hand.length + '枚）。', [
+      { label: '手札が6枚になるまで引く', cls: 'btn-primary', on: () => dispatch({ type: 'BLACKSMITH_CHOOSE', choice: 'six' }) },
+      { label: '+2 カード', on: () => dispatch({ type: 'BLACKSMITH_CHOOSE', choice: 'two' }) },
+      { label: '+1 カード と +1 アクション', on: () => dispatch({ type: 'BLACKSMITH_CHOOSE', choice: 'cantrip' }) }]);
+    if (pd.type === 'miller_pick') {
+      return modalPickIds('粉屋 — 手札に加える', '山札の上から見た ' + pd.cards.length + '枚 から1枚を手札に加えます（残りは捨てます）。',
+        pd.cards, (id) => dispatch({ type: 'MILLER_PICK', card: id }), '手札に加える');
+    }
+    if (pd.type === 'marquis_discard') {
+      const need = Math.max(0, p.hand.length - 10);
+      return modalSelectN(p, '侯爵 — 手札を捨てる', '手札が10枚になるように ' + need + '枚 を選んで捨てます。',
+        need, '捨てる', (cards) => dispatch({ type: 'MARQUIS_DISCARD', cards }));
+    }
+    if (pd.type === 'sycophant_discard') {
+      const need = Math.min(3, p.hand.length);
+      return modalSelectN(p, 'ごますり — 手札を捨てる', 'カード ' + need + '枚 を選んで捨てます（1枚以上捨てれば +3 コイン）。',
+        need, '捨てる', (cards) => dispatch({ type: 'SYCOPHANT_DISCARD', cards }));
+    }
+    if (pd.type === 'sibyl_place') {
+      return modalSingleHand(p, '女予言者 — ' + (pd.stage === 'top' ? '山札の一番上へ' : '山札の一番下へ'),
+        pd.stage === 'top' ? '手札から1枚を山札の一番上に置きます。' : 'もう1枚を山札の一番下に置きます。',
+        () => true, (card) => dispatch({ type: 'SIBYL_PLACE', card }), null,
+        pd.stage === 'top' ? '一番上へ' : '一番下へ');
+    }
+    if (pd.type === 'capital_city') {
+      if (pd.stage === 'discard') {
+        const need = Math.min(2, p.hand.length);
+        if (need === 0) return modalOptions('首都', '手札がありません（2枚捨てられないので +2 コインは得られません）。', [
+          { label: '次へ', cls: 'btn-primary', on: () => dispatch({ type: 'CAPITAL_CITY', ok: false }) }]);
+        return modalSelectN(p, '首都 — 2枚捨てて +2 コイン',
+          'カード ' + need + '枚 を捨てると +2 コイン' + (need < 2 ? '（2枚ちょうど捨てないとコインは得られません）' : '') + '。しなくてもよい。',
+          need, '捨てる（+2 コイン）', (cards) => dispatch({ type: 'CAPITAL_CITY', ok: true, cards }),
+          { label: '捨てない', on: () => dispatch({ type: 'CAPITAL_CITY', ok: false }) });
+      }
+      return modalOptions('首都 — 2コインを払って +2 カード', '2 コインを払うと +2 カード（今のコイン ' + (state.turn.coins || 0) + '）。しなくてもよい。', [
+        { label: '2 コインを払う（+2 カード）', cls: 'btn-primary', on: () => dispatch({ type: 'CAPITAL_CITY', ok: true }) },
+        { label: '払わない', on: () => dispatch({ type: 'CAPITAL_CITY', ok: false }) }]);
+    }
+    if (pd.type === 'innkeeper_choose') return modalOptions('宿屋の主人', '次から1つを選びます（引く前に選びます）。', [
+      { label: '+1 カード', cls: 'btn-primary', on: () => dispatch({ type: 'INNKEEPER_CHOOSE', choice: 'one' }) },
+      { label: '+3 カード、その後 3枚 捨てる', on: () => dispatch({ type: 'INNKEEPER_CHOOSE', choice: 'three' }) },
+      { label: '+5 カード、その後 6枚 捨てる', on: () => dispatch({ type: 'INNKEEPER_CHOOSE', choice: 'five' }) }]);
+    if (pd.type === 'innkeeper_discard') {
+      const need = Math.min(pd.n, p.hand.length);
+      return modalSelectN(p, '宿屋の主人 — 手札を捨てる', 'カード ' + need + '枚 を選んで捨てます。',
+        need, '捨てる', (cards) => dispatch({ type: 'INNKEEPER_DISCARD', cards }));
+    }
+    if (pd.type === 'hunter_pick') {
+      const label = pd.stage === 'action' ? 'アクション' : (pd.stage === 'treasure' ? '財宝' : '勝利点');
+      const cands = pd.cards.filter((c) => (pd.stage === 'treasure'
+        ? DOM.engine.isTreasureFor(state, c) : DOM.isType(c, pd.stage)));
+      return modalPickIds('狩人 — ' + label + 'カードを手札に', '公開したカードから ' + label + 'カード1枚を手札に加えます（アクション→財宝→勝利点 の順）。',
+        cands, (id) => dispatch({ type: 'HUNTER_PICK', card: id }), '手札に加える');
+    }
+    if (pd.type === 'stronghold_choose') return modalOptions('要塞', '次から1つを選びます。', [
+      { label: '+3 コイン', cls: 'btn-primary', on: () => dispatch({ type: 'STRONGHOLD_CHOOSE', choice: 'coins' }) },
+      { label: '次のターンの開始時に +3 カード', on: () => dispatch({ type: 'STRONGHOLD_CHOOSE', choice: 'cards' }) }]);
+    if (pd.type === 'hill_fort_gain') {
+      return modalGainSupply(state, '堡塁 — 獲得', 'コスト4コイン以下のカード1枚を獲得します。',
+        (id) => DOM.engine.costUpTo(state, id, 4), (id) => dispatch({ type: 'HILL_FORT_GAIN', card: id }));
+    }
+    if (pd.type === 'hill_fort_choose') {
+      const nm = pd.card ? ((DOM.CARDS[pd.card] || {}).name || pd.card) : null;
+      return modalOptions('堡塁', '次から1つを選びます。', [
+        { label: nm ? '「' + nm + '」を手札に加える' : '獲得したカードを手札に加える（獲得できていません）',
+          cls: 'btn-primary', on: () => dispatch({ type: 'HILL_FORT_CHOOSE', choice: 'hand' }) },
+        { label: '+1 カード と +1 アクション', on: () => dispatch({ type: 'HILL_FORT_CHOOSE', choice: 'cantrip' }) }]);
+    }
+    if (pd.type === 'allies_topdeck') {
+      const names = pd.cards.map((c) => (DOM.CARDS[c] || {}).name || c);
+      return modalPickSubset('山札の上に置く', '場から捨てる代わりに、山札の一番上に置けます（' + names.join('・') + '）。しなくてもよい。',
+        pd.cards, (cards) => dispatch({ type: 'ALLIES_TOPDECK', cards }), '置く');
+    }
+    if (pd.type === 'sunken_treasure') {
+      return modalGainSupply(state, '沈没船の財宝 — 獲得', 'あなたの場に同じカードが無いアクションカード1枚を獲得します（コストの上限はありません）。',
+        DOM.engine.sunkenTreasureCanGain(state, pd.player), (id) => dispatch({ type: 'SUNKEN_TREASURE_GAIN', card: id }));
+    }
     if (pd.type === 'attack_window' && pd.stage === 'react') {
       return modalOptions('アタックを受ける', '相手がアタックカードを使いました（このアタック自体はあなたに何もしませんが、リアクションは使えます）。',
         reactOptions(p, pd, { type: 'ATTACK_WINDOW_REACT' }));
@@ -3586,7 +3692,8 @@
   function pruneSelection(len) {
     UI.selection = (UI.selection || []).filter((i) => typeof i === 'number' && i >= 0 && i < len);
   }
-  function modalSelectN(p, title, desc, n, confirmLabel, onConfirm) {
+  // skip を渡すと「やらない」ボタンが付く（任意の N枚選択＝首都など）。
+  function modalSelectN(p, title, desc, n, confirmLabel, onConfirm, skip) {
     pruneSelection(p.hand.length);
     const chips = p.hand.map((id, idx) => {
       const pos = UI.selection.indexOf(idx);
@@ -3594,8 +3701,26 @@
         onClick: () => { const i = UI.selection.indexOf(idx); if (i >= 0) UI.selection.splice(i, 1); else if (UI.selection.length < n) UI.selection.push(idx); render(); } });
     });
     const remain = n - UI.selection.length;
-    const footer = h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
+    const confirm = h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
+      style: skip ? 'margin-bottom:8px' : null,
       onclick: () => onConfirm(takeSelection(p.hand)) }, remain === 0 ? confirmLabel : ('あと ' + remain + ' 枚'));
+    const footer = skip
+      ? h('div', null, confirm, h('button', { class: 'btn btn-block', onclick: () => { UI.selection = []; skip.on(); } }, skip.label))
+      : confirm;
+    return modalShell(title, desc, chips, footer);
+  }
+  /* 任意の並び（手札とは限らない）から**部分集合**を選ぶ（同盟：天幕/商人の野営地の山札上置き）。
+     0枚も合法＝確定ボタンは常に押せる。 */
+  function modalPickSubset(title, desc, cards, onConfirm, confirmLabel) {
+    pruneSelection(cards.length);
+    const chips = cards.map((id, idx) => {
+      const pos = UI.selection.indexOf(idx);
+      return cardEl(id, { size: 'sm', extra: pos >= 0 ? 'selected' : 'selectable', badge: pos >= 0 ? String(pos + 1) : null,
+        onClick: () => { const i = UI.selection.indexOf(idx); if (i >= 0) UI.selection.splice(i, 1); else UI.selection.push(idx); render(); } });
+    });
+    const k = UI.selection.length;
+    const footer = h('button', { class: 'btn btn-primary btn-block',
+      onclick: () => onConfirm(takeSelection(cards)) }, k === 0 ? '置かない' : (confirmLabel + '（' + k + '枚）'));
     return modalShell(title, desc, chips, footer);
   }
 
