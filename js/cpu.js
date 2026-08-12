@@ -124,6 +124,10 @@
      engine が拒否する札を CPU が提案し続けると pending が閉じず無限ループ（本番 livelock）になる。
      コスト比較は coin/potion/debt の成分別（$4+P は "up to $4" でない／$0+負債8 は "exactly $0" でない）。
      spec = { pot, debt }（省略時 0）＝廃棄/購入した札のポーション・負債成分を引き継ぐときに渡す。 */
+  /* 「サプライから獲得/廃棄するカードの種別」＝混合山（廃墟/騎士/城/同盟の分割山）は**一番上の実カード**で判定する。
+     **engine の isTypeSupply が正本**（engine が拒否する札を CPU が提案し続けると本番 livelock になる）。
+     ※手札/場のカードの種別判定は従来どおり `isType`（山ではないので解決不要）。 */
+  const isTypeSup = (state, id, ty) => (DOM.engine.isTypeSupply ? DOM.engine.isTypeSupply(state, id, ty) : DOM.isType(id, ty));
   const gainableBase = (state, id) => DOM.engine.gainableBase(state, id);
   const costUpTo = (state, id, coin, spec) => DOM.engine.costUpTo(state, id, coin, spec);
   const costUnder = (state, id, coin, spec) => DOM.engine.costUnder(state, id, coin, spec);
@@ -476,7 +480,7 @@
       const cands = p.hand.filter((c) => isType(c, 'action') && !isType(c, 'duration') && c !== 'procession');
       const upOK = cands.some((c) => {
         const mx = cost(state, c) + 1, pot = C()[c].potion || 0, dbt = C()[c].debt || 0;
-        return !!firstGainable(state, (id) => costExact(state, id, mx, pot, dbt) && isType(id, 'action'));
+        return !!firstGainable(state, (id) => costExact(state, id, mx, pot, dbt) && isTypeSup(state, id, 'action'));
       });
       if (upOK) return 'procession';
     }
@@ -1000,7 +1004,7 @@
     if (buyable('lost_arts') && !tok.action && deckActions >= 4 && !(cardBuy && cost(state, cardBuy) >= 6)) return 'lost_arts';
     if (buyable('training') && !tok.coin && deckActions >= 4 && !(cardBuy && cost(state, cardBuy) >= 6)) return 'training';
     // 海路（$5）＝$4以下のアクション獲得＋その山に+1購入トークン（獲得できるときだけ）。
-    if (buyable('seaway') && !tok.buy && firstGainable(state, (id) => costUpTo(state, id, 4) && isType(id, 'action')) &&
+    if (buyable('seaway') && !tok.buy && firstGainable(state, (id) => costUpTo(state, id, 4) && isTypeSup(state, id, 'action')) &&
         !(cardBuy && cost(state, cardBuy) >= 6)) return 'seaway';
     // 舞踏会（$5）＝-$1トークンを受けて$4以下を2枚。金貨1枚より2枚のほうが得な序盤に。
     if (buyable('ball') && (p.turns || 0) <= 8 && !wantVP && !(cardBuy && cost(state, cardBuy) >= 6)) return 'ball';
@@ -1178,17 +1182,17 @@
       return { type: 'SALT_TRASH', card: cand[0] || null };
     }
     if (pd.type === 'banquet') {
-      return { type: 'BANQUET_GAIN', card: firstGainable(state, (id) => costUpTo(state, id, 5) && !isType(id, 'victory')) };
+      return { type: 'BANQUET_GAIN', card: firstGainable(state, (id) => costUpTo(state, id, 5) && !isTypeSup(state, id, 'victory')) };
     }
     if (pd.type === 'advance') {
       if (pd.stage === 'trash') {
         // 手札のアクション1枚を廃棄してよい（may）。$6以下の最善アクションが「一番安い手札アクション」以上なら格上げ、無益なら辞退。
         const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => (C()[a].cost || 0) - (C()[b].cost || 0));
-        const target = firstGainable(state, (id) => costUpTo(state, id, 6) && isType(id, 'action'));
+        const target = firstGainable(state, (id) => costUpTo(state, id, 6) && isTypeSup(state, id, 'action'));
         if (acts.length && target && (C()[target].cost || 0) >= (C()[acts[0]].cost || 0)) return { type: 'ADVANCE_TRASH', card: acts[0] };
         return { type: 'ADVANCE_TRASH', card: null };
       }
-      return { type: 'ADVANCE_GAIN', card: firstGainable(state, (id) => costUpTo(state, id, 6) && isType(id, 'action')) };
+      return { type: 'ADVANCE_GAIN', card: firstGainable(state, (id) => costUpTo(state, id, 6) && isTypeSup(state, id, 'action')) };
     }
     if (pd.type === 'ritual') {
       // 手札1枚を廃棄（強制・手札があれば）。屋敷（+2VP＆ジャンク除去）＞呪い＞銅貨を優先、無ければ最安札。
@@ -1230,7 +1234,7 @@
     }
     // 海路＝コスト$4以下のアクションを獲得（強制）→ その山に+1購入トークン。
     if (pd.type === 'seaway') {
-      return { type: 'SEAWAY_GAIN', card: firstGainable(state, (id) => costUpTo(state, id, 4) && isType(id, 'action')) };
+      return { type: 'SEAWAY_GAIN', card: firstGainable(state, (id) => costUpTo(state, id, 4) && isTypeSup(state, id, 'action')) };
     }
     // 探索＝3択。呪い2枚 → アタック1枚 → 手札7枚以上なら6枚捨て、どれも損なら辞退。
     if (pd.type === 'quest' && pd.stage === 'mode') {
@@ -2406,7 +2410,7 @@
       case 'university': {
         // 非サプライ（賞品/成長先）とロック中の分割山下段は engine が獲得を拒否する＝提案すると無限ループになる
         //   （bestGain/bestGainExact/pickSwindlerGift には入っている除外の書き漏れ＝今回のレビューで発見した既存バグ）。
-        const actGain = firstGainable(state, (id) => costUpTo(state, id, 5) && isType(id, 'action'));
+        const actGain = firstGainable(state, (id) => costUpTo(state, id, 5) && isTypeSup(state, id, 'action'));
         return { type: 'UNIVERSITY_GAIN', card: actGain || null };
       }
       case 'familiar':
@@ -2555,7 +2559,7 @@
         if (card === 'masterpiece') amt = max; // 過払い1コイン→銀貨1枚は好レート。全額。
         else if (card === 'stonemason') {
           for (let x = max; x >= 1; x--) {
-            if (firstGainable(state, (id) => costExact(state, id, x, 0, 0) && isType(id, 'action') && !isType(id, 'victory'))) { amt = x; break; }
+            if (firstGainable(state, (id) => costExact(state, id, x, 0, 0) && isTypeSup(state, id, 'action') && !isTypeSup(state, id, 'victory'))) { amt = x; break; }
           }
         } else if (card === 'herald') {
           const good = p.discard.filter((c) => keepValue(c) >= 60).length; // 良い札を山札の上へ
@@ -2564,7 +2568,7 @@
         return { type: 'OVERPAY_RESOLVE', amount: amt };
       }
       case 'stonemason_overpay': {
-        const g = firstGainable(state, (id) => costExact(state, id, pd.exact, 0, 0) && isType(id, 'action'));
+        const g = firstGainable(state, (id) => costExact(state, id, pd.exact, 0, 0) && isTypeSup(state, id, 'action'));
         return { type: 'STONEMASON_OVERPAY_GAIN', card: g };
       }
       case 'doctor_overpay': {
@@ -2705,7 +2709,7 @@
         return { type: 'BERSERKER_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
       case 'wheelwright':
         if (pd.stage === 'discard') return { type: 'WHEELWRIGHT_DISCARD', card: p.hand.includes('estate') ? 'estate' : null };
-        { const g = firstGainable(state, (id) => costUpTo(state, id, pd.maxCost, pd) && isType(id, 'action'));
+        { const g = firstGainable(state, (id) => costUpTo(state, id, pd.maxCost, pd) && isTypeSup(state, id, 'action'));
           return { type: 'WHEELWRIGHT_GAIN', card: g || null }; }
       case 'witchs_hut': {
         if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'WITCHS_HUT_REACT' }; }
@@ -2724,7 +2728,7 @@
       case 'haggler': {
         // 「購入した札より安い・勝利点でない」＝engine と同じ述語（勝利点は engine が拒否／呪いは可＝GAIN_ORDER の最後尾）。
         const uc = (pd.coin != null) ? pd.coin : (pd.maxCost || 0) + 1;
-        return { type: 'HAGGLER_GAIN', card: firstGainable(state, (id) => costUnder(state, id, uc, pd) && !isType(id, 'victory')) };
+        return { type: 'HAGGLER_GAIN', card: firstGainable(state, (id) => costUnder(state, id, uc, pd) && !isTypeSup(state, id, 'victory')) };
       }
       case 'fools_gold_react':
         return { type: 'FOOLS_GOLD_REACT', trash: true };
@@ -2751,7 +2755,7 @@
       case 'squire':
         return { type: 'SQUIRE_RESOLVE', choice: 'silver' };
       case 'squire_trash_gain': {
-        const atk = firstGainable(state, (id) => isType(id, 'attack')); // アタックならコスト制限なし（engine と同じ）
+        const atk = firstGainable(state, (id) => isTypeSup(state, id, 'attack')); // アタックならコスト制限なし（engine と同じ）
         return { type: 'SQUIRE_TRASH_GAIN', card: atk || null };
       }
       case 'storeroom':
@@ -2808,7 +2812,7 @@
       }
       case 'rebuild': {
         if (pd.stage === 'name') return { type: 'REBUILD_NAME', card: 'province' }; // 属州を守り 屋敷/公領を格上げ
-        const g = firstGainable(state, (id) => costUpTo(state, id, pd.maxCost, pd) && isType(id, 'victory'));
+        const g = firstGainable(state, (id) => costUpTo(state, id, pd.maxCost, pd) && isTypeSup(state, id, 'victory'));
         return { type: 'REBUILD_GAIN', card: g };
       }
       case 'count': {
@@ -2845,13 +2849,13 @@
         const cands = p.hand.filter((c) => isType(c, 'action') && !isType(c, 'duration') && c !== 'procession');
         const upgradeable = (c) => {
           const mx = cost(state, c) + 1, pot = C()[c].potion || 0, dbt = C()[c].debt || 0;
-          return !!firstGainable(state, (id) => costExact(state, id, mx, pot, dbt) && isType(id, 'action'));
+          return !!firstGainable(state, (id) => costExact(state, id, mx, pot, dbt) && isTypeSup(state, id, 'action'));
         };
         const ok = cands.filter(upgradeable).sort((a, b) => ((isType(b, 'ruins') ? 1 : 0) - (isType(a, 'ruins') ? 1 : 0)) || (cost(state, a) - cost(state, b)));
         return { type: 'PROCESSION_CHOOSE', card: ok[0] || null };
       }
       case 'procession_gain': {
-        const g = firstGainable(state, (id) => costExact(state, id, pd.exact, pd.pot, pd.debt) && isType(id, 'action'));
+        const g = firstGainable(state, (id) => costExact(state, id, pd.exact, pd.pot, pd.debt) && isTypeSup(state, id, 'action'));
         return { type: 'PROCESSION_GAIN', card: g };
       }
       case 'counterfeit': {
@@ -2918,7 +2922,7 @@
       case 'inventor_gain': {
         // コスト$4以下を1枚獲得（強制）。engine の inventorGainable と同じ述語で候補を選ぶ（拒否されない＝無限ループ防止）。
         const ok = (id) => costUpTo(state, id, 4);
-        const pick = firstGainable(state, (id) => ok(id) && !isType(id, 'victory') && !isType(id, 'curse'))
+        const pick = firstGainable(state, (id) => ok(id) && !isTypeSup(state, id, 'victory') && !isTypeSup(state, id, 'curse'))
           || firstGainable(state, ok);
         return { type: 'INVENTOR_GAIN', card: pick };
       }
@@ -2939,7 +2943,7 @@
       }
       case 'sculptor_gain': {
         const ok = (id) => costUpTo(state, id, 4);
-        const pick = firstGainable(state, (id) => ok(id) && !isType(id, 'victory') && !isType(id, 'curse'))
+        const pick = firstGainable(state, (id) => ok(id) && !isTypeSup(state, id, 'victory') && !isTypeSup(state, id, 'curse'))
           || firstGainable(state, ok);
         return { type: 'SCULPTOR_GAIN', card: pick };
       }
@@ -3014,7 +3018,7 @@
           //     engine に拒否され続けて CPU 無限ループになる（敵対レビュー M3）。
           const ok = (id) => cost(state, id) === pd.exact &&
             ((C()[id] || {}).potion || 0) === (pd.pot || 0) && ((C()[id] || {}).debt || 0) === (pd.dbt || 0);
-          const pick = firstGainable(state, (id) => ok(id) && !isType(id, 'victory') && !isType(id, 'curse'))
+          const pick = firstGainable(state, (id) => ok(id) && !isTypeSup(state, id, 'victory') && !isTypeSup(state, id, 'curse'))
             || firstGainable(state, ok);
           return { type: 'IMPROVE_GAIN', card: pick };
         }

@@ -443,6 +443,47 @@ console.log('=== 同盟 A2: 敵対レビュー回帰 ===');
 }
 
 /* ============================================================
+   A2b: 「カードの種別」は山の一番上で判定する／「山の種別」は randomizer のまま
+   ============================================================ */
+console.log('=== 同盟 A2b: カードの種別は一番上・山の種別は randomizer ===');
+// 叙事詩＝古地図(A)/航海(A持続)/沈没した宝物(**財宝**)/遠い海岸(A勝利点)、城砦＝天幕/駐屯地/丘の砦/要塞(**勝利点**)。
+function dig(s, pile, n) { s[pile] = s[pile].slice(n); s.supply[pile] = s[pile].length; return s; }
+{
+  const s = dig(mk(['odysseys', 'forts', 'lurker', 'university', 'salt_the_earth', 'village', 'smithy', 'market', 'moat', 'militia']), 'odysseys', 8);
+  ok(E.mixedTopCard(s, 'odysseys') === 'sunken_treasure', '前提：叙事詩の一番上が沈没した宝物（財宝）');
+  ok(E.isTypeSupply(s, 'odysseys', 'action') === false, '「アクションカード」ではない（randomizer の古地図ではなく一番上を見る）');
+  ok(E.isTreasureFor(s, 'odysseys') === true, '「財宝カード」として扱われる（鉱山/収税吏/英雄が獲得できる）');
+  ok(E.costUpTo(s, 'odysseys', 6) && !E.isTypeSupply(s, 'odysseys', 'action'),
+    '「$6以下のアクションを獲得」（昇進/海路/大学/車大工）の候補には出ない＝コストは満たすが種別で落ちる');
+  // 待ち伏せ＝サプライのアクションカードを廃棄。ゲートと受理が同じ述語であること（片方だけだと詰む）。
+  const t0 = tally(s);
+  s.pending = { type: 'lurker', stage: 'trash', player: 0 };
+  const s2 = reduce(s, { type: 'LURKER_TRASH', card: 'odysseys' });
+  ok(s2.pending != null && tdiff(t0, tally(s2)).length === 0, '待ち伏せは沈没した宝物を「アクションカード」として廃棄できない');
+}
+{
+  const s = dig(mk(['forts', 'salt_the_earth', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival']), 'forts', 12);
+  ok(E.mixedTopCard(s, 'forts') === 'stronghold', '前提：城砦の一番上が要塞（アクション・勝利点・持続）');
+  ok(E.isTypeSupply(s, 'forts', 'victory') === true, '「勝利点カード」として扱われる（randomizer の天幕は勝利点ではない）');
+  s.pending = { type: 'salt_the_earth', player: 0 };
+  const s2 = reduce(s, { type: 'SALT_TRASH', card: 'forts' });
+  ok(s2.pending === null && count(s2.trash, 'stronghold') === 1, '塩まきは要塞を「勝利点カード」として廃棄できる');
+  ok(s2.supply.forts === 3 && s2.forts.length === 3, '廃棄で山キーの残数と実配列が同期する');
+}
+{
+  /* ★直しすぎていないことの担保＝**「山の」コスト・種別を参照する効果は randomizer のまま**。
+     公式逐語＝`Some cards refer to information about a pile as if it's just one card.
+     In these cases, go with what's on the Randomizer card.` */
+  const s = dig(mk(['odysseys', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival', 'mine']), 'odysseys', 8);
+  ok(E.actionSupplyPiles(s).indexOf('odysseys') >= 0,
+    '一番上が財宝でも「アクションのサプライ山」＝冒険の山トークンは置ける（山の種別は randomizer）');
+  ok(E.populatePiles(s).indexOf('odysseys') >= 0, '植民の対象からも外れない（山の種別で判定）');
+  const s2 = E.createInitialState(['A', 'B'], ['odysseys', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival', 'mine'],
+    { startActive: 0, landmarks: ['defiled_shrine'] });
+  ok((s2.pileVP.odysseys || 0) === 2, '汚された神殿も「素のアクションの山」として山上VPを置く（randomizer で判定）');
+}
+
+/* ============================================================
    A2: CPU（engine と同じ述語を見るか＝本番 livelock を防ぐ）
    ============================================================ */
 console.log('=== 同盟 A2: CPU ===');

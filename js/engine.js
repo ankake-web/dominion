@@ -73,6 +73,15 @@
   function mixedPileWithTop(state, id) {
     return MIXED_PILE_KEYS.find((k) => Array.isArray(state[k]) && state[k][0] === id) || null;
   }
+  /* 「サプライから**獲得／廃棄するカード**の種別」を見る述語。
+     混合山（廃墟/騎士/城/同盟の分割山6組）はサプライにあるのが**一番上の1枚だけ**なので、
+     山キーのプレースホルダ（randomizer）ではなく**今の一番上の実カード**の種別で判定する。
+     例＝叙事詩の山の一番上が沈没した宝物（財宝）なら、待ち伏せは「アクションカード」として廃棄できないし、
+         城砦の山の一番上が要塞（勝利点）なら、塩まきは「勝利点カード」として廃棄できる。
+     ⚠ 「**山の**コスト・種別」を参照する効果（植民／若き魔女の災い／冒険の山トークンの置き先／
+        発明家の家族／汚された神殿／オベリスク）は **randomizer を見るのが公式** ＝ そちらでは使わないこと。
+     ⚠ engine拒否・CPU候補・UIフィルタの3面が必ず同じ述語を見ること（片側だけ直すと本番 livelock）。 */
+  function isTypeSupply(state, id, ty) { return DOM.isType(mixedTopCard(state, id) || id, ty); }
   /* ===== 同盟：循環(Rotate) =====
      公式逐語＝`Rotating a pile means taking the top card, and all copies of it directly under it,
      and putting them on the bottom.` ＝**一番上のカードと、その直下に連続する同名のカードだけ**を
@@ -344,6 +353,9 @@
     return Object.keys(C()).filter((id) => isCapitalismTreasure(id));
   }
   function isTreasureFor(state, id) {
+    // 混合山の山キーを渡されたら**一番上の実カード**で判定する（サプライにあるのはその1枚だけ）。
+    //   手札/場のカードでは mixedTopCard が null を返すので素通り＝既存挙動は不変。
+    id = mixedTopCard(state, id) || id;
     if (DOM.isType(id, 'treasure')) return true;
     const t = state && state.turn;
     if (!t || !state.projects || !state.projects.length) return false;
@@ -1562,7 +1574,7 @@
     /* 夜想曲：錯乱(Deluded)を返したターンは**アクションカードを購入できない**（獲得はできる／
        イベント・プロジェクトは「カードではない」ので買える／夜行カードはアクションでなければ買える）。
        手番プレイヤーにだけ効く（この述語は engine拒否・CPU非提案・UIボタン無効化の3面が共有する）。 */
-    if (state.turn && state.turn.cantBuyActions && state.turn.active === pi && DOM.isType(id, 'action')) return false;
+    if (state.turn && state.turn.cantBuyActions && state.turn.active === pi && isTypeSupply(state, id, 'action')) return false;
     return true;
   }
 
@@ -1644,7 +1656,7 @@
       state.pending = null;
     } else if (card === 'stonemason') {
       // 石工：過払い額とちょうど同じコストのアクションカードを2枚獲得。
-      if (anyGainable(state, (id) => costExact(state, id, amount, 0, 0) && DOM.isType(id, 'action'))) {
+      if (anyGainable(state, (id) => costExact(state, id, amount, 0, 0) && isTypeSupply(state, id, 'action'))) {
         state.pending = { type: 'stonemason_overpay', player: pi, exact: amount, remaining: 2 };
       } else {
         log(state, `${p.name} は石工の過払い（$${amount}）で獲得できるアクションがなかった。`);
@@ -5006,7 +5018,7 @@
       case 'university':
         addActions(t, 2);
         // コスト5以下のアクションカードを獲得してよい（任意）。ポーション費用/負債コストのカードは$5に含めない（公式）。
-        if (anyGainable(state, (id) => costUpTo(state, id, 5) && DOM.isType(id, 'action')))
+        if (anyGainable(state, (id) => costUpTo(state, id, 5) && isTypeSupply(state, id, 'action')))
           state.pending = { type: 'university', player: pi };
         break;
       case 'alchemist':
@@ -7066,7 +7078,7 @@
     // 暗黒時代：狂信者＝廃棄されたとき +3カード（持ち主が引く。相手のアタックで廃棄されても発動）。
     if (card === 'cultist') { draw(state, pIndex, 3); log(state, `${p.name} は狂信者の廃棄で +3カード。`); }
     // 暗黒時代：従者＝廃棄されたときサプライのアタックカードを1枚獲得（対話＝onTrashQueue へ）。
-    if (card === 'squire' && anyGainable(state, (id) => gainableBase(state, id) && DOM.isType(id, 'attack'))) {
+    if (card === 'squire' && anyGainable(state, (id) => gainableBase(state, id) && isTypeSupply(state, id, 'attack'))) {
       (state.onTrashQueue = state.onTrashQueue || []).push({ type: 'squire_trash_gain', player: pIndex });
     }
     // 暗黒時代：地下墓所＝廃棄されたとき、これより安いカード1枚を獲得（対話＝onTrashQueue へ）。
@@ -7109,7 +7121,7 @@
   //   「より安い」は成分別比較（ポーション費用/負債コストの札を購入した場合も正しく効く）。
   //   pending には購入した札のコスト3成分を焼き込む（旧スナップショットは coin 欠落 → maxCost から復元）。
   function hagglerCanGain(state, ref, id) {
-    return costUnder(state, id, ref.coin, ref) && !DOM.isType(id, 'victory');
+    return costUnder(state, id, ref.coin, ref) && !isTypeSupply(state, id, 'victory');
   }
   function maybeHagglerGains(state, pi, ref) {
     const hagglers = state.players[pi].inPlay.filter((c) => c === 'haggler').length;
@@ -7837,7 +7849,7 @@
      イベントは「カード」ではないので、コスト軽減（橋/街道）を受けず、購入時トリガー
      （商人ギルド/値切り屋/過払い）も発動しない（BUY_EVENT 側で呼ばない）。 */
   function anyVictorySupply(state) {
-    return Object.keys(state.supply).some((id) => (state.supply[id] || 0) > 0 && DOM.isType(id, 'victory'));
+    return Object.keys(state.supply).some((id) => (state.supply[id] || 0) > 0 && isTypeSupply(state, id, 'victory'));
   }
   // 冒険：1ターンに1回しか買えないイベント（施し/借入/保存/巡礼）＝2回目の購入は engine が拒否する
   //   （公式ルールブック "You can only buy this once per turn."＝購入自体ができない＝購入権を無駄にしない）。
@@ -8206,7 +8218,7 @@
     }
   }
   // 特価品＝コスト$5以下の勝利点でないカード（勝利点と兼ねるカードも不可）。
-  function bargainCanGain(state, cid) { return costUpTo(state, cid, 5) && !DOM.isType(cid, 'victory'); }
+  function bargainCanGain(state, cid) { return costUpTo(state, cid, 5) && !isTypeSupply(state, cid, 'victory'); }
   // 特価品＝他の各プレイヤーが馬1枚を獲得する（購入者の左隣から手番順）。アタックではない。
   function bargainHorses(state, pi) {
     const n = state.players.length;
@@ -8252,7 +8264,7 @@
   }
   // コスト$N以下の獲得候補（負債/ポーション費用は除外＝成分ごと比較の公式ルール）。
   function upToCanGain(state, cid, max) { return costUpTo(state, cid, max); }
-  function seawayCanGain(state, cid) { return costUpTo(state, cid, 4) && DOM.isType(cid, 'action'); }
+  function seawayCanGain(state, cid) { return costUpTo(state, cid, 4) && isTypeSupply(state, cid, 'action'); }
   // 巡礼＝場（inPlay＋持続カード）にある名前の異なるカードのうち、サプライから獲得できるもの。
   function pilgrimageChoices(state, pi) {
     const p = state.players[pi];
@@ -8271,10 +8283,10 @@
     //   supply だけ減って実カード配列が減らず、カードが1枚湧く（保存則違反）。プレースホルダは常に除外する。
   }
   function banquetCanGain(state, cid) {
-    return costUpTo(state, cid, 5) && !DOM.isType(cid, 'victory');
+    return costUpTo(state, cid, 5) && !isTypeSupply(state, cid, 'victory');
   }
   function advanceCanGain(state, cid) {
-    return costUpTo(state, cid, 6) && DOM.isType(cid, 'action');
+    return costUpTo(state, cid, 6) && isTypeSupply(state, cid, 'action');
   }
 
   function maybeArena(state, pi) {
@@ -8624,7 +8636,7 @@
         if (removeOne(p.inPlay, r.card)) { trashCard(state, r.player, r.card); log(state, `${p.name} は行進で「${C()[r.card].name}」を廃棄した。`); }
         else log(state, `${p.name} は行進で対象を廃棄できなかった（場に無い）。`);
         const mx = tref.coin + 1;
-        if (anyGainable(state, (id) => costExact(state, id, mx, tref.pot, tref.debt) && DOM.isType(id, 'action'))) {
+        if (anyGainable(state, (id) => costExact(state, id, mx, tref.pot, tref.debt) && isTypeSupply(state, id, 'action'))) {
           state.pending = { type: 'procession_gain', player: r.player, exact: mx, pot: tref.pot, debt: tref.debt };
         }
         continue; // applyEffect は行わない（制御項目）。pending を立てたら while が停止する。
@@ -9191,7 +9203,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'salt_the_earth') return state;
         const id = action.card;
-        if (!id || (state.supply[id] || 0) <= 0 || !DOM.isType(id, 'victory')) return state;
+        if (!id || (state.supply[id] || 0) <= 0 || !isTypeSupply(state, id, 'victory')) return state;
         // 城の混合山（castles）＝一番上の実カードを廃棄（trashFromSupplyPile が supply と同期）。
         const trashed = trashFromSupplyPile(state, pd.player, id);
         if (!trashed) return state;
@@ -10180,7 +10192,7 @@
         if (action.choice === 'trash') {
           // ゲートと受理（LURKER_TRASH）は同じ述語＝gainableBase（非サプライ・ロック中の分割山下段・在庫切れを除外）。
           //   片方だけだと「候補ありと判定→受理が拒否」で pending が閉じない（CPU無限ループ／人間が詰む）。
-          const canTrash = (id) => gainableBase(state, id) && DOM.isType(id, 'action');
+          const canTrash = (id) => gainableBase(state, id) && isTypeSupply(state, id, 'action');
           state.pending = Object.keys(state.supply).some(canTrash)
             ? { type: 'lurker', stage: 'trash', player: pd.player } : null;
         } else if (action.choice === 'gain') {
@@ -10194,7 +10206,7 @@
         if (!pd || pd.type !== 'lurker' || pd.stage !== 'trash') return state;
         const card = action.card;
         // 非サプライ（賞品/トラベラー成長先/戦利品）とロック中の分割山下段は「サプライの山」ではない＝対象外。
-        if (!gainableBase(state, card) || !DOM.isType(card, 'action')) return state;
+        if (!gainableBase(state, card) || !isTypeSupply(state, card, 'action')) return state;
         const trashed = trashFromSupplyPile(state, pd.player, card); // 混合山は一番上の実カード
         if (!trashed) return state;
         log(state, `${state.players[pd.player].name} はサプライの「${C()[trashed].name}」を廃棄した（待ち伏せ）。`);
@@ -10881,7 +10893,7 @@
           const fr = costOf(state, found);
           const fc = fr.coin + 3;
           log(state, `${p.name} は建て直しで「${C()[found].name}」を廃棄した。`);
-          state.pending = anyGainable(state, (id) => costUpTo(state, id, fc, fr) && DOM.isType(id, 'victory'))
+          state.pending = anyGainable(state, (id) => costUpTo(state, id, fc, fr) && isTypeSupply(state, id, 'victory'))
             ? { type: 'rebuild', stage: 'gain', player: pd.player, maxCost: fc, pot: fr.pot, debt: fr.debt }
             : null;
         } else {
@@ -10893,7 +10905,7 @@
       case 'REBUILD_GAIN': {
         const pd = state.pending;
         if (!pd || pd.type !== 'rebuild' || pd.stage !== 'gain') return state;
-        finishGain(state, pd, action.card, (id) => costUpTo(state, id, pd.maxCost, pd) && DOM.isType(id, 'victory'), 'discard', '獲得した（建て直し）。');
+        finishGain(state, pd, action.card, (id) => costUpTo(state, id, pd.maxCost, pd) && isTypeSupply(state, id, 'victory'), 'discard', '獲得した（建て直し）。');
         return state;
       }
       case 'COUNT_PART1': {
@@ -11020,7 +11032,7 @@
       case 'PROCESSION_GAIN': {
         const pd = state.pending;
         if (!pd || pd.type !== 'procession_gain') return state;
-        finishGain(state, pd, action.card, (id) => costExact(state, id, pd.exact, pd.pot, pd.debt) && DOM.isType(id, 'action'), 'discard', '獲得した（行進）。');
+        finishGain(state, pd, action.card, (id) => costExact(state, id, pd.exact, pd.pot, pd.debt) && isTypeSupply(state, id, 'action'), 'discard', '獲得した（行進）。');
         return state;
       }
       case 'COUNTERFEIT_PLAY': {
@@ -11829,7 +11841,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'university') return state;
         if (action.card == null) { state.pending = null; return state; } // 獲得しない
-        finishGain(state, pd, action.card, (id) => costUpTo(state, id, 5) && DOM.isType(id, 'action'), 'discard', '獲得した（大学）。');
+        finishGain(state, pd, action.card, (id) => costUpTo(state, id, 5) && isTypeSupply(state, id, 'action'), 'discard', '獲得した（大学）。');
         return state;
       }
       /* ---- 使い魔：呪いを受ける ---- */
@@ -13298,7 +13310,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'stonemason_overpay') return state;
         const card = action.card;
-        const canGain = (id) => costExact(state, id, pd.exact, 0, 0) && DOM.isType(id, 'action');
+        const canGain = (id) => costExact(state, id, pd.exact, 0, 0) && isTypeSupply(state, id, 'action');
         if (card == null || !canGain(card)) return state; // 獲得は必須
         gain(state, pd.player, card, 'discard');
         log(state, `${state.players[pd.player].name} は石工の過払いで「${C()[card].name}」を獲得した。`);
@@ -14094,7 +14106,7 @@
         const wr = costOf(state, card);
         log(state, `${pl.name} は「${C()[card].name}」を捨てた（車大工）。`);
         triggerOnDiscard(state, pd.player, [card], true); // この後 獲得ステップがあるので織工は自動
-        if (anyGainable(state, (id) => costUpTo(state, id, wr.coin, wr) && DOM.isType(id, 'action'))) {
+        if (anyGainable(state, (id) => costUpTo(state, id, wr.coin, wr) && isTypeSupply(state, id, 'action'))) {
           state.pending = { type: 'wheelwright', stage: 'gain', player: pd.player, maxCost: wr.coin, pot: wr.pot, debt: wr.debt };
         } else {
           state.pending = null;
@@ -14104,7 +14116,7 @@
       case 'WHEELWRIGHT_GAIN': {
         const pd = state.pending;
         if (!pd || pd.type !== 'wheelwright' || pd.stage !== 'gain') return state;
-        finishGain(state, pd, action.card, (id) => costUpTo(state, id, pd.maxCost, pd) && DOM.isType(id, 'action'), 'discard', 'アクションを獲得した（車大工）。');
+        finishGain(state, pd, action.card, (id) => costUpTo(state, id, pd.maxCost, pd) && isTypeSupply(state, id, 'action'), 'discard', 'アクションを獲得した（車大工）。');
         return state;
       }
       case 'WITCHS_HUT_DISCARD': {
@@ -15852,6 +15864,7 @@
     MIXED_PILE_KEYS,   // 混合山の山キー一覧（廃墟/騎士/城＋同盟の6山）＝**この配列が唯一の正本**
     HIDDEN_MIXED_PILE_KEYS, // そのうち中身が秘密の山（廃墟/騎士）＝マスクとオンラインUndoの同意判定が見る
     isMixedPileKey,    // その id が混合山の山キーか
+    isTypeSupply,      // 「サプライから獲得/廃棄するカードの種別」＝混合山は**一番上の実カード**で判定（CPU/UI も同じ述語を見る）
     pileKeyOf,         // カードid → その山キー（分割山の中身 → 山／山を名指しする効果は4種すべてに効く）
     mixedTopCard,      // その混合山の一番上の実カードid（無ければ null）＝CPU/UI の表示・コスト評価はこれを見る
     rotatePile,        // 循環＝先頭からの「連続」同名ブロックを末尾へ（空の山・1種類だけの山でも合法＝無効果）
