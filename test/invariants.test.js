@@ -162,7 +162,8 @@ console.log('=== カード保存則: 出荷セット（固定/ランダム各種
 {
   const sets = ['basic', 'intrigue', 'seaside', 'alchemy', 'prosperity', 'cornucopia', 'guilds', 'hinterlands', 'darkages', 'adventures', 'adventures-events', 'empires', 'empires-landmarks', 'empires-events', 'renaissance', 'renaissance-projects', 'promo2-pack', 'random', 'random-promo', 'random-seaside', 'random-alchemy', 'random-prosperity', 'random-cornucopia', 'random-guilds', 'random-hinterlands', 'random-darkages', 'random-adventures', 'random-empires', 'random-renaissance',
     'menagerie', 'menagerie-ways', 'menagerie-events', 'random-menagerie',
-    'nocturne', 'random-nocturne'];
+    'nocturne', 'random-nocturne',
+    'allies', 'random-allies'];
   let allOk = true;
   for (const setId of sets) {
     for (let sd = 0; sd < 3; sd++) {

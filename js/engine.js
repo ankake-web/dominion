@@ -9163,12 +9163,15 @@
        - 前哨地/使節団/今を生きる が先に立っていればそちらを優先し、航海のぶんは同じくここで消費する。 */
     let voyageExtra = false;
     if (p.voyageExtra > 0) {
-      /* ⚠ **そのターンぶんの予約はここで全部消費する**（`Take an extra turn after this one` ＝この片付けの話）。
-         公式FAQ逐語＝`If you play Voyage multiple times in one turn, ... all Voyages after the first will fail.`
-         1個ずつ減らすと、余りが後の通常ターンまで生き残って**本来存在しない追加ターン**が発生する。 */
-      p.voyageExtra = 0;
+      /* ⚠ **そのターンぶんの予約はこの片付けで使い切る**（`Take an extra turn after this one`）。
+         余りを後の通常ターンまで残すと**本来存在しない追加ターン**が湧く（A4 の敵対レビュー [medium] 6）。
+         ただし**1個ずつ消費する**＝リッチで追加ターンが飛ばされたときに2枚目で取り直せるようにする
+         （公式 2023 Errata の Trivia 逐語＝`If you play two Outposts and Lich on one turn, Lich can skip the
+          first extra turn. **The second Outpost still happens, since you haven't taken 2 turns in a row yet.**`）。
+         残りは finishTurnAdvance の末尾で必ず捨てる。 */
       voyageExtra = !extra && !missionExtra && !seizeExtra && (state.turn.chain || 1) < 2;
-      if (!voyageExtra) log(state, `${p.name} の航海による追加ターンは発生しない（3ターン連続にはできない）。`);
+      if (voyageExtra) p.voyageExtra -= 1;
+      else { p.voyageExtra = 0; log(state, `${p.name} の航海による追加ターンは発生しない（3ターン連続にはできない）。`); }
     }
     // 冒険：-1カードトークン（遺物）は draw() 内で「次のドロー」に効く（この先引きが次のドローなら1枚減）。
     //   冒険：探検（Expedition）＝このターンに買ったぶんだけ追加で引く（累積・前哨地の3枚にも加算）。
@@ -9220,8 +9223,13 @@
         日本語版カードは旧文面だが本アプリは現行を採用する）。
        公式「**次の手札を見てから決めてよい**」＝このエンジンの「片付けで次の手札を先引きする」構造では
        **先引きの後**に窓を開くのが正しい（§0-25 のリス／§0-21 の保存と同じ位置）。
-       前哨地/使節団/今を生きる が既に立っているときは offer しない（それらが優先＝3連続を作らない）。 */
-    if (hasAlly(state, 'island_folk') && (p.favors || 0) >= 5 && !extra && !missionExtra && !seizeExtra && !voyageExtra &&
+       前哨地/使節団/今を生きる が既に立っているときは offer しない（それらが優先＝3連続を作らない）。
+       ⚠ **航海が立っているときは offer する**＝公式は「どちらの追加ターンを取るか**選ばせる**」
+         （`allies_rules.md` 逐語＝`you've hit the "but not a 3rd turn in a row" limit, so you will have to
+          choose which extra turn to take`）。航海のターンは「手札から3枚まで」の制限が付くので、
+         好意5を払ってでも島民を選ぶのが得な局面がある＝選べないと明確に損をする。
+         島民を選んだら航海の予約は失敗として捨てる（下の reducer）。 */
+    if (hasAlly(state, 'island_folk') && (p.favors || 0) >= 5 && !extra && !missionExtra && !seizeExtra &&
         (state.turn.chain || 1) < 2 && !state.turn.islandAsked && !isGameOver(state)) {
       state.turn.islandAsked = true;
       state.turn.advanceCtx = { pi, extra, missionExtra, seizeExtra, voyageExtra };
@@ -9294,13 +9302,17 @@
           公式例「前哨地2枚＋リッチなら1つ目の追加ターンだけ飛び、2つ目は起きる」がこれで再現される。
        ⚠ **飛ばしたターンも「取っていたのと同じ数え方」でタイブレークに数える**（公式逐語）＝
           通常ターンなら turns に数え（freeTurns には数えない）、追加ターンなら freeTurns にも数える。 */
-    let skipGuard = 0;
+    let skipGuard = 0, skipped = false;
     while ((state.players[next].skipTurns || 0) > 0 && skipGuard++ < 64) {
       const sp = state.players[next];
       sp.skipTurns -= 1;
       sp.turns += 1;
       if (isExtra && next === pi && (seizeTurn || islandTurn || voyageTurn)) sp.freeTurns = (sp.freeTurns || 0) + 1;
       log(state, `${sp.name} はリッチで1ターンをスキップした。`);
+      /* 同盟：飛ばされたのが**航海の追加ターン**で、まだ航海の予約が残っていれば**もう一度取ろうとする**。
+         公式（2023 Errata の Trivia 逐語）＝飛ばしたターンは「行われていない」ので、まだ2連続していない
+         ＝2枚目の航海（前哨地）は成立する。旗1つの boolean で持つと、この公式例が再現できない。 */
+      const retakeVoyage = isExtra && next === pi && voyageTurn && (p.voyageExtra || 0) > 0 && prevChain < 2;
       /* 飛ばしたのが**追加ターン**なら、その種類を問わず以降は通常の手順に戻す。
          ⚠ 支配(Possession)の追加ターンは `state.extraTurns` 由来で `next`（被支配者）≠ `pi`（支配者）なので、
             `next === pi` を条件にすると `possessedBy` が残り、**無関係な第三者のターンが「支配された追加ターン」
@@ -9309,10 +9321,26 @@
         isExtra = false; noBuyCards = false; seizeTurn = false; islandTurn = false; voyageTurn = false;
         possessedBy = null;
       }
+      skipped = true;
+      if (retakeVoyage) {
+        p.voyageExtra -= 1;
+        next = pi; isExtra = true; rotationSeat = anchor; seizeTurn = true; voyageTurn = true;
+        continue; // 同じ席にまだスキップが残っていれば、この取り直したターンも飛ぶ
+      }
       next = (next + 1) % n; rotationSeat = next; // 「左隣へ通常どおり進む」（公式）
     }
-    // 同盟：島民/航海の「3ターン連続にはできない」を数えるための連続手番カウンタ（同じ席が続いた回数。1=通常のターン）。
-    const chain = (isExtra && next === pi) ? prevChain + 1 : 1;
+    /* 同盟：航海の予約は「このターンぶん」＝ここで使い切れなかった残りは必ず捨てる
+       （後の通常ターンに持ち越すと本来存在しない追加ターンが湧く）。追加ターンを1回取れた時点で、
+       同じターンに使った2枚目以降は3連続になるので失敗する＝公式FAQ `all Voyages after the first will fail.`。 */
+    if ((p.voyageExtra || 0) > 0) {
+      if (voyageTurn && next === pi) log(state, `${p.name} の2枚目以降の航海は失敗した（3ターン連続にはできない）。`);
+      p.voyageExtra = 0;
+    }
+    /* 同盟：島民/航海の「3ターン連続にはできない」を数えるための連続手番カウンタ（同じ席が続いた回数。1=通常のターン）。
+       ⚠ **リッチで飛ばしたターンは「行われていない」**＝連続を切らない（公式逐語＝`Skipping a turn means ...
+          nothing happens for that turn`／「直前のターンの持ち主」を見るカードは**実際にプレイされた最後のターン**を見る）。
+          相手が全員スキップして自分に戻ってきたら、それは自分の連続手番の続きになる。 */
+    const chain = (next === pi && (isExtra || skipped)) ? prevChain + 1 : 1;
     state.turn = freshTurn(next, isExtra, { rotationSeat, possessedBy, noBuyCards, seizeTurn, chain, voyageTurn });
     // ルネサンス：鍵（Key・アーティファクト）＝あなたのターンの開始時 +$1（取ったターンには恩恵なし＝開始時は過ぎている）。
     if (hasArtifact(state, next, 'key')) {
@@ -9324,8 +9352,10 @@
       : (extra ? `${state.players[next].name} の追加ターンです（前哨地）。`
         : (missionExtra ? `${state.players[next].name} の追加ターンです（使節団：カードは購入できません）。`
           : (islandTurn ? `${state.players[next].name} の追加ターンです（島民）。`
-            : (seizeTurn ? `${state.players[next].name} の追加ターンです（今を生きる）。`
-              : `${state.players[next].name} の番です。`)))));
+            // 同盟：航海の追加ターンも seizeTurn を立てる（タイブレークに数えない）ので、**seizeTurn より先に**分岐する。
+            : (voyageTurn ? `${state.players[next].name} の追加ターンです（航海：手札から3枚まで使えます）。`
+              : (seizeTurn ? `${state.players[next].name} の追加ターンです（今を生きる）。`
+                : `${state.players[next].name} の番です。`))))));
     // 海辺：次の手番開始時の予約効果を解決（非対話は即適用、対話は startQueue→pending）。
     resolveDurationStartEffects(state, next);
   }
@@ -10079,7 +10109,17 @@
     //   state.onTrashQueue に貯めておき、選択待ちが無くなったタイミングで1件ずつ pending 化する。
     //   誰のターンでも card の持ち主(player)が選ぶ（actor が pending.player を返す）。
     if (!state.pending && !state.gameOver && state.onTrashQueue && state.onTrashQueue.length) {
-      state.pending = state.onTrashQueue.shift();
+      /* 【終端保証】同盟：リッチの窓は**積んだ後に候補が枯れる**ことがある。1回の蛮族で2人以上が山札の上の
+         リッチを廃棄すると窓が2つ積まれ、廃棄置き場の「リッチより安いカード」を先の1人が取り切ってしまう。
+         公式＝`Gaining a cheaper card is mandatory if possible.`＝**可能でなければ何もしない**。
+         pending にする前に再検査して、候補ゼロなら捨てて次へ（＝人間が閉じられない窓・CPU の livelock を作らない）。
+         §0-22 で明文化した「回数制限つきの窓は解決時に必ず再検査する」と同型。 */
+      while (state.onTrashQueue.length) {
+        const q = state.onTrashQueue[0];
+        if (q.type === 'lich_gain' && !lichTrashTargets(state).length) { state.onTrashQueue.shift(); continue; }
+        state.pending = state.onTrashQueue.shift();
+        break;
+      }
       state = runReplays(state);
     }
     // 帝国：城の「獲得時の対話」（広大な城＝公領/屋敷3の選択／幽霊城＝相手の手札上げ）は、gainer 自身の pending 中に
@@ -17233,7 +17273,7 @@
         }
         // 島民＝ターンの終了時、好意5で追加のターン（3ターン連続にはできない）。片付けの続きへ合流する。
         if (pd.type === 'ally_island_folk') {
-          const ctx = (t && t.advanceCtx) || { pi: pd.player, extra: false, missionExtra: false, seizeExtra: false };
+          const ctx = (t && t.advanceCtx) || { pi: pd.player, extra: false, missionExtra: false, seizeExtra: false, voyageExtra: false };
           let island = false;
           if (ok && spendFavors(state, pd.player, 5)) {
             island = true;
@@ -17241,7 +17281,10 @@
           }
           if (t) t.advanceCtx = null;
           state.pending = null;
-          finishTurnAdvance(state, ctx.pi, ctx.extra, ctx.missionExtra, ctx.seizeExtra, island);
+          /* 島民と航海が同時に成立するときは**どちらか一方**（3ターン連続にはできない）。島民を選んだら
+             航海の予約は失敗＝この片付けで捨てる（航海のターンに付く「手札から3枚まで」の制限も付かない）。 */
+          if (island && ctx.voyageExtra) { pl.voyageExtra = 0; log(state, `${pl.name} の航海による追加ターンは発生しない（島民を選んだ）。`); }
+          finishTurnAdvance(state, ctx.pi, ctx.extra, ctx.missionExtra, ctx.seizeExtra, island, island ? false : ctx.voyageExtra);
           return state;
         }
         /* 都市国家＝自分のターンにアクションを獲得したとき、好意2でそれを**獲得した場所から**使用する
@@ -17533,8 +17576,9 @@
         if (!pd || pd.type !== 'sunken_treasure') return state;
         const card = action.card;
         if (card == null || !sunkenTreasureCanGain(state, pd.player)(card)) return state;
+        const stReal = mixedTopCard(state, card) || card; // ★gain の**前**に確定（gain が混合山の一番上を抜くので後だと次の札の名前になる）
         gain(state, pd.player, card, 'discard');
-        log(state, `${state.players[pd.player].name} は沈没船の財宝で「${C()[mixedTopCard(state, card) || card].name}」を獲得した。`);
+        log(state, `${state.players[pd.player].name} は沈没船の財宝で「${C()[stReal].name}」を獲得した。`);
         if (state.pending === pd) state.pending = null;
         return state;
       }
@@ -17574,8 +17618,9 @@
         const card = action.card;
         if (card == null || !costUpTo(state, card, 4)) return state;
         state.pending = null;
+        const cpReal = mixedTopCard(state, card) || card; // ★gain の**前**に確定（混合山は一番上が抜けて次の札に変わる）
         gain(state, pd.player, card, 'discard');
-        log(state, `${state.players[pd.player].name} は大工で「${C()[mixedTopCard(state, card) || card].name}」を獲得した。`);
+        log(state, `${state.players[pd.player].name} は大工で「${C()[cpReal].name}」を獲得した。`);
         return state;
       }
       // 大工（空山あり）＝手札1枚を廃棄（強制）→ それより最大2コイン高いカードを1枚獲得（強制）。
@@ -17600,8 +17645,9 @@
         const card = action.card;
         if (card == null || !modifyCanGain(state, pd)(card)) return state;
         state.pending = null;
+        const cuReal = mixedTopCard(state, card) || card; // ★gain の**前**に確定（混合山は一番上が抜けて次の札に変わる）
         gain(state, pd.player, card, 'discard');
-        log(state, `${state.players[pd.player].name} は大工で「${C()[mixedTopCard(state, card) || card].name}」を獲得した。`);
+        log(state, `${state.players[pd.player].name} は大工で「${C()[cuReal].name}」を獲得した。`);
         return state;
       }
       /* 急使＝捨て札置き場からアクション1枚または財宝1枚を使用してよい（任意・アクション権を消費しない）。 */
@@ -17642,8 +17688,9 @@
         const card = action.card;
         if (card == null || !swapCanGain(state, pd.returned)(card)) return state; // 強制
         state.pending = null;
+        const swReal = mixedTopCard(state, card) || card; // ★gain の**前**に確定（混合山は一番上が抜けて次の札に変わる）
         gain(state, pd.player, card, 'hand');
-        log(state, `${state.players[pd.player].name} は交換で「${C()[mixedTopCard(state, card) || card].name}」を手札に獲得した。`);
+        log(state, `${state.players[pd.player].name} は交換で「${C()[swReal].name}」を手札に獲得した。`);
         return state;
       }
       /* 侍祭＝①手札のアクション/勝利点1枚を廃棄してよい（したら金貨）→ ②これを廃棄してよい（したら卜占官1枚）。 */
@@ -17697,8 +17744,9 @@
         const card = action.card;
         if (card == null || !barbarianCanGain(state, pd.trashed)(card)) return state; // 強制
         state.pending = null;
+        const bbReal = mixedTopCard(state, card) || card; // ★gain の**前**に確定（混合山は一番上が抜けて次の札に変わる）
         gain(state, pd.victim, card, 'discard');
-        log(state, `${state.players[pd.victim].name} は蛮族で「${C()[mixedTopCard(state, card) || card].name}」を獲得した。`);
+        log(state, `${state.players[pd.victim].name} は蛮族で「${C()[bbReal].name}」を獲得した。`);
         if (state.pending) (state.onGainQueue = state.onGainQueue || []).push({ type: 'barbarian_next', player: pd.source, source: pd.source, queue: pd.queue });
         else barbarianEnterVictim(state, pd.source, pd.queue);
         return state;
@@ -17801,8 +17849,9 @@
         const card = action.card;
         if (card == null || !costUpTo(state, card, 4)) return state;
         state.pending = null;
+        const cjReal = mixedTopCard(state, card) || card; // ★gain の**前**に確定（混合山は一番上が抜けて次の札に変わる）
         gain(state, pd.player, card, 'discard');
-        log(state, `${state.players[pd.player].name} は霊術師で「${C()[mixedTopCard(state, card) || card].name}」を獲得した。`);
+        log(state, `${state.players[pd.player].name} は霊術師で「${C()[cjReal].name}」を獲得した。`);
         return state;
       }
       /* 専門家＝手札のアクションまたは財宝1枚を使用してよい（任意）。
@@ -17879,8 +17928,9 @@
         const card = action.card;
         if (card == null || !modifyCanGain(state, pd)(card)) return state;
         state.pending = null;
+        const mdReal = mixedTopCard(state, card) || card; // ★gain の**前**に確定（混合山は一番上が抜けて次の札に変わる）
         gain(state, pd.player, card, 'discard');
-        log(state, `${state.players[pd.player].name} は改造で「${C()[mixedTopCard(state, card) || card].name}」を獲得した。`);
+        log(state, `${state.players[pd.player].name} は改造で「${C()[mdReal].name}」を獲得した。`);
         return state;
       }
       /* リッチの廃棄時＝廃棄置き場からこれ（リッチ）より**厳密に安い**カード1枚を獲得（可能なら強制）。
@@ -17888,8 +17938,13 @@
       case 'LICH_GAIN': {
         const pd = state.pending;
         if (!pd || pd.type !== 'lich_gain') return state;
+        const cands = lichTrashTargets(state);
+        /* 【終端保証】候補ゼロなら窓を閉じる（公式＝`Gaining a cheaper card is mandatory if possible.`＝
+           可能でなければ何もしない）。窓を積んだ後に候補が枯れることがある＝上の onTrashQueue の再検査と対。
+           旧スナップショットの復元でここに来ても閉じられるよう、**受理側にも**同じガードを置く（§0-17 と同型）。 */
+        if (!cands.length) { state.pending = null; return state; }
         const card = action.card;
-        if (card == null || !lichTrashTargets(state).includes(card)) return state;
+        if (card == null || !cands.includes(card)) return state;
         state.pending = null;
         if (removeOne(state.trash, card)) {
           gainFromOutside(state, pd.player, card, 'discard');
@@ -17952,8 +18007,9 @@
         const card = action.card;
         if (card == null || !costUpTo(state, card, 5)) return state;
         state.pending = null;
+        const imReal = mixedTopCard(state, card) || card; // ★gain の**前**に確定（混合山は一番上が抜けて次の札に変わる）
         gain(state, pd.player, card, 'discard');
-        log(state, `${state.players[pd.player].name} は輸入者で「${C()[mixedTopCard(state, card) || card].name}」を獲得した。`);
+        log(state, `${state.players[pd.player].name} は輸入者で「${C()[imReal].name}」を獲得した。`);
         return state;
       }
       /* 仲買人＝手札1枚を廃棄（強制）→ 4択（そのコイン費用$1につき1つ）。
@@ -18565,6 +18621,7 @@
     // mix-all 硬化：獲得コスト述語の正本（engine reducer / CPU 候補選び / UI モーダル filter が同じ関数を見る）
     costOf,        // コストの3成分 {coin, pot, debt}（コスト軽減込み）
     gainableBase,  // サプライから獲得できる土台（非サプライ・ロック中の分割山下段・在庫切れを弾く）
+    mixedPileWithTop, // その実カードidが「今どれかの混合山の一番上」か（山キーを返す。無ければ null）＝UI が獲得可否を説明するのに使う
     costUpTo,      // 「コスト$N以下」（成分別比較。ポーション/負債を持つ札は既定で対象外）
     costUnder,     // 「これより安い」（成分別 strictly less）
     costExact,     // 「ちょうど$N（ポーション/負債も一致）」

@@ -1320,9 +1320,19 @@
   // 連携(Liaison)＝これが王国に1枚でもあると同盟(Ally)カードが1枚配られ、全員が好意を得る。
   //   ⚠ 生徒(student) は魔法使い(wizards)の分割山の中に居る＝**山IDだけを見る判定では取りこぼす**。
   DOM.ALLIES_LIAISONS = ['bauble', 'sycophant', 'importer', 'student', 'underling', 'broker', 'contract', 'emissary', 'guildmaster'];
+  /* 同盟の固定10種（自作 showcase＝公式の同盟専用10種は存在しない）。同盟の新機構をひと通り味わえる構成：
+       好意(Favor)と同盟(Ally)カード … 連携3系統（道化棒＝財宝／仲買人＝廃棄して4択／生徒＝**分割山の中**）
+       分割山＋循環(Rotate) ……… 町民($2)・叙事詩($3)・魔法使い($3) の3組（循環は触れ役/古地図/生徒）
+       持続 ……………………………… 航海（追加ターン＋そのターンは手札から3枚まで）／霊術師（次のターン手札へ）
+       アタック ……………………… 蛮族（廃棄＋同種別の格下げ獲得）／魔導士（指定を外すと呪い）
+       長老(Elder)の「追加でもう1つ選ぶ」… 町・宿屋の主人・仲買人 が対象になる
+       ほか ……………………………… リッチ（1ターンスキップ）／商人の野営地（場から捨てるとき山札の上）
+     コスト分布＝$2×2／$3×3／$4×3／$5×1／$6×1（分割山は買い進むと $5/$6 まで上がる）。 */
+  DOM.KINGDOM_ALLIES = ['bauble', 'townsfolk', 'merchant_camp', 'odysseys', 'wizards',
+                        'broker', 'innkeeper', 'town', 'barbarian', 'marquis'];
   // 段階1（効果が未実装）のプール＝闇市場デッキに入れない（買っても何も起きない死に札になるため）。
-  //   同盟を段階2（実プレイ）にするときに、この配列から 'allies' を消す。
-  DOM.STAGE1_POOLS = ['allies'];
+  //   ※ 同盟は A5 で実プレイ化（段階2）したのでここから外した＝現在は空。新しい拡張を段階1で足したらここに入れる。
+  DOM.STAGE1_POOLS = [];
   // 移動動物園の固定10種（自作 showcase）。追放（ラクダの隊列）・馬（そり/騎兵隊/馬丁/貸し馬屋）・
   //   持続（艀/村有緑地）・アタック（魔女の集会）・獲得に反応するリアクション（牧羊犬/村有緑地）を一通り味わえる。
   //   コスト分布＝$2×1／$3×3／$4×3／$5×3。
@@ -1373,6 +1383,9 @@
     { id: 'menagerie-ways',  kind: 'standard', name: '移動動物園＋習性', desc: '移動動物園10種＋習性2枚（アクションの効果を置き換える横型・買わない）', kingdom: DOM.KINGDOM_MENAGERIE, waysFrom: 'menagerie' },
     // 移動動物園＋イベント（横型）。固定10王国に、移動動物園イベント20種から2枚を無作為に付ける（購入フェイズに買う横型）。
     { id: 'menagerie-events', kind: 'standard', name: '移動動物園＋イベント', desc: '移動動物園10種＋イベント2枚（購入フェイズに買う横型・馬/追放/追加ターン）', kingdom: DOM.KINGDOM_MENAGERIE, eventsFrom: 'menagerie' },
+    // 同盟セット（固定10種）。王国に連携(Liaison)があるので createInitialState が同盟(Ally)カード1枚を自動で選び、
+    //   全員に好意トークンを配る。分割山3組（町民/叙事詩/魔法使い）は16枚の混合山として自動で用意される。
+    { id: 'allies',          kind: 'standard', name: '同盟セット', desc: '好意トークン・同盟カード・分割山と循環', kingdom: DOM.KINGDOM_ALLIES },
     // ---- おすすめ（テーマ別・固定10種）----
     { id: 'big-money',       kind: 'recommend', name: 'ビッグマネー', desc: 'お金を伸ばして属州を狙う王道',
       kingdom: ['chapel', 'moneylender', 'harbinger', 'throne_room', 'bureaucrat', 'poacher', 'market', 'mine', 'laboratory', 'sentry'] },
@@ -1413,6 +1426,9 @@
     { id: 'random-renaissance', kind: 'random', name: 'ルネサンスから', randomFrom: ['renaissance'] },
     { id: 'random-nocturne', kind: 'random', name: '夜想曲から',     randomFrom: ['nocturne'] },
     { id: 'random-menagerie', kind: 'random', name: '移動動物園から', randomFrom: ['menagerie'] },
+    // 同盟から＝POOLS.allies（31枠＝非分割25＋分割山6）。分割山は「山キー」1枠で抽選され、中身4種は
+    //   createInitialState が16枚積む（＝混合山なので randomKingdom の2段分割山の正規化は通らない）。
+    { id: 'random-allies',   kind: 'random', name: '同盟から',       randomFrom: ['allies'] },
     { id: 'random-intrigue', kind: 'random', name: '陰謀のみから',   randomFrom: ['intrigue'] },
     { id: 'random-basic',    kind: 'random', name: '基本のみから',   randomFrom: ['basic'] },
     { id: 'random-promo',    kind: 'random', name: 'プロモ込みから',  randomFrom: ['basic', 'intrigue', 'promo'] },
@@ -1443,7 +1459,7 @@
        `mix:<王国プール,カンマ区切り>[:<横型の枚数 0-2>[:<横型プール,カンマ区切り>]]`
        例) mix:basic,intrigue,seaside
            mix:seaside,empires,renaissance:2:ev-empires,pj-renaissance
-     - 王国プール ＝ MIX_KINGDOM_POOLS のキー（実プレイ可能な13拡張）。選んだプールの**和集合から10種を抽選**（公式どおり）。
+     - 王国プール ＝ MIX_KINGDOM_POOLS のキー（実プレイ可能な15拡張＋プロモ＝16プール）。選んだプールの**和集合から10種を抽選**（公式どおり）。
      - 横型プール ＝ MIX_LANDSCAPE_POOLS のキー。選んだプールを**まとめてシャッフルし、合計で最大2枚**だけ引く
        （公式：イベント＋ランドマーク＋プロジェクトの合算で最大2枚。王国山は常に10）。
      - サーバは正規表現＋プール実在チェックで検証する（gameServer.js の isValidKingdomSet）。
@@ -1453,7 +1469,7 @@
     basic: '基本', intrigue: '陰謀', seaside: '海辺', alchemy: '錬金術', prosperity: '繁栄',
     cornucopia: '収穫祭', guilds: 'ギルド', hinterlands: '異郷', darkages: '暗黒時代',
     adventures: '冒険', empires: '帝国', renaissance: 'ルネサンス', menagerie: '移動動物園',
-    nocturne: '夜想曲', promo: 'プロモ',
+    nocturne: '夜想曲', allies: '同盟', promo: 'プロモ',
   };
   // mix で選べる横型プール（kind ごとに分けて選べる）。
   DOM.MIX_LANDSCAPE_POOLS = {

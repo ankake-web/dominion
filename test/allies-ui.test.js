@@ -352,6 +352,72 @@ try {
     ok(pile && pile.querySelector('.pile-favor').textContent.indexOf('2') >= 0, 'トークン数が出る');
     ok(pile && pile.querySelector('.pcost').textContent.indexOf('3') >= 0, '表示コストが $5→$3 に下がる');
   }
+  /* A5＝CARD_SET 昇格。出荷する固定10種を実際に描いて、人間が操作できる状態になっているかを見る。
+     （分割山は「山キー」ではなく**一番上の実カード**を描くのが正＝プレースホルダを出すと
+       「町民 $2」と表示して実際は「長老 $5」を買う食い違いになる。） */
+  console.log('=== A5: 出荷セット allies の盤面（Ally 帯・好意・分割山の一番上） ===');
+  {
+    const s = E.createInitialState(['あなた', '相手'], DOM.kingdomForSet('allies'), { startActive: 0 });
+    showAs(s, 0);
+    ok(!runtimeError, '固定10種の盤面が例外なく描ける');
+    ok(!!s.ally, '固定10種では Ally が必ず選ばれる');
+    ok(byText('.sup-title', '同盟'), 'Ally の帯が盤面に出る');
+    ok(doc.body.textContent.indexOf('好意') >= 0, '好意の表示がある');
+    const piles = $all('.pile').map((e) => e.getAttribute('data-pile'));
+    ['townsfolk', 'odysseys', 'wizards'].forEach((p) => {
+      ok(piles.indexOf(p) >= 0, p + ' の山が盤面に出る');
+      const el = $all('.pile').find((e) => e.getAttribute('data-pile') === p);
+      const top = DOM.ALLIES_SPLIT_PILES[p][0];
+      ok(el && el.textContent.indexOf(DOM.CARDS[top].name) >= 0, p + ' は一番上（' + DOM.CARDS[top].name + '）を表示する');
+    });
+    DOM.KINGDOM_ALLIES.forEach((id) => ok(piles.indexOf(id) >= 0, id + ' の山が盤面にある'));
+    ok($all('.pile').length >= 10 + 7, '基本サプライ＋王国10山が並ぶ（実 ' + $all('.pile').length + '）');
+  }
+
+  /* A5 の敵対レビューで確定した UI 分（どれも「同盟が実プレイに出て初めて到達できる」）。 */
+  console.log('=== A5: 敵対レビュー確定分の回帰（UI） ===');
+  {
+    // [high] リッチの獲得窓が候補ゼロで開いても人間が閉じられる（蛮族で2人がリッチを廃棄すると起きる）
+    const s = mk('plateau_shepherds', ['barbarian', 'wizards']);
+    s.trash = [];
+    s.pending = { type: 'lich_gain', player: 0 };
+    showAs(s, 0);
+    ok(!!$('.modal'), 'リッチ：候補ゼロでもモーダルは出る');
+    ok(actionable(), 'リッチ：候補ゼロでも押せるものがある（人間が詰まない）');
+    // 候補があるときは辞退ボタンを出さない（獲得は「可能なら強制」）
+    const s2 = mk('plateau_shepherds', ['barbarian', 'wizards']);
+    s2.trash = ['estate'];
+    s2.pending = { type: 'lich_gain', player: 0 };
+    showAs(s2, 0);
+    ok($all('.modal button').filter((b) => !b.disabled).length === 0 && $all('.modal .chip-grid .card').length > 0,
+      'リッチ：候補があるときは辞退ボタンを出さない（強制）');
+  }
+  {
+    // [low] 専門家の「1枚を獲得する」＝サプライに山が無ければ何も起きないことをラベルで明示する
+    const s = mk('plateau_shepherds', ['bauble']);
+    s.pending = { type: 'specialist_choose', player: 0, card: 'marquis' }; // 侯爵はこの王国のサプライに無い
+    showAs(s, 0);
+    ok(doc.body.textContent.indexOf('サプライに山が無いので獲得できません') >= 0,
+      '専門家：獲得できないときは注記が出る（選択肢は消さない＝公式）');
+    const s2 = mk('plateau_shepherds', ['bauble', 'marquis']);
+    s2.pending = { type: 'specialist_choose', player: 0, card: 'marquis' };
+    showAs(s2, 0);
+    ok(doc.body.textContent.indexOf('サプライに山が無いので獲得できません') < 0, '専門家：獲得できるときは注記を出さない');
+  }
+  {
+    // [low] リッチのスキップ予定・航海の「手札から3枚まで」の残りが盤面に出る（どちらも公開情報）
+    const s = mk('plateau_shepherds', ['wizards', 'odysseys']);
+    s.players[0].skipTurns = 2;
+    showAs(s, 0);
+    ok(!!byText('.badge', 'スキップ'), 'リッチのスキップ予定がバッジに出る');
+    ok((byText('.badge', 'スキップ') || {}).textContent.indexOf('2') >= 0, 'スキップ回数が出る');
+    const s2 = mk('plateau_shepherds', ['wizards', 'odysseys']);
+    s2.turn.voyageTurn = true; s2.turn.handPlays = 1;
+    showAs(s2, 0);
+    const vb = byText('.badge', '航海');
+    ok(!!vb, '航海の追加ターンであることがバッジに出る');
+    ok(vb && vb.textContent.indexOf('2') >= 0, '手札から使える残り枚数（3-1=2）が出る');
+  }
 } catch (e) {
   fail++; console.log('  x 例外: ' + (e && e.stack ? e.stack : e));
 }

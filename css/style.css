@@ -161,7 +161,10 @@ input.code-input {
 /* 抽選元は数が多い（14種）。1行のセグメントだと overflow:hidden で後ろが隠れて選べなくなるので、
    チップとして折り返す。 */
 .seg.seg-wrap { display: flex; flex-wrap: wrap; gap: 6px; border: none; overflow: visible; border-radius: 0; }
-.seg.seg-wrap .seg-btn { border: 1px solid var(--line); border-radius: 8px; font-size: 13px; padding: 8px 9px; min-height: 38px; min-width: 0; }
+/* ⚠ `flex: 0 0 auto` は必須。後ろにある `.field .seg-btn { flex: 1 1 0 }`（全幅・均等割り）が効くと
+   **flex-basis が 0 になって折り返しが発動せず**、320px では18個が幅22pxまで潰れてラベルが1文字ずつ縦書きになる
+   （＝チップにした意味が消える）。セレクタは3クラスでこちらが強いので、打ち消しを明示的に書く。 */
+.seg.seg-wrap .seg-btn { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; padding: 8px 9px; min-height: 38px; min-width: 0; }
 .seg.seg-wrap .seg-btn + .seg-btn { border-left: 1px solid var(--line); }
 .set-tiles { display: flex; flex-direction: column; gap: 6px; }
 .set-tile {

@@ -71,6 +71,20 @@
     'cavalry', 'village_green', 'groom', 'hostelry', 'cardinal', 'bounty_hunter',
     'snowy_village', 'sheepdog', 'scrap', 'goatherd', 'camel_train', 'stockpile',
     'black_cat', 'sleigh', 'supplies',
+    /* 同盟（実プレイ＝段階2＝A5 で昇格）＝強さ/コストの目安順。供給があるときだけ効く（bestEngineBuy/bestGain が参照）。
+       ⚠ **分割山6組は「山キー」だけが実際に獲得される**（中身24種はその山の一番上のときだけ手に入る）。
+         山キーのコストは `cardCost` が今の一番上を返すので、掘り進むと自動で高コスト帯へ移る。
+       ⚠ 中身24種もここに置く必要がある（整合性テストの「GAIN_ORDER＝全カード」）。山キーの後ろにまとめる。 */
+    'marquis', 'barbarian', 'highwayman', 'skirmisher', 'guildmaster', 'galleria', 'emissary',
+    'capital_city', 'hunter', 'specialist', 'modify', 'swap', 'contract',
+    'innkeeper', 'royal_galley', 'broker', 'town', 'carpenter', 'courier',
+    'wizards', 'clashes', 'odysseys', 'augurs', 'forts', 'townsfolk',
+    'underling', 'merchant_camp', 'sentinel', 'importer', 'bauble', 'sycophant',
+    // 分割山の中身（山の一番上のときだけ獲得できる）＝同コスト帯での相対順
+    'lich', 'territory', 'sibyl', 'distant_shore', 'stronghold',
+    'warlord', 'sorcerer', 'sorceress', 'elder', 'hill_fort', 'sunken_treasure',
+    'garrison', 'miller', 'conjurer', 'archer', 'voyage', 'acolyte',
+    'blacksmith', 'student', 'old_map', 'tent', 'herb_gatherer', 'battle_plan', 'town_crier',
     'pawn', 'lurker', 'moat', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke',
     // 追加拡張（収穫祭/異郷/暗黒時代）＝孤立プールで実サプライに出ないため並び順はCPU挙動に無影響
     // （新プロモ6種は実プレイ化済み＝上の実強度順の位置に配置済み）
@@ -85,19 +99,6 @@
     // 段階1追加（夜想曲。CARD_SETS 未参照＝実際には獲得されないが GAIN_ORDER=全カードの整合性を満たす）
     'bard', 'blessed_village', 'cemetery', 'changeling', 'cobbler', 'conclave', 'crypt', 'cursed_village', 'den_of_sin', 'devils_workshop', 'druid', 'exorcist', 'faithful_hound', 'fool', 'ghost_town', 'guardian', 'idol', 'leprechaun', 'monastery', 'necromancer', 'night_watchman', 'pixie', 'pooka', 'raider', 'sacred_grove', 'secret_cave', 'shepherd', 'skulk', 'tormentor', 'tracker', 'tragic_hero', 'vampire', 'werewolf',
     'cursed_gold', 'goat', 'haunted_mirror', 'lucky_coin', 'magic_lamp', 'pasture', 'pouch', 'will_o_wisp', 'imp', 'ghost', 'wish', 'bat', 'zombie_apprentice', 'zombie_mason', 'zombie_spy',
-    // 同盟（Allies）＝段階1（CARD_SETS 未参照＝実際には獲得されない。整合性テストの「GAIN_ORDER=全カード」を満たすためだけ）。
-    //   段階2で実プレイ化するときに、実強度順の正しい位置へ並べ直すこと。
-    //   ※分割山6組（augurs/clashes/forts/odysseys/townsfolk/wizards）は山キー、その下の24種は山の中身。
-    'marquis', 'barbarian', 'capital_city', 'contract', 'emissary', 'galleria', 'guildmaster',
-    'highwayman', 'hunter', 'modify', 'skirmisher', 'specialist', 'swap',
-    'broker', 'carpenter', 'courier', 'innkeeper', 'royal_galley', 'town',
-    'importer', 'merchant_camp', 'sentinel', 'underling', 'bauble', 'sycophant',
-    'augurs', 'herb_gatherer', 'acolyte', 'sorceress', 'sibyl',
-    'clashes', 'battle_plan', 'archer', 'warlord', 'territory',
-    'forts', 'tent', 'garrison', 'hill_fort', 'stronghold',
-    'odysseys', 'old_map', 'voyage', 'sunken_treasure', 'distant_shore',
-    'townsfolk', 'town_crier', 'blacksmith', 'miller', 'elder',
-    'wizards', 'student', 'conjurer', 'sorcerer', 'lich',
     'copper', 'curse'];
   /* 同盟：女魔導士／魔導士の「カード名を宣言する」＝自分の山札の一番上として**一番ありそうな名前**を推定する
      （山札が空なら捨て札から。どちらも空なら銅貨）。**null を返さない**（engine が拒否すると livelock）。 */

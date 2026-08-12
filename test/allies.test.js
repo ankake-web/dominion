@@ -42,6 +42,11 @@ function tally(s) {
   MIX.forEach((k) => (s[k] || []).forEach(a));
   (s.trash || []).forEach(a); (s.blackMarket || []).forEach(a);
   s.players.forEach((p) => ZONES.forEach((z) => (p[z] || []).forEach(a)));
+  /* 配列でないゾーンは ZONES では拾えないので個別に数える（`test/invariants.test.js` の tally と同じ集合にする）。
+     A5 で同盟が mix-all に参加した＝このソークの王国に帝国の資料庫(archive)や支配(possession)が
+     混ざりうるようになったので、ここを取りこぼすと**保存則の偽陽性**で赤くなる。 */
+  s.players.forEach((p) => (p.archives || []).forEach((x) => (x.cards || []).forEach(a)));   // 帝国：資料庫の脇置き {id, cards}
+  if (s.turn) { (s.turn.possessionGains || []).forEach(a); (s.turn.possessionTrash || []).forEach(a); } // 錬金術：支配の精算待ち
   return t;
 }
 function tdiff(x, y) { const ks = new Set([...Object.keys(x), ...Object.keys(y)]); const d = []; ks.forEach((k) => { if ((x[k] || 0) !== (y[k] || 0)) d.push(k + ':' + (x[k] || 0) + '→' + (y[k] || 0)); }); return d; }
@@ -1924,6 +1929,311 @@ console.log('=== A4: CPUソーク（同盟の王国カードを厚く配って�
     }
   });
   ok(bad === 0 && games === SOAK.length * 2, 'CPUソーク完走（' + games + '/' + (SOAK.length * 2) + '・膠着0・例外0・保存則違反0）');
+}
+
+/* ============================================================
+   A5＝CARD_SET 昇格（同盟が実プレイに出るようになる）
+   - `allies`（固定10種）と `random-allies` が CARD_SETS にある／mix-all にも参加する。
+   - **`DOM.STAGE1_POOLS` から 'allies' が外れた**＝闇市場デッキに同盟の非分割25種が入る。
+     ⚠ このとき **分割山の中身24種と山キー6つが漏れてはいけない**（MIXED_PILE_CONTENTS / MIXED_PILE_KEYS）。
+   - 固定10種は**連携を必ず含む**（含まないと Ally も好意も登場せず拡張の目玉が出ない）。
+   ============================================================ */
+console.log('=== A5: CARD_SET 昇格（固定10種・random-allies・mix・闇市場） ===');
+{
+  const SETS = DOM.CARD_SETS;
+  const fixed = SETS.find((s) => s.id === 'allies');
+  ok(!!fixed, 'CARD_SETS に allies がある');
+  ok(fixed && fixed.kind === 'standard', 'allies は kind=standard（UI の「拡張」タイルに出る）');
+  ok(fixed && !!fixed.desc, 'allies に一行説明がある（拡張タイルの表示に使う）');
+  ok(!!SETS.find((s) => s.id === 'random-allies'), 'CARD_SETS に random-allies がある');
+  ok(!!DOM.MIX_KINGDOM_POOLS.allies, 'mix-all の王国プールに allies がある');
+  ok((DOM.STAGE1_POOLS || []).indexOf('allies') < 0, 'STAGE1_POOLS から allies が外れている');
+
+  const K10 = DOM.KINGDOM_ALLIES || [];
+  ok(K10.length === 10, '固定10種がちょうど10山');
+  ok(K10.every((id) => !!DOM.CARDS[id]), '固定10種はすべてカタログにある');
+  ok(K10.every((id) => (DOM.POOLS.allies || []).indexOf(id) >= 0), '固定10種はすべて同盟プールの札');
+  ok(K10.length === new Set(K10).size, '固定10種に重複がない');
+  // 連携の判定は**分割山の中身まで走査**する（生徒は魔法使いの山の中に居る）。
+  const hasLiaison = K10.some((id) => DOM.ALLIES_LIAISONS.indexOf(id) >= 0 ||
+    (DOM.ALLIES_SPLIT_PILES[id] || []).some((c) => DOM.ALLIES_LIAISONS.indexOf(c) >= 0));
+  ok(hasLiaison, '固定10種に連携(Liaison)が含まれる＝Ally と好意が必ず登場する');
+  const splitInFixed = K10.filter((id) => !!DOM.ALLIES_SPLIT_PILES[id]);
+  ok(splitInFixed.length >= 2, '固定10種に分割山が2組以上ある（循環を味わえる）');
+  ok(K10.some((id) => DOM.CARDS[id] && (DOM.CARDS[id].types || []).indexOf('attack') >= 0) ||
+     splitInFixed.some((p) => DOM.ALLIES_SPLIT_PILES[p].some((c) => (DOM.CARDS[c].types || []).indexOf('attack') >= 0)),
+     '固定10種にアタックがある');
+  ok(splitInFixed.some((p) => DOM.ALLIES_SPLIT_PILES[p].some((c) => (DOM.CARDS[c].types || []).indexOf('duration') >= 0)) ||
+     K10.some((id) => (DOM.CARDS[id].types || []).indexOf('duration') >= 0), '固定10種に持続がある');
+
+  // 固定セットを実際に組む
+  {
+    const s = mk(DOM.kingdomForSet('allies'), {}, ['A', 'B']);
+    ok(!!s.ally, '固定セットでは必ず Ally が1枚選ばれる');
+    ok(DOM.ALLIES_ALLY.indexOf(s.ally) >= 0, '選ばれた Ally は23種のどれか');
+    ok(s.players.every((p) => p.favors === 1), '開始時の好意は1個（輸入者は固定10種に無い）');
+    splitInFixed.forEach((p) => {
+      ok(Array.isArray(s[p]) && s[p].length === 16, p + ' の分割山が16枚');
+      ok(s.supply[p] === 16, p + ' の supply 残数が実配列と同期している');
+      // 一番上は最安（安い順に積む）
+      ok(s[p][0] === DOM.ALLIES_SPLIT_PILES[p][0], p + ' の一番上が最安のカード');
+    });
+    // 3山終了の数え方＝分割山は16枚全部が無くなって初めて1山
+    const empt0 = E.emptyPileCount(s);
+    const p0 = splitInFixed[0];
+    s[p0] = s[p0].slice(0, 1); s.supply[p0] = 1;
+    ok(E.emptyPileCount(s) === empt0, '分割山は残り1枚でも「空」に数えない');
+    s[p0] = []; s.supply[p0] = 0;
+    ok(E.emptyPileCount(s) === empt0 + 1, '分割山は16枚すべて無くなって初めて1山ぶんの空');
+  }
+
+  // random-allies：分割山の中身は絶対に王国に出ない／必ず10山／組める
+  {
+    let bad = 0, withAlly = 0;
+    for (let i = 0; i < 120; i += 1) {
+      const k = DOM.kingdomForSet('random-allies');
+      if (k.length !== 10) { bad += 1; continue; }
+      if (k.some((id) => (DOM.POOLS.allies_split || []).indexOf(id) >= 0)) { bad += 1; continue; }
+      if (k.some((id) => (DOM.POOLS.allies || []).indexOf(id) < 0)) { bad += 1; continue; }
+      const s = mk(k, {}, ['A', 'B']);
+      if (s.ally) withAlly += 1;
+      // 連携の有無と Ally の有無・好意の初期値は必ず一致する
+      const lia = k.some((id) => DOM.ALLIES_LIAISONS.indexOf(id) >= 0 ||
+        (DOM.ALLIES_SPLIT_PILES[id] || []).some((c) => DOM.ALLIES_LIAISONS.indexOf(c) >= 0));
+      if (!!s.ally !== lia) { bad += 1; continue; }
+      if (s.players.some((p) => (p.favors | 0) !== (lia ? (k.indexOf('importer') >= 0 ? 5 : 1) : 0))) bad += 1;
+    }
+    ok(bad === 0, 'random-allies 120回：中身の混入なし・連携の有無と Ally/好意が完全に一致（Ally あり ' + withAlly + '）');
+  }
+
+  // mix-all：同盟を混ぜても王国が組める（他拡張と同居）
+  {
+    let bad = 0;
+    ['mix:allies', 'mix:allies,basic', 'mix:allies,darkages,empires', 'mix:allies,nocturne,menagerie'].forEach((setId) => {
+      const k = DOM.kingdomForSet(setId);
+      if (k.length !== 10) { bad += 1; return; }
+      if (k.some((id) => (DOM.POOLS.allies_split || []).indexOf(id) >= 0)) { bad += 1; return; }
+      try { mk(k, {}, ['A', 'B']); } catch (e) { bad += 1; }
+    });
+    ok(bad === 0, 'mix-all に同盟を混ぜても王国が組める（分割山の中身は出ない）');
+  }
+
+  /* 闇市場：STAGE1_POOLS から外したので同盟の**非分割25種**が入る。
+     山キー6つ・分割山の中身24種は入ってはいけない（買うと実在しない札が湧く／山の一番上でしか得られない）。 */
+  {
+    const BM_K = ['black_market', 'village', 'market', 'smithy', 'moat', 'militia', 'cellar', 'laboratory', 'bauble', 'wizards'];
+    let leak = '', sawAllies = 0, rounds = 0;
+    for (let i = 0; i < 40; i += 1) {
+      const s = mk(BM_K, {}, ['A', 'B']);
+      const deck = s.blackMarket || [];
+      rounds += 1;
+      deck.forEach((id) => {
+        if ((DOM.POOLS.allies_split || []).indexOf(id) >= 0) leak = leak || ('分割山の中身 ' + id);
+        if (MIX.indexOf(id) >= 0) leak = leak || ('混合山の山キー ' + id);
+        if ((DOM.POOLS.allies || []).indexOf(id) >= 0) sawAllies += 1;
+      });
+      // サプライに在る同盟の札（道化棒/魔法使い）は闇市場デッキに入らない
+      if (deck.indexOf('bauble') >= 0 || deck.indexOf('wizards') >= 0) leak = leak || 'サプライにある札が入った';
+    }
+    ok(!leak, '闇市場デッキに分割山の中身も山キーも漏れない（' + (leak || 'ok') + '）');
+    ok(sawAllies === rounds * 24, '闇市場デッキに同盟の非分割24種（サプライの道化棒を除く）が毎回入る');
+    // 段階1プールは空＝「効果が未実装なので闇市場から除く」対象がもう無い
+    ok((DOM.STAGE1_POOLS || []).length === 0, 'STAGE1_POOLS は空（実装済みの拡張しか無い）');
+  }
+
+  // 闇市場で同盟の連携を買っても、Ally が居ないゲームでは好意が湧かない（公式：Ally はセットアップで決まる）
+  {
+    let s = mk(['black_market', 'village', 'market', 'smithy', 'moat', 'militia', 'cellar', 'laboratory', 'chapel', 'festival'], {}, ['A', 'B']);
+    ok(!s.ally, '連携が王国に無ければ Ally は選ばれない');
+    ok(s.players.every((p) => (p.favors | 0) === 0), '連携が無ければ好意も配られない');
+    const p = s.players[0];
+    p.hand.push('underling'); // 闇市場で買った連携が手札にある状況（好意を配る唯一の入口 gainFavors を通る）
+    s.turn.actions = 1;
+    s = reduce(s, { type: 'PLAY_ACTION', player: 0, card: 'underling' });
+    ok((s.players[0].favors | 0) === 0, 'Ally が居ないゲームでは連携を使っても好意は増えない');
+  }
+}
+
+/* ============================================================
+   A5 の多エージェント敵対レビューで確定した分の回帰
+   （どれも「同盟が実プレイに出て初めて到達できる」＝A4 までのテストは緑のまま素通りしていた）
+   ============================================================ */
+console.log('=== A5: 敵対レビュー確定分の回帰 ===');
+{
+  // 連携が無い王国＝Ally が出ない＝ターン1の窓が開かないので、手番送りの検査に使える。
+  const NOLIA = ['townsfolk', 'odysseys', 'village', 'smithy', 'market', 'moat', 'cellar', 'laboratory', 'festival', 'workshop'];
+  const clr = (s) => { s.players.forEach((pl) => { pl.hand = []; pl.deck = []; pl.discard = []; pl.inPlay = []; }); return s; };
+  const endTurn = (s, pi) => reduce(reduce(s, { type: 'END_ACTION_PHASE', player: pi }), { type: 'END_TURN', player: pi });
+
+  /* [high] リッチの獲得窓が**候補ゼロで開いて閉じない**（engine拒否×CPU提案の livelock／人間は脱出不能）。
+     1回の蛮族で2人以上が山札の上のリッチを廃棄すると窓が2つ積まれ、廃棄置き場の「リッチより安いカード」を
+     先の1人が取り切る。公式＝`Gaining a cheaper card is mandatory if possible.`＝可能でなければ何もしない。
+     ⚠ 蛮族(barbarian)と魔法使い(wizards→リッチ)は**出荷する固定10種に同居する**＝実プレイで踏む。 */
+  {
+    seed = 8400;
+    let s = mk(DOM.KINGDOM_ALLIES, { ally: 'plateau_shepherds' }, ['A', 'B', 'C']);
+    clr(s);
+    s.trash = ['estate'];                       // リッチ($6)より安い札は1枚だけ
+    s.players[1].deck = ['lich']; s.players[2].deck = ['lich'];
+    s.players[0].hand = ['barbarian']; s.turn.actions = 1;
+    s = reduce(s, { type: 'PLAY_ACTION', player: 0, card: 'barbarian' });
+    let step = 0, stuck = false, nullAct = false;
+    while (s.pending && step++ < 60) {
+      const before = JSON.stringify(s);
+      const a = CPU.decide(s);
+      if (a == null) { nullAct = true; break; }
+      s = reduce(s, a);
+      if (JSON.stringify(s) === before) { stuck = true; break; }
+    }
+    ok(!nullAct, 'リッチ×蛮族：CPU が null を返さない');
+    ok(!stuck, 'リッチ×蛮族：engine拒否×CPU提案の livelock が起きない');
+    ok(!s.pending, 'リッチ×蛮族：候補ゼロの窓が閉じる（残 pending=' + (s.pending && s.pending.type) + '）');
+    // 受理側の終端保証（旧スナップショットの復元でここに来ても閉じられる）
+    let s2 = mk(NOLIA, {}, ['A', 'B']);
+    s2.trash = [];
+    s2.pending = { type: 'lich_gain', player: 0 };
+    s2 = reduce(s2, { type: 'LICH_GAIN', player: 0, card: null });
+    ok(!s2.pending, 'LICH_GAIN は候補ゼロなら card:null を受理して窓を閉じる');
+  }
+
+  /* [medium] 航海2枚＋リッチ＝1枚目の追加ターンは飛ぶが、**2枚目は成立する**
+     （公式 2023 Errata の Trivia 逐語＝飛ばしたターンは行われていないので、まだ2連続していない）。
+     旗1つの boolean で持つとこの公式例が再現できない＝予約を「残り数」で持つ。 */
+  {
+    seed = 8401;
+    let s = clr(mk(NOLIA, {}, ['A', 'B']));
+    s.players[0].voyageExtra = 2; s.players[0].skipTurns = 1;
+    s = endTurn(s, 0);
+    ok(s.turn.active === 0 && s.turn.voyageTurn === true, '航海2枚＋リッチ：2枚目の航海の追加ターンが成立する');
+    ok(s.turn.chain === 2, '航海2枚＋リッチ：連続手番は2（3連続にはならない）');
+    ok((s.players[0].voyageExtra | 0) === 0, '航海の予約は使い切る');
+    // 1枚だけなら飛んで終わり（予約は後の通常ターンへ持ち越さない＝A4 の [medium] 6 の維持）
+    seed = 8402;
+    let s2 = clr(mk(NOLIA, {}, ['A', 'B']));
+    s2.players[0].voyageExtra = 1; s2.players[0].skipTurns = 1;
+    s2 = endTurn(s2, 0);
+    ok(s2.turn.active === 1, '航海1枚＋リッチ：追加ターンは飛んで通常進行');
+    ok((s2.players[0].voyageExtra | 0) === 0, '使い切れなかった航海の予約は捨てる（持ち越さない）');
+  }
+
+  /* [medium] 相手のターンがリッチで飛んでも**連続手番は切れない**（飛ばしたターンは「行われていない」）。
+     ここを 1 にリセットすると、航海が本来できない3連続ターンを許してしまう。 */
+  {
+    seed = 8403;
+    let s = clr(mk(NOLIA, {}, ['A', 'B']));
+    s.players[1].skipTurns = 1;
+    s = endTurn(s, 0);
+    ok(s.turn.active === 0, 'B が飛んで A の番に戻る');
+    ok(s.turn.chain === 2, '飛ばされたターンは連続を切らない（A の2連続目）');
+    s.players[0].voyageExtra = 1;
+    s = endTurn(s, 0);
+    ok(s.turn.active === 1, '3ターン目になる航海は発生しない');
+    ok(s.log.some((l) => l.indexOf('3ターン連続にはできない') >= 0), '「3ターン連続にはできない」ログが出る');
+  }
+
+  /* [low] 島民(Island Folk)と航海が同時に成立するときは**どちらを取るか選べる**（公式）。
+     航海のターンには「手札から3枚まで」の制限が付くので、好意5を払って島民を選ぶのが得な局面がある。 */
+  {
+    seed = 8404;
+    const K = ['bauble'].concat(NOLIA).slice(0, 10);
+    let s = clr(mk(K, { ally: 'island_folk' }, ['A', 'B']));
+    s.players[0].favors = 5; s.players[0].voyageExtra = 1;
+    s = endTurn(s, 0);
+    ok(s.pending && s.pending.type === 'ally_island_folk', '航海が立っていても島民の窓が開く');
+    s = reduce(s, { type: 'ALLY_SIMPLE', player: 0, ok: true });
+    ok(s.turn.active === 0 && s.turn.voyageTurn !== true, '島民を選ぶと3枚制限の無い追加ターンになる');
+    ok((s.players[0].voyageExtra | 0) === 0 && (s.players[0].favors | 0) === 0, '航海の予約は捨て、好意5を払う');
+    seed = 8405;
+    let s2 = clr(mk(K, { ally: 'island_folk' }, ['A', 'B']));
+    s2.players[0].favors = 5; s2.players[0].voyageExtra = 1;
+    s2 = endTurn(s2, 0);
+    s2 = reduce(s2, { type: 'ALLY_SIMPLE', player: 0, ok: false });
+    ok(s2.turn.active === 0 && s2.turn.voyageTurn === true, '島民を断れば航海の追加ターンになる');
+  }
+
+  /* [low] 航海の追加ターンのログが移動動物園の「今を生きる」を名乗っていた（航海も seizeTurn を立てるため）。 */
+  {
+    seed = 8406;
+    let s = clr(mk(NOLIA, {}, ['A', 'B']));
+    s.players[0].voyageExtra = 1;
+    s = endTurn(s, 0);
+    const last = s.log[s.log.length - 1];
+    ok(last.indexOf('航海') >= 0 && last.indexOf('今を生きる') < 0, '航海の追加ターンは「航海」と表示する（実際: ' + last + '）');
+  }
+
+  /* [low] 混合山（城／同盟の分割山）から獲得したときのログが、**獲得後の**一番上を名乗っていた
+     （gain が一番上を抜いた後に名前を引いていた）。城は2人戦で各1枚＝**出荷済みの帝国で毎回**ズレる。 */
+  {
+    const KM = ['wizards', 'townsfolk', 'village', 'smithy', 'market', 'moat', 'cellar', 'laboratory', 'festival', 'workshop'];
+    seed = 8407;
+    let s = clr(mk(KM, { ally: 'plateau_shepherds' }, ['A', 'B']));
+    s.players[0].hand = ['conjurer']; s.turn.actions = 1;
+    s = reduce(s, { type: 'PLAY_ACTION', player: 0, card: 'conjurer' });
+    s = reduce(s, { type: 'CONJURER_GAIN', player: 0, card: 'townsfolk' });
+    ok(count(s.players[0].discard, 'town_crier') === 1, '分割山から獲得したのは一番上（触れ役）');
+    ok((s.log.filter((x) => x.indexOf('霊術師で') >= 0).pop() || '').indexOf('触れ役') >= 0, 'ログも触れ役を名乗る');
+    seed = 8408;
+    let s2 = clr(mk(['castles'].concat(KM).slice(0, 10), { ally: 'plateau_shepherds' }, ['A', 'B']));
+    s2.players[0].hand = ['conjurer']; s2.turn.actions = 1;
+    s2 = reduce(s2, { type: 'PLAY_ACTION', player: 0, card: 'conjurer' });
+    s2 = reduce(s2, { type: 'CONJURER_GAIN', player: 0, card: 'castles' });
+    ok(count(s2.players[0].discard, 'humble_castle') === 1, '城の混合山から獲得したのは一番上（粗末な城）');
+    ok((s2.log.filter((x) => x.indexOf('霊術師で') >= 0).pop() || '').indexOf('粗末な城') >= 0, '城のログも粗末な城を名乗る（出荷済み帝国の表示バグ）');
+  }
+}
+
+console.log('=== A5: 出荷セット（allies / random-allies）の CPU ソーク ===');
+{
+  let games = 0, bad = 0;
+  const LV = ['easy', 'normal', 'hard'];
+  ['allies', 'random-allies'].forEach((setId) => {
+    for (let np = 2; np <= 4; np += 1) {
+      for (let sd = 0; sd < 3; sd += 1) {
+        seed = 8100 + np * 13 + sd;
+        const names = []; for (let k = 0; k < np; k++) names.push({ name: 'P' + k, isCpu: true, level: LV[(sd + k) % 3] });
+        let s = E.createInitialState(names, DOM.kingdomForSet(setId), { startActive: 0 });
+        const t0 = tally(s);
+        let step = 0, err = false;
+        try {
+          while (!s.gameOver && step++ < 25000) {
+            const a = CPU.decide(s);
+            if (a == null) { console.log('    ' + setId + '/' + np + '/' + sd + ': CPU が null（' + (s.pending && s.pending.type) + '）'); err = true; break; }
+            const before = JSON.stringify(s);
+            s = reduce(s, a);
+            if (JSON.stringify(s) === before) { console.log('    ' + setId + '/' + np + '/' + sd + ': engine が拒否（' + JSON.stringify(a) + '）'); err = true; break; }
+          }
+        } catch (e) { console.log('    ' + setId + '/' + np + '/' + sd + ': 例外 ' + e.message); err = true; }
+        if (!err && !s.gameOver) { console.log('    ' + setId + '/' + np + '/' + sd + ': 未終局（膠着）'); err = true; }
+        const d = tdiff(t0, tally(s));
+        if (d.length) { console.log('    ' + setId + '/' + np + '/' + sd + ': 保存則 ' + d.slice(0, 5).join(' ')); err = true; }
+        if (err) bad += 1; else games += 1;
+      }
+    }
+  });
+  ok(bad === 0 && games === 18, '出荷セット CPUソーク完走（' + games + '/18・膠着0・例外0・engine拒否0・保存則違反0）');
+
+  /* mix-all に同盟が参加した＝**他拡張と同居する経路**が新しく開いた。
+     （帝国の資料庫・支配が混ざりうるので、上の tally が `p.archives` / `possession*` を数えていないと偽陽性で赤くなる） */
+  let mixBad = 0, mixGames = 0;
+  ['mix:allies,empires', 'mix:allies,alchemy', 'mix:allies,darkages', 'mix:allies,nocturne,menagerie'].forEach((setId, i) => {
+    seed = 8300 + i;
+    const names = [{ name: 'P0', isCpu: true, level: 'hard' }, { name: 'P1', isCpu: true, level: 'normal' }];
+    let s = E.createInitialState(names, DOM.kingdomForSet(setId), { startActive: 0 });
+    const t0 = tally(s);
+    let step = 0, err = false;
+    try {
+      while (!s.gameOver && step++ < 25000) {
+        const a = CPU.decide(s);
+        if (a == null) { console.log('    ' + setId + ': CPU が null（' + (s.pending && s.pending.type) + '）'); err = true; break; }
+        s = reduce(s, a);
+      }
+    } catch (e) { console.log('    ' + setId + ': 例外 ' + e.message); err = true; }
+    if (!err && !s.gameOver) { console.log('    ' + setId + ': 未終局（膠着）'); err = true; }
+    const d = tdiff(t0, tally(s));
+    if (d.length) { console.log('    ' + setId + ': 保存則 ' + d.slice(0, 5).join(' ')); err = true; }
+    if (err) mixBad += 1; else mixGames += 1;
+  });
+  ok(mixBad === 0 && mixGames === 4, 'mix-all に同盟を混ぜた4戦も完走（他拡張のゾーンまで数える tally の回帰）');
 }
 
 console.log('\n========================================');

@@ -1233,6 +1233,16 @@
         // 同盟：好意(Favor)＝同盟カードがあるゲームだけ表示（財源/村人とは別枠・使い道は同盟カードが定める）。
         usesFavors(state)
           ? h('div', { class: 'badge favors', style: 'background:#7a5c2e' }, h('div', { class: 'v' }, active.favors || 0), h('div', { class: 'k' }, '好意'))
+          : null,
+        /* 同盟：リッチ＝「1ターンスキップする」。**公開情報**なのに表示が無いと、自分の手番が飛んでから
+           ログで気づくことになる（次に取ろうとするターンが飛ぶ）。 */
+        (active.skipTurns || 0) > 0
+          ? h('div', { class: 'badge skipturns', style: 'background:#5a4a6e' }, h('div', { class: 'v' }, active.skipTurns), h('div', { class: 'k' }, 'スキップ'))
+          : null,
+        /* 同盟：航海の追加ターンは**手札から3枚まで**しか使えない。engine は `canPlayHandCard` で弾くが、
+           理由が画面に出ていないと「押しても何も起きない」ように見える（残り枚数を出す）。 */
+        t.voyageTurn
+          ? h('div', { class: 'badge voyage', style: 'background:#2e5c7a' }, h('div', { class: 'v' }, Math.max(0, 3 - (t.handPlays || 0))), h('div', { class: 'k' }, '航海'))
           : null)
     );
 
@@ -2607,8 +2617,12 @@
     }
     if (pd.type === 'ally_inventors') {
       const targets = DOM.engine.favorPileTargets(state);
+      /* トークンは「山」に置く＝**分割山はプレースホルダ（山の名前）のまま出すのが正しい**。
+         一番上の実カードに描き替えると「その1種だけ安くなる」と誤解させる（実際は4種すべてが安くなる）。
+         盤面の山は一番上の実カードを描くので、食い違って見えないよう説明文で補う。 */
       return modalPickIds('発明家の家族 — 好意を山に置く',
-        '好意1 を 勝利点でないサプライの山1つに置けます（その山のカードは全員に $1 安くなります・戻ってきません）。',
+        '好意1 を 勝利点でないサプライの山1つに置けます（その山のカードは全員に $1 安くなります・戻ってきません）。'
+        + '分割山（町民・卜占官など）に置くと、その山の4種すべてが安くなります。',
         targets, (id) => dispatch({ type: 'ALLY_INVENTORS', pile: id }), '置く',
         { label: '置かない', on: () => dispatch({ type: 'ALLY_INVENTORS', pile: null }) }, state);
     }
@@ -2888,8 +2902,13 @@
     }
     if (pd.type === 'specialist_choose') {
       const nm = ((DOM.CARDS[pd.card] || {}).name || pd.card);
+      /* 「同じカード1枚を獲得する」は**サプライからのみ**＝闇市場で買った札・非サプライ札・山が空のときは獲得できない。
+         公式は「遂行できない選択肢も選べる」（§0-21 の探索と同じ）ので選択肢は消さず、
+         押しても何も起きないことを**ラベルで明示**して事故（もう一度使う権利を無駄にする）を防ぐ。 */
+      const canCopy = DOM.engine.gainableBase(state, pd.card) || !!DOM.engine.mixedPileWithTop(state, pd.card);
       return modalChoice(pd, '専門家', 'SPECIALIST_CHOOSE',
-        [{ k: 'again', label: '「' + nm + '」をもう一度使う' }, { k: 'copy', label: '「' + nm + '」1枚を獲得する' }]);
+        [{ k: 'again', label: '「' + nm + '」をもう一度使う' },
+          { k: 'copy', label: '「' + nm + '」1枚を獲得する' + (canCopy ? '' : '（サプライに山が無いので獲得できません）') }]);
     }
     if (pd.type === 'elder_play') {
       return modalPlayCardEvent(state, p, '長老 — アクションを使う',
@@ -2911,8 +2930,12 @@
         DOM.engine.modifyCanGain(state, pd), (id) => dispatch({ type: 'MODIFY_GAIN', card: id }));
     }
     if (pd.type === 'lich_gain') {
+      /* 候補ゼロで開くことがある（1回の蛮族で2人以上がリッチを廃棄し、先の1人が廃棄置き場の安い札を取り切った）。
+         獲得は「可能なら強制」なので、そのときだけ閉じるボタンを出す（engine 側にも終端保証がある）。 */
+      const lichCands = DOM.engine.lichTrashTargets(state);
       return modalPickIds('リッチ — 廃棄置き場から獲得', 'リッチよりコストの低いカード1枚を廃棄置き場から獲得します。',
-        DOM.engine.lichTrashTargets(state), (id) => dispatch({ type: 'LICH_GAIN', card: id }), '獲得する');
+        lichCands, (id) => dispatch({ type: 'LICH_GAIN', card: id }), '獲得する',
+        lichCands.length ? null : { label: '獲得できるカードがない（閉じる）', on: () => dispatch({ type: 'LICH_GAIN', card: null }) });
     }
     if (pd.type === 'miller_pick') {
       return modalPickIds('粉屋 — 手札に加える', '山札の上から見た ' + pd.cards.length + '枚 から1枚を手札に加えます（残りは捨てます）。',
