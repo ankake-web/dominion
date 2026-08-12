@@ -29,6 +29,18 @@
   const SPLIT_BOTTOM = {}; Object.keys(SPLIT_TOP).forEach((b) => { SPLIT_BOTTOM[SPLIT_TOP[b]] = b; }); // 上段id → 下段id
   // その id（下段）が「まだ上段が残っていて獲得/購入できない」か。
   function splitLocked(state, id) { return !!(SPLIT_TOP[id] && (state.supply[SPLIT_TOP[id]] || 0) > 0); }
+  /* 同盟：分割山6組（卜占官/衝突/城砦/叙事詩/町民/魔法使い）＝4種×4枚＝16枚。**帝国の2段 SPLIT_PILES とは別物**で、
+     混合山（castles/knights）と同じく state[pileId] に実カードid配列を持ち、一番上の1枚だけ購入/獲得できる。
+     ALLIES_PILE_OF: 中身のカードid → その山id（'sorceress' → 'augurs'）。 */
+  const ALLIES_SPLIT = DOM.ALLIES_SPLIT_PILES || {};
+  const ALLIES_PILE_IDS = Object.keys(ALLIES_SPLIT);
+  const ALLIES_PILE_OF = {};
+  ALLIES_PILE_IDS.forEach((pileId) => { ALLIES_SPLIT[pileId].forEach((cid) => { ALLIES_PILE_OF[cid] = pileId; }); });
+  // 王国に連携(Liaison)カードがあるか＝同盟(Ally)カードと好意を使うゲームか。**分割山は中身4種まで見る**（生徒）。
+  function alliesHasLiaison(kingdom) {
+    const LI = DOM.ALLIES_LIAISONS || [];
+    return (kingdom || []).some((id) => LI.indexOf(id) >= 0 || (ALLIES_SPLIT[id] || []).some((c) => LI.indexOf(c) >= 0));
+  }
   // 冒険：トラベラーの成長系列（このカードを場から捨てる時、次の成長先と交換してよい）。champion/teacher は終端（次が無い）。
   const TRAVELLER_NEXT = { page: 'treasure_hunter', treasure_hunter: 'warrior', warrior: 'hero', hero: 'champion',
                            peasant: 'soldier', soldier: 'fugitive', fugitive: 'disciple', disciple: 'teacher' };
@@ -767,6 +779,12 @@
         vpTokens: 0,       // 繁栄：勝利点トークンの累計（司教・記念碑・収集・投資。公開・終了時に加算）
         coffers: 0,        // ギルド：財源（Coffers）トークン。購入フェイズに1枚=+1コインで使える。公開・VPには数えない。
         villagers: 0,      // ルネサンス：村人（Villagers）トークン。アクションフェイズに1個=+1アクションで使える。公開・VPには数えない（財源と同型・別枠）。
+        favors: 0,         // 同盟：好意（Favor）トークン。**財源/村人とは完全に別枠**。公開・VPには数えない・上限なし。
+                           //   与えるのは連携(Liaison)カードだけ＋開始時1個（輸入者があるゲームは5個）。
+                           //   使い道は「そのゲームの同盟(Ally)カードが定める1通りだけ」＝state.ally を見る。
+        favorShuffle: 0,   // 同盟：占星術師団/メイソン団の常設方針＝「1回のシャッフルに使う好意の上限」（0=使わない）。
+                           //   シャッフルは効果解決の途中で同期的に起きて対話を挟めない（星図/へそくりと同じ難所）ので、
+                           //   **何個使うかだけ本人が決め、どの札を選ぶかはエンジンが最善を自動選択する**（§0-29 の許容簡略化）。
         projects: [],      // ルネサンス：このプレイヤーが買ったプロジェクトid列（キューブ＝各自2個まで＝最大2つ・同じものは1回だけ）。公開。
         cargo: [],         // ルネサンス：貨物船の脇置き（**表向き＝公開**。次の手番開始時に手札へ。allCards/保存則tally に数える）。
         sinisterPlot: 0,   // ルネサンス：悪巧み（プロジェクト）に置いた自分のトークン数（非カード・公開・VP無関係）。
@@ -821,6 +839,24 @@
     if (kingdom.includes('young_witch')) {
       baneCard = pickBane(kingdom);
       if (baneCard) kingdom.push(baneCard);
+    }
+    /* 同盟：王国に連携(Liaison)カードが1枚でもあれば、同盟(Ally)カード23枚から**1枚だけ**無作為に決め、
+       全員に好意マット（＝p.favors）を配る。開始時の好意は1個、**輸入者があるゲームは5個**
+       （輸入者の `準備：各プレイヤーは +4 好意 を得る。`）。連携が1枚も無ければ Ally も好意も一切登場しない。
+       ⚠ 連携は**分割山の中にも居る**（生徒＝魔法使いの山）。kingdom は山ID（'wizards'）を持つので、
+         山IDだけを見る判定では取りこぼして「Ally が出ないゲーム」になる＝中身4種まで走査すること。
+       ※Ally は横型の合計2枚制限（イベント/ランドマーク/プロジェクト/習性）には数えない＝別デッキ。
+       ※若き魔女の災いカード(Bane)と同じく createInitialState で1回だけ決める＝サーバ権威・再戦も自動で安全。 */
+    let ally = null;
+    if (alliesHasLiaison(kingdom)) {
+      const pool = DOM.ALLIES_ALLY || [];
+      ally = (opts.ally && DOM.LANDSCAPES[opts.ally] && DOM.LANDSCAPES[opts.ally].kind === 'ally')
+        ? opts.ally
+        : (pool.length ? pool[Math.floor(Math.random() * pool.length)] : null);
+      if (ally) {
+        const start = kingdom.includes('importer') ? 5 : 1;
+        players.forEach((pl) => { pl.favors = start; });
+      }
     }
     // プロモ/帝国：分割山＝1つの山枠（上段5＋下段5）。上段/下段どちらかが王国にあれば両方をサプライに
     // 置く（emptyPileCount では1山として数える）。抽選は上段に正規化済み（DOM.randomKingdom）だが、
@@ -945,6 +981,8 @@
       knights,  // 暗黒時代：騎士の混合山（実カードid配列。無ければ null）。supply.knights と長さ同期。
       castles,  // 帝国：城の混合山（実カードid配列・昇順。無ければ null）。supply.castles と長さ同期。
       baneCard, // 収穫祭：若き魔女の災いカード（無ければ null）
+      ally,     // 同盟：このゲームの同盟(Ally)カードid（王国に連携が無ければ null）。**公開・対局中不変**。
+                //   好意(p.favors)の使い道はこの1枚が定める＝Ally が null なら好意は登場しない。
       trash,    // 廃棄置き場（夜想曲：ネクロマンサーがあればゾンビ3枚が最初から入っている）
       trashFaceDown: {}, // 夜想曲：ネクロマンサーで裏返した廃棄置き場のカード（id→枚数。ターン終了で全解除）
       blackMarket, // 闇市場デッキ（無ければ null）

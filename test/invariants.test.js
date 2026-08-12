@@ -72,6 +72,11 @@ function runGame(kingdom, players, landmarks, events, projects, ways) {
       const seen = new Set([].concat(bo.deck, bo.discard, bo.druid || []));
       s.players.forEach((p) => { (p.boonsInFront || []).forEach((b) => seen.add(b)); (p.boonsHeld || []).forEach((b) => seen.add(b)); });
       ((s.turn && s.turn.boonChoice && s.turn.boonChoice.boons) || []).forEach((b) => seen.add(b));
+      /* ⚠ **解決待ちの列 state.boonQueue も数える**（2026-08-12 に取りこぼしが判明）。
+         祝福は「複数を順に受ける」ので pending を直接立てず boonQueue に積み、reduce 末尾の再開網が1件ずつ解決する。
+         再演（山砦/玉座の間）が絡むと **pending が null のまま列に祝福が残ったまま reduce が終わる**ことがあり、
+         この検査点（`if (s.pending) continue;` の直後）で「消えた」と誤検知していた。祝福自体は次の reduce で解決される。 */
+      ((s.boonQueue) || []).forEach((e) => { if (e && e.boon) seen.add(e.boon); });
       if (seen.size !== 12) return { okp: false, why: '祝福が消えた step' + step + ' 種類数=' + seen.size };
       // 「山＋捨て札＋ドルイドの脇」には同じ祝福が2枚あってはいけない（複製の検出。集合の大きさでは捕まらない）。
       const own = [].concat(bo.deck, bo.discard, bo.druid || []);
