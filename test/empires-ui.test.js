@@ -75,6 +75,36 @@ try {
     showAs(s, 0);
     ok(!runtimeError && byText('.pname', DOM.CARDS.bustling_village.name) != null, '上段が尽きると下段（騒がしい村）が見える');
   }
+  {
+    /* 【敵対レビュー回帰】混合山は**盤面だけでなく拡大シートと獲得モーダルも**一番上の実カードを見せる。
+       プレースホルダを描くと「城 $3」と表示して実際には「王城 $10」を買う、という食い違いになる
+       （dispatch は山キーのまま＝engine が一番上を配る）。 */
+    const s = mk(); s.turn.phase = 'buy'; s.turn.coins = 12; s.turn.buys = 1;
+    s.castles = ['kings_castle', 'kings_castle']; s.supply.castles = 2;
+    showAs(s, 0);
+    const pile = $all('.pile').find((e) => e.getAttribute('data-pile') === 'castles');
+    ok(pile != null, '前提：城の山が盤面にある');
+    pile.click();
+    ok(!runtimeError && $('.zoom-name') && $('.zoom-name').textContent === DOM.CARDS.kings_castle.name,
+      '城の山をタップすると拡大シートは一番上の実カード（王城）を見せる');
+    ok(byText('.sheet .btn', '購入する') != null, '購入ボタンは出る（dispatch は山キーのまま）');
+    ok(byText('.zoom-remain', 'サプライ残り 2 枚') != null, '混合山でも残枚数は山キーの残数を出す（消えない）');
+    UI.sheet = null;
+    // 獲得モーダル（工房型）のチップも一番上の実カード
+    const s2 = mk();
+    s2.castles = ['kings_castle', 'kings_castle']; s2.supply.castles = 2;
+    s2.pending = { type: 'workshop', player: 0 };
+    showAs(s2, 0);
+    ok(!runtimeError, '獲得モーダルが例外なく描ける');
+    ok(byText('.pick-supply .cname', DOM.CARDS.kings_castle.name) == null ||
+       byText('.pick-supply .cname', DOM.CARDS.castles.name) == null,
+      '獲得モーダルのチップにプレースホルダ（城）は出ない（一番上$10は$4以下ではないので候補外）');
+    const s3 = mk();
+    s3.pending = { type: 'workshop', player: 0 };
+    showAs(s3, 0);
+    ok(byText('.pick-supply .cname', DOM.CARDS.humble_castle.name) != null,
+      '$4以下なら獲得モーダルのチップは一番上の実カード（粗末な城）を見せる');
+  }
 
   console.log('=== 各 pending のモーダル描画（帝国セットの全カード） ===');
   // 大君主（命令）

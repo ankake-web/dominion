@@ -207,6 +207,15 @@ function isNoConsentUndoableBuy(room, seat) {
   if (JSON.stringify(cur.boons || null) !== JSON.stringify(prev.boons || null)) return false;
   if (JSON.stringify(cur.hexes || null) !== JSON.stringify(prev.hexes || null)) return false;
   if ((cur.lostInTheWoods == null ? -1 : cur.lostInTheWoods) !== (prev.lostInTheWoods == null ? -1 : prev.lostInTheWoods)) return false;
+  /* 【実バグ修正】暗黒時代：廃墟/騎士の山は maskStateFor が**一番上の1枚だけ**公開している。
+     買うと次の1枚が配信される＝「見てから無料で戻す」ができてしまうので、伏せ札の山が動いていたら
+     同意なしにはしない（従来どおり承認制へ落とす）。
+     ※城と同盟の分割山6組は**全公開**なので比較しない（比較すると買うたびに承認制になり UX だけ落ちる）。
+     ※`splitRotated`（同盟の循環で2段分割山の上下が入れ替わる）も「購入で動きうる非プレイヤー状態」として比較する。 */
+  for (const k of (E.HIDDEN_MIXED_PILE_KEYS || ['ruins', 'knights'])) {
+    if (JSON.stringify(cur[k] || null) !== JSON.stringify(prev[k] || null)) return false;
+  }
+  if (JSON.stringify(cur.splitRotated || null) !== JSON.stringify(prev.splitRotated || null)) return false;
   const NOCTURNE_STATE = ['deluded', 'envious', 'misery', 'boonsInFront', 'boonsHeld', 'riverDraws', 'guardianActive', 'houndsAside'];
   for (let i = 0; i < cur.players.length; i++) {
     if (i === seat) {

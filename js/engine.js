@@ -27,8 +27,16 @@
   // 分割山（Split pile）：下段は上段が尽きるまで購入/獲得できない。正本は DOM.SPLIT_PILES（下段id→上段id）。
   const SPLIT_TOP = DOM.SPLIT_PILES || {};              // 下段id → 上段id（例 avanto→sauna）
   const SPLIT_BOTTOM = {}; Object.keys(SPLIT_TOP).forEach((b) => { SPLIT_BOTTOM[SPLIT_TOP[b]] = b; }); // 上段id → 下段id
-  // その id（下段）が「まだ上段が残っていて獲得/購入できない」か。
-  function splitLocked(state, id) { return !!(SPLIT_TOP[id] && (state.supply[SPLIT_TOP[id]] || 0) > 0); }
+  /* その id が「まだ山の一番上に出ていなくて獲得/購入できない」か。
+     通常は下段が上段の下に隠れている。**同盟の循環(Rotate)で上下が入れ替わった山**（`state.splitRotated`）では
+     逆に上段が隠れる（戦闘計画は「任意のサプライ山」を回せる＝サウナ/アヴァントや帝国の5組も対象）。 */
+  function splitLocked(state, id) {
+    const rot = (state && state.splitRotated) || {};
+    const top = SPLIT_TOP[id];
+    if (top) return !rot[top] && (state.supply[top] || 0) > 0;                            // 下段
+    if (SPLIT_BOTTOM[id]) return !!rot[id] && (state.supply[SPLIT_BOTTOM[id]] || 0) > 0;  // 上段（回転中のみ隠れる）
+    return false;
+  }
   /* 同盟：分割山6組（卜占官/衝突/城砦/叙事詩/町民/魔法使い）＝4種×4枚＝16枚。**帝国の2段 SPLIT_PILES とは別物**で、
      混合山（castles/knights）と同じく state[pileId] に実カードid配列を持ち、一番上の1枚だけ購入/獲得できる。
      ALLIES_PILE_OF: 中身のカードid → その山id（'sorceress' → 'augurs'）。 */
@@ -36,6 +44,87 @@
   const ALLIES_PILE_IDS = Object.keys(ALLIES_SPLIT);
   const ALLIES_PILE_OF = {};
   ALLIES_PILE_IDS.forEach((pileId) => { ALLIES_SPLIT[pileId].forEach((cid) => { ALLIES_PILE_OF[cid] = pileId; }); });
+  /* 混合山（＝順序つきの実カードid配列 `state[山キー]` で管理する山）の**唯一の正本**。
+     暗黒時代の廃墟/騎士・帝国の城・同盟の分割山6組がこれ。**ここに足せば**
+       gain の isMixed／trashFromSupplyPile／returnToPile／availableInSupply／exileFromSupply／
+       cardCost／populatePiles／封鎖(BLOCKADE_GAIN)／追放候補(exilableSupplyIds)
+     が一斉に対応する。※同盟の前は ['ruins','knights','castles'] が7箇所にリテラルで散らばっていた。
+     - 一番上の1枚だけ購入/獲得/廃棄できる（`state[k][0]`）。`supply[k]` は残数（配列長と同期）。
+     - 「山のコスト・種別」は**プレースホルダのカード（＝randomizer＝最安カード）**が持ち、
+       「買うときのコスト」は**今の一番上**（cardCost が解決する）。この2つを混同しないこと。 */
+  const MIXED_PILE_KEYS = ['ruins', 'knights', 'castles'].concat(ALLIES_PILE_IDS);
+  const MIXED_PILE_SET = new Set(MIXED_PILE_KEYS);
+  /* 混合山の「中身」＝単体では山を持たないカード（廃墟5／騎士10／城8／同盟の分割山24）。
+     **名指しで購入できない**（山の一番上でのみ買える）／**闇市場デッキに入れない**（$0で単体入手できてしまう）。 */
+  const MIXED_PILE_CONTENTS = new Set([].concat(
+    (DOM.POOLS && DOM.POOLS.knights) || [], (DOM.POOLS && DOM.POOLS.ruins) || [],
+    (DOM.POOLS && DOM.POOLS.castles) || [], (DOM.POOLS && DOM.POOLS.allies_split) || []));
+  /* 混合山のうち**中身と順序が秘密**の山＝無作為に積む廃墟と騎士だけ（maskStateFor が一番上以外を伏せる）。
+     城は昇順で決定的、同盟の分割山6組は公式に「いつでも全部見てよい」＝どちらも全公開なのでここに入れない。
+     ※サーバの「相手の同意なしで1手もどす」も この集合を見る（買うと次の1枚が見えてしまう山＝
+       見てから無料で戻せると不正になるため、承認制へ落とす）。 */
+  const HIDDEN_MIXED_PILE_KEYS = ['ruins', 'knights'];
+  function isMixedPileKey(id) { return MIXED_PILE_SET.has(id); }
+  // その混合山の「一番上の実カードid」（山が無い/空なら null）。
+  function mixedTopCard(state, pileId) {
+    return (isMixedPileKey(pileId) && Array.isArray(state[pileId]) && state[pileId].length) ? state[pileId][0] : null;
+  }
+  // その id が「今どこかの混合山の一番上にある実カード」なら、その山キーを返す（無ければ null）。
+  function mixedPileWithTop(state, id) {
+    return MIXED_PILE_KEYS.find((k) => Array.isArray(state[k]) && state[k][0] === id) || null;
+  }
+  /* ===== 同盟：循環(Rotate) =====
+     公式逐語＝`Rotating a pile means taking the top card, and all copies of it directly under it,
+     and putting them on the bottom.` ＝**一番上のカードと、その直下に連続する同名のカードだけ**を
+     まとめて山の一番下へ移す。**離れた位置にある同名は動かさない**（交換(Swap)や大使で順序が乱れた山の規定）。
+     - **常に任意**（`You may rotate ...`）。**空の山・中身が1種類だけの山を回しても合法**（何も起きないだけ）。
+       ＝選択肢ゼロの pending で詰ませない／拒否もしない。
+     - **戦闘計画(Battle Plan) だけが「任意のサプライ山」を回せる**（騎士/廃墟/城/サウナも対象）。
+       他5枚（触れ役/薬草集め/古地図/天幕/生徒）は自分の山を名指し＝サプライ外でも回せる。
+     - 帝国/プロモの2段分割山（上段5＋下段5）は supply キーが2つで配列を持たないので、
+       `state.splitRotated[上段id]` の真偽で「上下が入れ替わっている」ことを表す（splitLocked が見る）。
+     戻り値＝実際に山の順序が変わったか（ログ用。false でも「回した」こと自体は合法）。 */
+  function rotatePile(state, pileId) {
+    if (!pileId) return false;
+    const arr = state[pileId];
+    if (Array.isArray(arr)) {                       // 混合山（廃墟/騎士/城/同盟の6山）
+      if (arr.length === 0) return false;           // 空の山＝動かすカードが無い
+      const top = arr[0];
+      let n = 1;
+      while (n < arr.length && arr[n] === top) n += 1;
+      if (n >= arr.length) return false;            // 全部が同名＝下へ回しても見た目が変わらない
+      const block = arr.splice(0, n);
+      for (let i = 0; i < block.length; i += 1) arr.push(block[i]);
+      return true;
+    }
+    // 2段分割山＝上段idで1山（下段を指定されたら上段に正規化）。片方が尽きていれば全部同名＝不変。
+    const topId = SPLIT_TOP[pileId] || (SPLIT_BOTTOM[pileId] ? pileId : null);
+    if (!topId) return false;                       // 普通の山＝中身が全部同名＝不変
+    const bottomId = SPLIT_BOTTOM[topId];
+    if ((state.supply[topId] || 0) <= 0 || (state.supply[bottomId] || 0) <= 0) return false;
+    state.splitRotated = state.splitRotated || {};
+    state.splitRotated[topId] = !state.splitRotated[topId];
+    return true;
+  }
+  /* 戦闘計画(Battle Plan)＝**任意のサプライ山**を回せる（公式逐語：騎士・廃墟・城・サウナ/アヴァントも含む）。
+     - 返すのは**山キー**（2段分割山は上段キーに正規化＝1山1エントリ）。
+     - **サプライ山限定**（wiki 逐語：`As Battle Plan can only rotate Supply piles, it cannot rotate the Ferryman's pile`）
+       ＝賞品/戦利品/馬/トラベラー成長先/精霊 などの非サプライ山は返さない。
+     - **普通の山も空の山も合法な選択肢**として返す（回しても何も起きないだけ＝公式FAQ
+       `Many piles won't do anything meaningful if you do this`）。残枚数で絞らない。
+     ※他5枚（触れ役/薬草集め/古地図/天幕/生徒）は自分の山を**名指し**するのでこの述語を使わない
+       （名指しならサプライ外の山でも回せる＝Ferryman）。 */
+  function rotatableSupplyPiles(state) {
+    const out = [];
+    Object.keys(state.supply || {}).forEach((id) => {
+      if (NON_SUPPLY.has(id)) return;
+      if (SPLIT_TOP[id]) return;                       // 2段分割山の下段は上段キーで1山
+      if (!C()[id]) return;
+      out.push(id);
+    });
+    if (Array.isArray(state.ruins)) out.push('ruins'); // 廃墟は supply キーを持たない混合山
+    return out;
+  }
   // 王国に連携(Liaison)カードがあるか＝同盟(Ally)カードと好意を使うゲームか。**分割山は中身4種まで見る**（生徒）。
   function alliesHasLiaison(kingdom) {
     const LI = DOM.ALLIES_LIAISONS || [];
@@ -152,6 +241,9 @@
     if (state.supply && state.supply[cardId] != null) return cardId;
     if (DOM.POOLS && (DOM.POOLS.castles || []).indexOf(cardId) >= 0) return 'castles';
     if (DOM.POOLS && (DOM.POOLS.knights || []).indexOf(cardId) >= 0) return 'knights';
+    // 同盟：分割山の中身24種 → その山キー（'sorceress' → 'augurs'）。山を名指しする効果は**その山の4種すべて**に効く
+    //   （公式逐語＝冒険の山トークンを叙事詩の山に置くと財宝の沈没した宝物でも +$1）。
+    if (ALLIES_PILE_OF[cardId]) return ALLIES_PILE_OF[cardId];
     return cardId;
   }
   // ランドマーク上のリザーブ landmarkVP[id] から per 個をプレイヤーの vpTokens へ移す（残りが per 未満なら残り全部）。移した個数を返す。
@@ -169,12 +261,11 @@
 
   // このターンのコスト軽減（「橋」など）を反映した実コスト
   function cardCost(state, id) {
-    // 混合山（騎士/城）は「山の一番上の実カード」のコストで判断する（騎士＝Sir Martinだけ$4／城＝一番上の最安城）。
-    let base = (id === 'knights' && Array.isArray(state.knights) && state.knights.length)
-      ? ((C()[state.knights[0]] && C()[state.knights[0]].cost) || 0)
-      : (id === 'castles' && Array.isArray(state.castles) && state.castles.length)
-        ? ((C()[state.castles[0]] && C()[state.castles[0]].cost) || 0)
-        : ((C()[id] && C()[id].cost) || 0);
+    /* 混合山（騎士/城/同盟の分割山6組）は「山の一番上の実カード」のコストで判断する
+       （騎士＝Sir Martinだけ$4／城＝一番上の最安城／同盟＝循環や購入で $3→$4→$5→$6 と動く）。
+       ※これは**買うときのコスト**。「山のコスト・種別」を参照する効果はプレースホルダ（randomizer）を見る。 */
+    const mixTop = mixedTopCard(state, id);
+    let base = mixTop ? ((C()[mixTop] && C()[mixTop].cost) || 0) : ((C()[id] && C()[id].cost) || 0);
     const t = state.turn;
     const active = t ? state.players[t.active] : null;
     /* ===== 移動動物園：コストが動くカード3枚（コスト欄に * が付く）=====
@@ -311,6 +402,11 @@
     const p = state.players[pIndex];
     removeOne(p.hand, card);
     p.inPlay.push(card);
+    /* 冒険：山トークン＝「**その山のカード**を使ったとき」のボーナス＝**財宝でも乗る**（公式）。
+       同盟の分割山の逐語＝`The token can be put on the Odyssey pile, and then Sunken Treasure will also
+       make +[$1] when played.`（帝国の分割山も同型＝石／鹵獲品／大金が該当）。
+       ※PLAY_ACTION 側と同じく「効果解決より前」に適用する。炉(kiln)で中断しても取りこぼさないよう先頭に置く。 */
+    applyPileTokens(state, pIndex, card);
     // ルネサンス：資本主義で「財宝になったアクション」を購入フェイズに出した場合＝**アクションの効果を全て解決する**
     //   （アタックは発動しリアクション窓も開く／持続は場に残る）。アクション権は消費しない。
     //   「コインだけ加算」は必ず壊れる（公式）＝applyEffect を通す。
@@ -342,6 +438,10 @@
     // 冒険：相続＝自分のターン中は屋敷もアクションとして使える（`applyEffect` の case 'estate' が脇札に委譲する）。
     const isAct = DOM.isType(card, 'action') || inheritedEstate(p, card);
     if (isAct) state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1; // 共謀者などの「このターンに使ったアクション数」
+    /* 冒険：山トークン＝「その山のカードを**使った**とき」＝この経路（苦労/進軍/博打/遅延・刈り入れの
+       ターン開始時の使用）も「カードの使用」なのでボーナスが乗る。PLAY_ACTION／playTreasureCard と同じく
+       効果解決より前に適用する。相続の屋敷は「脇に置いたカードの山」のトークンを見る（公式）。 */
+    applyPileTokens(state, pi, inheritedEstate(p, card) ? p.inherited[0] : card);
     log(state, `${p.name} は${note}「${C()[card].name}」を使った。`);
     if (isAct) {
       const useWay = isUsableWay(state, way) ? way : null;
@@ -653,6 +753,9 @@
     // プロモ/帝国：分割山＝10枚（上段5枚＋下段5枚）＝各5枚に上書き。下段は上段が尽きるまで購入/獲得できない（gain/canBuyCard がガード）。
     //   上段idが王国にあれば上下とも各5枚に（下段は createInitialState の相互補完で既に王国に居る）。
     Object.keys(SPLIT_BOTTOM).forEach((top) => { if (kingdom.includes(top)) { supply[top] = 5; supply[SPLIT_BOTTOM[top]] = 5; } });
+    /* 同盟：分割山6組＝**4種×4枚＝16枚（人数によらず常に16枚）**。城のような人数別調整は無い。
+       中身の並び（実カードid配列）は createInitialState が state[山キー] に作る＝ここは残数だけ。 */
+    ALLIES_PILE_IDS.forEach((k) => { if (kingdom.includes(k)) supply[k] = 4 * (ALLIES_SPLIT[k] || []).length; });
     // 錬金術：王国にポーション費用カードがあれば、ポーション山（公式は16枚）を共通サプライに加える。
     if (kingdom.some((k) => C()[k] && C()[k].potion)) supply.potion = 16;
     // 繁栄：王国に繁栄の王国カードがあれば、プラチナ貨（12枚）と植民地（勝利点と同枚数）を共通サプライに加える。
@@ -886,6 +989,18 @@
       (DOM.POOLS.castles || []).forEach((id) => { castles.push(id); if (dbl && DBL.has(id)) castles.push(id); }); // 昇順維持・重複は隣接
       supply.castles = castles.length; // 山キーの残数を実配列に同期（8 or 12）
     }
+    /* 同盟：分割山6組＝4種×4枚＝16枚を**コストの安い順**（最安が一番上）に積む。人数によらず常に16枚。
+       公式逐語＝`The cards start the game in order by cost.`（卜占官＝薬草集め4枚 → 侍祭4枚 → 女魔導士4枚 → 巫女4枚）。
+       循環(Rotate)・交換(Swap)・大使で順序が乱れることが公式に想定されている（`that's fine.`）。
+       state[山キー] は**全公開**（`You can look through the cards in a split pile at any time`）＝maskStateFor で伏せない。 */
+    const alliesPiles = {};
+    ALLIES_PILE_IDS.forEach((pileId) => {
+      if (!kingdom.includes(pileId)) return;
+      const arr = [];
+      (ALLIES_SPLIT[pileId] || []).forEach((cid) => { for (let n = 0; n < 4; n += 1) arr.push(cid); });
+      alliesPiles[pileId] = arr;
+      supply[pileId] = arr.length;
+    });
 
     // 闇市場(Black Market)デッキ：使用中のサプライに無い王国カードを1枚ずつ集めてシャッフル。
     // 闇市場が王国に含まれるときだけ用意する。
@@ -895,13 +1010,17 @@
       const inSupply = (id) => Object.prototype.hasOwnProperty.call(supply, id);
       // 混合山の「中身」（騎士/廃墟/城の実カード）は単体の王国カードではない＝闇市場デッキに入れない（山の一番上でのみ得る）。
       //   同盟の分割山6組の中身24種も同じ（4種×4枚の山の一番上でのみ購入/獲得できる）。
-      const mixedContents = new Set([].concat(DOM.POOLS.knights || [], DOM.POOLS.ruins || [], DOM.POOLS.castles || [],
-        DOM.POOLS.allies_split || []));
+      const mixedContents = MIXED_PILE_CONTENTS;
       // 段階1（カタログと画像だけで効果が未実装）のプールは闇市場デッキに入れない
       //   ＝買っても何も起きない死に札になるため。実プレイ化（段階2）のときに DOM.STAGE1_POOLS から外す。
       const stage1 = new Set([].concat.apply([], (DOM.STAGE1_POOLS || []).map((k) => DOM.POOLS[k] || [])));
       // 収穫祭：賞品(NON_SUPPLY)は王国カードではない＝闇市場デッキに絶対に入れない（$0で買える不正防止）。
-      blackMarket = shuffle(universe.filter((id) => DOM.CARDS[id] && id !== 'black_market' && !NON_SUPPLY.has(id) && !inSupply(id) && !mixedContents.has(id) && !stage1.has(id)));
+      /* 【実バグ修正】混合山の**山キー**（'knights'/'castles' と同盟の6山）は「実在する1枚のカード」ではなく
+         山を表すプレースホルダ＝闇市場デッキに入れてはいけない（買うと存在しないカードが捨て札に湧き、
+         終局後の deckCards にも出る）。中身(mixedContents)だけ塞いでいたので山キーが漏れていた。
+         MIXED_PILE_KEYS が正本なので、新しい混合山を足しても自動で塞がる。 */
+      blackMarket = shuffle(universe.filter((id) => DOM.CARDS[id] && id !== 'black_market' && !NON_SUPPLY.has(id) &&
+        !inSupply(id) && !mixedContents.has(id) && !isMixedPileKey(id) && !stage1.has(id)));
     }
 
     // 帝国：横型ランドスケープ（ランドマーク）の準備。opts.landmarks で受け取る（DOM.LANDSCAPES にある id のみ）。
@@ -972,11 +1091,12 @@
     //   廃棄置き場は既に保存則 tally の対象なので、総カード枚数が3枚増える。
     const trash = kingdom.includes('necromancer') ? ZOMBIES.slice() : [];
 
-    return {
+    return Object.assign({
       version: 0,
       kingdom,
       players,
       supply,
+      splitRotated: {}, // 同盟：循環(Rotate)で上下が入れ替わった2段分割山 {上段id:true}（非カード・公開）。混合山は配列そのものが回る。
       ruins,    // 暗黒時代：廃墟の混合山（実カードid配列。無ければ null）。supply.ruins と長さ同期。
       knights,  // 暗黒時代：騎士の混合山（実カードid配列。無ければ null）。supply.knights と長さ同期。
       castles,  // 帝国：城の混合山（実カードid配列・昇順。無ければ null）。supply.castles と長さ同期。
@@ -1007,7 +1127,7 @@
       log: [`ゲーム開始。${players[startActive].name} の番です。`],
       gameOver: false,
       result: null,
-    };
+    }, alliesPiles); // 同盟：state.augurs / state.wizards … （混合山と同型のトップレベル配列）
   }
 
   /* ---------- ログ ---------- */
@@ -1157,10 +1277,10 @@
   const GAIN_TO_HAND = new Set(['den_of_sin', 'ghost_town', 'guardian', 'night_watchman']);
   // サプライから pIndex が dest('discard'|'hand'|'deck'|'setAside') にカードを獲得
   function gain(state, pIndex, cardId, dest) {
-    // 暗黒時代：混合山（廃墟/騎士）は state[cardId]（実カード配列）の在庫で判定・供給する。
-    //   'ruins'/'knights' を山の先頭の実カードid（'survivors'/'sir_martin'等）へ解決して獲得する。
-    //   騎士は supply.knights（数値・王国枠）も同期させる。廃墟は supply キーを持たない（state.ruins のみ）。
-    const isMixed = (cardId === 'ruins' || cardId === 'knights' || cardId === 'castles');
+    // 混合山（廃墟/騎士/城/同盟の分割山6組）は state[cardId]（実カード配列）の在庫で判定・供給する。
+    //   山キーを先頭の実カードid（'survivors'/'sir_martin'/'herb_gatherer'等）へ解決して獲得する。
+    //   supply[山キー]（数値・王国枠）も同期させる。廃墟だけは supply キーを持たない（state.ruins のみ）。
+    const isMixed = isMixedPileKey(cardId);
     if (isMixed) {
       if (!Array.isArray(state[cardId]) || state[cardId].length === 0) return false;
     } else {
@@ -1274,7 +1394,7 @@
   //   廃棄トリガー（墓標/司祭/下水道/城塞などの on-trash）は trashCard 経由で通常どおり発火するが、
   //   **支配中でも退避しない**（fromSupply）。戻り値＝実際に廃棄した実カードid（できなければ null）。
   function trashFromSupplyPile(state, pi, pileId) {
-    const isMixed = (pileId === 'ruins' || pileId === 'knights' || pileId === 'castles');
+    const isMixed = isMixedPileKey(pileId);
     if (isMixed) {
       if (!Array.isArray(state[pileId]) || state[pileId].length === 0) return null;
       const real = state[pileId].shift();
@@ -1291,7 +1411,7 @@
   //   サプライに存在しない札（闇市場デッキ由来）は戻せない＝呼び出し側が窓を開かないこと（gate と同じ述語）。
   function returnToPile(state, cardId) {
     const pile = pileKeyOf(state, cardId);
-    if (pile === 'ruins' || pile === 'knights' || pile === 'castles') {
+    if (isMixedPileKey(pile)) {
       if (!Array.isArray(state[pile])) return false;
       state[pile].unshift(cardId);
       if (state.supply[pile] != null) state.supply[pile] = state[pile].length;
@@ -1300,6 +1420,13 @@
     if (!Object.prototype.hasOwnProperty.call(state.supply, cardId)) return false;
     state.supply[cardId] += 1;
     return true;
+  }
+  // そのカードを「元の山へ戻せる」か（returnToPile と同じ述語＝交易商人/取り替え子のゲートが使う）。
+  //   混合山の中身は山キーが在ればよい（家宝/ゾンビ/闇市場デッキ由来の札は山が無いので戻せない）。
+  function canReturnToPile(state, cardId) {
+    const pile = pileKeyOf(state, cardId);
+    if (isMixedPileKey(pile)) return Array.isArray(state[pile]);
+    return Object.prototype.hasOwnProperty.call(state.supply, cardId);
   }
   /* ===== 移動動物園：追放（Exile）=====
      追放マット `p.exile` は**公開**・所有者のカード（allCards に入る＝庭園/得点に数える）。
@@ -1312,14 +1439,12 @@
   //   分割山の下段は上段が残る間は「サプライにない」／混合山（廃墟/騎士/城）は一番上の実カードだけ。
   function availableInSupply(state, id) {
     if ((state.supply[id] || 0) > 0) return !splitLocked(state, id);
-    const mixKey = ['ruins', 'knights', 'castles'].find((k) => Array.isArray(state[k]) && state[k][0] === id);
-    return !!mixKey && (state[mixKey] || []).length > 0;
+    return !!mixedPileWithTop(state, id);
   }
   // サプライの山から1枚取って追放マットへ置く（獲得ではない）。置けたら true。
   function exileFromSupply(state, pi, cardId) {
     if (!availableInSupply(state, cardId)) return false;
-    const mixKey = ((state.supply[cardId] || 0) > 0) ? null
-      : ['ruins', 'knights', 'castles'].find((k) => Array.isArray(state[k]) && state[k][0] === cardId);
+    const mixKey = ((state.supply[cardId] || 0) > 0) ? null : mixedPileWithTop(state, cardId);
     if (mixKey) { state[mixKey].shift(); if (state.supply[mixKey] != null) state.supply[mixKey] = state[mixKey].length; }
     else state.supply[cardId] -= 1;
     const p = state.players[pi];
@@ -1388,7 +1513,6 @@
   // 「サプライから追放できる」候補（＝各山の一番上）。engine拒否・CPU候補・UIフィルタが同じ関数を見る。
   //   非サプライ山（馬/賞品/戦利品/トラベラー成長先）は「サプライにある」ではない＝対象外。
   //   ロック中の分割山の下段も対象外（availableInSupply）。混合山は一番上の実カードだけを候補に足す。
-  const MIXED_PILE_KEYS = ['ruins', 'knights', 'castles'];
   function exilableSupplyIds(state) {
     const out = [];
     Object.keys(state.supply).forEach((id) => {
@@ -1430,6 +1554,9 @@
   function canBuyCard(state, pi, id) {
     if (id === 'grand_market' && state.players[pi].inPlay.includes('copper')) return false;
     if (id === 'ruins') return false; // 暗黒時代：廃墟は購入できない（略奪者アタック/獲得でのみ配られる）
+    // 混合山の中身（廃墟/騎士/城/同盟の分割山の各カード）は名指しで購入できない＝山キーで一番上だけ買える。
+    //   ※そのカード自身が独立した山として置かれている場合（fuzz の全プール混成など）は普通に買える。
+    if (MIXED_PILE_CONTENTS.has(id) && state.supply[id] == null) return false;
     if (NON_SUPPLY.has(id)) return false; // 収穫祭：賞品は購入できない（馬上槍試合でのみ獲得）
     if (splitLocked(state, id)) return false; // 分割山：下段は上段が尽きるまで購入できない
     /* 夜想曲：錯乱(Deluded)を返したターンは**アクションカードを購入できない**（獲得はできる／
@@ -2111,7 +2238,11 @@
   function actionSupplyPiles(state) {
     return Object.keys(state.supply).filter((id) =>
       state.supply[id] != null && !NON_SUPPLY.has(id) && C()[id] && DOM.isType(id, 'action') &&
-      id !== 'knights' && !SPLIT_TOP[id] && !splitLocked(state, id));
+      id !== 'knights' && !SPLIT_TOP[id]);
+    /* ※ここで `!splitLocked` を見てはいけない。トークンを置けるかは「**山**がアクションのサプライ山か」の話で、
+         「今その id を獲得できるか」ではない。循環(Rotate)で2段分割山の上下が入れ替わっている間も
+         山は同じ1つの山＝トークンは置ける（山の種別は randomizer 固定）。
+         `!SPLIT_TOP[id]` だけで上段キー1エントリに正規化できている。 */
   }
   function validTeacherPiles(state, pi) {
     const p = state.players[pi];
@@ -3371,7 +3502,7 @@
     return Object.keys(state.supply).filter((id) =>
       (state.supply[id] || 0) > 0 && !NON_SUPPLY.has(id) && C()[id] &&
       DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && !DOM.isType(id, 'command') &&
-      costIsPlainCoin(id) && cardCost(state, id) <= 4 && id !== 'knights' && // 騎士の混合山は対象外（applyEffect未定義。船長×騎士は出荷セットで同居しないが将来の混成に備え除外）
+      costIsPlainCoin(id) && cardCost(state, id) <= 4 && !isMixedPileKey(id) && // 混合山（騎士/城/同盟の分割山）の山キーは対象外（プレースホルダ＝applyEffect が無く無効果の死に選択肢になる）
       !splitLocked(state, id));
   }
   function anyCaptainTarget(state) { return captainTargets(state).length > 0; }
@@ -3382,7 +3513,7 @@
     return Object.keys(state.supply).filter((id) =>
       (state.supply[id] || 0) > 0 && !NON_SUPPLY.has(id) && C()[id] &&
       DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && !DOM.isType(id, 'command') &&
-      costIsPlainCoin(id) && cardCost(state, id) <= 5 && id !== 'knights' &&
+      costIsPlainCoin(id) && cardCost(state, id) <= 5 && !isMixedPileKey(id) && // 混合山の山キーは対象外（プレースホルダ＝無効果）
       !splitLocked(state, id));
   }
   function anyOverlordTarget(state) { return overlordTargets(state).length > 0; }
@@ -3394,7 +3525,7 @@
     return Object.keys(state.supply).filter((id) =>
       (state.supply[id] || 0) > 0 && !NON_SUPPLY.has(id) && C()[id] &&
       DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && !DOM.isType(id, 'command') &&
-      costIsPlainCoin(id) && cardCost(state, id) < mx && id !== 'knights' && // 騎士の混合山は対象外（applyEffect未定義＝無効果の死に選択肢になる。持続除外と同じ簡略化）
+      costIsPlainCoin(id) && cardCost(state, id) < mx && !isMixedPileKey(id) && // 混合山の山キーは対象外（プレースホルダ＝applyEffect が無く無効果の死に選択肢になる）
       !splitLocked(state, id));
   }
 
@@ -6031,6 +6162,8 @@
     if ((DOM.POOLS.ruins || []).indexOf(cardId) >= 0) return Array.isArray(state.ruins) && state.ruins.length === 0;
     if ((DOM.POOLS.knights || []).indexOf(cardId) >= 0) return (state.supply.knights || 0) <= 0;
     if ((DOM.POOLS.castles || []).indexOf(cardId) >= 0) return (state.supply.castles || 0) <= 0;
+    // 同盟：分割山の中身24種も個別の supply キーを持たない＝**16枚すべてが無くなって初めて空**（山キーで判定）。
+    if (ALLIES_PILE_OF[cardId] && state.supply[cardId] == null) return (state.supply[ALLIES_PILE_OF[cardId]] || 0) <= 0;
     if (!Object.prototype.hasOwnProperty.call(state.supply, cardId)) return false; // サプライに無い＝対象外
     if (SPLIT_TOP[cardId]) return (state.supply[cardId] || 0) <= 0 && (state.supply[SPLIT_TOP[cardId]] || 0) <= 0; // 分割山下段
     if (SPLIT_BOTTOM[cardId]) return (state.supply[cardId] || 0) <= 0 && (state.supply[SPLIT_BOTTOM[cardId]] || 0) <= 0; // 分割山上段
@@ -6057,10 +6190,16 @@
       const cs = Object.keys(names).filter((c) => DOM.isType(c, 'action')).map((c) => names[c]).sort((a, b) => b - a);
       vp += 3 * (cs.length >= 2 ? cs[1] : 0);
     }
-    // オベリスク：選ばれた山＝分割山なら「両半分」を同一山として数える（settlers⇔bustling_village 等）。
+    /* オベリスク：「その山から出たカード」＝分割山なら**その山の全種**を同一山として数える
+       （帝国の2段は両半分＝settlers⇔bustling_village／同盟の分割山は4種すべて）。
+       数え落とすと勝者が変わり得るので、山→中身の写像は1箇所（obeliskNames）に集約する。 */
     if (has('obelisk') && state.obeliskPile) {
-      const op = state.obeliskPile, sib = SPLIT_BOTTOM[op] || SPLIT_TOP[op];
-      vp += 2 * cnt((c) => c === op || (sib && c === sib));
+      const op = state.obeliskPile;
+      const obeliskNames = new Set([op]);
+      if (SPLIT_BOTTOM[op]) obeliskNames.add(SPLIT_BOTTOM[op]);
+      if (SPLIT_TOP[op]) obeliskNames.add(SPLIT_TOP[op]);
+      (ALLIES_SPLIT[op] || []).forEach((c) => obeliskNames.add(c));
+      vp += 2 * cnt((c) => obeliskNames.has(c));
     }
     if (has('tower')) cards.forEach((c) => { if (!DOM.isType(c, 'victory') && isFromEmptySupplyPile(state, c)) vp += 1; });
     if (has('keep')) {
@@ -6815,9 +6954,13 @@
       }
       // 汚された神殿：アクションを獲得→その山から1VPを汚された神殿へ移す。購入フェイズ中に呪いを獲得→神殿上の全VPを受け取る。
       if (hasLandmark(state, 'defiled_shrine')) {
-        if (DOM.isType(cardId, 'action') && (state.pileVP[cardId] || 0) > 0) {
-          state.pileVP[cardId] -= 1; state.landmarkStash.defiled_shrine = (state.landmarkStash.defiled_shrine || 0) + 1;
-          log(state, `${gp.name} の獲得で ${C()[cardId].name}の山から勝利点1個が汚された神殿へ移った（計${state.landmarkStash.defiled_shrine}個）。`);
+        /* 【実バグ修正】山上VPは**山キー**に載っている＝獲得した実カードidで引くと取れない。
+           分割山の下段（帝国：騒がしい村/石/大金…）と同盟の分割山の2枚目以降は、
+           VPが山の上に置かれたまま永久に孤児化していた（徴税で踏んだのと同型＝§0-20）。 */
+        const shrinePile = pileKeyOf(state, cardId);
+        if (DOM.isType(cardId, 'action') && (state.pileVP[shrinePile] || 0) > 0) {
+          state.pileVP[shrinePile] -= 1; state.landmarkStash.defiled_shrine = (state.landmarkStash.defiled_shrine || 0) + 1;
+          log(state, `${gp.name} の獲得で ${C()[shrinePile].name}の山から勝利点1個が汚された神殿へ移った（計${state.landmarkStash.defiled_shrine}個）。`);
         }
         if (cardId === 'curse' && pIndex === active && inBuy) {
           const got = state.landmarkStash.defiled_shrine || 0;
@@ -7332,10 +7475,10 @@
      - 「戻す山が無いカード」は交換できない（闇市場で買った札／家宝／ゾンビ）。
      戻り値＝交換できたか。 */
   function exchangeCard(state, pi, fromId, toId, zone) {
-    if (state.supply[fromId] == null) return false;   // 戻す山が無い＝交換できない
-    if ((state.supply[toId] || 0) <= 0) return false; // 交換先の山が空
+    if (!canReturnToPile(state, fromId)) return false; // 戻す山が無い＝交換できない
+    if ((state.supply[toId] || 0) <= 0) return false;  // 交換先の山が空
     if (zone && !removeOne(zone, fromId)) return false;
-    state.supply[fromId] += 1;
+    returnToPile(state, fromId);                       // 混合山（騎士/城/同盟の分割山）は一番上に載せる
     state.supply[toId] -= 1;
     state.players[pi].discard.push(toId);             // 交換で得たカードは**どこから交換しても捨て札へ**
     log(state, `${state.players[pi].name} は「${C()[fromId].name}」を「${C()[toId].name}」と交換した。`);
@@ -7348,7 +7491,8 @@
   function changelingCanExchange(state, pi, cardId, dest) {
     if ((state.supply.changeling || 0) <= 0) return false;
     if (cardId === 'changeling') return false;
-    if (state.supply[cardId] == null) return false; // 山を持たない（家宝/ゾンビ/闇市場由来）＝戻せない
+    if (!canReturnToPile(state, cardId)) return false; // 山を持たない（家宝/ゾンビ/闇市場由来）＝戻せない
+    //   ※混合山（騎士/城/同盟の分割山）の中身は山キーで戻せる＝交換できる（公式：その山の一番上に載る）
     if (cardCost(state, cardId) < 3) return false;
     const z = zoneOf(state.players[pi], dest);
     return !!z && z.indexOf(cardId) >= 0;           // 獲得先にまだあること（stop-moving）
@@ -8082,18 +8226,28 @@
       if ((state.supply[id] || 0) <= 0) return;
       if (SPLIT_TOP[id]) return;                       // 分割山の下段は独立した山ではない（上段キーで1山）
       if (MIXED_PILE_KEYS.indexOf(id) >= 0) return;    // 混合山は下で扱う
+      if (splitLocked(state, id)) return;              // 循環で上下が入れ替わった山の上段は今は取れない
       if (!C()[id] || !DOM.isType(id, 'action')) return;
       out.push(id);
     });
-    // 分割山：上段が尽きて下段だけ残っている山も「アクションの山」（上段がアクションなら）＝下段を獲得する。
+    // 分割山：今 獲得できる側が下段（上段が尽きた／循環で入れ替わった）なら下段キーで数える。種別は上段＝randomizer で判定。
     Object.keys(SPLIT_TOP).forEach((bottom) => {
       const top = SPLIT_TOP[bottom];
       if (!C()[top] || !DOM.isType(top, 'action')) return;
-      if ((state.supply[top] || 0) > 0) return;        // 上段が残っていれば上のループで拾っている
-      if ((state.supply[bottom] || 0) > 0) out.push(bottom);
+      if (!splitLocked(state, top) && (state.supply[top] || 0) > 0) return; // 上のループで拾っている
+      if (!splitLocked(state, bottom) && (state.supply[bottom] || 0) > 0) out.push(bottom);
     });
+    /* 混合山：山の**種別**（＝プレースホルダ／randomizer）がアクションの山だけが対象。
+       廃墟だけはカタログにプレースホルダを持たない（supply キーも無い）ので明示的に足す。
+       騎士＝アクション○／城＝勝利点×／同盟の6山＝randomizer が全部アクション○（叙事詩に勝利点が
+       入っていても「勝利点の山」ではない＝公式の Family of Inventors 逐語と同じ考え方）。 */
     if (Array.isArray(state.ruins) && state.ruins.length) out.push('ruins');
-    if (Array.isArray(state.knights) && state.knights.length) out.push('knights');
+    MIXED_PILE_KEYS.forEach((k) => {
+      if (k === 'ruins') return;
+      if (!Array.isArray(state[k]) || !state[k].length) return;
+      if (!C()[k] || !DOM.isType(k, 'action')) return;
+      out.push(k);
+    });
     return out;
   }
   // コスト$N以下の獲得候補（負債/ポーション費用は除外＝成分ごと比較の公式ルール）。
@@ -8112,7 +8266,9 @@
     return Object.keys(state.supply).filter((id) =>
       (state.supply[id] || 0) > 0 && !NON_SUPPLY.has(id) && C()[id] &&
       DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && !DOM.isType(id, 'command') &&
-      costIsPlainCoin(id) && cardCost(state, id) <= 4 && id !== 'knights' && !splitLocked(state, id));
+      costIsPlainCoin(id) && cardCost(state, id) <= 4 && !isMixedPileKey(id) && !splitLocked(state, id));
+    // ※混合山（騎士/城/同盟の分割山6組）の山キーは**実在する1枚のカードではない**＝脇に置くと
+    //   supply だけ減って実カード配列が減らず、カードが1枚湧く（保存則違反）。プレースホルダは常に除外する。
   }
   function banquetCanGain(state, cid) {
     return costUpTo(state, cid, 5) && !DOM.isType(cid, 'victory');
@@ -10275,6 +10431,11 @@
         if (t.noBuyCards) return state; // 冒険：使節団の追加ターン＝カードは購入できない（闇市場の購入も「購入」）
         const card = action.card;
         if (pd.revealed.indexOf(card) < 0) return state;
+        /* 混合山のプレースホルダ（山キー）と中身は闇市場では買えない＝**実在する1枚のカードではない**。
+           デッキ構築側（createInitialState）でも除外しているが、**v63 以前に始まってオンラインで永続化された
+           対局を復元すると、既にデッキへ入ってしまっている**ので受理側にも同じガードを置く
+           （§0-17 の `pending.self` と同型＝旧スナップショットの互換は受理側で守る）。 */
+        if (isMixedPileKey(card) || MIXED_PILE_CONTENTS.has(card)) return state;
         /* 夜想曲：錯乱を**返した後**なら闇市場でもアクションカードは買えない（公式）。
            まだ返していない＝アクションフェイズで闇市場を使うぶんには普通に買える（`t.cantBuyActions` が立っていない）。 */
         if (t.cantBuyActions && pd.player === t.active && DOM.isType(card, 'action')) return state;
@@ -11533,9 +11694,8 @@
         if (!pd || pd.type !== 'blockade' || pd.stage !== 'gain') return state;
         const card = action.card;
         if (card == null || !costUpTo(state, card, 4)) return state;
-        // 混合山（騎士/城）は「一番上の実カード」を獲得する＝封鎖が見張るのもその実カード。
-        const isMixedPile = (card === 'ruins' || card === 'knights' || card === 'castles');
-        const realId = isMixedPile ? (state[card] || [])[0] : card;
+        // 混合山（騎士/城/同盟の分割山）は「一番上の実カード」を獲得する＝封鎖が見張るのもその実カード。
+        const realId = isMixedPileKey(card) ? (state[card] || [])[0] : card;
         if (!realId) return state;
         // **必ず gain() を通す**（混合山の shift・負債の付与・分割山ガード・獲得トリガー・支配の振り分けが一括で効く）。
         if (!gain(state, pd.player, card, 'setAside')) return state;
@@ -15426,9 +15586,14 @@
     });
     // 闇市場デッキは伏せ札。中身は誰にも見えないよう枚数だけ残す（公開された3枚は pending.revealed 側に出る）。
     if (Array.isArray(s.blackMarket)) s.blackMarket = new Array(s.blackMarket.length).fill('back');
-    // 暗黒時代：混合山（廃墟/騎士）は一番上の1枚だけ公開情報。残りは裏向き（枚数のみ見せる）。
-    if (Array.isArray(s.ruins)) s.ruins = s.ruins.map((c, i) => (i === 0 ? c : 'back'));
-    if (Array.isArray(s.knights)) s.knights = s.knights.map((c, i) => (i === 0 ? c : 'back'));
+    /* 混合山のうち**中身が秘密**の山（暗黒時代の廃墟/騎士＝無作為に積むので順序が情報になる）は
+       一番上の1枚だけ公開情報。残りは裏向き（枚数のみ見せる）。
+       ※城（昇順で決定的）と同盟の分割山6組は**全公開**が公式（`You can look through the cards in a split pile
+         at any time, without changing the order.`）＝ここで伏せてはいけない。
+       集合は HIDDEN_MIXED_PILE_KEYS が正本（サーバの「同意なしの1手もどす」もこれを見る）。 */
+    HIDDEN_MIXED_PILE_KEYS.forEach((k) => {
+      if (Array.isArray(s[k])) s[k] = s[k].map((c, i) => (i === 0 ? c : 'back'));
+    });
     /* 夜想曲：祝福/呪詛の山は**中身も順序も完全に秘密**（枚数だけ見せる）。捨て札は**一番上の1枚だけ**が
        公開情報＝それ以外を見てはいけない（日本語wiki 逐語）。順序が漏れると残りの祝福/呪詛が全部読めてしまう。
        ドルイドの脇3枚は表向き＝公開。 */
@@ -15682,6 +15847,17 @@
     exorcistSpirits,   // 悪魔祓い＝廃棄したカードより安い精霊の候補（**非サプライなので costUnder では取れない**）
     necromancerTargets, // ネクロマンサー＝廃棄置き場の「表向き・持続でない」アクションの位置（engine/CPU/UI 共通）
     changelingCanExchange, // 取り替え子＝この獲得を取り替え子と交換できるか（engine/CPU/UI 共通）
+    // 同盟：分割山6組（混合山モデル）と循環(Rotate)。engine/CPU/UI/テストが同じ正本を見る。
+    splitLocked,       // その id が「まだ山の一番上に出ていない」か（2段分割山＋循環）。CPU/UI はこれを見る
+    MIXED_PILE_KEYS,   // 混合山の山キー一覧（廃墟/騎士/城＋同盟の6山）＝**この配列が唯一の正本**
+    HIDDEN_MIXED_PILE_KEYS, // そのうち中身が秘密の山（廃墟/騎士）＝マスクとオンラインUndoの同意判定が見る
+    isMixedPileKey,    // その id が混合山の山キーか
+    pileKeyOf,         // カードid → その山キー（分割山の中身 → 山／山を名指しする効果は4種すべてに効く）
+    mixedTopCard,      // その混合山の一番上の実カードid（無ければ null）＝CPU/UI の表示・コスト評価はこれを見る
+    rotatePile,        // 循環＝先頭からの「連続」同名ブロックを末尾へ（空の山・1種類だけの山でも合法＝無効果）
+    rotatableSupplyPiles, // 戦闘計画＝「任意のサプライ山」を回す候補（engine拒否・CPU候補・UIフィルタが共有）
+    trashFromSupplyPile,  // サプライの山から1枚を廃棄（塩まき/待ち伏せ/剣闘士）。混合山は一番上の実カードを抜く
+    returnToPile,         // 獲得しかけたカードを山へ戻す（交易商人）。混合山は一番上に載せる
     improveTargets,    // ルネサンス：増築の廃棄対象（engine/CPU/UI が同じ候補を参照）
     isTreasureFor,     // ルネサンス：資本主義を含む「今この状態で財宝か」＝**財宝判定の正本**（engine/CPU/UI が同じ述語）
     capitalismTreasures, // ルネサンス：資本主義で財宝になるアクションの集合（整合性テストで固定する）

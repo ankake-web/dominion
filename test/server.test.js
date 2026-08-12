@@ -289,6 +289,25 @@ function mkClient(url) {
         await h1.waitFor((m) => m.t === 'undoDone', 2000);
         ok(rooms.get(h1j.code).state.supply.curse === curseBefore, '承認後は呪いも元に戻る');
       }
+      /* 対照【敵対レビュー回帰】：**伏せ札の混合山**（暗黒時代の廃墟/騎士）を買うと次の1枚が配信される
+         ＝「見てから無料で戻す」ができてしまうので承認制へ落とす。
+         ※城・同盟の分割山6組は全公開なので、こちらは従来どおり同意なしで戻せる（比較対象に入れない）。 */
+      {
+        const rm6 = rooms.get(h1j.code);
+        rm6.state.turn.phase = 'buy'; rm6.state.turn.coins = 8; rm6.state.turn.buys = 1;
+        rm6.state.knights = ['dame_molly', 'sir_martin', 'dame_anna', 'sir_bailey'];
+        rm6.state.supply.knights = 4;
+        h1.send({ t: 'action', action: { type: 'BUY', card: 'knights' } });
+        const kb = await h1.waitFor((m) => m.t === 'state' && m.state.supply.knights === 3, 2000);
+        ok(!!kb, '前提：騎士の山を購入できた');
+        ok(kb.undoFree === false, '伏せ札の山（騎士）を買った直後は undoFree=false（次の1枚を見てから戻せない）');
+        h1.send({ t: 'undo' });
+        const ask4 = await g1.waitFor((m) => m.t === 'undoAsk', 2000);
+        ok(!!ask4, '伏せ札の山の購入はきちんと承認を求める');
+        g1.send({ t: 'undoVote', ok: true });
+        await h1.waitFor((m) => m.t === 'undoDone', 2000);
+        ok(rooms.get(h1j.code).state.supply.knights === 4, '承認後は騎士の山も元に戻る');
+      }
       // 対照：購入以外（フェイズ移行）は同意なしにはならず、従来どおり承認制になる
       {
         const rm4 = rooms.get(h1j.code);

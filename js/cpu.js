@@ -112,9 +112,13 @@
     'will_o_wisp', 'imp', 'ghost', 'wish', 'bat',
     'cursed_gold', 'goat', 'haunted_mirror', 'lucky_coin', 'magic_lamp', 'pasture', 'pouch',
     'zombie_apprentice', 'zombie_mason', 'zombie_spy']);
-  // 新プロモ：サウナ/アヴァント分割山＝上のサウナが残る間はアヴァントを獲得できない
-  // （engine の gain/canBuyCard 拒否と必ずセット＝提案すると強制獲得と噛み合い無限ループ）。
-  function splitBlocked(state, id) { const top = (DOM.SPLIT_PILES || {})[id]; return !!(top && sup(state, top) > 0); }
+  // 新プロモ/帝国：2段分割山＝上段が残る間は下段を獲得できない（同盟の循環で上下が入れ替わることもある）。
+  // **述語は engine の splitLocked が正本**（engine の gain/canBuyCard 拒否と必ず一致させる
+  //  ＝提案すると強制獲得と噛み合って無限ループする）。
+  function splitBlocked(state, id) {
+    if (DOM.engine && DOM.engine.splitLocked) return DOM.engine.splitLocked(state, id);
+    const top = (DOM.SPLIT_PILES || {})[id]; return !!(top && sup(state, top) > 0);
+  }
 
   /* ---------- mix-all 硬化：獲得の述語は **engine の正本をそのまま呼ぶ** ----------
      engine が拒否する札を CPU が提案し続けると pending が閉じず無限ループ（本番 livelock）になる。
@@ -649,11 +653,10 @@
     else if (p.misery >= 2) vp -= 4;
     return vp;
   }
-  // 混合山（暗黒時代=騎士／帝国=城）を買うと実際に手に入るのは「一番上の実カード」。それ以外は id のまま。
+  // 混合山（暗黒時代=騎士/廃墟／帝国=城／同盟=分割山6組）を買うと実際に手に入るのは「一番上の実カード」。
+  //   それ以外は id のまま。**述語は engine の mixedTopCard が正本**（山を足すたびに CPU 側が漏れるのを防ぐ）。
   function mixedTop(state, id) {
-    if (id === 'castles' && Array.isArray(state.castles) && state.castles.length) return state.castles[0];
-    if (id === 'knights' && Array.isArray(state.knights) && state.knights.length) return state.knights[0];
-    return id;
+    return ((DOM.engine && DOM.engine.mixedTopCard) ? DOM.engine.mixedTopCard(state, id) : null) || id;
   }
   function buyEndsGame(state, id) {
     const after = (k) => (state.supply[k] || 0) - (k === id ? 1 : 0);

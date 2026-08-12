@@ -22,7 +22,9 @@ function count(arr, id) { return (arr || []).filter((c) => c === id).length; }
 const KING = ['engineer', 'city_quarter', 'royal_blacksmith', 'capital', 'village', 'smithy', 'market', 'workshop', 'moat', 'cellar'];
 function mk(opts) { return E.createInitialState(['A', 'B'], KING, Object.assign({ startActive: 0 }, opts || {})); }
 const ZONES = ['deck', 'hand', 'discard', 'inPlay', 'durationCards', 'setAside', 'islandMat', 'nativeVillageMat', 'princes', 'tavern'];
-function tally(s) { const t = {}; const a = (id) => { if (id != null) t[id] = (t[id] || 0) + 1; }; Object.keys(s.supply).forEach((id) => { if (id === 'ruins' || id === 'knights' || id === 'castles') return; const n = s.supply[id] | 0; for (let i = 0; i < n; i++) a(id); }); (s.ruins || []).forEach(a); (s.knights || []).forEach(a); (s.castles || []).forEach(a); (s.trash || []).forEach(a); (s.blackMarket || []).forEach(a); s.players.forEach((p) => ZONES.forEach((z) => (p[z] || []).forEach(a))); s.players.forEach((p) => (p.archives || []).forEach((ar) => (ar.cards || []).forEach(a))); return t; }
+// 混合山（廃墟/騎士/城＋同盟の分割山6組）は engine の MIXED_PILE_KEYS が正本＝新しい山を足しても二重計上しない。
+const MIXKEYS = (DOM.engine && DOM.engine.MIXED_PILE_KEYS) || ['ruins', 'knights', 'castles'];
+function tally(s) { const t = {}; const a = (id) => { if (id != null) t[id] = (t[id] || 0) + 1; }; Object.keys(s.supply).forEach((id) => { if (MIXKEYS.indexOf(id) >= 0) return; const n = s.supply[id] | 0; for (let i = 0; i < n; i++) a(id); }); MIXKEYS.forEach((k) => (s[k] || []).forEach(a)); (s.trash || []).forEach(a); (s.blackMarket || []).forEach(a); s.players.forEach((p) => ZONES.forEach((z) => (p[z] || []).forEach(a))); s.players.forEach((p) => (p.archives || []).forEach((ar) => (ar.cards || []).forEach(a))); return t; }
 function tdiff(a, b) { const ks = new Set([...Object.keys(a), ...Object.keys(b)]); const d = []; ks.forEach((k) => { if ((a[k] || 0) !== (b[k] || 0)) d.push(k + ':' + (a[k] || 0) + '→' + (b[k] || 0)); }); return d; }
 
 /* ============ 負債：購入→ブロック→返済 ============ */

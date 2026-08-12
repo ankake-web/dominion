@@ -117,8 +117,15 @@
   }
 
   /* ---------- カード見た目ヘルパ ---------- */
+  /* 【実バグ修正】ここに無い種別は `typeLabel` が undefined になり「アクション・アタック・」のように
+     末尾が欠けたラベルが出る（略奪者・人狼・家宝・精霊・ゾンビ・同盟の7種別で実際に出ていた）。
+     **新しい種別を `DOM.CARDS` に足したら必ずここにも足すこと**（`js/carddata.js` の
+     BASE_TYPE_JP / ALLIES_TYPE_JP と対になる表）。 */
   const TYPE_JP = { treasure: '財宝', victory: '勝利点', curse: '呪い', action: 'アクション', attack: 'アタック', reaction: 'リアクション',
-    duration: '持続', command: '命令', knight: '騎士', ruins: '廃墟', shelter: '避難所', reserve: 'リザーブ', traveller: 'トラベラー', castle: '城' };
+    duration: '持続', command: '命令', knight: '騎士', ruins: '廃墟', shelter: '避難所', reserve: 'リザーブ', traveller: 'トラベラー', castle: '城',
+    looter: '略奪者', // 暗黒時代
+    night: '夜行', fate: '幸運', doom: '不運', heirloom: '家宝', spirit: '精霊', zombie: 'ゾンビ', // 夜想曲
+    liaison: '連携', townsfolk: '町民', augur: '卜占官', clash: '衝突', fort: '城砦', odyssey: '叙事詩', wizard: '魔法使い' }; // 同盟
   function typeClass(id) {
     const c = DOM.CARDS[id];
     if (c.types.includes('treasure')) return 'type-treasure';
@@ -127,7 +134,14 @@
     if (c.types.includes('reaction')) return 'type-reaction';
     return 'type-action';
   }
-  function typeLabel(id) { return DOM.CARDS[id].types.map((t) => TYPE_JP[t]).join('・'); }
+  UI.TYPE_JP = TYPE_JP; // テストが「全カード種別を網羅しているか」を検査する（新種別の足し忘れ防止）
+  function typeLabel(id) { return DOM.CARDS[id].types.map((t) => TYPE_JP[t] || t).join('・'); }
+  /* 混合山（廃墟/騎士/城/同盟の分割山6組）の**表示用id**＝一番上の実カード。
+     山キーはプレースホルダなので、そのまま描くとコスト・名前・種別が実際に手に入るカードと食い違う。
+     ※engine へ送る id（購入/獲得の dispatch）は**山キーのまま**にすること。 */
+  function mixTop(state, id) {
+    return (state && DOM.engine.mixedTopCard ? DOM.engine.mixedTopCard(state, id) : null) || id;
+  }
   // 財宝は枚数で色分け（場のチップで金貨/銀貨/銅貨を見分けやすく）
   function coinClass(id) { return (id === 'copper' || id === 'silver' || id === 'gold') ? ' c-' + id : ''; }
   // 実コスト（「橋」等のこのターンのコスト軽減を反映）。表示・購入判定で共通利用。
@@ -242,10 +256,9 @@
   // サプライの山。opts: {onClick, buyable, gainable, size}
   function pileEl(id, state, opts) {
     opts = opts || {};
-    // 混合山（騎士/城）は一番上の実カードを表示する（購入対象は 'knights'/'castles' のまま）。
-    const isKnightPile = id === 'knights' && Array.isArray(state.knights) && state.knights.length > 0;
-    const isCastlePile = id === 'castles' && Array.isArray(state.castles) && state.castles.length > 0;
-    const dispId = isKnightPile ? state.knights[0] : (isCastlePile ? state.castles[0] : id);
+    // 混合山（騎士/城/同盟の分割山6組）は一番上の実カードを表示する（購入対象は山キーのまま）。
+    const dispId = mixTop(state, id);
+    const isMix = dispId !== id;
     const c = DOM.CARDS[dispId] || DOM.CARDS[id];
     const n = state.supply[id] || 0;
     const ec = effCost(state, id);
@@ -253,7 +266,7 @@
       (n <= 0 ? ' empty' : '') + (opts.buyable ? ' buyable' : '') + (opts.gainable ? ' gainable' : '') +
       (opts.recommended ? ' recommended' : '') +
       (ec < c.cost ? ' discounted' : '');
-    const aria = c.name + (isKnightPile ? '（騎士の山の一番上）' : isCastlePile ? '（城の山の一番上）' : '') + '、コスト' + ec + (potCost(id) ? '＋ポーション' : '') + '、残り' + n + '枚' + (opts.recommended ? '、おすすめ' : '');
+    const aria = c.name + (isMix && DOM.CARDS[id] ? '（' + DOM.CARDS[id].name + 'の山の一番上）' : '') + '、コスト' + ec + (potCost(id) ? '＋ポーション' : '') + '、残り' + n + '枚' + (opts.recommended ? '、おすすめ' : '');
     return h('div', a11yBtn({ class: cls, onclick: opts.onClick, 'data-pile': id }, opts.onClick, aria),
       h('div', { class: 'pcost' }, ec),
       h('div', { class: 'pname' }, c.name),
@@ -1629,8 +1642,9 @@
     // 冒険：使節団（Mission）の追加ターンはカードを購入できない（イベントは買える）＝engine の拒否と揃える。
     const canBuy = interactive && !state.pending && t.phase === 'buy' && !t.noBuyCards && (state.players[t.active].debt || 0) === 0 && (state.supply[id] || 0) > 0 && t.buys > 0 && affordable(state, id) && DOM.engine.canBuyCard(state, t.active, id);
     const label = '購入する（' + cost + 'コイン' + (pc ? '＋ポーション' + (pc > 1 ? pc : '') : '') + '）';
-    if (canBuy) showSheet(id, { label, cls: 'btn-primary', on: () => dispatch({ type: 'BUY', card: id }) });
-    else showSheet(id, null);
+    // 混合山は拡大シートも一番上の実カードを見せる（購入の dispatch は山キーのまま）。
+    if (canBuy) showSheet(mixTop(state, id), { label, cls: 'btn-primary', on: () => dispatch({ type: 'BUY', card: id }) });
+    else showSheet(mixTop(state, id), null);
   }
 
   function viewActionBar(state, viewer, actor, interactive) {
@@ -2151,8 +2165,9 @@
     if (pd.type === 'pursue') {
       const names = [];
       const push = (id) => { if (DOM.CARDS[id] && names.indexOf(id) < 0) names.push(id); };
-      Object.keys(state.supply).forEach((id) => { if (['ruins', 'knights', 'castles'].indexOf(id) < 0) push(id); });
-      ['ruins', 'knights', 'castles'].forEach((k) => { (state[k] || []).forEach(push); });
+      const MIX = DOM.engine.MIXED_PILE_KEYS || [];
+      Object.keys(state.supply).forEach((id) => { if (MIX.indexOf(id) < 0) push(id); });
+      MIX.forEach((k) => { (state[k] || []).forEach(push); });
       return modalPickIds('追求 — カード名を指定',
         'カード名を1つ指定します。山札の上4枚を公開し、指定した名前のカードだけを山札の上に戻し、残りを捨て札にします。',
         names, (id) => dispatch({ type: 'PURSUE_NAME', card: id }), '指定する');
@@ -2161,7 +2176,7 @@
     if (pd.type === 'populate') {
       const piles = (state.turn.populateQueue || []).filter((k) => (DOM.engine.populatePiles(state) || []).indexOf(k) >= 0);
       const chips = piles.map((k) => {
-        const shown = (k === 'ruins' || k === 'knights') ? ((state[k] || [])[0] || k) : k;
+        const shown = (DOM.engine.mixedTopCard ? DOM.engine.mixedTopCard(state, k) : null) || k;
         return cardEl(shown, { size: 'sm', extra: 'selectable', onClick: () => dispatch({ type: 'POPULATE_GAIN', pile: k }) });
       });
       const footer = h('button', { class: 'btn btn-primary btn-block', onclick: () => dispatch({ type: 'POPULATE_GAIN', auto: true }) },
@@ -3473,7 +3488,7 @@
     const remainOf = (id) => {
       if (!state) return null;
       if ((state.supply[id] || 0) > 0) return state.supply[id];
-      const k = ['ruins', 'knights', 'castles'].find((m) => Array.isArray(state[m]) && state[m][0] === id);
+      const k = (DOM.engine.MIXED_PILE_KEYS || []).find((m) => Array.isArray(state[m]) && state[m][0] === id);
       return k ? state[k].length : null;
     };
     const chips = (ids || []).length
@@ -3682,9 +3697,12 @@
     //   allowEmpty＝「山が空でもよい」用途（教師の山トークン置き先＝公式は空の山にも置ける）。
     const elig = all.filter((id) => filter(id) &&
       (allowEmpty ? (state.supply[id] != null) : ((state.supply[id] || 0) > 0 && canBase(state, id))));
+    /* 混合山（騎士/城/同盟の分割山）は**一番上の実カード**を描く（プレースホルダを出すと
+       「卜占官 $3」と表示して実際には「巫女 $6」を獲得する、という食い違いになる）。
+       dispatch は山キーのまま＝engine は山から一番上を配る（盤面の pileEl・植民のチップと同じ扱い）。 */
     const chips = elig.length
       ? elig.map((id) => h('div', { class: 'pick-supply' },
-          cardEl(id, { size: 'sm', extra: 'selectable', onClick: () => openPickZoom(id, pickLabel || '獲得する', () => onPick(id)) }),
+          cardEl(mixTop(state, id), { size: 'sm', extra: 'selectable', onClick: () => openPickZoom(mixTop(state, id), pickLabel || '獲得する', () => onPick(id)) }),
           h('div', { class: 'pick-remain' }, '残' + (state.supply[id] || 0))))
       : [h('p', { class: 'muted' }, (pickLabel || '獲得') + 'できるカードがありません')];
     const footer = (skipOnEmpty && (!elig.length || alwaysSkip))
@@ -3735,7 +3753,14 @@
     const c = DOM.CARDS[id];
     const p = UI.sheet.primary;
     const state = UI.store && UI.store.state;
-    const remain = state && state.supply && state.supply[id] != null ? state.supply[id] : null;
+    /* 山の残枚数。混合山（騎士/城/同盟の分割山）は**一番上の実カード**を拡大表示しているので
+       その実カードidには supply キーが無い＝山キーの残数を出す（出さないと残枚数だけ消える）。 */
+    const remain = (() => {
+      if (!state || !state.supply) return null;
+      if (state.supply[id] != null) return state.supply[id];
+      const k = (DOM.engine.MIXED_PILE_KEYS || []).find((m) => Array.isArray(state[m]) && state[m][0] === id);
+      return k ? state[k].length : null;
+    })();
     return h('div', { class: 'scrim', onclick: (e) => { if (e.target.classList.contains('scrim')) closeSheet(); } },
       h('div', { class: 'sheet' },
         h('button', { class: 'sheet-close', 'aria-label': '閉じる', onclick: closeSheet }, '✕'),

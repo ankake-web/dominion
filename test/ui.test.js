@@ -445,6 +445,27 @@ try {
     timers.length = 0;
   }
 
+  /* 【敵対レビュー回帰】種別ラベルの表記漏れ検知（ui.js は carddata.js とは**別の** TYPE_JP を持っている）。
+     ここに無い種別は `typeLabel` が undefined になり「アクション・アタック・」のように末尾が欠けたラベルが出る
+     （略奪者・人狼・家宝・精霊・ゾンビ・同盟の7種別で実際に出ていた）。
+     **新しい種別を DOM.CARDS に足したら ui.js の TYPE_JP にも足すこと**を構造的に守らせる。 */
+  {
+    console.log('=== 種別ラベル：ui.js の TYPE_JP が全 type を網羅している ===');
+    const D = win.DOM;
+    const seen = new Set();
+    Object.values(D.CARDS).forEach((c) => (c.types || []).forEach((t) => seen.add(t)));
+    const bad = [];
+    // カード一覧の拡大表示と同じ経路（UI._typeLabel が無いので、代表カードのラベルを組み立てて検査する）
+    seen.forEach((t) => {
+      const rep = Object.keys(D.CARDS).find((id) => (D.CARDS[id].types || []).indexOf(t) >= 0);
+      const MAP = (win.DOM.UI && win.DOM.UI.TYPE_JP) || {};
+      const lbl = D.CARDS[rep].types.map((x) => MAP[x]).join('・');
+      if (!MAP[t]) bad.push(t + '(' + rep + ': ' + lbl + ')');
+    });
+    ok(Object.keys((win.DOM.UI && win.DOM.UI.TYPE_JP) || {}).length > 0, 'ui.js の TYPE_JP を検査できる');
+    ok(bad.length === 0, 'ui.js の TYPE_JP に全カード種別がある（欠け: ' + (bad.join(', ') || 'なし') + '）');
+  }
+
   ok(runtimeError === null, '実行時エラーなし: ' + (runtimeError ? (runtimeError.stack || runtimeError) : ''));
 } catch (e) {
   fail++;

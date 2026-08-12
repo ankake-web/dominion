@@ -28,13 +28,17 @@ const ZONES = ['deck', 'hand', 'discard', 'inPlay', 'durationCards', 'setAside',
   'eventSetAside', // 移動動物園：遅延/刈り入れの脇置き（次の自分のターン開始時に使用する。公開ゾーン）
   'ghostSetAside', // 夜想曲：幽霊の脇札（公開。幽霊が場を離れても孤児化するだけで所有カードのまま）
   'cryptSetAside']; // 夜想曲：納骨堂の脇札（裏向き＝所有者のみ可視だが物理カードなので保存則に数える）
+/* 混合山（順序つき実カード配列で管理する山）＝暗黒時代の廃墟/騎士・帝国の城・同盟の分割山6組。
+   supply[山キー] は残数なので**二重に数えない**（実カード配列 state[山キー] の中身だけを数える）。
+   engine の MIXED_PILE_KEYS が正本＝新しい混合山を足しても自動で追従する（漏れると保存則が誤検知で赤になる）。 */
+const MIXED_PILE_KEYS = (DOM.engine && DOM.engine.MIXED_PILE_KEYS) || ['ruins', 'knights', 'castles'];
 function tally(s) {
   const t = {}; const add = (id) => { if (id != null) t[id] = (t[id] || 0) + 1; };
   Object.keys(s.supply).forEach((id) => {
-    if (id === 'ruins' || id === 'knights' || id === 'castles') return; // 混合山は実カードを state.ruins/knights/castles で数える（下）
+    if (MIXED_PILE_KEYS.indexOf(id) >= 0) return; // 混合山は実カードを state[山キー] で数える（下）
     const n = s.supply[id] | 0; for (let i = 0; i < n; i++) add(id);
   });
-  (s.ruins || []).forEach(add); (s.knights || []).forEach(add); (s.castles || []).forEach(add); // 混合山の中身（廃墟/騎士/城）
+  MIXED_PILE_KEYS.forEach((k) => (s[k] || []).forEach(add)); // 混合山の中身（廃墟/騎士/城＋同盟の分割山6組）
   (s.trash || []).forEach(add); (s.blackMarket || []).forEach(add);
   s.players.forEach((p) => ZONES.forEach((z) => (p[z] || []).forEach(add)));
   s.players.forEach((p) => (p.archives || []).forEach((a) => (a.cards || []).forEach(add))); // 帝国：資料庫の脇置き（{id,cards}）
@@ -345,6 +349,54 @@ console.log('=== カード保存則: 移動動物園イベント（買う横型�
     if (!r.okp) { allOk = false; console.log('    ME-POP' + g + ': ' + r.why); }
   }
   ok(allOk, '移動動物園イベント各種すべて保存則・不変条件を満たし終局（脇置き/追放はカード・投資枚数は非カード）');
+}
+
+/* E6) 同盟：分割山6組（混合山モデル）と循環(Rotate)。
+   - 山キー（augurs 等）は supply に残数、実カードは state[山キー] の配列＝**二重に数えない**（tally が正本）。
+   - 好意(p.favors)・Ally(state.ally)・splitRotated は**非カード**＝保存則に無関係。
+   - 循環でカードが増減しないこと、混合山・2段分割山を回しても保存則と3山終了が壊れないことを見る。 */
+console.log('=== カード保存則: 同盟の分割山6組＋循環(Rotate) ===');
+{
+  const ALLIES_PILES = Object.keys(DOM.ALLIES_SPLIT_PILES);
+  let allOk = true;
+  // 6山を2つずつ組み合わせた王国（連携＝生徒が魔法使いの中に居るので好意/Ally も走る）。
+  for (let i = 0; i < ALLIES_PILES.length; i++) {
+    const K = [ALLIES_PILES[i], ALLIES_PILES[(i + 1) % ALLIES_PILES.length], 'bauble',
+      'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory'];
+    for (let sd = 0; sd < 2; sd++) {
+      const r = runGame(K, mkPlayers(2 + (sd % 3), i + sd));
+      if (!r.okp) { allOk = false; console.log('    AL' + i + ' sd' + sd + ': ' + r.why); }
+    }
+  }
+  // 6山を全部同時に置いた王国（3山終了が16枚単位で効くか）。
+  for (let sd = 0; sd < 4; sd++) {
+    const r = runGame(ALLIES_PILES.concat(['importer', 'village', 'smithy', 'market']), mkPlayers(2 + (sd % 3), 30 + sd));
+    if (!r.okp) { allOk = false; console.log('    AL-ALL sd' + sd + ': ' + r.why); }
+  }
+  // 全プール混成に同盟の分割山を強制同居（汎用獲得・混合山・非サプライと同時に踏ませる）。
+  for (let g = 0; g < 8; g++) {
+    const K = ['augurs', 'wizards', 'knights', 'castles', 'workshop', 'remake', 'black_market', 'trader', 'lurker', 'village'];
+    const r = runGame(K, mkPlayers(2 + (g % 3), 60 + g));
+    if (!r.okp) { allOk = false; console.log('    AL-MIX' + g + ': ' + r.why); }
+  }
+  ok(allOk, '同盟の分割山6組すべて保存則・不変条件を満たし終局（山キーの残数と実カード配列を二重計上しない）');
+
+  // 循環(Rotate)：カードの総数が変わらない／山の残数と実配列が同期し続ける。
+  let rotOk = true;
+  {
+    const K = ALLIES_PILES.concat(['knights', 'sauna', 'village', 'market']);
+    let s = E.createInitialState(mkPlayers(3, 1), K, { startActive: 0 });
+    const init = tally(s);
+    for (let r = 0; r < 50; r++) {
+      const piles = DOM.engine.rotatableSupplyPiles(s);
+      DOM.engine.rotatePile(s, piles[r % piles.length]);
+      const d = diffTally(init, tally(s));
+      if (d.length) { rotOk = false; console.log('    ROT step' + r + ': ' + d.join(' ')); break; }
+      const bad = MIXED_PILE_KEYS.some((k) => Array.isArray(s[k]) && s.supply[k] != null && s.supply[k] !== s[k].length);
+      if (bad) { rotOk = false; console.log('    ROT step' + r + ': supply と実配列の長さがずれた'); break; }
+    }
+  }
+  ok(rotOk, '循環(Rotate)を50回繰り返してもカードの保存則と「残数＝実配列の長さ」が保たれる');
 }
 
 // D) 支配(Possession)を強制して保存則検証（CPUは支配を買わないので手で発動させ、被支配ターンを操作させる）。
