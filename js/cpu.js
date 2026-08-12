@@ -99,6 +99,16 @@
     'townsfolk', 'town_crier', 'blacksmith', 'miller', 'elder',
     'wizards', 'student', 'conjurer', 'sorcerer', 'lich',
     'copper', 'curse'];
+  /* 同盟：女魔導士／魔導士の「カード名を宣言する」＝自分の山札の一番上として**一番ありそうな名前**を推定する
+     （山札が空なら捨て札から。どちらも空なら銅貨）。**null を返さない**（engine が拒否すると livelock）。 */
+  function mostLikelyTop(p) {
+    const pool = (p.deck && p.deck.length) ? p.deck : (p.discard || []);
+    const cnt = {};
+    pool.forEach((c) => { cnt[c] = (cnt[c] || 0) + 1; });
+    let best = null, n = -1;
+    Object.keys(cnt).forEach((c) => { if (cnt[c] > n) { n = cnt[c]; best = c; } });
+    return best || 'copper';
+  }
   // 収穫祭：賞品(Prize)は馬上槍試合でのみ獲得する非サプライ札＝汎用の獲得効果(bestGain/bestGainExact)は
   // 絶対に賞品を選ばない（豊穣の角等で$0賞品を不正獲得しない／賞品を拒否する reducer と噛み合って無限ループしない）。
   const PRIZE_SET = new Set(['bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed']);
@@ -226,7 +236,10 @@
   function chooseAction(state, p) {
     const t = state.turn;
     if (t.actions <= 0) return null;
-    const has = (id) => p.hand.includes(id);
+    /* 同盟：将軍（Warlord）＝場に2枚以上ある同名のアクションは手札から使えない。
+       engine が拒否する手を返し続けると本番 livelock になるので、`has` の時点で弾く（1箇所で全カードに効く）。 */
+    const has = (id) => p.hand.includes(id) &&
+      !(DOM.engine.warlordBlocks && DOM.engine.warlordBlocks(state, t.active, id));
     const dead = p.hand.some((c) => isDead(c));
     // --- 非ターミナル（+アクションが付く＝連鎖できる）を最優先 ---
     if (has('village')) return 'village';
@@ -3312,6 +3325,36 @@
         const g = firstGainable(state, DOM.engine.sunkenTreasureCanGain(state, pd.player));
         return { type: 'SUNKEN_TREASURE_GAIN', card: g };
       }
+
+      /* ===== 同盟 A4：アタック7種（堀があれば必ず公開して無効化する） ===== */
+      case 'barbarian': {
+        if (pd.stage === 'react') return p.hand.includes('moat') ? { type: 'MOAT_REVEAL' } : { type: 'BARBARIAN_REACT' };
+        // 格下げ獲得は被害者が選ぶ（強制）＝一番良いものを取る
+        const g = firstGainable(state, DOM.engine.barbarianCanGain(state, pd.trashed));
+        return { type: 'BARBARIAN_GAIN', card: g };
+      }
+      case 'archer': {
+        if (pd.stage === 'react') return p.hand.includes('moat') ? { type: 'MOAT_REVEAL' } : { type: 'ARCHER_REACT' };
+        if (pd.stage === 'hide') { // 被害者＝一番大事な札を隠す
+          const order = p.hand.slice().sort((a, b) => keepValue(b) - keepValue(a));
+          return { type: 'ARCHER_HIDE', card: order[0] };
+        }
+        // 使用者＝公開された中で一番価値の高い札を捨てさせる
+        const order = (pd.revealed || []).slice().sort((a, b) => keepValue(b) - keepValue(a));
+        return { type: 'ARCHER_PICK', card: order[0] || (pd.revealed || [])[0] };
+      }
+      case 'sorceress': {
+        if (pd.stage === 'react') return p.hand.includes('moat') ? { type: 'MOAT_REVEAL' } : { type: 'SORCERESS_REACT' };
+        // 宣言＝自分の山札に一番多い名前（銅貨/屋敷が基本）
+        return { type: 'SORCERESS_NAME', card: mostLikelyTop(p) };
+      }
+      case 'sorcerer': {
+        if (pd.stage === 'react') return p.hand.includes('moat') ? { type: 'MOAT_REVEAL' } : { type: 'SORCERER_REACT' };
+        return { type: 'SORCERER_NAME', card: mostLikelyTop(p) };
+      }
+      case 'skirmisher': return p.hand.includes('moat') ? { type: 'MOAT_REVEAL' } : { type: 'SKIRMISHER_REACT' };
+      case 'highwayman': case 'warlord': // 相手のターンをフックする持続アタック（堀で免疫）
+        return p.hand.includes('moat') ? { type: 'MOAT_REVEAL' } : { type: 'LINGER_REACT' };
 
       case 'royal_galley_play': { // 王家のガレー船＝手札の持続でないアクションを1枚（次のターンにもう一度使える）
         const cands = p.hand.filter((c) => isType(c, 'action') && !isType(c, 'duration'));

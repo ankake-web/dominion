@@ -1664,7 +1664,10 @@
       showSheet(id, null);
       return;
     }
-    if (interactive && !state.pending && t.phase === 'action' && (c.types.includes('action') || inheritedEstate(state, id)) && t.actions > 0) {
+    // 同盟：将軍＝場に2枚以上ある同名のアクションは手札から使えない（engine が拒否する手をUIに出さない）。
+    const warlordBlocked = DOM.engine.warlordBlocks && DOM.engine.warlordBlocks(state, t.active, id);
+    if (interactive && !state.pending && t.phase === 'action' && !warlordBlocked
+        && (c.types.includes('action') || inheritedEstate(state, id)) && t.actions > 0) {
       // 移動動物園：習性（Way）が採用されていれば「記載効果の代わりに習性で使う」ボタンも並べる。
       const wayList = (state.ways || []).filter((w) => (DOM.LANDSCAPES || {})[w]);
       const btns = [{ label: wayList.length ? '使う（カードの効果）' : '使う', cls: 'btn-primary', on: () => dispatch({ type: 'PLAY_ACTION', card: id }) }];
@@ -2740,6 +2743,48 @@
     if (pd.type === 'blacksmith_choose') return modalChoice(pd, '蹄鉄工', 'BLACKSMITH_CHOOSE',
       [{ k: 'six', label: '手札が6枚になるまで引く（今 ' + p.hand.length + '枚）' },
         { k: 'two', label: '+2 カード' }, { k: 'cantrip', label: '+1 カード と +1 アクション' }]);
+    /* ===== 同盟 A4：アタック7種のモーダル ===== */
+    if (pd.type === 'barbarian' && pd.stage === 'react') {
+      return modalOptions('蛮族を受ける', '山札の一番上が廃棄されます（コスト$3以上なら種別を共有するより安いカードを獲得、そうでなければ呪い）。',
+        reactOptions(p, pd, { type: 'BARBARIAN_REACT' }));
+    }
+    if (pd.type === 'barbarian' && pd.stage === 'gain') {
+      const nm = ((DOM.CARDS[pd.trashed] || {}).name || pd.trashed);
+      return modalGainSupply(state, '蛮族 — 獲得', '廃棄した「' + nm + '」と種別を1つ以上共有し、それより安いカード1枚を獲得します。',
+        DOM.engine.barbarianCanGain(state, pd.trashed), (id) => dispatch({ type: 'BARBARIAN_GAIN', card: id }));
+    }
+    if (pd.type === 'archer' && pd.stage === 'react') {
+      return modalOptions('射手を受ける', '1枚を除いて手札を公開し、相手が選んだ1枚を捨てます。', reactOptions(p, pd, { type: 'ARCHER_REACT' }));
+    }
+    if (pd.type === 'archer' && pd.stage === 'hide') {
+      return modalSingleHand(p, '射手 — 公開しない1枚を選ぶ',
+        '手札から1枚を選ぶと、その1枚だけ公開せずに済みます（残りは公開され、相手がその中から1枚を選んで捨てさせます）。',
+        () => true, (card) => dispatch({ type: 'ARCHER_HIDE', card }), null, '隠す');
+    }
+    if (pd.type === 'archer' && pd.stage === 'pick') {
+      return modalPickIds('射手 — 捨てさせる1枚',
+        state.players[pd.victim].name + ' が公開したカードから1枚を選んで捨てさせます。',
+        pd.revealed, (id) => dispatch({ type: 'ARCHER_PICK', card: id }), '捨てさせる');
+    }
+    if (pd.type === 'sorceress' && pd.stage === 'name') {
+      return modalNameCard(state, '女魔導士 — カード名を宣言', 'カード名を1つ宣言します。あなたの山札の一番上を公開して手札に加え、それが宣言したカードなら他のプレイヤー全員が呪いを獲得します。',
+        (id) => dispatch({ type: 'SORCERESS_NAME', card: id }));
+    }
+    if (pd.type === 'sorceress' && pd.stage === 'react') {
+      return modalOptions('女魔導士を受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'SORCERESS_REACT' }));
+    }
+    if (pd.type === 'sorcerer' && pd.stage === 'react') {
+      return modalOptions('魔導士を受ける', 'カード名を宣言してから山札の一番上を公開します（外れなら呪いを獲得）。',
+        reactOptions(p, pd, { type: 'SORCERER_REACT' }));
+    }
+    if (pd.type === 'sorcerer' && pd.stage === 'name') {
+      return modalNameCard(state, '魔導士 — カード名を宣言', 'カード名を1つ宣言してから、あなたの山札の一番上を公開します。宣言と違えば呪い1枚を獲得します（公開したカードは山札の上に戻します）。',
+        (id) => dispatch({ type: 'SORCERER_NAME', card: id }));
+    }
+    if (pd.type === 'skirmisher' && pd.stage === 'react') {
+      return modalOptions('散兵を受ける', 'このターン、相手がアタックカードを獲得するたびに手札3枚になるように捨てます（今は何も起きません）。',
+        reactOptions(p, pd, { type: 'SKIRMISHER_REACT' }));
+    }
     if (pd.type === 'royal_galley_play') {
       return modalPlayCardEvent(state, p, '王家のガレー船 — カードを使う',
         '手札の**持続でない**アクションカード1枚を使用できます（脇に置き、次のターンの開始時にもう一度使用します）。しなくてもよい。',

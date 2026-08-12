@@ -513,6 +513,14 @@
     applyPileTokens(state, pIndex, card);
     // 同盟：「カードを使用した後」に働く Ally（道化棒/契約書＝**財宝の連携**なので購入フェイズでも誘発する）。
     noteAllyPlay(state, pIndex, card);
+    /* 同盟：追いはぎ＝「他のプレイヤーが**各ターンに最初に使用する財宝**は、何もしない」。
+       ⚠ 「何もしない」＝**使用時の記載効果を全部スキップする**（コインも／カード文の指示も／
+          嫉妬・銅細工師のような額の書き換えも上書きする）。カードは普通に場に出て「使用した」と数え、
+          片付けで普通に捨てられる。ライン下の能力（元手の負債）は働く。**累積しない**（1ターン1枚）。 */
+    if (highwaymanBlocks(state, pIndex)) {
+      log(state, `${p.name} の「${C()[card].name}」は追いはぎで何も起こらなかった（このターン最初の財宝）。`);
+      return;
+    }
     // ルネサンス：資本主義で「財宝になったアクション」を購入フェイズに出した場合＝**アクションの効果を全て解決する**
     //   （アタックは発動しリアクション窓も開く／持続は場に残る）。アクション権は消費しない。
     //   「コインだけ加算」は必ず壊れる（公式）＝applyEffect を通す。
@@ -2100,6 +2108,19 @@
     old_witch:     { onMoat: (s, pd) => oldWitchEnterVictim(s, pd.source, pd.queue) },
     villain:       { onMoat: (s, pd) => villainEnterVictim(s, pd.source, pd.queue) },
     knight:        { onMoat: (s, pd) => knightAttackEnter(s, pd.source, pd.sourceCard, pd.queue) },
+    /* 同盟：王国のアタック7種（**Ally が起こす攻撃と違い普通のアタック**＝堀/灯台/チャンピオンで防げる）。
+       追いはぎ／将軍は「相手のターンをフックする持続アタック」＝沼の妖婆と同じ linger モデル。 */
+    barbarian:     { onMoat: (s, pd) => barbarianEnterVictim(s, pd.source, pd.queue) },
+    archer:        { onMoat: (s, pd) => archerEnterVictim(s, pd.source, pd.queue) },
+    sorceress:     { onMoat: (s, pd) => sorceressEnterVictim(s, pd.source, pd.queue) },
+    sorcerer:      { onMoat: (s, pd) => sorcererEnterVictim(s, pd.source, pd.queue) },
+    highwayman:    { onMoat: (s, pd) => { markLingerImmune(s, pd.source, 'highwayman', pd.victim, pd.rid); lingerAttackEnter(s, pd.source, 'highwayman', pd.queue, pd.rid); } },
+    warlord:       { onMoat: (s, pd) => { markLingerImmune(s, pd.source, 'warlord', pd.victim, pd.rid); lingerAttackEnter(s, pd.source, 'warlord', pd.queue, pd.rid); } },
+    skirmisher:    { onMoat: (s, pd) => {
+      const sk = (s.turn.skirmishers || [])[pd.skIdx];
+      if (sk && !sk.immune.includes(pd.victim)) sk.immune.push(pd.victim);
+      skirmisherEnterVictim(s, pd.source, pd.queue, pd.skIdx);
+    } },
     /* 夜想曲：呪詛（不運アタック＝暗躍者/迫害者/吸血鬼/人狼）の共通リアクション窓。
        堀を公開した被害者は accepted に入らない＝呪詛を受けない。**呪詛は全員の窓を閉じてから1枚だけめくる**。 */
     hex:           { onMoat: (s, pd) => hexReactEnter(s, pd.source, pd.queue, pd.accepted || []) },
@@ -6426,6 +6447,66 @@
         if (anyGainable(state, (id) => costUpTo(state, id, 4))) state.pending = { type: 'hill_fort_gain', player: pi };
         else state.pending = { type: 'hill_fort_choose', player: pi, card: null, dest: null, elder: elderOn(state, 'hill_fort') };
         break;
+      /* 蛮族（アタック）：+2コイン。他の各プレイヤーは山札の一番上を廃棄し、
+         コスト$3以上なら「種別を共有するより安いカード」を1枚獲得、そうでなければ呪いを獲得。 */
+      case 'barbarian': {
+        addCoins(state, 2);
+        const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        barbarianEnterVictim(state, pi, q);
+        break;
+      }
+      /* 射手（アタック）：+2コイン。手札5枚以上の各相手が1枚を除いて公開し、使用者が1枚を選んで捨てさせる。 */
+      case 'archer': {
+        addCoins(state, 2);
+        const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        archerEnterVictim(state, pi, q);
+        break;
+      }
+      /* 追いはぎ（持続アタック）：即時効果なし。次の自分のターン開始時に**これを場から捨ててから** +3カード。
+         それまで、他の各プレイヤーが**各ターンに最初に使用する財宝**は何もしない（**累積しない**）。
+         免疫は**使用した瞬間**に確定して予約に持つ（沼の妖婆/呪いの森と同型）。 */
+      case 'highwayman': {
+        const rid = (state._lingerSeq = (state._lingerSeq | 0) + 1);
+        armDuration(state, pi, 'highwayman', { immune: [], rid });
+        const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        lingerAttackEnter(state, pi, 'highwayman', q, rid);
+        break;
+      }
+      /* 将軍（持続アタック）：+1アクション。次の自分のターン開始時 +2カード。
+         それまで、他のプレイヤーは**場に2枚以上ある同名のアクション**を手札から使用できない。 */
+      case 'warlord': {
+        addActions(t, 1);
+        const rid = (state._lingerSeq = (state._lingerSeq | 0) + 1);
+        armDuration(state, pi, 'warlord', { immune: [], rid });
+        const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        lingerAttackEnter(state, pi, 'warlord', q, rid);
+        break;
+      }
+      /* 散兵（アタック）：+1カード +1アクション +1コイン。**このターン、アタックカードを獲得するたび**、
+         他の各プレイヤーが手札3枚まで捨てる。**免疫は使用した瞬間に確定する**（獲得時には堀を公開できない＝公式）。
+         **使用回数ぶん独立に発動する**（N枚使えばN回。各回が独立に「3枚まで」を再実行する）。 */
+      case 'skirmisher': {
+        draw(state, pi, 1); addActions(t, 1); addCoins(state, 1);
+        (t.skirmishers = t.skirmishers || []).push({ immune: [] });
+        const skIdx = t.skirmishers.length - 1;
+        const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        skirmisherEnterVictim(state, pi, q, skIdx);
+        break;
+      }
+      /* 女魔導士（アタック・卜占官）：+1アクション → カード名を宣言 → 自分の山札の一番上を公開して手札へ →
+         当たっていたら他の全員が呪いを獲得。 */
+      case 'sorceress':
+        addActions(t, 1);
+        state.pending = { type: 'sorceress', stage: 'name', player: pi };
+        break;
+      /* 魔導士（アタック・魔法使い）：+1カード +1アクション → 他の各プレイヤーが名前を宣言してから
+         自分の山札の一番上を公開し、外れなら呪いを獲得（公開したカードは山札の上に戻す）。 */
+      case 'sorcerer': {
+        draw(state, pi, 1); addActions(t, 1);
+        const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        sorcererEnterVictim(state, pi, q);
+        break;
+      }
       /* 改造：手札1枚を廃棄（強制）→ 二択（+1カード+1アクション ／ 廃棄した札より最大2コイン高いカードを獲得）。
          **廃棄が先・選択が後**（何を廃棄したかを見てから選ぶ＝公式FAQ逐語）。
          手札が空なら廃棄できず「これ(it)」も無い＝二択のうち +1カード+1アクション だけを出す（終端保証）。 */
@@ -7148,6 +7229,181 @@
       }
     }
   }
+  /* ========== 同盟（Allies）A4：アタック7種 ==========
+     ⚠ **王国のアタックは普通のアタック**（Ally が起こす攻撃＝魔女の輪/すり師団 とは違う）＝
+        `ATTACKS` に登録し、堀/灯台/チャンピオン/守護者 の免疫を通すこと。 */
+  /* 蛮族＝廃棄したカードと**種別を1つ以上共有し、かつそれより安い**カードの候補述語。
+     ⚠ 「$3以上か」は**コイン成分だけ**を見る（市街 $0+負債8 は呪い／錬金術師 $3+P は格下げ獲得）が、
+        「より安いか」は**3成分の厳密比較**（component-wise strictly less）＝この非対称が最大の罠。
+     ⚠ **連携(Liaison)・町民/卜占官/衝突/城砦/叙事詩/魔法使い も本物の種別**＝種別一致に数える（公式FAQ逐語）。 */
+  function barbarianCanGain(state, trashedCard) {
+    const ref = costOf(state, trashedCard);
+    const types = (C()[trashedCard] || {}).types || [];
+    return (id) => {
+      if (!costUnder(state, id, ref.coin, { pot: ref.pot, debt: ref.debt })) return false;
+      const real = mixedTopCard(state, id) || id;
+      const ty = (C()[real] || {}).types || [];
+      return ty.some((x) => types.indexOf(x) >= 0);
+    };
+  }
+  function barbarianEnterVictim(state, source, queue) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'barbarian', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      barbarianHit(state, source, victim, rest);
+    }
+  }
+  function barbarianHit(state, source, victim, queue) {
+    const v = state.players[victim];
+    if (v.deck.length === 0 && v.discard.length > 0) reshuffleDeck(v, state);
+    const top = v.deck.length ? v.deck.shift() : null;
+    if (top == null) {
+      /* 公式逐語＝`If you cannot trash a card, then you did not trash a card costing [$3] or more,
+         and so you gain a Curse.` ＝1枚も廃棄できなければ**呪い**。 */
+      if ((state.supply.curse || 0) > 0 && gain(state, victim, 'curse', 'discard')) log(state, `${v.name} は呪いを獲得した（蛮族：山札が空）。`);
+      barbarianEnterVictim(state, source, queue);
+      return;
+    }
+    trashCard(state, victim, top);
+    log(state, `${v.name} は山札の一番上の「${C()[top].name}」を廃棄した（蛮族）。`);
+    if (costOf(state, top).coin >= 3) {
+      // 種別を共有するより安いカードを1枚獲得（**強制**。候補が無ければ何も獲得しない＝呪いには落ちない）。
+      if (anyGainable(state, barbarianCanGain(state, top))) {
+        state.pending = { type: 'barbarian', stage: 'gain', player: victim, source, victim, queue, trashed: top };
+        return;
+      }
+    } else if ((state.supply.curse || 0) > 0 && gain(state, victim, 'curse', 'discard')) {
+      log(state, `${v.name} は呪いを獲得した（蛮族：コスト$3未満）。`);
+    }
+    barbarianEnterVictim(state, source, queue);
+  }
+  /* 散兵＝プレイした瞬間は誰にも何も起きないが、**必ずアタック反応窓を開いて免疫を確定する**
+     （公式FAQ逐語＝`Revealing Moat when Skirmisher is played stops the attack; you can't reveal Moat
+      when an Attack card is gained later.`）＝窓を開かないと堀を公開する機会が永久に失われる。
+     免疫は `t.skirmishers[skIdx].immune` に記録する（沼の妖婆の rid と同型＝予約ごとに独立）。 */
+  function skirmisherEnterVictim(state, source, queue, skIdx) {
+    const sk = (state.turn.skirmishers || [])[skIdx];
+    queue = (queue || []).slice();
+    while (queue.length) {
+      const victim = queue[0];
+      if (attackImmune(state, victim)) { if (sk && !sk.immune.includes(victim)) sk.immune.push(victim); queue.shift(); continue; }
+      if (hasReaction(state.players[victim])) {
+        state.pending = { type: 'skirmisher', stage: 'react', player: victim, source, victim, queue: queue.slice(1), skIdx };
+        return;
+      }
+      queue.shift(); // 反応札なし＝この時点では何も起きない
+    }
+    state.pending = null;
+  }
+  /* 射手＝手札が5枚以上の各相手が「1枚を除いてすべて公開」→ **使用者が**その中の1枚を選んで捨てさせる。
+     2段（被害者が隠す1枚を選ぶ → 使用者が捨てさせる1枚を選ぶ）＝pending の持ち主が跨ぐ。
+     ⚠ 「隠した1枚」は**使用者にも他人にも見えてはいけない**（maskStateFor で伏せる）。 */
+  function archerEnterVictim(state, source, queue) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    while (queue.length && state.players[queue[0]].hand.length < 5) queue = queue.slice(1); // 手札4枚以下は無事
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'archer', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      state.pending = { type: 'archer', stage: 'hide', player: victim, source, victim, queue: rest };
+    }
+  }
+  /* 女魔導士＝カード名を宣言 → 自分の山札の一番上を公開して**当たり外れに関わらず手札へ** →
+     当たっていたら他の全員が呪いを獲得（アタック＝免疫あり）。 */
+  function sorceressResolve(state, pi, named) {
+    const p = state.players[pi];
+    if (p.deck.length === 0 && p.discard.length > 0) reshuffleDeck(p, state);
+    const top = p.deck.length ? p.deck.shift() : null;
+    if (top == null) { state.pending = null; return; }  // 山札も捨て札も空＝誰も呪いを受けない（公式）
+    reveal(state, pi, [top], '女魔導士で山札の一番上を公開');
+    p.hand.push(top);
+    log(state, `${p.name} は女魔導士で「${C()[top].name}」を公開して手札に加えた（宣言＝${(C()[named] || {}).name || named}）。`);
+    if (top !== named) { state.pending = null; return; }
+    const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+    sorceressEnterVictim(state, pi, q);
+  }
+  function sorceressEnterVictim(state, source, queue) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'sorceress', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      if ((state.supply.curse || 0) > 0 && gain(state, victim, 'curse', 'discard')) log(state, `${state.players[victim].name} は呪いを獲得した（女魔導士）。`);
+      sorceressEnterVictim(state, source, rest);
+    }
+  }
+  /* 魔導士＝各相手が**先に**カード名を宣言し、**その後**自分の山札の一番上を公開する。
+     外れなら呪いを獲得。**当たり外れに関わらず公開したカードは山札の上に戻す**（女魔導士と逆）。 */
+  function sorcererEnterVictim(state, source, queue) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'sorcerer', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      state.pending = { type: 'sorcerer', stage: 'name', player: victim, source, victim, queue: rest };
+    }
+  }
+  function sorcererReveal(state, source, victim, queue, named) {
+    const v = state.players[victim];
+    if (v.deck.length === 0 && v.discard.length > 0) reshuffleDeck(v, state);
+    if (v.deck.length === 0) {
+      // 山札も捨て札も空＝公開できない＝呪いを獲得しない（女魔導士に合わせる＝公式見解）。
+      log(state, `${v.name} は魔導士で公開できるカードが無かった（呪いなし）。`);
+    } else {
+      const top = v.deck[0];
+      reveal(state, victim, [top], '魔導士で山札の一番上を公開');
+      log(state, `${v.name} は「${(C()[named] || {}).name || named}」を宣言し「${C()[top].name}」を公開した（魔導士）。`);
+      if (top !== named && (state.supply.curse || 0) > 0 && gain(state, victim, 'curse', 'discard')) {
+        log(state, `${v.name} は呪いを獲得した（魔導士：外れ）。`);
+      }
+      // 公開したカードは山札の上に戻す（＝deck から抜いていないのでそのまま）
+    }
+    sorcererEnterVictim(state, source, queue);
+  }
+  /* 追いはぎ＝「他のプレイヤーが**各ターンに最初に使用する財宝**は、何もしない」（次の自分のターン開始時まで）。
+     ⚠ **累積しない**（複数の追いはぎが場にあっても1ターンにつき財宝1枚だけ）＝
+        沼の妖婆/呪いの森の「予約1つにつき1回」モデルをそのまま流用すると多重発動する。
+     ⚠ 「何もしない」＝**使用時の記載効果を全部スキップする**（コインも・カード文の指示も）。
+        カードは普通に場に出て「使用した」と数え、片付けで普通に捨てられる。ライン下の能力は働く。
+     戻り値＝この財宝の効果を無効化するか。 */
+  function highwaymanBlocks(state, pi) {
+    const t = state.turn;
+    if (!t) return false;
+    const n = state.players.length;
+    let armed = false;
+    for (let o = 0; o < n; o++) {
+      if (o === pi) continue;   // 使用者自身は影響を受けない（`each other player`）
+      if ((state.players[o].delayedEffects || []).some((e) => e.type === 'highwayman' && !(e.immune || []).includes(pi))) armed = true;
+    }
+    if (!armed) return false;
+    const done = t.highwaymanDone || (t.highwaymanDone = {});
+    if (done[pi]) return false;  // このターンの「最初の財宝」は既に無効化済み＝以降は普通に働く
+    done[pi] = true;
+    return true;
+  }
+  /* 将軍＝「他のプレイヤーは、**自分の場に2枚以上ある同名のアクションカード**を**手札から**使用できない」。
+     ⚠ 「場」はそのプレイヤー自身の場（持続で残っている札も数える）。**手札からの使用だけ**を止める
+        （玉座の2回目＝再演や、脇札からのプレイは止まらない＝公式FAQ逐語）。
+     ⚠ engine拒否・CPU非提案・UI無効化の3面が同じ述語を見ること（片側だけだと本番 livelock）。 */
+  function warlordBlocks(state, pi, card) {
+    if (!DOM.isType(card, 'action')) return false;
+    const n = state.players.length;
+    let armed = false;
+    for (let o = 0; o < n; o++) {
+      if (o === pi) continue;
+      if ((state.players[o].delayedEffects || []).some((e) => e.type === 'warlord' && !(e.immune || []).includes(pi))) armed = true;
+    }
+    if (!armed) return false;
+    const p = state.players[pi];
+    const cnt = p.inPlay.filter((c) => c === card).length + (p.durationCards || []).filter((c) => c === card).length;
+    return cnt >= 2;
+  }
   /* 「選ぶ」カードの選択肢1つぶんの効果。長老の追加選択でも同じ関数を使う（＝挙動が必ず一致する）。 */
   function applyChoiceOption(state, kind, pi, opt, ctx) {
     const t = state.turn, p = state.players[pi];
@@ -7277,6 +7533,20 @@
   }
   // 各持続カードの「次の手番開始時」効果（カードidをキーに登録）。対話分は §手5/手6 で startQueue に積む。
   const DURATION_RESOLVERS = {
+    /* 同盟：追いはぎ＝次の自分のターンの開始時、**まずこれを場から捨て**、**その後**に +3カード
+       （公式FAQ逐語＝`Discarding Highwayman happens first, so it's possible to even draw that Highwayman
+        with the +3 Cards.`）。**捨てられなくてもカードは必ず3枚引く**（玉座で2回使うと捨てるのは1回・引くのは6枚）。 */
+    highwayman: (s, pi) => {
+      const pl = s.players[pi];
+      if (removeOne(pl.durationCards || [], 'highwayman') || removeOne(pl.inPlay, 'highwayman')) {
+        pl.discard.push('highwayman');
+        log(s, `${pl.name} は追いはぎを場から捨てた（ターン開始時）。`);
+      }
+      const got = draw(s, pi, 3);
+      log(s, `${pl.name} は追いはぎの持続効果（+${got.length}カード）。`);
+    },
+    // 同盟：将軍＝次の自分のターンの開始時 +2カード（このとき相手への制限も同時に解ける＝予約が消えるため）。
+    warlord: (s, pi) => { const got = draw(s, pi, 2); log(s, `${s.players[pi].name} は将軍の持続効果（+${got.length}カード）。`); },
     /* 同盟：王家のガレー船＝次の自分のターンの開始時、脇に置いたカードを**使用する**（強制）。 */
     royal_galley: (s, pi) => {
       const pl = s.players[pi];
@@ -9684,6 +9954,20 @@
       while (state.onGainQueue.length) {
         const q = state.onGainQueue.shift();
         if (q.type === 'gatekeeper_exile') { applyGatekeeperExile(state, q.player, q.card, q.dest); continue; }
+        /* 同盟：アタックの続き（獲得時の対話に割り込まれたぶん）＝**非対話**なのでその場で次の被害者へ進める。 */
+        if (q.type === 'barbarian_next') { barbarianEnterVictim(state, q.source, q.queue); if (state.pending) break; continue; }
+        if (q.type === 'archer_next') { archerEnterVictim(state, q.source, q.queue); if (state.pending) break; continue; }
+        /* 同盟：散兵＝アタックカードを獲得したとき、免疫でない他の全員が手札3枚まで捨てる。
+           **使用回数ぶん独立に発動する**（1件ずつキューに積んである）。 */
+        if (q.type === 'skirmisher_attack') {
+          const vic = [];
+          for (let k = 1; k < state.players.length; k++) {
+            const seat = (q.player + k) % state.players.length;
+            if ((q.immune || []).indexOf(seat) < 0 && !attackImmune(state, seat)) vic.push(seat);
+          }
+          if (vic.length) { discardDownEnter(state, q.player, 3, vic); if (state.pending) break; }
+          continue;
+        }
         // 同盟：獲得時の Ally 窓は、積んでから解決までに条件が崩れることがある（好意が減った／札が動いた）＝再検査。
         if (String(q.type).indexOf('ally_') === 0 && !allyGainWindowOpen(state, q)) continue;
         state.pending = q; break;
@@ -9873,6 +10157,8 @@
         if (t.phase !== 'action') return state;
         if (t.actions <= 0) return state;
         if (!canPlayFromHand(state, pi)) return state; // 同盟：航海の追加ターン＝手札から3枚まで
+        // 同盟：将軍＝場に2枚以上ある同名のアクションを手札から使用できない（engine拒否・CPU・UI の3面共通）。
+        if (warlordBlocks(state, pi, action.card)) return state;
         t.inStartPhase = false; // ルネサンス：自分でアクションを使い始めたら「ターン開始時効果」は終わり
         const card = action.card;
         // 冒険：相続＝自分のターン中、屋敷はアクション（命令）としてもプレイできる（脇のカードを動かさずに使用）。
@@ -15076,7 +15362,8 @@
       case 'LINGER_REACT': {
         const pd = state.pending;
         // 相手のターンをフックする持続アタック（呪いの森／沼の妖婆／移動動物園の門番）を「そのまま受ける」。
-        if (!pd || (pd.type !== 'haunted_woods' && pd.type !== 'swamp_hag' && pd.type !== 'gatekeeper') || pd.stage !== 'react') return state;
+        // 同盟：追いはぎ／将軍も「相手のターンをフックする持続アタック」＝同じ受理経路（許可リストに足す）。
+        if (!pd || ['haunted_woods', 'swamp_hag', 'gatekeeper', 'highwayman', 'warlord'].indexOf(pd.type) < 0 || pd.stage !== 'react') return state;
         lingerAttackEnter(state, pd.source, pd.type, pd.queue, pd.rid);
         return state;
       }
@@ -17096,6 +17383,99 @@
         if (state.pending === pd) state.pending = null;
         return state;
       }
+      /* ========== 同盟 A4：アタック7種の reducer ========== */
+      // 蛮族＝アタックを受ける（堀を出さずに受ける）／格下げ獲得（被害者が選ぶ・強制）。
+      case 'BARBARIAN_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'barbarian' || pd.stage !== 'react') return state;
+        barbarianHit(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'BARBARIAN_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'barbarian' || pd.stage !== 'gain') return state;
+        const card = action.card;
+        if (card == null || !barbarianCanGain(state, pd.trashed)(card)) return state; // 強制
+        state.pending = null;
+        gain(state, pd.victim, card, 'discard');
+        log(state, `${state.players[pd.victim].name} は蛮族で「${C()[mixedTopCard(state, card) || card].name}」を獲得した。`);
+        if (state.pending) (state.onGainQueue = state.onGainQueue || []).push({ type: 'barbarian_next', player: pd.source, source: pd.source, queue: pd.queue });
+        else barbarianEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+      // 射手＝アタックを受ける／隠す1枚を選ぶ（被害者）／捨てさせる1枚を選ぶ（使用者）。
+      case 'ARCHER_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'archer' || pd.stage !== 'react') return state;
+        state.pending = { type: 'archer', stage: 'hide', player: pd.victim, source: pd.source, victim: pd.victim, queue: pd.queue };
+        return state;
+      }
+      case 'ARCHER_HIDE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'archer' || pd.stage !== 'hide') return state;
+        const v = state.players[pd.victim];
+        const card = action.card;
+        if (card == null || v.hand.indexOf(card) < 0) return state; // 強制（手札5枚以上なので候補はある）
+        // 公開する（＝隠す1枚以外の全部）。**隠した1枚は使用者にも見えてはいけない**＝pending に載せない。
+        const revealed = v.hand.slice();
+        removeOne(revealed, card);
+        reveal(state, pd.victim, revealed, '射手で1枚を除いて手札を公開');
+        state.pending = { type: 'archer', stage: 'pick', player: pd.source, source: pd.source, victim: pd.victim,
+                          queue: pd.queue, revealed };
+        return state;
+      }
+      case 'ARCHER_PICK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'archer' || pd.stage !== 'pick') return state;
+        const card = action.card;
+        if (card == null || pd.revealed.indexOf(card) < 0) return state; // 強制
+        state.pending = null;
+        alliesDiscardHand(state, pd.victim, [card], '射手で');
+        if (!state.pending) archerEnterVictim(state, pd.source, pd.queue);
+        else (state.onGainQueue = state.onGainQueue || []).push({ type: 'archer_next', player: pd.source, source: pd.source, queue: pd.queue });
+        return state;
+      }
+      // 女魔導士＝カード名を宣言（強制）／呪いを受ける。
+      case 'SORCERESS_NAME': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'sorceress' || pd.stage !== 'name') return state;
+        const card = action.card;
+        if (card == null || !C()[card]) return state; // カード名なら何でもよい（サプライにある必要は無い）
+        state.pending = null;
+        sorceressResolve(state, pd.player, card);
+        return state;
+      }
+      case 'SORCERESS_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'sorceress' || pd.stage !== 'react') return state;
+        state.pending = null;
+        if ((state.supply.curse || 0) > 0 && gain(state, pd.victim, 'curse', 'discard')) log(state, `${state.players[pd.victim].name} は呪いを獲得した（女魔導士）。`);
+        sorceressEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+      // 魔導士＝各相手が名前を宣言（強制）→ その後に自分の山札の一番上を公開する。
+      case 'SORCERER_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'sorcerer' || pd.stage !== 'react') return state;
+        state.pending = { type: 'sorcerer', stage: 'name', player: pd.victim, source: pd.source, victim: pd.victim, queue: pd.queue };
+        return state;
+      }
+      case 'SORCERER_NAME': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'sorcerer' || pd.stage !== 'name') return state;
+        const card = action.card;
+        if (card == null || !C()[card]) return state;
+        state.pending = null;
+        sorcererReveal(state, pd.source, pd.victim, pd.queue, card);
+        return state;
+      }
+      // 散兵＝プレイ時のアタック窓（即時効果は無い＝免疫の確定だけ）。
+      case 'SKIRMISHER_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'skirmisher' || pd.stage !== 'react') return state;
+        skirmisherEnterVictim(state, pd.source, pd.queue, pd.skIdx);
+        return state;
+      }
       /* 王家のガレー船＝手札の**持続でない**アクション1枚を使用してよい（任意・アクション権を消費しない）。
          使ったカードは**完全に解決してから**脇に置く（reduce 末尾の galleySetAside 再開網）。 */
       case 'ROYAL_GALLEY_PLAY': {
@@ -17768,6 +18148,8 @@
     'BAUBLE_CHOOSE', 'CONTRACT_SETASIDE', 'CONTRACT_PLAY', 'IMPORTER_GAIN', 'BROKER_TRASH', 'BROKER_CHOOSE',
     'STUDENT_TRASH', 'TOWN_CRIER_CHOOSE', 'HERB_GATHERER_PLAY', 'OLD_MAP_DISCARD', 'BATTLE_PLAN_REVEAL',
     'ROYAL_GALLEY_PLAY', 'CONJURER_GAIN', 'SPECIALIST_PLAY', 'SPECIALIST_CHOOSE', 'ELDER_PLAY',
+    'BARBARIAN_REACT', 'BARBARIAN_GAIN', 'ARCHER_REACT', 'ARCHER_HIDE', 'ARCHER_PICK',
+    'SORCERESS_NAME', 'SORCERESS_REACT', 'SORCERER_REACT', 'SORCERER_NAME', 'SKIRMISHER_REACT',
     'MODIFY_TRASH', 'MODIFY_CHOOSE', 'MODIFY_GAIN', 'LICH_GAIN',
     // ルネサンス（Renaissance）：村人（アクションフェイズ）／プロジェクト（買う横型・1人2つまで）／王国カード
     'SPEND_VILLAGER', 'BUY_PROJECT',
@@ -17923,6 +18305,8 @@
     modifyCanGain,     // 改造＝廃棄したカードより最大2コイン高いカード（成分別比較）
     lichTrashTargets,  // リッチ＝廃棄置き場からこれより安いカード（**サプライではない**＝cost述語を使わない）
     canPlayFromHand,   // 同盟：航海の追加ターン＝手札から3枚まで（engine拒否・CPU非提案・UI無効化の3面共通）
+    warlordBlocks,     // 同盟：将軍＝場に2枚以上ある同名アクションを手札から使えない（同上・3面共通）
+    barbarianCanGain,  // 同盟：蛮族＝廃棄札と種別を共有しより安いカードの候補（連携/分割山種別も種別に数える）
     elderOn,           // 長老＝そのカードの「選ぶ」で追加の異なる1つを選べるか
     trashFromSupplyPile,  // サプライの山から1枚を廃棄（塩まき/待ち伏せ/剣闘士）。混合山は一番上の実カードを抜く
     // 同盟 A3：Ally カード23種（engine拒否・CPU候補・UIフィルタが同じ述語を見る）
