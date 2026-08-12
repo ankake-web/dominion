@@ -189,6 +189,22 @@ try {
     ok(Array.isArray(s.ruins) && s.ruins.length > 0, 'Looterありで state.ruins が用意される');
     ok(!runtimeError && byText('.sup-title', '廃墟の山'), '盤面に廃墟の山セクションが描画される');
   }
+  /* 【A2b レビュー回帰・既存バグ】カード名を宣言するモーダル（建て直し/秘術師/医者/熟練工）は、
+     混合山のプレースホルダ（'knights'/'castles'/同盟の分割山）ではなく**中身**を出す。
+     山キーを宣言しても山札のカードとは絶対に一致しない＝死に宣言になり、
+     本物の「デイム・ジョセフィーヌ」等を名指しできない（追求 pursue で踏んだのと同型）。 */
+  {
+    console.log('=== 建て直し：宣言モーダルは騎士の山の「中身」を出す ===');
+    const s = mk();
+    s.pending = { type: 'rebuild', stage: 'name', player: 0 };
+    showAs(s, 0);
+    const names = $all('.modal .card .cname').map((e) => e.textContent);
+    ok(!runtimeError, '宣言モーダルが例外なく描ける');
+    ok(names.indexOf(DOM.CARDS.knights.name) < 0, 'プレースホルダ（騎士）は宣言候補に出ない');
+    ok(names.indexOf(DOM.CARDS.dame_josephine.name) >= 0, '騎士の山の中身（デイム・ジョセフィーヌ）を宣言できる');
+    ok(names.indexOf(DOM.CARDS.province.name) >= 0, '普通の山（属州）も従来どおり宣言できる');
+  }
+
 } catch (e) {
   fail++;
   console.log('  ✗ EXCEPTION: ' + e.message + '\n' + (e.stack || '').split('\n').slice(0, 4).join('\n'));

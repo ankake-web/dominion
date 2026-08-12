@@ -1177,8 +1177,8 @@
     // 帝国：横型イベント（買う横型）の選択待ち。
     if (pd.type === 'salt_the_earth') {
       // サプライの勝利点山1つを廃棄（強制）。CPU＝最も安い勝利点（屋敷）を廃棄（自陣・終局への害が小さい）。
-      const cand = Object.keys(state.supply).filter((id) => sup(state, id) > 0 && isType(id, 'victory'))
-        .sort((a, b) => (C()[a].cost || 0) - (C()[b].cost || 0));
+      const cand = Object.keys(state.supply).filter((id) => sup(state, id) > 0 && isTypeSup(state, id, 'victory'))
+        .sort((a, b) => cost(state, a) - cost(state, b));
       return { type: 'SALT_TRASH', card: cand[0] || null };
     }
     if (pd.type === 'banquet') {
@@ -1543,8 +1543,8 @@
         }
         if (pd.stage === 'trash') {
           // engine と同じ述語（非サプライ/ロック中の分割山下段は「サプライの山」ではない＝拒否される）
-          const acts = Object.keys(state.supply).filter((id) => gainableBase(state, id) && isType(id, 'action'))
-            .sort((a, b) => C()[a].cost - C()[b].cost);
+          const acts = Object.keys(state.supply).filter((id) => gainableBase(state, id) && isTypeSup(state, id, 'action'))
+            .sort((a, b) => cost(state, a) - cost(state, b)); // コストも engine の実コスト（混合山＝一番上）で見る
           return { type: 'LURKER_TRASH', card: acts[0] || null };
         }
         { const acts = state.trash.filter((id) => isType(id, 'action')).sort((a, b) => C()[b].cost - C()[a].cost); return { type: 'LURKER_GAIN', card: acts[0] }; }

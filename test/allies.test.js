@@ -483,6 +483,57 @@ function dig(s, pile, n) { s[pile] = s[pile].slice(n); s.supply[pile] = s[pile].
   ok((s2.pileVP.odysseys || 0) === 2, '汚された神殿も「素のアクションの山」として山上VPを置く（randomizer で判定）');
 }
 
+{
+  /* 【A2b レビュー回帰】従者(squire) の on-trash＝**窓を開く述語と受理する述語が同じ**こと。
+     片方だけ一番上を見ると、分割山が「サプライで唯一のアタック」のときに CPU が本番 livelock する
+     （実際にソーク72戦中3戦で膠着した）。 */
+  let s = mk(['clashes', 'squire', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival']);
+  s.clashes = s.clashes.slice(4); s.supply.clashes = s.clashes.length; // 先頭＝射手（アタック）
+  ok(E.isTypeSupply(s, 'clashes', 'attack') === true, '前提：衝突の一番上が射手（アタック）');
+  s.pending = { type: 'squire_trash_gain', player: 0 };
+  const t0 = tally(s);
+  s = reduce(s, { type: 'SQUIRE_TRASH_GAIN', card: 'clashes' });
+  ok(s.pending === null && count(s.players[0].discard, 'archer') === 1,
+    '従者の獲得が受理される（gate と受理が同じ述語＝CPU が同じ手を返し続けない）');
+  ok(tdiff(t0, tally(s)).length === 0, '保存則が壊れない');
+}
+{
+  /* 【A2b レビュー回帰】待ち伏せ(lurker) の候補は CPU も engine と同じ述語を見る。
+     CPU は「安いアクション山」から選ぶので、randomizer が $2〜$3 の同盟の分割山が必ず先頭に来る＝
+     一番上が財宝/勝利点だと engine に拒否され続けて livelock した。 */
+  let s = mk(['odysseys', 'lurker', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival'],
+    {}, [{ name: 'C0', isCpu: true, level: 'hard' }, { name: 'C1', isCpu: true, level: 'hard' }]);
+  s.odysseys = s.odysseys.slice(8); s.supply.odysseys = s.odysseys.length; // 先頭＝沈没した宝物（財宝）
+  s.pending = { type: 'lurker', stage: 'trash', player: 0 };
+  s.turn.phase = 'action';
+  const a = CPU.decide(s);
+  ok(a && a.card !== 'odysseys', 'CPU は「アクションでない」分割山を待ち伏せの廃棄候補に出さない（実 ' + (a && a.card) + '）');
+  const s2 = reduce(s, a);
+  ok(s2.pending === null, 'CPU が返した手を engine が受理して選択待ちが閉じる（3面一致）');
+}
+{
+  /* 【A2b レビュー回帰】塩まき(salt_the_earth)＝CPU/UI も一番上で判定する。
+     騎士の一番上がデイム・ジョセフィーヌ（勝利点）のとき、engine は受理するのに
+     CPU/UI が候補に出さない、という 3面破れが mix-all で**今日すでに**到達可能だった。 */
+  let s = mk(['knights', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival', 'mine'],
+    {}, [{ name: 'C0', isCpu: true, level: 'hard' }, { name: 'C1', isCpu: true, level: 'hard' }]);
+  s.knights = ['dame_josephine'].concat(s.knights.filter((c) => c !== 'dame_josephine'));
+  ok(E.isTypeSupply(s, 'knights', 'victory') === true, '前提：騎士の一番上が勝利点（デイム・ジョセフィーヌ）');
+  s.supply.estate = 0; s.supply.duchy = 0; s.supply.province = 0; // 基本の勝利点山を空にして騎士だけを候補にする
+  s.pending = { type: 'salt_the_earth', player: 0 };
+  const a = CPU.decide(s);
+  ok(a && a.card === 'knights', 'CPU は騎士の山を勝利点として候補に出す（実 ' + (a && a.card) + '）');
+  const s2 = reduce(s, a);
+  ok(s2.pending === null && count(s2.trash, 'dame_josephine') === 1, '塩まきで一番上の実カードが廃棄される');
+}
+{
+  // 終端保証：勝利点の山が1つも無ければ塩まきの窓は閉じる（人間が逃げ道ゼロで詰まない）
+  let s = mk(['village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival', 'mine', 'workshop']);
+  s.supply.estate = 0; s.supply.duchy = 0; s.supply.province = 0;
+  s.pending = { type: 'salt_the_earth', player: 0 };
+  ok(reduce(s, { type: 'SALT_TRASH', card: null }).pending === null, '勝利点の山がゼロなら塩まきの窓は閉じる（終端保証）');
+}
+
 /* ============================================================
    A2: CPU（engine と同じ述語を見るか＝本番 livelock を防ぐ）
    ============================================================ */

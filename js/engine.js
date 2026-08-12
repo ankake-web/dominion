@@ -9202,6 +9202,7 @@
       case 'SALT_TRASH': {
         const pd = state.pending;
         if (!pd || pd.type !== 'salt_the_earth') return state;
+        if (!anyVictorySupply(state)) { state.pending = null; return state; } // 終端保証（勝利点の山がゼロ）
         const id = action.card;
         if (!id || (state.supply[id] || 0) <= 0 || !isTypeSupply(state, id, 'victory')) return state;
         // 城の混合山（castles）＝一番上の実カードを廃棄（trashFromSupplyPile が supply と同期）。
@@ -10670,7 +10671,7 @@
       case 'SQUIRE_TRASH_GAIN': { // on-trash：サプライのアタックカードを1枚獲得
         const pd = state.pending;
         if (!pd || pd.type !== 'squire_trash_gain') return state;
-        finishGain(state, pd, action.card, (id) => DOM.isType(id, 'attack') && !NON_SUPPLY.has(id), 'discard', 'アタックカードを獲得した（従者）。');
+        finishGain(state, pd, action.card, (id) => isTypeSupply(state, id, 'attack') && !NON_SUPPLY.has(id), 'discard', 'アタックカードを獲得した（従者）。');
         return state;
       }
       case 'STOREROOM_DISCARD': {

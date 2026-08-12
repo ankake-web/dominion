@@ -2600,7 +2600,7 @@
     }
     // 帝国：横型イベントの選択待ち
     if (pd.type === 'salt_the_earth') return modalGainSupply(state, '大地への塩まき — 廃棄', 'サプライの勝利点カード1枚を選んで廃棄します（その山が1枚減ります）。',
-      (id) => DOM.CARDS[id] && DOM.CARDS[id].types.includes('victory'),
+      (id) => DOM.CARDS[id] && isTypeSup(state, id, 'victory'),
       (id) => dispatch({ type: 'SALT_TRASH', card: id }), null, null, '廃棄する');
     if (pd.type === 'banquet') return modalGainSupply(state, '宴会 — 獲得', 'コスト$5以下の、勝利点でないカード1枚を獲得します。',
       (id) => canUpTo(state, id, 5) && !isTypeSup(state, id, 'victory'),
@@ -3064,7 +3064,7 @@
       { label: '+2 アクション', on: () => dispatch({ type: 'SQUIRE_RESOLVE', choice: 'actions' }) },
       { label: '+2 購入', on: () => dispatch({ type: 'SQUIRE_RESOLVE', choice: 'buys' }) },
       { label: '銀貨を獲得', on: () => dispatch({ type: 'SQUIRE_RESOLVE', choice: 'silver' }) }]);
-    if (pd.type === 'squire_trash_gain') return modalGainSupply(state, '従者 — アタックを獲得', '（廃棄された従者）サプライのアタックカードを1枚獲得します。', (id) => DOM.isType(id, 'attack'), (id) => dispatch({ type: 'SQUIRE_TRASH_GAIN', card: id }), () => dispatch({ type: 'SQUIRE_TRASH_GAIN', card: null }));
+    if (pd.type === 'squire_trash_gain') return modalGainSupply(state, '従者 — アタックを獲得', '（廃棄された従者）サプライのアタックカードを1枚獲得します。', (id) => isTypeSup(state, id, 'attack'), (id) => dispatch({ type: 'SQUIRE_TRASH_GAIN', card: id }), () => dispatch({ type: 'SQUIRE_TRASH_GAIN', card: null }));
     if (pd.type === 'storeroom') return modalMultiHand(p, pd.stage === 'discard1' ? '倉庫 — 捨てて引く' : '倉庫 — 捨てて+$1', pd.stage === 'discard1' ? '好きな枚数を捨て、同じ枚数を引きます（0枚でもOK）。' : '好きな枚数を捨て、捨てた枚数ぶん +$1（0枚でもOK）。', (n) => '確定（' + n + '枚捨て）', true, (cards) => dispatch({ type: 'STOREROOM_DISCARD', cards }));
     if (pd.type === 'scavenger' && pd.stage === 'deck') return modalOptions('清掃', '山札をすべて捨て札にできます（その後、捨て札から1枚を山札の上に置きます）。', [
       { label: '山札を捨て札にする', cls: 'btn-primary', on: () => dispatch({ type: 'SCAVENGER_DECK', discardDeck: true }) },
@@ -3656,9 +3656,16 @@
     return modalShell(title, desc, chips, footer);
   }
   // 願いの井戸: このゲームのカードから1種を宣言
+  /* カード名を1つ宣言する（秘術師／医者／熟練工／建て直し）。
+     **混合山（廃墟/騎士/城/同盟の分割山）はプレースホルダ（山キー）を出すと絶対に一致しない死に宣言になる**
+     （かつ本物の「領地」「要塞」等を名指しできない）＝中身を展開して出す（追求 pursue と同じ扱い）。 */
   function modalNameCard(state, title, desc, onPick) {
-    const order = DOM.SUPPLY_ORDER(state.kingdom);
-    const chips = order.map((id) =>
+    const MIX = (DOM.engine.MIXED_PILE_KEYS || []);
+    const names = [];
+    const push = (id) => { if (DOM.CARDS[id] && names.indexOf(id) < 0) names.push(id); };
+    DOM.SUPPLY_ORDER(state.kingdom).forEach((id) => { if (MIX.indexOf(id) < 0) push(id); });
+    MIX.forEach((k) => { (state[k] || []).forEach(push); });
+    const chips = names.map((id) =>
       cardEl(id, { size: 'sm', extra: 'selectable', onClick: () => openPickZoom(id, '宣言する', () => onPick(id)) }));
     return modalShell(title, desc, chips, null);
   }
