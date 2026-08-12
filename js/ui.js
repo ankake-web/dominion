@@ -3042,7 +3042,8 @@
     if (pd.type === 'thief' && pd.stage === 'gain') return modalOptions('泥棒 — 「' + DOM.CARDS[pd.trashed].name + '」を獲得?', '廃棄した財宝を自分の捨て札に獲得できます。', [
       { label: '獲得する', cls: 'btn-primary', on: () => dispatch({ type: 'THIEF_GAIN', take: true }) },
       { label: '廃棄のまま', on: () => dispatch({ type: 'THIEF_GAIN', take: false }) }]);
-    if (pd.type === 'throne') return modalSingleHand(p, '玉座の間 — 2回使うアクションを選ぶ', '手札のアクションカードを1枚選ぶと、それを2回使います。', (id) => DOM.isType(id, 'action'), (card) => dispatch({ type: 'THRONE_CHOOSE', card }), null, '2回使う');
+    // 同盟：航海の3枚制限／将軍で使えない札は候補に出さない（engine が拒否する死に選択肢を作らない）＋辞退できる。
+    if (pd.type === 'throne') return modalSingleHand(p, '玉座の間 — 2回使うアクションを選ぶ', '手札のアクションカードを1枚選ぶと、それを2回使います。', (id) => DOM.isType(id, 'action') && DOM.engine.canPlayHandCard(state, pd.player, id), (card) => dispatch({ type: 'THRONE_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'THRONE_CHOOSE', card: null }) }, '2回使う');
     if (pd.type === 'secret_chamber_putback') { const scn = Math.min(2, p.hand.length); return modalSelectN(p, '秘密の小部屋 — 山札の上に戻す', '手札から' + scn + '枚を選んで山札の上に戻します（最初のタップが一番上）。', scn, '確定（戻す）', (cards) => dispatch({ type: 'SECRET_CHAMBER_PUTBACK', cards })); }
 
     /* ===== 基本セット 第二版 ===== */
@@ -3400,7 +3401,7 @@
     if (pd.type === 'expand' && pd.stage === 'gain') return modalGainSupply(state, '拡張 — 獲得', 'コスト ' + pd.maxCost + ' 以下のカードを1枚獲得します。', (id) => canUpTo(state, id, pd.maxCost, pd), (id) => dispatch({ type: 'EXPAND_GAIN', card: id }));
     if (pd.type === 'forge' && pd.stage === 'trash') return modalMultiHand(p, '溶鉱炉 — 廃棄', '好きな枚数を廃棄します（合計コストちょうどのカードを獲得）。', (n) => '確定（' + n + '枚廃棄）', true, (cards) => dispatch({ type: 'FORGE_TRASH', cards }));
     if (pd.type === 'forge' && pd.stage === 'gain') return modalGainSupply(state, '溶鉱炉 — 獲得', 'ちょうどコスト $' + pd.exact + ' のカードを1枚獲得します。', (id) => canExact(state, id, pd.exact, 0, 0), (id) => dispatch({ type: 'FORGE_GAIN', card: id }));
-    if (pd.type === 'kings_court') return modalSingleHand(p, '王の宮廷 — 3回使う', '3回使うアクションカードを選びます。', (id) => DOM.isType(id, 'action'), (card) => dispatch({ type: 'KINGS_COURT_CHOOSE', card }), null, '3回使う');
+    if (pd.type === 'kings_court') return modalSingleHand(p, '王の宮廷 — 3回使う', '3回使うアクションカードを選びます。', (id) => DOM.isType(id, 'action') && DOM.engine.canPlayHandCard(state, pd.player, id), (card) => dispatch({ type: 'KINGS_COURT_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'KINGS_COURT_CHOOSE', card: null }) }, '3回使う');
     if (pd.type === 'war_chest' && pd.stage === 'name') return modalGainSupply(state, '軍用金 — カードを指定', state.players[pd.source].name + ' が獲得できないカードを1つ指定します。', () => true, (id) => dispatch({ type: 'WAR_CHEST_NAME', card: id }));
     if (pd.type === 'war_chest' && pd.stage === 'gain') return modalGainSupply(state, '軍用金 — 獲得', 'コスト$5以下で、指定されていないカードを1枚獲得します。', (id) => canUpTo(state, id, 5) && (state.turn.warChestNamed || []).indexOf(id) < 0, (id) => dispatch({ type: 'WAR_CHEST_GAIN', card: id }));
     if (pd.type === 'watchtower') return modalOptions('物見やぐら', '獲得した「' + DOM.CARDS[pd.card].name + '」をどうしますか？', [
@@ -3646,7 +3647,7 @@
     }
     if (pd.type === 'hermit' && pd.stage === 'trash') return modalHermitTrash(p, state);
     if (pd.type === 'hermit' && pd.stage === 'gain') return modalGainSupply(state, '隠遁者 — 獲得', 'コスト3以下のカードを1枚獲得します。', (id) => canUpTo(state, id, 3), (id) => dispatch({ type: 'HERMIT_GAIN', card: id }), () => dispatch({ type: 'HERMIT_GAIN', card: null }));
-    if (pd.type === 'procession') return modalSingleHand(p, '行進 — 2回使うアクション', '手札の非持続アクション1枚を選ぶと2回使い、廃棄して、ちょうど+$1高いアクションを獲得します（使わなくてもよい）。', (id) => DOM.isType(id, 'action') && !DOM.isType(id, 'duration'), (card) => dispatch({ type: 'PROCESSION_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'PROCESSION_CHOOSE', card: null }) }, '2回使う');
+    if (pd.type === 'procession') return modalSingleHand(p, '行進 — 2回使うアクション', '手札の非持続アクション1枚を選ぶと2回使い、廃棄して、ちょうど+$1高いアクションを獲得します（使わなくてもよい）。', (id) => DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && DOM.engine.canPlayHandCard(state, pd.player, id), (card) => dispatch({ type: 'PROCESSION_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'PROCESSION_CHOOSE', card: null }) }, '2回使う');
     if (pd.type === 'procession_gain') return modalGainSupply(state, '行進 — 獲得', 'ちょうどコスト $' + pd.exact + (pd.pot ? 'P' : '') + ' のアクションを1枚獲得します。', (id) => isTypeSup(state, id, 'action') && canExact(state, id, pd.exact, pd.pot, pd.debt), (id) => dispatch({ type: 'PROCESSION_GAIN', card: id }));
     if (pd.type === 'counterfeit') return modalSingleHand(p, '偽造通貨 — 2回使う財宝', '手札の非持続財宝1枚を選ぶと2回使い、それを廃棄します（使わなくてもよい）。', (id) => isTreasureNow(state, id) && !DOM.isType(id, 'duration'), (card) => dispatch({ type: 'COUNTERFEIT_PLAY', card }), { label: '使わない', on: () => dispatch({ type: 'COUNTERFEIT_PLAY', card: null }) }, '2回使う');
     // --- Group D（アタック）---

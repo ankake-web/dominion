@@ -1727,6 +1727,54 @@ console.log('=== A4: 敵対レビュー確定分の回帰 ===');
   ok(s.turn.coins === c0 + 4, '無効化された1枚目も「1枚目」として数える＝2枚目は +$4（実際 +' + (s.turn.coins - c0) + '）');
 }
 {
+  /* [high 回帰] 将軍 × 玉座の間＝**合法な対象がゼロなら窓を開かない**（開くと engine拒否×CPU提案の livelock）。
+     窓・受理・CPU候補・UI フィルタの4点セットが同じ述語（`canPlayHandCard`）を見ること。 */
+  let s = mkA4(['clashes', 'throne_room', 'kings_court', 'procession', 'village', 'smithy', 'market', 'moat', 'militia', 'gold'], 2);
+  digPile(s, 'clashes', 2);   // 将軍が一番上
+  s.players[0].hand = ['warlord']; s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'warlord' });
+  while (s.pending && s.pending.type === 'warlord') s = reduce(s, { type: 'LINGER_REACT' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  ['throne_room', 'kings_court', 'procession'].forEach((tc) => {
+    let u = s;
+    u.players[1].inPlay = ['village', 'village'];
+    u.players[1].hand = [tc, 'village', 'copper'];
+    u.turn.actions = 5;
+    u = reduce(u, { type: 'PLAY_ACTION', card: tc });
+    ok(u.pending == null, tc + '：合法な対象がゼロなら窓を開かない（livelock 回帰）');
+    // CPU も engine が拒否する手を返さない
+    let v = s;
+    v.players[1].inPlay = ['village'];
+    v.players[1].hand = [tc, 'village', 'village', 'copper'];
+    v.turn.actions = 5;
+    v = reduce(v, { type: 'PLAY_ACTION', card: tc });
+    let guard = 0, rejected = 0;
+    while (v.pending && guard++ < 30) {
+      const a = CPU.decide(v);
+      const b = JSON.stringify(v);
+      v = reduce(v, a);
+      if (JSON.stringify(v) === b) rejected++;
+    }
+    ok(rejected === 0 && !v.pending, tc + '：CPU が engine に拒否される手を返さない（拒否' + rejected + '回）');
+  });
+}
+{
+  /* [high 回帰] 専門家 × 航海＝手札から3枚使い切った後は専門家の窓を開かない
+     （開くと specialist_play → 'again' → 再演 → specialist_play の無限ループになる）。 */
+  let s = mkA4(SPLIT_K, 2);
+  digPile(s, 'odysseys', 1);   // 航海
+  s.players[0].hand = ['voyage']; s.turn.actions = 1;
+  s.players[0].deck = new Array(40).fill('copper');
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'voyage' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  s.turn.handPlays = 3;
+  s.players[0].hand = ['specialist', 'copper']; s.turn.actions = 3;
+  const before = JSON.stringify([s.turn.handPlays, s.players[0].hand, s.pending]);
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'specialist' });
+  ok(JSON.stringify([s.turn.handPlays, s.players[0].hand, s.pending]) === before,
+    '航海の3枚制限に達していれば専門家自体を使えない（livelock 回帰）');
+}
+{
   // [medium] 将軍：玉座の間／長老／専門家 など「手札から使わせる」経路も止まる
   let s = mkA4(['warlord', 'throne_room', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'gold'], 2);
   s.players[0].hand = ['warlord']; s.turn.actions = 1;

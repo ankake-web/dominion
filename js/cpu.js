@@ -1508,8 +1508,10 @@
         return { type: 'FEAST_GAIN', card: bestGain(state, 5, { noVictory: true }) || bestGain(state, 5) };
       case 'throne': {
         // 2回使う価値が高いアクション（玉座以外で最も高コスト）を選ぶ
-        const acts = p.hand.filter((c) => isType(c, 'action') && c !== 'throne_room').sort((a, b) => throneValue(b) - throneValue(a));
-        const pick = acts[0] || p.hand.filter((c) => isType(c, 'action'))[0];
+        // ⚠ 同盟：航海の3枚制限／将軍で使えない札を返し続けると engine拒否×CPU提案の livelock になる。
+        const ok2 = (c) => isType(c, 'action') && DOM.engine.canPlayHandCard(state, pd.player, c);
+        const acts = p.hand.filter((c) => ok2(c) && c !== 'throne_room').sort((a, b) => throneValue(b) - throneValue(a));
+        const pick = acts[0] || p.hand.filter(ok2)[0] || null;
         return { type: 'THRONE_CHOOSE', card: pick };
       }
       case 'library':
@@ -2539,9 +2541,9 @@
         if (pd.stage === 'trash') return { type: 'FORGE_TRASH', cards: p.hand.filter((c) => c === 'estate') };
         return { type: 'FORGE_GAIN', card: bestGainExact(state, pd.exact, { noVictory: true }) || bestGainExact(state, pd.exact) };
       case 'kings_court': {
-        const acts = p.hand.filter((c) => isType(c, 'action'));
+        const acts = p.hand.filter((c) => isType(c, 'action') && DOM.engine.canPlayHandCard(state, pd.player, c));
         const nonKc = acts.filter((c) => c !== 'kings_court').sort((a, b) => throneValue(b) - throneValue(a));
-        const card = nonKc[0] || acts.slice().sort((a, b) => throneValue(b) - throneValue(a))[0];
+        const card = nonKc[0] || acts.slice().sort((a, b) => throneValue(b) - throneValue(a))[0] || null;
         return { type: 'KINGS_COURT_CHOOSE', card };
       }
       case 'war_chest':

@@ -4562,8 +4562,9 @@
         break;
       }
       case 'throne_room':
-        // 手札にアクションがあれば、2回使うカードを選ぶ
-        if (p.hand.some((c) => DOM.isType(c, 'action'))) state.pending = { type: 'throne', player: pi };
+        /* 手札にアクションがあれば、2回使うカードを選ぶ。
+           ⚠ 同盟：航海の3枚制限／将軍で**使える対象がゼロ**なら窓を開かない（開くと閉じられず人間が詰む）。 */
+        if (p.hand.some((c) => DOM.isType(c, 'action') && canPlayHandCard(state, pi, c))) state.pending = { type: 'throne', player: pi };
         break;
       case 'tribute': {
         // 左隣のプレイヤーが山札の上2枚を公開して捨てる
@@ -4965,7 +4966,7 @@
         state.pending = { type: 'hermit', stage: 'trash', player: pi };
         break;
       case 'procession': // 手札の非持続アクションを2回使う→廃棄→ちょうど+$1高いアクションを獲得（使わなくてよい）
-        if (p.hand.some((c) => DOM.isType(c, 'action') && !DOM.isType(c, 'duration'))) state.pending = { type: 'procession', player: pi };
+        if (p.hand.some((c) => DOM.isType(c, 'action') && !DOM.isType(c, 'duration') && canPlayHandCard(state, pi, c))) state.pending = { type: 'procession', player: pi };
         break;
       case 'marauder': { // 戦利品を獲得（自分）＋各相手が廃墟を獲得（アタック）
         if (gain(state, pi, 'spoils', 'discard')) log(state, `${p.name} は略奪者で戦利品を獲得した。`);
@@ -5249,7 +5250,7 @@
         state.pending = { type: 'forge', stage: 'trash', player: pi }; // 任意枚数廃棄→合計コストちょうどを獲得
         break;
       case 'kings_court':
-        if (p.hand.some((c) => DOM.isType(c, 'action'))) state.pending = { type: 'kings_court', player: pi };
+        if (p.hand.some((c) => DOM.isType(c, 'action') && canPlayHandCard(state, pi, c))) state.pending = { type: 'kings_court', player: pi };
         break;
       case 'rabble': {
         draw(state, pi, 3);
@@ -11308,9 +11309,10 @@
         if (!pd || pd.type !== 'throne') return state;
         const p = state.players[pd.player];
         const card = action.card;
+        if (card == null) { state.pending = null; return state; } // 公式は "You **may** play"＝辞退できる（終端保証）
         if (p.hand.indexOf(card) < 0 || !DOM.isType(card, 'action')) return state;
-        // 同盟：将軍＝場に2枚以上ある同名のアクションは手札から使えない（公式FAQが玉座の間を名指しで禁止）。
-        if (warlordBlocks(state, pd.player, card)) return state;
+        // 同盟：航海の3枚制限／将軍（場に2枚以上ある同名）は「手札から使わせる」経路も止める（公式FAQが玉座を名指し）。
+        if (!canPlayHandCard(state, pd.player, card)) return state;
         removeOne(p.hand, card);
         p.inPlay.push(card);
         notePlayFromHand(state, pd.player); // 同盟：航海＝玉座が選んだ手札のカードも数える（再演は数えない）
@@ -12617,6 +12619,7 @@
         const card = action.card;
         if (card == null) { state.pending = null; return state; } // 使わない
         if (p.hand.indexOf(card) < 0 || !DOM.isType(card, 'action') || DOM.isType(card, 'duration')) return state;
+        if (!canPlayHandCard(state, pd.player, card)) return state; // 同盟：航海の3枚制限／将軍
         removeOne(p.hand, card); p.inPlay.push(card);
         t.actionsPlayed = (t.actionsPlayed || 0) + 1;
         state.pending = null;
@@ -13656,7 +13659,9 @@
         if (!pd || pd.type !== 'kings_court') return state;
         const p = state.players[pd.player];
         const card = action.card;
+        if (card == null) { state.pending = null; return state; } // 辞退できる（終端保証）
         if (p.hand.indexOf(card) < 0 || !DOM.isType(card, 'action')) return state;
+        if (!canPlayHandCard(state, pd.player, card)) return state; // 同盟：航海の3枚制限／将軍
         removeOne(p.hand, card); p.inPlay.push(card);
         t.actionsPlayed = (t.actionsPlayed || 0) + 1;
         state.pending = null;
@@ -17782,8 +17787,11 @@
         if (card == null) return state;                      // 辞退＝持続にならない
         if (owner.hand.indexOf(card) < 0) return state;
         if ((!DOM.isType(card, 'action') && !inheritedEstate(owner, card)) || DOM.isType(card, 'duration')) return state;
-        t.galleySetAside = { player: pd.player, card };
-        playCardNoAction(state, pd.player, card, owner.hand, '王家のガレー船で', action.way);
+        // ⚠ **プレイに成功したときだけ**脇置きの予約を立てる（失敗すると再開網が場の別の同名コピーを脇に置く）。
+        if (!canPlayHandCard(state, pd.player, card)) return state;
+        if (playCardNoAction(state, pd.player, card, owner.hand, '王家のガレー船で', action.way)) {
+          t.galleySetAside = { player: pd.player, card };
+        }
         return state;
       }
       // 霊術師＝コスト4以下のカード1枚を獲得（強制）。
@@ -17808,8 +17816,11 @@
         if (card == null) return state;                      // 辞退
         if (owner.hand.indexOf(card) < 0) return state;
         if (!DOM.isType(card, 'action') && !isTreasureFor(state, card) && !inheritedEstate(owner, card)) return state;
-        t.specialistAfter = { player: pd.player, card };
-        playCardNoAction(state, pd.player, card, owner.hand, '専門家で', action.way);
+        // ⚠ **プレイに成功したときだけ**二択の予約を立てる（失敗すると specialist_play が無限に開く＝レビューで実測）。
+        if (!canPlayHandCard(state, pd.player, card)) return state;
+        if (playCardNoAction(state, pd.player, card, owner.hand, '専門家で', action.way)) {
+          t.specialistAfter = { player: pd.player, card };
+        }
         return state;
       }
       case 'SPECIALIST_CHOOSE': {
@@ -17833,8 +17844,9 @@
         if (card == null) return state;                      // 辞退（+$2 だけ）
         if (owner.hand.indexOf(card) < 0) return state;
         if (!DOM.isType(card, 'action') && !inheritedEstate(owner, card)) return state;
+        if (!canPlayHandCard(state, pd.player, card)) return state;
         t.elderBoost = inheritedEstate(owner, card) ? 'estate' : card;
-        playCardNoAction(state, pd.player, card, owner.hand, '長老で', action.way);
+        if (!playCardNoAction(state, pd.player, card, owner.hand, '長老で', action.way)) t.elderBoost = null;
         return state;
       }
       // 改造＝手札1枚を廃棄（強制）→ 二択（+1カード+1アクション ／ 廃棄した札より最大2コイン高いカードを獲得）。
