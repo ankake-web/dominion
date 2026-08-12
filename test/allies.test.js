@@ -33,7 +33,8 @@ function mk(kingdom, opts, names) {
 }
 // 保存則の tally（混合山は実カード配列で数え、supply の残数キーは数えない＝二重計上を避ける）。
 const ZONES = ['deck', 'hand', 'discard', 'inPlay', 'durationCards', 'setAside', 'islandMat', 'nativeVillageMat',
-  'princes', 'tavern', 'inherited', 'cargo', 'exile', 'eventSetAside', 'ghostSetAside', 'cryptSetAside'];
+  'princes', 'tavern', 'inherited', 'cargo', 'exile', 'eventSetAside', 'ghostSetAside', 'cryptSetAside',
+  'contractSetAside'];
 const MIX = E.MIXED_PILE_KEYS;
 function tally(s) {
   const t = {}; const a = (id) => { if (id != null) t[id] = (t[id] || 0) + 1; };
@@ -788,6 +789,8 @@ console.log('=== A3: 小売店主連盟（連携を使った後・5以上で+$1�
   s.players[0].hand = ['bauble'];
   s.turn.phase = 'buy';
   s = reduce(s, { type: 'PLAY_TREASURE', card: 'bauble' });
+  // A4：道化棒は「異なる2つを選ぶ」窓を開く＝**その解決が終わってから** Ally が誘発する（公式）。
+  s = reduce(s, { type: 'BAUBLE_CHOOSE', picks: ['buy', 'coin'] });
   ok(s.turn.coins >= 1, '財宝の連携（道化棒）を使っても誘発する: coins=' + s.turn.coins);
   ok(s.players[0].favors === 5, '好意は消費しない');
 }
@@ -798,6 +801,7 @@ console.log('=== A3: 小売店主連盟（連携を使った後・5以上で+$1�
   s.turn.phase = 'buy';
   const b0 = s.turn.buys;
   s = reduce(s, { type: 'PLAY_TREASURE', card: 'bauble' });
+  s = reduce(s, { type: 'BAUBLE_CHOOSE', picks: ['coin', 'favor'] }); // +1購入 は選ばない（小売店主連盟のぶんだけ数える）
   ok(s.turn.buys === b0 + 1, '好意10以上なら +1購入（+$1 と**累積**）');
 }
 {
@@ -818,6 +822,7 @@ console.log('=== A3: 魔女の輪（好意3で全員に呪い・アタックで�
   s.players[1].hand = ['moat'];
   s.turn.phase = 'buy';
   s = reduce(s, { type: 'PLAY_TREASURE', card: 'bauble' });
+  s = reduce(s, { type: 'BAUBLE_CHOOSE', picks: ['buy', 'coin'] }); // 道化棒の選択を解決してから Ally の窓が開く
   ok(s.pending && s.pending.type === 'ally_circle', '連携を使った後に窓が開く');
   s = reduce(s, { type: 'ALLY_SIMPLE', ok: true });
   ok(count(s.players[1].discard, 'curse') === 1, '**堀を持っていても**呪いを受ける（アタックではない）');
@@ -1170,6 +1175,8 @@ console.log('=== A3: 敵対レビュー回帰（確定7件） ===');
   c.turn.phase = 'buy';
   c = reduce(c, { type: 'PLAY_TREASURE', card: 'crown' });
   c = reduce(c, { type: 'CROWN_CHOOSE', card: 'bauble' });
+  // A4：道化棒は使うたびに「異なる2つ」を選び直す＝2回ぶん解決する（命令の commandAs とは逆）。
+  while (c.pending && c.pending.type === 'bauble_choose') c = reduce(c, { type: 'BAUBLE_CHOOSE', picks: ['buy', 'coin'] });
   const shop = c.log.filter((l) => l.indexOf('小売店主連盟') >= 0).length;
   ok(shop === 2, '冠×財宝の連携＝2回誘発する: ' + shop);
   // 大君主（命令）が連携をプレイしても誘発する

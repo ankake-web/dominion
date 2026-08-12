@@ -2660,6 +2660,76 @@
         { label: '循環させない', on: () => dispatch({ type: 'ROTATE_PILE', pile: null }) }]);
     }
     /* ===== 同盟 A4：王国カード49種のモーダル ===== */
+    if (pd.type === 'bauble_choose') {
+      const OPTS = [{ k: 'buy', label: '+1 購入' }, { k: 'coin', label: '+1 コイン' },
+        { k: 'favor', label: '+1 好意' }, { k: 'topdeck', label: 'このターン、獲得したカードを山札の上に置いてよい' }];
+      pruneSelection(OPTS.length);
+      const chips = OPTS.map((o, idx) => {
+        const pos = UI.selection.indexOf(idx);
+        return h('button', { class: 'btn btn-block ' + (pos >= 0 ? 'btn-primary' : ''), style: 'margin-bottom:6px',
+          onclick: () => { const i = UI.selection.indexOf(idx); if (i >= 0) UI.selection.splice(i, 1); else if (UI.selection.length < 2) UI.selection.push(idx); render(); } },
+        (pos >= 0 ? '✓ ' : '') + o.label);
+      });
+      const ready = UI.selection.length === 2;
+      const footer = h('button', { class: 'btn btn-primary btn-block', disabled: ready ? null : 'disabled',
+        onclick: () => dispatch({ type: 'BAUBLE_CHOOSE', picks: takeSelection(OPTS).map((o) => o.k) }) },
+      ready ? '確定' : ('あと ' + (2 - UI.selection.length) + ' つ選ぶ'));
+      return modalShell('道化棒 — 異なる2つを選ぶ', '4つのうち異なる2つを選びます（先に2つ選んでから解決します）。', chips, footer);
+    }
+    if (pd.type === 'contract_setaside') {
+      return modalSingleHand(p, '契約書 — 脇に置く',
+        '手札のアクションカード1枚を脇に置けます（次のターンの開始時に使用します）。しなくてもよい。',
+        (id) => DOM.isType(id, 'action') || DOM.engine.inheritedEstate(p, id),
+        (card) => dispatch({ type: 'CONTRACT_SETASIDE', card }),
+        { label: '脇に置かない', on: () => dispatch({ type: 'CONTRACT_SETASIDE', card: null }) }, '脇に置く');
+    }
+    if (pd.type === 'contract_play') {
+      const nm = ((DOM.CARDS[(p.contractSetAside || [])[0]] || {}).name || '');
+      const wayList = (state.ways || []).filter((w) => (DOM.LANDSCAPES || {})[w]);
+      return modalOptions('契約書 — 脇札を使用', '契約書で脇に置いた「' + nm + '」を使用します（アクション権は使いません）。',
+        [{ label: '使用する', cls: 'btn-primary', on: () => dispatch({ type: 'CONTRACT_PLAY' }) }]
+          .concat(wayList.map((w) => ({ label: '「' + DOM.LANDSCAPES[w].name + '」で使用する', on: () => dispatch({ type: 'CONTRACT_PLAY', way: w }) }))));
+    }
+    if (pd.type === 'importer_gain') {
+      return modalGainSupply(state, '輸入者 — 獲得', 'コスト5コイン以下のカード1枚を獲得します。',
+        (id) => DOM.engine.costUpTo(state, id, 5), (id) => dispatch({ type: 'IMPORTER_GAIN', card: id }));
+    }
+    if (pd.type === 'broker_trash') {
+      return modalSingleHand(p, '仲買人 — 廃棄', '手札から1枚を廃棄します（その後、そのコスト$1につき1つを選びます）。',
+        () => true, (card) => dispatch({ type: 'BROKER_TRASH', card }));
+    }
+    if (pd.type === 'broker_choose') {
+      const n = pd.n || 0;
+      return modalOptions('仲買人', '廃棄したカードのコストは $' + n + ' でした。次から1つを選びます。', [
+        { label: '+' + n + ' カード', cls: 'btn-primary', on: () => dispatch({ type: 'BROKER_CHOOSE', choice: 'cards' }) },
+        { label: '+' + n + ' アクション', on: () => dispatch({ type: 'BROKER_CHOOSE', choice: 'actions' }) },
+        { label: '+' + n + ' コイン', on: () => dispatch({ type: 'BROKER_CHOOSE', choice: 'coins' }) },
+        { label: '+' + n + ' 好意', on: () => dispatch({ type: 'BROKER_CHOOSE', choice: 'favors' }) }]);
+    }
+    if (pd.type === 'student_trash') {
+      return modalSingleHand(p, '生徒 — 廃棄', '手札から1枚を廃棄します（財宝なら +1 好意、そして生徒を山札の一番上に置きます）。',
+        () => true, (card) => dispatch({ type: 'STUDENT_TRASH', card }));
+    }
+    if (pd.type === 'town_crier_choose') return modalOptions('触れ役', '次から1つを選びます（その後、町民の山を循環させるか選べます）。', [
+      { label: '+2 コイン', cls: 'btn-primary', on: () => dispatch({ type: 'TOWN_CRIER_CHOOSE', choice: 'coins' }) },
+      { label: '銀貨1枚を獲得', on: () => dispatch({ type: 'TOWN_CRIER_CHOOSE', choice: 'silver' }) },
+      { label: '+1 カード と +1 アクション', on: () => dispatch({ type: 'TOWN_CRIER_CHOOSE', choice: 'cantrip' }) }]);
+    if (pd.type === 'herb_gatherer_play') {
+      const names = [];
+      (p.discard || []).forEach((c) => { if (DOM.engine.isTreasureFor(state, c) && names.indexOf(c) < 0) names.push(c); });
+      return modalPickIds('薬草集め — 捨て札から財宝を使う', '捨て札置き場から財宝カード1枚を使用できます（しなくてもよい）。',
+        names, (id) => dispatch({ type: 'HERB_GATHERER_PLAY', card: id }), '使う',
+        { label: '使わない', on: () => dispatch({ type: 'HERB_GATHERER_PLAY', card: null }) });
+    }
+    if (pd.type === 'old_map_discard') {
+      return modalSingleHand(p, '古地図 — 捨てる', '手札から1枚を捨てます（その後 +1 カード）。',
+        () => true, (card) => dispatch({ type: 'OLD_MAP_DISCARD', card }), null, '捨てる');
+    }
+    if (pd.type === 'battle_plan_reveal') {
+      return modalSingleHand(p, '戦闘計画 — アタックを公開', '手札のアタックカード1枚を公開すると +1 カード（しなくてもよい）。',
+        (id) => DOM.isType(id, 'attack'), (card) => dispatch({ type: 'BATTLE_PLAN_REVEAL', card }),
+        { label: '公開しない', on: () => dispatch({ type: 'BATTLE_PLAN_REVEAL', card: null }) }, '公開する');
+    }
     if (pd.type === 'town_choose') return modalOptions('町', '次から1つを選びます。', [
       { label: '+1 カード と +2 アクション', cls: 'btn-primary', on: () => dispatch({ type: 'TOWN_CHOOSE', choice: 'cards' }) },
       { label: '+1 購入 と +2 コイン', on: () => dispatch({ type: 'TOWN_CHOOSE', choice: 'coins' }) }]);
@@ -2978,7 +3048,8 @@
       '廃棄トークンを置いた山からカードを獲得しました。手札1枚を廃棄できます（しなくてもよい）。', () => true,
       (card) => dispatch({ type: 'PLAN_TRASH', card }),
       { label: '廃棄しない', on: () => dispatch({ type: 'PLAN_TRASH', card: null }) }, '廃棄する');
-    if (pd.type === 'travelling_fair') return modalOptions('移動遊園地 — 山札の上に置く？',
+    // 同盟：道化棒の4つ目の選択肢も同じ窓を使う（`source` で表示だけ分ける）。
+    if (pd.type === 'travelling_fair') return modalOptions((pd.source === 'bauble' ? '道化棒' : '移動遊園地') + ' — 山札の上に置く？',
       '獲得した「' + (DOM.CARDS[pd.card] ? DOM.CARDS[pd.card].name : pd.card) + '」を山札の上に置けます。', [
       { label: '山札の上に置く', cls: 'btn-primary', on: () => dispatch({ type: 'TRAVELLING_FAIR_TOPDECK', topdeck: true }) },
       { label: 'そのまま（捨て札）', cls: 'btn-ghost', on: () => dispatch({ type: 'TRAVELLING_FAIR_TOPDECK', topdeck: false }) },

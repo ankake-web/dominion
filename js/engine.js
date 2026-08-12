@@ -771,6 +771,20 @@
         state.pending = { type: 'sunken_treasure', player: pIndex };
       }
     }
+    /* 道化棒（財宝・連携）＝4つから**異なる2つ**を選ぶ（+1購入／+1コイン／+1好意／
+       「このターン、カードを獲得するとき山札の上に置いてよい」）。**先に2つ選んでから解決する**（公式）。
+       ⚠ **再演（冠/ティアラ/偽造通貨/専門家）のたびに選び直せる**＝命令の commandAs を流用しない。
+       ⚠ 4つ目は "this turn," なので**場を離れても効き続ける**（偽造通貨で廃棄しても有効＝公式）。 */
+    if (card === 'bauble') state.pending = { type: 'bauble_choose', player: pIndex, picked: [] };
+    /* 契約書（財宝・持続・連携）＝+$2（coin:2 で計上済み）+1好意 →
+       手札のアクション1枚を脇に置いてよい（任意）。**置いたときだけ持続になる**（貨物船と同型）。
+       置いた札は**表向き**＝公開情報。次の自分のターンの開始時に**強制で使用する**。 */
+    if (card === 'contract') {
+      gainFavors(state, pIndex, 1, 'は契約書で');
+      if (p.hand.some((c) => DOM.isType(c, 'action') || inheritedEstate(p, c))) {
+        state.pending = { type: 'contract_setaside', player: pIndex };
+      }
+    }
     // 海辺：私掠船マーク中なら、このターン最初の銀貨/金貨は出した後に廃棄される（コインは入る）。
     corsairOnPlayTreasure(state, pIndex, card);
     // 冒険：-$1トークンの相殺（購入フェイズでコインが増えたぶんに食い込む）。
@@ -840,7 +854,15 @@
      ※公式FAQ「密使(Emissary)・下役(Underling)は好意をくれる**前**にシャッフルを起こしうる＝
        まだ持っていない好意はそのシャッフルには使えない」は、この位置（シャッフル時点の p.favors を見る）で自動的に守られる。
      ※セットアップの初期山札シャッフルでは使えない（公式）＝createInitialState は reshuffleDeck を通さない。 */
+  /* 同盟：密使（Emissary）＝「**このカードで**（少なくとも1枚を）シャッフルした場合」を判定するための
+     シャッフル回数カウンタ。reduce は同期的に走るので、効果の前後で差分を取れば「その効果の解決中に
+     シャッフルが起きたか」が分かる（`applyPileTokens` 等の**効果解決より前**の区間を含めないこと）。
+     ⚠ 公式FAQ逐語＝`It only counts as shuffling if at least one card was in your discard pile.`
+        ＝**実際に何枚戻ったかは問わない**（メイソン団で0枚になっても成立する）ので、
+        「捨て札が1枚以上あった」時点で数える。 */
+  let shuffleTicks = 0;
   function reshuffleDeck(p, state) {
+    if (p.discard.length > 0) shuffleTicks += 1;
     const shuffled = shuffle(p.discard);
     p.discard.length = 0;
     if ((p.projects || []).indexOf('star_chart') >= 0 && shuffled.length > 1) {
@@ -979,6 +1001,14 @@
       seizeTurn: !!extra.seizeTurn, // 移動動物園：今を生きる／同盟：島民 の追加ターン（同点時のタイブレークに数えない）
       chain: extra.chain || 1,      // 同盟：島民の「3ターン連続にはできない」用＝同じ席が連続している回数（1=通常のターン）
       allyPlayed: null,             // 同盟：「カードを使用した後」に働く Ally の未処理キュー（reduce 末尾の再開網が消化する）
+      /* 同盟 A4：「**このターン**、〜したとき」型の設置（"while this is in play" ではないので
+         場を離れても効き続け、**使用回数ぶん累積する**）。庭師(groundskeeper)の「場の枚数」とは別機構。 */
+      guildmasters: 0,              // ギルドマスター＝獲得のたびに +1好意（使用回数ぶん）
+      galleria: 0,                  // ガレリア＝ちょうど$3/$4 の獲得で +1購入（使用回数ぶん）
+      baubleTopdeck: 0,             // 道化棒＝獲得したカードを山札の上に置いてよい（移動遊園地と同じ窓）
+      skirmishers: null,            // 散兵＝アタックカードの獲得で相手が手札3枚まで捨てる（使用回数ぶん・免疫は使用時に確定）
+      garrisonTokens: null,         // 駐屯地＝場のインスタンスごとのトークン数（**好意ではない**）
+      topdeckDone: false,           // 天幕/商人の野営地の「場から捨てる代わりに山札の上へ」窓を出したか
       populateQueue: null, populatePlayer: null, // 移動動物園：植民＝獲得が残っている山キー（reduce 末尾の再開網が使う）
       treasuresLocked: false, // 公式：一度でも購入（カード/イベント/闇市場）したら、そのターンはもう財宝を出せない
       /* 夜想曲。錯乱/嫉妬は「持っている＝効いている」ではない：**購入フェイズの開始時に返して初めて発動**し、
@@ -6387,6 +6417,79 @@
         if (anyGainable(state, (id) => costUpTo(state, id, 4))) state.pending = { type: 'hill_fort_gain', player: pi };
         else state.pending = { type: 'hill_fort_choose', player: pi, card: null, dest: null };
         break;
+      /* 仲買人（連携）：手札1枚を廃棄（強制）→ 4択（そのコイン費用$1につき +1カード／+1アクション／
+         +1コイン／+1好意）。**負債・ポーション成分はボーナスにならない**（コイン費用の数だけ見る）。 */
+      case 'broker':
+        if (p.hand.length > 0) state.pending = { type: 'broker_trash', player: pi };
+        break;
+      /* ギルドマスター（連携）：+3コイン。「**このターン**、カード1枚を獲得するとき +1好意」。
+         "This turn," なので**場を離れても効き続け、使用回数ぶん累積する**（triggerOnGain が読む）。 */
+      case 'guildmaster':
+        addCoins(state, 3);
+        t.guildmasters = (t.guildmasters || 0) + 1;
+        break;
+      // ガレリア：+3コイン。「このターン、**ちょうど$3か$4**のカードを獲得するとき +1購入」（累積）。
+      case 'galleria':
+        addCoins(state, 3);
+        t.galleria = (t.galleria || 0) + 1;
+        break;
+      /* 密使（連携）：+3カード。**このカードの +3カード でシャッフルが起きたら** +1アクション +2好意。
+         ⚠ 山トークン（Pathfinding）等の**効果解決より前**のドローで起きたシャッフルは数えない
+            （公式FAQ逐語）＝ここ（case に入ってから）で前後差を取る。 */
+      case 'emissary': {
+        const before = shuffleTicks;
+        draw(state, pi, 3);
+        if (shuffleTicks > before) {
+          addActions(t, 1);
+          gainFavors(state, pi, 2, 'は密使のシャッフルで');
+          log(state, `${p.name} は密使でシャッフルした（+1アクション）。`);
+        }
+        break;
+      }
+      /* 輸入者（連携・持続）：使用したターンは何もしない。**次の自分のターンの開始時に $5以下を1枚獲得**（強制）。
+         準備の「各プレイヤー +4好意」は createInitialState（A1 で実装済み）。 */
+      case 'importer':
+        armDuration(state, pi, 'importer');
+        break;
+      /* 生徒（連携・魔法使い）：+1アクション → **魔法使いの山を循環してよい（先！）** → 手札1枚を廃棄（強制）。
+         廃棄したのが財宝なら +1好意 かつ **これ（場の生徒）を山札の上に置く**（両方とも強制）。
+         ⚠ 循環は「常に最後」ではない＝この1枚だけ廃棄より前（公式カード文の行順）。 */
+      case 'student':
+        addActions(t, 1);
+        openRotateWindow(state, pi, 'wizards', 'student',
+          p.hand.length > 0 ? { type: 'student_trash', player: pi } : null);
+        break;
+      /* 触れ役（町民）：三択（+2コイン ／ 銀貨を獲得 ／ +1カード+1アクション）→ **その後**に町民の山を循環してよい。
+         公式FAQ逐語＝`First choose ... Then, no matter what you picked, choose whether or not to rotate`。 */
+      case 'town_crier':
+        state.pending = { type: 'town_crier_choose', player: pi };
+        break;
+      /* 薬草集め（卜占官）：+1購入 → **山札を全部 捨て札に置く**（⚠ これは「捨てる」ではないので
+         坑道/村有緑地/忠犬などの捨て札トリガーを誘発しない＝公式FAQ逐語）→ 捨て札を見て財宝1枚を
+         使用してよい（任意）→ 卜占官の山を循環してよい（任意・最後）。 */
+      case 'herb_gatherer': {
+        t.buys += 1;
+        const nDeck = p.deck.length;
+        while (p.deck.length) p.discard.push(p.deck.shift());
+        if (nDeck) log(state, `${p.name} は薬草集めで山札${nDeck}枚を捨て札に置いた（捨て札トリガーは誘発しない）。`);
+        if (p.discard.some((c) => isTreasureFor(state, c))) state.pending = { type: 'herb_gatherer_play', player: pi };
+        else openRotateWindow(state, pi, 'augurs', 'herb_gatherer', null);
+        break;
+      }
+      /* 古地図（叙事詩）：+1カード +1アクション → 手札1枚を捨てる（**強制**・捨て札トリガーは誘発する）→
+         +1カード → 叙事詩の山を循環してよい（任意・最後）。公式FAQ逐語＝`Everything happens in the order listed`。 */
+      case 'old_map':
+        draw(state, pi, 1); addActions(t, 1);
+        if (p.hand.length > 0) state.pending = { type: 'old_map_discard', player: pi };
+        else { draw(state, pi, 1); openRotateWindow(state, pi, 'odysseys', 'old_map', null); }
+        break;
+      /* 戦闘計画（衝突）：+1カード +1アクション → 手札のアタックカード1枚を公開してよい（+1カード）→
+         **任意のサプライ山**を循環してよい（`rotatableSupplyPiles` が正本＝騎士/廃墟/城/サウナも対象）。 */
+      case 'battle_plan':
+        draw(state, pi, 1); addActions(t, 1);
+        if (p.hand.some((c) => DOM.isType(c, 'attack'))) state.pending = { type: 'battle_plan_reveal', player: pi };
+        else state.pending = { type: 'rotate_pile', player: pi, any: true, source: 'battle_plan' };
+        break;
       /* 領土（勝利点・衝突）＝可変VP（所持する**異なる名前の勝利点カード1種類につき1点**・自身も数える）は vpOf。
          「獲得したとき、サプライの空の山1つにつき金貨1枚」は triggerOnGain（**この獲得で空になった山も数える**）。 */
       // 沈没船の財宝（財宝・叙事詩）＝コインは増えない。効果は applyTreasureEffect 側。
@@ -6435,6 +6538,7 @@
       p.cargo || [],      // ルネサンス：貨物船の脇置き（表向き＝公開。所有カード＝VPに数える）
       p.ghostSetAside || [], // 夜想曲：幽霊の脇札（公開。幽霊が場を離れても孤児化するだけで所有カードのまま）
       p.cryptSetAside || [], // 夜想曲：納骨堂の脇札（所有者のみ可視。同上）
+      p.contractSetAside || [], // 同盟：契約書／王家のガレー船の脇札（**表向き＝公開**。所有カードに数える）
       ...((p.archives || []).map((a) => a.cards || []))); // 帝国：資料庫の脇置き（所有カード＝VPに数える）
   }
   function vpOf(p) {
@@ -6945,6 +7049,16 @@
   }
   // 各持続カードの「次の手番開始時」効果（カードidをキーに登録）。対話分は §手5/手6 で startQueue に積む。
   const DURATION_RESOLVERS = {
+    /* 同盟：輸入者＝次の自分のターンの開始時、コスト$5以下のカード1枚を獲得（**強制**）。 */
+    importer: (s, pi) => {
+      if (anyGainable(s, (id) => costUpTo(s, id, 5))) s.turn.startQueue.push({ type: 'importer_gain', player: pi });
+    },
+    /* 同盟：契約書＝脇に置いたアクションを次の自分のターンの開始時に**使用する**（強制・アクション権不要）。
+       ⚠ 契約書自身はそのターンの片付けで捨てられる（脇札が持続でも＝公式の明示例外）。 */
+    contract: (s, pi) => {
+      const pl = s.players[pi];
+      if ((pl.contractSetAside || []).length) s.turn.startQueue.push({ type: 'contract_play', player: pi });
+    },
     /* 同盟：要塞＝「次のターンの開始時に +3カード」を選んだときだけ持続になる（条件つき持続）。 */
     stronghold: (s, pi) => { draw(s, pi, 3); log(s, `${s.players[pi].name} は要塞の持続効果（+3カード）。`); },
     /* 同盟：駐屯地＝次の自分のターン開始時、上のトークンを全部取り除き1個につき +1カード（強制）。
@@ -7541,8 +7655,12 @@
     /* ===== 冒険：移動遊園地＝このターン、獲得したカードを山札の上に置いてよい（獲得のたびに任意）=====
        gainer の pending 中の獲得（工房/改築等）でも取りこぼさないよう onGainQueue に積む（城の on-gain 対話と同型）。
        既に山札の上に置かれた獲得（dest==='deck'）は対象外。 */
-    if (state.turn && state.turn.travellingFair && pIndex === state.turn.active && dest !== 'deck') {
-      (state.onGainQueue = state.onGainQueue || []).push({ type: 'travelling_fair', player: pIndex, card: cardId, dest: dest || 'discard' });
+    /* 同盟：道化棒（bauble）の4つ目の選択肢も**まったく同じ窓**（`This turn, when you gain a card,
+       you may put it onto your deck.`）＝同じ pending を共有する（`source` で表示だけ分ける）。
+       "this turn," なので道化棒が場を離れても効き続ける（偽造通貨で廃棄しても有効＝公式）。 */
+    if (state.turn && (state.turn.travellingFair || state.turn.baubleTopdeck) && pIndex === state.turn.active && dest !== 'deck') {
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'travelling_fair', player: pIndex, card: cardId,
+        dest: dest || 'discard', source: state.turn.travellingFair ? 'travelling_fair' : 'bauble' });
     }
     /* ===== 同盟 A4：王国カードの「カードを獲得したとき」＝**Ally の窓より前**に解決する =====
        ⚠ ギルドマスターの +1好意 は Ally の窓（建築家ギルド/都市国家/遊牧民団/罠師の小屋）より**先**に入れる
@@ -16644,6 +16762,179 @@
         if (state.pending === pd) state.pending = null;
         return state;
       }
+      /* 道化棒＝4つから**異なる2つ**を選ぶ（先に2つ選んでから解決する）。強制。 */
+      case 'BAUBLE_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'bauble_choose') return state;
+        const picks = Array.isArray(action.picks) ? action.picks : [];
+        const valid = ['buy', 'coin', 'favor', 'topdeck'];
+        if (picks.length !== 2 || picks[0] === picks[1]) return state;
+        if (picks.some((c) => valid.indexOf(c) < 0)) return state;
+        state.pending = null;
+        const owner = state.players[pd.player];
+        valid.forEach((opt) => {                    // 記載順に解決（+1購入 → +$1 → +1好意 → 山札の上に置く窓）
+          if (picks.indexOf(opt) < 0) return;
+          if (opt === 'buy') t.buys += 1;
+          else if (opt === 'coin') addCoins(state, 1);
+          else if (opt === 'favor') gainFavors(state, pd.player, 1, 'は道化棒で');
+          else t.baubleTopdeck = (t.baubleTopdeck || 0) + 1;
+        });
+        log(state, `${owner.name} は道化棒で ${picks.length}つ を選んだ。`);
+        return state;
+      }
+      /* 契約書＝手札のアクション1枚を脇に置いてよい（任意）。置いたときだけ持続になる。 */
+      case 'CONTRACT_SETASIDE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'contract_setaside') return state;
+        const owner = state.players[pd.player];
+        const card = action.card;
+        if (card == null) { state.pending = null; return state; }   // 辞退＝持続にならない
+        if (owner.hand.indexOf(card) < 0) return state;
+        if (!DOM.isType(card, 'action') && !inheritedEstate(owner, card)) return state;
+        removeOne(owner.hand, card);
+        (owner.contractSetAside = owner.contractSetAside || []).push(card);
+        armDuration(state, pd.player, 'contract');
+        log(state, `${owner.name} は契約書で「${C()[card].name}」を脇に置いた（次のターンの開始時に使用）。`);
+        state.pending = null;
+        return state;
+      }
+      // 契約書＝次のターンの開始時に脇札を使用する（強制・アクション権を消費しない）。
+      case 'CONTRACT_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'contract_play') return state;
+        const owner = state.players[pd.player];
+        const z = owner.contractSetAside || [];
+        if (!z.length) { state.pending = null; return state; }
+        const card = z[0];
+        state.pending = null;
+        playCardNoAction(state, pd.player, card, z, '契約書で脇に置いた', action.way);
+        return state;
+      }
+      // 輸入者＝次のターンの開始時に $5以下のカード1枚を獲得（強制）。
+      case 'IMPORTER_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'importer_gain') return state;
+        const card = action.card;
+        if (card == null || !costUpTo(state, card, 5)) return state;
+        state.pending = null;
+        gain(state, pd.player, card, 'discard');
+        log(state, `${state.players[pd.player].name} は輸入者で「${C()[mixedTopCard(state, card) || card].name}」を獲得した。`);
+        return state;
+      }
+      /* 仲買人＝手札1枚を廃棄（強制）→ 4択（そのコイン費用$1につき1つ）。
+         ⚠ 廃棄したカードの**コイン費用**だけを見る（負債・ポーション成分は0扱い＝公式FAQ逐語）。 */
+      case 'BROKER_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'broker_trash') return state;
+        const owner = state.players[pd.player];
+        const card = action.card;
+        if (card == null || owner.hand.indexOf(card) < 0) return state; // 強制
+        removeOne(owner.hand, card);
+        const n = costOf(state, card).coin;   // 廃棄後に測る（廃棄はコストを変えない＝差は出ない）
+        trashCard(state, pd.player, card);
+        log(state, `${owner.name} は仲買人で「${C()[card].name}」を廃棄した（コスト$${n}）。`);
+        state.pending = { type: 'broker_choose', player: pd.player, n };
+        return state;
+      }
+      case 'BROKER_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'broker_choose') return state;
+        const ch = action.choice;
+        if (['cards', 'actions', 'coins', 'favors'].indexOf(ch) < 0) return state;
+        const owner = state.players[pd.player];
+        const n = pd.n || 0;
+        state.pending = null;
+        if (n <= 0) return state;                                   // $0 を廃棄＝選べるが0個
+        if (ch === 'cards') { const got = draw(state, pd.player, n); log(state, `${owner.name} は仲買人で +${got.length}カード。`); }
+        else if (ch === 'actions') { addActions(t, n); log(state, `${owner.name} は仲買人で +${n}アクション。`); }
+        else if (ch === 'coins') { addCoins(state, n); log(state, `${owner.name} は仲買人で +${n}コイン。`); }
+        else gainFavors(state, pd.player, n, 'は仲買人で');
+        return state;
+      }
+      /* 生徒＝手札1枚を廃棄（強制）。財宝なら +1好意 かつ**これ（場の生徒）を山札の上に置く**。
+         ⚠ 「これ」が場に無い（命令経由など）ときは好意だけ得て移動は不発（lose track＝保存則）。 */
+      case 'STUDENT_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'student_trash') return state;
+        const owner = state.players[pd.player];
+        const card = action.card;
+        if (card == null || owner.hand.indexOf(card) < 0) return state; // 強制
+        const wasTreasure = isTreasureFor(state, card);
+        removeOne(owner.hand, card);
+        trashCard(state, pd.player, card);
+        log(state, `${owner.name} は生徒で「${C()[card].name}」を廃棄した。`);
+        if (wasTreasure) {
+          gainFavors(state, pd.player, 1, 'は生徒で');
+          if (takeSelf(state, pd.player, 'student')) {
+            owner.deck.unshift('student');
+            log(state, `${owner.name} は生徒を山札の一番上に置いた。`);
+          }
+        }
+        if (state.pending === pd) state.pending = null;
+        return state;
+      }
+      // 触れ役＝三択 → その後に町民の山を循環してよい（何を選んでも循環は選べる＝公式）。
+      case 'TOWN_CRIER_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'town_crier_choose') return state;
+        const ch = action.choice;
+        if (['coins', 'silver', 'cantrip'].indexOf(ch) < 0) return state;
+        const owner = state.players[pd.player];
+        state.pending = null;
+        if (ch === 'coins') { addCoins(state, 2); log(state, `${owner.name} は触れ役で +2コイン。`); }
+        else if (ch === 'silver') { if (gain(state, pd.player, 'silver', 'discard')) log(state, `${owner.name} は触れ役で銀貨1枚を獲得した。`); }
+        else { draw(state, pd.player, 1); addActions(t, 1); log(state, `${owner.name} は触れ役で +1カード +1アクション。`); }
+        const rot = { type: 'rotate_pile', player: pd.player, pile: 'townsfolk', source: 'town_crier', next: null };
+        if (state.pending) (state.onGainQueue = state.onGainQueue || []).push(rot); // 銀貨の獲得時対話が立っていたら後で
+        else if (canRotatePile(state, 'townsfolk')) state.pending = rot;
+        return state;
+      }
+      /* 薬草集め＝捨て札から財宝1枚を使用してよい（任意・アクション権を消費しない）→ その後に卜占官を循環してよい。 */
+      case 'HERB_GATHERER_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'herb_gatherer_play') return state;
+        const owner = state.players[pd.player];
+        const card = action.card;
+        state.pending = null;
+        if (card != null) {
+          if (owner.discard.indexOf(card) < 0 || !isTreasureFor(state, card)) return state;
+          playCardNoAction(state, pd.player, card, owner.discard, '薬草集めで捨て札から');
+        }
+        const rot = { type: 'rotate_pile', player: pd.player, pile: 'augurs', source: 'herb_gatherer', next: null };
+        if (state.pending) (state.onGainQueue = state.onGainQueue || []).push(rot);
+        else if (canRotatePile(state, 'augurs')) state.pending = rot;
+        return state;
+      }
+      // 古地図＝手札1枚を捨てる（強制）→ +1カード → 叙事詩を循環してよい。
+      case 'OLD_MAP_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'old_map_discard') return state;
+        const owner = state.players[pd.player];
+        const card = action.card;
+        if (card == null || owner.hand.indexOf(card) < 0) return state; // 強制
+        state.pending = null;
+        alliesDiscardHand(state, pd.player, [card], '古地図で');
+        draw(state, pd.player, 1);
+        const rot = { type: 'rotate_pile', player: pd.player, pile: 'odysseys', source: 'old_map', next: null };
+        if (state.pending) (state.onGainQueue = state.onGainQueue || []).push(rot);
+        else if (canRotatePile(state, 'odysseys')) state.pending = rot;
+        return state;
+      }
+      // 戦闘計画＝手札のアタック1枚を公開してよい（+1カード）→ 任意のサプライ山を循環してよい。
+      case 'BATTLE_PLAN_REVEAL': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'battle_plan_reveal') return state;
+        const owner = state.players[pd.player];
+        const card = action.card;
+        if (card != null) {
+          if (owner.hand.indexOf(card) < 0 || !DOM.isType(card, 'attack')) return state;
+          reveal(state, pd.player, [card], '戦闘計画でアタックカードを公開');
+          draw(state, pd.player, 1);
+          log(state, `${owner.name} は戦闘計画で「${C()[card].name}」を公開して +1カード。`);
+        }
+        state.pending = { type: 'rotate_pile', player: pd.player, any: true, source: 'battle_plan' };
+        return state;
+      }
       // 町＝二択（+1カード+2アクション ／ +1購入+2コイン）。強制。
       case 'TOWN_CHOOSE': {
         const pd = state.pending;
@@ -16921,7 +17212,9 @@
         // 夜想曲：納骨堂の脇札は裏向き＝所有者だけが見られる（公式逐語「other players may not」）。
         //   幽霊の脇札は**公開**（公開しながら掘るので全員が見ている）＝伏せない。
         cryptSetAside: revealHand ? (p.cryptSetAside || []).slice() : (p.cryptSetAside || []).map(() => 'back'),
-        // inPlay / durationCards / islandMat / princes（王子の脇＝公開）/ ghostSetAside は表向き＝そのまま
+        // inPlay / durationCards / islandMat / princes（王子の脇＝公開）/ ghostSetAside /
+        //   contractSetAside（同盟：契約書・王家のガレー船の脇札＝公式逐語「The set-aside card is face up.」）は
+        //   表向き＝そのまま（Object.assign が素通しする）。
       });
     });
     // 闇市場デッキは伏せ札。中身は誰にも見えないよう枚数だけ残す（公開された3枚は pending.revealed 側に出る）。
@@ -17057,6 +17350,8 @@
     'ROTATE_PILE', 'TOWN_CHOOSE', 'BLACKSMITH_CHOOSE', 'MILLER_PICK', 'MARQUIS_DISCARD', 'SYCOPHANT_DISCARD',
     'SIBYL_PLACE', 'CAPITAL_CITY', 'INNKEEPER_CHOOSE', 'INNKEEPER_DISCARD', 'HUNTER_PICK',
     'STRONGHOLD_CHOOSE', 'HILL_FORT_GAIN', 'HILL_FORT_CHOOSE', 'ALLIES_TOPDECK', 'SUNKEN_TREASURE_GAIN',
+    'BAUBLE_CHOOSE', 'CONTRACT_SETASIDE', 'CONTRACT_PLAY', 'IMPORTER_GAIN', 'BROKER_TRASH', 'BROKER_CHOOSE',
+    'STUDENT_TRASH', 'TOWN_CRIER_CHOOSE', 'HERB_GATHERER_PLAY', 'OLD_MAP_DISCARD', 'BATTLE_PLAN_REVEAL',
     // ルネサンス（Renaissance）：村人（アクションフェイズ）／プロジェクト（買う横型・1人2つまで）／王国カード
     'SPEND_VILLAGER', 'BUY_PROJECT',
     'HIDEOUT_TRASH', 'INVENTOR_GAIN', 'MOUNTAIN_VILLAGE_TAKE', 'PRIEST_TRASH', 'RECRUITER_TRASH',

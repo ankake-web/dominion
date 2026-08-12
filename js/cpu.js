@@ -3306,6 +3306,59 @@
         return { type: 'SUNKEN_TREASURE_GAIN', card: g };
       }
 
+      case 'bauble_choose': { // 道化棒＝異なる2つ（購入フェイズなので +$1 と +1購入 を基本にする）
+        const wantFavor = !!state.ally; // Ally が居るゲームなら好意にも価値がある
+        return { type: 'BAUBLE_CHOOSE', picks: wantFavor ? ['coin', 'favor'] : ['coin', 'buy'] };
+      }
+      case 'contract_setaside': { // 契約書＝次のターンの開始時に使う価値のあるアクションを脇に置く
+        const acts = p.hand.filter((c) => isType(c, 'action'));
+        if (!acts.length) return { type: 'CONTRACT_SETASIDE', card: null };
+        for (const id of GAIN_ORDER) if (acts.indexOf(id) >= 0) return { type: 'CONTRACT_SETASIDE', card: id };
+        return { type: 'CONTRACT_SETASIDE', card: acts[0] };
+      }
+      case 'contract_play': return { type: 'CONTRACT_PLAY' }; // 強制（脇札を使う）
+      case 'importer_gain': { // 輸入者＝$5以下で一番良いカード（強制）
+        const g = bestGain(state, 5, { noVictory: true }) || bestGain(state, 5) ||
+          firstGainable(state, (id) => DOM.engine.costUpTo(state, id, 5));
+        return { type: 'IMPORTER_GAIN', card: g };
+      }
+      case 'broker_trash': { // 仲買人＝死蔵札があれば圧縮、無ければ一番安い札（強制）
+        const junk = p.hand.filter((c) => isDead(c) || c === 'copper').sort((a, b) => cost(state, b) - cost(state, a));
+        if (junk.length) return { type: 'BROKER_TRASH', card: junk[0] };
+        const order = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b));
+        return { type: 'BROKER_TRASH', card: order[0] };
+      }
+      case 'broker_choose': { // 仲買人＝アクション権が尽きていて手札にアクションがあれば+アクション、他はコイン
+        if (state.turn.phase === 'action' && (state.turn.actions || 0) === 0 && p.hand.some((c) => isType(c, 'action'))) {
+          return { type: 'BROKER_CHOOSE', choice: 'actions' };
+        }
+        if ((pd.n || 0) >= 3) return { type: 'BROKER_CHOOSE', choice: 'cards' };
+        return { type: 'BROKER_CHOOSE', choice: 'coins' };
+      }
+      case 'student_trash': { // 生徒＝財宝を廃棄すると好意＋山札の上に戻る。銅貨があれば銅貨、無ければ死蔵札
+        if (p.hand.includes('copper')) return { type: 'STUDENT_TRASH', card: 'copper' };
+        const tre = p.hand.filter((c) => isTreasureNow(state, c)).sort((a, b) => keepValue(a) - keepValue(b));
+        if (tre.length) return { type: 'STUDENT_TRASH', card: tre[0] };
+        const order = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b));
+        return { type: 'STUDENT_TRASH', card: order[0] };
+      }
+      case 'town_crier_choose': { // 触れ役＝アクション権が残っていれば cantrip、そうでなければ +2コイン
+        if ((state.turn.actions || 0) > 0 && p.hand.some((c) => isType(c, 'action'))) return { type: 'TOWN_CRIER_CHOOSE', choice: 'cantrip' };
+        return { type: 'TOWN_CRIER_CHOOSE', choice: 'coins' };
+      }
+      case 'herb_gatherer_play': { // 薬草集め＝捨て札から一番強い財宝を使う
+        const tre = (p.discard || []).filter((c) => isTreasureNow(state, c)).sort((a, b) => keepValue(b) - keepValue(a));
+        return { type: 'HERB_GATHERER_PLAY', card: tre[0] || null };
+      }
+      case 'old_map_discard': { // 古地図＝一番弱い札を捨てる（強制）
+        const order = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b));
+        return { type: 'OLD_MAP_DISCARD', card: order[0] };
+      }
+      case 'battle_plan_reveal': { // 戦闘計画＝手札にアタックがあれば公開して +1カード（純利得）
+        const atk = p.hand.filter((c) => isType(c, 'attack'));
+        return { type: 'BATTLE_PLAN_REVEAL', card: atk[0] || null };
+      }
+
       case 'ally_nomads': { // 遊牧民団＝好意1で +1カード/+1アクション/+1購入（相手のターン中は +カード 一択）
         if ((p.favors || 0) < 1) return { type: 'ALLY_NOMADS', choice: null };
         const myTurn = state.turn && state.turn.active === pd.player;
