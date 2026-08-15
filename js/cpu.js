@@ -133,6 +133,16 @@
     'zombie_apprentice', 'zombie_mason', 'zombie_spy',
     // 略奪：戦利品(Loot) 15種＝非サプライ（「戦利品を獲得する」効果でのみ得る）。engine の NON_SUPPLY と同じ集合。
     ...((DOM.POOLS && DOM.POOLS.loot) || [])]);
+
+  /* アタックの反応窓で「無効化して免れる」札を手札から出す共通述語（engine の hasReaction と対になる）。
+     堀(moat)と**盾(shield・略奪の戦利品)は完全に同型**（公式FAQ逐語＝`exactly as with Moat.`）＝
+     どちらも公開するだけで免疫になり、手札に残る。**新しい同型の札を足したらここに1行足すだけ**で
+     51箇所のアタック分岐が一斉に追従する。 */
+  function immuneReveal(p) {
+    if (p.hand.indexOf('moat') >= 0) return { type: 'MOAT_REVEAL' };
+    if (p.hand.indexOf('shield') >= 0) return { type: 'SHIELD_REVEAL' };
+    return null;
+  }
   // 新プロモ/帝国：2段分割山＝上段が残る間は下段を獲得できない（同盟の循環で上下が入れ替わることもある）。
   // **述語は engine の splitLocked が正本**（engine の gain/canBuyCard 拒否と必ず一致させる
   //  ＝提案すると強制獲得と噛み合って無限ループする）。
@@ -1422,7 +1432,7 @@
       case 'cellar':
         return { type: 'CELLAR_RESOLVE', cards: p.hand.filter((c) => isDead(c)) };
       case 'militia': {
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         const need = p.hand.length - 3;
         return { type: 'MILITIA_RESOLVE', cards: pickDiscards(p.hand, need) };
       }
@@ -1438,6 +1448,16 @@
         return { type: 'REMODEL_GAIN', card: bestGain(state, pd.maxCost, pd) };
       case 'workshop':
         return { type: 'WORKSHOP_GAIN', card: bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) };
+
+      /* ===== 拡張: 略奪（Plunder）＝戦利品(Loot) ===== */
+      // 賞品のヤギ＝手札1枚を廃棄してもよい（任意）。不要札があるときだけ廃棄する。
+      case 'prize_goat': {
+        const junk = p.hand.filter((c) => trashValue(c) < 10).sort((a, b) => trashValue(a) - trashValue(b));
+        return { type: 'PRIZE_GOAT_TRASH', card: junk.length ? junk[0] : null };
+      }
+      // ハンマー＝コスト4以下を**強制**獲得（勝利点を避けて最善を取る。候補ゼロなら engine 側が窓を開かない）。
+      case 'hammer_gain':
+        return { type: 'HAMMER_GAIN', card: bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) };
 
       /* ===== 拡張: 陰謀 ===== */
       case 'courtyard': {
@@ -1473,7 +1493,7 @@
       }
       case 'torturer': {
         // 拷問人の対象側。堀があれば無効化、無ければ呪いより手札2枚捨てを選ぶ
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'TORTURER_RESOLVE', choice: 'discard', cards: pickDiscards(p.hand, Math.min(2, p.hand.length)) };
       }
       case 'scout':
@@ -1482,14 +1502,14 @@
       case 'swindler':
         if (pd.stage === 'react') {
           // 犠牲者側。react ステージは堀持ちのときだけ作られるので無効化する
-          if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+          if (immuneReveal(p)) return immuneReveal(p);
           return { type: 'SWINDLER_REACT' };
         }
         // gain ステージ（攻撃側）。相手の利得が最小のカードを与える（候補ありなら必ず非null）
         return { type: 'SWINDLER_GAIN', card: pickSwindlerGift(state, pd) };
       case 'saboteur':
         if (pd.stage === 'react') {
-          if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+          if (immuneReveal(p)) return immuneReveal(p);
           return { type: 'SABOTEUR_REACT' };
         }
         // gain ステージ（犠牲者・任意）。上限内で最善を拾う。無ければ獲得しない(null)
@@ -1504,7 +1524,7 @@
         }
       case 'minion_attack':
         // 犠牲者側。堀があれば無効化、無ければそのまま受ける
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'MINION_ATTACK_REACT' };
       case 'masquerade':
         if (pd.stage === 'pass') {
@@ -1529,14 +1549,14 @@
         // 単純CPUは引いたアクションをそのまま手札に（脇に置かない）
         return { type: 'LIBRARY_RESOLVE', setAside: false };
       case 'spy':
-        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'SPY_REACT' }; }
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'SPY_REACT' }; }
         { // 自分=不要札を捨てて良い札を残す / 相手=良い札を捨てさせ不要札を残す
           const dead = isType(pd.card, 'victory') || isType(pd.card, 'curse');
           const mine = pd.victim === pd.source;
           return { type: 'SPY_DECIDE', discard: mine ? dead : !dead };
         }
       case 'thief':
-        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'THIEF_REACT' }; }
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'THIEF_REACT' }; }
         if (pd.stage === 'pick') {
           const best = pd.treasures.slice().sort((a, b) => (C()[b].coin || 0) - (C()[a].coin || 0))[0];
           return { type: 'THIEF_PICK', card: best };
@@ -1545,11 +1565,11 @@
         return { type: 'THIEF_GAIN', take: (C()[pd.trashed].coin || 0) >= 2 };
       case 'witch':
         // 呪いを受ける側。堀があれば無効化、無ければそのまま（CPUは秘密の小部屋を公開しない）
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'WITCH_REACT' };
       case 'bureaucrat':
         if (pd.stage === 'react') {
-          if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+          if (immuneReveal(p)) return immuneReveal(p);
           return { type: 'BUREAUCRAT_REACT' };
         }
         { // put: 最も安い勝利点（屋敷優先）を山札の上に置く
@@ -1591,7 +1611,7 @@
       case 'poacher':
         return { type: 'POACHER_DISCARD', cards: pickDiscards(p.hand, pd.need) };
       case 'bandit':
-        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'BANDIT_REACT' }; }
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'BANDIT_REACT' }; }
         { // pick: 安い財宝を廃棄して高い財宝を残す
           const c = pd.cands.slice().sort((a, b) => (C()[a].coin || 0) - (C()[b].coin || 0))[0];
           return { type: 'BANDIT_PICK', card: c };
@@ -1643,7 +1663,7 @@
       case 'patrol':
         return { type: 'PATROL_RESOLVE', order: pd.cards.slice() };
       case 'replace':
-        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'REPLACE_REACT' }; }
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'REPLACE_REACT' }; }
         if (pd.stage === 'trash') return { type: 'REPLACE_TRASH', card: pickRemodelTrash(state, p) };
         return { type: 'REPLACE_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true, pot: pd.pot, debt: pd.debt }) || bestGain(state, pd.maxCost, pd) };
       case 'secret_passage':
@@ -1820,26 +1840,26 @@
       }
       // 冒険：アタックを受ける側（堀があれば無効化、無ければそのまま受ける＝react のみ・効果は自動）。
       case 'relic': // -1カードトークンは自動
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'RELIC_REACT' };
       case 'giant': // 公開→廃棄/呪いは自動
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'GIANT_REACT' };
       case 'bridge_troll': // -$1トークンは自動
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'BRIDGE_TROLL_REACT' };
       case 'haunted_woods': // 呪いの森：堀で免疫、無ければそのまま受ける（購入時に手札が山札の上へ）
       case 'swamp_hag':     // 沼の妖婆：堀で免疫、無ければそのまま受ける（購入時に呪い獲得）
       case 'gatekeeper':    // 移動動物園：門番＝堀で免疫、無ければ受ける（獲得したアクション/財宝が追放される）
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'LINGER_REACT' };
       // 冒険：トラベラー（page/peasant＋成長先）
       case 'warrior': // 山札上を捨て$3/$4廃棄（自動）＝堀があれば無効化
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'WARRIOR_REACT' };
       case 'soldier': {
         if (pd.stage === 'react') {
-          if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+          if (immuneReveal(p)) return immuneReveal(p);
           return { type: 'SOLDIER_REACT' };
         }
         // discard：最も手札に残す価値の低いカードを1枚捨てる。
@@ -1929,7 +1949,7 @@
         return { type: 'LEGIONARY_REVEAL', reveal: p.hand.includes('gold') };
       case 'enchantress':
         // 反応ステップ：堀があれば無効化、なければそのまま受ける（enchanted される）。
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'ENCHANTRESS_REACT' };
       case 'archive_pick': {
         // 脇の中から最も価値の高い札を先に手札へ（keepValue 高い順）。
@@ -1965,7 +1985,7 @@
         // 捨て札から 銅貨/開拓者 を手札へ（このターンの economy／無料アクション＝常に得）。
         return { type: 'SETTLERS_RESOLVE', take: true };
       case 'catapult': {
-        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'CATAPULT_REACT' }; }
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'CATAPULT_REACT' }; }
         // 廃棄（強制）＝最も価値の低い不要札。銅貨は財宝なので廃棄すると相手の手札も削れる（+圧縮）。
         const junk = p.hand.filter((c) => c !== 'catapult').sort((a, b) => trashValue(a) - trashValue(b));
         return { type: 'CATAPULT_TRASH', card: junk[0] || p.hand[0] || null };
@@ -2022,13 +2042,13 @@
       }
       // 黒猫／枢機卿／魔女の集会のアタックを受ける（堀があれば公開して無効化）。
       case 'black_cat':
-        return p.hand.includes('moat') ? { type: 'MOAT_REVEAL' } : { type: 'BLACK_CAT_REACT' };
+        return immuneReveal(p) ? immuneReveal(p) : { type: 'BLACK_CAT_REACT' };
       case 'cardinal':
-        if (pd.stage === 'react') return p.hand.includes('moat') ? { type: 'MOAT_REVEAL' } : { type: 'CARDINAL_REACT' };
+        if (pd.stage === 'react') return immuneReveal(p) ? immuneReveal(p) : { type: 'CARDINAL_REACT' };
         // 追放されるのは自分のカード＝一番惜しくない方を選ぶ。
         return { type: 'CARDINAL_PICK', card: (pd.cands || []).slice().sort((a, b) => keepValue(a) - keepValue(b))[0] };
       case 'coven':
-        return p.hand.includes('moat') ? { type: 'MOAT_REVEAL' } : { type: 'COVEN_REACT' };
+        return immuneReveal(p) ? immuneReveal(p) : { type: 'COVEN_REACT' };
       // 強制退去＝要らない手札を追放して、その +$2 で買えるものを取る。
       case 'displace_exile':
         return { type: 'DISPLACE_EXILE', card: p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0] };
@@ -2232,7 +2252,7 @@
         return { type: 'LOOK_ARRANGE_RESOLVE', discard, top };
       }
       case 'hex': // 呪詛のリアクション窓（堀があれば公開して免れる）
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'HEX_REACT' };
       case 'hex_poverty':
         return { type: 'HEX_POVERTY_DISCARD', cards: pickDiscards(p.hand, Math.max(0, p.hand.length - 3)) };
@@ -2312,10 +2332,10 @@
       case 'faithful_hound_react': // 忠犬＝脇に置いてターン終了時に手札へ戻す（常に得）
         return { type: 'FAITHFUL_HOUND_REACT', setAside: true };
       case 'idol': // 偶像（財宝アタック）のリアクション窓
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'IDOL_REACT' };
       case 'attack_window': // 「アタックを使用した」ことだけに反応する窓（人狼のドロー側／迫害者のインプ側）
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'ATTACK_WINDOW_REACT' };
       /* ---- 夜想曲：夜行カード ---- */
       case 'cobbler_gain': // カブラー＝コスト4以下を手札に獲得（強制）
@@ -2348,7 +2368,7 @@
         return { type: 'MONASTERY_TRASH', card: null };
       }
       case 'raider':
-        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'RAIDER_REACT' }; }
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'RAIDER_REACT' }; }
         { // 夜襲＝捨てる1枚は「最も価値の低い候補」
           const inPlay = new Set(state.players[pd.source].inPlay.concat(state.players[pd.source].durationCards || []));
           const cand = [...new Set(p.hand.filter((c) => inPlay.has(c)))].sort((a, b) => keepValue(a) - keepValue(b));
@@ -2437,10 +2457,10 @@
       case 'tide_pools_discard':
         return { type: 'TIDE_POOLS_DISCARD', cards: pickDiscards(p.hand, Math.min(2, p.hand.length)) };
       case 'cutpurse':
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'CUTPURSE_REACT' };
       case 'sea_witch':
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'SEA_WITCH_REACT' };
       case 'sea_witch_discard':
         return { type: 'SEA_WITCH_DISCARD', cards: pickDiscards(p.hand, Math.min(2, p.hand.length)) };
@@ -2456,7 +2476,7 @@
       case 'blockade':
         if (pd.stage === 'react') {
           // 犠牲者側。堀があれば公開して免疫、無ければそのまま受ける。
-          if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+          if (immuneReveal(p)) return immuneReveal(p);
           return { type: 'BLOCKADE_REACT' };
         }
         // 4コスト以下で最善（脇に置いて次手番手札へ＝銀貨など）。
@@ -2488,7 +2508,7 @@
         return { type: 'APOTHECARY_RESOLVE', order };
       }
       case 'scrying_pool':
-        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'SCRYING_REACT' }; }
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'SCRYING_REACT' }; }
         { // 自分＝アクション以外を捨ててアクションまで掘る／相手＝良い札を捨てさせ死に札を残す
           const mine = pd.victim === pd.source;
           const isAct = isType(pd.card, 'action');
@@ -2502,7 +2522,7 @@
         return { type: 'UNIVERSITY_GAIN', card: actGain || null };
       }
       case 'familiar':
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'FAMILIAR_REACT' };
       case 'golem': {
         // 順序はほぼ結果に影響しないため高コスト側を先に使う
@@ -2518,14 +2538,14 @@
 
       /* ===== 繁栄（Prosperity）===== */
       case 'charlatan':
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'CHARLATAN_REACT' };
       case 'rabble':
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'RABBLE_REACT' };
       case 'clerk':
         if (pd.stage === 'react') {
-          if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+          if (immuneReveal(p)) return immuneReveal(p);
           return { type: 'CLERK_REACT' };
         }
         { const c = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0]; return { type: 'CLERK_TOPDECK', card: c }; }
@@ -2595,7 +2615,7 @@
         return { type: 'HAMLET_DISCARD', card: junk || null }; // 購入は常に有用＝死に札があれば捨てる
       }
       case 'fortune_teller':
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'FORTUNE_TELLER_REACT' };
       case 'horse_traders':
         return { type: 'HORSE_TRADERS_DISCARD', cards: pickDiscards(p.hand, Math.min(2, p.hand.length)) };
@@ -2614,11 +2634,11 @@
       case 'young_witch':
         if (pd.stage === 'discard') return { type: 'YOUNG_WITCH_DISCARD', cards: pickDiscards(p.hand, Math.min(2, p.hand.length)) };
         if (pd.bane && p.hand.includes(pd.bane)) return { type: 'YOUNG_WITCH_BANE' }; // 災いカードで免れる
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'YOUNG_WITCH_REACT' };
       case 'jester':
         if (pd.stage === 'react') {
-          if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+          if (immuneReveal(p)) return immuneReveal(p);
           return { type: 'JESTER_REACT' };
         }
         { // choose: 捨てられた札が良ければ自分が獲得、悪い(勝利点/呪い/銅貨)なら相手に押し付ける
@@ -2628,7 +2648,7 @@
         }
       case 'followers':
         if (pd.stage === 'react') {
-          if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+          if (immuneReveal(p)) return immuneReveal(p);
           return { type: 'FOLLOWERS_REACT' };
         }
         return { type: 'FOLLOWERS_DISCARD', cards: pickDiscards(p.hand, p.hand.length - 3) };
@@ -2696,7 +2716,7 @@
         return { type: 'PLAZA_DISCARD', card: tre === 'copper' ? 'copper' : null };
       }
       case 'taxman':
-        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'TAXMAN_REACT' }; }
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'TAXMAN_REACT' }; }
         if (pd.stage === 'trash') {
           if (p.hand.includes('copper') && sup(state, 'silver') > 0) return { type: 'TAXMAN_TRASH', card: 'copper' }; // 銅貨→銀貨（圧縮＋テンポ）
           if (p.hand.includes('silver') && sup(state, 'gold') > 0) return { type: 'TAXMAN_TRASH', card: 'silver' };  // 銀貨→金貨
@@ -2723,7 +2743,7 @@
         return { type: 'JOURNEYMAN_NAME', card: named };
       }
       case 'soothsayer':
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'SOOTHSAYER_REACT' };
 
       /* ===== 拡張: 異郷（Hinterlands）===== */
@@ -2742,7 +2762,7 @@
           return { type: 'DEVELOP_GAIN', card: null };
         }
       case 'oracle':
-        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'ORACLE_REACT' }; }
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'ORACLE_REACT' }; }
         {
           const good = (pd.cards || []).some((c) => isTreasure(c) || isType(c, 'action'));
           const mine = pd.victim === pd.source;
@@ -2752,7 +2772,7 @@
         if (pd.stage === 'look') { const top = p.deck[0]; return { type: 'JACK_LOOK', discard: !!top && (isType(top, 'victory') || isType(top, 'curse')) }; }
         { const junk = p.hand.find((c) => !isTreasure(c) && (isType(c, 'curse') || c === 'estate')); return { type: 'JACK_TRASH', card: junk || null }; }
       case 'noble_brigand':
-        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'NOBLE_BRIGAND_REACT' }; }
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'NOBLE_BRIGAND_REACT' }; }
         return { type: 'NOBLE_BRIGAND_PICK', card: (pd.revealed || []).includes('gold') ? 'gold' : 'silver' };
       case 'spice_merchant':
         if (pd.stage === 'trash') return { type: 'SPICE_MERCHANT_TRASH', card: p.hand.includes('copper') ? 'copper' : null };
@@ -2778,7 +2798,7 @@
       case 'mandarin':
         return { type: 'MANDARIN_TOPDECK', card: p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0] };
       case 'margrave':
-        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'MARGRAVE_REACT' }; }
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'MARGRAVE_REACT' }; }
         return { type: 'MARGRAVE_DISCARD', cards: pickDiscards(p.hand, Math.max(0, p.hand.length - 3)) };
       case 'stables':
         return { type: 'STABLES_DISCARD', card: p.hand.includes('copper') ? 'copper' : null };
@@ -2792,7 +2812,7 @@
       case 'souk_trash':
         return { type: 'SOUK_TRASH', cards: p.hand.filter((c) => isType(c, 'curse') || c === 'estate').slice(0, 2) };
       case 'berserker':
-        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'BERSERKER_REACT' }; }
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'BERSERKER_REACT' }; }
         if (pd.stage === 'discard') return { type: 'BERSERKER_DISCARD', cards: pickDiscards(p.hand, Math.max(0, p.hand.length - 3)) };
         return { type: 'BERSERKER_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
       case 'wheelwright':
@@ -2800,13 +2820,13 @@
         { const g = firstGainable(state, (id) => costUpTo(state, id, pd.maxCost, pd) && isTypeSup(state, id, 'action'));
           return { type: 'WHEELWRIGHT_GAIN', card: g || null }; }
       case 'witchs_hut': {
-        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'WITCHS_HUT_REACT' }; }
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'WITCHS_HUT_REACT' }; }
         const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => cost(state, a) - cost(state, b));
         const cards = acts.length >= 2 ? acts.slice(0, 2) : pickDiscards(p.hand, Math.min(2, p.hand.length));
         return { type: 'WITCHS_HUT_DISCARD', cards };
       }
       case 'cauldron':
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'CAULDRON_REACT' };
       case 'duchess_gain':
         return { type: 'DUCHESS_GAIN', gain: false }; // デッキを濁さないため受け取らない
@@ -2952,19 +2972,19 @@
         return { type: 'COUNTERFEIT_PLAY', card: null }; // 良い財宝は温存
       }
       case 'marauder': // react のみ（廃墟獲得は自動）
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'MARAUDER_REACT' };
       case 'cultist': // react のみ
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'CULTIST_REACT' };
       case 'cultist_chain':
         return { type: 'CULTIST_CHAIN', play: true }; // 連鎖は無料＝常に使う
       case 'pillage':
-        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'PILLAGE_REACT' }; }
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'PILLAGE_REACT' }; }
         // stage 'pick'：使用者として被害者の最も価値の高い手札を捨てさせる
         return { type: 'PILLAGE_PICK', card: state.players[pd.victim].hand.slice().sort((a, b) => keepValue(b) - keepValue(a))[0] };
       case 'rogue':
-        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'ROGUE_REACT' }; }
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'ROGUE_REACT' }; }
         if (pd.stage === 'gain_from_trash') {
           const cands = (state.trash || []).filter((c) => { const cc = cost(state, c); return cc >= 3 && cc <= 6 && (C()[c].potion || 0) === 0; }).sort((a, b) => cost(state, b) - cost(state, a));
           return { type: 'ROGUE_GAIN_FROM_TRASH', card: cands[0] };
@@ -2972,7 +2992,7 @@
         // stage 'pick'：被害者として価値の低い方を廃棄（良い方を残す）
         return { type: 'ROGUE_PICK', card: (pd.trashable || []).slice().sort((a, b) => keepValue(a) - keepValue(b))[0] };
       case 'discard_down': {
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; // 堀で無効化（民兵と同型・embedded反応窓）
+        if (immuneReveal(p)) return immuneReveal(p); // 堀で無効化（民兵と同型・embedded反応窓）
         const target = Math.min(pd.down, p.hand.length);
         const toDiscard = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b)).slice(0, p.hand.length - target);
         return { type: 'DISCARD_DOWN_RESOLVE', cards: toDiscard };
@@ -2988,7 +3008,7 @@
         return { type: 'URCHIN_TRASH', trash: junkOwned >= 4 };
       }
       case 'knight':
-        if (pd.stage === 'react') { if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' }; return { type: 'KNIGHT_REACT' }; }
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'KNIGHT_REACT' }; }
         // stage 'pick'：被害者として価値の低い方を廃棄（騎士は価値が高い＝残す＝相手の騎士を巻き込まない安全策）
         return { type: 'KNIGHT_PICK', card: (pd.trashable || []).slice().sort((a, b) => keepValue(a) - keepValue(b))[0] };
       case 'dame_anna_trash':
@@ -3039,12 +3059,12 @@
         // 山札の上に戻す順（cards[0]が一番上＝次に引く）。価値の高い札を上に。
         return { type: 'SEER_ORDER', cards: (pd.cards || []).slice().sort((a, b) => keepValue(b) - keepValue(a)) };
       case 'old_witch':
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'OLD_WITCH_REACT' };
       case 'old_witch_trash':
         return { type: 'OLD_WITCH_TRASH', card: 'curse' }; // 手札の呪いを廃棄できるなら常に得
       case 'villain':
-        if (p.hand.includes('moat')) return { type: 'MOAT_REVEAL' };
+        if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'VILLAIN_REACT' };
       case 'villain_discard': {
         // コスト$2以上の手札1枚を捨てる（強制）。最も価値の低いものを捨てる。
@@ -3389,13 +3409,13 @@
 
       /* ===== 同盟 A4：アタック7種（堀があれば必ず公開して無効化する） ===== */
       case 'barbarian': {
-        if (pd.stage === 'react') return p.hand.includes('moat') ? { type: 'MOAT_REVEAL' } : { type: 'BARBARIAN_REACT' };
+        if (pd.stage === 'react') return immuneReveal(p) ? immuneReveal(p) : { type: 'BARBARIAN_REACT' };
         // 格下げ獲得は被害者が選ぶ（強制）＝一番良いものを取る
         const g = firstGainable(state, DOM.engine.barbarianCanGain(state, pd.trashed));
         return { type: 'BARBARIAN_GAIN', card: g };
       }
       case 'archer': {
-        if (pd.stage === 'react') return p.hand.includes('moat') ? { type: 'MOAT_REVEAL' } : { type: 'ARCHER_REACT' };
+        if (pd.stage === 'react') return immuneReveal(p) ? immuneReveal(p) : { type: 'ARCHER_REACT' };
         if (pd.stage === 'hide') { // 被害者＝一番大事な札を隠す
           const order = p.hand.slice().sort((a, b) => keepValue(b) - keepValue(a));
           return { type: 'ARCHER_HIDE', card: order[0] };
@@ -3405,17 +3425,17 @@
         return { type: 'ARCHER_PICK', card: order[0] || (pd.revealed || [])[0] };
       }
       case 'sorceress': {
-        if (pd.stage === 'react') return p.hand.includes('moat') ? { type: 'MOAT_REVEAL' } : { type: 'SORCERESS_REACT' };
+        if (pd.stage === 'react') return immuneReveal(p) ? immuneReveal(p) : { type: 'SORCERESS_REACT' };
         // 宣言＝自分の山札に一番多い名前（銅貨/屋敷が基本）
         return { type: 'SORCERESS_NAME', card: mostLikelyTop(p) };
       }
       case 'sorcerer': {
-        if (pd.stage === 'react') return p.hand.includes('moat') ? { type: 'MOAT_REVEAL' } : { type: 'SORCERER_REACT' };
+        if (pd.stage === 'react') return immuneReveal(p) ? immuneReveal(p) : { type: 'SORCERER_REACT' };
         return { type: 'SORCERER_NAME', card: mostLikelyTop(p) };
       }
-      case 'skirmisher': return p.hand.includes('moat') ? { type: 'MOAT_REVEAL' } : { type: 'SKIRMISHER_REACT' };
+      case 'skirmisher': return immuneReveal(p) ? immuneReveal(p) : { type: 'SKIRMISHER_REACT' };
       case 'highwayman': case 'warlord': // 相手のターンをフックする持続アタック（堀で免疫）
-        return p.hand.includes('moat') ? { type: 'MOAT_REVEAL' } : { type: 'LINGER_REACT' };
+        return immuneReveal(p) ? immuneReveal(p) : { type: 'LINGER_REACT' };
 
       case 'royal_galley_play': { // 王家のガレー船＝手札の持続でないアクションを1枚（次のターンにもう一度使える）
         const cands = p.hand.filter((c) => isType(c, 'action') && !isType(c, 'duration') && DOM.engine.canPlayHandCard(state, pd.player, c));

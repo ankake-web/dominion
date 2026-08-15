@@ -773,6 +773,40 @@
     }
     // 帝国：元手＝+6コイン（coin:6 で計上済み）＋1購入。場から捨てるときの負債6は cleanupAndAdvance で処理。
     if (card === 'capital') { t.buys += 1; }
+    /* ===== 略奪（Plunder）：戦利品(Loot) の財宝効果 =====
+       正本＝docs/research/plunder_rules.md 第5章。**コイン成分は `coin:` で計上済み**なのでここには書かない
+       （11枚が +$3・尽きぬ杯が $1・アンフォラ/宝珠/呪符の巻物は 0）。 */
+    // 船首像＝$3（計上済み）＋あなたの次のターンの開始時 +2カード（持続）。
+    if (card === 'figurehead') armDuration(state, pIndex, 'figurehead');
+    // 賞品のヤギ＝$3＋1購入＋手札1枚を廃棄してもよい（**任意**）。
+    //   ⚠ 財宝の使用中に廃棄が起きる＝廃棄トリガー（城塞/ネズミ/狂信者/墓所/青空市場/リッチ）がここで発火し、
+    //     pending を立てると PLAY_ALL_TREASURES が中断する（`playAllResume` が残りを出し切る）。
+    if (card === 'prize_goat') {
+      t.buys += 1;
+      if (p.hand.length > 0) state.pending = { type: 'prize_goat', player: pIndex };
+    }
+    /* ハンマー＝$3＋コスト4以下のカード1枚を獲得（**強制**）。公式FAQ逐語＝`This isn't optional.`
+       ⚠ 「コスト最大4コイン**0ポーション0負債**まで」＝`costUpTo` を使う（素の `cardCost<=4` は禁止
+          ＝ポーション費用/負債コスト/非サプライ/ロック中の分割山下段を拾って本番 livelock になる）。
+       ⚠ **強制なのに候補ゼロ**（$4以下の山が全部空）になり得るので、**窓を開く前に再検査して開かない**
+          （§0-29 A5 の [high] リッチと同型）。 */
+    if (card === 'hammer') {
+      if (anyGainable(state, (id) => costUpTo(state, id, 4))) state.pending = { type: 'hammer_gain', player: pIndex };
+      else log(state, `${p.name} はハンマーを使ったが、コスト4以下の獲得先が無い。`);
+    }
+    /* 剣＝$3＋1購入＋アタック（他のプレイヤーは全員、**手札が4枚になるように**捨て札にする）。
+       ⚠ 「5枚以上なら1枚捨てる」ではない＝手札枚数に関わらず4枚になるまで（民兵型）。 */
+    if (card === 'sword') {
+      t.buys += 1;
+      const others = [];
+      for (let k = 1; k < state.players.length; k++) {
+        const idx = (pIndex + k) % state.players.length;
+        if (state.players[idx].hand.length > 4 && !attackImmune(state, idx)) others.push(idx);
+      }
+      if (others.length) discardDownEnter(state, pIndex, 4, others);
+    }
+    // 盾＝$3＋1購入（リアクションは手札から公開する側＝`SHIELD_REVEAL`。使用時の効果はこれだけ）。
+    if (card === 'shield') { t.buys += 1; }
     // 帝国：御守り（charm）＝二択（A: +1購入+$2 ／ B: このターン次にカードを獲得したとき、同コストで名前の異なるカードを1枚獲得してよい）。
     if (card === 'charm') { state.pending = { type: 'charm_mode', player: pIndex }; }
     // 帝国：鹵獲品（plunder）＝+$2（coin:2 で計上済み）＋1勝利点トークン（プレイ毎）。
@@ -2161,6 +2195,7 @@
       player.hand.includes('guard_dog') || // 異郷：番犬（相手のアタック時に手札から先に使ってよい。免疫にはならない）
       player.hand.includes('caravan_guard') || // 冒険：隊商の護衛（相手のアタック時に手札から先にプレイしてよい。免疫にはならない）
       player.hand.includes('beggar') || // 暗黒時代：物乞い（捨てて銀貨2枚を獲得。免疫にはならない）
+      player.hand.includes('shield') || // 略奪：盾（戦利品。**堀と同じ免疫**＝公開しても手札に残る）
       (player.hand.includes('diplomat') && player.hand.length >= 5);
   }
   // 秘密の小部屋のリアクションを差し込める「被攻撃側の反応ステップ」か。
@@ -7724,6 +7759,8 @@
   }
   // 各持続カードの「次の手番開始時」効果（カードidをキーに登録）。対話分は §手5/手6 で startQueue に積む。
   const DURATION_RESOLVERS = {
+    // 略奪：船首像＝あなたの次のターンの開始時 +2カード（$3 は使用時に計上済み）。
+    figurehead: (s, pi) => { draw(s, pi, 2); log(s, `${s.players[pi].name} は船首像で +2カード。`); },
     /* 同盟：追いはぎ＝次の自分のターンの開始時、**まずこれを場から捨て**、**その後**に +3カード
        （公式FAQ逐語＝`Discarding Highwayman happens first, so it's possible to even draw that Highwayman
         with the +3 Cards.`）。**捨てられなくてもカードは必ず3枚引く**（玉座で2回使うと捨てるのは1回・引くのは6枚）。 */
@@ -7968,6 +8005,13 @@
     }
     // キャッシュ：獲得したとき銅貨2枚を獲得。
     if (cardId === 'cache') { let g = 0; for (let i = 0; i < 2; i++) if (gain(state, pIndex, 'copper', 'discard')) g++; log(state, `${gp.name} はキャッシュで銅貨 ${g}枚 を獲得した。`); }
+    /* 略奪：ダブロン金貨＝これを獲得したとき金貨1枚を獲得（**強制**。日本語wiki 逐語
+       「金貨の獲得は強制である」「サプライの金貨が無い場合、何も獲得しない」）。
+       ※戦利品は `gainLoot` が**公開してから**獲得するので、ここは公開の後に走る（入れ子の獲得）。 */
+    if (cardId === 'doubloons') {
+      if (gain(state, pIndex, 'gold', 'discard')) log(state, `${gp.name} はダブロン金貨で金貨1枚を獲得した。`);
+      else log(state, `${gp.name} はダブロン金貨を獲得したが、金貨の山が空。`);
+    }
     // 大使館：獲得したとき、他の各プレイヤーは銀貨1枚を獲得。
     if (cardId === 'embassy') { for (let o = 0; o < n; o++) if (o !== pIndex && gain(state, o, 'silver', 'discard')) log(state, `${state.players[o].name} は銀貨1枚を獲得した（大使館）。`); }
     // 不正利得：獲得したとき、他の各プレイヤーは呪い1枚を獲得（アタックではない＝堀では防げない）。
@@ -11133,6 +11177,40 @@
         if (!isAttackReactPending(pd)) return state;
         log(state, `${p.name} は「堀」を公開し、アタックを無効化した。`);
         ATTACKS[pd.type].onMoat(state, pd); // 登録表を引いて「この被害者を飛ばして次へ」
+        return state;
+      }
+      /* 略奪：盾＝堀とまったく同じ免疫リアクション（公式FAQ逐語＝`exactly as with Moat.`）。
+         **手札に残る**（公開するだけ）ので、自分のターンには普通に +$3 +1購入 で使える。
+         **1ターンに複数のアタックへ何度でも使える**＝1回の公開で無効化するのは「今この1つ」だけ。 */
+      case 'SHIELD_REVEAL': {
+        const pd = state.pending;
+        if (!pd) return state;
+        const p = state.players[pd.player];
+        if (p.hand.indexOf('shield') < 0) return state;
+        if (!isAttackReactPending(pd)) return state;
+        log(state, `${p.name} は「盾」を公開し、アタックを無効化した。`);
+        ATTACKS[pd.type].onMoat(state, pd);
+        return state;
+      }
+      /* 略奪：賞品のヤギ＝手札1枚を廃棄してもよい（**任意**＝`card:null` で「廃棄しない」）。 */
+      case 'PRIZE_GOAT_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'prize_goat') return state;
+        const p = state.players[pd.player];
+        if (action.card == null) { state.pending = null; return state; }
+        if (p.hand.indexOf(action.card) < 0) return state;
+        removeOne(p.hand, action.card);
+        state.pending = null; // 廃棄が別の pending を開くことがある（墓所/リッチ等）ので**先に**閉じる
+        trashCard(state, pd.player, action.card);
+        log(state, `${p.name} は賞品のヤギで「${C()[action.card].name}」を廃棄した。`);
+        return state;
+      }
+      /* 略奪：ハンマー＝コスト4以下のカード1枚を獲得（**強制**）。
+         候補は `costUpTo(state, id, 4)`（成分別比較＝ポーション費用/負債コスト/非サプライを弾く）。 */
+      case 'HAMMER_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'hammer_gain') return state;
+        finishGain(state, pd, action.card, (id) => costUpTo(state, id, 4), 'discard', 'ハンマーで獲得した。');
         return state;
       }
 
@@ -18512,6 +18590,8 @@
     'PLAY_ACTION', 'PLAY_TREASURE', 'PLAY_ALL_TREASURES', 'BUY', 'END_ACTION_PHASE', 'END_TURN',
     'PLAY_NIGHT', // 夜想曲：夜フェイズに夜行カードを使う（アクション権も購入権も消費しない）
     'CELLAR_RESOLVE', 'MILITIA_RESOLVE', 'MOAT_REVEAL',
+    // 略奪（Plunder）：戦利品(Loot)
+    'SHIELD_REVEAL', 'PRIZE_GOAT_TRASH', 'HAMMER_GAIN',
     'MINE_TRASH', 'MINE_GAIN', 'REMODEL_TRASH', 'REMODEL_GAIN', 'WORKSHOP_GAIN',
     'COURTYARD_PUT', 'PAWN_RESOLVE', 'STEWARD_RESOLVE', 'STEWARD_TRASH',
     'WISHING_RESOLVE', 'BARON_RESOLVE', 'IRONWORKS_GAIN',

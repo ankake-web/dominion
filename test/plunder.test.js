@@ -141,5 +141,124 @@ console.log('=== P1a: 戦利品(Loot)の山の基盤 ===');
   ok(m2.loot.every((c) => c === 'back'), 'マスク：獲得後も山の中身は伏せたまま');
 }
 
+console.log('\n=== P1b-1: 戦利品の効果（ダブロン金貨／船首像／賞品のヤギ／ハンマー／剣／盾） ===');
+
+// 手札・場・山札を作って財宝を1枚出すヘルパ（購入フェイズ）
+function playT(s, pi, card) {
+  s.turn.active = pi; s.turn.phase = 'buy';
+  s.players[pi].hand.push(card);
+  return E.reduce(s, { type: 'PLAY_TREASURE', card });
+}
+function fresh(kingdom, names) {
+  const s = mk(kingdom || KING_LOOT, {}, names || ['A', 'B']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  return s;
+}
+
+// --- ダブロン金貨＝獲得時に金貨（強制） ---
+{
+  const s = fresh();
+  s.loot = ['doubloons'].concat(s.loot.filter((c) => c !== 'doubloons'));
+  const t0 = tally(s);
+  const g0 = s.supply.gold;
+  E.gainLoot(s, 0);
+  ok(count(s.players[0].discard, 'doubloons') === 1, 'ダブロン金貨を獲得した');
+  ok(count(s.players[0].discard, 'gold') === 1 && s.supply.gold === g0 - 1, '獲得時に金貨1枚を**強制**獲得する');
+  ok(sameTally(t0, tally(s)), '保存則：カード総数は不変');
+  // 金貨の山が空なら何も起きない
+  const s2 = fresh(); s2.loot = ['doubloons'].concat(s2.loot.filter((c) => c !== 'doubloons'));
+  s2.supply.gold = 0;
+  E.gainLoot(s2, 0);
+  ok(count(s2.players[0].discard, 'gold') === 0, '金貨の山が空なら何も獲得しない（落ちない）');
+}
+// --- 船首像＝$3＋次のターン開始時 +2カード（持続） ---
+{
+  const s = fresh();
+  const s1 = playT(s, 0, 'figurehead');
+  ok(s1.turn.coins === 3, '船首像：+$3');
+  ok((s1.players[0].delayedEffects || []).some((e) => e.type === 'figurehead'), '持続の予約が立つ');
+  // 自分の手番が戻ってくるまで進める
+  let cur = s1;
+  cur.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  cur = E.reduce(cur, { type: 'END_TURN' });
+  cur = E.reduce(cur, { type: 'END_ACTION_PHASE' });
+  cur = E.reduce(cur, { type: 'END_TURN' });
+  ok(cur.turn.active === 0, '自分の手番に戻った');
+  ok(cur.players[0].hand.length === 7, '船首像：次のターン開始時 +2カード（先引き5＋2）');
+}
+// --- 賞品のヤギ＝$3＋1購入＋任意の廃棄 ---
+{
+  const s = fresh();
+  s.players[0].hand = ['estate'];
+  const b0 = s.turn.buys;
+  let s1 = playT(s, 0, 'prize_goat');
+  ok(s1.turn.coins === 3 && s1.turn.buys === b0 + 1, '賞品のヤギ：+$3 +1購入');
+  ok(s1.pending && s1.pending.type === 'prize_goat', '廃棄の窓が開く');
+  const t0 = tally(s1);
+  s1 = E.reduce(s1, { type: 'PRIZE_GOAT_TRASH', card: 'estate' });
+  ok(!s1.pending && count(s1.trash, 'estate') === 1, '選んだ1枚を廃棄して窓が閉じる');
+  ok(sameTally(t0, tally(s1)), '保存則：廃棄しても総数は不変');
+  // 廃棄しないで閉じられる（任意）
+  const s2 = fresh(); s2.players[0].hand = ['estate'];
+  let s3 = playT(s2, 0, 'prize_goat');
+  s3 = E.reduce(s3, { type: 'PRIZE_GOAT_TRASH', card: null });
+  ok(!s3.pending && count(s3.trash, 'estate') === 0, '「廃棄しない」で閉じられる（任意）');
+  // 手札0枚なら窓を開かない
+  const s4 = fresh();
+  const s5 = playT(s4, 0, 'prize_goat');
+  ok(!s5.pending, '手札0枚なら窓を開かない');
+}
+// --- ハンマー＝$3＋コスト4以下を強制獲得 ---
+{
+  const s = fresh();
+  let s1 = playT(s, 0, 'hammer');
+  ok(s1.turn.coins === 3, 'ハンマー：+$3');
+  ok(s1.pending && s1.pending.type === 'hammer_gain', '獲得の窓が開く');
+  // 強制＝辞退できない
+  const declined = E.reduce(s1, { type: 'HAMMER_GAIN', card: null });
+  ok(declined.pending && declined.pending.type === 'hammer_gain', '候補があるうちは辞退できない（強制）');
+  // $5 は取れない／$4 は取れる
+  const tooExpensive = E.reduce(s1, { type: 'HAMMER_GAIN', card: 'laboratory' });
+  ok(tooExpensive.pending, 'コスト5は獲得できない');
+  const s2 = E.reduce(s1, { type: 'HAMMER_GAIN', card: 'militia' });
+  ok(!s2.pending && count(s2.players[0].discard, 'militia') === 1, 'コスト4を獲得できる');
+  // 候補ゼロなら窓を開かない（＝人間が詰まない／CPUが無限ループしない）
+  const s3 = fresh();
+  Object.keys(s3.supply).forEach((id) => { if (E.costUpTo(s3, id, 4)) s3.supply[id] = 0; });
+  const s4 = playT(s3, 0, 'hammer');
+  ok(!s4.pending, '$4以下の獲得先が1つも無ければ窓を開かない');
+}
+// --- 剣＝アタック（手札が4枚になるまで捨てる） ---
+{
+  const s = fresh();
+  s.players[1].hand = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  const s1 = playT(s, 0, 'sword');
+  ok(s1.turn.coins === 3, '剣：+$3');
+  ok(s1.pending && s1.pending.type === 'discard_down' && s1.pending.down === 4 && s1.pending.player === 1,
+    '剣：他プレイヤーに「手札4枚まで捨てる」窓（民兵型・down=4）');
+  const s2 = E.reduce(s1, { type: 'DISCARD_DOWN_RESOLVE', cards: ['copper', 'copper'] });
+  ok(!s2.pending && s2.players[1].hand.length === 4, '手札が4枚になった');
+  // 手札4枚以下の相手は対象外
+  const s3 = fresh(); s3.players[1].hand = ['copper', 'copper', 'copper', 'copper'];
+  const s4 = playT(s3, 0, 'sword');
+  ok(!s4.pending, '手札4枚の相手には窓を開かない（「5枚以上なら1枚」ではない）');
+}
+// --- 盾＝堀と同型の免疫リアクション（手札に残る・何度でも） ---
+{
+  const s = fresh();
+  s.players[1].hand = ['shield', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  const s1 = playT(s, 0, 'sword');
+  ok(s1.pending && s1.pending.player === 1, '盾を持っていても窓は開く（公開するか選べる）');
+  const s2 = E.reduce(s1, { type: 'SHIELD_REVEAL' });
+  ok(!s2.pending, '盾を公開するとアタックが無効化される');
+  ok(count(s2.players[1].hand, 'shield') === 1, '**盾は手札に残る**（堀と同じ）');
+  ok(s2.players[1].hand.length === 6, '手札を1枚も捨てていない');
+  // 盾は自分のターンには普通の財宝として使える
+  const s3 = fresh();
+  const s4 = playT(s3, 0, 'shield');
+  ok(s4.turn.coins === 3, '盾：自分のターンには +$3');
+  ok(s4.turn.buys >= 2, '盾：+1購入');
+}
+
 console.log(`\n略奪テスト結果: ${pass} 件成功, ${fail} 件失敗`);
 if (fail > 0) process.exit(1);

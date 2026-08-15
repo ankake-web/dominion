@@ -1893,6 +1893,15 @@
     if (pd.type === 'workshop') return modalGainSupply(state, '工房 — 獲得', 'コスト 4 以下のカードを獲得します。',
       (id) => canUpTo(state, id, 4), (id) => dispatch({ type: 'WORKSHOP_GAIN', card: id }), () => dispatch({ type: 'WORKSHOP_GAIN', card: null }));
 
+    /* ===== 拡張: 略奪（Plunder）＝戦利品(Loot) ===== */
+    // 賞品のヤギ＝手札1枚を廃棄してもよい（**任意**＝「廃棄しない」で必ず閉じられる）。
+    if (pd.type === 'prize_goat') return modalSingleHand(p, '賞品のヤギ — 廃棄', '手札から1枚を廃棄できます（しなくてもよい）。',
+      () => true, (id) => dispatch({ type: 'PRIZE_GOAT_TRASH', card: id }),
+      { label: '廃棄しない', on: () => dispatch({ type: 'PRIZE_GOAT_TRASH', card: null }) });
+    // ハンマー＝コスト4以下を**強制**獲得（engine は候補ゼロなら窓を開かない＝辞退ボタンは保険）。
+    if (pd.type === 'hammer_gain') return modalGainSupply(state, 'ハンマー — 獲得', 'コスト 4 以下のカード1枚を獲得します（強制）。',
+      (id) => canUpTo(state, id, 4), (id) => dispatch({ type: 'HAMMER_GAIN', card: id }), () => dispatch({ type: 'HAMMER_GAIN', card: null }));
+
     /* ===== 拡張: 陰謀 ===== */
     if (pd.type === 'courtyard') return modalSingleHand(p, '中庭 — 山札の上に置く', '手札から1枚を選び、山札の一番上に置きます（次のターンに引きます）。',
       () => true, (id) => dispatch({ type: 'COURTYARD_PUT', card: id }), null, '山札の上に置く');
@@ -3869,6 +3878,8 @@
   function reactOptions(p, pd, proceed) {
     const opts = [];
     if (p.hand.includes('moat')) opts.push({ label: '🛡 堀を公開して無効化', cls: 'btn-primary', on: () => dispatch({ type: 'MOAT_REVEAL' }) });
+    // 略奪：盾（戦利品）＝堀と完全に同型（公式FAQ逐語 `exactly as with Moat.`）。公開しても手札に残る。
+    if (p.hand.includes('shield')) opts.push({ label: '🛡 盾を公開して無効化（手札に残る）', cls: 'btn-primary', on: () => dispatch({ type: 'SHIELD_REVEAL' }) });
     if (p.hand.includes('secret_chamber') && !pd.reacted) opts.push({ label: '🔮 秘密の小部屋を公開（+2引いて2枚戻す）', on: () => dispatch({ type: 'SECRET_CHAMBER_REVEAL' }) });
     if (canDiplomatReact(p, pd)) opts.push({ label: '🤝 外交官を公開（+2引いて3枚捨てる）', on: () => dispatch({ type: 'DIPLOMAT_REVEAL' }) });
     if (p.hand.includes('horse_traders')) opts.push({ label: '🐴 馬商人を脇に置く（次の手番に +1カードで戻る／攻撃は受ける）', on: () => dispatch({ type: 'HORSE_TRADERS_REACT' }) });
