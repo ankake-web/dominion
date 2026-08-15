@@ -194,7 +194,7 @@ PROGRESS §0-3 が「**将来 Plunder/Loot を入れる時に再考**」と先�
 
 ---
 
-## 段階2 **P1b＝戦利品(Loot) 15種の効果＝完了**（2026-08-15・未push・`sw.js` v74）
+## 段階2 **P1b＝戦利品(Loot) 15種の効果＝完了・push済**（2026-08-15・`393baba..4091cc9`・`sw.js` v74・本番反映を機械照合）
 
 **これで P1（Loot の山＋15種）が完了**＝`gainLoot` で得た戦利品が全部ちゃんと働く。
 **略奪はまだ `CARD_SETS` 未参照＝実プレイには出ない**。正本＝`docs/research/plunder_rules.md` 第5章。
@@ -233,6 +233,16 @@ engine は `SHIELD_REVEAL` を受理し CPU も返すのに、**人間だけが�
 ### 検証
 - **npm test 全42スイート緑（exit 0・整合性5303・不変条件12）**／
   `test/plunder.test.js` 29→**136件**／`test/plunder-ui.test.js` 9→**37件**。
+
+### ✅ push＝完了（2026-08-15・`393baba..4091cc9`／5コミット）＝本番反映を機械照合
+- **GitHub Pages**（Deploy success）：`sw.js` **v74**／`js/cards.js`・`js/engine.js`・`js/cpu.js`・`js/ui.js` が
+  **ローカルと sha1 完全一致**／本番 `engine.js` に `gainLoot`・`spellScrollEffect`・`endlessChalices`・
+  `SHIELD_REVEAL`／`SEXTANT_RESOLVE`／`AMPHORA_CHOOSE`／`ORB_RESOLVE`・`puzzleBox` を確認／
+  **本番 `ui.js` の `SHIELD_REVEAL` が 4箇所**（`reactOptions` 1 ＋ embedded 型モーダル 3）＝盾の穴が塞がっている／
+  **本番 `cpu.js` に `immuneReveal` があり、素の `hand.includes('moat')` は 0箇所**。
+- **Render**：`GET /status` = `{"persist":true,"rooms":0}`。
+- **本番の挙動は不変**（略奪は `CARD_SETS` 未参照）。ただし**盾の UI 修正と CPU の共通述語化は既存の堀にも効く経路**
+  なので、堀の挙動が変わっていないことは全42スイートで担保している。
 
 ### 既知の許容簡略化（意図的）
 - **宝珠(Orb)は choose-one だが `ELDER_CHOICE_ORDER` に登録しない**（長老の追加選択の対象にしない）＝
@@ -1977,7 +1987,7 @@ mix を解禁すると、PROGRESS §6 / §0-10 に**「どの出荷 CARD_SET で
 最終更新: 2026-08-15 / branch `main`（最新は `git log` で確認）。
 
 **【現在地】§0-30＝新拡張「略奪（Plunder）」の**段階0（研究）＋段階1（カタログ85種＋webp）＋段階2 P1（戦利品の山＋15種）が完了**
-（`sw.js` v74・**P1b は未push**）。正本＝**`docs/research/plunder_rules.md`**（7章）＝実装対象**85種**（王国40／Loot 15／
+（`sw.js` v74・**push済＝本番反映を機械照合**）。正本＝**`docs/research/plunder_rules.md`**（7章）＝実装対象**85種**（王国40／Loot 15／
 イベント15／特性15）を7群で収集し**各群を別エージェントが敵対検証**した。冒頭に**「実装前に必読」20項目**と
 **決定 D1〜D5**と**段階1/2 の計画**がある。
 **カタログは入ったが `CARD_SETS` 未参照＝略奪はまだ実プレイには出ない**（`DOM.CARDS` 560／`LANDSCAPES` 201＝計761枚）。
