@@ -216,6 +216,11 @@ function isNoConsentUndoableBuy(room, seat) {
     if (JSON.stringify(cur[k] || null) !== JSON.stringify(prev[k] || null)) return false;
   }
   if (JSON.stringify(cur.splitRotated || null) !== JSON.stringify(prev.splitRotated || null)) return false;
+  /* 略奪：戦利品(Loot)の山は**中身も順序も完全に伏せられている**。戦利品を獲得すると山の一番上が変わり、
+     獲得した1枚が全員に公開される＝**情報が増える**ので、同意なしの巻き戻しは認めない
+     （伏せ札の騎士の山と同型の覗き見穴になる）。 */
+  if ((cur.loot || []).length !== (prev.loot || []).length) return false;
+  if (JSON.stringify(cur.loot || null) !== JSON.stringify(prev.loot || null)) return false;
   const NOCTURNE_STATE = ['deluded', 'envious', 'misery', 'boonsInFront', 'boonsHeld', 'riverDraws', 'guardianActive', 'houndsAside'];
   for (let i = 0; i < cur.players.length; i++) {
     if (i === seat) {

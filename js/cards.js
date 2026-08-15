@@ -1618,6 +1618,13 @@
   DOM.POOLS.plunderexp = ['cage', 'grotto', 'jewelled_egg', 'search', 'shaman', 'secluded_shrine', 'siren', 'stowaway', 'taskmaster', 'abundance', 'cabin_boy', 'crucible', 'flagship', 'fortune_hunter', 'gondola', 'harbor_village', 'landing_party', 'mapmaker', 'maroon', 'rope', 'swamp_shacks', 'tools', 'buried_treasure', 'crew', 'cutthroat', 'enlarge', 'figurine', 'first_mate', 'frigate', 'longship', 'mining_road', 'pendant', 'pickaxe', 'pilgrim', 'quartermaster', 'silver_mine', 'trickster', 'wealthy_village', 'sack_of_loot', 'kings_cache'];
   // 戦利品(Loot)＝非サプライ（15種×2枚＝30枚を1山に伏せる）。ランダム抽選の母集団には入れない。
   DOM.POOLS.loot = ['amphora', 'doubloons', 'endless_chalice', 'figurehead', 'hammer', 'insignia', 'jewels', 'orb', 'prize_goat', 'puzzle_box', 'sextant', 'shield', 'spell_scroll', 'staff', 'sword'];
+  /* 「戦利品を配る」カード＝これが1枚でも対局にあるときだけ戦利品の山（30枚）を作る。
+     RGG ルールブック逐語 `Shuffle them into a face-down pile before the game if any cards refer to Loot.`
+     正本＝英語wiki `Loot > Ways to gain Loot`（王国7・イベント5・特性1）。**横型（イベント/特性）も含む**ので
+     `createInitialState` では kingdom だけでなく events / traits も走査すること。 */
+  DOM.LOOT_GIVERS = ['jewelled_egg', 'search', 'pickaxe', 'wealthy_village', 'cutthroat', 'sack_of_loot', // 王国
+    'peril', 'foray', 'looting', 'invasion', 'prosper', // イベント
+    'cursed']; // 特性
   // 段階1（効果が未実装）のプール＝闇市場デッキに入れない（買っても何も起きない死に札になるため）。
   //   実プレイ化（段階2＝CARD_SET 昇格）のときに、この配列から外す。
   DOM.STAGE1_POOLS = ['plunderexp', 'loot'];

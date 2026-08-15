@@ -1567,6 +1567,14 @@
         h('span', { class: 'mat-label' }, '祝福／呪詛: '),
         bits.map((b) => h('span', { class: 'chip-card' }, b))));
     }
+    /* 略奪：戦利品(Loot)の山＝**非サプライ・中身は完全に秘密**（廃墟と違い一番上も見えない）。
+       残枚数だけ出す（見えないと「あと何枚あるか」が分からず戦略が立たない＝§0-28 の非サプライ5山と同じ理由）。
+       獲得した1枚は公開演出（reveals）側に出るのでここには出さない。 */
+    if (Array.isArray(state.loot)) {
+      matRows.push(h('div', { class: 'mat-row' },
+        h('span', { class: 'mat-label' }, '戦利品: '),
+        h('span', { class: 'chip-card' }, '🎁 山 ' + state.loot.length + '枚（裏向き・中身は非公開）')));
+    }
     const matsBlock = matRows.length ? h('div', { class: 'mats' }, matRows) : null;
 
     // 手札（種類でグループ化・重ね表示）。支配中は操作対象（被支配者）の手札を出す。

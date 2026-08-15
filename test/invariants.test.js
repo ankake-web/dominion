@@ -41,6 +41,7 @@ function tally(s) {
   });
   MIXED_PILE_KEYS.forEach((k) => (s[k] || []).forEach(add)); // 混合山の中身（廃墟/騎士/城＋同盟の分割山6組）
   (s.trash || []).forEach(add); (s.blackMarket || []).forEach(add);
+  (s.loot || []).forEach(add); // 略奪：戦利品の山（30枚）＝**カード**なので数える（祝福/呪詛は非カードなので数えない）
   s.players.forEach((p) => ZONES.forEach((z) => (p[z] || []).forEach(add)));
   s.players.forEach((p) => (p.archives || []).forEach((a) => (a.cards || []).forEach(add))); // 帝国：資料庫の脇置き（{id,cards}）
   if (s.turn) { (s.turn.possessionGains || []).forEach(add); (s.turn.possessionTrash || []).forEach(add); }

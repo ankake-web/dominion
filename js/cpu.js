@@ -130,7 +130,9 @@
     'treasure_hunter', 'warrior', 'hero', 'champion', 'soldier', 'fugitive', 'disciple', 'teacher', 'horse',
     'will_o_wisp', 'imp', 'ghost', 'wish', 'bat',
     'cursed_gold', 'goat', 'haunted_mirror', 'lucky_coin', 'magic_lamp', 'pasture', 'pouch',
-    'zombie_apprentice', 'zombie_mason', 'zombie_spy']);
+    'zombie_apprentice', 'zombie_mason', 'zombie_spy',
+    // 略奪：戦利品(Loot) 15種＝非サプライ（「戦利品を獲得する」効果でのみ得る）。engine の NON_SUPPLY と同じ集合。
+    ...((DOM.POOLS && DOM.POOLS.loot) || [])]);
   // 新プロモ/帝国：2段分割山＝上段が残る間は下段を獲得できない（同盟の循環で上下が入れ替わることもある）。
   // **述語は engine の splitLocked が正本**（engine の gain/canBuyCard 拒否と必ず一致させる
   //  ＝提案すると強制獲得と噛み合って無限ループする）。

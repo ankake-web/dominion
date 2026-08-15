@@ -23,7 +23,13 @@
   //   どちらも購入・汎用獲得・闇市場デッキの対象外＝NON_SUPPLY に入れて4系統から一括で除外する。
   const HEIRLOOMS = ['cursed_gold', 'goat', 'haunted_mirror', 'lucky_coin', 'magic_lamp', 'pasture', 'pouch'];
   const ZOMBIES = ['zombie_apprentice', 'zombie_mason', 'zombie_spy'];
-  const NON_SUPPLY = new Set([].concat(PRIZES, ['spoils', 'madman', 'mercenary'], TRAVELLER_GROWTH, ['horse'], NOCTURNE_NP, HEIRLOOMS, ZOMBIES)); // supply の数値キーだが「山」としては数えない/買えないもの（賞品＋暗黒時代の略奪品/狂人/傭兵＋冒険のトラベラー成長先＋移動動物園の馬＋夜想曲の精霊/願い/コウモリ/家宝/ゾンビ）
+  /* 略奪：戦利品(Loot) 15種＝**非サプライ**。他の非サプライ山と違い `supply` の数値キーを持たず、
+     `state.loot`（実カードid配列30枚＝15種×2）で管理する（＝廃墟 `state.ruins` と同じ形だが**サプライではない**）。
+     `The Loot pile isn't in the Supply; players can't buy or gain from it, except with cards that specifically gain Loot.`
+     → `NON_SUPPLY` に入れて4系統（3山終了／購入／闇市場デッキ母集団／汎用獲得）から一括除外する。 */
+  const LOOT_IDS = (DOM.POOLS && DOM.POOLS.loot) ? DOM.POOLS.loot.slice() : [];
+  const LOOT_SET = new Set(LOOT_IDS);
+  const NON_SUPPLY = new Set([].concat(PRIZES, ['spoils', 'madman', 'mercenary'], TRAVELLER_GROWTH, ['horse'], NOCTURNE_NP, HEIRLOOMS, ZOMBIES, LOOT_IDS)); // supply の数値キーだが「山」としては数えない/買えないもの（賞品＋暗黒時代の略奪品/狂人/傭兵＋冒険のトラベラー成長先＋移動動物園の馬＋夜想曲の精霊/願い/コウモリ/家宝/ゾンビ＋略奪の戦利品）
   // 分割山（Split pile）：下段は上段が尽きるまで購入/獲得できない。正本は DOM.SPLIT_PILES（下段id→上段id）。
   const SPLIT_TOP = DOM.SPLIT_PILES || {};              // 下段id → 上段id（例 avanto→sauna）
   const SPLIT_BOTTOM = {}; Object.keys(SPLIT_TOP).forEach((b) => { SPLIT_BOTTOM[SPLIT_TOP[b]] = b; }); // 上段id → 下段id
@@ -1343,6 +1349,20 @@
       boons = { deck, discard: [], druid };
     }
     if (kingdom.some((k) => DOM.isType(k, 'doom'))) hexes = { deck: shuffle((DOM.HEXES_NOCTURNE || []).slice()), discard: [] };
+    /* 略奪：戦利品(Loot)の山＝**15種×2枚＝30枚を裏向きにシャッフルした1山**。**カードなので保存則 tally に数える**
+       （祝福/呪詛と違う）。RGG ルールブック逐語＝
+       `There are 15 Loot cards, with 2 copies of each. Shuffle them into a face-down pile before the game if
+        any cards refer to Loot. ... The Loot pile isn't in the Supply; players can't buy or gain from it,
+        except with cards that specifically gain Loot.`
+       - **枚数は人数によらず常に30枚**。**サプライではない**＝`supply` に載せない（載せると3山終了に数えられる）。
+       - **中身も順序も完全に秘密**（`Players can't look through the Loot pile during a game.`）＝
+         廃墟と違い**一番上も見えない**。`maskStateFor` で全部伏せる。
+       - **戦利品を配るカード（`DOM.LOOT_GIVERS`）が1枚でもあるときだけ作る**。イベント/特性も配るので
+         kingdom だけでなく **events / traits も走査する**。 */
+    const lootGivers = new Set(DOM.LOOT_GIVERS || []);
+    const usesLoot = kingdom.some((k) => lootGivers.has(k)) ||
+      events.some((e) => lootGivers.has(e)) || (opts.traits || []).some((t) => lootGivers.has(t));
+    const loot = usesLoot ? shuffle([].concat(LOOT_IDS, LOOT_IDS)) : null;
     // 夜想曲：森の迷子（Lost in the Woods）＝ゲーム中1枚だけの状態。持ち主の席番号（誰も持っていなければ null）。
     // 夜想曲：ネクロマンサー＝準備でゾンビ3枚を**廃棄置き場に置く**（「廃棄」ではない＝墓所/下水道/青空市場は誘発しない）。
     //   廃棄置き場は既に保存則 tally の対象なので、総カード枚数が3枚増える。
@@ -1368,6 +1388,7 @@
       blackMarket, // 闇市場デッキ（無ければ null）
       boons,          // 夜想曲：祝福デッキ {deck, discard, druid}（非カード。幸運が無ければ null）
       hexes,          // 夜想曲：呪詛デッキ {deck, discard}（非カード。不運が無ければ null）
+      loot,           // 略奪：戦利品の山（実カードid配列30枚・**カード＝保存則に数える**・非サプライ・中身は完全に秘密。配る札が無ければ null）
       lostInTheWoods: null, // 夜想曲：森の迷子（状態）の持ち主の席番号（誰も持っていなければ null・非カード）
       pileVP, // 帝国：集合（Gathering）＝サプライ山の上に置かれた勝利点トークン数 {[pileId]:個数}（公開・非カード＝保存則に無関係）。水道橋/汚された神殿の準備分もここ。
       pileDebt, // 帝国：徴税（Tax）＝サプライ山の上に置かれた負債トークン数 {[pileId]:個数}（公開・非カード＝保存則に無関係）。
@@ -1695,6 +1716,14 @@
   // 交易商人：獲得しかけたカードを山へ戻す（混合山は山キーを正規化して実カード配列の先頭へ戻す）。
   //   サプライに存在しない札（闇市場デッキ由来）は戻せない＝呼び出し側が窓を開かないこと（gate と同じ述語）。
   function returnToPile(state, cardId) {
+    /* 略奪：戦利品は**戦利品の山の一番上へ裏向きに**戻す（英語wiki `Loot` 逐語＝
+       `If you exchange a gained Loot (e.g. with Changeling), the Loot goes back on top of the pile, face down.`）。
+       サプライではないので `supply` を触ってはいけない。 */
+    if (LOOT_SET.has(cardId)) {
+      if (!Array.isArray(state.loot)) return false;
+      state.loot.unshift(cardId);
+      return true;
+    }
     const pile = pileKeyOf(state, cardId);
     if (isMixedPileKey(pile)) {
       if (!Array.isArray(state[pile])) return false;
@@ -1709,9 +1738,44 @@
   // そのカードを「元の山へ戻せる」か（returnToPile と同じ述語＝交易商人/取り替え子のゲートが使う）。
   //   混合山の中身は山キーが在ればよい（家宝/ゾンビ/闇市場デッキ由来の札は山が無いので戻せない）。
   function canReturnToPile(state, cardId) {
+    if (LOOT_SET.has(cardId)) return Array.isArray(state.loot); // 略奪：戦利品は戦利品の山へ戻す
     const pile = pileKeyOf(state, cardId);
     if (isMixedPileKey(pile)) return Array.isArray(state[pile]);
     return Object.prototype.hasOwnProperty.call(state.supply, cardId);
+  }
+  /* 略奪：「戦利品1枚を獲得する」の唯一の入口。RGG ルールブック逐語＝
+     `During the game, "gain a Loot" means, you gain the top card of the Loot pile.
+      When you gain a Loot, reveal it to all players. Then put it into your discard pile as usual.`
+     - **山の一番上を取り、全員に公開してから獲得する**（公開は `reveal()` を通す＝パトロンが正しく誘発する）。
+     - サプライを経由しない＝`gainFromOutside` と同じ置き方だが、**戦利品には戻せる山がある**ので
+       `_gainOutside`（交易商人の窓を閉じる旗）は立てない（交易商人で銀貨に置換されたら
+       `returnToPile` が戦利品の山の一番上へ裏向きに戻す＝公式）。
+     - **山が空なら何も起きない**（30枚しかない）。戻り値＝獲得した戦利品のid（獲得できなければ null）。 */
+  function gainLoot(state, pIndex, dest) {
+    if (!Array.isArray(state.loot) || !state.loot.length) return null;
+    const id = state.loot.shift();
+    reveal(state, pIndex, [id], '戦利品を獲得');
+    const t = state.turn;
+    takeDebt(state, pIndex, id);
+    if (t && t.possessedBy != null && pIndex === t.active) {
+      (t.possessionGains = t.possessionGains || []).push(id);
+      log(state, `${state.players[pIndex].name} が獲得した「${C()[id].name}」は脇に置かれた（支配：${state.players[t.possessedBy].name} が受け取る）。`);
+      triggerOnGain(state, t.possessedBy, id, dest || 'discard');
+      return id;
+    }
+    const p = state.players[pIndex];
+    if (dest === 'hand') p.hand.push(id);
+    else if (dest === 'deck') p.deck.unshift(id);
+    else if (dest === 'setAside') p.setAside.push(id);
+    else p.discard.push(id);
+    if (t) t.lastGainedAny = id; // 移動動物園：行人（誰の獲得でも記録する）
+    if (t && pIndex === t.active) {
+      (t.gainedThisTurn = t.gainedThisTurn || []).push(id);
+      if (t.phase === 'buy') { t.buyPhaseGained = true; t.bpGained = (t.bpGained || 0) + 1; }
+    }
+    log(state, `${state.players[pIndex].name} は戦利品「${C()[id].name}」を獲得した（残り${state.loot.length}枚）。`);
+    triggerOnGain(state, pIndex, id, dest || 'discard');
+    return id;
   }
   /* ===== 移動動物園：追放（Exile）=====
      追放マット `p.exile` は**公開**・所有者のカード（allCards に入る＝庭園/得点に数える）。
@@ -18396,6 +18460,10 @@
       s.hexes.deck = new Array(s.hexes.deck.length).fill('back');
       s.hexes.discard = s.hexes.discard.map((c, i, a) => (i === a.length - 1 ? c : 'back'));
     }
+    /* 略奪：戦利品の山は**中身も順序も完全に秘密**（枚数だけ見せる）。日本語wiki 逐語＝
+       「一番上のカードのみが公開される廃墟などとは異なるので注意」＝**一番上も伏せる**。
+       獲得された1枚は `state.reveals`（公開演出）側に出るのでそちらで全員に見える。 */
+    if (Array.isArray(s.loot)) s.loot = new Array(s.loot.length).fill('back');
     // 仮面舞踏会のパスは「同時・秘密」。逐次解決中の picks(他席が渡したカード)を
     // 後手席に配信すると情報優位になるため、自分の選択分以外は伏せる。
     if (s.pending && s.pending.type === 'masquerade' && s.pending.stage === 'pass' && s.pending.picks) {
@@ -18622,6 +18690,8 @@
     costOf,        // コストの3成分 {coin, pot, debt}（コスト軽減込み）
     gainableBase,  // サプライから獲得できる土台（非サプライ・ロック中の分割山下段・在庫切れを弾く）
     mixedPileWithTop, // その実カードidが「今どれかの混合山の一番上」か（山キーを返す。無ければ null）＝UI が獲得可否を説明するのに使う
+    gainLoot,      // 略奪：「戦利品1枚を獲得する」の唯一の入口（山の一番上を公開して獲得。空なら null）
+    LOOT_IDS,      // 略奪：戦利品15種のid（非サプライ。テスト/UIが同じ集合を見る）
     costUpTo,      // 「コスト$N以下」（成分別比較。ポーション/負債を持つ札は既定で対象外）
     costUnder,     // 「これより安い」（成分別 strictly less）
     costExact,     // 「ちょうど$N（ポーション/負債も一致）」
