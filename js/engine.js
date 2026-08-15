@@ -12028,7 +12028,7 @@
     switch (action.type) {
       /* ---- 新規ゲーム ---- */
       case 'NEW_GAME':
-        return createInitialState(action.players, action.kingdom, { startActive: action.startActive, landmarks: action.landmarks, events: action.events, projects: action.projects, ways: action.ways });
+        return createInitialState(action.players, action.kingdom, { startActive: action.startActive, landmarks: action.landmarks, events: action.events, projects: action.projects, ways: action.ways, traits: action.traits });
 
       /* ---- アクションカードを使う ---- */
       case 'PLAY_ACTION': {

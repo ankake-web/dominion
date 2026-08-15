@@ -2042,5 +2042,85 @@ const KING_P6 = ['fortune_hunter', 'mapmaker', 'enlarge', 'first_mate', 'frigate
   ok(bad === 0 && games === 4, 'P6 CPUソーク完走（4/4・膠着0・例外0・保存則違反0）');
 }
 
+/* ============================================================
+   P7＝CARD_SET 昇格（plunder / plunder-events / plunder-traits / random-plunder / mix-all）
+   ============================================================ */
+console.log('\n=== P7: CARD_SET 昇格 ===');
+{
+  const ids = DOM.CARD_SETS.map((s) => s.id);
+  ok(ids.indexOf('plunder') >= 0 && ids.indexOf('plunder-events') >= 0 && ids.indexOf('plunder-traits') >= 0 && ids.indexOf('random-plunder') >= 0,
+    '4つの略奪セットが CARD_SETS にある');
+  ok((DOM.KINGDOM_PLUNDER || []).length === 10 && DOM.KINGDOM_PLUNDER.every((id) => DOM.POOLS.plunderexp.indexOf(id) >= 0),
+    '固定10種はすべて略奪プールのカード');
+  ok((DOM.STAGE1_POOLS || []).indexOf('plunderexp') < 0 && (DOM.STAGE1_POOLS || []).indexOf('loot') < 0,
+    '略奪のプールは STAGE1_POOLS に入っていない（＝実プレイ・闇市場に出る）');
+  ok(DOM.MIX_KINGDOM_POOLS.plunderexp === '略奪', 'mix-all の抽選元に略奪がある');
+  ok(!!DOM.MIX_LANDSCAPE_POOLS['ev-plunder'] && !!DOM.MIX_LANDSCAPE_POOLS['trait-plunder'], 'mix の横型プール（イベント/特性）がある');
+  // plunder-traits＝特性2枚が付き、createInitialState で山に付く
+  seed = 12345;
+  const tr = DOM.traitsForSet('plunder-traits');
+  ok(tr.length === 2 && tr.every((t) => DOM.TRAITS_PLUNDER.indexOf(t) >= 0), 'plunder-traits は特性2枚を抽選する');
+  const s = E.createInitialState(['A', 'B'], DOM.KINGDOM_PLUNDER, { startActive: 0, traits: tr });
+  ok(s.traits && Object.keys(s.traits).length >= 1, '特性が山に付く');
+  // 闇市場デッキ＝略奪の王国40種は入る／戦利品15種は入らない
+  seed = 777;
+  const bmKing = ['black_market', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory', 'festival'];
+  const bs = E.createInitialState(['A', 'B'], bmKing, { startActive: 0 });
+  const bm = bs.blackMarket || [];
+  ok(bm.some((id) => DOM.POOLS.plunderexp.indexOf(id) >= 0), '闇市場デッキに略奪の王国カードが入る');
+  ok(!bm.some((id) => LOOT.indexOf(id) >= 0), '戦利品（非サプライ）は闇市場デッキに入らない');
+}
+// 出荷4セットの CPU ソーク（イベント/特性込み）
+{
+  let games = 0, bad = 0;
+  ['plunder', 'plunder-events', 'plunder-traits', 'random-plunder'].forEach((setId, ki) => {
+    for (let sd = 0; sd < 2; sd++) {
+      seed = 12000 + ki * 17 + sd;
+      const k = DOM.kingdomForSet(setId);
+      const ls = DOM.landscapesForSet(setId);
+      const names = [{ name: 'P0', isCpu: true, level: 'hard' }, { name: 'P1', isCpu: true, level: 'normal' }];
+      let s = E.createInitialState(names, k, { startActive: 0, events: ls.events, traits: ls.traits });
+      const t0 = tally(s);
+      let step = 0, err = false;
+      try {
+        while (!s.gameOver && step++ < 25000) {
+          const a = CPU.decide(s);
+          if (a == null) { console.log('    ' + setId + '/' + sd + ': CPU が null（' + (s.pending && s.pending.type) + '）'); err = true; break; }
+          s = E.reduce(s, a);
+        }
+      } catch (e) { console.log('    ' + setId + '/' + sd + ': 例外 ' + e.message + '\n' + (e.stack || '').split('\n')[1]); err = true; }
+      if (!err && !s.gameOver) { console.log('    ' + setId + '/' + sd + ': 未終局 pending=' + (s.pending && s.pending.type)); err = true; }
+      if (!err && !sameTally(t0, tally(s))) { console.log('    ' + setId + '/' + sd + ': 保存則違反'); err = true; }
+      if (err) bad++; else games++;
+    }
+  });
+  ok(bad === 0 && games === 8, '出荷4セットの CPUソーク完走（' + games + '/8・膠着0・例外0・保存則違反0）');
+}
+// mix：略奪×他拡張の混成ソーク
+{
+  let games = 0, bad = 0;
+  ['darkages', 'allies', 'prosperity'].forEach((other, ki) => {
+    seed = 12500 + ki * 31;
+    const setId = 'mix:plunderexp,' + other + ':2:ev-plunder,trait-plunder';
+    const k = DOM.kingdomForSet(setId);
+    const ls = DOM.landscapesForSet(setId);
+    const names = [{ name: 'P0', isCpu: true, level: 'normal' }, { name: 'P1', isCpu: true, level: 'normal' }];
+    let s = E.createInitialState(names, k, { startActive: 0, events: ls.events, traits: ls.traits, landmarks: ls.landmarks, projects: ls.projects, ways: ls.ways });
+    const t0 = tally(s);
+    let step = 0, err = false;
+    try {
+      while (!s.gameOver && step++ < 25000) {
+        const a = CPU.decide(s);
+        if (a == null) { console.log('    mix+' + other + ': CPU が null（' + (s.pending && s.pending.type) + '）'); err = true; break; }
+        s = E.reduce(s, a);
+      }
+    } catch (e) { console.log('    mix+' + other + ': 例外 ' + e.message); err = true; }
+    if (!err && !s.gameOver) { console.log('    mix+' + other + ': 未終局 pending=' + (s.pending && s.pending.type)); err = true; }
+    if (!err && !sameTally(t0, tally(s))) { console.log('    mix+' + other + ': 保存則違反'); err = true; }
+    if (err) bad++; else games++;
+  });
+  ok(bad === 0 && games === 3, 'mix（略奪×暗黒時代/同盟/繁栄）ソーク完走（' + games + '/3）');
+}
+
 console.log(`\n略奪テスト結果: ${pass} 件成功, ${fail} 件失敗`);
 if (fail > 0) process.exit(1);

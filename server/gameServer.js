@@ -352,13 +352,13 @@ function startGame(room) {
   // 横型ランドスケープ（ランドマーク/イベント/プロジェクト）もサーバ権威で1度だけ確定して全員で共有する。
   //   **landscapesForSet が唯一の入口**（3種を別々に引くと mix で「合計最大2枚」を超える）。
   const ls = DOM.landscapesForSet ? DOM.landscapesForSet(room.kingdomSet || 'basic') : { landmarks: [], events: [], projects: [], ways: [] };
-  const landmarks = ls.landmarks, events = ls.events, projects = ls.projects, ways = ls.ways || [];
+  const landmarks = ls.landmarks, events = ls.events, projects = ls.projects, ways = ls.ways || [], traits = ls.traits || [];
   // 手番順: テストは START_ACTIVE に整数(0)を注入して決定論化するので最優先。
   // 本番はホストのトグル（randomOrder）に従う：ランダム＝開始席をランダム化／上から順＝席0(ホスト)固定。
   const startActive = Number.isInteger(START_ACTIVE)
     ? START_ACTIVE
     : (room.randomOrder !== false ? 'random' : 0);
-  room.state = E.createInitialState(configs, kingdom, { startActive, landmarks, events, projects, ways });
+  room.state = E.createInitialState(configs, kingdom, { startActive, landmarks, events, projects, ways, traits });
   room.started = true;
   room.history = [];      // 「1手もどす」の履歴は対局ごと（再戦で前の対局へ戻れないように捨てる）
   clearUndoReq(room);

@@ -1625,9 +1625,16 @@
   DOM.LOOT_GIVERS = ['jewelled_egg', 'search', 'pickaxe', 'wealthy_village', 'cutthroat', 'sack_of_loot', // 王国
     'peril', 'foray', 'looting', 'invasion', 'prosper', // イベント
     'cursed']; // 特性
+  /* 略奪の固定10種（自作 showcase・公式の略奪専用10種は無い）。新機構をひと通り味わえる構成＝
+     戦利品を配る4種（宝飾卵/調査/切り裂き魔/戦利品の袋）／"next time" 持続（調査/切り裂き魔）／
+     シャーマンの常設ルール（宝飾卵とシナジー）／現場監督の繰り返し／乗組員の topdeck 持続／
+     一等航海士のループ／港の村（村枠＋$判定）。コスト分布＝$2×3・$3×1・$4×1・$5×4・$6×1。 */
+  DOM.KINGDOM_PLUNDER = ['jewelled_egg', 'search', 'shaman', 'taskmaster', 'harbor_village',
+                         'cutthroat', 'crew', 'pilgrim', 'first_mate', 'sack_of_loot'];
   // 段階1（効果が未実装）のプール＝闇市場デッキに入れない（買っても何も起きない死に札になるため）。
   //   実プレイ化（段階2＝CARD_SET 昇格）のときに、この配列から外す。
-  DOM.STAGE1_POOLS = ['plunderexp', 'loot'];
+  //   略奪は P7 で昇格済み＝空に戻した（戦利品 Loot は NON_SUPPLY なので闇市場には元々入らない）。
+  DOM.STAGE1_POOLS = [];
   // 移動動物園の固定10種（自作 showcase）。追放（ラクダの隊列）・馬（そり/騎兵隊/馬丁/貸し馬屋）・
   //   持続（艀/村有緑地）・アタック（魔女の集会）・獲得に反応するリアクション（牧羊犬/村有緑地）を一通り味わえる。
   //   コスト分布＝$2×1／$3×3／$4×3／$5×3。
@@ -1681,6 +1688,9 @@
     // 同盟セット（固定10種）。王国に連携(Liaison)があるので createInitialState が同盟(Ally)カード1枚を自動で選び、
     //   全員に好意トークンを配る。分割山3組（町民/叙事詩/魔法使い）は16枚の混合山として自動で用意される。
     { id: 'allies',          kind: 'standard', name: '同盟セット', desc: '好意トークン・同盟カード・分割山と循環', kingdom: DOM.KINGDOM_ALLIES },
+    { id: 'plunder',         kind: 'standard', name: '略奪セット', desc: '戦利品・"次に〜したとき"の持続・シャーマンの廃棄置き場ルール', kingdom: DOM.KINGDOM_PLUNDER },
+    { id: 'plunder-events',  kind: 'standard', name: '略奪＋イベント', desc: '略奪10種＋イベント2枚（旅行の追加ターン・戦利品を買う横型）', kingdom: DOM.KINGDOM_PLUNDER, eventsFrom: 'plunderexp' },
+    { id: 'plunder-traits',  kind: 'standard', name: '略奪＋特性', desc: '略奪10種＋特性2枚（サプライの山に付く横型＝山ごと性格が変わる）', kingdom: DOM.KINGDOM_PLUNDER, traitsFrom: 'plunderexp' },
     // ---- おすすめ（テーマ別・固定10種）----
     { id: 'big-money',       kind: 'recommend', name: 'ビッグマネー', desc: 'お金を伸ばして属州を狙う王道',
       kingdom: ['chapel', 'moneylender', 'harbinger', 'throne_room', 'bureaucrat', 'poacher', 'market', 'mine', 'laboratory', 'sentry'] },
@@ -1724,6 +1734,7 @@
     // 同盟から＝POOLS.allies（31枠＝非分割25＋分割山6）。分割山は「山キー」1枠で抽選され、中身4種は
     //   createInitialState が16枚積む（＝混合山なので randomKingdom の2段分割山の正規化は通らない）。
     { id: 'random-allies',   kind: 'random', name: '同盟から',       randomFrom: ['allies'] },
+    { id: 'random-plunder',  kind: 'random', name: '略奪から',       randomFrom: ['plunderexp'] },
     { id: 'random-intrigue', kind: 'random', name: '陰謀のみから',   randomFrom: ['intrigue'] },
     { id: 'random-basic',    kind: 'random', name: '基本のみから',   randomFrom: ['basic'] },
     { id: 'random-promo',    kind: 'random', name: 'プロモ込みから',  randomFrom: ['basic', 'intrigue', 'promo'] },
@@ -1764,7 +1775,7 @@
     basic: '基本', intrigue: '陰謀', seaside: '海辺', alchemy: '錬金術', prosperity: '繁栄',
     cornucopia: '収穫祭', guilds: 'ギルド', hinterlands: '異郷', darkages: '暗黒時代',
     adventures: '冒険', empires: '帝国', renaissance: 'ルネサンス', menagerie: '移動動物園',
-    nocturne: '夜想曲', allies: '同盟', promo: 'プロモ',
+    nocturne: '夜想曲', allies: '同盟', plunderexp: '略奪', promo: 'プロモ',
   };
   // mix で選べる横型プール（kind ごとに分けて選べる）。
   DOM.MIX_LANDSCAPE_POOLS = {
@@ -1774,6 +1785,8 @@
     'pj-renaissance': { label: 'プロジェクト（ルネサンス）', get: () => DOM.PROJECTS_RENAISSANCE || [] },
     'way-menagerie': { label: '習性（移動動物園）', get: () => DOM.WAYS_MENAGERIE || [] },
     'ev-menagerie': { label: 'イベント（移動動物園）', get: () => DOM.EVENTS_MENAGERIE || [] },
+    'ev-plunder': { label: 'イベント（略奪）', get: () => DOM.EVENTS_PLUNDER || [] },
+    'trait-plunder': { label: '特性（略奪）', get: () => DOM.TRAITS_PLUNDER || [] },
   };
   DOM.isMixSet = function (setId) { return typeof setId === 'string' && setId.indexOf('mix:') === 0; };
   // mix セットIDを分解する。不正なプール名は捨てる（サーバ側の検証と同じ挙動）。
@@ -1831,6 +1844,7 @@
     if (expansion === 'empires') return DOM.EVENTS_EMPIRES || [];
     if (expansion === 'adventures') return DOM.EVENTS_ADVENTURES || [];
     if (expansion === 'menagerie') return DOM.EVENTS_MENAGERIE || [];
+    if (expansion === 'plunderexp') return DOM.EVENTS_PLUNDER || [];
     return [];
   };
   DOM.eventsForSet = function (setId) {
@@ -1861,10 +1875,20 @@
   /* セットID → 使用する横型3種を**一度に**確定する唯一の入口（ui.js の startConfigured／server の startGame が呼ぶ）。
      ※ landmarksForSet / eventsForSet / projectsForSet を別々に呼ぶと mix で「合計最大2枚」を超えてしまう
        （3つとも独立に2枚ずつ引いてしまう）。**mix では必ずこの関数を使うこと**。 */
+  // セットID → 使用する特性id列（横型・0〜2枚）。traitsFrom（拡張id）を持つセットのみ抽選する。
+  DOM.traitPoolFor = function (expansion) {
+    if (expansion === 'plunderexp') return DOM.TRAITS_PLUNDER || [];
+    return [];
+  };
+  DOM.traitsForSet = function (setId) {
+    const set = DOM.CARD_SETS.find((s) => s.id === setId);
+    if (set && set.traitsFrom) return DOM.pickLandmarks(2, DOM.traitPoolFor(set.traitsFrom));
+    return [];
+  };
   DOM.landscapesForSet = function (setId) {
     if (DOM.isMixSet(setId)) {
       const m = DOM.parseMixSet(setId);
-      const out = { landmarks: [], events: [], projects: [], ways: [] };
+      const out = { landmarks: [], events: [], projects: [], ways: [], traits: [] };
       if (!m.count || !m.lsPools.length) return out;
       // 選んだ横型プールを1つの束にまとめてシャッフルし、合計 count 枚だけ引く（公式：横型は合算で最大2枚）。
       let bag = [];
@@ -1875,6 +1899,7 @@
         else if (kind === 'event') out.events.push(id);
         else if (kind === 'project') out.projects.push(id);
         else if (kind === 'way') out.ways.push(id);
+        else if (kind === 'trait') out.traits.push(id);   // 略奪：特性（買わない横型・山に付く）
       });
       return out;
     }
@@ -1883,6 +1908,7 @@
       events: DOM.eventsForSet(setId),
       projects: DOM.projectsForSet(setId),
       ways: DOM.waysForSet(setId),
+      traits: DOM.traitsForSet(setId),   // 略奪：特性
     };
   };
   // 表示名（mix はプール名から組み立てる。ロビー/セット選択の見出しに使う）。

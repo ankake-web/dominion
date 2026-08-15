@@ -55,8 +55,8 @@ function diffTally(a, b) { const ks = new Set([...Object.keys(a), ...Object.keys
 function hasBack(s) { return s.players.some((p) => ZONES.some((z) => (p[z] || []).some((c) => c === 'back'))) || s.players.some((p) => (p.archives || []).some((a) => (a.cards || []).some((c) => c === 'back'))) || (s.trash || []).some((c) => c === 'back'); }
 
 // 1ゲームを最後まで進め、安定点ごとに全不変条件を検査。違反があれば false と詳細を返す。
-function runGame(kingdom, players, landmarks, events, projects, ways) {
-  let s = E.createInitialState(players, kingdom, { startActive: 0, landmarks: landmarks || [], events: events || [], projects: projects || [], ways: ways || [] });
+function runGame(kingdom, players, landmarks, events, projects, ways, traits) {
+  let s = E.createInitialState(players, kingdom, { startActive: 0, landmarks: landmarks || [], events: events || [], projects: projects || [], ways: ways || [], traits: traits || [] });
   const init = tally(s);
   const n = s.players.length;
   let step = 0;
@@ -168,7 +168,8 @@ console.log('=== カード保存則: 出荷セット（固定/ランダム各種
   const sets = ['basic', 'intrigue', 'seaside', 'alchemy', 'prosperity', 'cornucopia', 'guilds', 'hinterlands', 'darkages', 'adventures', 'adventures-events', 'empires', 'empires-landmarks', 'empires-events', 'renaissance', 'renaissance-projects', 'promo2-pack', 'random', 'random-promo', 'random-seaside', 'random-alchemy', 'random-prosperity', 'random-cornucopia', 'random-guilds', 'random-hinterlands', 'random-darkages', 'random-adventures', 'random-empires', 'random-renaissance',
     'menagerie', 'menagerie-ways', 'menagerie-events', 'random-menagerie',
     'nocturne', 'random-nocturne',
-    'allies', 'random-allies'];
+    'allies', 'random-allies',
+    'plunder', 'plunder-events', 'plunder-traits', 'random-plunder']; // 略奪（P7 で昇格）
   let allOk = true;
   for (const setId of sets) {
     for (let sd = 0; sd < 3; sd++) {
@@ -178,8 +179,9 @@ console.log('=== カード保存則: 出荷セット（固定/ランダム各種
       const ev = DOM.eventsForSet ? DOM.eventsForSet(setId) : [];       // 帝国：empires-events は横型イベント2枚付き
       const pr = DOM.projectsForSet ? DOM.projectsForSet(setId) : [];   // ルネサンス：renaissance-projects は横型プロジェクト2枚付き
       const wy = DOM.waysForSet ? DOM.waysForSet(setId) : [];           // 移動動物園：menagerie-ways は習性2枚付き
-      const r = runGame(k, mkPlayers(2 + (sd % 3), sd), lm, ev, pr, wy);
-      if (!r.okp) { allOk = false; console.log('    ' + setId + ' sd' + sd + ' [' + lm.join(',') + '][' + ev.join(',') + '][' + pr.join(',') + '][' + wy.join(',') + ']: ' + r.why); }
+      const tr = DOM.traitsForSet ? DOM.traitsForSet(setId) : [];       // 略奪：plunder-traits は特性2枚付き
+      const r = runGame(k, mkPlayers(2 + (sd % 3), sd), lm, ev, pr, wy, tr);
+      if (!r.okp) { allOk = false; console.log('    ' + setId + ' sd' + sd + ' [' + lm.join(',') + '][' + ev.join(',') + '][' + pr.join(',') + '][' + wy.join(',') + '][' + tr.join(',') + ']: ' + r.why); }
     }
   }
   ok(allOk, '出荷セット各種すべて保存則・不変条件を満たし終局');

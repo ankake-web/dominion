@@ -85,6 +85,12 @@
     'warlord', 'sorcerer', 'sorceress', 'elder', 'hill_fort', 'sunken_treasure',
     'garrison', 'miller', 'conjurer', 'archer', 'voyage', 'acolyte',
     'blacksmith', 'student', 'old_map', 'tent', 'herb_gatherer', 'battle_plan', 'town_crier',
+    /* 略奪（実プレイ＝段階2＝P7 で昇格）＝強さ/コストの目安順。供給があるときだけ効く（bestEngineBuy/bestGain が参照）。 */
+    'kings_cache', 'sack_of_loot', 'wealthy_village', 'pilgrim', 'crew', 'cutthroat', 'frigate', 'first_mate',
+    'quartermaster', 'mining_road', 'trickster', 'silver_mine', 'pickaxe', 'pendant', 'enlarge', 'figurine',
+    'longship', 'buried_treasure', 'harbor_village', 'landing_party', 'flagship', 'abundance', 'cabin_boy',
+    'crucible', 'fortune_hunter', 'gondola', 'mapmaker', 'swamp_shacks', 'tools', 'rope', 'maroon',
+    'taskmaster', 'secluded_shrine', 'siren', 'stowaway', 'shaman', 'search', 'jewelled_egg', 'grotto', 'cage',
     'pawn', 'lurker', 'moat', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke',
     // 追加拡張（収穫祭/異郷/暗黒時代）＝孤立プールで実サプライに出ないため並び順はCPU挙動に無影響
     // （新プロモ6種は実プレイ化済み＝上の実強度順の位置に配置済み）
@@ -99,12 +105,7 @@
     // 段階1追加（夜想曲。CARD_SETS 未参照＝実際には獲得されないが GAIN_ORDER=全カードの整合性を満たす）
     'bard', 'blessed_village', 'cemetery', 'changeling', 'cobbler', 'conclave', 'crypt', 'cursed_village', 'den_of_sin', 'devils_workshop', 'druid', 'exorcist', 'faithful_hound', 'fool', 'ghost_town', 'guardian', 'idol', 'leprechaun', 'monastery', 'necromancer', 'night_watchman', 'pixie', 'pooka', 'raider', 'sacred_grove', 'secret_cave', 'shepherd', 'skulk', 'tormentor', 'tracker', 'tragic_hero', 'vampire', 'werewolf',
     'cursed_gold', 'goat', 'haunted_mirror', 'lucky_coin', 'magic_lamp', 'pasture', 'pouch', 'will_o_wisp', 'imp', 'ghost', 'wish', 'bat', 'zombie_apprentice', 'zombie_mason', 'zombie_spy',
-    // 段階1追加（略奪 Plunder。CARD_SETS 未参照＝実際には獲得されないが GAIN_ORDER=全カードの整合性を満たす）。
-    //   段階2で実プレイ化するときに、実強度順の正しい位置へ並べ直すこと（同盟 A5 と同じ）。
-    'cage', 'grotto', 'jewelled_egg', 'search', 'shaman', 'secluded_shrine', 'siren', 'stowaway', 'taskmaster', 'abundance',
-    'cabin_boy', 'crucible', 'flagship', 'fortune_hunter', 'gondola', 'harbor_village', 'landing_party', 'mapmaker', 'maroon', 'rope',
-    'swamp_shacks', 'tools', 'buried_treasure', 'crew', 'cutthroat', 'enlarge', 'figurine', 'first_mate', 'frigate', 'longship',
-    'mining_road', 'pendant', 'pickaxe', 'pilgrim', 'quartermaster', 'silver_mine', 'trickster', 'wealthy_village', 'sack_of_loot', 'kings_cache',
+    // 戦利品(Loot)15種＝非サプライ（NON_SUPPLY_SET）＝汎用獲得の候補にならない（GAIN_ORDER=全カードの整合性のためだけ）。
     'amphora', 'doubloons', 'endless_chalice', 'figurehead', 'hammer', 'insignia', 'jewels', 'orb', 'prize_goat', 'puzzle_box',
     'sextant', 'shield', 'spell_scroll', 'staff', 'sword',
     'copper', 'curse'];

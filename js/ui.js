@@ -4865,13 +4865,15 @@
     const events = opts.events || ls.events;
     const projects = opts.projects || ls.projects;
     const ways = opts.ways || ls.ways || [];   // 移動動物園：習性（買わない横型）
+    const traits = opts.traits || ls.traits || []; // 略奪：特性（買わない横型・山に付く）
     UI.lastConfigs = configs;
     UI.lastKingdom = kingdom;
     UI.lastLandmarks = landmarks;
     UI.lastEvents = events;
     UI.lastProjects = projects;
     UI.lastWays = ways;
-    const st = E().createInitialState(configs, kingdom, { landmarks, events, projects, ways });
+    UI.lastTraits = traits;
+    const st = E().createInitialState(configs, kingdom, { landmarks, events, projects, ways, traits });
     UI.mode = 'local'; UI.mySeat = null; UI.localViewer = firstHuman(st);
     UI._noAutoSkipOnce = false; // 前の対局で「1手もどす」を押した名残を持ち越さない
     UI.store = DOM.LocalStore(st);
@@ -4880,9 +4882,9 @@
     render();
   }
   function restartLocal() {
-    const st = E().createInitialState(UI.lastConfigs, UI.lastKingdom, { landmarks: UI.lastLandmarks || [], events: UI.lastEvents || [], projects: UI.lastProjects || [] });
+    const st = E().createInitialState(UI.lastConfigs, UI.lastKingdom, { landmarks: UI.lastLandmarks || [], events: UI.lastEvents || [], projects: UI.lastProjects || [], ways: UI.lastWays || [], traits: UI.lastTraits || [] });
     UI.localViewer = firstHuman(st);
-    UI.store.dispatch({ type: 'NEW_GAME', players: UI.lastConfigs, kingdom: UI.lastKingdom, landmarks: UI.lastLandmarks || [], events: UI.lastEvents || [], projects: UI.lastProjects || [], ways: UI.lastWays || [] });
+    UI.store.dispatch({ type: 'NEW_GAME', players: UI.lastConfigs, kingdom: UI.lastKingdom, landmarks: UI.lastLandmarks || [], events: UI.lastEvents || [], projects: UI.lastProjects || [], ways: UI.lastWays || [], traits: UI.lastTraits || [] });
   }
 
   /* ---------- オンライン（WebSocket / サーバ権威） ---------- */
