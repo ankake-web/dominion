@@ -1637,6 +1637,33 @@
         const junk = p.hand.filter((c) => trashValue(c) < 10).sort((a, b) => trashValue(a) - trashValue(b));
         return { type: 'ROPE_TRASH', card: junk.length ? junk[0] : null };
       }
+      /* ===== 略奪P4：特性(Trait) ===== */
+      // 敬虔な＝不要札があれば1枚廃棄。
+      case 'pious_trash': {
+        const junk = p.hand.filter((c) => trashValue(c) < 10).sort((a, b) => trashValue(a) - trashValue(b));
+        return { type: 'PIOUS_TRASH', card: junk.length ? junk[0] : null };
+      }
+      // 友好的な＝手札の友好的なカードを捨てて同じ山から1枚獲得（どうせクリンナップで捨てる＝実質+1枚＝常に得）。
+      case 'friendly_discard': {
+        const c = p.hand.find((x) => DOM.engine.hasTrait(state, x, 'friendly'));
+        return { type: 'FRIENDLY_DISCARD', card: c || null };
+      }
+      // 忍耐強い＝手札の忍耐強いアクション/財宝を全部脇へ（次のターンにアクション権なしで使える＝ほぼ常に得）。
+      case 'patient_set': {
+        const cards = p.hand.filter((x) => DOM.engine.hasTrait(state, x, 'patient') && (isType(x, 'action') || isTreasure(x)));
+        return { type: 'PATIENT_SET', cards };
+      }
+      // 内気な＝最も価値の低い内気なカードを捨てて +2カード（純増＝常に得）。
+      case 'shy_discard': {
+        const shy = p.hand.filter((x) => DOM.engine.hasTrait(state, x, 'shy')).sort((a, b) => keepValue(a) - keepValue(b));
+        return { type: 'SHY_DISCARD', card: shy.length ? shy[0] : null };
+      }
+      // 鼓舞する＝場に出していない一番良いアクションを使う。
+      case 'inspiring_play': {
+        const cand = (DOM.engine.inspiringTargets ? DOM.engine.inspiringTargets(state, pd.player) : []).slice()
+          .sort((a, b) => keepValue(b) - keepValue(a));
+        return { type: 'INSPIRING_PLAY', card: cand.length ? cand[0] : null };
+      }
 
       /* ===== 拡張: 陰謀 ===== */
       case 'courtyard': {

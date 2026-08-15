@@ -414,8 +414,59 @@
        **全員に・常時・累積で**効く（トークンを置いた本人だけ／手番中だけ ではない＝公式）。
        山キーは `pileKeyOf` で正規化する（分割山の中身も同じ山＝安くなる）。$0未満にはしない（末尾の Math.max）。 */
     if (state.pileFavor) base -= (state.pileFavor[pileKeyOf(state, id)] || 0);
+    /* 略奪：特性「安価な(Cheap)」＝その山のカードはゲーム全体（得点計算を含む）で $1 安い。
+       **全員に・常時**（手番に依存しない）。ポーション/負債の成分は下げない（coin だけ）。
+       山キーは pileKeyOf で正規化（分割山/混合山の中身にも効く）。 */
+    if (state.traits && state.traits.cheap && state.traits.cheap === pileKeyOf(state, id)) base -= 1;
     const red = (t && t.costReduction) || 0;
     return Math.max(0, base - red);
+  }
+  /* ===== 略奪：特性(Trait) ＝「山」に付く（カードではない）。判定は必ず pileKeyOf を通す ＝
+     分割山の中身・混合山の中身にも効き、**山が空になっても効き続ける**。種別は増やさない。 */
+  function hasTrait(state, cardId, traitId) {
+    const tp = state.traits && state.traits[traitId];
+    if (!tp) return false;
+    return pileKeyOf(state, cardId) === tp;
+  }
+  /* 鼓舞する(Inspiring)＝「場に出していないアクション」の候補（engine拒否・CPU候補・UIフィルタが同じ述語を見る）。
+     場＝inPlay＋durationCards（前ターンからの持続も「場」＝公式）。脇置き（貨物船/王子など）は場ではない。 */
+  function inspiringTargets(state, pi) {
+    const p = state.players[pi];
+    const inPlay = p.inPlay.concat(p.durationCards || []);
+    const out = [];
+    p.hand.forEach((c) => {
+      if (out.indexOf(c) >= 0) return;
+      if (!DOM.isType(c, 'action')) return;
+      if (inPlay.indexOf(c) >= 0) return;
+      if (!canPlayHandCard(state, pi, c)) return; // 航海の3枚制限・将軍
+      out.push(c);
+    });
+    return out;
+  }
+  // 特性の付いた山に「まだ取れるカードがあるか」（分割山は下段も見る）。
+  function traitPileHasCards(state, pk) {
+    if (isMixedPileKey(pk)) return Array.isArray(state[pk]) && state[pk].length > 0;
+    if ((state.supply[pk] || 0) > 0) return true;
+    const b = SPLIT_BOTTOM[pk];
+    return !!(b && (state.supply[b] || 0) > 0);
+  }
+  // 特性の付いた山の「一番上」を獲得する（へつらう/友好的な。2段分割山は上段が尽きていれば下段）。
+  function gainTraitTop(state, pi, pk, dest) {
+    if (isMixedPileKey(pk)) return gain(state, pi, pk, dest);
+    if ((state.supply[pk] || 0) > 0) return gain(state, pi, pk, dest);
+    const b = SPLIT_BOTTOM[pk];
+    if (b && (state.supply[b] || 0) > 0) return gain(state, pi, b, dest);
+    return false;
+  }
+  // その山キーに属する実カードid の一覧（運命の(Fated)＝シャッフル時の判定用に setup で焼き込む）。
+  function pileContents(state, pk) {
+    if (isMixedPileKey(pk) && Array.isArray(state[pk])) {
+      const out = [];
+      state[pk].forEach((c) => { if (out.indexOf(c) < 0) out.push(c); });
+      return out.length ? out : [pk];
+    }
+    const bottom = (typeof SPLIT_BOTTOM !== 'undefined' && SPLIT_BOTTOM[pk]) ? [SPLIT_BOTTOM[pk]] : [];
+    return [pk].concat(bottom);
   }
   /* ========== ルネサンス：資本主義（Capitalism・プロジェクト）＝**財宝判定の唯一の正本** ==========
      「あなたのターン中、テキストに **+$（コイン）** を含むアクションカードは、（アクションであると同時に）財宝でもある。」
@@ -562,6 +613,11 @@
     //   （PLAY_ALL_TREASURES 経由なら turn.playAllResume が残りの財宝を出し切る）。
     if (maybeKiln(state, card, pIndex, 'treasure')) return;
     applyTreasureEffect(state, pIndex, card);
+    // 略奪P4：無謀な(Reckless)＝財宝でも指示に2回従う（2回目は1回目の選択待ちの解決後）。
+    if (state.traits && hasTrait(state, card, 'reckless')) {
+      state.replay = state.replay || [];
+      state.replay.push({ player: pIndex, card, label: 'reckless_treasure' });
+    }
   }
   /* 移動動物園：イベントで「アクション権を消費せずにカードを使用する」共通入口
      （苦労 Toil／進軍 March／博打 Gamble／遅延 Delay・刈り入れ Reap のターン開始時の使用）。
@@ -615,6 +671,11 @@
         return true;
       }
       applyTreasureEffect(state, pi, card);
+      // 略奪P4：無謀な(Reckless)＝財宝でも指示に2回従う。
+      if (state.traits && hasTrait(state, card, 'reckless')) {
+        state.replay = state.replay || [];
+        state.replay.push({ player: pi, card, label: 'reckless_treasure' });
+      }
     }
     return true;
   }
@@ -1137,6 +1198,21 @@
         if (state) log(state, `${p.name} は占星術師団で ${picks.length}枚 をシャッフルした束の上に置いた。`);
       }
     }
+    /* 略奪：特性「運命の(Fated)」＝シャッフルするとき、その山のカードを公開して**シャッフルした束の**
+       一番上か一番下に置ける（任意・一部だけでもよい）。シャッフルは同期・非対話なので自動選択＝
+       アクション/財宝は上・それ以外（勝利点/呪い）は下（ほぼ常に最善）＝許容簡略化（§0-22 星図と同型）。
+       宿屋/寄付/併合など**どの経路のシャッフルでも**誘発する（この関数が唯一の入口）。 */
+    if ((p.fatedIds || []).length && shuffled.length > 1) {
+      const top = [], bottom = [];
+      for (let i = shuffled.length - 1; i >= 0; i--) {
+        if (p.fatedIds.indexOf(shuffled[i]) < 0) continue;
+        const c = shuffled.splice(i, 1)[0];
+        if (DOM.isType(c, 'action') || DOM.isType(c, 'treasure')) top.push(c); else bottom.push(c);
+      }
+      if (top.length) shuffled.unshift(...top);
+      if (bottom.length) shuffled.push(...bottom);
+      if (state && (top.length || bottom.length)) log(state, `${p.name} は運命のカードを公開した（上${top.length}枚・下${bottom.length}枚）。`);
+    }
     p.deck = p.deck.concat(shuffled);
     placeStash(p);
     /* 公式FAQ逐語（メイソン団）＝`When you need to shuffle to access more cards from your deck, you only
@@ -1593,6 +1669,63 @@
        この関数は cleanupAndAdvance からしか呼ばれない＝先頭手番だけ素通りしていた
        （すり師団を先手だけが1ターン免れる非対称／初期好意1をターン1で使えない＝敵対レビューで確定）。
        持続カードもプロジェクトもターン1には存在し得ないので、ここでは Ally 窓だけを最小限で開く。 */
+    /* ===== 略奪：特性(Trait) の選出＝**準備手順の最後**（災いカード/Ally/避難所/家宝を全部決めた後）＝公式。
+       付け先は「王国のアクションまたは財宝の山」＝**randomizer（プレースホルダ）の種別**で判定
+       （城=勝利点の山は対象外／騎士・同盟の分割山=アクションの山は対象）。災いカードの山も候補。
+       同じ山に2枚は付けない。基本カード（銀貨等）と廃墟には付かない。 */
+    {
+      const traitList = (opts.traits || []).filter((tid) => DOM.LANDSCAPES && DOM.LANDSCAPES[tid] && DOM.LANDSCAPES[tid].kind === 'trait');
+      if (traitList.length) {
+        initial.traits = {};
+        const used = [];
+        traitList.forEach((tid) => {
+          const cands = initial.kingdom.filter((k) =>
+            (DOM.isType(k, 'action') || DOM.isType(k, 'treasure')) && used.indexOf(k) < 0);
+          if (!cands.length) return;
+          const pile = opts.traitPiles && opts.traitPiles[tid] && cands.indexOf(opts.traitPiles[tid]) >= 0
+            ? opts.traitPiles[tid]                                  // テスト/再現用に山を固定できる
+            : cands[Math.floor(Math.random() * cands.length)];
+          initial.traits[tid] = pile;
+          used.push(pile);
+          log(initial, `特性「${(DOM.LANDSCAPES[tid] || {}).name || tid}」は「${(C()[pile] || {}).name || pile}」の山に付いた。`);
+        });
+        /* 受け継がれた(Inherited)＝開始デッキのカード1枚（屋敷→無ければ銅貨）をその山のカードと入れ替える。
+           **獲得ではない**（獲得トリガーを引かない）。入れ替えた屋敷/避難所/家宝は箱へ（消える）・銅貨は山へ戻す。
+           山からはターン順（開始プレイヤーから）に1枚ずつ取る＝3山終了に影響する。
+           どの開始カードを替えるかの選択は自動（屋敷優先）＝許容簡略化（公式は「気にするならターン順に選ぶ」）。 */
+        const inhPile = initial.traits.inherited;
+        if (inhPile) {
+          for (let k = 0; k < initial.players.length; k++) {
+            const seat = (startActive + k) % initial.players.length;
+            const pl = initial.players[seat];
+            let got = null;
+            if (isMixedPileKey(inhPile)) {
+              if (Array.isArray(initial[inhPile]) && initial[inhPile].length) {
+                got = initial[inhPile].shift();
+                if (initial.supply[inhPile] != null) initial.supply[inhPile] = initial[inhPile].length;
+              }
+            } else if ((initial.supply[inhPile] || 0) > 0) {
+              initial.supply[inhPile] -= 1; got = inhPile;
+            }
+            if (!got) break;
+            const zoneFor = (id) => (pl.deck.indexOf(id) >= 0 ? pl.deck : (pl.hand.indexOf(id) >= 0 ? pl.hand : null));
+            let swapId = ['estate', 'copper', 'hovel', 'necropolis', 'overgrown_estate'].find((id) => zoneFor(id)) || pl.deck[0] || pl.hand[0];
+            const z = zoneFor(swapId) || pl.deck;
+            const at = z.indexOf(swapId);
+            if (at >= 0) z[at] = got; else z.push(got);
+            if (swapId === 'copper') initial.supply.copper += 1;   // 銅貨は山へ戻す（屋敷/避難所/家宝は箱へ＝消える）
+            log(initial, `${pl.name} は開始デッキの「${(C()[swapId] || {}).name || swapId}」を「${(C()[got] || {}).name || got}」と入れ替えた（受け継がれた）。`);
+          }
+        }
+        /* 運命の(Fated)＝シャッフルのたびに、その山のカードを山札の上か下へ置ける。
+           シャッフルは同期・非対話（§0-22 の星図と同型）なので**自動選択**＝アクション/財宝は上・
+           勝利点/呪いは下（ほぼ常に最善）＝許容簡略化。対象idは setup で焼き込む（山が空でも効く）。 */
+        if (initial.traits.fated) {
+          const ids = pileContents(initial, initial.traits.fated);
+          initial.players.forEach((pl) => { pl.fatedIds = ids.slice(); });
+        }
+      }
+    }
     allyStartOfTurn(initial, startActive);
     /* 略奪：シャーマン＝**ゲームの最初のターンにも**「ターンの開始時」は起きる（公式＝
        `This applies even on your first turn (relevant with Necromancer)`）。ネクロマンサー同居時は
@@ -2128,6 +2261,11 @@
     const fp = (t.firstPlayDone = t.firstPlayDone || {});
     const isFirst = !fp[pi];
     fp[pi] = true;
+    /* 略奪P4：特性「鼓舞する(Inspiring)」＝**あなたのターンに**鼓舞するカードを使用した後、
+       場に出していないアクション1枚を手札から使用してもよい（解決後＝reduce 末尾の再開網が窓を開く）。 */
+    if (state.traits && state.traits.inspiring && pi === t.active && hasTrait(state, card, 'inspiring')) {
+      (t.inspiringQueue = t.inspiringQueue || []).push(pi);
+    }
     if (!(state.players[pi].delayedEffects || []).some((e) => e.nextTime)) return;
     if (isFirst && isTreasureFor(state, card)) fireNextTime(state, 'first_treasure', { player: pi });
     if (DOM.isType(card, 'action') && !DOM.isType(card, 'command')) {
@@ -4414,6 +4552,15 @@
     if (hvN && state.turn === t0) {
       if (state.pending) t0.hvPending = { player: pi, n: hvN, coins0: hvC0 };
       else settleHarborVillage(state, pi, hvN, hvC0);
+    }
+    /* 略奪P4：特性「無謀な(Reckless)」＝1度の使用で指示に**2回**従う（玉座の間とは別物＝
+       actionsPlayed も noteAllyPlay も増やさない＝プレイは1回）。2回目は state.replay の
+       'reckless' で1回目の選択待ちの解決後に走る。習性/女魔術師/追いはぎで書き換えられたときは
+       applyEffect 自体が呼ばれない＝自動的に2回にならない（公式。カメレオンの習性だけは
+       applyEffect を通るので自動的に2回になる＝公式の例外と一致）。 */
+    if (state.turn && state.traits && hasTrait(state, cardId, 'reckless') && state._recklessIter !== cardId) {
+      state.replay = state.replay || [];
+      state.replay.push({ player: pi, card: cardId, label: 'reckless' });
     }
     return r;
   }
@@ -7672,6 +7819,11 @@
     if ((state.kingdom || []).includes('shaman') && shamanTargets(state).length) {
       state.turn.startQueue.push({ type: 'shaman_gain', player: pi });
     }
+    /* 略奪P4：特性「内気な(Shy)」＝自分のターンの開始時、手札の内気なカード1枚を捨てて +2カード（任意・1回）。
+       ①捨てる→捨て札トリガー→②引く の一連の処理（1項目として積む＝間に他の開始時効果は挟まらない）。 */
+    if (state.traits && state.traits.shy && p.hand.some((c) => hasTrait(state, c, 'shy'))) {
+      state.turn.startQueue.push({ type: 'shy_discard', player: pi });
+    }
     // 繁栄：会計士＝手番開始時、手札の会計士を（アクションを消費せず）使ってよい。startQueue の最後に積む。
     const clerks = p.hand.filter((c) => c === 'clerk').length;
     for (let i = 0; i < clerks; i++) state.turn.startQueue.push({ type: 'clerk_start', player: pi });
@@ -8674,6 +8826,36 @@
     // ゴンドラ＝これを獲得したとき、手札のアクションカード1枚を使用してもよい（アクション権は消費しない）。
     if (cardId === 'gondola') {
       (state.onGainQueue = state.onGainQueue || []).push({ type: 'gondola_play', player: pIndex });
+    }
+    /* ===== 略奪P4：特性(Trait) の獲得時効果（判定は hasTrait＝pileKeyOf 正規化・山が空でも効く） ===== */
+    // 呪われた(Cursed)＝獲得したとき、戦利品1枚と呪い1枚を獲得（**この順**＝公式。呪いが無くても戦利品は得る）。
+    if (hasTrait(state, cardId, 'cursed')) {
+      log(state, `${gp.name} は呪われたカードを獲得した＝戦利品と呪いを獲得する。`);
+      gainLoot(state, pIndex);
+      if ((state.supply.curse || 0) > 0) gain(state, pIndex, 'curse', 'discard');
+    }
+    // 豊かな(Rich)＝獲得したとき、銀貨1枚を獲得（強制）。
+    if (hasTrait(state, cardId, 'rich')) {
+      if (gain(state, pIndex, 'silver', 'discard')) log(state, `${gp.name} は豊かなカードの獲得で銀貨1枚を獲得した。`);
+    }
+    // 近隣の(Nearby)＝獲得したとき +1購入（自分のターンでなければ無駄になる）。
+    if (hasTrait(state, cardId, 'nearby')) {
+      if (state.turn && pIndex === state.turn.active) { state.turn.buys += 1; log(state, `${gp.name} は近隣のカードの獲得で +1購入。`); }
+      else log(state, `${gp.name} は近隣のカードを獲得したが、自分のターンではないため +1購入 は無駄になった。`);
+    }
+    // へつらう(Fawning)＝**属州**を獲得したとき、へつらうカード1枚を獲得（強制・山が空なら何も起きない）。
+    if (cardId === 'province' && state.traits && state.traits.fawning) {
+      if (gainTraitTop(state, pIndex, state.traits.fawning, 'discard')) log(state, `${gp.name} は属州の獲得で、へつらうカード1枚を獲得した。`);
+    }
+    // 敬虔な(Pious)＝獲得したとき、手札1枚を廃棄してもよい（任意・対話＝キューへ）。
+    if (hasTrait(state, cardId, 'pious')) {
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'pious_trash', player: pIndex });
+    }
+    /* せっかちな(Hasty)＝獲得したとき脇に置き、次の自分のターンの開始時に使用する（強制）。
+       獲得先から動かせなければ失敗（stop-moving）＝キュー消化時に再確認。脇は遅延/刈り入れと同じ
+       p.eventSetAside（次ターン開始時に event_play が強制使用する既存機構）を使う。 */
+    if (hasTrait(state, cardId, 'hasty')) {
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'hasty_aside', player: pIndex, card: cardId, dest });
     }
     /* 密航者＝**誰かが**持続カード1枚を獲得したとき、手札から使用してもよい（移動動物園型リアクション）。
        手番プレイヤーの獲得時効果を全部処理した**後**に窓を開く（必読14b）＝キューの末尾に積む。
@@ -9800,6 +9982,28 @@
   }
 
   /* ---------- クリーンアップ＆次の番へ ---------- */
+  /* 略奪P4：「場から捨て札にする」の共通振り分け＝
+     - 無謀な(Reckless)＝捨てる代わりにその山へ戻す（供給が増える＝3山終了が巻き戻り得る＝公式）。
+       山へ戻せなければ（闇市場由来など）普通に捨てる（lose track）。
+     - 疲れ知らずの(Tireless)＝脇に置き、**ターン終了時（次の手札を先引きした後）**に山札の上へ（強制）。
+       holder（cleanup ローカル）に積み、先引きの後で unshift する。
+     - どちらでもなければ捨て札へ。⚠ 山札の上へ置く効果（策謀/カエル/宝物庫）は**この前に**場から
+       抜き取っている＝先に動いた方が勝つ（lose track）＝公式どおり。 */
+  function discardFromPlayRouted(state, seat, card, tirelessHold) {
+    if (state.traits) {
+      if (hasTrait(state, card, 'reckless') && canReturnToPile(state, card)) {
+        returnToPile(state, card);
+        log(state, `${state.players[seat].name} の無謀な「${C()[card].name}」は山に戻った。`);
+        return;
+      }
+      if (hasTrait(state, card, 'tireless')) {
+        tirelessHold.push({ player: seat, card });
+        log(state, `${state.players[seat].name} は疲れ知らずの「${C()[card].name}」を脇に置いた（ターン終了時に山札の上へ）。`);
+        return;
+      }
+    }
+    state.players[seat].discard.push(card);
+  }
   function cleanupAndAdvance(state) {
     state.replay = []; // 玉座の間の保留分が万一残っても次手番に持ち越さない
     state.reveals = {}; state.revealLatest = null; // 公開表示は手番をまたいで持ち越さない
@@ -9807,6 +10011,7 @@
     state.trashFaceDown = {};
     const pi = state.turn.active;
     const p = state.players[pi];
+    const tirelessHold = []; // 略奪P4：疲れ知らずの＝先引きの後に山札の上へ置く札（この片付けの中だけで生きる）
     /* 略奪："next time" 型持続＝このターン中に条件が満たされた（予約が消費された）**他プレイヤーの**持続を、
        このターンの片付けで持ち主の場から捨てる（公式＝`is discarded that turn`）。
        ⚠ **全体掃除にしない**＝印が付いた1枚だけを捨てる（隊商の護衛＝相手のターンにプレイして自分の次の
@@ -9816,8 +10021,8 @@
       if (m.player === pi) return;
       const q = state.players[m.player];
       if (removeOne(q.durationCards || [], m.card) || removeOne(q.inPlay, m.card)) {
-        q.discard.push(m.card);
         log(state, `${q.name} の「${C()[m.card].name}」は役目を終えて捨て札になった。`);
+        discardFromPlayRouted(state, m.player, m.card, tirelessHold); // 略奪P4：無謀な/疲れ知らずの も通す
       }
     });
     state.turn.nextTimeSweep = null;
@@ -9921,7 +10126,7 @@
     const used = {}; const newDur = [];
     for (const c of (p.durationCards || [])) {
       if ((used[c] || 0) < (cnt[c] || 0)) { newDur.push(c); used[c] = (used[c] || 0) + 1; }
-      else p.discard.push(c); // 効果を出し切った持続 → 捨て札へ
+      else discardFromPlayRouted(state, pi, c, tirelessHold); // 効果を出し切った持続 → 捨て札へ（無謀な/疲れ知らずのを通す）
     }
     const restInPlay = [];
     for (const c of p.inPlay) {
@@ -9951,7 +10156,9 @@
        引く枚数は変わらない（前哨地の3枚でも3枚引いて、残した札はそれに加算される＝公式）。 */
     const coastalKeep = [];
     (state.turn.coastalKeep || []).forEach((c) => { if (removeOne(p.hand, c)) coastalKeep.push(c); });
-    p.discard.push(...restInPlay, ...p.hand);
+    // 場からの捨て札は無謀な/疲れ知らずの の振り分けを通す（手札からの捨て札は「場から」ではない＝普通に捨てる）。
+    restInPlay.forEach((c) => discardFromPlayRouted(state, pi, c, tirelessHold));
+    p.discard.push(...p.hand);
     p.durationCards = newDur;
     p.inPlay = [];
     p.hand = coastalKeep;
@@ -10056,6 +10263,13 @@
       }
       pl.cageDue = false;
     });
+    /* 略奪P4：疲れ知らずの(Tireless)＝ターン終了時、脇に置いた札を山札の上へ（**次の手札を先引きした後**＝
+       公式 `You draw your next hand before putting the card onto your deck.`。旗/探検の追加ドローも先）。 */
+    tirelessHold.forEach((m) => {
+      state.players[m.player].deck.unshift(m.card);
+      log(state, `${state.players[m.player].name} は疲れ知らずの「${C()[m.card].name}」を山札の上に置いた（ターンの終了時）。`);
+    });
+    tirelessHold.length = 0;
     state.players.forEach((pl) => {
       while ((pl.boonsInFront || []).length) {
         const b = pl.boonsInFront.shift();
@@ -10793,6 +11007,25 @@
       state.pending = { type: 'scheme_cleanup', player: pi, max: schemes };
       return;
     }
+    /* 略奪P4：特性「友好的な(Friendly)」＝クリンナップフェイズの開始時、手札の友好的なカード1枚を
+       捨て札にして、友好的なカード1枚を獲得してもよい（**1ターンに1回だけ**）。
+       ⚠ クリンナップの捨て札＝捨て札リアクション（坑道/村有緑地/織工）は働かない（各カードの
+          「クリンナップ中を除く」条件＝本エンジンでは triggerOnDiscard を呼ばないことで一致する）。 */
+    if (state.traits && state.traits.friendly && !state.turn.friendlyDone &&
+        me.hand.some((c) => hasTrait(state, c, 'friendly')) && traitPileHasCards(state, state.traits.friendly)) {
+      state.turn.friendlyDone = true;
+      state.pending = { type: 'friendly_discard', player: pi };
+      return;
+    }
+    /* 略奪P4：特性「忍耐強い(Patient)」＝クリンナップフェイズの開始時、手札の忍耐強いカードを何枚でも
+       脇に置いてよい → 次の自分のターンの開始時にそれらを使用する（強制）。
+       脇＝遅延/刈り入れと同じ p.eventSetAside（event_play が次ターン開始時に強制使用する既存機構）。 */
+    if (state.traits && state.traits.patient && !state.turn.patientDone &&
+        me.hand.some((c) => hasTrait(state, c, 'patient'))) {
+      state.turn.patientDone = true;
+      state.pending = { type: 'patient_set', player: pi };
+      return;
+    }
     /* 【重要】増築の廃棄/獲得が誘発した対話（技術革新／下水道／貨物船／ドゥカート＝onGain/onTrashQueue）は、
        **片付け（手札を捨てる・次の手札を先引きする・手番を渡す）より前**に解決しなければならない。
        キューが残っているうちは片付けを保留し、reduce 末尾のキュー消化に譲る（storytellerResume と同型の再入）。
@@ -10935,6 +11168,17 @@
       });
       state = runReplays(state);
     }
+    /* 略奪P4：鼓舞する(Inspiring)＝鼓舞するカードの解決後、「場に出していないアクション1枚」を
+       手札から使用してもよい（任意・アクション権は消費しない）。候補が無ければ無言でスキップ。 */
+    if (!state.pending && !state.gameOver && state.turn && (state.turn.inspiringQueue || []).length) {
+      const iq = state.turn.inspiringQueue;
+      while (iq.length && !state.pending) {
+        const seat = iq.shift();
+        if (inspiringTargets(state, seat).length) state.pending = { type: 'inspiring_play', player: seat };
+      }
+      if (!iq.length) state.turn.inspiringQueue = null;
+      state = runReplays(state);
+    }
     /* 略奪P3：港の村＝次のアクションが選択待ちを立てた場合、その解決後（＝使用時効果を全て処理し終えた直後）に
        コイン差で判定する（執事の「+$2 を選ぶ」等が正しく数えられる）。 */
     if (!state.pending && !state.gameOver && state.turn && state.turn.hvPending) {
@@ -11027,6 +11271,19 @@
         }
         // 略奪P3：ゴンドラの獲得時窓＝手札にアクションが無ければスキップ。
         if (q.type === 'gondola_play' && !state.players[q.player].hand.some((c) => DOM.isType(c, 'action'))) continue;
+        // 略奪P4：敬虔な(Pious)の廃棄窓＝消化時に手札が空なら無言でスキップ（任意効果）。
+        if (q.type === 'pious_trash' && !state.players[q.player].hand.length) continue;
+        /* 略奪P4：せっかちな(Hasty)＝**非対話**＝獲得先にまだあれば脇（eventSetAside）へ移す（強制）。
+           先に動かされていたら失敗（stop-moving）。次の自分のターンの開始時に event_play が強制使用する。 */
+        if (q.type === 'hasty_aside') {
+          const hp = state.players[q.player];
+          const hz = zoneOf(hp, q.dest);
+          if (hz && removeOne(hz, q.card)) {
+            (hp.eventSetAside = hp.eventSetAside || []).push(q.card);
+            log(state, `${hp.name} はせっかちな「${C()[q.card].name}」を脇に置いた（次のターンの開始時に使用する）。`);
+          }
+          continue;
+        }
         // 略奪P3：密航者のリアクション窓＝消化時に手札に密航者が無ければスキップ。
         if (q.type === 'stowaway_react' && state.players[q.player].hand.indexOf('stowaway') < 0) continue;
         /* 同盟：アタックの続き（獲得時の対話に割り込まれたぶん）＝**非対話**なのでその場で次の被害者へ進める。 */
@@ -11172,6 +11429,19 @@
         }
         noteAllyPlay(state, r.player, r.card); // 同盟：これも「カードの使用」＝Ally の窓が開く（2回目のプレイ）
         continue; // applyEffect（アクションの効果）は行わない
+      }
+      /* 略奪P4：無謀な(Reckless)＝指示に従う2回目（**プレイではない**＝actionsPlayed・noteAllyPlay・
+         山トークン・チャンピオンは動かさない。共謀者にも数えない＝公式）。 */
+      if (r.label === 'reckless') {
+        log(state, `${state.players[r.player].name} は無謀な「${C()[r.card].name}」の指示にもう一度従う。`);
+        state._recklessIter = r.card;
+        try { applyEffect(state, r.card, r.player); } finally { delete state._recklessIter; }
+        continue;
+      }
+      if (r.label === 'reckless_treasure') {
+        log(state, `${state.players[r.player].name} は無謀な「${C()[r.card].name}」の指示にもう一度従う。`);
+        applyTreasureEffect(state, r.player, r.card);
+        continue;
       }
       /* 略奪：旗艦＝「次に使用した命令でないアクションカード」を再使用する（1回目の解決後）。
          命令（はみだし者等）経由でプレイされたカードの再演は**サプライに残したまま**行う（playAsCommand）＝
@@ -12347,6 +12617,80 @@
         state.pending = null;
         trashCard(state, pd.player, action.card);
         log(state, `${pl.name} は縄で「${C()[action.card].name}」を廃棄した。`);
+        return state;
+      }
+      /* ===== 略奪P4：特性(Trait) ===== */
+      // 敬虔な(Pious)＝獲得したとき、手札1枚を廃棄してもよい（任意）。
+      case 'PIOUS_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'pious_trash') return state;
+        const pl = state.players[pd.player];
+        if (action.card == null) { state.pending = null; return state; }
+        if (!removeOne(pl.hand, action.card)) return state;
+        state.pending = null;
+        trashCard(state, pd.player, action.card);
+        log(state, `${pl.name} は敬虔なカードの獲得で「${C()[action.card].name}」を廃棄した。`);
+        return state;
+      }
+      /* 友好的な(Friendly)＝クリンナップ開始時、手札の友好的なカード1枚を捨てて同じ山から1枚獲得してもよい。
+         クリンナップの捨て札＝捨て札リアクションは働かない（triggerOnDiscard を呼ばない＝各カードの
+         「クリンナップ中を除く」条件と同じ結果）。解決後はクリンナップを再入する。 */
+      case 'FRIENDLY_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'friendly_discard') return state;
+        const pl = state.players[pd.player];
+        state.pending = null;
+        if (action.card != null) {
+          if (!hasTrait(state, action.card, 'friendly') || !removeOne(pl.hand, action.card)) { state.pending = pd; return state; }
+          pl.discard.push(action.card);
+          log(state, `${pl.name} は友好的な「${C()[action.card].name}」を捨てた。`);
+          gainTraitTop(state, pd.player, state.traits.friendly, 'discard');
+        }
+        endBuyTailSchemeOrCleanup(state, pd.player);
+        return state;
+      }
+      // 忍耐強い(Patient)＝クリンナップ開始時、手札の忍耐強いカードを何枚でも脇へ → 次のターンの開始時に使用（強制）。
+      case 'PATIENT_SET': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'patient_set') return state;
+        const pl = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        const chk = pl.hand.slice();
+        for (const c of cards) {
+          if (!hasTrait(state, c, 'patient')) return state;
+          const i = chk.indexOf(c); if (i < 0) return state; chk.splice(i, 1);
+        }
+        state.pending = null;
+        cards.forEach((c) => { removeOne(pl.hand, c); (pl.eventSetAside = pl.eventSetAside || []).push(c); });
+        if (cards.length) log(state, `${pl.name} は忍耐強いカード ${cards.length}枚 を脇に置いた（次のターンの開始時に使用する）。`);
+        endBuyTailSchemeOrCleanup(state, pd.player);
+        return state;
+      }
+      /* 内気な(Shy)＝ターンの開始時、手札の内気なカード1枚を捨てて +2カード（任意・①捨てる→
+         捨て札トリガー→②引く の順＝坑道の金貨がリシャッフルに入る）。 */
+      case 'SHY_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'shy_discard') return state;
+        const pl = state.players[pd.player];
+        if (action.card == null) { state.pending = null; return state; }
+        if (!hasTrait(state, action.card, 'shy') || !removeOne(pl.hand, action.card)) return state;
+        state.pending = null;
+        pl.discard.push(action.card);
+        log(state, `${pl.name} は内気な「${C()[action.card].name}」を捨てた。`);
+        triggerOnDiscard(state, pd.player, [action.card]);
+        draw(state, pd.player, 2);
+        log(state, `${pl.name} は +2カード（内気な）。`);
+        return state;
+      }
+      // 鼓舞する(Inspiring)＝場に出していないアクション1枚を手札から使用してもよい（アクション権は消費しない）。
+      case 'INSPIRING_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'inspiring_play') return state;
+        const pl = state.players[pd.player];
+        if (action.card == null) { state.pending = null; return state; }
+        if (inspiringTargets(state, pd.player).indexOf(action.card) < 0) return state;
+        state.pending = null;
+        playCardNoAction(state, pd.player, action.card, pl.hand, '鼓舞するカードの効果で', action.way);
         return state;
       }
       /* 略奪：宝珠＝「捨て札からアクションか財宝1枚を使用」or「+1購入 +$3」。
@@ -19816,6 +20160,7 @@
     'GROTTO_SET', 'SHAMAN_TRASH', 'SHAMAN_GAIN', 'SIREN_REACT', 'SIREN_GAIN', 'STOWAWAY_REACT',
     'MAROON_TRASH', 'CRUCIBLE_TRASH', 'PILGRIM_PUT', 'FIGURINE_DISCARD', 'GONDOLA_CHOOSE', 'GONDOLA_PLAY',
     'TOOLS_GAIN', 'PICKAXE_TRASH', 'SILVER_MINE_GAIN', 'CABIN_BOY_RESOLVE', 'CABIN_BOY_GAIN', 'ROPE_TRASH',
+    'PIOUS_TRASH', 'FRIENDLY_DISCARD', 'PATIENT_SET', 'SHY_DISCARD', 'INSPIRING_PLAY',
     'AMPHORA_CHOOSE', 'ORB_RESOLVE', 'SPELL_SCROLL_GAIN', 'SPELL_SCROLL_PLAY',
     'MINE_TRASH', 'MINE_GAIN', 'REMODEL_TRASH', 'REMODEL_GAIN', 'WORKSHOP_GAIN',
     'COURTYARD_PUT', 'PAWN_RESOLVE', 'STEWARD_RESOLVE', 'STEWARD_TRASH',
@@ -20048,6 +20393,8 @@
     lichTrashTargets,  // リッチ＝廃棄置き場からこれより安いカード（**サプライではない**＝cost述語を使わない）
     shamanTargets,     // 略奪：シャーマン＝廃棄置き場のコスト6以下（engine/CPU/UI が同じ述語を見る）
     toolsTargets,      // 略奪：工具＝誰かが場に出しているカードの一覧（engine/CPU/UI が同じ述語を見る）
+    hasTrait,          // 略奪：特性＝この実カードidに特性が付いているか（pileKeyOf 正規化・山が空でも効く）
+    inspiringTargets,  // 略奪：鼓舞する＝「場に出していないアクション」の候補（engine/CPU/UI が同じ述語を見る）
     canPlayFromHand,   // 同盟：航海の追加ターン＝手札から3枚まで（engine拒否・CPU非提案・UI無効化の3面共通）
     warlordBlocks,     // 同盟：将軍＝場に2枚以上ある同名アクションを手札から使えない（同上・3面共通）
     canPlayHandCard,   // 「その手札の1枚を今使えるか」＝航海の3枚制限＋将軍（engine/CPU/UI が同じ述語を見る）

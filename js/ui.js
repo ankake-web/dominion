@@ -1553,6 +1553,15 @@
         h('span', { class: 'mat-label' }, pl.name + ': '),
         bits.map((b) => h('span', { class: 'chip-card' }, b))));
     });
+    // 略奪：特性(Trait)＝どの山にどの特性が付いているか（公開・対局中不変）。
+    if (state.traits && Object.keys(state.traits).length) {
+      const bits = Object.keys(state.traits).map((tid) => {
+        const tn = (DOM.LANDSCAPES[tid] || {}).name || tid;
+        const pn = (DOM.CARDS[state.traits[tid]] || {}).name || state.traits[tid];
+        return h('span', { class: 'chip-card', onclick: () => openLandmarkZoom(tid) }, '🏷️ ' + tn + '：' + pn);
+      });
+      matRows.push(h('div', { class: 'mat-row' }, h('span', { class: 'mat-label' }, '特性: '), bits));
+    }
     // 夜想曲：祝福/呪詛の山の残枚数と、捨て札の一番上（公開情報）。
     if (state.boons || state.hexes) {
       const bits = [];
@@ -2014,6 +2023,30 @@
       '手札1枚を廃棄できます（しなくてもよい）。', () => true,
       (id) => dispatch({ type: 'ROPE_TRASH', card: id }),
       { label: '廃棄しない', on: () => dispatch({ type: 'ROPE_TRASH', card: null }) });
+    /* ===== 略奪P4：特性(Trait) ===== */
+    if (pd.type === 'pious_trash') return modalSingleHand(p, '敬虔な — 廃棄（任意）',
+      '敬虔なカードを獲得したので、手札1枚を廃棄できます（しなくてもよい）。', () => true,
+      (id) => dispatch({ type: 'PIOUS_TRASH', card: id }),
+      { label: '廃棄しない', on: () => dispatch({ type: 'PIOUS_TRASH', card: null }) });
+    if (pd.type === 'friendly_discard') return modalSingleHand(p, '友好的な — 捨てて獲得（任意）',
+      'クリンナップの開始時：手札の友好的なカード1枚を捨てると、友好的なカード1枚を獲得します。',
+      (id) => DOM.engine.hasTrait(state, id, 'friendly'),
+      (id) => dispatch({ type: 'FRIENDLY_DISCARD', card: id }),
+      { label: '捨てない', on: () => dispatch({ type: 'FRIENDLY_DISCARD', card: null }) }, '捨てて1枚獲得');
+    if (pd.type === 'patient_set') return modalMultiHand(p, '忍耐強い — 脇に置く（任意）',
+      'クリンナップの開始時：手札の忍耐強いカードを何枚でも脇に置けます。次のあなたのターンの開始時にそれらを使用します（強制）。',
+      (n) => '確定（' + n + '枚 置く）', true, (cards) => dispatch({ type: 'PATIENT_SET', cards }), null,
+      (id) => DOM.engine.hasTrait(state, id, 'patient'));
+    if (pd.type === 'shy_discard') return modalSingleHand(p, '内気な — 捨てて +2カード（任意）',
+      'ターンの開始時：手札の内気なカード1枚を捨てると +2カード引きます。',
+      (id) => DOM.engine.hasTrait(state, id, 'shy'),
+      (id) => dispatch({ type: 'SHY_DISCARD', card: id }),
+      { label: '捨てない', on: () => dispatch({ type: 'SHY_DISCARD', card: null }) }, '捨てて +2カード');
+    if (pd.type === 'inspiring_play') return modalSingleHand(p, '鼓舞する — アクションを使う（任意）',
+      '鼓舞するカードを使用したので、場に出していないアクションカード1枚を手札から使用できます（アクション権は消費しません）。',
+      (id) => (DOM.engine.inspiringTargets ? DOM.engine.inspiringTargets(state, pd.player) : []).indexOf(id) >= 0,
+      (id) => dispatch({ type: 'INSPIRING_PLAY', card: id }),
+      { label: '使わない', on: () => dispatch({ type: 'INSPIRING_PLAY', card: null }) }, '使う');
 
     /* ===== 拡張: 陰謀 ===== */
     if (pd.type === 'courtyard') return modalSingleHand(p, '中庭 — 山札の上に置く', '手札から1枚を選び、山札の一番上に置きます（次のターンに引きます）。',

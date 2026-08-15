@@ -1296,5 +1296,254 @@ const KING_P3B = ['grotto', 'siren', 'stowaway', 'taskmaster', 'cabin_boy', 'lon
   ok(bad === 0 && games === 6, 'P3 CPUソーク完走（' + games + '/6・膠着0・例外0・保存則違反0）');
 }
 
+/* ============================================================
+   P4＝特性(Trait) の基盤と15種
+   ============================================================ */
+console.log('\n=== P4: 特性(Trait) ===');
+
+const KING_T = ['village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory', 'festival', 'mine'];
+function mkT(traits, piles, names) {
+  return E.createInitialState(names || ['A', 'B'], KING_T, { startActive: 0, traits, traitPiles: piles });
+}
+
+// --- 選出の基盤 ---
+{
+  const s = mkT(['cheap'], { cheap: 'village' });
+  ok(s.traits && s.traits.cheap === 'village', '特性は指定した山（テスト用 traitPiles）に付く');
+  const s2 = E.createInitialState(['A', 'B'], KING_T, { startActive: 0, traits: ['cheap', 'pious'] });
+  ok(s2.traits.cheap !== s2.traits.pious, '同じ山に2枚の特性は付かない');
+  ok([s2.traits.cheap, s2.traits.pious].every((pk) => KING_T.indexOf(pk) >= 0), '付け先は王国の山');
+}
+
+// --- 安価な(Cheap) ---
+{
+  const s = mkT(['cheap'], { cheap: 'village' });
+  ok(E.cardCost(s, 'village') === 2, '安価な村＝$2（全員に・常時）');
+  // 買うときも$2
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 2;
+  const s2 = E.reduce(s, { type: 'BUY', card: 'village' });
+  ok(count(s2.players[0].discard, 'village') === 1 && s2.turn.coins === 0, '$2で購入できる');
+}
+
+// --- 呪われた(Cursed) ---
+{
+  let s = mkT(['cursed'], { cursed: 'smithy' });
+  ok(Array.isArray(s.loot) && s.loot.length === 30, '呪われたがあるゲームでは戦利品の山ができる');
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 4;
+  const lootBefore = s.loot.length;
+  s = E.reduce(s, { type: 'BUY', card: 'smithy' });
+  ok(s.loot.length === lootBefore - 1 && count(s.players[0].discard, 'curse') === 1,
+    '呪われたカードの獲得＝戦利品と呪いを獲得（この順）');
+  // 呪いが尽きても戦利品は得る
+  let z = mkT(['cursed'], { cursed: 'smithy' });
+  z.supply.curse = 0; z.turn.phase = 'buy'; z.turn.buys = 1; z.turn.coins = 4;
+  const lb = z.loot.length;
+  z = E.reduce(z, { type: 'BUY', card: 'smithy' });
+  ok(z.loot.length === lb - 1 && count(z.players[0].discard, 'curse') === 0, '呪いが無くても戦利品は獲得する');
+}
+
+// --- 運命の(Fated)＝シャッフル時に自動で「アクション/財宝は上」 ---
+{
+  let s = mkT(['fated'], { fated: 'village' });
+  ok((s.players[0].fatedIds || []).indexOf('village') >= 0, '対象idが全プレイヤーに焼き込まれる');
+  const p = s.players[0];
+  p.hand = ['smithy']; p.deck = []; p.discard = ['copper', 'village', 'copper', 'estate'];
+  p.inPlay = []; s.turn.phase = 'action'; s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'smithy' });   // 3枚引く＝リシャッフルが起きる
+  // 村（運命の・アクション）はシャッフルした束の一番上＝最初に引かれている
+  ok(count(s.players[0].hand, 'village') === 1, 'シャッフル時、運命の村が束の一番上に置かれて引かれる');
+}
+
+// --- へつらう(Fawning) ---
+{
+  let s = mkT(['fawning'], { fawning: 'village' });
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 8;
+  s = E.reduce(s, { type: 'BUY', card: 'province' });
+  ok(count(s.players[0].discard, 'village') === 1, '属州の獲得で、へつらうカード（村）を獲得（強制）');
+}
+
+// --- 豊かな(Rich)／近隣の(Nearby) ---
+{
+  let s = mkT(['rich'], { rich: 'smithy' });
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 4;
+  s = E.reduce(s, { type: 'BUY', card: 'smithy' });
+  ok(count(s.players[0].discard, 'silver') === 1, '豊かなカードの獲得で銀貨を獲得');
+  let z = mkT(['nearby'], { nearby: 'smithy' });
+  z.turn.phase = 'buy'; z.turn.buys = 1; z.turn.coins = 4;
+  z = E.reduce(z, { type: 'BUY', card: 'smithy' });
+  ok(z.turn.buys === 1, '近隣のカードの獲得で +1購入（1消費して+1＝残1）');
+}
+
+// --- 敬虔な(Pious) ---
+{
+  let s = mkT(['pious'], { pious: 'smithy' });
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 4;
+  s.players[0].hand = ['copper', 'curse'];
+  s = E.reduce(s, { type: 'BUY', card: 'smithy' });
+  ok(s.pending && s.pending.type === 'pious_trash', '獲得で任意の廃棄窓が開く');
+  s = E.reduce(s, { type: 'PIOUS_TRASH', card: 'curse' });
+  ok(count(s.trash, 'curse') === 1, '手札1枚を廃棄できる');
+}
+
+// --- せっかちな(Hasty) ---
+{
+  let s = mkT(['hasty'], { hasty: 'smithy' });
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 4;
+  s = E.reduce(s, { type: 'BUY', card: 'smithy' });
+  ok(count(s.players[0].eventSetAside || [], 'smithy') === 1 && count(s.players[0].discard, 'smithy') === 0,
+    'せっかちなカードは獲得したとき脇に置かれる');
+  s.players[0].deck = ['copper', 'copper', 'copper', 'silver', 'gold', 'estate', 'estate', 'estate'];
+  s = E.reduce(s, { type: 'END_TURN' });
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });   // → A のターン開始＝脇の鍛冶屋を強制使用（event_play の窓）
+  ok(s.pending && s.pending.type === 'event_play', '次のターンの開始時に使用の窓（遅延と同じ機構）が開く');
+  s = E.reduce(s, { type: 'EVENT_PLAY' });
+  ok(count(s.players[0].inPlay, 'smithy') === 1, '脇のせっかちなカードが使用される（強制・アクション権なし）');
+}
+
+// --- 受け継がれた(Inherited) ---
+{
+  const s = mkT(['inherited'], { inherited: 'village' });
+  const a = s.players[0], b = s.players[1];
+  const all = (pl) => pl.deck.concat(pl.hand);
+  ok(count(all(a), 'village') === 1 && count(all(b), 'village') === 1, '各プレイヤーの開始デッキに村が1枚入る');
+  ok(count(all(a), 'estate') === 2, '屋敷1枚が入れ替わった（3→2）');
+  ok(s.supply.village === 10 - 2, '山から人数ぶん減る（3山終了に影響）');
+  ok(count(all(a), 'copper') === 7, '銅貨は減らない（屋敷を優先して入れ替え）');
+}
+
+// --- 鼓舞する(Inspiring) ---
+{
+  let s = mkT(['inspiring'], { inspiring: 'village' });
+  s = handPlay(s, 0, ['village', 'smithy']);
+  s.players[0].deck = ['copper', 'copper', 'copper', 'silver'];
+  s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'village' });
+  ok(s.pending && s.pending.type === 'inspiring_play', '鼓舞するカードの解決後に窓が開く');
+  const before = s.turn.actions;
+  s = E.reduce(s, { type: 'INSPIRING_PLAY', card: 'smithy' });
+  ok(count(s.players[0].inPlay, 'smithy') === 1 && s.turn.actions === before, '場に出していないアクションをアクション権を消費せず使用できる');
+  // 場に同名がある札は使えない
+  let z = mkT(['inspiring'], { inspiring: 'village' });
+  z = handPlay(z, 0, ['village', 'village']);
+  z.turn.actions = 2;
+  z = E.reduce(z, { type: 'PLAY_ACTION', card: 'village' });
+  ok(!z.pending, '手札に「場に出していないアクション」が無ければ窓を開かない（村は場にある）');
+}
+
+// --- 友好的な(Friendly)＝クリンナップ開始時 ---
+{
+  let s = mkT(['friendly'], { friendly: 'smithy' });
+  s.turn.phase = 'buy'; s.turn.buys = 1;
+  s.players[0].hand = ['smithy', 'copper'];
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(s.pending && s.pending.type === 'friendly_discard', 'クリンナップ開始時に窓が開く');
+  const supBefore = s.supply.smithy;
+  s = E.reduce(s, { type: 'FRIENDLY_DISCARD', card: 'smithy' });
+  ok(s.supply.smithy === supBefore - 1, '捨てて同じ山から1枚獲得');
+  ok(!s.pending || s.pending.type !== 'friendly_discard', '窓は1ターンに1回だけ');
+  ok(s.turn.active === 1, 'クリンナップが再開してターンが渡る');
+  const a = s.players[0];
+  ok(count(a.deck.concat(a.hand, a.discard), 'smithy') === 2, '鍛冶屋は捨てた1枚＋獲得した1枚の計2枚');
+}
+
+// --- 忍耐強い(Patient)＝クリンナップ開始時に脇→次ターン開始時に使用 ---
+{
+  let s = mkT(['patient'], { patient: 'smithy' });
+  s.turn.phase = 'buy'; s.turn.buys = 1;
+  s.players[0].hand = ['smithy', 'copper'];
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(s.pending && s.pending.type === 'patient_set', 'クリンナップ開始時に脇へ置く窓が開く');
+  s = E.reduce(s, { type: 'PATIENT_SET', cards: ['smithy'] });
+  ok(count(s.players[0].eventSetAside || [], 'smithy') === 1, '忍耐強いカードを脇に置いた');
+  ok(s.turn.active === 1, 'クリンナップが再開する');
+  s.players[0].deck = ['copper', 'copper', 'copper', 'silver', 'gold'];
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });   // → A のターン開始（event_play の窓）
+  ok(s.pending && s.pending.type === 'event_play', '次のターンの開始時に使用の窓が開く');
+  s = E.reduce(s, { type: 'EVENT_PLAY' });
+  ok(count(s.players[0].inPlay, 'smithy') === 1, '脇の忍耐強いカードが（アクション権なしで）使用される');
+}
+
+// --- 内気な(Shy)＝ターンの開始時 ---
+{
+  let s = mkT(['shy'], { shy: 'smithy' }, ['A', 'B']);
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });   // → B
+  s.players[0].hand = ['smithy', 'copper'];
+  s.players[0].deck = ['silver', 'gold', 'copper'];
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });   // → A のターン開始
+  ok(s.pending && s.pending.type === 'shy_discard', 'ターンの開始時に窓が開く');
+  const handBefore = s.players[0].hand.length;
+  s = E.reduce(s, { type: 'SHY_DISCARD', card: 'smithy' });
+  ok(s.players[0].hand.length === handBefore - 1 + 2, '内気なカードを捨てて +2カード');
+  ok(count(s.players[0].discard, 'smithy') === 1, '捨て札に置かれる（廃棄ではない）');
+}
+
+// --- 無謀な(Reckless)＝2回従う＋場から捨てるとき山へ戻る ---
+{
+  let s = mkT(['reckless'], { reckless: 'smithy' });
+  s = handPlay(s, 0, ['smithy']);
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'silver'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'smithy' });
+  ok(count(s.players[0].hand, 'copper') === 6, '無謀な鍛冶屋＝指示に2回従う（+3カード×2）');
+  ok(s.turn.actionsPlayed === 1, '「使用したカード」は1枚（共謀者の数え方）');
+  const supBefore = s.supply.smithy;
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(s.supply.smithy === supBefore + 1, '場から捨てるとき、山に戻る（供給が増える）');
+  const a = s.players[0];
+  ok(count(a.deck.concat(a.hand, a.discard, a.inPlay), 'smithy') === 0, '手元には残らない');
+}
+{
+  // 無謀な財宝＝コインも2回
+  let s = E.createInitialState(['A', 'B'], ['jewelled_egg', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory', 'festival'],
+    { startActive: 0, traits: ['reckless'], traitPiles: { reckless: 'jewelled_egg' } });
+  s.turn.phase = 'buy'; s.turn.buys = 1;
+  s.players[0].hand = ['jewelled_egg'];
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'jewelled_egg' });
+  ok(s.turn.coins === 2 && s.turn.buys === 3, '無謀な宝飾卵＝$1+1購入 を2回（$2・購入+2）');
+}
+
+// --- 疲れ知らずの(Tireless)＝場から捨てるとき脇へ→ターン終了時（先引きの後）に山札の上 ---
+{
+  let s = mkT(['tireless'], { tireless: 'village' });
+  s = handPlay(s, 0, ['village']);
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'village' });
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(s.players[0].deck[0] === 'village', '疲れ知らずの村＝次の手札を引いた後、山札の上に置かれる');
+  ok(count(s.players[0].hand, 'village') === 0, '先引きの手札には混ざらない（1ターン早く働かない）');
+}
+
+// --- P4 ソーク（複数の特性を同時に） ---
+{
+  let games = 0, bad = 0;
+  const COMBOS = [
+    ['cheap', 'cursed'], ['fated', 'rich'], ['hasty', 'nearby'], ['friendly', 'patient'],
+    ['shy', 'pious'], ['reckless', 'tireless'], ['inherited', 'inspiring'], ['fawning', 'cursed'],
+  ];
+  COMBOS.forEach((tr, ki) => {
+    seed = 9800 + ki * 7;
+    const names = [{ name: 'P0', isCpu: true, level: 'normal' }, { name: 'P1', isCpu: true, level: 'normal' }];
+    let s = E.createInitialState(names, KING_T, { startActive: 0, traits: tr });
+    KING_T.forEach((id) => s.players.forEach((pl) => { for (let c = 0; c < 2; c++) if ((s.supply[id] | 0) > 0) { s.supply[id] -= 1; pl.deck.push(id); } }));
+    const t0 = tally(s);
+    let step = 0, err = false;
+    try {
+      while (!s.gameOver && step++ < 25000) {
+        const a = CPU.decide(s);
+        if (a == null) { console.log('    P4soak ' + tr.join('+') + ': CPU が null（' + (s.pending && s.pending.type) + '）'); err = true; break; }
+        s = E.reduce(s, a);
+      }
+    } catch (e) { console.log('    P4soak ' + tr.join('+') + ': 例外 ' + e.message); err = true; }
+    if (!err && !s.gameOver) { console.log('    P4soak ' + tr.join('+') + ': 未終局 pending=' + (s.pending && s.pending.type)); err = true; }
+    if (!err && !sameTally(t0, tally(s))) { console.log('    P4soak ' + tr.join('+') + ': 保存則違反'); err = true; }
+    if (err) bad++; else games++;
+  });
+  ok(bad === 0 && games === COMBOS.length, 'P4 CPUソーク完走（' + games + '/' + COMBOS.length + '・膠着0・例外0・保存則違反0）');
+}
+
 console.log(`\n略奪テスト結果: ${pass} 件成功, ${fail} 件失敗`);
 if (fail > 0) process.exit(1);

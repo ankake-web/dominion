@@ -119,6 +119,12 @@ const CASES = [
   ['cabin_boy（二択）', (s) => { s.players[0].durationCards = ['cabin_boy']; s.pending = { type: 'cabin_boy', player: 0 }; }],
   ['cabin_boy_gain', (s) => { s.pending = { type: 'cabin_boy_gain', player: 0 }; }],
   ['rope_trash', (s) => { s.players[0].hand = ['copper']; s.pending = { type: 'rope_trash', player: 0 }; }],
+  // P4：特性(Trait)
+  ['pious_trash', (s) => { s.players[0].hand = ['copper']; s.pending = { type: 'pious_trash', player: 0 }; }],
+  ['friendly_discard', (s) => { s.traits = { friendly: 'village' }; s.players[0].hand = ['village']; s.pending = { type: 'friendly_discard', player: 0 }; }],
+  ['patient_set', (s) => { s.traits = { patient: 'village' }; s.players[0].hand = ['village', 'copper']; s.pending = { type: 'patient_set', player: 0 }; }],
+  ['shy_discard', (s) => { s.traits = { shy: 'village' }; s.players[0].hand = ['village']; s.pending = { type: 'shy_discard', player: 0 }; }],
+  ['inspiring_play', (s) => { s.traits = { inspiring: 'village' }; s.players[0].hand = ['smithy']; s.pending = { type: 'inspiring_play', player: 0 }; }],
 ];
 CASES.forEach(([name, setup]) => {
   const s = mkP(); setup(s); showAs(s, 0);
