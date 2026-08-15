@@ -75,7 +75,11 @@
 ## ⚠️ 実装前に必読：この拡張の落とし穴（敵対検証で確定したリスクの集約）
 
 ### 1. ★最大の設計判断★ "next time"（次に〜したとき）型の持続＝**本アプリに前例が無い持続**
-該当＝**Cage / Search / Secluded Shrine / Cutthroat / Abundance / Landing Party / Gondola**（詳細は第1章 §3-1b）。
+該当＝**ちょうど7枚**＝**Cage / Search / Secluded Shrine / Abundance / Flagship / Landing Party / Cutthroat**
+（英語wiki `Duration` の `Triggered effects` 節が正本。詳細は第1章 §3-1b）。
+**⚠ Abundance は Treasure - Duration**＝購入フェイズに出す（アクション権を使わない）＝`applyTreasureEffect` 側に書く。
+**⚠ Cutthroat は `anyone gains`＝他人の獲得でも誘発する**／**予約を張るのはアタックを全部解決した後**
+（先に張ると自分のアタックで相手が捨てた坑道の金貨が自分の予約を誘発してしまう）。
 公式逐語＝`Some Duration cards in Plunder do something the "next time" a certain thing happens.
 That thing could happen the same turn, or many turns later; these may sit in play turn after turn until finally the thing happens.`
 - **(a) 相手のターンに条件が満たされうる＝「相手の片付け」で自分の場から捨てられる。**
@@ -1226,11 +1230,11 @@ Cutthroat のカードテキストは明示的に **"The next time anyone gains 
 > ### ⚠️ この章（kingdom1）の敵対検証について
 > 下書きを書いたエージェントとは**別の2体**が、担当を分けて**一次資料を自分で引き直して**検証した
 > （ライブwiki 直読み＋Wayback の別スナップショット＋RGG 公式PDF の3系統で照合）。
-> **確定した訂正は計12件（うち high 4件）／要ユーザー確認4件／下書きが落としていた裁定8件。**
+> **確定した訂正は計15件（V1が6件・V2が9件。うち high 4件）／要ユーザー確認5件／下書きが落としていた裁定 約24件。**
 > **本文はまだ訂正前のままなので、必ず章末の「敵対検証レポート」を先に読むこと。**
 > とくに重いのは＝**旗艦(Flagship)は持続を再演すると場に残る**（本文は「残らない」＝逆）／
 > **現場監督×増築の裁定は2025年2月エラッタで無効**（本文は「実装前に確認」で止まっている）／
-> **"next time" 型は5枚ではなく最低7枚**（切り裂き魔・上陸部隊が抜けていた）／
+> **"next time" 型は5枚ではなく ちょうど7枚**（切り裂き魔・上陸部隊が抜けていた）／
 > **日本語印刷版は「存在しない」と断定できない**（本文の前提が誤り）。
 
 
@@ -1241,22 +1245,57 @@ Taskmaster / Abundance / Cabin Boy / Crucible / Flagship
 
 | 項目 | 出典 | 備考 |
 |---|---|---|
-| 英語カードテキスト・種別・コスト | 英語wiki（wiki.dominionstrategy.com）の各カードページ `Card text` 欄＋`Versions > English versions` 表 | Wayback 経由（`tools/wikifetch.py` ＋ CDX API で 2025年前半のキャプチャを明示指定）。**全13枚とも capture は 2023-03〜2025-05＝略奪発売（2022-12）より後**＝略奪の情報を確実に含む |
+| 英語カードテキスト・種別・コスト | 英語wiki（wiki.dominionstrategy.com）の各カードページ `Card text` 欄＋`Versions > English versions` 表 | Wayback 経由。**CDX API で実キャプチャ日時を確定**した（下表）。全13枚とも略奪発売（2022-12）より後＝略奪の情報を確実に含む |
 | 公式FAQ・裁定 | 同ページの `Official FAQ` / `Other rules clarifications` / `Trivia` 節 | |
-| 日本語カード名 | 日本語wiki `https://wikiwiki.jp/dominiondeck/一覧/略奪（拡張）`（2023-03-30 更新） | **表の並び順とコスト帯が英語wikiと完全一致**することで対応を確定 |
-| 日本語カードテキスト | 日本語wiki の各カードページ | ⚠ **日本語wiki自身が「(※日本語訳はDominion Onlineより)」と明記**＝**ホビージャパンの印刷版ではなくオンライン版の訳**。下記「日本語版について」参照 |
+| 日本語カード名 | ①**ホビージャパン公式の実物写真**（4枚のみ確認可）／②日本語wiki `https://wikiwiki.jp/dominiondeck/略奪（拡張）`（2026-07-21 更新） | 下記「日本語版について」参照 |
+| 日本語カードテキスト | 日本語wiki の各カードページ | ⚠ **日本語wiki自身が「(※日本語訳はDominion Onlineより)」と明記**＝**ホビージャパンの印刷版ではなくオンライン版の訳**。**印刷版とは文言が実際に違うことを実物写真で確認済み**。下記参照 |
+
+<!-- 検証で訂正: 旧="全13枚とも capture は 2023-03〜2025-05" → `tools/wikifetch.py` の出力は要求プレフィックス（'2id_' 等）を印字するだけで実キャプチャ日を示さないので、この記述は根拠にならなかった。CDX API で実日時を確定し直した。出典= https://web.archive.org/cdx/search/cdx?url=wiki.dominionstrategy.com/index.php/<Page> -->
+
+**実キャプチャ日時（CDX で確定・2025-06 以前の最新を採用）**
+Cage=**20240907** ／ Grotto=20250116 ／ Jewelled_Egg=20250118 ／ Search=20250127 ／ Shaman=20250503 ／
+Secluded_Shrine=20250118 ／ Siren=20250118 ／ Stowaway=20250115 ／ Taskmaster=20250114 ／
+Abundance=20250116 ／ Cabin_Boy=20250501 ／ Crucible=20250118 ／ Flagship=20250130 ／
+Plunder_(expansion)=20250415 ／ Errata=20250330。
+（Wayback の 2025-12 以降のキャプチャは Anubis の bot 検知画面が保存されているので使えない。）
 
 ##### ⚠ 日本語版について（実装前に必ず読むこと）
-- **英語wikiの `Other language versions` 表に Japanese の行が1枚も無い**（Dutch / French / German / Polish のみ）。
-  ＝**略奪の日本語印刷版は（この資料の時点で）存在しない**と考えるのが自然。
-- したがって本表の日本語名・日本語テキストは **Dominion Online の日本語訳**（日本語wikiが転載しているもの）。
-  夜想曲・同盟のときのような「印刷版の日本語wiki＝正本」という前提が**今回は成り立たない**。
-  → 実装時の日本語表示はこの訳を採用してよいが、**将来ホビージャパン版が出たら変わりうる**ことを前提にする。
+
+<!-- 検証で訂正: 旧="略奪の日本語印刷版は（この資料の時点で）存在しないと考えるのが自然" / "「印刷版の日本語wiki＝正本」という前提が今回は成り立たない" → **誤り**。ホビージャパンが「ドミニオン：略奪」日本語版を 2023年3月下旬に発売済み。
+出典= https://hobbyjapan.games/dominion_plunder/ （HJ公式・2023年3月・実物写真あり）／ https://www.4gamer.net/games/138/G013817/20230216103/ ／ https://www.gamer.ne.jp/news/202302180012/ ／JAN 4981932026688。
+「英語wikiに Japanese 行が無い」は事実だが（13枚とも Dutch/German/Polish のみ＝機械確認）、それは英語wikiの記載漏れであって「印刷版が無い」根拠にはならない。 -->
+
+- **ホビージャパン版「ドミニオン：略奪」は 2023年3月下旬に発売済み**（＝日本語印刷版は**存在する**）。
+  したがって本プロジェクトの原則「日本語名・文面の正本＝日本語wiki（ホビージャパン印刷版）」は**今回も適用したい**。
+- **ところが日本語wikiの略奪カードページは「(※日本語訳はDominion Onlineより)」と明記している**
+  （2026-07-20 更新時点でも）。**この注記は略奪固有**で、同盟の `道化棒`/`大工`・基本の `民兵` のページには無い
+  （3ページを実取得して機械確認）。＝**日本語wikiの略奪の文面は印刷版ではない**。
+- **印刷版の実物で確認できたのは4枚だけ**（HJ公式ページ掲載の実物写真
+  `https://hobbyjapan.games/wp-content/uploads/2023/01/Domi_Plunder_jp_kingdomcards.jpg` を実見）：
+  **シャーマン／セイレーン／現場監督／密航者**。**名前は4枚とも本資料の表と一致**（＝Dominion Online 訳と印刷版で
+  カード名は一致している公算が高い）。
+- **ただし文面は印刷版とDO訳で明確に違う**（実物写真からの逐語）：
+  | カード | 印刷版（HJ実物写真） | 日本語wiki（DO訳） |
+  |---|---|---|
+  | シャーマン | `これを使用しているゲーム中、…` | `シャーマンを使うゲームでは、…` |
+  | 密航者 | `いずれかのプレイヤーが持続カード1枚を獲得したとき、あなたの手札からこれを使用してもよい。` | `誰かが持続カード1枚を獲得したとき、あなたは手札からこれを使用してもよい。` |
+  | セイレーン | `あなたがこれを獲得したとき、あなたの手札からアクションカード1枚を廃棄しないかぎり、これを廃棄する。` | `これを獲得したとき、手札からアクションカード1枚を廃棄してもよい。廃棄しない場合、これを廃棄する。` |
+  | 現場監督 | `+1 アクション、+①、このターンにこれより後、あなたがコストがちょうど⑤のカード1枚を獲得した場合、その後、あなたの次のターンの開始時、この能力を繰り返す。` | `+1 アクション、+1 コイン、このターン、これより後にあなたがコスト5のカードを獲得した場合、あなたの次のターンの開始時に、このカードの能力を冒頭から繰り返す。` |
+- ⇒ **【要ユーザー確認】**：(a) 残り9枚（檻/岩屋/宝飾卵/調査/秘境の社/豊穣/キャビンボーイ/坩堝/旗艦）の
+  **印刷版カード名**、(b) 13枚全部の**印刷版カード文面**。本資料の日本語テキストは**すべてDO訳**であり、
+  そのまま `DOM.CARDS` の `text` にすると**印刷版と食い違う**（webp の文字も変わる）。
+  ユーザーが現物を持っているなら現物が正本。持っていないならDO訳採用でよいが、その旨をPROGRESSに残すこと。
 
 ##### エラッタ
 - **13枚とも `Versions > English versions` 表の行は「Plunder / December 2022」の1行だけ**＝
-  **再版もエラッタ行も無い**（＝2022年12月の初版テキストが現行テキスト）。
-  各ページの目次にも `Errata` 節は存在しない。
+  **再版行も無い**（＝2022年12月の初版テキストが現行テキスト。13枚すべて機械確認）。
+<!-- 検証で訂正: 旧根拠="各ページの目次にも Errata 節は存在しない" → エラッタはカードページではなく中央の `Errata` ページに載るので、この根拠は無効だった。中央ページを実取得して確認し直した。 -->
+- **中央の `Errata` ページ（capture=20250330）の `Plunder` 節に載っているのは `Journey`（イベント）1件だけ**
+  ＝**この13枚にカード単位のエラッタは無い**。逐語＝
+  `Journey — 'You don't discard cards from play in Clean-up this turn. Take an extra turn after this one (but not a 3rd turn in a row).' (2023)`
+- ⚠ **ただし一般ルールのエラッタが1件この13枚に効く**（`Errata` ページ `Rules` 節・逐語）：
+  `Durations — No longer have any effect on future turn if the card has left play (2025).`
+  → 下の **§E（現場監督×増築）** と **§F（旗艦）** を参照。**カードページのFAQはこのエラッタより前の記述**。
 
 ---
 
@@ -1405,6 +1444,9 @@ The next time a Supply pile empties, trash this and gain a Loot.
   - `If a non-supply pile (like Loot or Horse) is emptied, that won't trigger Search.`
   - `If gaining a card empties a Supply pile, you'll order Search with other when-gain effects. If trashing a card empties a Supply pile (e.g. Lurker), you'll order Search with other when-trash effects.`
   - `If you Invest in the last card of a Supply pile, other players who also Invested in that card can order between the +2 Cards from Invest and trashing their Searches.`
+  - **`If you play this with Band of Misfits, it will stay in play until a Supply pile empties. When one does, you trash nothing and gain a Loot.`**
+    <!-- 検証で訂正: 旧=この1行が丸ごと欠落していた（Other rules clarifications の6番目）。出典= 英語wiki Search ページ capture=20250127 の Other rules clarifications 節。
+         ＝命令(Command)経由で使うと「廃棄せずに Loot だけ得る」＝本プロジェクトの §0-17 `playedByCommand`/`takeSelf` に直結する実装必須情報。 -->
   - `If emptying a Supply pile causes you to play this (e.g. you gain the last Gondola which lets you play a Search), that won't trigger the Search (it triggers off the next Supply pile that's emptied).`
   - `Ending the game by emptying the third Supply pile, Provinces, or Colonies does trigger Search; you gain the Loot before the game ends. Usually this won't make a difference, but trashing Search and gaining Loot can affect your score due to abilities such as Fairgrounds, Tomb, and Keep, and there are a few abilities that might allow you to play the gained Loot before the end of your final turn and use it to buy some additional [VP].`
 
@@ -1494,8 +1536,11 @@ When you gain this, trash it unless you trash an Action from your hand.
 --------------------
 これを獲得したとき、手札からアクションカード1枚を廃棄してもよい。廃棄しない場合、これを廃棄する。
 ```
-（日本語wikiは種別欄を `アクション-アタック` と書き、持続部分をテキスト中の「持続」で表している＝
- **公式の種別列は Action - Duration - Attack**）
+<!-- 検証で訂正: 旧="日本語wikiは種別欄を アクション-アタック と書き…" だけで終わっていたが、**印刷版の実物は種別欄が「アクション−持続−アタック」**（HJ公式写真 Domi_Plunder_jp_kingdomcards.jpg を実見）。
+     ＝種別欄が2つしか無いのは Dominion Online の表示仕様であって印刷版ではない。密航者も同様に印刷版は「アクション−持続−リアクション」。 -->
+（日本語wikiは種別欄を `アクション-アタック` と書き、持続部分をテキスト中の「持続」で表しているが、
+ これは **Dominion Online の表示仕様**。**HJ印刷版の実物は種別欄が「アクション−持続−アタック」**＝
+ 英語wikiの `Action - Duration - Attack` と一致する）
 
 - **公式FAQ（逐語）**
   - `When you gain a Siren, it's immediately trashed unless you trash an Action card from your hand.`
@@ -1682,19 +1727,21 @@ The next time you play a non-Command Action card, replay it.
 
 #### 実装時に事故りそうな落とし穴（逐語引用つき）
 
-##### 0. 【最優先】日本語名の衝突＝**Loot の訳「戦利品」が、既存の `spoils`（暗黒時代）と同じ文字列**
+##### 0. 日本語名の衝突＝**`spoils` の改名は既に完了している（対応不要）**
+<!-- 検証で訂正: 旧="本プロジェクトは spoils の表示名に「戦利品」を採用済み（js/cards.js: spoils: { name: '戦利品', … text: '…戦利品置き場に戻す。' }）→ 先に spoils を「略奪品」に改名するのが素直"
+     ＝**現物と不一致**。作業ツリー（HEAD=ea0c091, 2026-08-15）の js/cards.js は既に `spoils: { id:'spoils', name:'略奪品', … text:'3 コイン\nこれを使用したとき、このカードを略奪品置き場に戻す。' }`。
+     `grep -rn 戦利品 js/` は **0件**、`grep -rn 略奪品 js/` は cards.js/cpu.js/engine.js で多数ヒット。
+     コミット逐語= `ea0c091 fix(darkages): spoils の日本語名を公式訳「略奪品」に直す（略奪の Loot＝「戦利品」と衝突するため）`。
+     ＝この節が求めていた改名は既に済んでおり、「最優先タスク」ではない。 -->
 - 日本語wiki（Dominion Online 訳）は **Loot = 戦利品**。実際に `宝飾卵`・`調査` の訳文が
   `戦利品1枚を獲得する` となっている。日本語wikiのページ名も `戦利品`（Loot）／`戦利品の袋`（Sack of Loot）。
-- 一方 **Spoils（暗黒時代）の日本語wikiページ名は `略奪品`**。
-- **本プロジェクトは `spoils` の表示名に「戦利品」を採用済み**
-  （`js/cards.js`：`spoils: { id: 'spoils', name: '戦利品', ... text: '...このカードを戦利品置き場に戻す。' }`。
-  PROGRESS §0-3 に「公式は『略奪品』だが…プロジェクト内一貫性を優先。**将来 Plunder/Loot を入れる時に再考**」と
-  明記して先送りしてある）。
-  → **その「将来」が今**。略奪を入れると **Loot と Spoils が同じ「戦利品」になり、盤面・ログ・カード一覧・
-  全文検索がすべて曖昧になる**（§0-29 の `alliance`＝同盟 と同型だが、こちらは**非サプライ山が2つ同時に立ちうる**
-  ぶん実害が大きい：mix-all で暗黒時代と略奪が同居すると「戦利品置き場」が2つ出る）。
-  → **先に `spoils` を「略奪品」に改名する**（公式訳に戻す）のが素直。`js/cards.js` の name と text、
-  カード一覧の群見出し、既存テストの期待値を同時に直すこと。
+- **Spoils（暗黒時代）の日本語wikiページ名は `略奪品`**（実取得して確認。逐語＝
+  `暗黒時代 / 略奪品 / 0* / 財宝 / 3 コイン / あなたはこのカードを使用するとき、このカードを略奪品の山札へ戻す。`）。
+- ✅ **`spoils` の改名は 2026-08-15 に完了済み**（`ea0c091` ＝現 HEAD）。
+  現在の `js/cards.js` は `name: '略奪品'` / `text: '…このカードを略奪品置き場に戻す。'`、
+  **`js/` 全体に「戦利品」は0件**（機械確認）。＝**Loot に「戦利品」を割り当ててよい状態が既に整っている**。
+  → **この節に残っている作業は無い**。ただし Loot 実装時に `戦利品置き場` の文言を新設するので、
+  `略奪品置き場`（Spoils）と混同しないことだけ注意する。
 - 拡張名も衝突する：**Plunder の日本語拡張名は「略奪」**で、暗黒時代の王国カード `pillage` の日本語名も**「略奪」**。
   （日本語wiki の `略奪` ページは pillage のカードページ、拡張は `一覧/略奪（拡張）`）。
   ＝§0-29 の `alliance` と完全に同型。**id 衝突は無い**（`pillage` vs 拡張ID）が、群見出しは区別すること。
@@ -1732,6 +1779,10 @@ The next time you play a non-Command Action card, replay it.
 - **複数人が同時に持ちうる**：`If multiple players have played a Search when a Supply pile empties, players trash their Searches and gain Loots in turn order.`
   → 手番順ループが要る（1人ぶんだけ解決して終わる実装は誤り）。
 - **玉座の間で「廃棄1回・獲得2回」**：`you'll trash Search once but gain two Loots (and discard Throne Room that turn).`
+- **命令(Command)経由なら「廃棄0回・獲得1回」**：`If you play this with Band of Misfits, it will stay in play until a Supply pile empties. When one does, you trash nothing and gain a Loot.`
+  <!-- 検証で追記: 下書きはこの1行を取りこぼしていた。出典= 英語wiki Search ページ capture=20250127。 -->
+  → §0-17 の「命令がプレイした札は動かない」そのもの。**`takeSelf` / `playedByCommand` を通し、
+  廃棄に失敗しても Loot の獲得は必ず実行する**（廃棄成功を条件にすると公式より弱くなる）。
 
 ##### C. Siren＝**獲得時の自己廃棄が「移動」で失敗する（stop-moving）**
 - `When you gain a Siren, it's immediately trashed unless you trash an Action card from your hand.`
@@ -1774,10 +1825,20 @@ The next time you play a non-Command Action card, replay it.
   → **習性(Way)を選び直させない・共謀者に数えない・`noteAllyPlay`（同盟の「アクションを使用した後」）も呼ばない**。
 - **無限に持続しうる**＝毎ターン $5 を獲得し続ける限り場に残る。`p.delayedEffects` の「1ターンぶんの予約」
   モデルだと表現できないので、**雇人(hireling)/王子と同じ「永続持続」枠**が要る。
-- `Improve` で廃棄した後でも予約は残る：`the Taskmaster will still repeat itself on your next turn ... you will have to remember this.`
-  ⇔ 一方で追加ルールは `If a Duration card leaves play somehow, it stops doing things on future turns.` と言っている。
-  **この2つは矛盾して見えるので実装前に必ず確認すること**（Improve は「クリンナップ開始時に場から廃棄」なので、
-  「予約が既に確定している」扱いだと解釈できる）。
+- ⚠ **`Improve` で廃棄した後の扱い＝2025年の一般ルールエラッタで変わっている**。
+<!-- 検証で訂正: 旧="この2つは矛盾して見えるので実装前に必ず確認すること（…「予約が既に確定している」扱いだと解釈できる）" ＝推測で埋めていた。
+     一次資料で解決する：英語wiki `Errata` ページ（capture=20250330）の Rules 節に
+     `Durations — No longer have any effect on future turn if the card has left play (2025).` がある。
+     Taskmaster ページの当該FAQ（capture=20250114）はこのエラッタより前の記述で、更新されていないだけ。
+     本プロジェクトは既に2025エラッタ側を採用している（PROGRESS §0-25「2025の『場を離れた持続は以後働かない』」）。 -->
+  - カードページのFAQ逐語（capture=20250114・**2025エラッタ前の記述**）＝
+    `If you haven't gained a [$5]-cost card this turn, Taskmaster can be trashed with Improve. But if you gain a [$5]-cost card afterwards (with a 2nd Improve), the Taskmaster will still repeat itself on your next turn (and potentially for multiple turns); you will have to remember this.`
+  - **現行の一般ルールエラッタ逐語**（`Errata` ページ `Rules` 節）＝
+    `Durations — No longer have any effect on future turn if the card has left play (2025).`
+  - **⇒ 現行では「増築で廃棄された現場監督は、次のターンに能力を繰り返さない」**。
+    追加ルールの `If a Duration card leaves play somehow, it stops doing things on future turns.` と整合する。
+    **本プロジェクトは既に2025エラッタ側を採用している**（PROGRESS §0-25）ので、そちらに揃えるのが一貫している。
+  - ※wiki のカードページFAQが未更新なので、**最終的には要ユーザー確認**（ただし一次資料の日付は 2025 > 2022 で明確）。
 
 ##### F. Flagship＝**命令(Command)種別の新カード**（本アプリの `playAsCommand` 機構に直結）
 - **強制**：`This isn't optional; whatever that next non-Command Action card is, Flagship replays it.`
@@ -1792,8 +1853,15 @@ The next time you play a non-Command Action card, replay it.
 - **相手のターンでも再演する**：`It replays it even if the card trashed itself, and even if it isn't your turn.`
   → 移動動物園のリアクション（そり等）や密航者(Stowaway)で相手のターンにアクションを使うと発火する。
 - **複数枚は累積**：`If you play two Flagships and then e.g. a Harbor Village, you'll play the Harbor Village three times total - once normally and once for each Flagship.`
-- **持続を再演したときの場残り**：`If you play Flagship, then play a Band of Misfits, which plays a Duration card, the Flagship will replay that Duration card. The Band of Misfits will stay in play, but the Flagship will not`
-  ＝§0-25/§0-28 の「玉座×持続」既存簡略化と**同じ話だが結論が逆**（Flagship は場に残らない）。
+- **持続を再演したときの場残り＝原則は「旗艦も場に残る」**。
+<!-- 検証で訂正: 旧="（Flagship は場に残らない）" と一般化していたが誤り。Plunder 拡張ページ Additional rules（capture=20250415）の逐語が
+     Flagship を「持続を余分にプレイしたら場に残る側」として名指ししている。「場に残らない」のは Band of Misfits 経由の特殊例だけ。 -->
+  - **原則（Plunder 追加ルール・逐語）**＝`Additionally, if a Duration card is played extra times by a card such as [Throne Room, Scepter, Mastermind, Specialist, **Flagship**, or Daimyo], that card also stays in play until the Duration card is discarded, to track the fact that the Duration card was played extra times.`
+    ＝**旗艦が持続カードを再演したら、その持続が捨てられるまで旗艦も場に残る**（＝玉座の間と同じ扱い）。
+  - **例外＝はみだし者(Band of Misfits)を経由したとき**だけ逐語で否定されている：
+    `If you play Flagship, then play a Band of Misfits, which plays a Duration card, the Flagship will replay that Duration card. The Band of Misfits will stay in play, but the Flagship will not; you will have to remember that the Duration card was played twice.`
+  - ※この FAQ も capture=20250130 ＝**2025年の `Durations` エラッタ前**の記述。エラッタとの整合は要確認。
+  - ＝§0-25/§0-28 の「玉座×持続」既存簡略化と**同じクラスの話**（本エンジンは持続の再演で玉座を場に残す実装がある）。
 
 ##### G. Cabin Boy の「持続カードを獲得」は**コスト制限が無い**
 - 逐語テキスト＝`trash this to gain a Duration card.`（"costing up to" が無い）
@@ -2161,17 +2229,18 @@ RGG ルールブックPDF `plunder_rules.txt` 85-89行にも同文）
 
 ##### 検証に使った一次資料（すべて自分で引き直した）
 
-| 資料 | 取得方法 | 版の新しさの根拠 |
+| 資料 | 取得方法 | 版 |
 |---|---|---|
-| 英語wiki 各カードページ | `tools/wikifetch.py Stowaway Taskmaster` ほか（Wayback経由）＋ CDXで最新キャプチャを明示指定する自作 `verify/_cdxfetch.py` | 本文末の **`This page was last edited on ...`** と `oldid` で判定（snapshot ラベルは当てにならないため使わなかった） |
+| 英語wiki 各カードページ（**最終確認**） | **`node tools/wikidirect.js`（ライブ直読み）** | Stowaway/Taskmaster `oldid=95366/95368`＝**2026-02-21**／Abundance/Cabin Boy/Crucible `95332/95334/95337`＝**2026-02-21**／Flagship `oldid=95900`＝**2026-03-20** |
+| 英語wiki `Plunder_(expansion)` / `Duration` / `Command` | 同上 | 2026-03-28 ／ **2026-05-05（`oldid=96197`）** ／ 2026-03-22（`oldid=95909`） |
+| 旧版との差分比較 | `tools/wikifetch.py`（Wayback）＋ CDX指定の自作 `verify/_cdxfetch.py` | Taskmaster 2024-09-01 / `oldid=94249`(2025-11-22)、Flagship `oldid=68989`(2023) / `85244`(2024-10-17) / `88751`(2024-12-07) / `93340`(2025-09-11) |
 | RGG 公式ルールブック | `C:/tmp/plunder_research/DomPlunder.txt`（pdftotext 済み・実DL） | 2022年8月組版（`plunderrandomizers21.indd` / `8/19/22`） |
-| 英語wiki `Plunder_(expansion)` / `Duration` / `Command` / `Prince` | 同上 | Command=2025-11-15、Prince=2025-11-12 の版 |
-| 日本語wiki | `C:/tmp/plunder_research/jp/<名前>.txt`（既取得ダンプ） | 各ページ冒頭の `Last-modified: 2026-07-20` 等 |
+| 日本語wiki | `C:/tmp/plunder_research/jp/<名前>.txt` | 各ページ冒頭 `Last-modified: 2026-07-20` 等 |
 
-**取得した版（自分で確認した番号）**
-- Stowaway `oldid=93335` / 2025-09-11 ・ Taskmaster `oldid=94249` / **2025-11-22**
-- Abundance `oldid=93337` / 2025-09-11 ・ Cabin Boy 2025-09-11 ・ Crucible 2024版 ・ Flagship `oldid=93340` / **2025-09-11**
-- 比較用の旧版：Taskmaster capture=2024-09-01、Flagship `oldid=88751`(2024-12-07) / `oldid=85244`(2024-10-17) / `oldid=68989`(2023)
+> **注**：最初は Wayback で取ったが、途中で `wikidirect.js` が常設化されたので**6枚＋3ページを全部ライブで取り直して突き合わせた**。
+> 結果、**カードの内容（コスト・種別・テキスト）はライブでも完全に同一**で、下記の訂正はすべてライブ版で再確認済み。
+> なお**ライブ版のほうが情報が多い**（Stowaway に日本語印刷版の行が増えている／`Duration` ページに
+> 「the next time」型の**完全な一覧**がある）。下書きが見た版には無かったものが含まれる。
 
 ---
 
@@ -2179,197 +2248,214 @@ RGG ルールブックPDF `plunder_rules.txt` 85-89行にも同文）
 
 1. **6枚のコスト・種別**：Stowaway `$3` Action-Duration-Reaction ／ Taskmaster `$3` Action-Duration ／
    Abundance `$4` Treasure-Duration ／ Cabin Boy `$4` Action-Duration ／ Crucible `$4` Treasure ／
-   Flagship `$4` Action-Duration-**Command**。**種別の落としは無い**。負債・ポーション費用も無し。
-2. **英語カードテキストは6枚とも現行版と逐語一致**（`Card text` 欄・`Versions` 表の両方で照合）。
-   Flagship は **RGG ルールブック本文（`DomPlunder.txt` 246〜251行）とも一字一句一致**。
-3. **カードのエラッタ・再版は無い**：6枚とも `Versions > English versions` は
-   **`Plunder / December 2022` の1行だけ**（機械カウントで各1件）。`Errata` 節も無い。
-   ※ただし「カードのエラッタ」が無いだけで、**一般ルール側のエラッタが Taskmaster の裁定を1つ壊している**（訂正2）。
-4. **Stowaway の Official FAQ／Other rules は下書きの引用どおり**
-   （`You may play this from your hand when you personally gain a Duration card, or when another player does.` /
-   `This plays like the Reactions in Menagerie; see the Reactions section.`）。
-5. **Abundance の FAQ 2件・Other rules 2件は下書きの引用どおり**（自己誘発しない Courier×Innovation の例を含む）。
-6. **Cabin Boy**：Official FAQ は `You can trash a Cabin Boy to gain another Cabin Boy.` の1件のみ、
-   `Other rules clarifications` は**空**＝下書きの記述どおり。
-7. **Crucible**：Official FAQ 2件（Estate の例／`[P]` `[D]` は何も生まない）、`Other rules clarifications` は**空**＝下書きどおり。
+   Flagship `$4` Action-Duration-**Command**。**種別の落としは無い**。負債・ポーション費用も無し。（ライブ版で再確認）
+2. **英語カードテキストは6枚とも現行版と逐語一致**。Flagship は **RGG ルールブック本文
+   （`DomPlunder.txt` 242〜260行）とも一字一句一致**。
+3. **エラッタ・再版は無い**（下書きの結論は正しい。**ただし根拠はもっと強くできる**）：
+   ライブ版の `Versions > English versions` は**新しい表スキーマ**になっており、
+   列が `Print | Digital | Text | Changes | Announced | Printed`。**6枚とも行は1本だけで
+   `Changes = First edition` / `Announced = （空）` / `Printed = December 2022`**（機械抽出で確認）。
+   ＝**エラッタが無いだけでなく、「announce されたが未印刷のエラッタ」も無い**
+   （§0-29 A4 の royal_galley のような罠がこの6枚には存在しない、と断言できる）。
+   ※ただし**一般ルール側のエラッタが Taskmaster の裁定を1つ壊している**（訂正3）。
+4. **Stowaway の Official FAQ／Other rules は下書きの引用どおり**（ライブ版でも2件のまま）。
+5. **Abundance の FAQ 2件・Other rules 2件は下書きどおり**（Courier×Innovation の自己誘発除外を含む）。
+6. **Cabin Boy**：Official FAQ は1件のみ、`Other rules clarifications` は**空**＝下書きどおり。
+7. **Crucible**：Official FAQ 2件、`Other rules clarifications` は**空**＝下書きどおり。
 8. **Flagship の Official FAQ 4件は下書きどおり**（強制／自己廃棄しても再演／相手のターンでも／Command は飛ばす／2枚で3回）。
 9. **落とし穴 C（Siren の stop-moving）／D（Shaman の常設効果）／I（Jewelled Egg は廃棄した本人が Loot）／
    J（Cage は次の手札を引いた後・0枚でも場に残る／Grotto は0枚なら残らない）／K（Grotto は捨てる→引く）**
-   ＝ **引用は現行英語wikiと逐語一致**（各ページの `Official FAQ` / `Other rules clarifications` を再取得して照合）。
+   ＝**引用は現行英語wikiと逐語一致**（各ページを再取得して照合）。
 10. **落とし穴 L（Stowaway は移動動物園型リアクション。誰の獲得でも窓が開く）＝正しい**。
-    日本語wikiも `密航者のリアクション効果は、いずれかのプレイヤーが持続カードを獲得した際に誘発する。他のプレイヤーだけでなく自分が獲得したときでも誘発する。` と一致。
-11. **落とし穴 M（Abundance は相手のターンにも誘発するが無意味）＝正しい**。英語FAQ
-    `If it happens during another player's turn, the +[$3] and +1 Buy won't be useful.` ＋
-    日本語wiki `自分のターン以外のタイミングで得た購入権、コインを次のターンに持ち越すことはできないので、無駄となる。`
-12. **落とし穴 G（Cabin Boy の「持続カードを獲得」にコスト制限が無い）＝正しい**
-    （カード文に `costing up to` が無く、FAQ が Cabin Boy 自身の獲得を明示）。
-13. **落とし穴 H（Crucible の +$ はコイン成分だけ）＝正しい**。日本語wikiも
-    `ポーションや負債のみのコストを持つブドウ園や大君主のようなカードを廃棄した場合、金量は出力しない。` と補強。
+11. **落とし穴 M（Abundance は相手のターンにも誘発するが無意味）＝正しい**。
+12. **落とし穴 G（Cabin Boy の「持続カードを獲得」にコスト制限が無い）＝正しい**。
+13. **落とし穴 H（Crucible の +$ はコイン成分だけ）＝正しい**。
 14. **落とし穴 F の中核（Necromancer は Command ではないので Flagship に再演される／
     はみだし者は Command なので飛ばされ、はみだし者が使ったカードの方が再演される）＝正しい**。
-    英語wiki `Command` ページ（2025-11-15版）が `Necromancer` と `Royal Carriage` を
-    **`Corner Cases`＝Command 型を持たない**と明記している。
+    ライブの `Command` ページが `Necromancer` と `Royal Carriage` を **`Corner cases`＝Command 型を持たない**と明記。
 
 ---
 
 ##### 訂正
 
-**[high] 対象=「⚠ 日本語版について」節（全13枚に効く前提）**
+**[high] 対象=「⚠ 日本語版について」節（全13枚＝拡張全体の方針に効く）**
 - 旧＝`英語wikiの Other language versions 表に Japanese の行が1枚も無い（Dutch / French / German / Polish のみ）。＝略奪の日本語印刷版は（この資料の時点で）存在しないと考えるのが自然。`
 - 正＝**日本語印刷版は存在する**。
-  - 出典1＝英語wiki `Plunder_(expansion)` の **`Trivia > Official releases in other languages`** に
-    `Japanese: 略奪 (pron. liaku datsu)` と明記（Dutch/German/Polish と並記）。
-  - 出典2＝**Japanese 行が実在するカードページが少なくとも4枚**ある：**Taskmaster（担当）／Siren／Crew／Invasion**。
-    Taskmaster・Siren の行には `[Japanese language Taskmaster]` `[Japanese language Siren]` の**印刷版画像**が入っており、
-    Print 列＝物理カードが存在する（Shuffle iT のデジタル画像は `... from Shuffle iT` という別 alt になる）。
-  - **英語wikiの `Other language versions` に Japanese 行が少ないのは「wikiの記入漏れ」であって「未発売の証拠ではない」。**
-    ＝下書きの「印刷版が無いのでDominion Online訳を採用してよい」という前提は成立しない
-    （本プロジェクトの方針「日本語名はホビージャパン印刷版が正本」を捨てる根拠にはならない）。
+  - 出典1＝英語wiki `Plunder_(expansion) > Trivia > Official releases in other languages` に
+    **`Japanese: 略奪 (pron. liaku datsu)`** と明記（Dutch / German / Polish と並記）。
+  - 出典2＝**Japanese 行が実在するカードページが複数ある**。担当6枚のうち
+    **Stowaway と Taskmaster の2枚**に、印刷版画像つきの Japanese 行がある（**ライブ版で確認**）。
+    他に **Siren / Crew / Invasion** でも確認した。
+  - ＝**Japanese 行が少ないのは「wikiの記入漏れ」であって「未発売の証拠ではない」**。
+    下書きの「印刷版が無いのでDominion Online訳を採用してよい」という前提は成立しない。
+  - ※ただし**結論（DomOnline訳を使う）自体は現実的には妥当**。理由が違うだけ（→「要ユーザー確認2」）。
 
 **[high] 対象=落とし穴A「the next time 型は5枚」**
-- 旧＝`Cage（勝利点を獲得したとき）／Search／Secluded Shrine／Abundance／Flagship` の**5枚**
-- 正＝**最低7枚**。`Card text` 欄を機械抽出して確認した結果：
-  | カード | 逐語 |
+- 旧＝`Cage／Search／Secluded Shrine／Abundance／Flagship` の**5枚**
+- 正＝**ちょうど7枚**。ライブの `Duration` ページ（2026-05-05・`oldid=96197`）に
+  **`Triggered effects`＝「開始時ではなく条件で誘発する持続」の公式カテゴリ**があり、
+  **Dominion 全体でこの7枚がすべて**（カードギャラリーのサムネも7枚）：
+
+  | カード | wiki の要約（逐語） |
   |---|---|
-  | Abundance | `The next time you gain an Action card: +1 Buy and +[$3].` |
-  | Cage | `The next time you gain a Victory card, trash this, and ...` |
-  | **Cutthroat**（$5・下書きに無い） | `The next time anyone gains a Treasure costing [$5] or more, gain a Loot.` |
-  | Flagship | `The next time you play a non-Command Action card, replay it.` |
-  | **Landing Party**（$4・下書きに無い） | `The next time the first card you play on a turn is a Treasure, put this onto your deck afterwards.` |
-  | Search | `The next time a Supply pile empties, trash this and gain a Loot.` |
-  | Secluded Shrine | `The next time you gain a Treasure, trash up to 2 cards from your hand.` |
-- **Cutthroat は「anyone gains」＝他人の獲得でも誘発する**ので、共通機構の設計要件が下書きの想定より広い。
-- ⚠ 未確認が10枚残っている（First Mate / Frigate / Longship / Mining Road / Pendant / Pickaxe /
-  Wealthy Village / Sack of Loot / King's Cache / Figurine ＋ Loot 15種）＝kingdom2・kingdom3 担当が要確認。
-  **「5枚だけ」を前提に窓の共通機構を設計すると後で作り直しになる。**
+  | Abundance | `When you gain an Action card, +1 Buy and +[$3].` |
+  | Cage | `When you gain a Victory card, trash the Cage and put the cards set aside with Cage into your hand at the end of the turn.` |
+  | **Cutthroat**（$5・下書きに無い） | `When anyone gains a Treasure card costing [$5] or more, gain a Loot.` |
+  | Flagship | `When you play a non-Command Action card, replay it.` |
+  | **Landing Party**（$4・下書きに無い） | `When the first card you play on a turn is a Treasure, put Landing Party onto your deck afterwards.` |
+  | Search | `When a Supply pile empties, trash Search and gain a Loot.` |
+  | Secluded Shrine | `When you gain a Treasure card, trash up to 2 cards from your hand.` |
+
+  → **7枚とも略奪のカード**＝この誘発窓の共通機構は略奪だけで完結する（他拡張への波及は無い）。
+  → **`Cutthroat` は「anyone gains」＝他人の獲得でも誘発**するので、
+    「自分の獲得だけ見る」設計にすると作り直しになる。
+  → `Landing Party` は「そのターン最初に使ったカードが財宝なら」＝**獲得でも廃棄でもない誘発点**が1つ増える。
+  ※ライブ版には同じページに `Duration effects`（＝場にある間ずっと効く持続）の一覧もあり、
+    略奪からは **Frigate / Highwayman** が入る（これも「相手のターンをフックする」機構が要る）。
 
 **[high] 対象=落とし穴E「Improve で廃棄した後でも Taskmaster の予約は残る」**
 - 旧＝`Improve で廃棄した後でも予約は残る：the Taskmaster will still repeat itself on your next turn ... you will have to remember this.`
   ⇔ 追加ルールと矛盾して見えるので**実装前に必ず確認すること**
-- 正＝**矛盾は既に決着済み。この裁定は 2025年2月エラッタで無効になった**＝
-  **場を離れた Taskmaster は次のターンに繰り返さない**（追加ルール
-  `If a Duration card leaves play somehow, it stops doing things on future turns.` が勝つ）。
-  - 出典1＝**日本語wiki `現場監督 > 詳細なルール`**（逐語）：
-    `持続カードが何らかの理由により場を離れた場合、【持続効果】はターン終了時にすべて失われる、というルール（英語版移動動物園（拡張）改版に伴う2025年2月エラッタ）により、成立しなくなりました。`
-    （＝直前に書かれている「増築で廃棄しても次ターンに効果が出る」という旧裁定への取り消し文）
-  - 出典2＝**英語wiki からも当該箇所が削除されている**。
-    2024-09-01 キャプチャの `Other rules clarifications` には Improve の項が**在る**が、
-    **現行版（`oldid=94249` / 2025-11-22）には無い**（同節は4項目のみ）。自分で両方を取得して差分確認した。
-  - 本プロジェクトは 2025年2月エラッタを既に採用済み（PROGRESS §0-25/§0-26）なので、**この方針で実装して整合する**。
+- 正＝**矛盾は既に決着済み。この裁定は無効**＝**場を離れた Taskmaster は次のターンに繰り返さない**
+  （追加ルール `If a Duration card leaves play somehow, it stops doing things on future turns.` が勝つ）。
+  - 出典1＝**日本語wiki `現場監督 > 詳細なルール`**（逐語）：旧裁定を書いた直後に取り消し文がある。
+    > `持続カードが何らかの理由により場を離れた場合、【持続効果】はターン終了時にすべて失われる、というルール（英語版移動動物園（拡張）改版に伴う2025年2月エラッタ）により、成立しなくなりました。`
+  - 出典2＝**英語wiki からも当該項目が削除されている**。2024-09-01 キャプチャの
+    `Other rules clarifications` には Improve の項が**在る**が、**`oldid=94249`(2025-11-22) にも
+    ライブ最新 `oldid=95368`(2026-02-21) にも無い**（同節は4項目のみ）。3版を自分で取得して差分確認した。
+  - 出典3＝ライブ `Duration > Other rules clarifications` の一般則
+    > `A Duration played this turn that won't stay in play can be trashed with Improve.`
+    ＝**「場に残らない持続だけが Improve で廃棄できる」**＝条件未達の Taskmaster は廃棄できるが、
+    廃棄された以上は次ターンに何もしない、で一貫する。
+  - 本プロジェクトは 2025年2月エラッタを既に採用済み（PROGRESS §0-25/§0-26）なので**この方針で実装して整合する**。
 
 **[high] 対象=落とし穴F「Flagship は場に残らない」**
 - 旧＝`（Flagship は場に残らない）`＝§0-25/§0-28 の「玉座×持続」と**結論が逆**
 - 正＝**一般則は逆で、Flagship は持続を再演したら場に残る**。
-  - 出典＝**RGG ルールブック逐語**（`DomPlunder.txt` 71〜74行）：
-    `Additionally, if a Duration card is played extra times by a card such as Flagship, that card also stays in play until the Duration card is discarded, to track the fact that the Duration card was played extra times.`
-  - 現行の英語wiki `Plunder_(expansion) > Additional rules > Durations` も同文（列挙が
-    `Throne Room, Scepter, Mastermind, Specialist, Flagship, or Daimyo` に拡張されている）。
-  - `Duration` ページも `When you use a Throne Room variant to play a Duration multiple times, that Throne Room stays in play for as long as the Duration does.`
-- 下書きが引いた「場に残らない」は **はみだし者(Band of Misfits)経由という1つのコーナーケース限定**の記述であり、
-  しかも**現行の英語wikiからは削除されている**（下記「要ユーザー確認1」）。
+  - 出典1＝**RGG ルールブック逐語**（`DomPlunder.txt` 71〜74行）：
+    > `Additionally, if a Duration card is played extra times by a card such as Flagship, that card also stays in play until the Duration card is discarded, to track the fact that the Duration card was played extra times.`
+  - 出典2＝ライブ `Plunder_(expansion) > Additional rules > Durations`（同文。列挙が
+    `[Throne Room, Scepter, Mastermind, Specialist, Flagship, or Daimyo]` に拡張されている）。
+  - 出典3＝ライブ `Duration > Other rules clarifications`：
+    > `When you use a Throne Room variant to play a Duration multiple times, that Throne Room stays in play for as long as the Duration does.`
+- 下書きが引いた「場に残らない」は **はみだし者(Band of Misfits)経由という1つのコーナーケース限定**の記述で、
+  しかも**現行の英語wikiからは削除されている**（→「要ユーザー確認1」）。
   **一般則として「残らない」と実装すると、素直な `Flagship → 手札の持続` が壊れる。**
 
 **[medium] 対象=Taskmaster「その他の裁定」の引用**
 - 旧＝5項目（最後が Improve の項）
 - 正＝**現行版は4項目**（Way/Conspirator・Importer・獲得時コスト（Destrier）・Haggler×Innovation）。
-  Improve の項は**2025年の編集で削除済み**（上記[high]と同根）。下書きは削除前の版を引いている。
+  Improve の項は削除済み（上記[high]と同根）。下書きは削除前の版を引いている。
 
 **[medium] 対象=落とし穴F「本アプリの Command 種別を持つ札（大君主／はみだし者／船長／王子／Flagship）」**
 - 旧＝5枚
-- 正＝**公式の Command は8つ**。英語wiki `Command > List of Commands` 逐語：
-  `Band of Misfits, Captain, and Overlord (revised versions) play a card from the supply.` /
-  `Prince (revised version) ...` / `Inheritance (revised version) causes Estates to become Command cards ...` /
-  `Scepter plays a card that is already in play.` / `Daimyo and Flagship replay the next played card.`
+- 正＝**公式の Command は8つ**。ライブ `Command > List of Commands` 逐語：
+  > `Band of Misfits, Captain, Overlord — Play a card from the Supply.`
+  > `Prince — Plays a set-aside card at the start of each turn.`
+  > `Estate under the influence of Inheritance — Plays a set-aside card.`
+  > `Scepter — Plays a card that is already in play.`
+  > `Daimyo, Flagship — Replays the next played card.`
   - **漏れているのは 王笏(Scepter) と 相続した屋敷(Inheritance)**。
   - **実装上いちばん効くのは相続した屋敷**＝これは**アクションかつ Command** なので
     **Flagship は相続した屋敷を再演してはいけない**。本プロジェクトは相続を実装済み（§0-21）＝mix-all で到達する。
-    ※`js/cards.js` を確認したところ `scepter` には既に `'command'` が付いている（`types: ['treasure','command']`）。
-    相続の屋敷は `inheritedEstate` で動的に扱っているので、**Flagship の除外述語は静的 types だけ見てはいけない**。
-  - 日本語wiki `旗艦 > 余談` も同じ列挙＋**無限ループの実例**（旗艦↔はみだし者、旗艦↔相続した屋敷）を挙げている
-    ＝Command 除外は「忠実性」ではなく**無限ループ防止のための必須条件**。
+    ⚠ `js/cards.js` を確認したところ `scepter` には既に `'command'` が付いている
+    （`types: ['treasure','command']`）が、**相続の屋敷は `inheritedEstate` で動的に扱っている**ので、
+    **Flagship の除外述語は静的 `types` だけを見てはいけない**。
+  - 日本語wiki `旗艦 > 余談` は**無限ループの実例**を2本挙げている（旗艦↔はみだし者／旗艦↔相続した屋敷）。
+    ＝Command 除外は忠実性の問題ではなく**無限ループ防止のための必須条件**。
+  - 補強（ライブ `Flagship > Trivia`・逐語）：
+    > `Flagship was the first card to have the Command type when it was originally published. Other cards had the Command type before Flagship did, such as Band of Misfits, but such cards all had the type added to them retroactively via errata.`
 
 **[medium] 対象=落とし穴E／Taskmaster の誘発条件**
 - 旧＝`コスト5のカードを獲得`
 - 正＝**「コイン5・ポーション0・負債0」でちょうど一致**。日本語wiki `現場監督 > 詳細なルール` 逐語：
-  `より正確には「コスト5コイン0ポーション0負債のカードの獲得」である`。
-  ＝本プロジェクトの3成分比較（`costExact` 系）をそのまま使うこと。`cardCost().coin === 5` だけで判定すると
-  ポーション費用・負債コストの札で誤爆する。
+  > `より正確には「コスト5コイン0ポーション0負債のカードの獲得」である`
+  → 本プロジェクトの3成分比較（`costExact` 系）をそのまま使うこと。
+    `cardCost().coin === 5` だけで判定するとポーション費用・負債コストの札で誤爆する。
 
 **[low] 対象=「参考：この群に効く Plunder の追加ルール」の引用**
-- 旧＝`... that card also stays in play until the Duration card is discarded, to track the fact that the Duration card was played extra times.`
+- 旧＝`... to track the fact that the Duration card was played extra times.`
 - 正＝現行wikiは末尾に**一句多い**：`...; and that effect also ends if that card somehow leaves play.`
   （**RGG 2022年ルールブックには無い＝後から足された文**＝2025年2月エラッタ側の文言）。
   この一句が上記[high]（Taskmaster×Improve の無効化）と対になっているので、落とすと判断を誤る。
 
-**[low] 対象=Taskmaster の日本語カードテキスト**
-- 旧＝Dominion Online 訳のみを掲載（`このターン、これより後にあなたがコスト5のカードを獲得した場合…冒頭から繰り返す。`）
-- 正＝**印刷版の日本語テキストが英語wikiに載っている**（`Other language versions > Japanese`・逐語）：
-  `+1 アクション、+[$1]、 このターンあなたがコストがちょうど[$5]のカード1枚を緩得した場合、その後、あなたの次のターンの開始時、この能力を繰り返す。`
-  （※`緩得` は wiki 側の誤字。正しくは `獲得`。同様に Siren の Japanese 行にも `廃楽`→`廃棄` の誤字がある＝
-  画像からの書き起こしミスと見られるので、**そのままカタログに貼らないこと**）
-  さらに日本語wiki自身が **Dominion Online 訳の「これより後に」は厳密には不正確**と注記している（下記「落としていた裁定」参照）。
+**[low] 対象=Taskmaster / Stowaway の日本語カードテキスト**
+- 旧＝Dominion Online 訳のみを掲載
+- 正＝**印刷版の日本語テキストが英語wikiに載っている**（`Other language versions > Japanese`・逐語）。
+  - **Taskmaster（印刷版）**
+    > `+1 アクション、+[$1]、 このターンあなたがコストがちょうど[$5]のカード1枚を緩得した場合、その後、あなたの次のターンの開始時、この能力を繰り返す。`
+    （DomOnline訳＝`…このターン、これより後にあなたがコスト5のカードを獲得した場合、…この能力を冒頭から繰り返す。`）
+  - **Stowaway（印刷版・ライブ版で新たに追加されていた）**
+    > `あなたの次のターンの開始時、＋2 カードを引く` / `いずれかのプレイヤーが持続カード1枚を獲得したとき、あなたの手札からこれを使用してもよい。`
+    （DomOnline訳＝`あなたの次のターンの開始時に、+2 カードを引く。` / `誰かが持続カード1枚を獲得したとき、あなたは手札からこれを使用してもよい。`）
+  - ⚠ **wiki 側の書き起こしに誤字がある**：Taskmaster の `緩得`（正＝`獲得`）、Siren の `廃楽`（正＝`廃棄`）。
+    **そのままカタログに貼らないこと。**
+  - なお**カード名は印刷版・日本語wiki・Dominion Online の3者で一致**（現場監督／密航者／豊穣／
+    キャビンボーイ／坩堝／旗艦）＝**名前は安全**。
 
 ---
 
 ##### 要ユーザー確認
 
 1. **【最重要】Flagship がはみだし者の使った持続カードを再演したとき、Flagship は場に残るか**
-   - **一般則＝残る**（RGGルールブック逐語・現行 `Plunder_(expansion)` 追加ルール・`Duration` ページ）。上記[high]のとおり。
+   - **一般則＝残る**（RGGルールブック逐語・ライブ `Plunder_(expansion)` 追加ルール・ライブ `Duration` ページ）。上記[high]。
    - **しかし**「はみだし者が使った持続を旗艦が再演した場合だけは、はみだし者は残るが旗艦は残らない」という裁定が
-     2023年〜2025年9月の英語wikiに**脚注付き（`[1]`）で存在**し、**2025-09-11 の版で削除**されている
-     （`oldid=85244`(2024-10-17)・`oldid=88751`(2024-12-07) には在り、`oldid=93340`(2025-09-11) には無い＝自分で3版を取得して確認）。
-   - 日本語wiki `旗艦` の**コメント欄（2024-10-08〜09）**によれば、当時の編集者が英語wikiを確認して
-     この裁定を採用し、`大名(Daimyo)も旗艦と同様の扱いであることはTGGのDiscordにてDZ氏から確認を取っています` と書いている
+     **2023年〜2025年9月の英語wikiに脚注付き（`[1]`）で存在**し、**2025-09-11 の版で削除**されている
+     （`oldid=85244`(2024-10-17)・`88751`(2024-12-07) には在り、`93340`(2025-09-11) 以降・**ライブ `95900`(2026-03-20) にも無い**＝
+     自分で5版を取得して確認）。
+   - 日本語wiki `旗艦` の**コメント欄（2024-10-08〜09）**によれば、当時の編集者が英語wikiを確認してこの裁定を採用し、
+     > `大名と合わせて編集しておきました。大名が旗艦と同様の扱いであることはTGGのDiscordにてDZ氏から確認を取っています。`
      ＝**当時は公式に近い確認があった**。
    - **理屈は通る**（はみだし者が使う持続カードは**サプライから動かない＝一度も場に入らない**ので、
      「その持続カードが場から捨てられるまで残る」という追跡自体が成立しない）。
+     ライブ `Duration` ページにも近い趣旨の一般則がある：
+     > `It is also sometimes possible to use a Throne Room variant on a Duration card but be unable to leave the Throne in play with the Duration (e.g., ... was played by a Command variant such as Band of Misfits and never entered play in the first place). In these cases, the Duration card is played twice immediately, but its ability is only activated once on future turns, since the Throne is not still in play to remind you.`
+     （※これは「はみだし者が玉座を使った」逆向きの例で、**我々のケースそのものではない**）
    - → **削除が「誤りだったから」なのか「2025年の一括編集の巻き添え」なのか、一次資料からは断定できない。**
-     （※Taskmaster の Improve 項も同じく脚注付きで同時期に消えているが、そちらは日本語wikiに
-      「2025年2月エラッタで成立しなくなった」という**独立の根拠がある**。旗艦側にはそれが無い。）
-   - **実装上の推奨**：一般則（残る）で実装し、**はみだし者/大君主/船長が使った持続を再演した場合だけは
-     場に残さない**（＝両方の資料に矛盾しない安全側）。この分岐を採るかはユーザー判断。
+     （Taskmaster の Improve 項も同時期に消えているが、そちらは日本語wikiに「2025年2月エラッタで無効」という**独立の根拠がある**。旗艦側にはそれが無い。）
+   - **実装上の推奨**：一般則（**残る**）で実装し、**はみだし者/大君主/船長がサプライから使った持続を再演した場合だけ
+     場に残さない**（両方の資料と矛盾しない安全側）。この分岐を入れるかはユーザー判断。
 
 2. **日本語表示テキストをどちらにするか**（訂正[high]＋[low]の帰結）
-   - 印刷版（ホビージャパン）が存在するが、**英語wikiに Japanese 行があるのは略奪85種のうち4枚だけ**、
+   - 印刷版（ホビージャパン）は存在するが、**英語wikiに Japanese 行があるのは略奪85種のうちごく一部**で、
      日本語wikiのテキストは**明示的に Dominion Online 訳**（各ページ冒頭に `(※日本語訳はDominion Onlineより)`）。
-   - ＝**「印刷版の逐語」を全72…85種ぶん揃える手段が今回は無い**。
-     夜想曲・同盟のときの「日本語wiki＝印刷版が正本」という前提は**今回は使えない**（下書きの結論は結果的に正しいが、理由が違う）。
-   - → **A: 日本語wiki（DomOnline訳）で統一**（実運用は楽・ただし Taskmaster のように印刷版と文面が違う）
-     **B: 4枚だけ印刷版に合わせる**（混在して不整合になる）
-     のどちらにするかを決めてほしい。**カード名（現場監督・セイレーン・乗組員 等）は印刷版と日本語wikiで一致している**ので、
-     少なくとも**名前は安全**。
+   - ＝**「印刷版の逐語」を85種ぶん揃える手段が今回は無い**。夜想曲・同盟のときの
+     「日本語wiki＝印刷版が正本」という前提は**今回は使えない**（下書きの結論は結果的に妥当だが、理由が違う）。
+   - → **A: 日本語wiki（DomOnline訳）で全カード統一**（実運用は楽・ただし一部は印刷版と文面が違う）
+     **B: Japanese 行がある数枚だけ印刷版に合わせる**（混在して不整合になる）
+     のどちらにするか決めてほしい。**カード名はどちらでも同じ**なので、名前だけは今すぐ確定してよい。
 
 3. **2025年9月の英語wiki一括編集で「脚注付きの裁定」がまとめて消えている可能性**
-   - 自分の担当2枚（Taskmaster・Flagship）で**同時に**起きている。
+   - 自分の担当2枚（Taskmaster・Flagship）で**同時に**起きている。どちらも `[1]` 脚注付きの行だった。
    - → **kingdom2/kingdom3・mechanics の担当が「現行版だけ」を見て起草していると、
-     同じ形で裁定を取りこぼしている恐れがある**。少なくとも2024年のキャプチャと突き合わせる価値がある
-     （`verify/_cdxfetch.py` で `capture=` 指定の取得ができる）。
+     同じ形で裁定を取りこぼしている恐れがある**。2024年のキャプチャと突き合わせる価値がある
+     （`verify/_cdxfetch.py` で `capture=` 指定の取得ができる。`wikidirect.js` はライブ専用なので旧版は取れない）。
 
 ---
 
 ##### 下書きが落としていた裁定（逐語）
 
-###### Stowaway（密航者）— 3件。うち2件は実装に直接効く
-1. **他人の獲得に反応する密航者は、手番プレイヤーの獲得時効果の「後」に処理される**（日本語wiki `詳細なルール`・逐語）
+###### Stowaway（密航者）— 3件。うち2件は実装に直接効く（日本語wiki `詳細なルール`）
+1. **他人の獲得に反応する密航者は、手番プレイヤーの獲得時効果の「後」に処理される**
    > `密航者のリアクション効果は、誰かが持続カードを獲得した時に誘発する効果だが、この効果は「ターンプレイヤーが持続カードを獲得した時に誘発する効果」よりも後に処理されることに注意`
-   例（逐語要旨）＝2人戦でAが**散兵**を使用→Aが**切り裂き魔**を獲得。
+   例＝2人戦でAが**散兵**を使用→Aが**切り裂き魔**を獲得。
    まず**Aの獲得時効果**（散兵でBが手札を3枚にする）を全部処理し、**その後で**Bが密航者を手札から使用できる。
    > `(iとiiの処理順が逆になることは無い)`
    → 本アプリでは `onGainQueue` に**手番プレイヤーぶんを先に積み、他プレイヤーのリアクション窓を後ろに置く**必要がある。
 2. **手札に獲得した密航者は、自分自身の獲得にリアクションできる**（＝「the next time」型の自己誘発禁止とは**逆**）
    > `職人・変容・カブラー・願い・彫刻家・交換などで密航者を手札に獲得した場合、(密航者自体も持続カードなので)その獲得したばかりの密航者を自身の獲得に対してリアクションすることができる。`
-   → 落とし穴Aの「自分自身を誘発させてはいけない」を**密航者にも適用してはいけない**（別機構）。
+   → 落とし穴Aの「自分自身を誘発させてはいけない」を**密航者に適用してはいけない**（別機構）。
 3. **エラッタで種別が増えたカードに注意**＝`王子` は現在 Action-**Duration**-Command なので**王子の獲得でも密航者が反応する**
    （英語wiki `Prince`：`it received the Duration and Command types as part of a series of revisions and rule changes in 2022`）。
-4. （参考）Secret History＝`Briefly it triggered on other players playing Duration cards; then to the final version.`
+4. （参考・Secret History）`Briefly it triggered on other players playing Duration cards; then to the final version.`
 
 ###### Taskmaster（現場監督）— 日本語wiki `詳細なルール` に実装直結の裁定が多数
-1. **「能力を繰り返す」は『アクションの使用』ではない**（英語wikiは Way と Conspirator しか書いていないが、日本語wikiは具体的に列挙）
+1. **「能力を繰り返す」は『アクションの使用』ではない**（英語wikiは Way と Conspirator しか書いていない）
    > `共謀者がカウントする『アクションの使用』には該当しない。` / `この処理を行っても、『アクションの使用後』は来ない。`
    > `法貨、御料車を呼び出すことはできない。` / `チャンピオンが持続している場合でも「+1 アクション」は得られない。`
    > `この処理をする際に、習性を選ぶことはできない。` / `この処理を行っても、フリゲート船のアタック効果は誘発しない。`
-   → **本アプリでは `noteAllyPlay`（同盟の「アクションを使用した後」）・山トークン・浮浪児のトラップ・
-     `t.schemes` 系のカウンタを一切触らないこと。**
+   → **`noteAllyPlay`（同盟の「アクションを使用した後」）・山トークン・浮浪児のトラップ・
+     共謀者カウンタ・習性の選択を一切触らないこと。**
 2. **過払い(overpay)はコストを変えない**
    > `名品購入時、2コイン分過払いしても、3コストの財宝カードを獲得したと判定されるので、現場監督の持続効果を誘発しない。`
 3. **動的コストの判定例が2つ**（英語wikiは Destrier だけ）
@@ -2377,8 +2463,8 @@ RGG ルールブックPDF `plunder_rules.txt` 85-89行にも同文）
    > `ターン内に他にカードを1枚獲得している状態でデストリエを獲得した場合は、5コストのカードを獲得したと判定される`
 4. **Dominion Online の日本語訳「これより後に」は不正確**（＝下書きが採用した訳文）
    > `厳密には英語版の通り「(この効果が発揮されたタイミング以降で)このターン、あなたがコスト5のカードを獲得した場合」が正しい。よって、5コストカードの獲得に誘発して現場監督が使用された場合、現場監督の「次のターンの開始時に、カードの能力を冒頭から繰り返す」の処理が発揮される`
-   （＝英語FAQ の Haggler×Innovation の項と同じ内容。**日本語文だけ読んで実装すると落とす**）
-5. **ターン開始時の解決順は選べる**（英語wikiの Importer の項と同内容だが、日本語wikiは逆順の帰結まで書いている）
+   （＝英語FAQ の Haggler×Innovation の項と同内容。**日本語文だけ読んで実装すると落とす**）
+5. **ターン開始時の解決順は選べる**（英語の Importer の項と同内容だが、日本語wikiは逆順の帰結まで書いている）
    > `先に輸入者を処理すると、ターン開始時点で現場監督の持続効果は発揮されない。`
 6. （参考）Preview / Secret History / **Wording**（下書きは3節とも未収録）
    > Wording: `A lot of work went into that wording ... "Play this again" was tried and failed; consider Throning it.`
@@ -2407,17 +2493,17 @@ RGG ルールブックPDF `plunder_rules.txt` 85-89行にも同文）
 - `購入フェイズで苦労や進軍を購入、ゴンドラ獲得などにより使用したアクションカード。`
 - **`夜フェイズに夜行カードとして使用した人狼。`**（＝夜フェイズでも発火する）
 - `他プレイヤーのターン中にリアクションとして使用したアクションカード（密航者、隊商の護衛、黒猫など）。`
-→ 本アプリでは `PLAY_ACTION` だけにフックすると全部取りこぼす。
-  **`playCardNoAction`（苦労/進軍/博打）・`PLAY_NIGHT`（人狼）・リアクション経路・資本主義の財宝化アクション**にも要る。
+→ **`PLAY_ACTION` だけにフックすると全部取りこぼす。**
+  `playCardNoAction`（苦労/進軍/博打）・`PLAY_NIGHT`（人狼）・リアクション経路・資本主義の財宝化アクションにも要る。
 
 さらに：
-- **捨て札になるタイミング**＝`このカードは使用後、命令カード以外のアクションを使用し、持続処理を発揮するまで場に残り続け、持続処理を発揮した次のクリーンアップフェイズに捨て札になる。`
-  `他のプレイヤーのターン中に旗艦の持続効果を発揮した場合、(そのカードが持続効果を発揮していなければ)そのターンのクリーンアップフェイズに捨て札になる。`
-  （※英語wiki `Duration` ページも
-  `you'll discard it from play during another player's Clean-up` という状況が実在すると明記している）
+- **捨て札になるタイミング**
+  > `このカードは使用後、命令カード以外のアクションを使用し、持続処理を発揮するまで場に残り続け、持続処理を発揮した次のクリーンアップフェイズに捨て札になる。`
+  > `他のプレイヤーのターン中に旗艦の持続効果を発揮した場合、(そのカードが持続効果を発揮していなければ)そのターンのクリーンアップフェイズに捨て札になる。`
+  （※ライブ `Duration` ページも `you'll discard it from play during another player's Clean-up` という状況が実在すると明記）
 - **複数回使用の累積**＝`村→旗艦→旗艦と使用した場合なども同様`（英語FAQの「2枚で3回」と同じ）。
 
-###### Abundance（豊穣）— 場残りの一般則（英語wiki `Duration > Other rules clarifications`・逐語）
+###### Abundance（豊穣）— 場残りの一般則（ライブ `Duration > Other rules clarifications`・逐語）
 > `Some Duration cards have an ability that is triggered by a certain condition being met, such as Abundance; these cards remain in play until Clean-up of the turn on which the condition is met, which may be the same turn on which they were played or a later turn. If the condition is never met, these cards will remain in play permanently as well.`
 → **条件が満たされなければ永久に場に残る**（＝`p.delayedEffects` の「1ターンぶんの予約」では表現できない、を裏づける公式文）。
 ＋ 日本語wiki の自己誘発しない具体例（英語wikiの Courier×Innovation とは別の例）：
@@ -2425,11 +2511,13 @@ RGG ルールブックPDF `plunder_rules.txt` 85-89行にも同文）
 
 ###### Search（他担当だが、落とし穴Bの検証結果）
 - 下書きBの引用は**7項目すべて現行版と逐語一致・取りこぼし無し**。
-- 質問への回答：**(a) 誰が空にしても誘発する**（カード文が `The next time a Supply pile empties`＝主語が無い／
-  FAQ が `If multiple players have played a Search when a Supply pile empties, players trash their Searches and gain Loots in turn order.` と複数人同時を前提にしている）／
-  **(b) 複数の Search は手番順で全部誘発する**／
-  **(c) 自分の獲得・自分の廃棄で空になった山でも誘発する**（`If gaining a card empties a Supply pile, you'll order Search with other when-gain effects.` ＝
-  自分の獲得でも誘発することを前提にしている）。**例外は「その山が空になったことが原因でこの Search が場に出た」場合だけ**。
+- 質問への回答：
+  - **(a) 誰が空にしても誘発する**（カード文の主語が無い＝`The next time a Supply pile empties`／
+    FAQ が `If multiple players have played a Search when a Supply pile empties, players trash their Searches and gain Loots in turn order.` と複数人同時を前提にしている）
+  - **(b) 複数の Search は手番順で全部誘発する**（同上）
+  - **(c) 自分の獲得・自分の廃棄で空にした山でも誘発する**
+    （`If gaining a card empties a Supply pile, you'll order Search with other when-gain effects.` ＝自分の獲得を前提にした文）。
+    **例外は「その山が空になったことが原因でこの Search が場に出た」場合だけ**。
 
 
 
