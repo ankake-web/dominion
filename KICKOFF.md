@@ -26,7 +26,7 @@
 ## 次に取り組むタスク＝**略奪の段階2 P1b（戦利品15種の効果）から**
 
 バッチ順は正本の §「段階2 の推奨バッチ順」：
-1. ~~**P1a＝Loot の山の基盤**~~ ✅**完了（`186e368`・未push）**＝`state.loot` 30枚／`gainLoot()`／非サプライ4系統除外／
+1. ~~**P1a＝Loot の山の基盤**~~ ✅**完了（`186e368`・push済）**＝`state.loot` 30枚／`gainLoot()`／非サプライ4系統除外／
    `maskStateFor` で全部伏せる／`returnToPile` は一番上に裏向き／保存則 tally／サーバの同意なし Undo 比較／盤面に残枚数。
    **新設 `test/plunder.test.js` 29件＋`test/plunder-ui.test.js` 9件。** → **次は P1b＝戦利品15種の効果**
    （`gainLoot` はできたが効果はまだ空）。**カード別の要点と難度は PROGRESS §「段階2 P1a」末尾の表**を見ること。

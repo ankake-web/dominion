@@ -128,7 +128,7 @@ PROGRESS §0-3 が「**将来 Plunder/Loot を入れる時に再考**」と先�
 
 ---
 
-## 段階2 **P1a＝戦利品(Loot)の山の基盤＝完了**（2026-08-15・未push・`sw.js` v73）
+## 段階2 **P1a＝戦利品(Loot)の山の基盤＝完了・push済**（2026-08-15・`186e368..d5d8e92`・`sw.js` v73・本番反映を機械照合）
 
 **略奪はまだ `CARD_SETS` 未参照＝実プレイには出ない**（本番挙動は不変）。正本＝`docs/research/plunder_rules.md`
 第1章 §1／第5章 §17。
@@ -160,6 +160,14 @@ PROGRESS §0-3 が「**将来 Plunder/Loot を入れる時に再考**」と先�
 ### 検証
 - **npm test 全42スイート緑（exit 0・整合性5303・不変条件12）**／新設 **`test/plunder.test.js` 29件**
   ＋**`test/plunder-ui.test.js` 9件**（42・43スイート目）。
+
+### ✅ push＝完了（2026-08-15・`186e368..d5d8e92`）＝本番反映を機械照合
+- **GitHub Pages**（Deploy success）：`sw.js` **v73**／`js/cards.js`・`js/engine.js`・`js/cpu.js`・`js/ui.js` が
+  **ローカルと sha1 完全一致**（改行を正規化）／本番 `engine.js` に `gainLoot` / `LOOT_IDS` / `state.loot` /
+  マスクの `s.loot = new Array(...).fill('back')`、本番 `cards.js` に `DOM.LOOT_GIVERS` を確認。
+- **Render**：`GET /status` = `{"persist":true,"rooms":0}`。
+- **本番の挙動は不変**＝**出荷 CARD_SET 49種×8回抽選で戦利品の山が1度もできない**ことを機械確認
+  （`DOM.LOOT_GIVERS` はすべて略奪のカードで、略奪は `CARD_SETS` 未参照）。
 
 ### 【次にやること】P1b＝**戦利品15種の効果**
 `gainLoot` はできたが**カードの効果はまだ空**（＝獲得しても +$ 以外は何も起きない）。
@@ -1892,7 +1900,7 @@ mix を解禁すると、PROGRESS §6 / §0-10 に**「どの出荷 CARD_SET で
 最終更新: 2026-08-15 / branch `main`（最新は `git log` で確認）。
 
 **【現在地】§0-30＝新拡張「略奪（Plunder）」の**段階0（研究）＋段階1（カタログ85種＋webp）＋段階2 P1a（戦利品の山の基盤）が完了**
-（`sw.js` v73・**P1a は未push**）。正本＝**`docs/research/plunder_rules.md`**（7章）＝実装対象**85種**（王国40／Loot 15／
+（`sw.js` v73・**push済＝本番反映を機械照合**）。正本＝**`docs/research/plunder_rules.md`**（7章）＝実装対象**85種**（王国40／Loot 15／
 イベント15／特性15）を7群で収集し**各群を別エージェントが敵対検証**した。冒頭に**「実装前に必読」20項目**と
 **決定 D1〜D5**と**段階1/2 の計画**がある。
 **カタログは入ったが `CARD_SETS` 未参照＝略奪はまだ実プレイには出ない**（`DOM.CARDS` 560／`LANDSCAPES` 201＝計761枚）。
