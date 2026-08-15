@@ -68,6 +68,7 @@
         const img = document.createElement('img');
         img.className = 'dcard-full';
         img.alt = c.name || ''; img.loading = 'lazy'; img.decoding = 'async';
+        img.width = 768; img.height = 1152; // webp の実寸を先に伝えてレイアウトシフトを防ぐ（表示幅はCSS）
         img.addEventListener('error', () => { img.replaceWith(DOM.cardView(c, {})); });
         img.src = 'asset/cards/' + c.id + '.webp';
         return img;

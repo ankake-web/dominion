@@ -1,7 +1,7 @@
 {
   "name": "ドミニオン",
   "short_name": "ドミニオン",
-  "description": "ドミニオン基本セット 2人対戦",
+  "description": "ドミニオン 基本＋15拡張を収録／CPU・2〜4人・オンライン対戦",
   "start_url": "./index.html",
   "display": "standalone",
   "orientation": "portrait",

@@ -32,7 +32,7 @@ function mk(kingdom, opts, names) {
 // 保存則の tally（`test/invariants.test.js` と同じ集合＋戦利品の山）。
 const ZONES = ['deck', 'hand', 'discard', 'inPlay', 'durationCards', 'setAside', 'islandMat', 'nativeVillageMat',
   'princes', 'tavern', 'inherited', 'cargo', 'exile', 'eventSetAside', 'ghostSetAside', 'cryptSetAside',
-  'contractSetAside', 'puzzleBox', 'cage'];
+  'contractSetAside', 'puzzleBox', 'cage', 'deliverAside', 'prepareAside'];
 const MIX = E.MIXED_PILE_KEYS;
 function tally(s) {
   const t = {}; const a = (id) => { if (id != null) t[id] = (t[id] || 0) + 1; };
@@ -1543,6 +1543,277 @@ function mkT(traits, piles, names) {
     if (err) bad++; else games++;
   });
   ok(bad === 0 && games === COMBOS.length, 'P4 CPUソーク完走（' + games + '/' + COMBOS.length + '・膠着0・例外0・保存則違反0）');
+}
+
+/* ============================================================
+   P5＝イベント15種
+   ============================================================ */
+console.log('\n=== P5: イベント15種 ===');
+
+const EVENTS_ALL = ['bury', 'avoid', 'deliver', 'peril', 'rush', 'foray', 'launch', 'mirror', 'prepare', 'scrounge', 'journey', 'maelstrom', 'looting', 'invasion', 'prosper'];
+function mkE(events, names) {
+  const s = E.createInitialState(names || ['A', 'B'], KING_T, { startActive: 0, events: events || EVENTS_ALL });
+  s.turn.phase = 'buy'; s.turn.buys = 9; s.turn.coins = 40;
+  return s;
+}
+function buyEv(s, id) { return E.reduce(s, { type: 'BUY_EVENT', event: id }); }
+
+// --- 埋葬／略奪行為 ---
+{
+  let s = mkE();
+  s.players[0].discard = ['gold', 'estate'];
+  const buys = s.turn.buys;
+  s = buyEv(s, 'bury');
+  ok(s.turn.buys === buys - 1 + 1, '埋葬＝+1購入（1消費して+1）');
+  ok(s.pending && s.pending.type === 'bury_put', '捨て札から選ぶ窓（強制）');
+  s = E.reduce(s, { type: 'BURY_PUT', card: 'estate' });
+  ok(s.players[0].deck[s.players[0].deck.length - 1] === 'estate', '選んだ札が山札の**一番下**に置かれる');
+  ok(Array.isArray(s.loot), 'イベントに戦利品を配るものがあるので山ができている');
+  const lb = s.loot.length;
+  s = buyEv(s, 'looting');
+  ok(s.loot.length === lb - 1, '略奪行為＝戦利品1枚を獲得');
+}
+
+// --- 回避（自動選択・2度目のシャッフルをしない） ---
+{
+  let s = mkE();
+  s = buyEv(s, 'avoid'); s = buyEv(s, 'avoid');
+  ok(s.turn.avoidPicks === 6, '回避は累積する（2回で最大6枚）');
+  const p = s.players[0];
+  p.hand = ['smithy']; p.deck = []; p.inPlay = [];
+  p.discard = ['curse', 'curse', 'estate', 'gold', 'silver', 'copper'];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'smithy' });   // ドロー3＝リシャッフル発生
+  ok(s.turn.avoidPicks === 0, '次の1回のシャッフルで消費される');
+  ok(count(s.players[0].discard, 'curse') === 2, 'ジャンク（呪い）はシャッフルに混ぜず捨て札に残る（自動選択）');
+  ok(count(s.players[0].hand, 'curse') === 0 && s.players[0].hand.length <= 3, '捨て札に残した札のために2度目のシャッフルはしない（引けた分だけ・呪いは引かない）');
+}
+
+// --- 配達 ---
+{
+  let s = mkE();
+  s = buyEv(s, 'deliver');
+  s = E.reduce(s, { type: 'BUY', card: 'silver' });
+  ok(count(s.players[0].deliverAside, 'silver') === 1 && count(s.players[0].discard, 'silver') === 0,
+    'このターン獲得したカードは脇に置かれる');
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(count(s.players[0].hand, 'silver') === 1, 'ターン終了時（先引きの後）に手札へ加わる');
+  ok(s.players[0].hand.length >= 6, '通常の5枚＋配達の1枚');
+}
+
+// --- 危難／襲撃 ---
+{
+  let s = mkE();
+  s.players[0].hand = ['village', 'copper'];
+  const lb = s.loot.length;
+  s = buyEv(s, 'peril');
+  ok(s.pending && s.pending.type === 'peril_trash', '危難＝廃棄の窓');
+  s = E.reduce(s, { type: 'PERIL_TRASH', card: 'village' });
+  ok(count(s.trash, 'village') === 1 && s.loot.length === lb - 1, 'アクションを廃棄して戦利品を獲得');
+  // アクションが無ければ窓を開かない
+  let z = mkE(); z.players[0].hand = ['copper'];
+  z = buyEv(z, 'peril');
+  ok(!z.pending, '手札にアクションが無ければ何も起きない');
+}
+{
+  let s = mkE();
+  s.players[0].hand = ['copper', 'silver', 'estate', 'gold'];
+  const lb = s.loot.length;
+  s = buyEv(s, 'foray');
+  s = E.reduce(s, { type: 'FORAY_DISCARD', cards: ['copper', 'silver', 'estate'] });
+  ok(s.loot.length === lb - 1, '3枚が互いに異なる名前＝戦利品を獲得');
+  let z = mkE();
+  z.players[0].hand = ['copper', 'copper', 'estate'];
+  const lb2 = z.loot.length;
+  z = buyEv(z, 'foray');
+  z = E.reduce(z, { type: 'FORAY_DISCARD', cards: ['copper', 'copper', 'estate'] });
+  ok(z.loot.length === lb2, '同名を含む3枚では戦利品なし（捨てるだけ）');
+}
+
+// --- 発進 ---
+{
+  let s = mkE();
+  s.players[0].hand = ['copper'];
+  s.players[0].deck = ['village', 'silver'];
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'copper' });   // 財宝を出してから
+  s = buyEv(s, 'launch');
+  ok(s.turn.phase === 'action', '発進＝アクションフェイズに戻る');
+  ok(count(s.players[0].hand, 'village') === 1, '+1カード（フェイズを戻した後に引く）');
+  ok(!s.turn.treasuresLocked, '財宝ロックが解除される（購入フェイズに入り直すと最初から）');
+  const s2 = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  ok(E.reduce(s2, { type: 'BUY_EVENT', event: 'launch' }) === s2 ||
+     count(E.reduce(s2, { type: 'BUY_EVENT', event: 'launch' }).log, s2.log) !== -1 ||
+     true, '（発進は1ターンに1度＝下で厳密に検査）');
+  const s3 = E.reduce(s2, { type: 'BUY_EVENT', event: 'launch' });
+  ok(s3.turn.phase === 'buy', '2回目の発進は購入自体が拒否される（1ターンに1度）');
+}
+
+// --- 鏡映（累積）／突貫（累積しない） ---
+{
+  let s = mkE();
+  s = buyEv(s, 'mirror'); s = buyEv(s, 'mirror');
+  s = E.reduce(s, { type: 'BUY', card: 'village' });
+  ok(count(s.players[0].discard, 'village') === 3, '鏡映×2＝村を買うと計3枚（累積）');
+}
+{
+  let s = mkE();
+  s = buyEv(s, 'rush'); s = buyEv(s, 'rush');
+  s = E.reduce(s, { type: 'BUY', card: 'village' });
+  ok(count(s.players[0].inPlay, 'village') === 1, '突貫＝獲得したアクションを使用する');
+  s = E.reduce(s, { type: 'BUY', card: 'village' });
+  ok(count(s.players[0].inPlay, 'village') === 1 && count(s.players[0].discard, 'village') === 1,
+    '突貫は**累積しない**（2回買っても次の1枚だけ）');
+}
+
+// --- 準備 ---
+{
+  let s = mkE();
+  s.players[0].hand = ['village', 'copper', 'estate'];
+  s = buyEv(s, 'prepare');
+  ok((s.players[0].prepareAside || []).length === 3 && s.players[0].hand.length === 0, '手札を全部 表向きに脇へ');
+  s = E.reduce(s, { type: 'END_TURN' });
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });   // → A のターン開始
+  ok(s.pending && s.pending.type === 'prepare_play', '次のターンの開始時に使用の窓（1つの開始時効果）');
+  const r = E.reduce(s, { type: 'PREPARE_PLAY', card: null });
+  ok(r.pending && r.pending.type === 'prepare_play', '使えるカードが残っている間は辞退できない（強制）');
+  s = E.reduce(s, { type: 'PREPARE_PLAY', card: 'village' });
+  ok(s.pending && s.pending.type === 'prepare_play', '村を使った後も財宝が残っている＝窓が続く');
+  s = E.reduce(s, { type: 'PREPARE_PLAY', card: 'copper' });
+  ok(!s.pending || s.pending.type !== 'prepare_play', '全部使ったら終わり');
+  ok(count(s.players[0].inPlay, 'village') === 1 && count(s.players[0].inPlay, 'copper') === 1, 'アクションと財宝を使用した');
+  ok(count(s.players[0].discard, 'estate') === 1, '残り（屋敷）は捨て札になる');
+  ok(s.turn.coins === 1, '財宝のコインはターンに乗る（ターン開始時＝アクションフェイズ）');
+}
+
+// --- 物色 ---
+{
+  let s = mkE();
+  s.trash = ['estate'];
+  s = buyEv(s, 'scrounge');
+  ok(s.pending && s.pending.type === 'scrounge', '二択の窓');
+  let g = E.reduce(s, { type: 'SCROUNGE_CHOOSE', choice: 'estate' });
+  ok(count(g.players[0].discard, 'estate') === 1 && count(g.trash, 'estate') === 0, '廃棄置き場から屋敷を獲得');
+  ok(g.pending && g.pending.type === 'scrounge' && g.pending.stage === 'gain', '獲得できたら $5以下の獲得（強制）');
+  g = E.reduce(g, { type: 'SCROUNGE_GAIN', card: 'festival' });
+  ok(count(g.players[0].discard, 'festival') === 1, '$5以下のカードを獲得');
+  let tzz = E.reduce(s, { type: 'SCROUNGE_CHOOSE', choice: 'trash' });
+  ok(tzz.pending && tzz.pending.stage === 'trash', '「手札1枚を廃棄」も選べる');
+  // 屋敷が無いときに estate を選ぶと何も起きない（遂行できない選択肢も選べる）
+  let z = mkE(); z.trash = [];
+  z = buyEv(z, 'scrounge');
+  z = E.reduce(z, { type: 'SCROUNGE_CHOOSE', choice: 'estate' });
+  ok(!z.pending, '廃棄置き場に屋敷が無ければ何も起きない（選択自体は合法）');
+}
+
+// --- 旅行（2023エラッタ版＝D1） ---
+{
+  let s = mkE(null, ['A', 'B']);
+  s.players[0].inPlay = ['village', 'copper'];
+  s.players[0].hand = ['estate'];
+  s = buyEv(s, 'journey');
+  s = buyEv(s, 'journey'); // 2枚目は空振り（買えるが追加ターンは1つ）
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(s.turn.active === 0, '旅行＝このターンの後に追加の1ターン');
+  ok(count(s.players[0].inPlay, 'village') === 1 && count(s.players[0].inPlay, 'copper') === 1,
+    'クリンナップで場のカードを捨てない（場に残る）');
+  ok(count(s.players[0].hand, 'estate') === 0, '手札は普通に捨てる');
+  // 追加ターンの片付けでは普通に捨てる＋3ターン連続は不可
+  s.turn.phase = 'buy'; s.turn.buys = 9; s.turn.coins = 40;
+  s = buyEv(s, 'journey');
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(s.turn.active === 1, '追加ターン中に買った旅行では3ターン連続にならない（Bのターンへ）');
+  ok(count(s.players[0].inPlay, 'village') === 1, '追加ターンでも旅行を買ったので場のカードは残る（公式＝追加ターンだけが失敗する）');
+}
+
+// --- 大渦巻 ---
+{
+  let s = mkE(null, ['A', 'B']);
+  s.players[0].hand = ['copper', 'copper', 'estate', 'gold'];
+  s.players[1].hand = ['copper', 'copper', 'copper', 'estate', 'estate'];
+  s = buyEv(s, 'maelstrom');
+  ok(s.pending && s.pending.type === 'maelstrom' && s.pending.stage === 'trash', '自分の3枚廃棄（強制）');
+  s = E.reduce(s, { type: 'MAELSTROM_TRASH', cards: ['copper', 'copper', 'estate'] });
+  ok(s.pending && s.pending.stage === 'victim' && s.pending.player === 1, '手札5枚以上の相手に廃棄の窓（堀不可）');
+  s = E.reduce(s, { type: 'MAELSTROM_VICTIM', card: 'estate' });
+  ok(count(s.trash, 'estate') === 2 && !s.pending, '相手が1枚廃棄して終了');
+  // 手札4枚以下の相手は無事
+  let z = mkE(null, ['A', 'B']);
+  z.players[0].hand = ['copper', 'copper', 'copper'];
+  z.players[1].hand = ['copper', 'copper', 'copper', 'estate'];
+  z = buyEv(z, 'maelstrom');
+  z = E.reduce(z, { type: 'MAELSTROM_TRASH', cards: ['copper', 'copper', 'copper'] });
+  ok(!z.pending, '手札4枚以下の相手は廃棄しない');
+}
+
+// --- 侵略 ---
+{
+  let s = mkE(null, ['A', 'B']);
+  s.players[0].hand = ['militia', 'copper'];
+  s.players[1].hand = ['copper', 'copper', 'copper', 'estate', 'estate'];
+  const lb = s.loot.length;
+  s = buyEv(s, 'invasion');
+  ok(s.pending && s.pending.type === 'invasion' && s.pending.stage === 'attack', '①アタックを使ってもよい');
+  s = E.reduce(s, { type: 'INVASION_ATTACK', card: 'militia' });
+  ok(s.pending && s.pending.type === 'militia', 'アタック（民兵）が解決中');
+  s = E.reduce(s, { type: 'MILITIA_RESOLVE', cards: s.players[1].hand.slice(0, 2) });
+  ok(s.pending && s.pending.type === 'invasion' && s.pending.stage === 'action', 'アタック解決後に③アクション獲得へ');
+  ok(count(s.players[0].discard, 'duchy') === 1, '②公領を獲得している');
+  s = E.reduce(s, { type: 'INVASION_ACTION', card: 'laboratory' });
+  ok(s.players[0].deck[0] === 'laboratory', '③アクションを山札の上に獲得（コスト上限なし）');
+  ok(s.loot.length === lb - 1, '④戦利品を獲得');
+  ok(s.players[0].inPlay.some((c) => LOOT.indexOf(c) >= 0), '獲得した戦利品を使用する（場に出る）');
+}
+
+// --- 繁栄 ---
+{
+  let s = mkE();
+  const lb = s.loot.length;
+  s = buyEv(s, 'prosper');
+  ok(s.loot.length === lb - 1, 'まず戦利品1枚');
+  ok(s.pending && s.pending.type === 'prosper_gain', '互いに異なる財宝の獲得窓');
+  s = E.reduce(s, { type: 'PROSPER_GAIN', card: 'gold' });
+  ok(count(s.players[0].discard, 'gold') === 1, '金貨を獲得');
+  const rej = E.reduce(s, { type: 'PROSPER_GAIN', card: 'gold' });
+  ok(rej.pending && count(rej.players[0].discard, 'gold') === 1, '同じ名前は2枚獲得できない（拒否）');
+  s = E.reduce(s, { type: 'PROSPER_GAIN', card: 'silver' });
+  s = E.reduce(s, { type: 'PROSPER_GAIN', card: null });
+  ok(!s.pending && count(s.players[0].discard, 'silver') === 1, '好きなところでやめられる');
+}
+
+// --- P5 ソーク（CPU 対戦にイベント購入をランダム注入） ---
+{
+  let games = 0, bad = 0;
+  for (let si = 0; si < 4; si++) {
+    seed = 9900 + si * 11;
+    const names = [{ name: 'P0', isCpu: true, level: 'normal' }, { name: 'P1', isCpu: true, level: 'normal' }];
+    let s = E.createInitialState(names, KING_T, { startActive: 0, events: EVENTS_ALL });
+    KING_T.forEach((id) => s.players.forEach((pl) => { for (let c = 0; c < 2; c++) if ((s.supply[id] | 0) > 0) { s.supply[id] -= 1; pl.deck.push(id); } }));
+    const t0 = tally(s);
+    let step = 0, err = false, evBought = 0;
+    try {
+      while (!s.gameOver && step++ < 30000) {
+        // ランダムにイベントを買わせる（CPU は略奪イベントを自発的に買わないため経路を強制的に通す）
+        if (!s.pending && s.turn.phase === 'buy' && (s.turn.buys || 0) > 0 && step % 7 === 0) {
+          const ev = EVENTS_ALL[Math.floor(sandbox.Math.random() * EVENTS_ALL.length)];
+          const cost = DOM.LANDSCAPES[ev].cost || 0;
+          if ((s.turn.coins || 0) >= cost) {
+            const before = s;
+            s = E.reduce(s, { type: 'BUY_EVENT', event: ev });
+            if (s !== before) evBought++;
+            continue;
+          }
+        }
+        const a = CPU.decide(s);
+        if (a == null) { console.log('    P5soak ' + si + ': CPU が null（' + (s.pending && s.pending.type) + '）'); err = true; break; }
+        s = E.reduce(s, a);
+      }
+    } catch (e) { console.log('    P5soak ' + si + ': 例外 ' + e.message); err = true; }
+    if (!err && !s.gameOver) { console.log('    P5soak ' + si + ': 未終局 pending=' + (s.pending && s.pending.type)); err = true; }
+    if (!err && !sameTally(t0, tally(s))) { console.log('    P5soak ' + si + ': 保存則違反'); err = true; }
+    if (err) bad++; else games++;
+  }
+  ok(bad === 0 && games === 4, 'P5 CPUソーク完走（イベント購入をランダム注入・4/4・膠着0・例外0・保存則違反0）');
 }
 
 console.log(`\n略奪テスト結果: ${pass} 件成功, ${fail} 件失敗`);

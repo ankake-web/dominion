@@ -226,10 +226,14 @@
     return props;
   }
   function cardArt(id) {
-    // 盤面（手札・サプライ）は軽量サムネを使う。拡大表示だけフル画像。
-    // eager + async decode で「スマホでカードが表示されない」を防ぐ（サムネは軽いので一括読込でOK）。
+    // 盤面（手札・サプライ）・カード一覧で共通のカード画像。
+    // loading=lazy＝画面に入るまで読み込まない（カード一覧の761枚一括描画で全量DLしない）。
+    //   盤面に見えている札は lazy でも即読み込まれるので表示は変わらない。
+    // width/height＝webp の実寸（768×1152）を先に伝えてレイアウトシフトを防ぐ（表示サイズはCSSが決める）。
+    // ※属性の適用順に意味がある：loading を src より**前**に置く（後だと eager で読み始めてから lazy になる）。
     return h('img', {
-      class: 'card-art', src: 'asset/cards/' + id + '.webp', alt: DOM.CARDS[id].name, decoding: 'async',
+      class: 'card-art', loading: 'lazy', decoding: 'async', width: '768', height: '1152',
+      src: 'asset/cards/' + id + '.webp', alt: DOM.CARDS[id].name,
       onerror: function () { this.style.display = 'none'; if (this.parentElement) this.parentElement.classList.add('art-failed'); },
     });
   }
@@ -464,7 +468,7 @@
     return h('div', { class: 'home' },
       h('div', { class: 'crest' }, '👑'),
       h('h1', null, 'Dominion'),
-      h('p', { class: 'sub' }, 'ドミニオン  基本セット'),
+      h('p', { class: 'sub' }, '基本＋15拡張を収録／CPU・2〜4人・オンライン対戦'),
       h('div', { class: 'flourish' }, h('span', null, '❖')),
       h('div', { class: 'menu' },
         h('button', { class: 'btn btn-primary btn-block', onclick: () => go('setup') }, 'CPUと対戦'),
@@ -2047,6 +2051,53 @@
       (id) => (DOM.engine.inspiringTargets ? DOM.engine.inspiringTargets(state, pd.player) : []).indexOf(id) >= 0,
       (id) => dispatch({ type: 'INSPIRING_PLAY', card: id }),
       { label: '使わない', on: () => dispatch({ type: 'INSPIRING_PLAY', card: null }) }, '使う');
+    /* ===== 略奪P5：イベント ===== */
+    if (pd.type === 'bury_put') return modalPickList(state, '埋葬 — 山札の一番下へ',
+      '捨て札のカード1枚を山札の一番下に置きます（強制）。',
+      [...new Set(p.discard)], '一番下に置く', (id) => dispatch({ type: 'BURY_PUT', card: id }));
+    if (pd.type === 'peril_trash') return modalSingleHand(p, '危難 — 廃棄（任意）',
+      '手札のアクションカード1枚を廃棄すると、戦利品1枚を獲得します。',
+      (id) => DOM.CARDS[id] && DOM.CARDS[id].types.includes('action'),
+      (id) => dispatch({ type: 'PERIL_TRASH', card: id }),
+      { label: '廃棄しない', on: () => dispatch({ type: 'PERIL_TRASH', card: null }) }, '廃棄して戦利品');
+    if (pd.type === 'foray_discard') return modalTrashHand(p, '襲撃 — ' + pd.need + '枚 捨てる',
+      '手札' + pd.need + '枚を公開して捨てます。3枚が互いに異なる名前なら戦利品1枚を獲得します。',
+      pd.need, (cards) => dispatch({ type: 'FORAY_DISCARD', cards }));
+    if (pd.type === 'scrounge' && pd.stage === 'choose') return modalOptions('物色', '次のうち1つを選びます。', [
+      { label: '手札1枚を廃棄する', on: () => dispatch({ type: 'SCROUNGE_CHOOSE', choice: 'trash' }) },
+      { label: '廃棄置き場から屋敷1枚を獲得（獲得したら $5以下を1枚獲得）' + (state.trash.indexOf('estate') < 0 ? '（屋敷が無いので何も起きません）' : ''),
+        on: () => dispatch({ type: 'SCROUNGE_CHOOSE', choice: 'estate' }) },
+    ]);
+    if (pd.type === 'scrounge' && pd.stage === 'trash') return modalSingleHand(p, '物色 — 廃棄',
+      '手札1枚を廃棄します。', () => true, (id) => dispatch({ type: 'SCROUNGE_TRASH', card: id }), null, '廃棄する');
+    if (pd.type === 'scrounge' && pd.stage === 'gain') return modalGainSupply(state, '物色 — 獲得',
+      'コスト5以下のカード1枚を獲得します（強制）。',
+      (id) => canUpTo(state, id, 5), (id) => dispatch({ type: 'SCROUNGE_GAIN', card: id }), () => dispatch({ type: 'SCROUNGE_GAIN', card: null }));
+    if (pd.type === 'maelstrom' && pd.stage === 'trash') return modalTrashHand(p, '大渦巻 — ' + pd.need + '枚 廃棄',
+      '手札' + pd.need + '枚を廃棄します（強制）。', pd.need, (cards) => dispatch({ type: 'MAELSTROM_TRASH', cards }));
+    if (pd.type === 'maelstrom' && pd.stage === 'victim') return modalSingleHand(p, '大渦巻 — 廃棄',
+      '手札が5枚以上あるので、手札1枚を廃棄します（強制・堀では防げません）。',
+      () => true, (id) => dispatch({ type: 'MAELSTROM_VICTIM', card: id }), null, '廃棄する');
+    if (pd.type === 'invasion' && pd.stage === 'attack') return modalSingleHand(p, '侵略 — アタックを使う（任意）',
+      '手札のアタックカード1枚を使用できます（アクション権は消費しません）。',
+      (id) => DOM.CARDS[id] && DOM.CARDS[id].types.includes('attack'),
+      (id) => dispatch({ type: 'INVASION_ATTACK', card: id }),
+      { label: '使わない', on: () => dispatch({ type: 'INVASION_ATTACK', card: null }) }, '使う');
+    if (pd.type === 'invasion' && pd.stage === 'action') return modalGainSupply(state, '侵略 — アクションを山札の上に獲得',
+      'アクションカード1枚を山札の上に獲得します（強制・コストの上限はありません）。',
+      (id) => DOM.engine.gainableBase(state, id) && DOM.engine.isTypeSupply(state, id, 'action'),
+      (id) => dispatch({ type: 'INVASION_ACTION', card: id }), () => dispatch({ type: 'INVASION_ACTION', card: null }));
+    if (pd.type === 'prosper_gain') return modalGainSupply(state, '繁栄 — 財宝を獲得（任意・何枚でも）',
+      '互いに名前の異なる財宝カードを1枚ずつ獲得できます（もうやめてもかまいません）。',
+      (id) => DOM.engine.gainableBase(state, id) && DOM.engine.isTreasureFor(state, id) && (pd.gained || []).indexOf(id) < 0,
+      (id) => dispatch({ type: 'PROSPER_GAIN', card: id }), () => dispatch({ type: 'PROSPER_GAIN', card: null }));
+    if (pd.type === 'prepare_play') {
+      const aside = p.prepareAside || [];
+      const playable = [...new Set(aside.filter((id) => (DOM.CARDS[id] && DOM.CARDS[id].types.includes('action')) || DOM.engine.isTreasureFor(state, id)))];
+      return modalPickList(state, '準備 — 使用する', '脇に置いたアクションと財宝を好きな順で全部使用します（強制）。',
+        playable, '使う', (id) => dispatch({ type: 'PREPARE_PLAY', card: id }),
+        playable.length ? null : { label: '残りを捨てる', on: () => dispatch({ type: 'PREPARE_PLAY', card: null }) });
+    }
 
     /* ===== 拡張: 陰謀 ===== */
     if (pd.type === 'courtyard') return modalSingleHand(p, '中庭 — 山札の上に置く', '手札から1枚を選び、山札の一番上に置きます（次のターンに引きます）。',
@@ -5105,13 +5156,31 @@
 
   /* ---------- フル画像の先読み ----------
      盤面・拡大表示は完成カード asset/cards/<id>.webp（平均約147KB）。タップ時の初取得待ちを避け、
-     対戦に入ったら手すきの時間に全カードを裏で読み込んでおく（SWがあればキャッシュにも残る）。 */
+     対戦に入ったら**その対局で実際に使うカードだけ**（サプライの山＋混合山の中身＋横型＝30枚前後）を
+     手すきの時間に裏で読み込む（SWがあればキャッシュにも残る）。
+     ※以前は DOM.CARDS 全部（560枚≒80MB）を先読みしていたが通信量が過大なのでやめた。
+       盤面に出ない札（闇市場・戦利品など）は表示時に読み込まれ、SW が表示したものだけキャッシュする。 */
   function preloadFullArt() {
-    if (UI._artPreloaded || !DOM.CARDS) return;
-    UI._artPreloaded = true;
+    const s = UI.store && UI.store.state;
+    if (!s || !s.supply || !DOM.CARDS) return;
+    const ids = new Set();
+    // サプライの山＝supply のキー（基本財宝/勝利点/呪い＋王国10種＋ポーション/植民地/非サプライ山など）
+    Object.keys(s.supply).forEach((id) => { if (DOM.CARDS[id]) ids.add(id); });
+    // 混合山（廃墟/騎士/城/同盟の分割山6組）は山キーだけでなく中身の実カードも盤面に出る
+    ((DOM.engine && DOM.engine.MIXED_PILE_KEYS) || []).forEach((k) => {
+      if (Array.isArray(s[k])) s[k].forEach((id) => { if (DOM.CARDS[id]) ids.add(id); });
+    });
+    // 横型（イベント/ランドマーク/プロジェクト/習性/同盟カード）＋災いカード。'back' 等の非カードidは除外。
+    [].concat(s.events || [], s.landmarks || [], s.projects || [], s.ways || [],
+      s.ally ? [s.ally] : [], s.baneCard ? [s.baneCard] : [])
+      .forEach((id) => { if (DOM.CARDS[id] || (DOM.LANDSCAPES || {})[id]) ids.add(id); });
+    // 同じ対局（同じカード集合）では一度だけ。再戦で王国が変われば読み直す。
+    const key = Array.from(ids).sort().join(',');
+    if (UI._artPreloadKey === key) return;
+    UI._artPreloadKey = key;
     const kick = () => {
       try {
-        Object.keys(DOM.CARDS).forEach((id) => { const im = new Image(); im.src = 'asset/cards/' + id + '.webp'; });
+        ids.forEach((id) => { const im = new Image(); im.src = 'asset/cards/' + id + '.webp'; });
       } catch (e) { /* noop */ }
     };
     if (typeof requestIdleCallback === 'function') requestIdleCallback(kick, { timeout: 4000 });

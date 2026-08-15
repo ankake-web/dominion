@@ -1664,6 +1664,72 @@
           .sort((a, b) => keepValue(b) - keepValue(a));
         return { type: 'INSPIRING_PLAY', card: cand.length ? cand[0] : null };
       }
+      /* ===== 略奪P5：イベント ===== */
+      // 埋葬＝捨て札で最も価値の低い札を山札の一番下へ（次のシャッフルまで引かない）。
+      case 'bury_put': {
+        const order = p.discard.slice().sort((a, b) => keepValue(a) - keepValue(b));
+        return { type: 'BURY_PUT', card: order[0] };
+      }
+      // 危難＝最も価値の低いアクションを廃棄して戦利品（ほぼ常に得）。
+      case 'peril_trash': {
+        const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => keepValue(a) - keepValue(b));
+        return { type: 'PERIL_TRASH', card: acts.length ? acts[0] : null };
+      }
+      // 襲撃＝価値の低い順に必要枚数（3枚が異なる名前になるかは気にしない＝単純化）。
+      case 'foray_discard': {
+        const order = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b));
+        return { type: 'FORAY_DISCARD', cards: order.slice(0, pd.need) };
+      }
+      case 'scrounge':
+        if (pd.stage === 'choose') {
+          if (state.trash.indexOf('estate') >= 0) return { type: 'SCROUNGE_CHOOSE', choice: 'estate' };
+          return { type: 'SCROUNGE_CHOOSE', choice: 'trash' };
+        }
+        if (pd.stage === 'trash') {
+          const order = p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b));
+          return { type: 'SCROUNGE_TRASH', card: order[0] };
+        }
+        return { type: 'SCROUNGE_GAIN', card: bestGain(state, 5, { noVictory: true }) || bestGain(state, 5) };
+      case 'maelstrom':
+        if (pd.stage === 'trash') {
+          const order = p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b));
+          return { type: 'MAELSTROM_TRASH', cards: order.slice(0, pd.need) };
+        }
+        return { type: 'MAELSTROM_VICTIM', card: p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0] };
+      case 'invasion':
+        if (pd.stage === 'attack') {
+          const atk = p.hand.filter((c) => isType(c, 'attack')).sort((a, b) => keepValue(b) - keepValue(a));
+          return { type: 'INVASION_ATTACK', card: atk.length ? atk[0] : null };
+        }
+        {
+          let best = null, bc = -1;
+          Object.keys(state.supply).forEach((id) => {
+            if (!DOM.engine.gainableBase(state, id) || !DOM.engine.isTypeSupply(state, id, 'action')) return;
+            const c = DOM.engine.cardCost(state, id);
+            if (c > bc) { bc = c; best = id; }
+          });
+          return { type: 'INVASION_ACTION', card: best };
+        }
+      // 繁栄＝コスト3以上の（まだ取っていない名前の）財宝を高い順に取り続け、無くなったらやめる。
+      case 'prosper_gain': {
+        let best = null, bc = 2; // $3 未満（銅貨等）は取らない
+        Object.keys(state.supply).forEach((id) => {
+          if ((pd.gained || []).indexOf(id) >= 0) return;
+          if (!DOM.engine.gainableBase(state, id)) return;
+          if (!DOM.engine.isTreasureFor(state, id)) return;
+          const c = DOM.engine.cardCost(state, id);
+          if (c > bc) { bc = c; best = id; }
+        });
+        return { type: 'PROSPER_GAIN', card: best };
+      }
+      // 準備＝アクション（価値の高い順）→財宝 の順で全部使う。
+      case 'prepare_play': {
+        const aside = (p.prepareAside || []).filter((c) => isType(c, 'action') || DOM.engine.isTreasureFor(state, c));
+        if (!aside.length) return { type: 'PREPARE_PLAY', card: null };
+        const acts = aside.filter((c) => isType(c, 'action'));
+        const pick = (acts.length ? acts : aside).sort((a, b) => keepValue(b) - keepValue(a))[0];
+        return { type: 'PREPARE_PLAY', card: pick };
+      }
 
       /* ===== 拡張: 陰謀 ===== */
       case 'courtyard': {
