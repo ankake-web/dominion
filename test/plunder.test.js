@@ -382,5 +382,140 @@ console.log('\n=== P1b-2: 戦利品の効果（六分儀／パズルボックス
   ok(count(s7.players[0].durationCards, 'caravan') === 1, '使わせた隊商のほうは持続として場に残る');
 }
 
+console.log('\n=== P1b-3: 難所5枚（宝石／アンフォラ／尽きぬ杯／宝珠／呪符の巻物） ===');
+
+/* 自分の手番が戻るまで進める。⚠ `END_TURN` は**購入フェイズからしか通らない**ので、
+   毎回 `END_ACTION_PHASE` → `END_TURN` の2手を送る（手番開始時は action フェイズ）。 */
+function nextOwnTurn(s) {
+  const me = s.turn.active;
+  let cur = s;
+  for (let i = 0; i < 8; i++) {
+    if (cur.turn.phase !== 'buy') cur = E.reduce(cur, { type: 'END_ACTION_PHASE' });
+    cur = E.reduce(cur, { type: 'END_TURN' });
+    if (cur.turn.active === me) return cur;
+  }
+  return cur;
+}
+
+// --- 宝石＝次のターン開始時に山札の一番下へ（捨て札を経由しない） ---
+{
+  const s = fresh();
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  let s1 = playT(s, 0, 'jewels');
+  ok(s1.turn.coins === 3 && s1.turn.buys >= 2, '宝石：+$3 +1購入');
+  const t0 = tally(s1);
+  const s2 = nextOwnTurn(s1);
+  ok(count(s2.players[0].deck, 'jewels') === 1, '次のターン開始時に山札へ移った');
+  ok(s2.players[0].deck[s2.players[0].deck.length - 1] === 'jewels', '**山札の一番下**に置かれている');
+  ok(count(s2.players[0].discard, 'jewels') === 0 && count(s2.players[0].durationCards, 'jewels') === 0,
+    '捨て札置き場にも場にも残っていない');
+  ok(sameTally(t0, tally(s2)), '保存則：総数は不変');
+  // 坑道（捨て札トリガー）を誘発しないこと＝捨て札置き場を経由しない証拠
+  const s3 = fresh(['jewelled_egg', 'tunnel', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory']);
+  s3.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  let s4 = playT(s3, 0, 'jewels');
+  const gold0 = s4.supply.gold;
+  const s5 = nextOwnTurn(s4);
+  ok(s5.supply.gold === gold0, '捨て札トリガーを1つも通していない（坑道のある場でも金貨が減らない）');
+}
+// --- アンフォラ＝「今」か「次」をプレイのたびに独立に選ぶ ---
+{
+  // 「今」を選ぶ＝当ターンに +$3 +1購入、持続しない
+  const s = fresh();
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  let s1 = playT(s, 0, 'amphora');
+  ok(s1.pending && s1.pending.type === 'amphora', '「今か次か」の窓が開く');
+  const b0 = s1.turn.buys;
+  s1 = E.reduce(s1, { type: 'AMPHORA_CHOOSE', now: true });
+  ok(!s1.pending && s1.turn.coins === 3 && s1.turn.buys === b0 + 1, '「今」＝その場で +$3 +1購入');
+  const s2 = E.reduce(s1, { type: 'END_TURN' });
+  ok(count(s2.players[0].discard, 'amphora') === 1 && count(s2.players[0].durationCards, 'amphora') === 0,
+    '「今」を選んだら**持続しない**（当ターンに捨てられる）');
+  // 「次」を選ぶ＝当ターンは何ももらわず、次のターン開始時に +$3 +1購入
+  const s3 = fresh();
+  s3.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  let s4 = playT(s3, 0, 'amphora');
+  s4 = E.reduce(s4, { type: 'AMPHORA_CHOOSE', now: false });
+  ok(s4.turn.coins === 0, '「次」＝当ターンにはコインをもらわない');
+  const s5 = E.reduce(s4, { type: 'END_TURN' });
+  ok(count(s5.players[0].durationCards, 'amphora') === 1, '「次」を選んだら持続として場に残る');
+  const s6 = nextOwnTurn(s4);
+  ok(s6.turn.coins === 3 && s6.turn.buys >= 2, '次のターン開始時に +$3 +1購入');
+}
+// --- 尽きぬ杯＝永続持続（ゲーム終了まで毎ターン $1 +1購入） ---
+{
+  const s = fresh();
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  const b0 = s.turn.buys;
+  let s1 = playT(s, 0, 'endless_chalice');
+  ok(s1.turn.coins === 1 && s1.turn.buys === b0 + 1, '尽きぬ杯：現在 $1 +1購入');
+  ok(s1.players[0].endlessChalices === 1, '稼働数が1になる');
+  const s2 = nextOwnTurn(s1);
+  ok(s2.turn.coins === 1 && s2.turn.buys === 2, '次のターン開始時にも $1 +1購入');
+  ok(count(s2.players[0].durationCards, 'endless_chalice') === 1, '**場に残り続ける**（永続持続）');
+  const s3 = nextOwnTurn(s2);
+  ok(s3.turn.coins === 1 && count(s3.players[0].durationCards, 'endless_chalice') === 1, 'さらに次のターンも続く');
+}
+// --- 宝珠＝捨て札を見て「捨て札から使う」or「+1購入 +$3」 ---
+{
+  const s = fresh();
+  s.players[0].discard = ['village', 'estate'];
+  s.players[0].deck = ['gold', 'gold'];
+  let s1 = playT(s, 0, 'orb');
+  ok(s1.pending && s1.pending.type === 'orb', '宝珠：選択の窓が開く');
+  // 捨て札からアクションを使う
+  const a0 = s1.turn.actions;
+  let s2 = E.reduce(s1, { type: 'ORB_RESOLVE', mode: 'play', card: 'village' });
+  ok(!s2.pending && count(s2.players[0].inPlay, 'village') === 1, '捨て札から村を使用した');
+  ok(count(s2.players[0].discard, 'village') === 0, '捨て札から取り除かれている');
+  ok(s2.turn.actions === a0 + 2, 'アクション権は消費せず村の +2アクションだけ増える');
+  ok(s2.turn.phase === 'buy', '**購入フェイズのまま**');
+  // 捨て札に無いカードは拒否
+  const s3 = E.reduce(s1, { type: 'ORB_RESOLVE', mode: 'play', card: 'smithy' });
+  ok(s3.pending && s3.pending.type === 'orb', '捨て札に無いカードは拒否（状態不変）');
+  // +$3 +1購入 を選ぶ
+  const b1 = s1.turn.buys;
+  const s4 = E.reduce(s1, { type: 'ORB_RESOLVE', mode: 'coin' });
+  ok(!s4.pending && s4.turn.coins === 3 && s4.turn.buys === b1 + 1, '「+1購入 +$3」も選べる');
+  // 宝珠自身は当ターンに捨てる（使わせた持続が残っても）
+  const s5 = fresh(); s5.players[0].discard = ['caravan'];
+  s5.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  let s6 = playT(s5, 0, 'orb');
+  s6 = E.reduce(s6, { type: 'ORB_RESOLVE', mode: 'play', card: 'caravan' });
+  const s7 = E.reduce(s6, { type: 'END_TURN' });
+  ok(count(s7.players[0].discard, 'orb') === 1 && count(s7.players[0].durationCards, 'orb') === 0,
+    '**宝珠自身は当ターンに捨てられる**（玉座の間と逆）');
+  ok(count(s7.players[0].durationCards, 'caravan') === 1, '使わせた隊商だけ持続として残る');
+}
+// --- 呪符の巻物＝アクションでも財宝／廃棄できたときだけ獲得 ---
+{
+  // 財宝として（購入フェイズ）
+  const s = fresh();
+  let s1 = playT(s, 0, 'spell_scroll');
+  ok(count(s1.trash, 'spell_scroll') === 1, '呪符の巻物：これを廃棄する');
+  ok(s1.pending && s1.pending.type === 'spell_scroll_gain', 'これより安いカードを獲得する窓が開く');
+  ok(s1.pending.limit === 7, 'コスト基準は自身の現在コスト（$7）');
+  // $7 は取れない（「これより安い」＝厳密に安い）／$6 は取れる
+  const notCheaper = E.reduce(s1, { type: 'SPELL_SCROLL_GAIN', card: 'kings_court' });
+  ok(notCheaper.pending, '同コスト以上は獲得できない');
+  let s2 = E.reduce(s1, { type: 'SPELL_SCROLL_GAIN', card: 'gold' });
+  ok(count(s2.players[0].discard, 'gold') === 1, '$6の金貨を獲得できる');
+  ok(s2.pending && s2.pending.type === 'spell_scroll_play', '獲得したのが財宝なので「使う？」の窓が開く');
+  const s3 = E.reduce(s2, { type: 'SPELL_SCROLL_PLAY', play: true });
+  ok(!s3.pending && count(s3.players[0].inPlay, 'gold') === 1, '獲得した金貨を使用できる');
+  ok(s3.turn.coins === 3, '使用した金貨の +$3 が入る（呪符の巻物自身は $0）');
+  // 使わないことも選べる
+  const s4 = E.reduce(s2, { type: 'SPELL_SCROLL_PLAY', play: false });
+  ok(!s4.pending && count(s4.players[0].discard, 'gold') === 1, '「使わない」も選べる');
+  // アクションとして（アクションフェイズ）＝アクション権を1つ消費する
+  const s5 = fresh();
+  s5.turn.phase = 'action'; s5.turn.actions = 1;
+  s5.players[0].hand = ['spell_scroll'];
+  const s6 = E.reduce(s5, { type: 'PLAY_ACTION', card: 'spell_scroll' });
+  ok(count(s6.trash, 'spell_scroll') === 1, 'アクションとしても使える（廃棄される）');
+  ok(s6.turn.actions === 0, 'アクションとして使うとアクション権を1つ消費する');
+  ok(s6.pending && s6.pending.type === 'spell_scroll_gain', '同じ獲得の窓が開く');
+}
+
 console.log(`\n略奪テスト結果: ${pass} 件成功, ${fail} 件失敗`);
 if (fail > 0) process.exit(1);

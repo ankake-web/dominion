@@ -1475,6 +1475,20 @@
         const acts = p.hand.filter((c) => DOM.isType(c, 'action'));
         return { type: 'STAFF_PLAY', card: acts.length ? acts.sort((a, b) => keepValue(b) - keepValue(a))[0] : null };
       }
+      // アンフォラ＝購入フェイズに出しているので基本は「今」もらう（次ターンに回すのは手番終了間際の判断が要る）。
+      case 'amphora':
+        return { type: 'AMPHORA_CHOOSE', now: true };
+      // 宝珠＝捨て札に使えるアクション/財宝があればそれを使い、無ければ +$3 +1購入。
+      case 'orb': {
+        const cand = p.discard.filter((c) => DOM.isType(c, 'action') || DOM.isType(c, 'treasure'));
+        if (cand.length) return { type: 'ORB_RESOLVE', mode: 'play', card: cand.sort((a, b) => keepValue(b) - keepValue(a))[0] };
+        return { type: 'ORB_RESOLVE', mode: 'coin' };
+      }
+      // 呪符の巻物＝これより安いカードを1枚獲得（強制）。獲得したものは使えるなら使う。
+      case 'spell_scroll_gain':
+        return { type: 'SPELL_SCROLL_GAIN', card: bestGain(state, pd.limit - 1, { noVictory: true }) || bestGain(state, pd.limit - 1) };
+      case 'spell_scroll_play':
+        return { type: 'SPELL_SCROLL_PLAY', play: true };
 
       /* ===== 拡張: 陰謀 ===== */
       case 'courtyard': {

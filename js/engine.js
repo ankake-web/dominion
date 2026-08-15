@@ -841,6 +841,38 @@
       t.buys += 1;
       if (p.hand.some((c) => DOM.isType(c, 'action') || inheritedEstate(p, c))) state.pending = { type: 'staff_play', player: pIndex };
     }
+    /* 尽きぬ杯＝**現在**と、**ゲーム終了まで各ターンの開始時**に $1 +1購入（永続持続）。
+       ⚠ 「現在」ぶんの $1 は `coin:1` で計上済み＝ここでは +1購入 と稼働数の加算だけ。
+       ⚠ **ターン開始時に使用させると（準備/王子/船長）その場で2回発動する**＝「現在」＋「各ターンの開始時」。
+          本エンジンでは開始時効果の解決中に使用されても `p.endlessChalices` が増えるだけで、
+          その手番の開始時効果は既に走った後なので自然に「現在」ぶんだけが乗る＝**次のターンから毎回**になる。
+          （公式の「即座に2金2購入」との差は、開始時に使わせる経路が実装されるまで到達しない＝P5 で再確認する）
+       ⚠ ティアラ等で複数回プレイしたら**その回数ぶん**毎ターン発動する（`p.hirelings` と同型の稼働数）。 */
+    if (card === 'endless_chalice') {
+      t.buys += 1;
+      p.endlessChalices = (p.endlessChalices || 0) + 1;
+      log(state, `${p.name} は尽きぬ杯を使った（$1 +1購入／以後ゲーム終了まで毎ターン開始時に $1 +1購入）。`);
+    }
+    /* 宝石＝$3＋1購入＋あなたの次のターンの開始時、**これを山札の一番下に置く**（強制）。
+       ⚠ **捨て札置き場を経由しない**（日本語wiki 逐語）＝「場から捨てるとき」のフック
+          （トリックスター/坑道/村有緑地/カエルの習性/城壁のある村）を**1つも通してはいけない**。 */
+    if (card === 'jewels') { t.buys += 1; armDuration(state, pIndex, 'jewels'); }
+    /* アンフォラ＝「**現在**」か「**次のターンの開始時**」を選んで +1購入 +$3。
+       ⚠ **プレイのたびに独立に選ぶ**／**1回でも「次」を選べば持続する**（回数で持つ。旗1つではない）。 */
+    if (card === 'amphora') state.pending = { type: 'amphora', player: pIndex };
+    // 呪符の巻物＝購入フェイズに財宝として出したときも同じ効果（アクション権は消費しない）。
+    if (card === 'spell_scroll') spellScrollEffect(state, pIndex);
+    /* 宝珠＝捨て札置き場をすべて見る（**どちらを選んでも先に処理する**）→ 次から1つ選ぶ：
+       「その中のアクションか財宝1枚を使用する」／「+1購入 +$3」。
+       ⚠ 「見る」は選択の前に必ず行う（公式FAQ逐語 `First look through your discard pile; then choose ...`）。
+       ⚠ 使用するのは**購入フェイズのまま**（杖と同じ）／**宝珠自身は当ターンに捨てる**（玉座の間と逆）。
+       ⚠ **これは「次のうち1つを選ぶ」＝choose-one カード**。長老(Elder・同盟)の追加選択の対象になり得るが、
+          §0-29 A4 の「長老で追加選択できるのは同盟の9種のみ」という**既存の許容簡略化**に合わせて据え置く
+          （`ELDER_CHOICE_ORDER` に登録しない）。mix-all 限定の差＝PROGRESS に許容簡略化として記録する。 */
+    if (card === 'orb') {
+      reveal(state, pIndex, p.discard.slice(0, 8), '宝珠：捨て札を見る', { notReveal: true });
+      state.pending = { type: 'orb', player: pIndex };
+    }
     // 帝国：御守り（charm）＝二択（A: +1購入+$2 ／ B: このターン次にカードを獲得したとき、同コストで名前の異なるカードを1枚獲得してよい）。
     if (card === 'charm') { state.pending = { type: 'charm_mode', player: pIndex }; }
     // 帝国：鹵獲品（plunder）＝+$2（coin:2 で計上済み）＋1勝利点トークン（プレイ毎）。
@@ -4011,6 +4043,24 @@
   }
   // 「これ(this)」を場から取り除く。取り除けたら物理カードidを、取り除けなければ null（＝「If you did」が偽）。
   //   命令カードがプレイした札は場に無いので必ず null。玉座の2回目（1回目で既に動いた）も null。
+  /* 略奪：呪符の巻物＝**アクションでも財宝でもある**＝プレイ経路が2つ（`PLAY_ACTION` と `PLAY_TREASURE`）。
+     どちらから来ても同じ効果なので1関数に集約する。公式FAQ逐語＝
+     `You can play this in your Action phase or Buy phase; if played in your Action phase, it uses up an Action play
+      for the turn. However playing the card you gain from Spell Scroll does not use up an Action play.`
+     ＝**アクション権を消費するのは呪符の巻物自身をアクションとして使ったときだけ**（各 reducer が既に処理）。
+     ⚠ `Trash this to gain a cheaper card.` ＝**廃棄できたときだけ獲得**＝`takeSelf` が null なら何も起きない
+        （命令経由・再演では場に無い＝lose track）。 */
+  function spellScrollEffect(state, pi) {
+    const self = takeSelf(state, pi, 'spell_scroll');
+    if (!self) { log(state, `${state.players[pi].name} は呪符の巻物を廃棄できなかった（獲得も起きない）。`); return; }
+    trashCard(state, pi, 'spell_scroll');
+    const limit = cardCost(state, 'spell_scroll'); // ⚠ 両辺とも cardCost を通す（渡し船/発明家の家族で変わる）
+    if (anyGainable(state, (id) => costUnder(state, id, limit))) {
+      state.pending = { type: 'spell_scroll_gain', player: pi, limit };
+    } else {
+      log(state, `${state.players[pi].name} は呪符の巻物を廃棄したが、これより安い獲得先が無い。`);
+    }
+  }
   function takeSelf(state, pi, cardId) {
     if (playedByCommand(state, pi, cardId)) return null;
     return removeOne(state.players[pi].inPlay, cardId) ? cardId : null;
@@ -4042,6 +4092,9 @@
     const t = state.turn;
     const p = state.players[pi];
     switch (cardId) {
+      /* ===== 略奪（Plunder）：呪符の巻物＝アクションとしても使える（財宝経路は applyTreasureEffect 側）。
+         公式FAQ＝アクションフェイズに使うとアクション権を1つ消費する（PLAY_ACTION が既に消費している）。 */
+      case 'spell_scroll': spellScrollEffect(state, pi); break;
       /* ===== 冒険（Adventures）：相続＝自分のターン中、屋敷は「脇のカードを動かさずに使用する」命令アクション ===== */
       //   applyEffect に置くことで PLAY_ACTION だけでなく 玉座/王の宮廷/行進/御料車 の再演でも同じ挙動になる。
       case 'estate': {
@@ -7141,6 +7194,11 @@
     }
     // 冒険：雇人＝永続持続。稼働数ぶん、各ターン開始時に +1カード（非対話）。
     if (p.hirelings) { for (let i = 0; i < p.hirelings; i++) draw(state, pi, 1); log(state, `${p.name} は雇人の持続効果（+${p.hirelings}カード）。`); }
+    /* 略奪：尽きぬ杯＝永続持続。稼働数ぶん、各ターン開始時に $1 +1購入（非対話）。 */
+    if (p.endlessChalices) {
+      addCoins(state, p.endlessChalices); state.turn.buys += p.endlessChalices;
+      log(state, `${p.name} は尽きぬ杯の持続効果（+$${p.endlessChalices} +${p.endlessChalices}購入）。`);
+    }
     // 新プロモ：王子＝脇に置いたカードを毎ターン開始時に（脇に置いたまま）使用する（強制・アクション権不要）。
     (p.princes || []).forEach((card, i) => {
       state.turn.startQueue.push({ type: 'prince_play', player: pi, idx: i, card });
@@ -7797,6 +7855,19 @@
   const DURATION_RESOLVERS = {
     // 略奪：船首像＝あなたの次のターンの開始時 +2カード（$3 は使用時に計上済み）。
     figurehead: (s, pi) => { draw(s, pi, 2); log(s, `${s.players[pi].name} は船首像で +2カード。`); },
+    /* 略奪：宝石＝あなたの次のターンの開始時、**これを山札の一番下に置く**（強制）。
+       ⚠ **捨て札置き場を経由しない**（日本語wiki 逐語「捨て札置き場を経由せず直接デッキボトムに移動する」）＝
+          `triggerOnDiscard`（トリックスター/坑道/村有緑地/カエルの習性/城壁のある村）を**1つも通さない**。
+       ⚠ 場から取り除けなければ（既に他の効果で動いていれば）何も起きない＝lose track。 */
+    jewels: (s, pi) => {
+      const pl = s.players[pi];
+      if (removeOne(pl.durationCards || [], 'jewels') || removeOne(pl.inPlay, 'jewels')) {
+        pl.deck.push('jewels'); // **一番下**（deck[0] が一番上なので末尾）
+        log(s, `${pl.name} は宝石を山札の一番下に置いた（捨て札置き場は経由しない）。`);
+      }
+    },
+    /* 略奪：アンフォラ＝「次のターンの開始時」を選んだぶんだけ +1購入 +$3（回数で持つ）。 */
+    amphora: (s, pi) => { addCoins(s, 3); s.turn.buys += 1; log(s, `${s.players[pi].name} はアンフォラの持続効果（+$3 +1購入）。`); },
     /* 同盟：追いはぎ＝次の自分のターンの開始時、**まずこれを場から捨て**、**その後**に +3カード
        （公式FAQ逐語＝`Discarding Highwayman happens first, so it's possible to even draw that Highwayman
         with the +3 Cards.`）。**捨てられなくてもカードは必ず3枚引く**（玉座で2回使うと捨てるのは1回・引くのは6枚）。 */
@@ -9240,6 +9311,8 @@
     if ((p.princes || []).length) cnt.prince = (cnt.prince || 0) + p.princes.length;
     // 冒険：雇人＝永続持続。稼働数ぶん物理カードを durationCards に残す（princes と同型）。
     if (p.hirelings) cnt.hireling = (cnt.hireling || 0) + p.hirelings;
+    // 略奪：尽きぬ杯＝永続持続。稼働数ぶん物理カードを durationCards に残す（雇人と同型）。
+    if (p.endlessChalices) cnt.endless_chalice = (cnt.endless_chalice || 0) + p.endlessChalices;
     // 冒険：チャンピオン＝永続持続（ゲーム終了まで場に残る）。稼働数ぶん物理カードを durationCards に残す。
     if (p.champions) cnt.champion = (cnt.champion || 0) + p.champions;
     // 帝国：資料庫＝脇にカードが残っている資料庫の数ぶん、物理カードを durationCards に残す（stashが尽きたら捨て札へ）。
@@ -10080,6 +10153,8 @@
     (p.delayedEffects || []).forEach((e) => { cnt[e.card] = (cnt[e.card] || 0) + 1; });
     if ((p.princes || []).length) cnt.prince = (cnt.prince || 0) + p.princes.length;
     if (p.hirelings) cnt.hireling = (cnt.hireling || 0) + p.hirelings;
+    // 略奪：尽きぬ杯＝永続持続。稼働数ぶん物理カードを durationCards に残す（雇人と同型）。
+    if (p.endlessChalices) cnt.endless_chalice = (cnt.endless_chalice || 0) + p.endlessChalices;
     if (p.champions) cnt.champion = (cnt.champion || 0) + p.champions;
     if ((p.archives || []).length) cnt.archive = (cnt.archive || 0) + p.archives.length;
     return cnt;
@@ -11294,6 +11369,73 @@
         (pl.puzzleBox = pl.puzzleBox || []).push(action.card);
         log(state, `${pl.name} はパズルボックスで手札1枚を裏向きに脇へ置いた（ターン終了時に手札へ）。`);
         state.pending = null;
+        return state;
+      }
+      /* 略奪：宝珠＝「捨て札からアクションか財宝1枚を使用」or「+1購入 +$3」。
+         ⚠ 捨て札から使うので `p.discard` を zone に渡す（`playCardNoAction` が removeOne して場に出す）。
+            **アクション権は消費しない**／**購入フェイズのまま**／**宝珠自身は当ターンに捨てる**。 */
+      case 'ORB_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'orb') return state;
+        const pl = state.players[pd.player];
+        if (action.mode === 'coin') {
+          state.pending = null;
+          addCoins(state, 3); state.turn.buys += 1;
+          log(state, `${pl.name} は宝珠で +$3 +1購入。`);
+          return state;
+        }
+        if (action.mode !== 'play' || action.card == null) return state;
+        if (pl.discard.indexOf(action.card) < 0) return state;
+        if (!(DOM.isType(action.card, 'action') || isTreasureFor(state, action.card))) return state;
+        state.pending = null;
+        playCardNoAction(state, pd.player, action.card, pl.discard, '宝珠で捨て札から');
+        return state;
+      }
+      /* 略奪：呪符の巻物＝**これを廃棄する。廃棄した場合、これより安いカード1枚を獲得**する。
+         それがアクションか財宝なら使用してもよい。
+         ⚠ 日本語の印刷版は「これを廃棄して〜獲得する」＝**ルールミスを誘発する誤訳**（日本語wikiが名指しで警告）。
+            英語原文 `Trash this to gain a cheaper card.` ＝**廃棄できたときだけ獲得**＝
+            命令(Command)経由や再演では場に無いので `takeSelf` が失敗し**獲得も起きない**（§0-17 の lose track）。
+         ⚠ 「これより安い」は**両辺とも `cardCost` を通す**（渡し船/発明家の家族のような
+            「山を名指しして下げる軽減」があると取れる集合が実際に増える）。 */
+      case 'SPELL_SCROLL_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'spell_scroll_gain') return state;
+        const limit = pd.limit;
+        if (!finishGain(state, pd, action.card, (id) => costUnder(state, id, limit), 'discard', '呪符の巻物で獲得した。')) return state;
+        // 獲得したのがアクションか財宝なら「使用してもよい」窓を開く（捨て札から使う＝宝珠と同じ経路）。
+        const got = action.card;
+        if (got != null && (DOM.isType(got, 'action') || isTreasureFor(state, got))) {
+          state.pending = { type: 'spell_scroll_play', player: pd.player, card: got };
+        }
+        return state;
+      }
+      case 'SPELL_SCROLL_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'spell_scroll_play') return state;
+        const pl = state.players[pd.player];
+        state.pending = null;
+        if (!action.play) return state;
+        if (pl.discard.indexOf(pd.card) < 0) return state; // 獲得時効果で動いていたら不発（lose track）
+        playCardNoAction(state, pd.player, pd.card, pl.discard, '呪符の巻物で');
+        return state;
+      }
+      /* 略奪：アンフォラ＝「現在」か「次のターンの開始時」を選ぶ（**プレイのたびに独立に**）。
+         公式FAQ逐語＝`you choose each time whether to get the +$3 and +1 Buy now or next turn, and Amphora only
+         stays in play if at least one of the plays was for next turn.`
+         →「次」を選んだ回数ぶん `armDuration` する＝**回数で持つ**（旗1つにすると2回プレイが壊れる）。 */
+      case 'AMPHORA_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'amphora') return state;
+        const pl = state.players[pd.player];
+        state.pending = null;
+        if (action.now) {
+          addCoins(state, 3); state.turn.buys += 1;
+          log(state, `${pl.name} はアンフォラで今すぐ +$3 +1購入。`);
+        } else {
+          armDuration(state, pd.player, 'amphora');
+          log(state, `${pl.name} はアンフォラを次のターンの開始時に持ち越した（+$3 +1購入）。`);
+        }
         return state;
       }
       /* 略奪：杖＝手札からアクション1枚を使用してよい（**任意**・アクション権を消費しない）。
@@ -18691,6 +18833,7 @@
     'CELLAR_RESOLVE', 'MILITIA_RESOLVE', 'MOAT_REVEAL',
     // 略奪（Plunder）：戦利品(Loot)
     'SHIELD_REVEAL', 'PRIZE_GOAT_TRASH', 'HAMMER_GAIN', 'SEXTANT_RESOLVE', 'PUZZLE_BOX_SET', 'STAFF_PLAY',
+    'AMPHORA_CHOOSE', 'ORB_RESOLVE', 'SPELL_SCROLL_GAIN', 'SPELL_SCROLL_PLAY',
     'MINE_TRASH', 'MINE_GAIN', 'REMODEL_TRASH', 'REMODEL_GAIN', 'WORKSHOP_GAIN',
     'COURTYARD_PUT', 'PAWN_RESOLVE', 'STEWARD_RESOLVE', 'STEWARD_TRASH',
     'WISHING_RESOLVE', 'BARON_RESOLVE', 'IRONWORKS_GAIN',

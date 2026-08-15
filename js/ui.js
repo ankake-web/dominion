@@ -1912,6 +1912,23 @@
       (id) => DOM.CARDS[id] && DOM.CARDS[id].types.includes('action'),
       (id) => dispatch({ type: 'STAFF_PLAY', card: id }),
       { label: '使わない', on: () => dispatch({ type: 'STAFF_PLAY', card: null }) }, '使う');
+    // アンフォラ＝「今」か「次のターンの開始時」を選ぶ（プレイのたびに独立に選べる）。
+    if (pd.type === 'amphora') return modalOptions('アンフォラ', '+1 購入 と +3 コインを、今もらうか次のターンの開始時にもらうかを選びます。', [
+      { label: '今もらう（+$3 +1購入）', cls: 'btn-primary', on: () => dispatch({ type: 'AMPHORA_CHOOSE', now: true }) },
+      { label: '次のターンの開始時にもらう', on: () => dispatch({ type: 'AMPHORA_CHOOSE', now: false }) },
+    ]);
+    // 宝珠＝捨て札を全部見てから、「捨て札からアクション/財宝を1枚使う」か「+1購入 +$3」を選ぶ。
+    if (pd.type === 'orb') return modalOrb(p);
+    // 呪符の巻物＝これより安いカード1枚を獲得（強制）→ アクション/財宝なら使ってよい。
+    if (pd.type === 'spell_scroll_gain') return modalGainSupply(state, '呪符の巻物 — 獲得',
+      'これ（コスト ' + pd.limit + '）より安いカード1枚を獲得します（強制）。',
+      (id) => canUnder(state, id, pd.limit), (id) => dispatch({ type: 'SPELL_SCROLL_GAIN', card: id }),
+      () => dispatch({ type: 'SPELL_SCROLL_GAIN', card: null }));
+    if (pd.type === 'spell_scroll_play') return modalOptions('呪符の巻物 — 使う？',
+      '獲得した「' + (DOM.CARDS[pd.card] ? DOM.CARDS[pd.card].name : pd.card) + '」を使用できます（アクション権は消費しません）。', [
+      { label: '使う', cls: 'btn-primary', on: () => dispatch({ type: 'SPELL_SCROLL_PLAY', play: true }) },
+      { label: '使わない', cls: 'btn-ghost', on: () => dispatch({ type: 'SPELL_SCROLL_PLAY', play: false }) },
+    ]);
 
     /* ===== 拡張: 陰謀 ===== */
     if (pd.type === 'courtyard') return modalSingleHand(p, '中庭 — 山札の上に置く', '手札から1枚を選び、山札の一番上に置きます（次のターンに引きます）。',
@@ -3912,6 +3929,21 @@
       onclick: () => { const sel = UI.selection.slice(); UI.selection = []; const discard = sel.map((i) => cards[i]); const top = cards.filter((c, i) => sel.indexOf(i) < 0); dispatch({ type: 'CARTOGRAPHER_RESOLVE', discard, top }); } },
       '確定（' + UI.selection.length + '枚 捨て、残り ' + (cards.length - UI.selection.length) + '枚 を山札の上へ）');
     return modalShell('地図職人 — 山札の上4枚', 'タップして捨てるカードを選びます（選ばなかったカードは公開順のまま山札の上に戻ります）。', chips, footer);
+  }
+  /* 略奪：宝珠＝捨て札置き場を**すべて見た上で**、「その中のアクション/財宝1枚を使用」か「+1購入 +$3」を選ぶ。
+     ⚠ 「見る」は選択の前に必ず行う（engine 側で処理済み）＝ここでは捨て札を一覧して選ばせる。 */
+  function modalOrb(p) {
+    const cand = (p.discard || []).map((id, idx) => ({ id, idx }))
+      .filter((x) => DOM.isType(x.id, 'action') || DOM.isType(x.id, 'treasure'));
+    const seen = [];
+    const chips = cand.filter((x) => { if (seen.indexOf(x.id) >= 0) return false; seen.push(x.id); return true; })
+      .map((x) => cardEl(x.id, { size: 'sm', extra: 'selectable',
+        onClick: () => dispatch({ type: 'ORB_RESOLVE', mode: 'play', card: x.id }) }));
+    const footer = h('button', { class: 'btn btn-primary btn-block',
+      onclick: () => dispatch({ type: 'ORB_RESOLVE', mode: 'coin' }) }, '+1 購入 と +3 コインをもらう');
+    return modalShell('宝珠 — 捨て札置き場（' + (p.discard || []).length + '枚）',
+      cand.length ? 'タップすると捨て札からそのカードを使用します（アクション権は消費しません）。または下のボタンで +1購入 +$3。'
+                  : '捨て札に使えるアクション/財宝がありません。+1購入 +$3 を選んでください。', chips, footer);
   }
   // 略奪：六分儀＝山札の上5枚から捨てる札をタップで選ぶ（残りは公開順のまま山札の上へ）＝地図職人と同じ操作。
   function modalSextant(pd) {

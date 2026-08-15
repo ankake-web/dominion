@@ -90,6 +90,11 @@ const CASES = [
   ['travelling_fair(勲章)', (s) => { s.pending = { type: 'travelling_fair', player: 0, card: 'silver', dest: 'discard', source: 'insignia' }; }],
   ['discard_down(剣)', (s) => { s.players[0].hand = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper']; s.pending = { type: 'discard_down', player: 0, source: 1, down: 4, queue: [] }; }],
   ['discard_down(剣)＋盾', (s) => { s.players[0].hand = ['shield', 'copper', 'copper', 'copper', 'copper', 'copper']; s.pending = { type: 'discard_down', player: 0, source: 1, down: 4, queue: [] }; }],
+  ['amphora', (s) => { s.pending = { type: 'amphora', player: 0 }; }],
+  ['orb（捨て札に使える札あり）', (s) => { s.players[0].discard = ['village', 'estate']; s.pending = { type: 'orb', player: 0 }; }],
+  ['orb（捨て札が空＝+$3 しか選べない）', (s) => { s.players[0].discard = []; s.pending = { type: 'orb', player: 0 }; }],
+  ['spell_scroll_gain', (s) => { s.pending = { type: 'spell_scroll_gain', player: 0, limit: 7 }; }],
+  ['spell_scroll_play', (s) => { s.players[0].discard = ['gold']; s.pending = { type: 'spell_scroll_play', player: 0, card: 'gold' }; }],
 ];
 CASES.forEach(([name, setup]) => {
   const s = mkP(); setup(s); showAs(s, 0);
