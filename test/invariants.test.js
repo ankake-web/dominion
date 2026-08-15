@@ -47,6 +47,7 @@ function tally(s) {
   (s.loot || []).forEach(add); // 略奪：戦利品の山（30枚）＝**カード**なので数える（祝福/呪詛は非カードなので数えない）
   s.players.forEach((p) => ZONES.forEach((z) => (p[z] || []).forEach(add)));
   s.players.forEach((p) => (p.archives || []).forEach((a) => (a.cards || []).forEach(add))); // 帝国：資料庫の脇置き（{id,cards}）
+  s.players.forEach((p) => (p.quartermasters || []).forEach((q) => (q.cards || []).forEach(add))); // 略奪：操舵手の脇置き（{id,cards}）
   if (s.turn) { (s.turn.possessionGains || []).forEach(add); (s.turn.possessionTrash || []).forEach(add); }
   return t;
 }

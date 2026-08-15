@@ -2098,6 +2098,76 @@
         playable, '使う', (id) => dispatch({ type: 'PREPARE_PLAY', card: id }),
         playable.length ? null : { label: '残りを捨てる', on: () => dispatch({ type: 'PREPARE_PLAY', card: null }) });
     }
+    /* ===== 略奪P6 ===== */
+    if (pd.type === 'kings_cache_play') return modalSingleHand(p, '王の隠し財産 — 財宝を3回使う（任意）',
+      '手札の財宝カード1枚を3回使用できます。',
+      (id) => DOM.engine.isTreasureFor(state, id) && id !== 'kings_cache',
+      (id) => dispatch({ type: 'KINGS_CACHE_PLAY', card: id }),
+      { label: '使わない', on: () => dispatch({ type: 'KINGS_CACHE_PLAY', card: null }) }, '3回使う');
+    if (pd.type === 'fortune_hunter' && pd.stage === 'play') {
+      const tre = [...new Set((pd.cards || []).filter((id) => DOM.engine.isTreasureFor(state, id)))];
+      return modalPickList(state, '財産目当て — 財宝を使う（任意）',
+        '山札の上から見た3枚：' + (pd.cards || []).map((c) => (DOM.CARDS[c] || {}).name || c).join('・') + '。この中の財宝1枚を使用できます。',
+        tre, '使う', (id) => dispatch({ type: 'FORTUNE_HUNTER_PLAY', card: id }),
+        { label: '使わない（残りを山札に戻す）', on: () => dispatch({ type: 'FORTUNE_HUNTER_PLAY', card: null }) });
+    }
+    if (pd.type === 'fortune_hunter' && pd.stage === 'arrange') return modalMultiCards(pd.cards, '財産目当て — 山札の上に戻す',
+      '残りを好きな順番で山札の上に戻します（**先に選んだ札が一番上**になります）。全部選んで確定してください。',
+      (n) => '確定（' + n + '/' + pd.cards.length + '枚）', pd.cards.length,
+      (top) => dispatch({ type: 'FORTUNE_HUNTER_ARRANGE', top }), pd.cards.length);
+    if (pd.type === 'mapmaker') return modalMultiCards(pd.cards, '地図作り — 2枚を手札へ',
+      '山札の上から見た' + pd.cards.length + '枚のうち ' + pd.take + '枚 を手札に加え、残りを捨てます。',
+      (n) => '手札に加える（' + n + '枚）', pd.take, (cards) => dispatch({ type: 'MAPMAKER_PICK', cards }), pd.take);
+    if (pd.type === 'mapmaker_react') return modalOptions('地図作り — リアクション',
+      '勝利点カードが獲得されました。手札の地図作りを使用できます。', [
+      { label: '使う', cls: 'btn-primary', on: () => dispatch({ type: 'MAPMAKER_REACT', play: true }) },
+      { label: '使わない', on: () => dispatch({ type: 'MAPMAKER_REACT', play: false }) },
+    ]);
+    if (pd.type === 'enlarge_trash') return modalSingleHand(p, '拡大 — 廃棄',
+      '手札1枚を廃棄します（強制）。それよりコストが最大2高いカード1枚を獲得します。',
+      () => true, (id) => dispatch({ type: 'ENLARGE_TRASH', card: id }), null, '廃棄する');
+    if (pd.type === 'enlarge_gain') return modalGainSupply(state, '拡大 — 獲得',
+      'コスト ' + pd.maxCost + ' 以下のカード1枚を獲得します（強制）。',
+      (id) => canUpTo(state, id, pd.maxCost, pd), (id) => dispatch({ type: 'ENLARGE_GAIN', card: id }),
+      () => dispatch({ type: 'ENLARGE_GAIN', card: null }));
+    if (pd.type === 'first_mate') return modalSingleHand(p, '一等航海士 — 同名のアクションを使う',
+      pd.name ? ('「' + ((DOM.CARDS[pd.name] || {}).name || pd.name) + '」をもう1枚使えます（やめてもよい＝手札が6枚になるように引きます）。')
+        : '手札のアクションカード1枚を使用できます（以後は同じ名前だけ続けて使えます。使わずに引いてもOK）。',
+      (id) => DOM.CARDS[id] && DOM.CARDS[id].types.includes('action') && (!pd.name || id === pd.name),
+      (id) => dispatch({ type: 'FIRST_MATE_PLAY', card: id }),
+      { label: '使わない（手札が6枚になるように引く）', on: () => dispatch({ type: 'FIRST_MATE_PLAY', card: null }) }, '使う');
+    if (pd.type === 'frigate' && pd.stage === 'react') return modalOptions('フリゲート船を受ける',
+      '次の相手のターンの開始時まで、あなたがアクションカードを使用するたび、その後に手札が4枚になるように捨てます。',
+      reactOptions(p, pd, { type: 'LINGER_REACT' }));
+    if (pd.type === 'trickster' && pd.stage === 'react') return modalOptions('トリックスターを受ける', '呪い1枚を獲得します。',
+      reactOptions(p, pd, { type: 'TRICKSTER_REACT' }));
+    if (pd.type === 'quartermaster') {
+      const inst = (p.quartermasters || []).find((q) => q.id === pd.qmId) || { cards: [] };
+      const gains = Object.keys(state.supply).filter((id) => DOM.CARDS[id] && canUpTo(state, id, 4) && DOM.engine.gainableBase(state, id));
+      const chips = gains.map((id) => cardEl(id, { size: 'sm', extra: 'selectable',
+        onClick: () => openPickZoom(id, '脇に獲得', () => dispatch({ type: 'QUARTERMASTER_RESOLVE', mode: 'gain', card: id })) }));
+      const buttons = [];
+      [...new Set(inst.cards || [])].forEach((id) => buttons.push(h('button', { class: 'btn btn-block', style: 'margin-bottom:8px',
+        onclick: () => dispatch({ type: 'QUARTERMASTER_RESOLVE', mode: 'take', card: id }) },
+        '脇の「' + ((DOM.CARDS[id] || {}).name || id) + '」を手札に加える')));
+      if (!chips.length && !buttons.length) buttons.push(h('button', { class: 'btn btn-block',
+        onclick: () => dispatch({ type: 'QUARTERMASTER_RESOLVE', mode: 'skip' }) }, '何もできない（閉じる）'));
+      return modalShell('操舵手 — ターンの開始時',
+        '下のサプライから「コスト4以下を1枚 脇に獲得」するか、脇のカードを手札に加えます。' +
+        ((inst.cards || []).length ? '（脇：' + inst.cards.map((c) => (DOM.CARDS[c] || {}).name || c).join('・') + '）' : ''),
+        chips, h('div', null, buttons));
+    }
+    if (pd.type === 'trickster_aside') {
+      const tre = p.inPlay.filter((id) => DOM.engine.isTreasureFor(state, id));
+      return modalMultiCards(tre, 'トリックスター — 財宝を脇に置く（任意）',
+        '場から捨てる財宝を最大' + pd.max + '枚 脇に置き、ターン終了時に手札へ加えます（0枚でもOK）。',
+        (n) => '確定（' + n + '枚）', pd.max, (cards) => dispatch({ type: 'TRICKSTER_ASIDE', cards }));
+    }
+    if (pd.type === 'mining_road_play') return modalOptions('鉱山道路 — 使う？',
+      '獲得した「' + ((DOM.CARDS[pd.card] || {}).name || pd.card) + '」を使用できます（このターンの残り回数：' + (state.turn.miningRoad || 0) + '）。', [
+      { label: '使う', cls: 'btn-primary', on: () => dispatch({ type: 'MINING_ROAD_PLAY', play: true }) },
+      { label: '使わない（権利は残る）', on: () => dispatch({ type: 'MINING_ROAD_PLAY', play: false }) },
+    ]);
 
     /* ===== 拡張: 陰謀 ===== */
     if (pd.type === 'courtyard') return modalSingleHand(p, '中庭 — 山札の上に置く', '手札から1枚を選び、山札の一番上に置きます（次のターンに引きます）。',

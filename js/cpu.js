@@ -417,8 +417,9 @@
     if (has('student')) return 'student';                 // +1アクション（循環＋廃棄。財宝なら好意＋山札上へ）
     if (has('sycophant')) return 'sycophant';             // +1アクション（3枚捨てて+3コイン）
     if (has('voyage')) return 'voyage';                   // +1アクション（追加ターン・使用は3枚まで）
-    // 略奪P2/P3：非ターミナル
+    // 略奪P2/P3/P6：非ターミナル
     if (has('landing_party')) return 'landing_party';     // +2カード+2アクション（次に財宝が最初の1枚なら山札の上へ）
+    if (has('mining_road')) return 'mining_road';         // +1アクション+1購入+$2（獲得した財宝を使える）
     if (has('harbor_village')) return 'harbor_village';   // +1カード+2アクション（次のアクションが+$なら+$1）
     if (has('wealthy_village')) return 'wealthy_village'; // +1カード+2アクション
     if (has('swamp_shacks')) return 'swamp_shacks';       // +2アクション（場の枚数でドロー）
@@ -441,6 +442,13 @@
     if (has('secluded_shrine')) return 'secluded_shrine'; // +$1＋次の財宝獲得で最大2枚圧縮
     if (has('stowaway')) return 'stowaway';               // 次ターン+2カード（持続）
     if (has('maroon') && p.hand.some((c) => isDead(c))) return 'maroon'; // 不要札を廃棄して種別ぶんドロー
+    if (has('trickster')) return 'trickster';             // アタック（全員に呪い）＋財宝を次ターンへ持ち越し
+    if (has('frigate')) return 'frigate';                 // +$3＋持続アタック（相手のアクション使用で手札4枚まで）
+    if (has('first_mate') && p.hand.some((c) => isType(c, 'action') && c !== 'first_mate')) return 'first_mate'; // 同名連打＋手札6枚まで
+    if (has('quartermaster')) return 'quartermaster';     // 永続（毎ターン$4以下を貯める/取る）
+    if (has('fortune_hunter')) return 'fortune_hunter';   // +$2＋上3枚から財宝を使える
+    if (has('mapmaker')) return 'mapmaker';               // 上4枚から2枚を手札へ
+    if (has('enlarge') && p.hand.some((c) => isDead(c))) return 'enlarge'; // 廃棄→格上げ×2ターン
     if (has('avanto')) return 'avanto';                   // +3カード（サウナ連鎖）
     if (has('golem')) return 'golem';                     // 山札のアクション2枚を使う
     if (has('herbalist')) return 'herbalist';             // +1購入+1コイン
@@ -1730,6 +1738,77 @@
         const pick = (acts.length ? acts : aside).sort((a, b) => keepValue(b) - keepValue(a))[0];
         return { type: 'PREPARE_PLAY', card: pick };
       }
+      /* ===== 略奪P6 ===== */
+      // 王の隠し財産＝一番価値の高い財宝を3回使う（無ければ使わない）。
+      case 'kings_cache_play': {
+        const tre = p.hand.filter((c) => DOM.engine.isTreasureFor(state, c) && c !== 'kings_cache')
+          .sort((a, b) => keepValue(b) - keepValue(a));
+        return { type: 'KINGS_CACHE_PLAY', card: tre.length ? tre[0] : null };
+      }
+      case 'fortune_hunter':
+        if (pd.stage === 'play') {
+          const tre = (pd.cards || []).filter((c) => DOM.engine.isTreasureFor(state, c)).sort((a, b) => keepValue(b) - keepValue(a));
+          return { type: 'FORTUNE_HUNTER_PLAY', card: tre.length ? tre[0] : null };
+        }
+        return { type: 'FORTUNE_HUNTER_ARRANGE', top: (pd.cards || []).slice().sort((a, b) => keepValue(b) - keepValue(a)) };
+      case 'mapmaker': {
+        const order = (pd.cards || []).slice().sort((a, b) => keepValue(b) - keepValue(a));
+        return { type: 'MAPMAKER_PICK', cards: order.slice(0, pd.take) };
+      }
+      case 'mapmaker_react':
+        return { type: 'MAPMAKER_REACT', play: true };
+      case 'enlarge_trash': {
+        const junk = p.hand.filter((c) => trashValue(c) < 10).sort((a, b) => trashValue(a) - trashValue(b));
+        const pick = junk.length ? junk[0] : p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0];
+        return { type: 'ENLARGE_TRASH', card: pick };
+      }
+      case 'enlarge_gain':
+        return { type: 'ENLARGE_GAIN', card: bestGain(state, pd.maxCost, { noVictory: pd.maxCost < 8, pot: pd.pot, debt: pd.debt }) || bestGain(state, pd.maxCost, { pot: pd.pot, debt: pd.debt }) };
+      // 一等航海士＝同名を全部使う（名前未確定なら一番多く持っている良いアクション）。
+      case 'first_mate': {
+        if (pd.name) {
+          return { type: 'FIRST_MATE_PLAY', card: p.hand.indexOf(pd.name) >= 0 ? pd.name : null };
+        }
+        const acts = p.hand.filter((c) => isType(c, 'action') && c !== 'first_mate');
+        if (!acts.length) return { type: 'FIRST_MATE_PLAY', card: null };
+        const byCount = {};
+        acts.forEach((c) => { byCount[c] = (byCount[c] || 0) + 1; });
+        const pick = acts.slice().sort((a, b) => (byCount[b] - byCount[a]) || (keepValue(b) - keepValue(a)))[0];
+        return { type: 'FIRST_MATE_PLAY', card: pick };
+      }
+      // フリゲート船のリアクション＝堀/盾があれば公開、無ければ受ける。
+      case 'frigate':
+        if (immuneReveal(p)) return immuneReveal(p);
+        return { type: 'LINGER_REACT' };
+      case 'trickster':
+        if (immuneReveal(p)) return immuneReveal(p);
+        return { type: 'TRICKSTER_REACT' };
+      // 操舵手＝良い$4以下（銀貨など）が取れるなら貯める。脇に札があれば終盤は回収。単純に「取れるなら獲得」。
+      case 'quartermaster': {
+        const inst = (p.quartermasters || []).find((q) => q.id === pd.qmId) || { cards: [] };
+        let best = null, bc = -1;
+        Object.keys(state.supply).forEach((id) => {
+          if (!DOM.engine.costUpTo(state, id, 4)) return;
+          if (isType(id, 'victory') || isType(id, 'curse')) return;
+          const c = DOM.engine.cardCost(state, id);
+          if (c > bc) { bc = c; best = id; }
+        });
+        if (best) return { type: 'QUARTERMASTER_RESOLVE', mode: 'gain', card: best };
+        if ((inst.cards || []).length) {
+          const take = inst.cards.slice().sort((a, b) => keepValue(b) - keepValue(a))[0];
+          return { type: 'QUARTERMASTER_RESOLVE', mode: 'take', card: take };
+        }
+        return { type: 'QUARTERMASTER_RESOLVE', mode: 'skip' };
+      }
+      // トリックスター＝場の一番価値の高い財宝を（回数まで）持ち越す。
+      case 'trickster_aside': {
+        const tre = p.inPlay.filter((c) => DOM.engine.isTreasureFor(state, c))
+          .sort((a, b) => keepValue(b) - keepValue(a)).slice(0, pd.max);
+        return { type: 'TRICKSTER_ASIDE', cards: tre };
+      }
+      // 鉱山道路＝獲得した財宝は基本使う（コインが増えて損しない）。
+      case 'mining_road_play':
+        return { type: 'MINING_ROAD_PLAY', play: true };
 
       /* ===== 拡張: 陰謀 ===== */
       case 'courtyard': {

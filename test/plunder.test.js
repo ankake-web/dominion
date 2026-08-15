@@ -41,6 +41,7 @@ function tally(s) {
   (s.trash || []).forEach(a); (s.blackMarket || []).forEach(a); (s.loot || []).forEach(a);
   s.players.forEach((p) => ZONES.forEach((z) => (p[z] || []).forEach(a)));
   s.players.forEach((p) => (p.archives || []).forEach((x) => (x.cards || []).forEach(a)));
+  s.players.forEach((p) => (p.quartermasters || []).forEach((x) => (x.cards || []).forEach(a))); // 略奪：操舵手の脇置き
   if (s.turn) { (s.turn.possessionGains || []).forEach(a); (s.turn.possessionTrash || []).forEach(a); }
   return t;
 }
@@ -1814,6 +1815,231 @@ function buyEv(s, id) { return E.reduce(s, { type: 'BUY_EVENT', event: id }); }
     if (err) bad++; else games++;
   }
   ok(bad === 0 && games === 4, 'P5 CPUソーク完走（イベント購入をランダム注入・4/4・膠着0・例外0・保存則違反0）');
+}
+
+/* ============================================================
+   P6＝残りの王国カード9種
+   ============================================================ */
+console.log('\n=== P6: 王国カード（複雑系） ===');
+
+const KING_P6 = ['fortune_hunter', 'mapmaker', 'enlarge', 'first_mate', 'frigate', 'mining_road', 'quartermaster', 'trickster', 'village', 'moat'];
+
+// --- 王の隠し財産（3回使用） ---
+{
+  let s = mk(['kings_cache', 'wealthy_village', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory']);
+  s.turn.phase = 'buy'; s.turn.buys = 1;
+  s.players[0].hand = ['kings_cache', 'gold'];
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'kings_cache' });
+  ok(s.pending && s.pending.type === 'kings_cache_play', '手札の財宝を選ぶ窓');
+  s = E.reduce(s, { type: 'KINGS_CACHE_PLAY', card: 'gold' });
+  ok(s.turn.coins === 9, '金貨を3回使用＝+$9');
+  ok(count(s.players[0].inPlay, 'gold') === 1, '物理カードは1枚だけ場に出る');
+}
+
+// --- 財産目当て ---
+{
+  let s = mk(KING_P6);
+  s = handPlay(s, 0, ['fortune_hunter']);
+  s.players[0].deck = ['estate', 'silver', 'copper', 'gold'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'fortune_hunter' });
+  ok(s.turn.coins === 2, '財産目当て＝+$2');
+  ok(s.pending && s.pending.type === 'fortune_hunter' && s.pending.cards.length === 3, '上3枚を見る');
+  // マスク＝相手には伏せる
+  const m = E.maskStateFor(s, 1);
+  ok((m.pending.cards || []).every((c) => c === 'back'), '見た3枚は相手に伏せられる（私的看破）');
+  s = E.reduce(s, { type: 'FORTUNE_HUNTER_PLAY', card: 'silver' });
+  ok(count(s.players[0].inPlay, 'silver') === 1 && s.turn.coins === 4, '中の財宝（銀貨）を使用できる');
+  ok(s.pending && s.pending.stage === 'arrange', '残り2枚を戻す窓');
+  s = E.reduce(s, { type: 'FORTUNE_HUNTER_ARRANGE', top: ['estate', 'copper'] });
+  ok(s.players[0].deck[0] === 'estate' && s.players[0].deck[1] === 'copper', '好きな順で山札の上に戻す');
+}
+
+// --- 地図作り（本体＋リアクション） ---
+{
+  let s = mk(KING_P6, null, ['A', 'B']);
+  s = handPlay(s, 0, ['mapmaker']);
+  s.players[0].deck = ['gold', 'silver', 'estate', 'curse', 'copper'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'mapmaker' });
+  ok(s.pending && s.pending.type === 'mapmaker' && s.pending.cards.length === 4, '上4枚を見る');
+  s = E.reduce(s, { type: 'MAPMAKER_PICK', cards: ['gold', 'silver'] });
+  ok(count(s.players[0].hand, 'gold') === 1 && count(s.players[0].hand, 'silver') === 1, '2枚を手札へ');
+  ok(count(s.players[0].discard, 'estate') === 1 && count(s.players[0].discard, 'curse') === 1, '残りは捨て札へ');
+}
+{
+  // リアクション＝相手が勝利点を獲得したとき手札から使用できる
+  let s = mk(KING_P6, null, ['A', 'B']);
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });   // → B
+  s.players[0].hand = ['mapmaker'];
+  s.players[0].deck = ['gold', 'silver', 'estate', 'curse'];
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 2;
+  s = E.reduce(s, { type: 'BUY', card: 'estate' });   // B が勝利点を獲得
+  ok(s.pending && s.pending.type === 'mapmaker_react' && s.pending.player === 0, '誰かの勝利点獲得で窓が開く');
+  s = E.reduce(s, { type: 'MAPMAKER_REACT', play: true });
+  ok(s.pending && s.pending.type === 'mapmaker' && s.pending.player === 0, '相手のターンに手札から使用できる');
+  s = E.reduce(s, { type: 'MAPMAKER_PICK', cards: ['gold', 'silver'] });
+  ok(count(s.players[0].hand, 'gold') === 1, 'リアクションでも普通に解決する');
+}
+
+// --- 拡大（今と次のターン） ---
+{
+  let s = mk(KING_P6);
+  s = handPlay(s, 0, ['enlarge', 'estate']);
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'enlarge' });
+  ok(s.pending && s.pending.type === 'enlarge_trash', '現在＝廃棄の窓（強制）');
+  s = E.reduce(s, { type: 'ENLARGE_TRASH', card: 'estate' });
+  ok(s.pending && s.pending.type === 'enlarge_gain' && s.pending.maxCost === 4, '屋敷($2)→$4以下の獲得');
+  s = E.reduce(s, { type: 'ENLARGE_GAIN', card: 'village' });
+  ok(count(s.players[0].discard, 'village') === 1, '獲得できる');
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(count(s.players[0].durationCards, 'enlarge') === 1, '持続として場に残る');
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });   // → A のターン開始
+  ok(s.pending && s.pending.type === 'enlarge_trash', '次のターンの開始時も廃棄→獲得');
+}
+
+// --- 一等航海士 ---
+{
+  let s = mk(KING_P6);
+  s = handPlay(s, 0, ['first_mate', 'village', 'village', 'smithy']);
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'silver', 'gold'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'first_mate' });
+  ok(s.pending && s.pending.type === 'first_mate', '使うアクションを選ぶ窓');
+  s = E.reduce(s, { type: 'FIRST_MATE_PLAY', card: 'village' });
+  ok(count(s.players[0].inPlay, 'village') === 1, '1枚目の村を使用');
+  ok(s.pending && s.pending.type === 'first_mate' && s.pending.name === 'village', '同名（村）だけ続けて使える');
+  const rej = E.reduce(s, { type: 'FIRST_MATE_PLAY', card: 'smithy' });
+  ok(rej.pending && count(rej.players[0].inPlay, 'smithy') === 0, '別名（鍛冶屋）は拒否される');
+  s = E.reduce(s, { type: 'FIRST_MATE_PLAY', card: 'village' });
+  s = E.reduce(s, { type: 'FIRST_MATE_PLAY', card: null });
+  ok(s.players[0].hand.length === 6, 'やめたら手札が6枚になるように引く（実際=' + s.players[0].hand.length + '）');
+}
+
+// --- フリゲート船 ---
+{
+  let s = mk(KING_P6, null, ['A', 'B']);
+  s = handPlay(s, 0, ['frigate']);
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'frigate' });
+  ok(s.turn.coins === 3, 'フリゲート船＝+$3');
+  ok((s.players[0].delayedEffects || []).some((e) => e.type === 'frigate'), '持続の予約が張られる');
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });   // → B のターン
+  ok(count(s.players[0].durationCards, 'frigate') === 1, '場に残る');
+  s.players[1].hand = ['village', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s.players[1].deck = ['estate', 'estate'];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'village' });
+  ok(s.pending && s.pending.type === 'discard_down' && s.pending.player === 1 && s.pending.down === 4,
+    'B がアクションを使用＝解決後に手札4枚まで捨てる');
+  s = E.reduce(s, { type: 'DISCARD_DOWN_RESOLVE', cards: s.players[1].hand.slice(0, s.players[1].hand.length - 4) });
+  ok(s.players[1].hand.length === 4, '手札4枚になった');
+}
+{
+  // 全員が堀で防いだら、そのターンの片付けで捨てられる（公式）
+  let s = mk(KING_P6, null, ['A', 'B']);
+  s = handPlay(s, 0, ['frigate']);
+  s.players[1].hand = ['moat', 'copper', 'copper', 'copper', 'copper'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'frigate' });
+  ok(s.pending && s.pending.type === 'frigate' && s.pending.stage === 'react', '堀のリアクション窓');
+  s = E.reduce(s, { type: 'MOAT_REVEAL' });
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(count(s.players[0].durationCards, 'frigate') === 0 && count(s.players[0].inPlay, 'frigate') === 0,
+    '誰にも影響しないフリゲート船はそのターンの片付けで場を離れる');
+}
+
+// --- 鉱山道路 ---
+{
+  let s = mk(KING_P6);
+  s = handPlay(s, 0, ['mining_road']);
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'mining_road' });
+  ok(s.turn.coins === 2 && s.turn.buys === 2, '鉱山道路＝+1購入 +$2');
+  s.turn.phase = 'buy'; s.turn.coins = 8;
+  s = E.reduce(s, { type: 'BUY', card: 'silver' });
+  ok(s.pending && s.pending.type === 'mining_road_play', '財宝の獲得で「使う？」の窓');
+  s = E.reduce(s, { type: 'MINING_ROAD_PLAY', play: true });
+  ok(count(s.players[0].inPlay, 'silver') === 1 && s.turn.miningRoad === 0, '獲得した銀貨を使用（回数を消費）');
+  // 「使わない」なら権利は残る
+  let z = mk(KING_P6);
+  z = handPlay(z, 0, ['mining_road']);
+  z = E.reduce(z, { type: 'PLAY_ACTION', card: 'mining_road' });
+  z.turn.phase = 'buy'; z.turn.buys = 3; z.turn.coins = 8;
+  z = E.reduce(z, { type: 'BUY', card: 'silver' });
+  z = E.reduce(z, { type: 'MINING_ROAD_PLAY', play: false });
+  ok(z.turn.miningRoad === 1, '使わなければ回数は残る');
+  z = E.reduce(z, { type: 'BUY', card: 'silver' });
+  ok(z.pending && z.pending.type === 'mining_road_play', '後の獲得でまた使える');
+}
+
+// --- 操舵手 ---
+{
+  let s = mk(KING_P6);
+  s = handPlay(s, 0, ['quartermaster']);
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'quartermaster' });
+  ok((s.players[0].quartermasters || []).length === 1, 'インスタンスができる');
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(count(s.players[0].durationCards, 'quartermaster') === 1, '永続持続として場に残る');
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });   // → A のターン開始
+  ok(s.pending && s.pending.type === 'quartermaster', 'ターンの開始時に二択の窓');
+  const t0 = tally(s);
+  s = E.reduce(s, { type: 'QUARTERMASTER_RESOLVE', mode: 'gain', card: 'silver' });
+  ok(s.players[0].quartermasters[0].cards.indexOf('silver') >= 0, '$4以下を脇に獲得（捨て札を経由しない）');
+  ok(sameTally(t0, tally(s)), '保存則が保たれる（脇も数える）');
+  // 次のターン＝脇から手札へ
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });   // → A
+  ok(s.pending && s.pending.type === 'quartermaster', '毎ターン開始時に窓');
+  s = E.reduce(s, { type: 'QUARTERMASTER_RESOLVE', mode: 'take', card: 'silver' });
+  ok(count(s.players[0].hand, 'silver') >= 1, '脇のカードを手札に加えられる');
+}
+
+// --- トリックスター ---
+{
+  let s = mk(KING_P6, null, ['A', 'B']);
+  s = handPlay(s, 0, ['trickster']);
+  const curses = s.supply.curse;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'trickster' });
+  ok(s.supply.curse === curses - 1, '他の全員が呪いを獲得（アタック）');
+  s.turn.phase = 'buy'; s.turn.buys = 1;
+  s.players[0].hand = ['gold', 'copper'];
+  s = E.reduce(s, { type: 'PLAY_ALL_TREASURES' });
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(s.pending && s.pending.type === 'trickster_aside', 'クリンナップ開始時に「財宝を脇へ」の窓');
+  s = E.reduce(s, { type: 'TRICKSTER_ASIDE', cards: ['gold'] });
+  ok(count(s.players[0].hand, 'gold') === 1, '脇に置いた金貨はターン終了時（先引きの後）に手札へ');
+  ok(s.players[0].hand.length === 6, '5枚＋金貨の6枚');
+}
+
+// --- P6 ソーク ---
+{
+  let games = 0, bad = 0;
+  for (let np = 2; np <= 3; np++) {
+    for (let si = 0; si < 2; si++) {
+      seed = 10100 + np * 13 + si;
+      const names = []; for (let k = 0; k < np; k++) names.push({ name: 'P' + k, isCpu: true, level: 'normal' });
+      let s = E.createInitialState(names, KING_P6, { startActive: 0 });
+      KING_P6.forEach((id) => s.players.forEach((pl) => { for (let c = 0; c < 2; c++) if ((s.supply[id] | 0) > 0) { s.supply[id] -= 1; pl.deck.push(id); } }));
+      s.players.forEach((pl) => pl.deck.push('kings_cache', 'gold'));
+      const t0 = tally(s);
+      let step = 0, err = false;
+      try {
+        while (!s.gameOver && step++ < 25000) {
+          const a = CPU.decide(s);
+          if (a == null) { console.log('    P6soak ' + np + '/' + si + ': CPU が null（' + (s.pending && s.pending.type) + '）'); err = true; break; }
+          s = E.reduce(s, a);
+        }
+      } catch (e) { console.log('    P6soak ' + np + '/' + si + ': 例外 ' + e.message); err = true; }
+      if (!err && !s.gameOver) { console.log('    P6soak ' + np + '/' + si + ': 未終局 pending=' + (s.pending && s.pending.type)); err = true; }
+      if (!err && !sameTally(t0, tally(s))) { console.log('    P6soak ' + np + '/' + si + ': 保存則違反'); err = true; }
+      if (err) bad++; else games++;
+    }
+  }
+  ok(bad === 0 && games === 4, 'P6 CPUソーク完走（4/4・膠着0・例外0・保存則違反0）');
 }
 
 console.log(`\n略奪テスト結果: ${pass} 件成功, ${fail} 件失敗`);
