@@ -491,7 +491,7 @@
     death_cart: { id: 'death_cart', name: '死の荷車', cost: 4, types: ['action', 'looter'],
                  text: 'これか手札のアクションカード1枚を廃棄してもよい。廃棄したなら +5 コイン。\n————\nこれを獲得したとき、廃墟2枚を獲得する。' },
     marauder: { id: 'marauder', name: '略奪者', cost: 4, types: ['action', 'attack', 'looter'],
-                 text: '戦利品置き場から戦利品1枚を獲得する。\n他のプレイヤーは各自、廃墟1枚を獲得する。' },
+                 text: '略奪品置き場から略奪品1枚を獲得する。\n他のプレイヤーは各自、廃墟1枚を獲得する。' },
     feodum: { id: 'feodum', name: '封土', cost: 4, types: ['victory'],
                  text: '（勝利点）\n所持している銀貨3枚につき 1 勝利点（端数切り捨て）。\nこれを廃棄したとき、銀貨3枚を獲得する。' },
 
@@ -527,7 +527,7 @@
     junk_dealer: { id: 'junk_dealer', name: '屑屋', cost: 5, types: ['action'],
                  text: '+1 カード\n+1 アクション\n+1 コイン\n手札のカード1枚を廃棄する。' },
     bandit_camp: { id: 'bandit_camp', name: '山賊の宿営地', cost: 5, types: ['action'],
-                 text: '+1 カード\n+2 アクション\n戦利品置き場から戦利品1枚を獲得する。' },
+                 text: '+1 カード\n+2 アクション\n略奪品置き場から略奪品1枚を獲得する。' },
     rebuild: { id: 'rebuild', name: '建て直し', cost: 5, types: ['action'],
                  text: '+1 アクション\nカード名を1つ指定する。指定したカード以外の勝利点カードが出るまで、自分の山札の上からカードを公開する。\n公開した他のカードを捨て札にし、その勝利点カードを廃棄する。\nそのコストより $3 多いコストまでの勝利点カード1枚を獲得する。' },
     catacombs: { id: 'catacombs', name: '地下墓所', cost: 5, types: ['action'],
@@ -543,7 +543,7 @@
     rogue: { id: 'rogue', name: '盗賊', cost: 5, types: ['action', 'attack'],
                  text: '+2 コイン\n廃棄置き場にコスト3～6のカードがあれば、その中から1枚を獲得する。\n無ければ、他のプレイヤーは各自、自分の山札の上から2枚を公開し、その中のコスト3～6のカード1枚を廃棄し、残りを捨て札にする。' },
     pillage: { id: 'pillage', name: '略奪', cost: 5, types: ['action', 'attack'],
-                 text: 'これを廃棄する。そうしたら、戦利品置き場から戦利品2枚を獲得し、手札が5枚以上の他のプレイヤーは各自、手札を公開し、あなたが選んだカード1枚を捨て札にする。' },
+                 text: 'これを廃棄する。そうしたら、略奪品置き場から略奪品2枚を獲得し、手札が5枚以上の他のプレイヤーは各自、手札を公開し、あなたが選んだカード1枚を捨て札にする。' },
     cultist: { id: 'cultist', name: '狂信者', cost: 5, types: ['action', 'attack', 'looter'],
                  text: '+2 カード\n他のプレイヤーは各自、廃墟1枚を獲得する。\n手札の狂信者1枚を使用してよい。\nこれを廃棄したとき、+3 カード。' },
     counterfeit: { id: 'counterfeit', name: '偽造通貨', cost: 5, types: ['treasure'], coin: 1,
@@ -597,9 +597,9 @@
     overgrown_estate: { id: 'overgrown_estate', name: '草茂る屋敷', cost: 1, types: ['victory', 'shelter'],
                  text: '0 勝利点\n————\nこのカードを廃棄したとき、+1 カードを引く。' },
 
-    // ===== 非サプライ（戦利品/狂人/傭兵・段階1）=====
-    spoils: { id: 'spoils', name: '戦利品', cost: 0, types: ['treasure'], coin: 3,
-                 text: '3 コイン\nこれを使用したとき、このカードを戦利品置き場に戻す。' },
+    // ===== 非サプライ（略奪品/狂人/傭兵・段階1）=====
+    spoils: { id: 'spoils', name: '略奪品', cost: 0, types: ['treasure'], coin: 3,
+                 text: '3 コイン\nこれを使用したとき、このカードを略奪品置き場に戻す。' },
     madman: { id: 'madman', name: '狂人', cost: 0, types: ['action'],
                  text: '+2 アクション\nこのカードを狂人置き場に戻す。そうしたら、あなたの手札1枚につき +1 カード。' },
     mercenary: { id: 'mercenary', name: '傭兵', cost: 0, types: ['action', 'attack'],
@@ -901,7 +901,7 @@
         4. 追跡者(tracker)＝2022年の**機能**エラッタ（「これが場にある間」→「このターン」）を反映。
         5. 2021年印刷で削除された "from its pile"（悪魔の工房／迫害者／レプラコーン／沼の恵み 等）は落とす＝機能差ゼロ。
        家宝を持つ王国カードは末尾に「（家宝：X）」を付ける（実カードでは枠外の帯なので区切り線は入れない）。
-       非サプライ札の "(This is not in the Supply.)" は既存カタログ（馬/戦利品/狂人/賞品）と同じく書かない。 */
+       非サプライ札の "(This is not in the Supply.)" は既存カタログ（馬/略奪品/狂人/賞品）と同じく書かない。 */
     bard:            { id: 'bard', name: '詩人', cost: 4, types: ['action', 'fate'],
                  text: '+2 コイン\n祝福を1つ受ける。' },
     blessed_village: { id: 'blessed_village', name: '恵みの村', cost: 4, types: ['action', 'fate'],
@@ -1251,7 +1251,7 @@
   DOM.POOLS.knights = ['dame_anna', 'dame_josephine', 'dame_molly', 'dame_natalie', 'dame_sylvia', 'sir_bailey', 'sir_destry', 'sir_martin', 'sir_michael', 'sir_vander'];   // 騎士の混合山の中身（非サプライ）
   DOM.POOLS.ruins = ['abandoned_mine', 'ruined_library', 'ruined_market', 'ruined_village', 'survivors'];       // 廃墟（特殊供給）
   DOM.POOLS.shelters = ['hovel', 'necropolis', 'overgrown_estate']; // 避難所（開始デッキ置換）
-  DOM.POOLS.darkages_np = ['spoils', 'madman', 'mercenary']; // 戦利品/狂人/傭兵（非サプライ）
+  DOM.POOLS.darkages_np = ['spoils', 'madman', 'mercenary']; // 略奪品/狂人/傭兵（非サプライ）
   // 冒険（Adventures）＝王国30種（抽選母集団。「冒険セット」固定10種と「冒険から」ランダムが参照。page/peasant はサプライ）。
   DOM.POOLS.adventures = ['coin_of_the_realm', 'page', 'peasant', 'ratcatcher', 'raze', 'amulet', 'caravan_guard', 'dungeon', 'gear', 'guide', 'duplicate', 'magpie', 'messenger', 'miser', 'port', 'ranger', 'transmogrify', 'artificer', 'bridge_troll', 'distant_lands', 'giant', 'haunted_woods', 'lost_city', 'relic', 'royal_carriage', 'storyteller', 'swamp_hag', 'treasure_trove', 'wine_merchant', 'hireling'];
   // 冒険：トラベラーの成長先8種＝非サプライ（page/peasant の交換でのみ得る・各5枚）。賞品(prizes)と同型で

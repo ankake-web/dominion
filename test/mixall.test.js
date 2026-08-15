@@ -116,7 +116,7 @@ console.log('=== mix: 汎用「$N以下を獲得」が 非サプライ／ポー�
   ok(E.costExact(s2, 'vineyard', 0, 0, 0) === false, 'costExact: $0+P は「ちょうど$0」ではない');
 }
 {
-  // 鉱山（財宝を +$3 まで格上げ）：賢者の石（$3+P）や戦利品（非サプライ）を獲得できない
+  // 鉱山（財宝を +$3 まで格上げ）：賢者の石（$3+P）や略奪品（非サプライ）を獲得できない
   const s = game(['mine', 'philosophers_stone', 'potion', 'bandit_camp', 'village', 'smithy', 'market', 'moat', 'militia', 'festival']);
   let s2 = playAction(s, 'mine', ['copper']);
   s2 = reduce(s2, { type: 'MINE_TRASH', card: 'copper' });
@@ -124,7 +124,7 @@ console.log('=== mix: 汎用「$N以下を獲得」が 非サプライ／ポー�
   s2 = reduce(s2, { type: 'MINE_GAIN', card: 'philosophers_stone' });
   ok(s2.pending && s2.pending.stage === 'gain', '鉱山：賢者の石（$3+P）を拒否');
   s2 = reduce(s2, { type: 'MINE_GAIN', card: 'spoils' });
-  ok(s2.pending && s2.pending.stage === 'gain', '鉱山：戦利品（非サプライ）を拒否');
+  ok(s2.pending && s2.pending.stage === 'gain', '鉱山：略奪品（非サプライ）を拒否');
   s2 = reduce(s2, { type: 'MINE_GAIN', card: 'silver' });
   ok(!s2.pending && s2.players[0].hand.includes('silver'), '鉱山：銀貨は手札に獲得（終端）');
 }
@@ -230,7 +230,7 @@ console.log('=== mix: gain()/trashCard を通らない経路（封鎖/待ち伏�
   ok(s2.trash.includes('village') && !s2.pending, '待ち伏せ：村は廃棄できる（終端）');
 }
 {
-  // 造幣所：非サプライ（戦利品）のコピーは獲得できない
+  // 造幣所：非サプライ（略奪品）のコピーは獲得できない
   let s2 = game(['mint', 'bandit_camp', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival']);
   s2.turn.phase = 'action'; s2.turn.actions = 1;
   setHand(s2, ['mint', 'spoils']); // 造幣所はアクション（手札の財宝を公開してコピーを獲得）
@@ -239,8 +239,8 @@ console.log('=== mix: gain()/trashCard を通らない経路（封鎖/待ち伏�
   s2 = reduce(s2, { type: 'PLAY_ACTION', card: 'mint' });
   ok(s2.pending && s2.pending.type === 'mint', '造幣所：公開する財宝を選ぶ選択待ち');
   s2 = reduce(s2, { type: 'MINT_REVEAL', card: 'spoils' });
-  ok((s2.supply.spoils || 0) === sp0, '造幣所：戦利品（非サプライ）を公開しても山が減らない＝獲得しない');
-  ok(sameTally(t0, tally(s2)), '造幣所×戦利品：カード保存則を満たす（コピーが増えない）');
+  ok((s2.supply.spoils || 0) === sp0, '造幣所：略奪品（非サプライ）を公開しても山が減らない＝獲得しない');
+  ok(sameTally(t0, tally(s2)), '造幣所×略奪品：カード保存則を満たす（コピーが増えない）');
   ok(!s2.pending, '造幣所：pending が閉じる');
 }
 {
@@ -249,7 +249,7 @@ console.log('=== mix: gain()/trashCard を通らない経路（封鎖/待ち伏�
   s.players[1].lastTurnGains = ['spoils', 'engineer', 'silver'];
   let s2 = playAction(s, 'smugglers');
   if (s2.pending && s2.pending.type === 'smugglers') {
-    ok(s2.pending.candidates.indexOf('spoils') < 0, '密輸人：戦利品（非サプライ）は候補外');
+    ok(s2.pending.candidates.indexOf('spoils') < 0, '密輸人：略奪品（非サプライ）は候補外');
     ok(s2.pending.candidates.indexOf('engineer') < 0, '密輸人：技術者（$0+負債4）は候補外');
     ok(s2.pending.candidates.indexOf('silver') >= 0, '密輸人：銀貨は候補');
     s2 = reduce(s2, { type: 'SMUGGLERS_GAIN', card: 'silver' });
@@ -361,16 +361,16 @@ function possessedGame(kingdom) {
   ok(eng >= 0, '（技術者の山は存在する）');
 }
 {
-  // 馬上槍試合：賞品が尽き公領も無ければ pending を立てない（戦利品/成長先を「賞品」と誤認しない）
+  // 馬上槍試合：賞品が尽き公領も無ければ pending を立てない（略奪品/成長先を「賞品」と誤認しない）
   const s = game(['tournament', 'bandit_camp', 'page', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory']);
   ['bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed'].forEach((id) => { s.supply[id] = 0; });
   s.supply.duchy = 0;
-  ok((s.supply.spoils || 0) > 0 || (s.supply.champion || 0) > 0, '前提：非サプライ山（戦利品/成長先）が存在する');
+  ok((s.supply.spoils || 0) > 0 || (s.supply.champion || 0) > 0, '前提：非サプライ山（略奪品/成長先）が存在する');
   setHand(s, ['tournament', 'province']);
   let s2 = reduce(s, { type: 'PLAY_ACTION', card: 'tournament' });
   ok(s2.pending && s2.pending.type === 'tournament' && s2.pending.stage === 'reveal_self', '馬上槍試合：属州公開の選択待ち');
   s2 = reduce(s2, { type: 'TOURNAMENT_REVEAL', reveal: true });
-  ok(!s2.pending || s2.pending.stage !== 'prize', '馬上槍試合：賞品も公領も無ければ「賞品を獲得」pending を立てない（戦利品を賞品扱いしない）');
+  ok(!s2.pending || s2.pending.stage !== 'prize', '馬上槍試合：賞品も公領も無ければ「賞品を獲得」pending を立てない（略奪品を賞品扱いしない）');
 }
 {
   // 青空市場：サプライからの廃棄（待ち伏せ）には反応しない（「あなたのカード」ではない）

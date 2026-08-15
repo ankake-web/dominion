@@ -113,7 +113,7 @@
   // 収穫祭：賞品(Prize)は馬上槍試合でのみ獲得する非サプライ札＝汎用の獲得効果(bestGain/bestGainExact)は
   // 絶対に賞品を選ばない（豊穣の角等で$0賞品を不正獲得しない／賞品を拒否する reducer と噛み合って無限ループしない）。
   const PRIZE_SET = new Set(['bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed']);
-  // 暗黒時代：戦利品/狂人/傭兵も非サプライ＝汎用獲得(bestGain等)や獲得系pendingから除外する
+  // 暗黒時代：略奪品/狂人/傭兵も非サプライ＝汎用獲得(bestGain等)や獲得系pendingから除外する
   //（engine の NON_SUPPLY 拒否と噛み合い、提案し続けて無限ループするのを防ぐ）。
   // 冒険：トラベラーの成長先8種も非サプライ（page/peasant の交換でのみ得る）＝汎用獲得や獲得系pendingから除外。
   // 移動動物園：馬（horse）も非サプライ＝「馬を獲得する」効果でのみ得る（購入も汎用獲得もできない）。
@@ -313,7 +313,7 @@
     // 暗黒時代：非ターミナル（+アクション付き）
     if (has('fortress')) return 'fortress';               // +1カード+2アクション（廃棄で手札に戻る）
     if (has('necropolis')) return 'necropolis';           // +2アクション（避難所）
-    if (has('bandit_camp')) return 'bandit_camp';         // +1カード+2アクション＋戦利品
+    if (has('bandit_camp')) return 'bandit_camp';         // +1カード+2アクション＋略奪品
     if (has('junk_dealer')) return 'junk_dealer';         // +1カード+1アクション+$1＋圧縮
     if (has('mystic')) return 'mystic';                   // +1アクション+$2＋当てれば手札へ
     if (has('vagrant')) return 'vagrant';                 // +1カード+1アクション
@@ -499,8 +499,8 @@
     if (has('priest')) return 'priest';                   // +2コイン＋以後の廃棄で+2コイン（圧縮と併せて強い）
     // 暗黒時代：ターミナル（アタック＞ドロー＞trash-to-gain＞その他）
     if (has('cultist')) return 'cultist';                   // +2カード＋廃墟配布＋連鎖（強力）
-    if (has('marauder')) return 'marauder';                 // 戦利品＋廃墟配布
-    if (has('pillage')) return 'pillage';                   // 廃棄→戦利品2枚＋手札を捨てさせる
+    if (has('marauder')) return 'marauder';                 // 略奪品＋廃墟配布
+    if (has('pillage')) return 'pillage';                   // 廃棄→略奪品2枚＋手札を捨てさせる
     if (has('rogue')) return 'rogue';                       // +$2＋廃棄置き場回収 or 相手の$3-6廃棄
     // 騎士（ターミナル種）＝手札にあれば使う（混合山アタック）
     for (const kn of ['sir_destry', 'dame_sylvia', 'sir_martin', 'dame_natalie', 'sir_michael', 'dame_anna', 'dame_josephine', 'sir_vander']) { if (has(kn)) return kn; }
@@ -736,7 +736,7 @@
     if (after('province') <= 0) return true;
     // 繁栄：植民地を使うゲームは植民地が尽きても終了する（engine の isGameOver と同じ条件を見る）。
     if (state.supply.colony != null && after('colony') <= 0) return true;
-    /* 3山終了は **engine の emptyPileCount が正本**（非サプライ＝賞品/戦利品/成長先を数えない・
+    /* 3山終了は **engine の emptyPileCount が正本**（非サプライ＝賞品/略奪品/成長先を数えない・
        分割山は上下で1山・廃墟の混合山を state.ruins で数える）。ここで素朴に supply のキーを数えると
        非サプライ山や分割山下段まで「空」に数えてしまい、engine はまだ続くのに CPU だけ「買うと終わる」と
        誤判定して終盤ずっと買い控える（敵対レビューで実測）。 */

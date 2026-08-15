@@ -23,7 +23,7 @@
   //   どちらも購入・汎用獲得・闇市場デッキの対象外＝NON_SUPPLY に入れて4系統から一括で除外する。
   const HEIRLOOMS = ['cursed_gold', 'goat', 'haunted_mirror', 'lucky_coin', 'magic_lamp', 'pasture', 'pouch'];
   const ZOMBIES = ['zombie_apprentice', 'zombie_mason', 'zombie_spy'];
-  const NON_SUPPLY = new Set([].concat(PRIZES, ['spoils', 'madman', 'mercenary'], TRAVELLER_GROWTH, ['horse'], NOCTURNE_NP, HEIRLOOMS, ZOMBIES)); // supply の数値キーだが「山」としては数えない/買えないもの（賞品＋暗黒時代の戦利品/狂人/傭兵＋冒険のトラベラー成長先＋移動動物園の馬＋夜想曲の精霊/願い/コウモリ/家宝/ゾンビ）
+  const NON_SUPPLY = new Set([].concat(PRIZES, ['spoils', 'madman', 'mercenary'], TRAVELLER_GROWTH, ['horse'], NOCTURNE_NP, HEIRLOOMS, ZOMBIES)); // supply の数値キーだが「山」としては数えない/買えないもの（賞品＋暗黒時代の略奪品/狂人/傭兵＋冒険のトラベラー成長先＋移動動物園の馬＋夜想曲の精霊/願い/コウモリ/家宝/ゾンビ）
   // 分割山（Split pile）：下段は上段が尽きるまで購入/獲得できない。正本は DOM.SPLIT_PILES（下段id→上段id）。
   const SPLIT_TOP = DOM.SPLIT_PILES || {};              // 下段id → 上段id（例 avanto→sauna）
   const SPLIT_BOTTOM = {}; Object.keys(SPLIT_TOP).forEach((b) => { SPLIT_BOTTOM[SPLIT_TOP[b]] = b; }); // 上段id → 下段id
@@ -118,7 +118,7 @@
   /* 戦闘計画(Battle Plan)＝**任意のサプライ山**を回せる（公式逐語：騎士・廃墟・城・サウナ/アヴァントも含む）。
      - 返すのは**山キー**（2段分割山は上段キーに正規化＝1山1エントリ）。
      - **サプライ山限定**（wiki 逐語：`As Battle Plan can only rotate Supply piles, it cannot rotate the Ferryman's pile`）
-       ＝賞品/戦利品/馬/トラベラー成長先/精霊 などの非サプライ山は返さない。
+       ＝賞品/略奪品/馬/トラベラー成長先/精霊 などの非サプライ山は返さない。
      - **普通の山も空の山も合法な選択肢**として返す（回しても何も起きないだけ＝公式FAQ
        `Many piles won't do anything meaningful if you do this`）。残枚数で絞らない。
      ※他5枚（触れ役/薬草集め/古地図/天幕/生徒）は自分の山を**名指し**するのでこの述語を使わない
@@ -620,7 +620,7 @@
   // 財宝の「使ったとき」効果だけを適用する（カードは動かさない）。
   //   1回目＝playTreasureCard（手札→場に移してから呼ぶ）。2回目＝冠/ティアラ/偽造通貨の再演
   //   （state.replay の 'treasure_replay' から runReplays が呼ぶ＝1回目の選択待ちが解決してから走る）。
-  //   自己移動する財宝（投資/戦利品/法貨/私掠船の廃棄）は removeOne ガードで2回目は自然に不発（lose track）。
+  //   自己移動する財宝（投資/略奪品/法貨/私掠船の廃棄）は removeOne ガードで2回目は自然に不発（lose track）。
   function applyTreasureEffect(state, pIndex, card) {
     const p = state.players[pIndex];
     const t = state.turn;
@@ -714,11 +714,11 @@
       if (p.deck.length === 0 && p.discard.length > 0) { reshuffleDeck(p); }
       if (p.deck.length > 0) state.pending = { type: 'crystal_ball', player: pIndex, card: p.deck[0] };
     }
-    // 暗黒時代：戦利品＝+$3（coin:3 で加算済み）。使ったら戦利品の山（非サプライ）へ戻す。
+    // 暗黒時代：略奪品＝+$3（coin:3 で加算済み）。使ったら略奪品の山（非サプライ）へ戻す。
     //   2回目のプレイ（冠/ティアラ/偽造通貨の再演）では既に山へ戻っている＝返却は不発（lose track・コインは入る）。
     if (card === 'spoils') {
-      if (removeOne(p.inPlay, 'spoils')) { state.supply.spoils = (state.supply.spoils || 0) + 1; log(state, `${p.name} は戦利品を使った（+$3）→山へ戻した。`); }
-      else log(state, `${p.name} は戦利品をもう一度使った（+$3）。`);
+      if (removeOne(p.inPlay, 'spoils')) { state.supply.spoils = (state.supply.spoils || 0) + 1; log(state, `${p.name} は略奪品を使った（+$3）→山へ戻した。`); }
+      else log(state, `${p.name} は略奪品をもう一度使った（+$3）。`);
     }
     // 冒険：掘出物＝+$2（coin:2 で加算済み）。プレイしたとき金貨1枚と銅貨1枚を獲得。
     if (card === 'treasure_trove') {
@@ -1005,7 +1005,7 @@
     // 廃墟(Ruins)山は supply の数値キーを持たず state.ruins（実カード配列）で管理する（createInitialState で生成）。
     //   ※'ruins' の山キーはカタログに無い＝supply に持つと CPU/UI の supply 走査が C()['ruins'] で落ちるため。
     //   騎士(knights)はカタログ有り・王国枠＝supply.knights（10枚・購入可）を kingdom.forEach で既に持つ。
-    //   非サプライ山：戦利品(山賊の宿営地/略奪者/略奪)=15固定、狂人(隠遁者)=10、傭兵(浮浪児)=10。
+    //   非サプライ山：略奪品(山賊の宿営地/略奪者/略奪)=15固定、狂人(隠遁者)=10、傭兵(浮浪児)=10。
     if (kingdom.some((k) => ['bandit_camp', 'marauder', 'pillage'].includes(k))) supply.spoils = 15;
     if (kingdom.includes('hermit')) supply.madman = 10;
     if (kingdom.includes('urchin')) supply.mercenary = 10;
@@ -1013,7 +1013,7 @@
     //   購入不可（canBuyCard）・3山終了に数えない（emptyPileCount）・獲得は「場から捨てる時の交換」のみ。
     if (kingdom.includes('page')) ['treasure_hunter', 'warrior', 'hero', 'champion'].forEach((id) => (supply[id] = 5));
     if (kingdom.includes('peasant')) ['soldier', 'fugitive', 'disciple', 'teacher'].forEach((id) => (supply[id] = 5));
-    // 夜想曲：非サプライ山（**枚数は人数によらない**＝賞品/戦利品と同じ）。正本＝docs/research/nocturne_rules.md §6-2。
+    // 夜想曲：非サプライ山（**枚数は人数によらない**＝賞品/略奪品と同じ）。正本＝docs/research/nocturne_rules.md §6-2。
     //   ウィル・オ・ウィスプは「幸運(Fate)が1枚でもあれば」置く（沼の恵みの獲得先）／悪魔祓いは精霊3山すべてを要求する。
     if (kingdom.some((k) => DOM.isType(k, 'fate')) || kingdom.includes('exorcist')) supply.will_o_wisp = 12;
     if (kingdom.some((k) => ['devils_workshop', 'tormentor', 'exorcist'].includes(k))) supply.imp = 13;
@@ -1796,7 +1796,7 @@
     });
   }
   // 「サプライから追放できる」候補（＝各山の一番上）。engine拒否・CPU候補・UIフィルタが同じ関数を見る。
-  //   非サプライ山（馬/賞品/戦利品/トラベラー成長先）は「サプライにある」ではない＝対象外。
+  //   非サプライ山（馬/賞品/略奪品/トラベラー成長先）は「サプライにある」ではない＝対象外。
   //   ロック中の分割山の下段も対象外（availableInSupply）。混合山は一番上の実カードだけを候補に足す。
   function exilableSupplyIds(state) {
     const out = [];
@@ -1999,7 +1999,7 @@
     trashCard(state, victim, trashed);
     log(state, `${v.name} は山札の上の「${C()[trashed].name}」を廃棄した。`);
     const ref = costOf(state, trashed);
-    // 非サプライ（賞品/トラベラー成長先/戦利品等）は贈与対象にしない（交換/専用機構でのみ得るカード）。
+    // 非サプライ（賞品/トラベラー成長先/略奪品等）は贈与対象にしない（交換/専用機構でのみ得るカード）。
     // コスト一致は3成分（銅貨$0 に 大君主$0+負債8 を押し付けられない＝公式）。
     if (anyGainable(state, (id) => costExact(state, id, ref.coin, ref.pot, ref.debt))) {
       state.pending = { type: 'swindler', stage: 'gain', player: source, source, victim, cost: ref.coin, pot: ref.pot, debt: ref.debt, queue };
@@ -3750,7 +3750,7 @@
   }
   function costLE(a, b) { return a.coin <= b.coin && a.pot <= b.pot && a.debt <= b.debt; }
   function costLT(a, b) { return costLE(a, b) && (a.coin < b.coin || a.pot < b.pot || a.debt < b.debt); }
-  // すべての「サプライから獲得する」効果の土台＝非サプライ（賞品/戦利品/狂人/傭兵/トラベラー成長先）・
+  // すべての「サプライから獲得する」効果の土台＝非サプライ（賞品/略奪品/狂人/傭兵/トラベラー成長先）・
   //   ロック中の分割山下段・在庫切れ・カタログ非在 を弾く。
   function gainableBase(state, id) {
     return !!C()[id] && !NON_SUPPLY.has(id) && !splitLocked(state, id) && (state.supply[id] || 0) > 0;
@@ -4929,9 +4929,9 @@
           ? { type: 'altar', stage: 'trash', player: pi }
           : (anyGainable(state, (id) => costUpTo(state, id, 5)) ? { type: 'altar', stage: 'gain', player: pi } : null);
         break;
-      case 'bandit_camp': // +1カード +2アクション、戦利品を1枚獲得（非サプライ）
+      case 'bandit_camp': // +1カード +2アクション、略奪品を1枚獲得（非サプライ）
         draw(state, pi, 1); addActions(t, 2);
-        if (gain(state, pi, 'spoils', 'discard')) log(state, `${p.name} は山賊の宿営地で戦利品を獲得した。`);
+        if (gain(state, pi, 'spoils', 'discard')) log(state, `${p.name} は山賊の宿営地で略奪品を獲得した。`);
         break;
       case 'hunting_grounds': // +4カード（on-trashは公領or屋敷3＝triggerOnTrash）
         draw(state, pi, 4);
@@ -4968,8 +4968,8 @@
       case 'procession': // 手札の非持続アクションを2回使う→廃棄→ちょうど+$1高いアクションを獲得（使わなくてよい）
         if (p.hand.some((c) => DOM.isType(c, 'action') && !DOM.isType(c, 'duration') && canPlayHandCard(state, pi, c))) state.pending = { type: 'procession', player: pi };
         break;
-      case 'marauder': { // 戦利品を獲得（自分）＋各相手が廃墟を獲得（アタック）
-        if (gain(state, pi, 'spoils', 'discard')) log(state, `${p.name} は略奪者で戦利品を獲得した。`);
+      case 'marauder': { // 略奪品を獲得（自分）＋各相手が廃墟を獲得（アタック）
+        if (gain(state, pi, 'spoils', 'discard')) log(state, `${p.name} は略奪者で略奪品を獲得した。`);
         const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
         marauderEnterVictim(state, pi, q);
         break;
@@ -4980,11 +4980,11 @@
         cultistEnterVictim(state, pi, q);
         break;
       }
-      case 'pillage': { // これを廃棄→戦利品2枚＋手札5枚以上の各相手が手札公開→使用者が1枚捨てさせる
+      case 'pillage': { // これを廃棄→略奪品2枚＋手札5枚以上の各相手が手札公開→使用者が1枚捨てさせる
         if (!takeSelf(state, pi, 'pillage')) break; // 場に無い（玉座2回目/命令で動かさずに使用）＝If you did が偽
         trashCard(state, pi, 'pillage');
         let g = 0; for (let i = 0; i < 2; i++) if (gain(state, pi, 'spoils', 'discard')) g++;
-        if (g) log(state, `${p.name} は略奪で戦利品 ${g}枚 を獲得した。`);
+        if (g) log(state, `${p.name} は略奪で略奪品 ${g}枚 を獲得した。`);
         const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
         pillageEnterVictim(state, pi, q);
         break;
@@ -6853,7 +6853,7 @@
   }
   // 帝国：あるカードが「空になったサプライ山」に由来するか（塔の得点用）。
   function isFromEmptySupplyPile(state, cardId) {
-    if (NON_SUPPLY.has(cardId)) return false; // 賞品/成長先/戦利品/狂人/傭兵 は非サプライ
+    if (NON_SUPPLY.has(cardId)) return false; // 賞品/成長先/略奪品/狂人/傭兵 は非サプライ
     // 混合山（廃墟/騎士/城）の中身は個別の supply キーを持たない＝集約キーで空判定
     if ((DOM.POOLS.ruins || []).indexOf(cardId) >= 0) return Array.isArray(state.ruins) && state.ruins.length === 0;
     if ((DOM.POOLS.knights || []).indexOf(cardId) >= 0) return (state.supply.knights || 0) <= 0;
@@ -9750,7 +9750,7 @@
   /* 植民（Populate）＝獲得元になる「アクションのサプライ山」の一覧（山キー）。
      - 山の種別で判定する（分割山は**上段カード**の種別＝上段が尽きていても下段を獲得する）。
      - 混合山：廃墟/騎士はアクションの山（一番上の1枚を獲得）／城は勝利点の山＝対象外。
-     - 非サプライ山（馬/賞品/戦利品/トラベラー成長先）は対象外。空の山は対象外。 */
+     - 非サプライ山（馬/賞品/略奪品/トラベラー成長先）は対象外。空の山は対象外。 */
   function populatePiles(state) {
     const out = [];
     Object.keys(state.supply).forEach((id) => {
@@ -10277,7 +10277,7 @@
       }
       if (r.label === 'counterfeit_trash') {
         // 暗黒時代：偽造通貨＝2回のプレイが終わった後、その財宝を場から廃棄する。
-        //   対象が自己移動していれば（戦利品が山へ戻る等）廃棄は不発（lose track）。
+        //   対象が自己移動していれば（略奪品が山へ戻る等）廃棄は不発（lose track）。
         const p = state.players[r.player];
         if (removeOne(p.inPlay, r.card)) { trashCard(state, r.player, r.card); log(state, `${p.name} は偽造通貨で「${C()[r.card].name}」を廃棄した。`); }
         continue;
@@ -11844,7 +11844,7 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'lurker' || pd.stage !== 'trash') return state;
         const card = action.card;
-        // 非サプライ（賞品/トラベラー成長先/戦利品）とロック中の分割山下段は「サプライの山」ではない＝対象外。
+        // 非サプライ（賞品/トラベラー成長先/略奪品）とロック中の分割山下段は「サプライの山」ではない＝対象外。
         if (!gainableBase(state, card) || !isTypeSupply(state, card, 'action')) return state;
         const trashed = trashFromSupplyPile(state, pd.player, card); // 混合山は一番上の実カード
         if (!trashed) return state;
@@ -12688,7 +12688,7 @@
           //   state.replay に順に積む（行進の procession2/procession_finish と同じ形）。
           //   これで1回目/2回目が立てる選択待ちが解決してから廃棄が走る。
           log(state, `${p.name} は偽造通貨で「${C()[card].name}」を2回使う。`);
-          playTreasureCard(state, pd.player, card); // 1回目（移動＋効果。戦利品は山へ戻る）
+          playTreasureCard(state, pd.player, card); // 1回目（移動＋効果。略奪品は山へ戻る）
           state.replay = state.replay || [];
           state.replay.push({ player: pd.player, card, label: 'treasure_replay' });  // 2回目（効果のみ）
           state.replay.push({ player: pd.player, card, label: 'counterfeit_trash' }); // 2回のプレイ後に廃棄
@@ -13639,7 +13639,7 @@
         const card = action.card; // null = 公開しない
         if (card != null && p.hand.indexOf(card) >= 0 && isTreasureFor(state, card)) {
           reveal(state, pd.player, [card], '造幣所：財宝を公開');
-          // 非サプライ（戦利品/宝冠 等）のコピーは造幣所では獲得できない（サプライに山が無い＝gainableBase）。
+          // 非サプライ（略奪品/宝冠 等）のコピーは造幣所では獲得できない（サプライに山が無い＝gainableBase）。
           if (gainableBase(state, card)) { gain(state, pd.player, card, 'discard'); log(state, `${p.name} は造幣所で「${C()[card].name}」を獲得した。`); }
         }
         state.pending = null;
@@ -13930,8 +13930,8 @@
             removeOne(player.hand, 'province'); player.discard.push('province');
             reveal(state, pd.player, ['province'], '馬上槍試合で属州を公開');
             log(state, `${player.name} は属州を公開・捨てた（馬上槍試合）。`);
-            // 賞品は PRIZES（5種）だけ＝NON_SUPPLY（戦利品/狂人/傭兵/トラベラー成長先も含む）で数えてはいけない。
-            //   mix で戦利品等が同居すると「賞品を獲得」の pending が開いたまま閉じない（CPU無限ループ／人間が詰む）。
+            // 賞品は PRIZES（5種）だけ＝NON_SUPPLY（略奪品/狂人/傭兵/トラベラー成長先も含む）で数えてはいけない。
+            //   mix で略奪品等が同居すると「賞品を獲得」の pending が開いたまま閉じない（CPU無限ループ／人間が詰む）。
             if (anyGainable(state, (id) => PRIZE_SET.has(id) || id === 'duchy')) {
               state.pending = { type: 'tournament', stage: 'prize', player: pd.player, source: pd.source };
             } else {

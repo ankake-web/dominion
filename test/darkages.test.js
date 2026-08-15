@@ -1,6 +1,6 @@
 /* 暗黒時代（Dark Ages）ゲームロジックの検証（Node 単体実行）
    使い方: node test/darkages.test.js
-   対象: 基盤機構（混合山=廃墟/騎士・非サプライ=戦利品/狂人/傭兵・避難所・封土VP）／
+   対象: 基盤機構（混合山=廃墟/騎士・非サプライ=略奪品/狂人/傭兵・避難所・封土VP）／
          経路別 on-trash（城塞×礼拝堂・狂信者×死の荷車・封土×騎士・地下墓所/狩場/従者/ネズミ/サー・ヴァンダー）／
          カード効果56枚の主要経路（アタック/命令/交換/財宝2回/騎士アタック）／CPU通し・カード保存則 */
 const fs = require('fs');
@@ -66,9 +66,9 @@ console.log('=== 暗黒時代: 基盤機構（混合山/非サプライ/避難�
   const s2 = mk(['marauder', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel', 'workshop']);
   ok(Array.isArray(s2.ruins) && s2.ruins.length === 10 && s2.supply.ruins == null, '廃墟(2人): state.ruins=10枚・supply.ruins なし');
   ok(!E.canBuyCard(s2, 0, 'ruins'), '廃墟は購入できない');
-  ok(s2.supply.spoils === 15, '略奪者: 戦利品15枚（非サプライ）');
+  ok(s2.supply.spoils === 15, '略奪者: 略奪品15枚（非サプライ）');
   // 非サプライは3山終了/購入/汎用獲得に数えない
-  ok(DOM.CARDS.spoils && DOM.CARDS.madman && DOM.CARDS.mercenary, '戦利品/狂人/傭兵 カタログ在');
+  ok(DOM.CARDS.spoils && DOM.CARDS.madman && DOM.CARDS.mercenary, '略奪品/狂人/傭兵 カタログ在');
   // Looter 無しなら廃墟山なし
   const s3 = mk(['knights', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel', 'workshop']);
   ok(!Array.isArray(s3.ruins) || s3.ruins.length === 0, 'Looter 無し=廃墟山なし');
@@ -196,10 +196,10 @@ console.log('=== 暗黒時代: カード効果 A/B/C ===');
   s = reduce(s, { type: 'ALTAR_GAIN', card: 'market' });
   ok(count(s.trash, 'curse') === 1 && count(s.players[0].discard, 'market') === 1, 'altar: 呪い廃棄→コスト5のマーケット獲得');
 
-  // bandit_camp＝戦利品獲得
+  // bandit_camp＝略奪品獲得
   s = setup(['bandit_camp', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel', 'workshop'], ['bandit_camp'], ['copper', 'copper']);
   s = play(s, 'bandit_camp');
-  ok(count(s.players[0].discard, 'spoils') === 1 && s.turn.actions === 2, 'bandit_camp: 戦利品獲得＋2アクション');
+  ok(count(s.players[0].discard, 'spoils') === 1 && s.turn.actions === 2, 'bandit_camp: 略奪品獲得＋2アクション');
 
   // death_cart on-gain＝廃墟2枚
   s = setup(LOOTER_K.concat(['village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine']).slice(0, 10), ['village'], ['copper']);
@@ -273,13 +273,13 @@ console.log('=== 暗黒時代: カード効果 A/B/C ===');
   ok(count(s.trash, 'smithy') === 1, 'procession: smithyを廃棄');
   ok(count(s.players[0].discard, 'laboratory') === 1, 'procession: ちょうど+$1（$5）のlaboratoryを獲得');
 
-  // counterfeit × spoils＝+$6・戦利品は山へ戻り廃棄されない
+  // counterfeit × spoils＝+$6・略奪品は山へ戻り廃棄されない
   s = setup(['bandit_camp', 'counterfeit', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel'], [], []);
   s.turn.phase = 'buy'; s.turn.coins = 0; s.turn.buys = 1;
   s.players[0].hand = ['counterfeit', 'spoils'];
   s = reduce(s, { type: 'PLAY_TREASURE', card: 'counterfeit' });
   s = reduce(s, { type: 'COUNTERFEIT_PLAY', card: 'spoils' });
-  ok(s.turn.coins === 7 && count(s.trash, 'spoils') === 0 && count(s.players[0].inPlay, 'spoils') === 0, 'counterfeit×spoils: +$7・戦利品は山へ戻り（場に残らず）廃棄されない');
+  ok(s.turn.coins === 7 && count(s.trash, 'spoils') === 0 && count(s.players[0].inPlay, 'spoils') === 0, 'counterfeit×spoils: +$7・略奪品は山へ戻り（場に残らず）廃棄されない');
 
   // counterfeit × copper＝銅貨を廃棄
   s = setup(['counterfeit', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel', 'workshop'], [], []);
@@ -293,11 +293,11 @@ console.log('=== 暗黒時代: カード効果 A/B/C ===');
 /* ============ アタック（Group D）============ */
 console.log('=== 暗黒時代: アタック ===');
 {
-  // marauder＝自分が戦利品・相手が廃墟
+  // marauder＝自分が略奪品・相手が廃墟
   let s = setup(['marauder', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel', 'workshop'], ['marauder'], ['copper'], { p1hand: ['copper', 'copper'] });
   s = play(s, 'marauder');
   s = drive(s);
-  ok(count(s.players[0].discard, 'spoils') === 1 && s.players[1].discard.filter((c) => DOM.isType(c, 'ruins')).length === 1, 'marauder: 戦利品獲得＋相手に廃墟');
+  ok(count(s.players[0].discard, 'spoils') === 1 && s.players[1].discard.filter((c) => DOM.isType(c, 'ruins')).length === 1, 'marauder: 略奪品獲得＋相手に廃墟');
 
   // cultist 連鎖（手札に2枚）＝相手に廃墟2枚
   s = setup(['cultist', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel', 'workshop'], ['cultist', 'cultist'], ['copper', 'copper', 'copper', 'copper'], { p1hand: ['copper'] });
@@ -305,12 +305,12 @@ console.log('=== 暗黒時代: アタック ===');
   s = drive(s);
   ok(s.players[1].discard.filter((c) => DOM.isType(c, 'ruins')).length === 2, 'cultist: 連鎖で相手に廃墟2枚');
 
-  // pillage＝廃棄→戦利品2枚＋相手の手札を捨てさせる
+  // pillage＝廃棄→略奪品2枚＋相手の手札を捨てさせる
   s = setup(['pillage', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel', 'workshop'], ['pillage'], ['copper'], { p1hand: ['gold', 'copper', 'copper', 'copper', 'estate'] });
   const p1n = s.players[1].hand.length;
   s = play(s, 'pillage');
   s = drive(s);
-  ok(count(s.trash, 'pillage') === 1 && count(s.players[0].discard, 'spoils') === 2, 'pillage: 廃棄成立→戦利品2枚');
+  ok(count(s.trash, 'pillage') === 1 && count(s.players[0].discard, 'spoils') === 2, 'pillage: 廃棄成立→略奪品2枚');
   ok(s.players[1].hand.length === p1n - 1, 'pillage: 相手が手札1枚を捨てた');
 
   // rogue（廃棄置き場から獲得）

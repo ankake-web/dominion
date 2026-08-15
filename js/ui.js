@@ -148,7 +148,7 @@
   function effCost(state, id) { return (state && E() && E().cardCost) ? E().cardCost(state, id) : DOM.CARDS[id].cost; }
   /* ---------- mix-all 硬化：獲得候補の述語は **engine の正本** を見る ----------
      engine が拒否する札をモーダルのチップに出すと人間が詰む（選んでも state が変わらない）。
-     コスト比較は coin/potion/debt の成分別＋非サプライ（賞品/戦利品/成長先）とロック中の分割山下段を除外。
+     コスト比較は coin/potion/debt の成分別＋非サプライ（賞品/略奪品/成長先）とロック中の分割山下段を除外。
      spec = { pot, debt }（省略時0）＝廃棄/購入した札のポーション・負債成分を引き継ぐときに渡す（pending に焼き込み済み）。 */
   const canBase = (state, id) => !E() || !E().gainableBase || E().gainableBase(state, id);
   /* 「サプライから獲得/廃棄するカードの種別」＝混合山（廃墟/騎士/城/同盟の分割山）は**一番上の実カード**で判定。
@@ -920,7 +920,7 @@
     addC('騎士（暗黒時代）', P.knights ? byCost(P.knights) : null);
     addC('廃墟（暗黒時代）', P.ruins ? byCost(P.ruins) : null);
     addC('避難所（暗黒時代）', P.shelters ? byCost(P.shelters) : null);
-    addC('非サプライ（戦利品・狂人・傭兵）', P.darkages_np ? byCost(P.darkages_np) : null);
+    addC('非サプライ（略奪品・狂人・傭兵）', P.darkages_np ? byCost(P.darkages_np) : null);
     addC('王国カード（冒険）', P.adventures ? byCost(P.adventures) : null);
     addC('トラベラー成長先（冒険・非サプライ）', P.travellers ? byCost(P.travellers) : null);
     addC('王国カード（帝国）', P.empires ? byCost(P.empires) : null);
@@ -1299,7 +1299,7 @@
       ? h('div', { class: 'supply-section' }, h('div', { class: 'sup-title' }, '廃墟の山（獲得専用）'),
           h('div', { class: 'supply-grid small' }, ruinsPileEl(state)))
       : null;
-    // 非サプライの数値キー山（購入不可＝交換/専用獲得のみ）：冒険のトラベラー成長先・収穫祭の賞品・暗黒時代の戦利品/狂人/傭兵。
+    // 非サプライの数値キー山（購入不可＝交換/専用獲得のみ）：冒険のトラベラー成長先・収穫祭の賞品・暗黒時代の略奪品/狂人/傭兵。
     //   王国枠に無く供給されている（state.supply に在る）ものを表示して、残枚数を可視化する。
     //   夜想曲の精霊3種／願い／コウモリ、移動動物園の馬も同じ扱い（残枚数が見えないと戦略が立たない）。
     const nonSupplyIds = [].concat((DOM.POOLS && DOM.POOLS.travellers) || [], (DOM.POOLS && DOM.POOLS.prizes) || [],
@@ -4334,7 +4334,7 @@
     const extra = Object.keys(state.supply).filter((id) => DOM.CARDS[id] && order.indexOf(id) < 0);
     const all = order.concat(extra);
     // 安全網：呼び出し側の filter に書き漏れがあっても、**engine が獲得を拒否する山はチップに出さない**
-    //   （非サプライ＝賞品/戦利品/成長先・ロック中の分割山下段・在庫切れ）＝人間が詰む選択肢を1か所で吸収する。
+    //   （非サプライ＝賞品/略奪品/成長先・ロック中の分割山下段・在庫切れ）＝人間が詰む選択肢を1か所で吸収する。
     //   allowEmpty＝「山が空でもよい」用途（教師の山トークン置き先＝公式は空の山にも置ける）。
     const elig = all.filter((id) => filter(id) &&
       (allowEmpty ? (state.supply[id] != null) : ((state.supply[id] || 0) > 0 && canBase(state, id))));

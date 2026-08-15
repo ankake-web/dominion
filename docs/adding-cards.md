@@ -62,7 +62,7 @@ case 'market': draw(state,pi,1); t.actions+=1; t.buys+=1; t.coins+=1; break;   /
 **終了判定**: `emptyPileCount` は **supply全キー**を数える／`isGameOver`（province<=0 or 空山>=3 or 150手番安全網）。
 
 **特殊山の足し方**:
-- **均質な非サプライ山**（戦利品/狂人/傭兵/賞品Prizes各1）＝ `supply` に数値キーで足す（保存則tallyは自動計上＝テスト改変不要）。ただし **(a) `emptyPileCount` から `NON_SUPPLY` set で除外**（3山終了に混ぜない）、**(b) `canBuyCard` で購入不可**。
+- **均質な非サプライ山**（略奪品/狂人/傭兵/賞品Prizes各1）＝ `supply` に数値キーで足す（保存則tallyは自動計上＝テスト改変不要）。ただし **(a) `emptyPileCount` から `NON_SUPPLY` set で除外**（3山終了に混ぜない）、**(b) `canBuyCard` で購入不可**。
 - **混合山**（廃墟Ruins/騎士Knights＝中身と順序が違う）＝ `state.ruins`/`state.knights` を**top-level id配列**（blackMarket型）。生成は createInitialState で shuffle、獲得は `state.ruins.shift()`。**`test/invariants.test.js` の tally に `(s.ruins||[]).forEach(add)` を追加必須**（漏れると保存則が誤検知で赤）。maskStateFor で伏せる、`emptyPileCount` に `+(ruins.length===0?1:0)` を明示加算。
 - **避難所Shelters**＝供給山でなく**開始デッキ置換**（createInitialState の `for(...) start.push('estate')` を条件で `hovel/necropolis/overgrown_estate` に）。deck開始なので保存則自動。DOM.CARDS定義・GAIN_ORDER・POOL所属・マスクは別途。
 - 非サプライ・非プールの新カードを足すなら integrity の base 除外リスト（copper/silver/gold/estate/duchy/province/curse/potion/platinum/colony）に追記が要る場合あり。

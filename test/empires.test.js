@@ -1056,7 +1056,7 @@ const K8 = (extra) => [extra, 'village', 'smithy', 'market', 'workshop', 'moat',
   s = reduce(s, { type: 'PLAY_ACTION', card: 'overlord' });
   s = reduce(s, { type: 'OVERLORD_PLAY', card: 'pillage' });
   ok(count(s.trash, 'pillage') === 0 && count(s.trash, 'overlord') === 0, '大君主×略奪：どちらも廃棄されない');
-  ok(count(s.players[0].discard, 'spoils') === 0 && !s.pending, '大君主×略奪：戦利品もアタックも起きない（If you did が偽）');
+  ok(count(s.players[0].discard, 'spoils') === 0 && !s.pending, '大君主×略奪：略奪品もアタックも起きない（If you did が偽）');
   ok(tdiff(t0, tally(s)).length === 0, '保存則（大君主×略奪）');
 }
 { // 倒壊：「これ」は選べない・手札からのみ廃棄。場に本物の倒壊があっても誤爆しない

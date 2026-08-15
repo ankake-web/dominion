@@ -128,7 +128,7 @@ const ADVERSARIAL = [
   ['crown', 'charm', 'capital', 'plunder', 'encampment', 'fortune', 'gladiator', 'castles', 'overlord', 'village'], // 帝国：冠の「財宝を2回使う」×選択待ちを立てる財宝(御守り)・+購入/VPを持つ財宝(元手/大金/鹵獲品)＋負債＋分割山＋城の混合山
   ['crown', 'overlord', 'throne_room', 'kings_court', 'village', 'market', 'smithy', 'moat', 'militia', 'workshop'], // 帝国：命令(大君主)の再演は選び直さない×玉座/王の宮廷/冠のネスト
   ['tiara', 'crystal_ball', 'anvil', 'investment', 'charlatan', 'bank', 'collection', 'monument', 'village', 'market'], // 繁栄：ティアラの2回目が pending 財宝(水晶玉/金床/投資/ペテン師)の選択・アタックを取りこぼさない
-  ['counterfeit', 'bandit_camp', 'marauder', 'band_of_misfits', 'procession', 'village', 'market', 'smithy', 'moat', 'militia'], // 暗黒時代：偽造通貨の2回プレイ→廃棄（戦利品の自己移動＝lose track）＋命令(はみだし者)×行進の再演
+  ['counterfeit', 'bandit_camp', 'marauder', 'band_of_misfits', 'procession', 'village', 'market', 'smithy', 'moat', 'militia'], // 暗黒時代：偽造通貨の2回プレイ→廃棄（略奪品の自己移動＝lose track）＋命令(はみだし者)×行進の再演
   // E8：命令（大君主/はみだし者）× 自己移動札（祝宴/鉱山の村/宝の地図/島/倒壊/陣地/農家の市場）＝自己移動は失敗し命令カードも動かない
   ['overlord', 'band_of_misfits', 'feast', 'mining_village', 'treasure_map', 'island', 'raze', 'encampment', 'farmers_market', 'throne_room'],
   // E8：命令（船長/王子）× 自己移動札＋Reserve（酒場マットへの自己移動）＋玉座/王の宮廷のネスト
@@ -460,7 +460,7 @@ console.log('=== カード保存則: mix-all（拡張を自由に混ぜる・分
   }
   // 3) 「汎用獲得札 × 危険な山」を強制的に同居させた王国（fuzz の抽選待ちにしない）。
   const FORCED = [
-    // 工房/鉄工所/職人/祝宴（≤$N獲得）× 賞品(馬上槍試合)・戦利品(山賊の宿営地)・ポーション費用(ブドウ園)・負債(技術者)
+    // 工房/鉄工所/職人/祝宴（≤$N獲得）× 賞品(馬上槍試合)・略奪品(山賊の宿営地)・ポーション費用(ブドウ園)・負債(技術者)
     ['workshop', 'ironworks', 'artisan', 'feast', 'tournament', 'bandit_camp', 'vineyard', 'potion', 'engineer', 'village'],
     // 改良/リメイク/溶鉱炉/開発/農地（ちょうど$N）× ポーション費用・負債・分割山下段・混合山
     ['upgrade', 'remake', 'forge', 'develop', 'farmland', 'vineyard', 'potion', 'overlord', 'sauna', 'avanto'],
