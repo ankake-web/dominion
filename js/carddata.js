@@ -111,8 +111,9 @@
   // 同盟（Allies）の新種別＝連携(Liaison)＋分割山6組の専用種別（町民/卜占官/衝突/城砦/叙事詩/魔法使い）。
   //   これらを持つカードは「types 配列の順にラベルを連ねる」汎用規則で表記する（本家の印刷順＝カタログの types 順）。
   //   公式訳の出典＝日本語wiki（ホビージャパン印刷版）。docs/research/allies_rules.md §g11。
-  const ALLIES_TYPE_JP = { liaison: '連携', townsfolk: '町民', augur: '卜占官', clash: '衝突', fort: '城砦', odyssey: '叙事詩', wizard: '魔法使い' };
-  const ALLIES_TYPE_EN = { liaison: 'Liaison', townsfolk: 'Townsfolk', augur: 'Augur', clash: 'Clash', fort: 'Fort', odyssey: 'Odyssey', wizard: 'Wizard' };
+  //   略奪(Plunder)の 戦利品(loot) も同じ汎用規則に乗せる（財宝・戦利品／財宝・持続・戦利品 のように types 順で連ねる）。
+  const ALLIES_TYPE_JP = { liaison: '連携', townsfolk: '町民', augur: '卜占官', clash: '衝突', fort: '城砦', odyssey: '叙事詩', wizard: '魔法使い', loot: '戦利品' };
+  const ALLIES_TYPE_EN = { liaison: 'Liaison', townsfolk: 'Townsfolk', augur: 'Augur', clash: 'Clash', fort: 'Fort', odyssey: 'Odyssey', wizard: 'Wizard', loot: 'Loot' };
   const BASE_TYPE_JP = { action: 'アクション', treasure: '財宝', victory: '勝利点', curse: '呪い', attack: 'アタック', reaction: 'リアクション', duration: '持続' };
   const BASE_TYPE_EN = { action: 'Action', treasure: 'Treasure', victory: 'Victory', curse: 'Curse', attack: 'Attack', reaction: 'Reaction', duration: 'Duration' };
   // 種別ラベル（日本語）

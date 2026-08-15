@@ -99,6 +99,14 @@
     // 段階1追加（夜想曲。CARD_SETS 未参照＝実際には獲得されないが GAIN_ORDER=全カードの整合性を満たす）
     'bard', 'blessed_village', 'cemetery', 'changeling', 'cobbler', 'conclave', 'crypt', 'cursed_village', 'den_of_sin', 'devils_workshop', 'druid', 'exorcist', 'faithful_hound', 'fool', 'ghost_town', 'guardian', 'idol', 'leprechaun', 'monastery', 'necromancer', 'night_watchman', 'pixie', 'pooka', 'raider', 'sacred_grove', 'secret_cave', 'shepherd', 'skulk', 'tormentor', 'tracker', 'tragic_hero', 'vampire', 'werewolf',
     'cursed_gold', 'goat', 'haunted_mirror', 'lucky_coin', 'magic_lamp', 'pasture', 'pouch', 'will_o_wisp', 'imp', 'ghost', 'wish', 'bat', 'zombie_apprentice', 'zombie_mason', 'zombie_spy',
+    // 段階1追加（略奪 Plunder。CARD_SETS 未参照＝実際には獲得されないが GAIN_ORDER=全カードの整合性を満たす）。
+    //   段階2で実プレイ化するときに、実強度順の正しい位置へ並べ直すこと（同盟 A5 と同じ）。
+    'cage', 'grotto', 'jewelled_egg', 'search', 'shaman', 'secluded_shrine', 'siren', 'stowaway', 'taskmaster', 'abundance',
+    'cabin_boy', 'crucible', 'flagship', 'fortune_hunter', 'gondola', 'harbor_village', 'landing_party', 'mapmaker', 'maroon', 'rope',
+    'swamp_shacks', 'tools', 'buried_treasure', 'crew', 'cutthroat', 'enlarge', 'figurine', 'first_mate', 'frigate', 'longship',
+    'mining_road', 'pendant', 'pickaxe', 'pilgrim', 'quartermaster', 'silver_mine', 'trickster', 'wealthy_village', 'sack_of_loot', 'kings_cache',
+    'amphora', 'doubloons', 'endless_chalice', 'figurehead', 'hammer', 'insignia', 'jewels', 'orb', 'prize_goat', 'puzzle_box',
+    'sextant', 'shield', 'spell_scroll', 'staff', 'sword',
     'copper', 'curse'];
   /* 同盟：女魔導士／魔導士の「カード名を宣言する」＝自分の山札の一番上として**一番ありそうな名前**を推定する
      （山札が空なら捨て札から。どちらも空なら銅貨）。**null を返さない**（engine が拒否すると livelock）。 */

@@ -2037,8 +2037,11 @@ console.log('=== A5: CARD_SET 昇格（固定10種・random-allies・mix・闇�
     }
     ok(!leak, '闇市場デッキに分割山の中身も山キーも漏れない（' + (leak || 'ok') + '）');
     ok(sawAllies === rounds * 24, '闇市場デッキに同盟の非分割24種（サプライの道化棒を除く）が毎回入る');
-    // 段階1プールは空＝「効果が未実装なので闇市場から除く」対象がもう無い
-    ok((DOM.STAGE1_POOLS || []).length === 0, 'STAGE1_POOLS は空（実装済みの拡張しか無い）');
+    /* 同盟は段階2（実プレイ）なので STAGE1_POOLS に入っていてはいけない。
+       ⚠ 「STAGE1_POOLS が空」で検査してはいけない＝**次の拡張を段階1で足した瞬間に落ちる**
+       （実際に略奪(Plunder)の段階1で落ちた）。見るべきは「同盟のプールが入っていないこと」。 */
+    ok((DOM.STAGE1_POOLS || []).indexOf('allies') < 0 && (DOM.STAGE1_POOLS || []).indexOf('allies_split') < 0,
+      '同盟のプールは STAGE1_POOLS に入っていない（＝闇市場に出る）');
   }
 
   // 闇市場で同盟の連携を買っても、Ally が居ないゲームでは好意が湧かない（公式：Ally はセットアップで決まる）

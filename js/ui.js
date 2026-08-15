@@ -125,7 +125,8 @@
     duration: '持続', command: '命令', knight: '騎士', ruins: '廃墟', shelter: '避難所', reserve: 'リザーブ', traveller: 'トラベラー', castle: '城',
     looter: '略奪者', // 暗黒時代
     night: '夜行', fate: '幸運', doom: '不運', heirloom: '家宝', spirit: '精霊', zombie: 'ゾンビ', // 夜想曲
-    liaison: '連携', townsfolk: '町民', augur: '卜占官', clash: '衝突', fort: '城砦', odyssey: '叙事詩', wizard: '魔法使い' }; // 同盟
+    liaison: '連携', townsfolk: '町民', augur: '卜占官', clash: '衝突', fort: '城砦', odyssey: '叙事詩', wizard: '魔法使い', // 同盟
+    loot: '戦利品' }; // 略奪（Loot。⚠ 暗黒時代の looter＝「略奪者」・spoils＝「略奪品」と別物）
   function typeClass(id) {
     const c = DOM.CARDS[id];
     if (c.types.includes('treasure')) return 'type-treasure';
@@ -935,6 +936,9 @@
     // 同盟：分割山6組は「山」（augurs 等）と「中身24種」を分けて出す（中身は単体では買えない＝山の一番上のみ）。
     addC('王国カード（同盟）', P.allies ? byCost(P.allies) : null);
     addC('分割山の中身（同盟・4種×4枚。一番上の1枚だけ購入できる）', P.allies_split ? P.allies_split.slice() : null);
+    // 略奪：戦利品(Loot)は非サプライ（15種×2枚＝30枚を1山に伏せる）＝王国とは別の群に出す。
+    addC('王国カード（略奪）', P.plunderexp ? byCost(P.plunderexp) : null);
+    addC('戦利品（略奪・非サプライ。15種×2枚を1山に伏せ、獲得したら公開する）', P.loot ? byCost(P.loot) : null);
     addL('ランドマーク（帝国・横型）', DOM.LANDMARKS_EMPIRES);
     addL('イベント（帝国・横型・購入フェイズに買う）', DOM.EVENTS_EMPIRES);
     addL('イベント（冒険・横型・購入フェイズに買う）', DOM.EVENTS_ADVENTURES);
@@ -944,6 +948,8 @@
     addL('呪詛（夜想曲・横型・不運カードから受ける）', DOM.HEXES_NOCTURNE);
     addL('状態（夜想曲・横型・プレイヤーが取る）', DOM.STATES_NOCTURNE);
     addL('同盟（同盟拡張・横型・1ゲームに1枚だけ／好意トークンの使い道を決める）', DOM.ALLIES_ALLY);
+    addL('イベント（略奪・横型・購入フェイズに買う）', DOM.EVENTS_PLUNDER);
+    addL('特性（略奪・横型・準備でサプライの王国の山1つに付ける／その山のカード全部に効く）', DOM.TRAITS_PLUNDER);
     addL('プロジェクト（ルネサンス・横型・1人2つまで）', DOM.PROJECTS_RENAISSANCE);
     addL('アーティファクト（ルネサンス・横型・1人だけが持てる）', DOM.ARTIFACTS_RENAISSANCE);
     addC('プロモカード', P.promo ? byCost(P.promo) : null);

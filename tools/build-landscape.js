@@ -71,14 +71,17 @@ const SKIN = {
   // 同盟：Ally＝濃い藍（イベントの茶・ランドマークの青緑・アーティファクトの灰青のいずれとも混ざらない色）。
   //   買わない横型なのでコスト円は描かない。
   ally:       { base: [44, 62, 118] },
+  // 略奪：特性(Trait)＝深い臙脂。サプライの山1つに付ける横型（コスト無し）。
+  trait:      { base: [104, 38, 46] },
 };
-const WITH_COIN = { event: true, project: true, landmark: false, artifact: false, way: false, boon: false, hex: false, state: false, ally: false };
+const WITH_COIN = { event: true, project: true, landmark: false, artifact: false, way: false, boon: false, hex: false, state: false, ally: false, trait: false };
 const KIND_LABEL = {
   event: 'イベント / Event', landmark: 'ランドマーク / Landmark',
   project: 'プロジェクト / Project', artifact: 'アーティファクト / Artifact',
   way: '習性 / Way',
   boon: '祝福 / Boon', hex: '呪詛 / Hex', state: '状態 / State',
   ally: '同盟 / Ally',
+  trait: '特性 / Trait',
 };
 
 const W = 1536, H = 1024;             // 合成解像度（縦型 1024×1536 の 90度相当）

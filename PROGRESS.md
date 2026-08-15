@@ -652,6 +652,44 @@ engine 内に散らばっていた `['ruins','knights','castles']` のリテラ�
 
 ---
 
+## 0-30b. **略奪（Plunder）＝段階1（カタログ85種＋webp）完了**（2026-08-15・`sw.js` v71・未push）
+
+段階0（公式ルール研究＝`docs/research/plunder_rules.md`）の上に**カタログを載せた**。
+**まだ CARD_SETS 未参照＝実プレイには出ない**（`DOM.STAGE1_POOLS = ['plunderexp', 'loot']` で闇市場からも塞いである）。
+
+### 規模＝85種（縦型55＝王国40＋Loot 15／横型30＝イベント15＋特性15）
+- `DOM.CARDS` 505→**560**／`DOM.LANDSCAPES` 171→**201**＝**合計761枚**。webp も761枚（**絵は未回収＝枠＋文字**）。
+- **⚠ プール名は `plunderexp`**＝英語id `plunder` が帝国の分割山「鹵獲品」で使用済みのため。
+  `DOM.POOLS.plunderexp`(40) ／ `DOM.POOLS.loot`(15＝非サプライ・抽選の母集団に入れない) ／
+  `DOM.EVENTS_PLUNDER`(15) ／ `DOM.TRAITS_PLUNDER`(15)。
+- **新種別 `loot`（戦利品）**＝表示ラベルは同盟と同じ「types 配列の順に連ねる」汎用規則に乗せた
+  （`js/carddata.js` の ALLIES_TYPE_JP/EN・`js/ui.js` の TYPE_JP・`test/integrity.test.js` の JP/EN の**4箇所**）。
+- **横型の新 kind `trait`（特性）**＝`tools/build-landscape.js` にスキンを新設（**深い臙脂・コスト欄なし**・
+  ラベル「特性 / Trait」）。前例＝同盟の `ally`。
+- **Loot 15種の種別は一様ではない**（研究の敵対検証で確定）＝`Treasure-Loot` 8／`Treasure-Duration-Loot` 4
+  （アンフォラ/尽きぬ杯/船首像/宝石）／`Treasure-Reaction-Loot`（盾）／`Treasure-Attack-Loot`（剣）／
+  **`Action-Treasure-Loot`（呪符の巻物）**。`Loot` は必ず種別の**最後**。
+
+### カタログ生成＝多エージェント（6群を起草 → 各群を別エージェントが研究doc と逐語照合）
+確定した訂正 **23件**。捏造・枚数過不足なし。id 衝突0（既存676枚と機械照合）。
+- 区切り線 `
+————
+` の有無は**英語wiki の生HTML の `<hr>` を数えて**決めた（宝飾卵/ゴンドラ/地図作り/埋められた財宝ほか）。
+- 「+1 カードを引く」→「+1 カード」等、**既存カタログの言い回しに正規化**した（DO訳そのままではない）。
+
+### 検証
+- **npm test 全40スイート緑（exit 0・整合性 4765→5303・不変条件12）**／`verify:e2e` 9/9（**webp 560/0**）。
+- **資本主義の財宝集合 130→140**（略奪の +$ を持つアクション10枚。コスト参照の誤ヒットは無いことを1枚ずつ確認）。
+- **テストを2件直した**（どちらも「次の拡張を段階1で足すと落ちる」書き方だった）：
+  1. `test/allies.test.js` の「`STAGE1_POOLS` は空」→「**同盟のプールが入っていない**」に変更。
+  2. `js/ui.js` の TYPE_JP に `loot` を追加（**A2 で入れた恒久検査が正しく捕まえた**）。
+
+### 【次にやること】段階2（engine/CPU/UI）
+研究doc の「段階1・2の計画」に従い **P1 Loot の山 → P2 "next time" 持続 → P3 素直な王国 → P4 特性 →
+P5 イベント → P6 残りの王国 → P7 CARD_SET 昇格** の順。着手前に**冒頭「実装前に必読」20項目**を読むこと。
+
+---
+
 ## 段階2 **A5＝CARD_SET 昇格＝同盟(Allies)の実プレイ化 完了・push済**（2026-08-13・`sw.js` v68・本番反映を実機確認）
 
 **同盟が実プレイに出るようになった**＝`allies`（固定10種）／`random-allies`／**mix-all（14→15拡張）**。

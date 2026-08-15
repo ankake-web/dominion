@@ -1126,7 +1126,289 @@
     sorcerer: { id: 'sorcerer', name: '魔導士', cost: 5, types: ['action', 'attack', 'wizard'],
                  text: '+1 カード\n+1 アクション\n他のプレイヤーは全員、カード名を1つ指定し、その後に自分の山札の一番上のカードを公開する。それが指定したカードでない場合、そのプレイヤーは呪い1枚を獲得する。' },
     lich: { id: 'lich', name: 'リッチ', cost: 6, types: ['action', 'wizard'],
-                 text: '+6 カード\n+2 アクション\n1ターンスキップする。\n————\nあなたがこれを廃棄するとき、これを捨て札にし、廃棄置き場からこれよりコストの低いカード1枚を獲得する。' },  };
+                 text: '+6 カード\n+2 アクション\n1ターンスキップする。\n————\nあなたがこれを廃棄するとき、これを捨て札にし、廃棄置き場からこれよりコストの低いカード1枚を獲得する。' },
+
+    /* ===== 略奪（Plunder・2022年12月）＝段階1（画像とカタログのみ。CARD_SETS 未参照＝実プレイには出ない） =====
+       正本＝docs/research/plunder_rules.md（一次資料の収集＋敵対検証済み。冒頭「実装前に必読」を先に読む）。
+       新種別＝戦利品(loot)。新機構＝Loot（伏せた非サプライ山・15種×2枚＝30枚）／特性(Trait)（横型・山に付く）／
+       "next time"（次に〜したとき）型の持続（ちょうど7枚）。
+       ⚠ 英語id `plunder` は帝国の分割山「鹵獲品」で使用済み＝この拡張のプール名/セットIDは `plunderexp`。
+       ⚠ 日本語文面は Dominion Online 訳（PROGRESS §4 の決定。印刷版と照合する手段が無い＝許容簡略化）。 */
+    // --- 王国カード40種 ---
+    /* ---------- 略奪（Plunder）王国カード 1/3 ＝ $2〜$4 の13枚 ----------
+       正本＝docs/research/plunder_rules.md 第2章（多エージェント研究＋敵対検証2体・章末の訂正を反映済み）。
+       現行＝2022年12月の初版テキスト（13枚ともエラッタ・再版なし＝Versions 表は Plunder / December 2022 の1行だけ）。
+       日本語文面は Dominion Online 訳で統一（ユーザー決定）。※印刷版（ホビージャパン2023年3月）とは
+         シャーマン／セイレーン／現場監督／密航者 の4枚で文言が違うことを実物写真で確認済み。
+       新種別は無い（loot は第5章）。'command' は既存（王笏/大君主/はみだし者/船長/王子）。
+       ⚠ Loot（戦利品）を獲得する札が2枚ある（宝飾卵・調査）＝第5章の Loot 山が要る。
+         暗黒時代の spoils＝「略奪品」とは別物（ea0c091 で改名済み）。
+       ⚠ 検証で訂正: 旧="「次に〜したとき」型の持続が4枚（檻／調査／秘境の社／豊穣）" → **旗艦(Flagship)が落ちていた**。
+         正＝**この13枚の中では5枚（檻／調査／秘境の社／豊穣／旗艦）**。拡張全体では **ちょうど7枚**
+         （＋切り裂き魔 Cutthroat $5・上陸部隊 Landing Party $4＝第3/4章）。正本＝研究doc 第2章 §A ＋
+         章末 敵対検証レポート[high]「the next time 型は5枚」（英語wiki `Duration > Triggered effects` の公式カテゴリ）。
+         ＝条件が満たされるまで場に残り続ける（満たされなければ永久に場に残る）。
+         p.delayedEffects（1ターンぶんの予約）では表現できない。§0-9 Batch5c の applyLingerOnBuy と同型の
+         イベント駆動の予約が要る。**その誘発事象の解決中に場に出た予約は、その事象では発火しない**
+         （＝檻／調査／秘境の社／豊穣 の4枚に公式の明文がある。密航者は逆に自分自身の獲得にも反応できる＝別機構）。
+       ⚠ 旗艦は命令(Command)＝**命令カードを再演してはいけない**（無限ループ防止のための必須条件）。
+         公式の Command は8つで、**js/cards.js の静的 types だけを見ると足りない**＝
+         `inheritedEstate`（相続した屋敷）は動的に Command 扱いなので除外述語に含めること。 */
+    // --- コスト$2（5種） ---
+    // Set aside up to 4 cards from your hand face down (on this). / The next time you gain a Victory card, trash this, and put / the set aside cards into your hand at end of turn.
+    cage: { id: 'cage', name: '檻', cost: 2, types: ['treasure', 'duration'], coin: 0,
+                 text: '手札を最大4枚（このカードの）脇に伏せて置いてもよい。\n次に勝利点カード1枚を獲得したとき、このカードを場から廃棄し、脇に置いたカードをターン終了時に手札に加える。' },
+    // +1 Action / Set aside up to 4 cards from your hand face down (on this). At the start of your next turn, discard / them, then draw as many.
+    grotto: { id: 'grotto', name: '岩屋', cost: 2, types: ['action', 'duration'],
+                 text: '+1 アクション\n手札を最大4枚（このカードの）上に伏せて置いてもよい。\nあなたの次のターンの開始時、それらを捨て札にし、同じ枚数のカードを引く。' },
+    // [$1] / +1 Buy / --- / When you trash this, gain a Loot.
+    jewelled_egg: { id: 'jewelled_egg', name: '宝飾卵', cost: 2, types: ['treasure'], coin: 1,
+                 text: '+1 コイン\n+1 購入\n————\nこれを廃棄したとき、戦利品1枚を獲得する。' },
+    // +[$2] / The next time a Supply pile empties, trash this and gain a Loot.
+    search: { id: 'search', name: '調査', cost: 2, types: ['action', 'duration'],
+                 text: '+2 コイン\n次にサプライ1山が空になったとき、これを場から廃棄し、戦利品1枚を獲得する。' },
+    // +1 Action / +[$1] / You may trash a card from your hand. / --- / In games using this, at the start of your turn, gain a card from the trash costing up to [$6].
+    shaman: { id: 'shaman', name: 'シャーマン', cost: 2, types: ['action'],
+                 text: '+1 アクション\n+1 コイン\n手札1枚を廃棄してもよい。\n————\nシャーマンを使うゲームでは、あなたは自分の各ターンの開始時に、廃棄置き場からコスト6以下のカード1枚を獲得する。' },
+    // --- コスト$3（4種） ---
+    // +[$1] / The next time you gain a Treasure, trash up to 2 cards from your hand.
+    secluded_shrine: { id: 'secluded_shrine', name: '秘境の社', cost: 3, types: ['action', 'duration'],
+                 text: '+1 コイン\n次に財宝カード1枚を獲得したとき、手札を最大2枚廃棄してもよい。' },
+    // Each other player gains a Curse. At the start of your next turn, draw until you have 8 cards in hand. / --- / When you gain this, trash it unless you trash an Action from your hand.
+    siren: { id: 'siren', name: 'セイレーン', cost: 3, types: ['action', 'duration', 'attack'],
+                 text: '他のプレイヤーは全員、呪い1枚を獲得する。\nあなたの次のターンの開始時、あなたは手札が8枚になるようにカードを引く。\n————\nこれを獲得したとき、手札からアクションカード1枚を廃棄してもよい。廃棄しない場合、これを廃棄する。' },
+    // At the start of your next turn, +2 Cards. / --- / When anyone gains a Duration card, you may play this from your hand.
+    stowaway: { id: 'stowaway', name: '密航者', cost: 3, types: ['action', 'duration', 'reaction'],
+                 text: 'あなたの次のターンの開始時、+2 カード。\n————\n誰かが持続カード1枚を獲得したとき、あなたは手札からこれを使用してもよい。' },
+    // +1 Action, +[$1], and if you gain a card costing exactly [$5] this turn, then at the start of your next turn, repeat this ability.
+    taskmaster: { id: 'taskmaster', name: '現場監督', cost: 3, types: ['action', 'duration'],
+                 text: '+1 アクション\n+1 コイン\nこのターン、これより後にあなたがコスト5のカードを獲得した場合、あなたの次のターンの開始時に、このカードの能力を冒頭から繰り返す。' },
+    // --- コスト$4（4種） ---
+    // The next time you gain an Action card: +1 Buy and +[$3].
+    abundance: { id: 'abundance', name: '豊穣', cost: 4, types: ['treasure', 'duration'], coin: 0,
+                 text: '次にアクションカード1枚を獲得したとき、\n+1 購入、+3 コイン' },
+    // +1 Card / +1 Action / At the start of your next turn, choose one: +[$2]; or trash this to gain a Duration card.
+    // ⚠ 検証で訂正: 旧='・持続カード1枚を獲得するために、…' → 正本(DO訳)は「持続カードを1枚獲得するために、…」（を の位置）
+    cabin_boy: { id: 'cabin_boy', name: 'キャビンボーイ', cost: 4, types: ['action', 'duration'],
+                 text: '+1 カード\n+1 アクション\nあなたの次のターンの開始時、次から1つを選ぶ：\n・+2 コイン\n・持続カードを1枚獲得するために、これを場から廃棄する' },
+    // Trash a card from your hand. +[$1] per [$1] it costs.
+    crucible: { id: 'crucible', name: '坩堝', cost: 4, types: ['treasure'], coin: 0,
+                 text: '手札1枚を廃棄する。\nそのコスト$1につき +1 コイン。' },
+    // +[$2] / The next time you play a non-Command Action card, replay it.
+    flagship: { id: 'flagship', name: '旗艦', cost: 4, types: ['action', 'duration', 'command'],
+                 text: '+2 コイン\n次に命令カード以外のアクションカード1枚を使用したとき、それを再使用する。' },
+    /* ---------- 略奪（Plunder）王国カード 2/3 ＝ $4〜$5 の13枚 ----------
+       正本＝docs/research/plunder_rules.md 第3章（多エージェント研究＋敵対検証で確定・現行＝2022年12月の初版のみ／13枚ともエラッタ無し）。
+       日本語のカード文面は Dominion Online 訳（＝日本語wiki 掲載）を既存カタログの言い回しへ寄せたもの。
+       ⚠ 区切り線（————）を持つのは gondola / mapmaker / buried_treasure の3枚だけ。
+         cutthroat の「次に〜戦利品」は**線の下ではなく持続能力そのもの**（英語wiki の Card text の <hr> を機械カウントして確認）。
+         これを取り違えると習性(Way)で使ったときの挙動が逆になる。
+       ⚠ 段階2で決める必要がある未決事項（カタログの文面自体には影響しない・研究doc §3/§L）：
+         「港の村」の追加効果を **習性(Way)由来の +コイン でも得るか**（英語wiki 公式FAQ＝得る／
+         日本語wiki＋2025年エラッタ・Discord 裁定＝得ない）。mix-all でしか同居しないので出荷セットへの影響はゼロ。 */
+    // +[$2] / Look at the top 3 cards of your deck. You may play a Treasure from them. Put the rest back in any order.
+    fortune_hunter: { id: 'fortune_hunter', name: '財産目当て', cost: 4, types: ['action'],
+                 text: '+2 コイン\n山札の上から3枚を見る。\nその中の財宝カード1枚を使用してもよい。\n残りを好きな順番で山札の上に戻す。' },
+    // Either now or at the start of your next turn: +[$2]. / — / When you gain this, you may play an Action card from your hand.
+    // ⚠ coin: 0 ＝「今 or 次のターン開始時」の選択制なので基本コインは持たせない（御守り charm と同じ扱い）。
+    gondola: { id: 'gondola', name: 'ゴンドラ', cost: 4, types: ['treasure', 'duration'], coin: 0,
+                 text: '現在またはあなたの次のターンの開始時に、+2 コイン\n————\nこれを獲得したとき、手札のアクションカード1枚を使用してもよい。' },
+    // +1 Card / +2 Actions / After the next Action you play this turn, if it gave you +[$], +[$1].
+    harbor_village: { id: 'harbor_village', name: '港の村', cost: 4, types: ['action'],
+                 // ⚠ 検証で訂正: 旧='その効果で +コイン を得ていた場合'（+コイン の前後に空白）
+                 //   → 研究doc の和訳は 'その効果で+コインを得ていた場合'（空白なし）。逐語に戻した。
+                 //   ※既存カタログで空白を入れているのは「+1 カード」のような +数値 トークンだけで、'+コイン' の前例は無い。
+                 text: '+1 カード\n+2 アクション\nこのターン次にアクションカード1枚を使用した後、その効果で+コインを得ていた場合、+1 コイン。' },
+    // +2 Cards / +2 Actions / The next time the first card you play on a turn is a Treasure, put this onto your deck afterwards.
+    landing_party: { id: 'landing_party', name: '上陸部隊', cost: 4, types: ['action', 'duration'],
+                 text: '+2 カード\n+2 アクション\n次にターン中最初に使用するカードが財宝カードであるとき、その後にこれを山札の上に置く。' },
+    // Look at the top 4 cards of your deck. Put 2 into your hand and discard the rest. / — / When any player gains a Victory card, you may play this from your hand.
+    mapmaker: { id: 'mapmaker', name: '地図作り', cost: 4, types: ['action', 'reaction'],
+                 text: '山札の上から4枚を見る。\nその中の2枚を手札に加え、残りを捨て札にする。\n————\n誰かが勝利点カード1枚を獲得したとき、あなたはこれを手札から使用してもよい。' },
+    // Trash a card from your hand. +2 Cards per type it has (Action, Attack, etc.).
+    maroon: { id: 'maroon', name: '置き去り', cost: 4, types: ['action'],
+                 text: '手札1枚を廃棄する。\nそれが持つ種別（アクション、アタックなど）1つにつき +2 カード。' },
+    // [$1] / +1 Buy / At the start of your next turn, +1 Card and you may trash a card from your hand.
+    rope: { id: 'rope', name: '縄', cost: 4, types: ['treasure', 'duration'], coin: 1,
+                 text: '+1 コイン\n+1 購入\nあなたの次のターンの開始時に、+1 カード、手札1枚を廃棄してもよい。' },
+    // +2 Actions / +1 Card per 3 cards you have in play (round down).
+    swamp_shacks: { id: 'swamp_shacks', name: '沼地の小屋', cost: 4, types: ['action'],
+                 text: '+2 アクション\nあなたが場に出しているカード3枚（端数切り捨て）につき、+1 カード。' },
+    // Gain a copy of a card anyone has in play.
+    tools: { id: 'tools', name: '工具', cost: 4, types: ['treasure'], coin: 0,
+                 text: '（自分を含む）誰かが場に出しているのと同じカード1枚を獲得する。' },
+    // At the start of your next turn, +1 Buy and +[$3]. / — / When you gain this, play it.
+    // ⚠ coin: 0 ＝ コインは「次のターンの開始時」にしか出ない（使用した瞬間には $0）。
+    buried_treasure: { id: 'buried_treasure', name: '埋められた財宝', cost: 5, types: ['treasure', 'duration'], coin: 0,
+                 text: 'あなたの次のターンの開始時、+1 購入、+3 コイン。\n————\nこれを獲得したとき、使用する。' },
+    // +3 Cards / At the start of your next turn, put this onto your deck.
+    // ⚠ 参考（方針で決着済み）: 日本語文面が2系統ある。日本語wiki（Dominion Online 訳）＝「これを場から山札の上に置く。」／
+    //   英語wiki の Japanese 行＝「これをあなたのデッキの上に置く。」。カード名『乗組員』は両者一致。
+    //   本カタログは決定方針どおり Dominion Online 訳を採用（印刷版との実物照合は未実施）。
+    crew: { id: 'crew', name: '乗組員', cost: 5, types: ['action', 'duration'],
+                 text: '+3 カード\nあなたの次のターンの開始時、これを場から山札の上に置く。' },
+    // Each other player discards down to 3 cards in hand. / The next time anyone gains a Treasure costing [$5] or more, gain a Loot.
+    // ⚠ 区切り線は無い（2行目も持続能力そのもの）。習性(Way)で使うとアタックも予約も両方発生しない。
+    cutthroat: { id: 'cutthroat', name: '切り裂き魔', cost: 5, types: ['action', 'duration', 'attack'],
+                 text: '他のプレイヤーは全員、手札が3枚になるように捨て札にする。\n次に（自分を含む）誰かがコスト5以上の財宝カード1枚を獲得したとき、あなたは戦利品1枚を獲得する。' },
+    // Now and at the start of your next turn: Trash a card from your hand, and gain one costing up to [$2] more.
+    enlarge: { id: 'enlarge', name: '拡大', cost: 5, types: ['action', 'duration'],
+                 text: '現在とあなたの次のターンの開始時：\n手札1枚を廃棄し、それよりコストが最大2コイン高いカード1枚を獲得する。' },
+    /* ===== 略奪（Plunder）王国カード 3/3 ＝ $5〜$7 の14枚 =====
+       正本＝docs/research/plunder_rules.md 第4章（英語wiki 14ページ＋日本語wiki 14ページを敵対検証済み）。
+       14件とも Versions 表は「First edition / December 2022」の1行のみ＝エラッタなし。
+       14件とも負債・ポーション費用は持たない（costIsPlainCoin が真）。
+       日本語文面＝Dominion Online 訳（PROGRESS §4 の2026-08-15 決定3）。研究doc の逐語からの
+       意図的な差分は次の4種だけ（それ以外は1文字も変えていない＝逐語検証で機械照合済み）：
+         (1) 資源行を既存676枚の慣習へ正規化＝「+N カードを引く」→「+N カード」／「1 コイン」→「+1 コイン」。
+         (2) 区切り線を既存カタログの形へ＝「--------------------」→「————」（U+2014×4・cards.js の52箇所と同一）。
+         (3) 「選ぶ」の書式を既存カタログの形へ＝「次のうち1つを選ぶ：」＋「〜」→「次から1つを選ぶ：」＋「・〜」
+             （quartermaster のみ。cards.js は選択肢に「」を使わず ・ で並べる）。
+         (4) 半角読点「,」→全角「、」（figurine のみ＝wikiwiki 側の表記ゆれ。語は置換していない）。
+       カード文中の改行は「1文＝1行」の既存慣習に合わせて折り返し位置を詰めた（frigate）。意味は不変。
+       Loot＝戦利品（暗黒時代 spoils は 略奪品 に改名済み＝衝突なし）。 */
+    // --- コスト5（12枚） ---
+    // +2 Cards / You may discard an Action card for +1 Buy and +$1.
+    figurine: { id: 'figurine', name: '小像', cost: 5, types: ['treasure'], coin: 0,
+                 // ⚠ 検証で訂正: 旧='そうした場合、+1 購入 と +1 コイン。'（"と" は研究doc に無い語の追加）
+                 //   → 研究doc 逐語 'そうした場合、+1 購入, +1 コイン。' の半角読点だけを全角化する形に戻した。
+                 text: '+2 カード\n手札のアクションカード1枚を捨て札にしてもよい。そうした場合、+1 購入、+1 コイン。' },
+    // Play any number of Action cards with the same name from your hand, / then draw until you have 6 cards in hand.
+    first_mate: { id: 'first_mate', name: '一等航海士', cost: 5, types: ['action'],
+                 text: '手札から、名前が互いに一致するアクションカードを好きな枚数使用してもよい。\nその後、手札が6枚になるようにカードを引く。' },
+    // +$3 / Until the start of your next turn, each time another player plays an Action card, / they discard down to 4 cards in hand afterwards.
+    frigate: { id: 'frigate', name: 'フリゲート船', cost: 5, types: ['action', 'duration', 'attack'],
+                 text: '+3 コイン\nあなたの次のターンの開始時まで、他のプレイヤーはアクションカード1枚を使用するたび、その後に、手札が4枚になるように捨て札にする。' },
+    // +2 Actions / At the start of your next turn, +2 Cards.
+    longship: { id: 'longship', name: 'ロングシップ', cost: 5, types: ['action', 'duration'],
+                 text: '+2 アクション\nあなたの次のターンの開始時、+2 カード。' },
+    // +1 Action / +1 Buy / +$2 / Once this turn, when you gain a Treasure, you may play it.
+    mining_road: { id: 'mining_road', name: '鉱山道路', cost: 5, types: ['action'],
+                 text: '+1 アクション\n+1 購入\n+2 コイン\nこのターンに1度、財宝カード1枚を獲得したとき、それを使用してもよい。' },
+    // +$1 per differently named Treasure you have in play.
+    pendant: { id: 'pendant', name: 'ペンダント', cost: 5, types: ['treasure'], coin: 0,
+                 text: 'あなたが場に出している異なる財宝カード1種類につき、+1 コイン。' },
+    // $1 / Trash a card from your hand. / If it costs $3 or more, gain a Loot to your hand.
+    pickaxe: { id: 'pickaxe', name: 'つるはし', cost: 5, types: ['treasure'], coin: 1,
+                 text: '+1 コイン\n手札1枚を廃棄する。\nそのコストが3以上の場合、戦利品1枚を手札に獲得する。' },
+    // +4 Cards / Put a card from your hand onto your deck.
+    pilgrim: { id: 'pilgrim', name: '巡礼者', cost: 5, types: ['action'],
+                 text: '+4 カード\n手札1枚を山札の上に置く。' },
+    // At the start of each of your turns for the rest of the game, choose one: / Gain a card costing up to $4, setting it aside on this; / or put a card from this into your hand.
+    quartermaster: { id: 'quartermaster', name: '操舵手', cost: 5, types: ['action', 'duration'],
+                 // ⚠ 検証で訂正: 旧='・コスト4以下のカード1枚を、このカードの脇に獲得する'（読点は研究doc に無い挿入）
+                 //   → 研究doc 逐語「コスト4以下のカード1枚を(このカードの)脇に獲得する」に合わせて読点を削除。
+                 text: 'ゲーム終了まで、あなたの各ターンの開始時、次から1つを選ぶ：\n・コスト4以下のカード1枚をこのカードの脇に獲得する\n・このカードの脇にあるカード1枚を手札に加える' },
+    // Gain a Treasure costing less than this to your hand.
+    silver_mine: { id: 'silver_mine', name: '銀山', cost: 5, types: ['treasure'], coin: 0,
+                 text: 'これより安い財宝カード1枚を手札に獲得する。' },
+    // Each other player gains a Curse. / Once this turn, when you discard a Treasure from play, you may set it aside. / Put it in your hand at end of turn.
+    trickster: { id: 'trickster', name: 'トリックスター', cost: 5, types: ['action', 'attack'],
+                 text: '他のプレイヤーは全員、呪い1枚を獲得する。\nこのターンに1度、財宝カード1枚を場から捨て札にしたとき、それを脇に置いてもよい。\nターン終了時、それを手札に加える。' },
+    // +1 Card / +2 Actions / -------------------- / When you gain this, if you have at least 3 differently named Treasures in play, gain a Loot.
+    wealthy_village: { id: 'wealthy_village', name: '価値ある村', cost: 5, types: ['action'],
+                 text: '+1 カード\n+2 アクション\n————\nこれを獲得したとき、異なる財宝カードを3種類以上場に出している場合、戦利品1枚を獲得する。' },
+    // --- コスト6 ---
+    // $1 / +1 Buy / Gain a Loot.
+    sack_of_loot: { id: 'sack_of_loot', name: '戦利品の袋', cost: 6, types: ['treasure'], coin: 1,
+                 text: '+1 コイン\n+1 購入\n戦利品1枚を獲得する。' },
+    // --- コスト7 ---
+    // You may play a Treasure from your hand 3 times.
+    kings_cache: { id: 'kings_cache', name: '王の隠し財産', cost: 7, types: ['treasure'], coin: 0,
+                 text: '手札の財宝カード1枚を3回使用してもよい。' },
+    // --- 戦利品(Loot) 15種＝非サプライ。15種×2枚＝30枚を1山にシャッフルして伏せる（獲得したら公開） ---
+    /* ===== 略奪（Plunder）＝戦利品(Loot) 15種 =====
+       正本＝docs/research/plunder_rules.md 第5章（＋章末の敵対検証レポートの訂正を反映）。
+       ・コストは公式では全15種 `$7*`（星付き＝非サプライ）。本カタログでは cost: 7 のみを書く
+         （賞品 prizes・略奪品 spoils と同じ扱い＝星は cards.js では表現していない）。
+       ・山は30枚（15種×2）で非サプライ・中身も順序も完全に伏せる（廃墟と違い一番上も見えない）。
+       ・新種別 'loot'（戦利品）＝carddata.js の typeLabel/typeLabelEn、integrity の JP/EN マップ、
+         ui.js の TYPE_JP に追加が必要。
+       ・【重要】暗黒時代の Spoils は公式訳「略奪品」に改名済み（js/cards.js:601）＝
+         「戦利品」は Loot が名乗る。（検証で実確認：cards.js に「戦利品」という name は現存しない）
+       ・⚠ 検証で追記＝統合時に必須（無いと integrity テストが即赤 / CPU が無限ループ）：
+         (1) `DOM.POOLS.loot = [...15件]`（賞品 prizes・略奪品 darkages_np と同じ非サプライ用の孤立プール）、
+         (2) `GAIN_ORDER` に15件（全カード網羅が整合性テストの要件）、
+         (3) engine の `NON_SUPPLY` と cpu の `NON_SUPPLY_SET` に15件
+             ＝§0-2 の「4系統除外チェックリスト」（3山終了／購入／闇市場デッキ母集団／汎用獲得）を必ず通す。
+       ・⚠ 表記メモ（検証・未変更）＝船首像の「+2 カードを引く」は研究doc の Dominion Online 訳どおり。
+         既存カタログでは「+2 カード。」が優勢（209件 vs 「カードを引く」3件・例＝js/cards.js:922）。
+         ユーザー決定「日本語文面は Dominion Online 訳で統一」を優先して**doc のまま残した**。 */
+
+    // Either now or at the start of your next turn: / +1 Buy and +$3.
+    // ※ +$3 は選択肢の中にあるので静的な coin にしない（研究doc 第5章「機械的な整合」）。
+    amphora: { id: 'amphora', name: 'アンフォラ', cost: 7, types: ['treasure', 'duration', 'loot'], coin: 0,
+                 text: '現在またはあなたの次のターンの開始時に、\n+1 購入、+3 コイン。' },
+
+    // $3 / ――― / When you gain this, gain a Gold.
+    doubloons: { id: 'doubloons', name: 'ダブロン金貨', cost: 7, types: ['treasure', 'loot'], coin: 3,
+                 text: '3 コイン\n————\nこれを獲得したとき、金貨1枚を獲得する。' },
+
+    // Now and at the start of each of your turns for the rest of the game: / $1 / +1 Buy
+    // ※ coin:1 は「現在」ぶん（＝香辛料 spices と同じ形＝コインは coin フィールド／+1購入は効果側）。
+    // ⚠ 実装メモ: **「現在」ぶんの +1 購入も効果側で足す必要がある**。coin:1 とあわせて
+    //    「現在」の +1 コインを効果側でも足すと二重計上になる（coin フィールドが既に払っている）。
+    //    各ターン開始時の 1 コイン/+1 購入 は永続持続（p.hirelings/p.champions と同型）で engine 側に持つ。
+    endless_chalice: { id: 'endless_chalice', name: '尽きぬ杯', cost: 7, types: ['treasure', 'duration', 'loot'], coin: 1,
+                 text: '現在と、ゲーム終了まであなたの各ターンの開始時に、\n1 コイン\n+1 購入' },
+
+    // $3 / ――― / At the start of your next turn, +2 Cards.
+    figurehead: { id: 'figurehead', name: '船首像', cost: 7, types: ['treasure', 'duration', 'loot'], coin: 3,
+                 text: '3 コイン\n————\nあなたの次のターンの開始時、+2 カードを引く。' },
+
+    // $3 / ――― / Gain a card costing up to $4.
+    hammer: { id: 'hammer', name: 'ハンマー', cost: 7, types: ['treasure', 'loot'], coin: 3,
+                 text: '3 コイン\n————\nコスト4以下のカード1枚を獲得する。' },
+
+    // $3 / ――― / This turn, when you gain a card, you may put it onto your deck.
+    insignia: { id: 'insignia', name: '勲章', cost: 7, types: ['treasure', 'loot'], coin: 3,
+                 text: '3 コイン\n————\nこのターン、カード1枚を獲得したとき、それを山札の上に置いてもよい。' },
+
+    // $3 / +1 Buy / ――― / At the start of your next turn, put this on the bottom of your deck.
+    jewels: { id: 'jewels', name: '宝石', cost: 7, types: ['treasure', 'duration', 'loot'], coin: 3,
+                 text: '3 コイン\n+1 購入\n————\nあなたの次のターンの開始時に、これを山札の一番下に置く。' },
+
+    // Look through your discard pile. Choose one: Play an Action or Treasure from it; or / +1 Buy and +$3.
+    // ※ +$3 は選択肢の中にあるので静的な coin にしない。「捨て札をすべて見る」は選択の前に必ず行う前段。
+    orb: { id: 'orb', name: '宝珠', cost: 7, types: ['treasure', 'loot'], coin: 0,
+                 // ⚠ 検証で訂正: 旧="・+1 購入 と +3 コイン"（研究doc は「+1 購入、+3 コイン」＝アンフォラと同じ表記）。
+                 // ※箇条書き（次から1つを選ぶ：＋「・」）は既存カタログの表記（js/cards.js:168 待ち伏せ等）に合わせたもの。
+                 //   研究doc の表は wiki のインライン表記（「…」;「…」）なので、そのままカード文にはしない。
+                 // ⚠ 実装メモ: 宝珠は choose-one＝長老(Elder)の追加選択対象（研究doc 第5章 落とし穴13）。
+                 //   ELDER_CHOICE_ORDER に載せるか、載せないなら許容簡略化として PROGRESS に明記すること。
+                 text: '捨て札置き場のカードをすべて見る。次から1つを選ぶ：\n・その中のアクションカードか財宝カード1枚を使用する\n・+1 購入、+3 コイン' },
+
+    // $3 / +1 Buy / ――― / You may trash a card from your hand.
+    prize_goat: { id: 'prize_goat', name: '賞品のヤギ', cost: 7, types: ['treasure', 'loot'], coin: 3,
+                 text: '3 コイン\n+1 購入\n————\n手札1枚を廃棄してもよい。' },
+
+    // $3 / +1 Buy / ――― / You may set aside a card from your hand face down. Put it into your hand at end of turn.
+    puzzle_box: { id: 'puzzle_box', name: 'パズルボックス', cost: 7, types: ['treasure', 'loot'], coin: 3,
+                 text: '3 コイン\n+1 購入\n————\n手札1枚を脇に伏せて置いてもよい。ターン終了時にそれを手札に加える。' },
+
+    // $3 / +1 Buy / ――― / Look at the top 5 cards of your deck. Discard any number. Put the rest back in any order.
+    sextant: { id: 'sextant', name: '六分儀', cost: 7, types: ['treasure', 'loot'], coin: 3,
+                 text: '3 コイン\n+1 購入\n————\n山札の上から5枚を見る。その中の好きな枚数を捨て札にする。残りを好きな順番で山札の上に戻す。' },
+
+    // $3 / +1 Buy / ――― / When another player plays an Attack, you may first reveal this from your hand to be unaffected.
+    shield: { id: 'shield', name: '盾', cost: 7, types: ['treasure', 'reaction', 'loot'], coin: 3,
+                 text: '3 コイン\n+1 購入\n————\n他のプレイヤーがアタックカードを使用するとき、その解決前に、手札からこれを公開してもよい。公開した場合、そのアタックカードの影響を受けない。' },
+
+    // Trash this to gain a cheaper card. If it's an Action or Treasure, you may play it.
+    // ※ 日本語の印刷版「これを廃棄して、これよりもコストの少ないカード1枚を獲得する」は
+    //    ルールミスを誘発する誤訳（日本語wiki が名指しで警告）＝差し戻し禁止。
+    //    英語原文は「廃棄できた場合にだけ獲得する」＝命令(Command)経由では廃棄が失敗し獲得も起きない。
+    spell_scroll: { id: 'spell_scroll', name: '呪符の巻物', cost: 7, types: ['action', 'treasure', 'loot'], coin: 0,
+                 text: 'これを廃棄する。廃棄した場合、これより安いカード1枚を獲得する。それがアクションカードか財宝カードの場合、使用してもよい。' },
+
+    // $3 / +1 Buy / ――― / You may play an Action from your hand.
+    staff: { id: 'staff', name: '杖', cost: 7, types: ['treasure', 'loot'], coin: 3,
+                 text: '3 コイン\n+1 購入\n————\n手札からアクションカード1枚を使用してもよい。' },
+
+    // $3 / +1 Buy / ――― / Each other player discards down to 4 cards in hand.
+    sword: { id: 'sword', name: '剣', cost: 7, types: ['treasure', 'attack', 'loot'], coin: 3,
+                 text: '3 コイン\n+1 購入\n————\n他のプレイヤーは全員、手札が4枚になるように捨て札にする。' },
+  };
 
   /* ---------- 王国カードのセット ----------
      第二版をデフォルトに。第二版で廃止された初版カードは実装を残し「初版」セットで遊べる。 */
@@ -1330,9 +1612,15 @@
      コスト分布＝$2×2／$3×3／$4×3／$5×1／$6×1（分割山は買い進むと $5/$6 まで上がる）。 */
   DOM.KINGDOM_ALLIES = ['bauble', 'townsfolk', 'merchant_camp', 'odysseys', 'wizards',
                         'broker', 'innkeeper', 'town', 'barbarian', 'marquis'];
+  /* 略奪（Plunder）＝段階1（画像・カタログのみ）。
+     ⚠ プール名は `plunderexp`＝英語id `plunder` が帝国の分割山「鹵獲品」で使用済みのため衝突を避ける。
+     王国40種が抽選/闇市場の母集団になる枠。**戦利品(Loot) 15種は非サプライ**なので別プール（賞品/馬と同じ扱い）。 */
+  DOM.POOLS.plunderexp = ['cage', 'grotto', 'jewelled_egg', 'search', 'shaman', 'secluded_shrine', 'siren', 'stowaway', 'taskmaster', 'abundance', 'cabin_boy', 'crucible', 'flagship', 'fortune_hunter', 'gondola', 'harbor_village', 'landing_party', 'mapmaker', 'maroon', 'rope', 'swamp_shacks', 'tools', 'buried_treasure', 'crew', 'cutthroat', 'enlarge', 'figurine', 'first_mate', 'frigate', 'longship', 'mining_road', 'pendant', 'pickaxe', 'pilgrim', 'quartermaster', 'silver_mine', 'trickster', 'wealthy_village', 'sack_of_loot', 'kings_cache'];
+  // 戦利品(Loot)＝非サプライ（15種×2枚＝30枚を1山に伏せる）。ランダム抽選の母集団には入れない。
+  DOM.POOLS.loot = ['amphora', 'doubloons', 'endless_chalice', 'figurehead', 'hammer', 'insignia', 'jewels', 'orb', 'prize_goat', 'puzzle_box', 'sextant', 'shield', 'spell_scroll', 'staff', 'sword'];
   // 段階1（効果が未実装）のプール＝闇市場デッキに入れない（買っても何も起きない死に札になるため）。
-  //   ※ 同盟は A5 で実プレイ化（段階2）したのでここから外した＝現在は空。新しい拡張を段階1で足したらここに入れる。
-  DOM.STAGE1_POOLS = [];
+  //   実プレイ化（段階2＝CARD_SET 昇格）のときに、この配列から外す。
+  DOM.STAGE1_POOLS = ['plunderexp', 'loot'];
   // 移動動物園の固定10種（自作 showcase）。追放（ラクダの隊列）・馬（そり/騎兵隊/馬丁/貸し馬屋）・
   //   持続（艀/村有緑地）・アタック（魔女の集会）・獲得に反応するリアクション（牧羊犬/村有緑地）を一通り味わえる。
   //   コスト分布＝$2×1／$3×3／$4×3／$5×3。
@@ -2008,6 +2296,143 @@
       text: 'あなたがカード1枚を獲得するとき、好意1を使ってもよい。そうした場合、そのカードを山札の上に置く。' },
     woodworkers_guild: { name: '木工ギルド', nameEn: 'Woodworkers\' Guild', kind: 'ally', expansion: 'allies', cost: 0, debt: 0,
       text: 'あなたの購入フェイズの開始時、好意1を使ってもよい。そうした場合、あなたの手札からアクションカード1枚を廃棄する。\n廃棄したなら、アクションカード1枚を獲得する。' },
+
+    /* ===== 略奪（Plunder）の横型＝イベント15＋特性(Trait)15。段階1（CARD_SETS 未参照） =====
+       特性(Trait)は新 kind＝ゲームの準備でサプライの王国の山1つに付ける（付いた山のカード全部に効く）。 */
+    /* ---------- 略奪（Plunder）イベント 15種 ----------
+       買う横型（`DOM.LANDSCAPES` 側）。**負債コスト・ポーション費用は1枚も無い＝すべてプレーンなコインのみ**。
+       種別は15枚とも `Event` だけ（Attack でも Duration でもない＝堀では防げない／持続の予約を張らない）。
+       ⚠ 英語id `plunder` は帝国の分割山カード「鹵獲品」で使用済みなので、プール名は **`plunderexp`**。
+       ⚠ `journey`（旅行）は **2022年12月の印刷版テキスト**を採用（2023年9月の Extra turn errata は
+          英語wiki の Print 欄が `Not printed yet`＝未印刷なので、royal_galley と同じ方針で採らない）。
+          ＝`Once per turn:` を持つので `ONCE_PER_TURN_EVENTS` に入れる側。
+       ⚠ 検証で追記（研究doc 第6章 §4-H）：`ONCE_PER_TURN_EVENTS` に入れるのは **`launch` と `journey` の2枚だけ**。
+          launch＝`"Once per turn" applies to the whole Event.`／journey＝2022版が `Once per turn:` を持つ。
+          **`deliver` は入れてはいけない**＝Donald X. 明言 `Deliver doesn't have "once per turn," even though
+          it does nothing when bought multiple times.`（＝何回でも買えて2枚目以降が空振り）。
+          他の12枚も once per turn 表記なし＝同じリストに入れないこと。
+       正本＝docs/research/plunder_rules.md 第6章 ---- */
+    // +1 Buy / Put any card from your discard pile on the bottom of your deck.
+    bury: { name: '埋葬', nameEn: 'Bury', kind: 'event', expansion: 'plunderexp', cost: 1, debt: 0,
+      text: '+1 購入\n捨て札置き場のカード1枚を山札の一番下に置く。' },
+    // +1 Buy / The next time you shuffle this turn, pick up to 3 of those cards to put into your discard pile.
+    avoid: { name: '回避', nameEn: 'Avoid', kind: 'event', expansion: 'plunderexp', cost: 2, debt: 0,
+      text: '+1 購入\nこのターン次にシャッフルするとき、カードを最大3枚シャッフルから取り出し捨て札に置く。' },
+    // +1 Buy / This turn, each time you gain a card, set it aside, and put it into your hand at end of turn.
+    deliver: { name: '配達', nameEn: 'Deliver', kind: 'event', expansion: 'plunderexp', cost: 2, debt: 0,
+      text: '+1 購入\nこのターン、カード1枚を獲得するたびにそれを脇に置き、ターン終了時に手札に加える。' },
+    // You may trash an Action card from your hand to gain a Loot.
+    peril: { name: '危難', nameEn: 'Peril', kind: 'event', expansion: 'plunderexp', cost: 2, debt: 0,
+      text: '戦利品1枚を獲得するために、手札からアクションカード1枚を廃棄してもよい。' },
+    // +1 Buy / The next time you gain an Action card this turn, play it.
+    rush: { name: '突貫', nameEn: 'Rush', kind: 'event', expansion: 'plunderexp', cost: 2, debt: 0,
+      text: '+1 購入\nこのターン次にアクションカード1枚を獲得したとき、それを使用する。' },
+    // Discard 3 cards, revealing them. If they have 3 different names, gain a Loot.
+    foray: { name: '襲撃', nameEn: 'Foray', kind: 'event', expansion: 'plunderexp', cost: 3, debt: 0,
+      text: '手札3枚を公開して捨て札にする。その3枚が異なるカードの場合、戦利品1枚を獲得する。' },
+    // Once per turn: Return to your Action phase. / +1 Card, +1 Action, and +1 Buy.
+    // ⚠ 検証で訂正: 旧=`1ターンに1度のみ：`（研究doc の Dominion Online 訳の字面）
+    //    → 既存カタログは "Once per turn:" を **5/5 すべて `1ターンに1回：`** と書いている
+    //      （施し／借入／保存／巡礼／絶望）ので house style に揃えた。意味の差はゼロ。
+    //    ※ 2行目の `+1 カードを引く、…、+1 購入。` も既存の列挙表記（js/cards.js:305
+    //      `+1 カード、+2 アクション、+1 購入`＝「を引く」なし・末尾句点なし）に合わせてある。
+    launch: { name: '発進', nameEn: 'Launch', kind: 'event', expansion: 'plunderexp', cost: 3, debt: 0,
+      text: '1ターンに1回：アクションフェイズに戻る。\n+1 カード、+1 アクション、+1 購入' },
+    // +1 Buy / The next time you gain an Action card this turn, gain a copy of it.
+    mirror: { name: '鏡映', nameEn: 'Mirror', kind: 'event', expansion: 'plunderexp', cost: 3, debt: 0,
+      text: '+1 購入\nこのターン次にアクションカード1枚を獲得したとき、追加で同じカード1枚を獲得する。' },
+    // Set aside your hand face up. / At the start of your next turn, play those Actions and Treasures in any order, then discard the rest.
+    prepare: { name: '準備', nameEn: 'Prepare', kind: 'event', expansion: 'plunderexp', cost: 3, debt: 0,
+      text: '手札をすべて表向きに脇に置く。\nあなたの次のターンの開始時、その中のアクションカードと財宝カードを好きな順番で使用し、その後、残りを捨て札にする。' },
+    // Choose one: Trash a card from your hand; / or gain an Estate from the trash, and if you did, gain a card costing up to [$5].
+    scrounge: { name: '物色', nameEn: 'Scrounge', kind: 'event', expansion: 'plunderexp', cost: 3, debt: 0,
+      text: '次から1つを選ぶ：\n・手札1枚を廃棄する\n・廃棄置き場から屋敷1枚を獲得する。獲得した場合、コスト5以下のカード1枚を獲得する' },
+    // Once per turn: If the previous turn wasn't yours, you don't discard cards from play in Clean-up this turn, and take an extra turn after this one.
+    // ⚠ 検証で訂正: 旧=`1ターンに1度のみ：` → `1ターンに1回：`（launch と同じ理由＝既存カタログ 5/5 の表記）。
+    //    本文は研究doc §4-F の「旧テキスト（＝日本語の印刷版）」と逐語一致（＝2022版）。
+    //    **「3ターン連続」の文言が入っていたらそれは 2023エラッタ＝誤り**（ここには無い＝正しい）。
+    journey: { name: '旅行', nameEn: 'Journey', kind: 'event', expansion: 'plunderexp', cost: 4, debt: 0,
+      text: '1ターンに1回：直前のターンがあなたのものでない場合、このターンあなたはクリーンアップフェイズに場のカードを捨て札にせず、このターンの後に追加の1ターンを得る。' },
+    // Trash 3 cards from your hand. Each other player with 5 or more cards in hand trashes one of them.
+    // ⚠ 要確認: 日本語文面だけ Dominion Online 訳（＝日本語wiki）ではなく **印刷版の逐語**を採った。
+    //    理由＝この1枚だけ日本語wiki 側の記載が拡張ページの一覧表の省略形（`手札3枚を廃棄する、手札を5枚以上持つ
+    //    他プレイヤーは手札1枚を廃棄`＝句点なし・体言止め）でカード文の体をなしていないため。
+    //    採用したのは英語wiki `Other language versions` の Japanese 行（日本語版カード実物の書き起こし）で、
+    //    wiki 側の誤字 `施棄` は `廃棄` に直してある。他の14枚は Dominion Online 訳のまま。
+    maelstrom: { name: '大渦巻', nameEn: 'Maelstrom', kind: 'event', expansion: 'plunderexp', cost: 4, debt: 0,
+      text: 'あなたの手札からカード3枚を廃棄する。\n手札が5枚以上ある他のプレイヤーは全員、手札からカード1枚を廃棄する。' },
+    // Gain a Loot.
+    looting: { name: '略奪行為', nameEn: 'Looting', kind: 'event', expansion: 'plunderexp', cost: 6, debt: 0,
+      text: '戦利品1枚を獲得する。' },
+    // You may play an Attack from your hand. / Gain a Duchy. Gain an Action onto your deck. / Gain a Loot; play it.
+    invasion: { name: '侵略', nameEn: 'Invasion', kind: 'event', expansion: 'plunderexp', cost: 10, debt: 0,
+      text: '手札からアタックカード1枚を使用してもよい。\n公領1枚を獲得する。アクションカード1枚を山札の上に獲得する。\n戦利品1枚を獲得し、使用する。' },
+    // Gain a Loot, plus any number of differently named Treasures.
+    prosper: { name: '繁栄', nameEn: 'Prosper', kind: 'event', expansion: 'plunderexp', cost: 10, debt: 0,
+      text: '戦利品1枚と、好きな枚数の互いに異なる財宝カードを獲得する。' },
+    /* ---------- 略奪（Plunder）＝特性(Trait) 15種（横型・買わない・獲得しない） ----------
+       ⚠ プール名/expansion は 'plunderexp'（英語id `plunder` は帝国の分割山カード「鹵獲品」で使用済み）。
+       特性はサプライの「王国カードかつアクションまたは財宝」の山1つに付き、その山に由来するカード全部に効く
+       （分割山なら4種すべて／山が空になっても効き続ける／同じ山に2枚は付けない）。
+       ⚠ 特性は「カード」ではない＝コスト無し・種別を増やさない（研究doc 逐語＝「廷臣や鷹匠が参照した場合でも
+          【カード種別】が増えるわけではない」）。
+          // ⚠ 検証で訂正: 旧=「（廷臣/鷹匠/品評会/蛮族の種別判定に混ぜない）」。品評会は"種別"ではなく"カード名"を
+          //    数えるカードで、蛮族と併せて研究doc に記載が無い＝推測の追記だったので削った。
+       ⚠ 選出は準備手順の最後（災いカードの山も候補に入る）。
+          // ⚠ 検証で訂正: 旧=「特性の効果は準備中には効かない。」＝誤り。準備中に効かないのは Cheap だけ
+          //    （研究doc §4-1 逐語 `This does not apply during setup`）。Inherited は逆に「準備(Setup)」で働く特性。
+       横型の合計2枚枠に数える（イベント/ランドマーク/プロジェクト/習性と同じ）。
+       日本語文面は Dominion Online 訳（＝研究doc `docs/research/plunder_rules.md` 第7章 §1 の一覧表）。
+       ⚠ 無謀な(Reckless) はホビージャパン印刷版が公式に誤訳（「2回使用する」）＝**採らない**。
+          英語原文どおり「1度の使用で2回指示に従う」を採用する（夜想曲の取り替え子と同じ判断）。 */
+    // Cheap cards cost [$1] less.
+    cheap: { name: '安価な', nameEn: 'Cheap', kind: 'trait', expansion: 'plunderexp', cost: 0, debt: 0,
+      text: '安価なカードのコストは1コイン下がる。' },
+    // When you gain a Cursed card, gain a Loot and a Curse.
+    cursed: { name: '呪われた', nameEn: 'Cursed', kind: 'trait', expansion: 'plunderexp', cost: 0, debt: 0,
+      text: '呪われたカード1枚を獲得したとき、戦利品1枚と呪い1枚を獲得する。' },
+    // When shuffling, you may look through the cards and reveal Fated cards to put them on the top or bottom.
+    fated: { name: '運命の', nameEn: 'Fated', kind: 'trait', expansion: 'plunderexp', cost: 0, debt: 0,
+      text: 'シャッフルするとき、それらのカードをすべて見て、その中の運命のカードを何枚でも公開してもよい。\n公開した各カードをシャッフルしたカードの一番上か一番下に置く。' },
+    // When you gain a Province, gain a Fawning card.
+    fawning: { name: 'へつらう', nameEn: 'Fawning', kind: 'trait', expansion: 'plunderexp', cost: 0, debt: 0,
+      text: '属州1枚を獲得したとき、へつらうカード1枚を獲得する。' },
+    // At the start of your Clean-up phase, you may discard a Friendly card to gain a Friendly card.
+    friendly: { name: '友好的な', nameEn: 'Friendly', kind: 'trait', expansion: 'plunderexp', cost: 0, debt: 0,
+      text: 'あなたのクリーンアップフェイズの開始時、手札の友好的なカードのうち1枚を捨て札にしてもよい。\nそうした場合、友好的なカード1枚を獲得する。' },
+    // When you gain a Hasty card, set it aside, and play it at the start of your next turn.
+    hasty: { name: 'せっかちな', nameEn: 'Hasty', kind: 'trait', expansion: 'plunderexp', cost: 0, debt: 0,
+      text: 'せっかちなカード1枚を獲得したとき、それを脇に置き、あなたの次のターンの開始時に使用する。' },
+    // Setup: You start the game with an Inherited card in place of a starting card you choose.
+    inherited: { name: '受け継がれた', nameEn: 'Inherited', kind: 'trait', expansion: 'plunderexp', cost: 0, debt: 0,
+      text: '準備：ゲーム開始時の自分のカード1枚を選び、受け継がれたカード1枚と入れ替える。' },
+    // After playing an Inspiring card on your turn, you may play an Action from your hand that you don't have a copy of in play.
+    inspiring: { name: '鼓舞する', nameEn: 'Inspiring', kind: 'trait', expansion: 'plunderexp', cost: 0, debt: 0,
+      text: 'あなたのターンに鼓舞するカードを使用した後、あなたが場に出していないアクションカード1枚を手札から使用してもよい。' },
+    // When you gain a Nearby card, +1 Buy.
+    nearby: { name: '近隣の', nameEn: 'Nearby', kind: 'trait', expansion: 'plunderexp', cost: 0, debt: 0,
+      text: '近隣のカード1枚を獲得したとき、+1 購入。' },
+    // At the start of your Clean-up phase, you may set aside Patient cards from your hand to play them at the start of your next turn.
+    patient: { name: '忍耐強い', nameEn: 'Patient', kind: 'trait', expansion: 'plunderexp', cost: 0, debt: 0,
+      text: 'あなたのクリーンアップフェイズの開始時に、手札から忍耐強いカードを何枚でも脇に置いてもよい。\nそうした場合、あなたの次のターンの開始時にそれらを使用する。' },
+    // When you gain a Pious card, you may trash a card from your hand.
+    pious: { name: '敬虔な', nameEn: 'Pious', kind: 'trait', expansion: 'plunderexp', cost: 0, debt: 0,
+      text: '敬虔なカード1枚を獲得したとき、手札1枚を廃棄してもよい。' },
+    // Follow the instructions of played Reckless cards twice. When discarding one from play, return it to its pile.
+    reckless: { name: '無謀な', nameEn: 'Reckless', kind: 'trait', expansion: 'plunderexp', cost: 0, debt: 0,
+      text: '無謀なカードは1度の使用で2回指示に従う。\n無謀なカードを場から捨て札にしたとき、それをそのカードの山に戻す。' },
+    // When you gain a Rich card, gain a Silver.
+    rich: { name: '豊かな', nameEn: 'Rich', kind: 'trait', expansion: 'plunderexp', cost: 0, debt: 0,
+      text: '豊かなカード1枚を獲得したとき、銀貨1枚を獲得する。' },
+    // At the start of your turn, you may discard one Shy card for +2 Cards.
+    shy: { name: '内気な', nameEn: 'Shy', kind: 'trait', expansion: 'plunderexp', cost: 0, debt: 0,
+      // ⚠ 検証で訂正: 旧='そうした場合、+2 カード。'（「を引く」が脱落）。
+      //    研究doc 第7章 §1 の和文は `そうした場合、+2 カードを引く。`。既存カタログにも
+      //    「このカードを廃棄したとき、+1 カードを引く。」（封土）の同型があり、文中に埋まる +N カードは「を引く」を付ける。
+      text: 'あなたのターンの開始時に、手札の内気なカードのうち1枚を捨て札にしてもよい。\nそうした場合、+2 カードを引く。' },
+    // When you discard a Tireless card from play, set it aside, and put it onto your deck at end of turn.
+    tireless: { name: '疲れ知らずの', nameEn: 'Tireless', kind: 'trait', expansion: 'plunderexp', cost: 0, debt: 0,
+      text: '疲れ知らずのカードを場から捨て札にしたとき、それを脇に置き、ターン終了時に山札の上に置く。' },
   };
   // 帝国ランドマーク21種（抽選元）。イベントは未実装（docs/research/landscape_cards.md §2 にデータあり）。
   DOM.LANDMARKS_EMPIRES = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'landmark');
@@ -2028,6 +2453,9 @@
   // 同盟：同盟(Ally)カード23種（抽選元）。**王国に連携(Liaison)が1枚でもあるとき1枚だけ**選ばれる。
   //   他の横型（イベント/ランドマーク/プロジェクト/習性）の「合計2枚まで」には数えない＝別デッキ。
   DOM.ALLIES_ALLY = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'ally');
+  // 略奪：イベント15種／特性(Trait)15種（段階1＝どの CARD_SET からも参照していない）。
+  DOM.EVENTS_PLUNDER = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'event' && DOM.LANDSCAPES[id].expansion === 'plunderexp');
+  DOM.TRAITS_PLUNDER = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'trait');
   // ルネサンス プロジェクト20種（抽選元）。買う横型＝BUY_PROJECT で発火（1人2つまで・同じものは1回だけ）。
   DOM.PROJECTS_RENAISSANCE = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'project' && DOM.LANDSCAPES[id].expansion === 'renaissance');
   // ルネサンス アーティファクト5種（抽選しない＝付与カードが王国にあれば自動で盤面に出る）。
