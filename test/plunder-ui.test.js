@@ -95,6 +95,10 @@ const CASES = [
   ['orb（捨て札が空＝+$3 しか選べない）', (s) => { s.players[0].discard = []; s.pending = { type: 'orb', player: 0 }; }],
   ['spell_scroll_gain', (s) => { s.pending = { type: 'spell_scroll_gain', player: 0, limit: 7 }; }],
   ['spell_scroll_play', (s) => { s.players[0].discard = ['gold']; s.pending = { type: 'spell_scroll_play', player: 0, card: 'gold' }; }],
+  // P2："next time" 型持続
+  ['cage_set（0枚でも確定できる）', (s) => { s.players[0].hand = ['estate', 'copper']; s.pending = { type: 'cage_set', player: 0 }; }],
+  ['shrine_trash（廃棄しないでも閉じられる）', (s) => { s.players[0].hand = ['copper', 'curse', 'gold']; s.pending = { type: 'shrine_trash', player: 0 }; }],
+  ['discard_down(切り裂き魔)', (s) => { s.players[0].hand = ['copper', 'copper', 'copper', 'copper', 'copper']; s.pending = { type: 'discard_down', player: 0, source: 1, down: 3, queue: [], next: 'cutthroat' }; }],
 ];
 CASES.forEach(([name, setup]) => {
   const s = mkP(); setup(s); showAs(s, 0);
@@ -114,6 +118,21 @@ CASES.forEach(([name, setup]) => {
   s.pending = { type: 'travelling_fair', player: 0, card: 'silver', dest: 'discard', source: 'insignia' };
   showAs(s, 0);
   ok(doc.body.textContent.indexOf('勲章') >= 0, '勲章の窓は「勲章」と表示される');
+}
+// P2：檻の脇札の見え方（自分＝中身／相手＝枚数だけ）
+{
+  const s = mkP();
+  s.players[0].cage = ['estate', 'estate'];
+  showAs(s, 0);
+  ok(!runtimeError && doc.body.textContent.indexOf('檻の脇') >= 0 && doc.body.textContent.indexOf('屋敷') >= 0,
+    '檻の脇札：自分には中身（屋敷）が見える');
+  // 相手（席1）の檻＝マスク済み state を「自分（席0）の視点」で描く＝枚数だけ見える
+  const m = DOM.engine.maskStateFor(s, 0);
+  m.players[1].cage = ['back', 'back'];  // 席1の檻（マスク後の形）
+  showAs(m, 0);
+  const txt = doc.body.textContent;
+  ok(!runtimeError && txt.indexOf('檻の脇: 2枚') >= 0, '檻の脇札：相手のは枚数だけ見える');
+  ok((DOM.engine.maskStateFor(s, 1).players[0].cage || []).every((c) => c === 'back'), 'maskStateFor は檻の中身を伏せる');
 }
 // CPU が全 pending で null を返さない（オンラインで reduce(state,null) が落ちるのを防ぐ）
 {

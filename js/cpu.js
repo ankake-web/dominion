@@ -417,10 +417,17 @@
     if (has('student')) return 'student';                 // +1アクション（循環＋廃棄。財宝なら好意＋山札上へ）
     if (has('sycophant')) return 'sycophant';             // +1アクション（3枚捨てて+3コイン）
     if (has('voyage')) return 'voyage';                   // +1アクション（追加ターン・使用は3枚まで）
+    // 略奪P2：非ターミナル
+    if (has('landing_party')) return 'landing_party';     // +2カード+2アクション（次に財宝が最初の1枚なら山札の上へ）
     // --- ターミナル（効果の大きい順）---
     // 新プロモ：王子＝良い対象（$4以下の持続/命令以外）が手札にあるときだけ（毎ターン無料再生＝最優先）。
     if (has('prince') && bestPrinceTarget(state, p)) return 'prince';
     if (has('captain')) return 'captain';                 // サプライの$4以下アクションを今と次ターンに使う
+    // 略奪P2：ターミナル
+    if (has('cutthroat')) return 'cutthroat';             // アタック（手札3枚まで）＋誰かの$5以上財宝の獲得で戦利品
+    if (has('search')) return 'search';                   // +$2＋次にサプライ1山が空くと廃棄して戦利品
+    if (has('flagship')) return 'flagship';               // +$2＋次の（命令でない）アクションを再使用
+    if (has('secluded_shrine')) return 'secluded_shrine'; // +$1＋次の財宝獲得で最大2枚圧縮
     if (has('avanto')) return 'avanto';                   // +3カード（サウナ連鎖）
     if (has('golem')) return 'golem';                     // 山札のアクション2枚を使う
     if (has('herbalist')) return 'herbalist';             // +1購入+1コイン
@@ -1489,6 +1496,17 @@
         return { type: 'SPELL_SCROLL_GAIN', card: bestGain(state, pd.limit - 1, { noVictory: true }) || bestGain(state, pd.limit - 1) };
       case 'spell_scroll_play':
         return { type: 'SPELL_SCROLL_PLAY', play: true };
+      /* ===== 略奪P2："next time" 型持続 ===== */
+      // 檻＝使い道の無い純勝利点カード（アクション/財宝を兼ねない）を最大4枚まで伏せる。呪いは入れない（廃棄機会を残す）。
+      case 'cage_set': {
+        const stash = p.hand.filter((c) => isType(c, 'victory') && !isType(c, 'action') && !isType(c, 'treasure') && !isType(c, 'curse')).slice(0, 4);
+        return { type: 'CAGE_SET', cards: stash };
+      }
+      // 秘境の社＝不要札（呪い/銅貨/屋敷など trashValue の低い順）を最大2枚廃棄。無ければ廃棄しない。
+      case 'shrine_trash': {
+        const junk = p.hand.filter((c) => trashValue(c) < 10).sort((a, b) => trashValue(a) - trashValue(b)).slice(0, 2);
+        return { type: 'SHRINE_TRASH', cards: junk };
+      }
 
       /* ===== 拡張: 陰謀 ===== */
       case 'courtyard': {

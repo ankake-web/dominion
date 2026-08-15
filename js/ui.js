@@ -1545,6 +1545,10 @@
       if ((pl.cryptSetAside || []).length) {
         bits.push('⚰️ 納骨堂の脇: ' + (idx === viewer ? pl.cryptSetAside.map((c) => DOM.CARDS[c].name).join('・') : pl.cryptSetAside.length + '枚'));
       }
+      // 略奪：檻の脇札（伏せ札＝自分には中身・相手には枚数だけ見せる）
+      if ((pl.cage || []).length) {
+        bits.push('🗜️ 檻の脇: ' + (idx === viewer ? pl.cage.map((c) => (DOM.CARDS[c] || {}).name || '？').join('・') : pl.cage.length + '枚'));
+      }
       if (bits.length) matRows.push(h('div', { class: 'mat-row' },
         h('span', { class: 'mat-label' }, pl.name + ': '),
         bits.map((b) => h('span', { class: 'chip-card' }, b))));
@@ -1929,6 +1933,15 @@
       { label: '使う', cls: 'btn-primary', on: () => dispatch({ type: 'SPELL_SCROLL_PLAY', play: true }) },
       { label: '使わない', cls: 'btn-ghost', on: () => dispatch({ type: 'SPELL_SCROLL_PLAY', play: false }) },
     ]);
+    /* ===== 略奪P2："next time" 型持続 ===== */
+    // 檻＝手札を最大4枚まで伏せて置いてよい（0枚でもOK＝檻は勝利点を獲得するまで場に残る）。
+    if (pd.type === 'cage_set') return modalMultiHand(p, '檻 — 脇に伏せて置く',
+      '手札から最大4枚を檻の上に伏せて置けます。次に勝利点カードを獲得したとき、檻を廃棄してそのターンの終了時に手札へ戻ります。0枚でもOK。',
+      (n) => '確定（' + n + '枚 置く）', true, (cards) => dispatch({ type: 'CAGE_SET', cards }), 4);
+    // 秘境の社＝手札を最大2枚廃棄してもよい（任意＝0枚で「廃棄しない」）。
+    if (pd.type === 'shrine_trash') return modalMultiHand(p, '秘境の社 — 廃棄（任意）',
+      '財宝カードを獲得したので、手札から最大2枚を廃棄できます（しなくてもよい）。',
+      (n) => (n ? '廃棄する（' + n + '枚）' : '廃棄しない'), true, (cards) => dispatch({ type: 'SHRINE_TRASH', cards }), 2);
 
     /* ===== 拡張: 陰謀 ===== */
     if (pd.type === 'courtyard') return modalSingleHand(p, '中庭 — 山札の上に置く', '手札から1枚を選び、山札の一番上に置きます（次のターンに引きます）。',

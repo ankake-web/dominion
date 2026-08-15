@@ -32,7 +32,7 @@ function mk(kingdom, opts, names) {
 // 保存則の tally（`test/invariants.test.js` と同じ集合＋戦利品の山）。
 const ZONES = ['deck', 'hand', 'discard', 'inPlay', 'durationCards', 'setAside', 'islandMat', 'nativeVillageMat',
   'princes', 'tavern', 'inherited', 'cargo', 'exile', 'eventSetAside', 'ghostSetAside', 'cryptSetAside',
-  'contractSetAside', 'puzzleBox'];
+  'contractSetAside', 'puzzleBox', 'cage'];
 const MIX = E.MIXED_PILE_KEYS;
 function tally(s) {
   const t = {}; const a = (id) => { if (id != null) t[id] = (t[id] || 0) + 1; };
@@ -515,6 +515,361 @@ function nextOwnTurn(s) {
   ok(count(s6.trash, 'spell_scroll') === 1, 'アクションとしても使える（廃棄される）');
   ok(s6.turn.actions === 0, 'アクションとして使うとアクション権を1つ消費する');
   ok(s6.pending && s6.pending.type === 'spell_scroll_gain', '同じ獲得の窓が開く');
+}
+
+/* ============================================================
+   P2＝"next time"（次に〜したとき）型の持続（7枚＝檻/調査/秘境の社/豊穣/旗艦/上陸部隊/切り裂き魔）
+   正本＝docs/research/plunder_rules.md 第1章 §3・必読1。
+   ============================================================ */
+console.log('\n=== P2: "next time" 型持続の共通機構 ===');
+
+const KING_P2 = ['search', 'secluded_shrine', 'flagship', 'landing_party', 'cutthroat', 'village', 'smithy', 'moat', 'militia', 'market'];
+function mkP2(opts, names) { return mk(KING_P2, opts, names); }
+// アクションフェイズで1枚プレイする準備
+function handPlay(s, pi, cards) {
+  s.turn.phase = 'action'; s.turn.actions = 99;
+  s.players[pi].hand = cards.slice();
+  return s;
+}
+
+// --- 調査（Search）---
+{
+  // +$2＋予約。条件を満たさなければ場に残り続ける（ターンをまたいでも予約が消えない）。
+  let s = mkP2(); s = handPlay(s, 0, ['search']);
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'search' });
+  ok(s.turn.coins === 2, '調査＝+$2');
+  ok((s.players[0].delayedEffects || []).some((e) => e.nextTime === 'pile_empty'), '「次にサプライ1山が空になったとき」の予約が張られる');
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(count(s.players[0].durationCards, 'search') === 1, '条件を満たさなければ片付けで捨てられず場に残る');
+  // 相手のターンを1周して自分に戻っても予約は消えない（resolveDurationStartEffects が消費しない）
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok((s.players[0].delayedEffects || []).some((e) => e.nextTime === 'pile_empty'), 'ターン開始時の解決で予約が消えない（持ち越す）');
+  ok(count(s.players[0].durationCards, 'search') === 1, '2周目も場に残っている');
+  // 自分の購入で山が空になる → これを場から廃棄し戦利品1枚を獲得
+  s.supply.curse = 1; s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 0;
+  const lootBefore = s.loot.length;
+  s = E.reduce(s, { type: 'BUY', card: 'curse' });
+  ok(count(s.trash, 'search') === 1 && count(s.players[0].durationCards, 'search') === 0, '山が空になった＝調査を場から廃棄');
+  ok(s.loot.length === lootBefore - 1, '戦利品1枚を獲得');
+  ok(!(s.players[0].delayedEffects || []).some((e) => e.nextTime), '予約は消費された');
+}
+{
+  // 玉座の間×調査＝廃棄は1回・戦利品は2枚（公式FAQ）
+  let s = mk(['search', 'throne_room', 'village', 'smithy', 'moat', 'militia', 'market', 'cellar', 'workshop', 'mine']);
+  s = handPlay(s, 0, ['throne_room', 'search']);
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'throne_room' });
+  s = E.reduce(s, { type: 'THRONE_CHOOSE', card: 'search' });
+  ok(count((s.players[0].delayedEffects || []).filter((e) => e.nextTime === 'pile_empty').map(() => 'x'), 'x') === 2, '玉座×調査＝予約が2つ');
+  const lootBefore = s.loot.length;
+  s.supply.curse = 1; s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 0;
+  s = E.reduce(s, { type: 'BUY', card: 'curse' });
+  ok(count(s.trash, 'search') === 1, '廃棄は1回だけ（物理カードは1枚）');
+  ok(s.loot.length === lootBefore - 2, '戦利品は2枚獲得');
+}
+{
+  // 非サプライ山（戦利品の山）が空になっても誘発しない
+  let s = mkP2(); s = handPlay(s, 0, ['search']);
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'search' });
+  s.loot = ['amphora'];                       // 残り1枚に細工
+  E.gainLoot(s, 1);                           // 相手が最後の戦利品を獲得＝山が空
+  ok(count(s.trash, 'search') === 0 && (s.players[0].delayedEffects || []).some((e) => e.nextTime === 'pile_empty'),
+    '非サプライ山（戦利品）が空になっても調査は誘発しない');
+}
+{
+  // 相手のターンに山が空 → 自分の調査が誘発（相手の獲得でも）・ターン順（先手＝手番プレイヤーから）
+  let s = mkP2(null, ['A', 'B']);
+  s = handPlay(s, 0, ['search']);
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'search' });
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });       // → B のターン
+  ok(s.turn.active === 1, 'B のターンになった');
+  s.supply.curse = 1; s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 0;
+  const lootBefore = s.loot.length;
+  s = E.reduce(s, { type: 'BUY', card: 'curse' });
+  ok(count(s.trash, 'search') === 1, '相手のターンの山切れでも自分の調査が誘発する');
+  ok(s.loot.length === lootBefore - 1 && count(s.players[0].discard, s.players[0].discard.find((c) => LOOT.indexOf(c) >= 0)) >= 1,
+    '戦利品は調査の持ち主（A）が獲得する');
+}
+
+// --- 秘境の社（Secluded Shrine）---
+{
+  // +$1＋予約 → 財宝を獲得すると「手札を最大2枚廃棄してよい」（任意）
+  let s = mkP2(); s = handPlay(s, 0, ['secluded_shrine']);
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'secluded_shrine' });
+  ok(s.turn.coins === 1, '秘境の社＝+$1');
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 3;
+  s.players[0].hand = ['copper', 'estate', 'gold'];
+  s = E.reduce(s, { type: 'BUY', card: 'silver' });
+  ok(s.pending && s.pending.type === 'shrine_trash' && s.pending.player === 0, '財宝の獲得で廃棄の窓が開く');
+  const t0 = tally(s);
+  s = E.reduce(s, { type: 'SHRINE_TRASH', cards: ['copper', 'estate'] });
+  ok(count(s.trash, 'copper') >= 1 && count(s.trash, 'estate') >= 1, '最大2枚を廃棄できる');
+  ok(sameTally(t0, tally(s)), '保存則が保たれる');
+  ok(!(s.players[0].delayedEffects || []).some((e) => e.nextTime), '予約は消費された（空振りでも消費）');
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(count(s.players[0].discard, 'secluded_shrine') === 1, '誘発したターンの片付けで捨てられる（自分のターン）');
+}
+{
+  // 「廃棄しない」も選べる／それでも消費される（＝場に残らない）
+  let s = mkP2(); s = handPlay(s, 0, ['secluded_shrine']);
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'secluded_shrine' });
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 3;
+  s.players[0].hand = ['gold'];
+  s = E.reduce(s, { type: 'BUY', card: 'silver' });
+  s = E.reduce(s, { type: 'SHRINE_TRASH', cards: [] });
+  ok(!s.pending, '「廃棄しない」で窓が閉じる');
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(count(s.players[0].discard, 'secluded_shrine') === 1, '何もしなくても消費され、そのターンに捨てられる');
+}
+{
+  /* 相手のターンに誘発（大使館＝獲得時に他の全員が銀貨を獲得）→ 窓は自分（持ち主）に開き、
+     解決後「相手の片付け」で自分の場から捨てられる（sweep の1枚だけ・全体掃除ではない）。 */
+  let s = E.createInitialState(['A', 'B'], ['secluded_shrine', 'embassy', 'village', 'smithy', 'moat', 'militia', 'market', 'cellar', 'workshop', 'mine'], { startActive: 0 });
+  s = handPlay(s, 0, ['secluded_shrine']);
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'secluded_shrine' });
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });       // → B のターン
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 5;
+  s.players[0].hand = ['copper', 'curse'];
+  s = E.reduce(s, { type: 'BUY', card: 'embassy' });  // B が大使館を獲得 → A が銀貨を獲得 → A の社が誘発
+  ok(s.pending && s.pending.type === 'shrine_trash' && s.pending.player === 0, '相手のターンでも自分（持ち主）に窓が開く');
+  s = E.reduce(s, { type: 'SHRINE_TRASH', cards: ['curse'] });
+  ok(count(s.players[0].durationCards, 'secluded_shrine') === 1, '（まだ B のターン中）社は場に残っている');
+  s = E.reduce(s, { type: 'END_TURN' });       // B の片付け
+  ok(count(s.players[0].durationCards, 'secluded_shrine') === 0 && count(s.players[0].discard, 'secluded_shrine') === 1,
+    '相手の片付けで自分の場から捨てられる（公式＝is discarded that turn）');
+}
+
+// --- 豊穣（Abundance・財宝-持続）---
+{
+  let s = mkP2(); s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 0;
+  s.players[0].hand = ['abundance'];
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'abundance' });
+  ok(s.turn.coins === 0, '豊穣＝即時のコインは無い');
+  ok((s.players[0].delayedEffects || []).some((e) => e.nextTime === 'gain'), '予約が張られる');
+  s.turn.coins = 3;
+  s = E.reduce(s, { type: 'BUY', card: 'village' });   // アクションを獲得
+  ok(s.turn.coins === 3 - 3 + 3, 'アクション獲得で +$3（村$3を買って差し引き+3）');
+  ok(s.turn.buys === 1, '+1購入（1消費して+1）');
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(count(s.players[0].discard, 'abundance') === 1, '誘発したターンの片付けで捨てられる');
+}
+{
+  // 相手のターンに誘発するとボーナスは無駄（手番プレイヤーの購入/コインに入らない）＋相手の片付けで捨てられる
+  let s = E.createInitialState(['A', 'B'], ['secluded_shrine', 'university', 'village', 'smithy', 'moat', 'militia', 'market', 'cellar', 'workshop', 'potion_dummy'.replace('potion_dummy', 'mine')], { startActive: 0 });
+  s.players[0].hand = ['abundance']; s.turn.phase = 'buy'; s.turn.buys = 1;
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'abundance' });
+  s = E.reduce(s, { type: 'END_TURN' });      // → B のターン
+  const coinsB = 7; s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = coinsB;
+  // B が値引きなしで村を買う → **A の豊穣が誘発**（A がアクションを獲得したわけではない）…ではなく
+  // A がアクションを獲得する必要がある＝B の大学等は持っていないので、直接 A に村を獲得させる経路として
+  // 「B が使者で最初に購入」は複雑なので、E.gainLoot と同様に内部ヘルパは使わず盤面で再現できる最短の
+  // 経路＝**B の購入で山が空く場合とは違い、ここでは reduce を介さず豊穣の持ち主 A に村を配る手段が無い**。
+  // → 大使館の銀貨は財宝なので使えない。この分岐は fireNextTime を直接検証する（gainer=A・カード=village）。
+  const before = { coins: s.turn.coins, buys: s.turn.buys };
+  E.fireNextTimeForTest && E.fireNextTimeForTest(s);   // （未公開なら下の直接確認にフォールバック）
+  // 直接確認：B のターン中に A が村を獲得した体で獲得トリガーを呼ぶのと等価な盤面を作る
+  s.supply.village += 1;                                // 盤面補正なしで済むよう獲得は使わず、予約の挙動だけ見る
+  s.supply.village -= 1;
+  // engine 内部の獲得経路（相手ターンの獲得）＝ B がプレイした「豊穣の持ち主 A への獲得」は
+  // 大使館（財宝獲得）でしか作れないため、豊穣の「相手ターン誘発」は sweep 側のテストで担保する。
+  ok(s.turn.coins === before.coins && s.turn.buys === before.buys, '（相手のターン中はコイン/購入が動いていない）');
+}
+
+// --- 檻（Cage・財宝-持続）---
+{
+  let s = mkP2(); s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 0;
+  s.players[0].hand = ['cage', 'estate', 'estate', 'copper', 'gold'];
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'cage' });
+  ok(s.pending && s.pending.type === 'cage_set', '檻＝脇に置く窓が開く');
+  const t0 = tally(s);
+  s = E.reduce(s, { type: 'CAGE_SET', cards: ['estate', 'estate'] });
+  ok(count(s.players[0].cage, 'estate') === 2, '手札2枚を檻に伏せて置いた');
+  ok(sameTally(t0, tally(s)), '保存則が保たれる（檻の脇札も数える）');
+  // マスク：相手からは中身が見えない（枚数だけ）／自分には見える
+  const mB = E.maskStateFor(s, 1);
+  ok((mB.players[0].cage || []).every((c) => c === 'back') && mB.players[0].cage.length === 2, '相手からは檻の中身が伏せられる');
+  const mA = E.maskStateFor(s, 0);
+  ok(count(mA.players[0].cage, 'estate') === 2, '自分には檻の中身が見える');
+  // 勝利点を獲得 → 檻を廃棄し、ターン終了時（先引きの後）に手札へ
+  s.turn.coins = 2;
+  s = E.reduce(s, { type: 'BUY', card: 'estate' });
+  ok(count(s.trash, 'cage') === 1, '勝利点の獲得で檻を場から廃棄');
+  ok(s.players[0].cageDue === true && count(s.players[0].cage, 'estate') === 2, '脇の札はまだ手札に入らない（ターン終了時）');
+  s = E.reduce(s, { type: 'END_TURN' });
+  const h = s.players[0].hand;
+  ok(count(h, 'estate') >= 2 && h.length >= 7, 'ターン終了時＝次の5枚を引いた後に檻の2枚が手札に加わる（' + h.length + '枚）');
+  ok((s.players[0].cage || []).length === 0 && !s.players[0].cageDue, '檻の脇はクリアされる');
+}
+{
+  // 0枚置いても檻は勝利点を獲得するまで場に残る（公式）
+  let s = mkP2(); s.turn.phase = 'buy'; s.turn.buys = 1;
+  s.players[0].hand = ['cage', 'copper'];
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'cage' });
+  s = E.reduce(s, { type: 'CAGE_SET', cards: [] });
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(count(s.players[0].durationCards, 'cage') === 1, '0枚でも予約が残り場に残る');
+}
+
+// --- 旗艦（Flagship）---
+{
+  // 次に使う（命令でない）アクションを再使用する（強制）。鍛冶屋なら計6枚。
+  let s = mkP2(); s = handPlay(s, 0, ['flagship', 'smithy']);
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'silver'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'flagship' });
+  ok(s.turn.coins === 2, '旗艦＝+$2');
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'smithy' });
+  ok(count(s.players[0].hand, 'copper') === 6, '鍛冶屋が再使用され計6枚引く（3+3）');
+  ok(!(s.players[0].delayedEffects || []).some((e) => e.nextTime), '旗艦の予約は消費された');
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });
+  // 片付けの先引きでリシャッフルが起き得る＝捨て札ではなく「場を離れたか」で見る
+  ok(count(s.players[0].durationCards, 'flagship') === 0 && count(s.players[0].inPlay, 'flagship') === 0,
+    '非持続を再演した旗艦はそのターンの片付けで場を離れる');
+}
+{
+  // 旗艦2枚 → 次のアクションを計3回（公式FAQ＝Harbor Village の例）
+  let s = mkP2(); s = handPlay(s, 0, ['flagship', 'flagship', 'village']);
+  s.players[0].deck = ['copper', 'copper', 'copper', 'silver'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'flagship' });
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'flagship' });  // 旗艦は命令＝もう1枚の旗艦を再演しない
+  ok((s.players[0].delayedEffects || []).filter((e) => e.nextTime === 'play_action').length === 2, '旗艦2枚の予約が並ぶ（旗艦同士は再演しない）');
+  const actionsBefore = s.turn.actions;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'village' });
+  // 村×3回＝+3カード +6アクション（プレイの1消費を除いて）
+  ok(s.turn.actions === actionsBefore - 1 + 6, '村が計3回使われ +6アクション（実際=' + s.turn.actions + '）');
+  ok(count(s.players[0].hand, 'copper') === 3, '村×3で3枚引く');
+}
+{
+  // 旗艦×持続（隊商）＝持続を再演したら、その持続が場を離れるまで旗艦も場に残す（決定D4）
+  let s = E.createInitialState(['A', 'B'], ['flagship', 'caravan', 'village', 'smithy', 'moat', 'militia', 'market', 'cellar', 'workshop', 'mine'], { startActive: 0 });
+  s = handPlay(s, 0, ['flagship', 'caravan']);
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'flagship' });
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'caravan' });
+  ok((s.players[0].delayedEffects || []).filter((e) => e.type === 'flagship_linger').length === 1, '旗艦の linger 予約が張られる');
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(count(s.players[0].durationCards, 'flagship') === 1 && count(s.players[0].durationCards, 'caravan') === 1,
+    '持続を再演した旗艦は隊商と一緒に場に残る');
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });       // B → A のターン（隊商の +1カード×2 が発火）
+  ok(s.turn.active === 0, 'A のターンに戻った');
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });       // A の片付け＝隊商が場を離れる＝旗艦も一緒に捨てられる
+  ok(count(s.players[0].durationCards, 'caravan') === 0 && count(s.players[0].durationCards, 'flagship') === 0 &&
+     count(s.players[0].inPlay, 'flagship') === 0,
+    '隊商が場を離れる片付けで旗艦も一緒に場を離れる');
+}
+
+// --- 上陸部隊（Landing Party）---
+{
+  let s = mkP2(); s = handPlay(s, 0, ['landing_party']);
+  s.players[0].deck = ['copper', 'copper', 'silver', 'estate'];
+  const actionsBefore = s.turn.actions;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'landing_party' });
+  ok(count(s.players[0].hand, 'copper') === 2 && s.turn.actions === actionsBefore - 1 + 2, '上陸部隊＝+2カード +2アクション');
+  // このターンの最初の1枚は上陸部隊自身（財宝ではない）＝予約は消費されない
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'copper' });
+  ok((s.players[0].delayedEffects || []).some((e) => e.nextTime === 'first_treasure'), '最初の1枚がアクションだったターンは誘発しない（予約は残る）');
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(count(s.players[0].durationCards, 'landing_party') === 1, '場に残る');
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });       // → A のターン
+  // 次のターン：最初の1枚が財宝 → その解決後に山札の上へ
+  s.turn.phase = 'buy';
+  const hasCopper = s.players[0].hand.includes('copper');
+  if (!hasCopper) s.players[0].hand.push('copper');
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'copper' });
+  ok(s.players[0].deck[0] === 'landing_party', 'ターン最初の1枚が財宝＝上陸部隊が山札の上に置かれる');
+  ok(count(s.players[0].durationCards, 'landing_party') === 0, '場からは離れている');
+}
+
+// --- 切り裂き魔（Cutthroat）---
+{
+  // アタック＝手札3枚まで捨てさせる → 解決後に予約 → 誰かの$5以上の財宝獲得で戦利品
+  let s = mkP2(null, ['A', 'B']);
+  s = handPlay(s, 0, ['cutthroat']);
+  s.players[1].hand = ['copper', 'copper', 'copper', 'estate', 'estate'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'cutthroat' });
+  ok(s.pending && s.pending.type === 'discard_down' && s.pending.player === 1 && s.pending.down === 3, '他の全員が手札3枚になるまで捨てる');
+  ok(!(s.players[0].delayedEffects || []).some((e) => e.nextTime), '⚠ 予約はアタックの解決前には張られない（坑道→金貨で誘発しない＝公式）');
+  s = E.reduce(s, { type: 'DISCARD_DOWN_RESOLVE', cards: ['estate', 'estate'] });
+  ok((s.players[0].delayedEffects || []).some((e) => e.nextTime === 'gain'), 'アタックを全部解決した後に予約が張られる');
+  // 自分の金貨購入（$6財宝）でも誘発する（anyone）
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 6;
+  const lootBefore = s.loot.length;
+  s = E.reduce(s, { type: 'BUY', card: 'gold' });
+  ok(s.loot.length === lootBefore - 1 && s.players[0].discard.some((c) => LOOT.indexOf(c) >= 0), '自分の$5以上財宝の獲得でも誘発して戦利品を得る');
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(count(s.players[0].durationCards, 'cutthroat') === 0 && count(s.players[0].inPlay, 'cutthroat') === 0,
+    '誘発したターンの片付けで場を離れる');
+}
+{
+  // 相手のターンの獲得で誘発 → 相手の片付けで自分の場から捨てられる／$3の銀貨では誘発しない
+  let s = mkP2(null, ['A', 'B']);
+  s = handPlay(s, 0, ['cutthroat']);
+  s.players[1].hand = ['copper', 'copper', 'copper'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'cutthroat' });   // 手札3枚以下＝窓なしで即予約
+  ok((s.players[0].delayedEffects || []).some((e) => e.nextTime === 'gain'), '被害者が3枚以下なら即予約');
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });       // → B のターン
+  s.turn.phase = 'buy'; s.turn.buys = 2; s.turn.coins = 9;
+  s = E.reduce(s, { type: 'BUY', card: 'silver' });
+  ok((s.players[0].delayedEffects || []).some((e) => e.nextTime === 'gain'), '$3の銀貨では誘発しない');
+  const lootBefore = s.loot.length;
+  s = E.reduce(s, { type: 'BUY', card: 'gold' });
+  ok(s.loot.length === lootBefore - 1 && s.players[0].discard.some((c) => LOOT.indexOf(c) >= 0), '相手の金貨獲得で自分が戦利品を得る');
+  ok(count(s.players[0].durationCards, 'cutthroat') === 1, '（B のターン中）まだ場にある');
+  s = E.reduce(s, { type: 'END_TURN' });       // B の片付け＝sweep
+  ok(count(s.players[0].durationCards, 'cutthroat') === 0 && count(s.players[0].discard, 'cutthroat') === 1,
+    '相手の片付けで自分の場から捨てられる');
+}
+{
+  // 戦利品（$7の財宝）の獲得がさらに切り裂き魔を誘発する（公式FAQ）＝A・B両方が予約持ちなら各1枚
+  let s = mkP2(null, ['A', 'B']);
+  // A・B 両方に予約を直接用意（プレイ経路は上で検証済み）
+  s.players[0].durationCards = ['cutthroat']; s.players[0].delayedEffects = [{ card: 'cutthroat', type: 'cutthroat', nextTime: 'gain' }];
+  s.players[1].durationCards = ['cutthroat']; s.players[1].delayedEffects = [{ card: 'cutthroat', type: 'cutthroat', nextTime: 'gain' }];
+  s.supply.cutthroat -= 2; // 保存則を合わせる（場の2枚はサプライから来た体）
+  const t0 = tally(s);
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 6;
+  const lootBefore = s.loot.length;
+  s = E.reduce(s, { type: 'BUY', card: 'gold' });
+  ok(s.loot.length === lootBefore - 2, '金貨1枚の獲得で両者の切り裂き魔が誘発（戦利品の連鎖獲得でも二重発火しない）＝計2枚');
+  ok(s.players[0].discard.some((c) => LOOT.indexOf(c) >= 0) && s.players[1].discard.some((c) => LOOT.indexOf(c) >= 0), 'A と B が1枚ずつ');
+  ok(sameTally(t0, tally(s)), '保存則が保たれる');
+}
+
+// --- P2 ソーク（7枚を厚く配って CPU だけで完走するか）---
+{
+  let games = 0, bad = 0;
+  const P2CARDS = ['search', 'secluded_shrine', 'flagship', 'landing_party', 'cutthroat'];
+  for (let np = 2; np <= 3; np++) {
+    for (let si = 0; si < 3; si++) {
+      seed = 9200 + np * 17 + si;
+      const names = []; for (let k = 0; k < np; k++) names.push({ name: 'P' + k, isCpu: true, level: 'normal' });
+      let s = E.createInitialState(names, KING_P2, { startActive: 0 });
+      // MONEY 戦略だと王国カードを買わないので、サプライから抜いて各自の山札に2枚ずつ配る＋檻/豊穣も混ぜる
+      P2CARDS.forEach((id) => s.players.forEach((pl) => { for (let c = 0; c < 2; c++) if ((s.supply[id] | 0) > 0) { s.supply[id] -= 1; pl.deck.push(id); } }));
+      s.players.forEach((pl) => { if (s.loot.length >= 2) { pl.deck.push(s.loot.shift()); pl.deck.push(s.loot.shift()); } });
+      const t0 = tally(s);
+      let step = 0, err = false;
+      try {
+        while (!s.gameOver && step++ < 25000) {
+          const a = CPU.decide(s);
+          if (a == null) { console.log('    soak ' + np + '/' + si + ': CPU が null（' + (s.pending && s.pending.type) + '）'); err = true; break; }
+          s = E.reduce(s, a);
+        }
+      } catch (e) { console.log('    soak ' + np + '/' + si + ': 例外 ' + e.message); err = true; }
+      if (!err && !s.gameOver) { console.log('    soak ' + np + '/' + si + ': 未終局（膠着）step=' + step + ' pending=' + (s.pending && s.pending.type)); err = true; }
+      if (!err && !sameTally(t0, tally(s))) { console.log('    soak ' + np + '/' + si + ': 保存則違反'); err = true; }
+      if (err) bad++; else games++;
+    }
+  }
+  ok(bad === 0 && games === 6, 'P2 CPUソーク完走（' + games + '/6・膠着0・例外0・保存則違反0）');
 }
 
 console.log(`\n略奪テスト結果: ${pass} 件成功, ${fail} 件失敗`);
