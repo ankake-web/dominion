@@ -2303,11 +2303,14 @@
        買う横型（`DOM.LANDSCAPES` 側）。**負債コスト・ポーション費用は1枚も無い＝すべてプレーンなコインのみ**。
        種別は15枚とも `Event` だけ（Attack でも Duration でもない＝堀では防げない／持続の予約を張らない）。
        ⚠ 英語id `plunder` は帝国の分割山カード「鹵獲品」で使用済みなので、プール名は **`plunderexp`**。
-       ⚠ `journey`（旅行）は **2022年12月の印刷版テキスト**を採用（2023年9月の Extra turn errata は
-          英語wiki の Print 欄が `Not printed yet`＝未印刷なので、royal_galley と同じ方針で採らない）。
-          ＝`Once per turn:` を持つので `ONCE_PER_TURN_EVENTS` に入れる側。
-       ⚠ 検証で追記（研究doc 第6章 §4-H）：`ONCE_PER_TURN_EVENTS` に入れるのは **`launch` と `journey` の2枚だけ**。
-          launch＝`"Once per turn" applies to the whole Event.`／journey＝2022版が `Once per turn:` を持つ。
+       ⚠ `journey`（旅行）は **2023年9月の Extra turn errata 側**を採用（決定 D1＝研究doc 冒頭）。
+          ＝`Once per turn:` の前置句は無く、「ただし連続3ターンとなる場合は得られない」を持つ。
+          根拠＝本アプリは**同じ2023エラッタの `mission`（使節団）を既に採用済み**（`ONCE_PER_TURN_EVENTS` に
+          `mission` が無い＝§0-26）で**旅行はその完全な同型**／**日本語文面は Dominion Online 訳で統一（D2）**
+          しており DO の `旅行` は**エラッタ側の文面**なので、旧版を採ると「表示は新版・挙動は旧版」になる。
+          **反転は1行**（`ONCE_PER_TURN_EVENTS` に journey を足し、この text を旧版へ戻す）。
+       ⚠ 検証で追記（研究doc 第6章 §4-H）：`ONCE_PER_TURN_EVENTS` に入れるのは **`launch` の1枚だけ**。
+          launch＝`"Once per turn" applies to the whole Event.`（journey はエラッタで前置句が消えたので入れない）。
           **`deliver` は入れてはいけない**＝Donald X. 明言 `Deliver doesn't have "once per turn," even though
           it does nothing when bought multiple times.`（＝何回でも買えて2枚目以降が空振り）。
           他の12枚も once per turn 表記なし＝同じリストに入れないこと。
@@ -2352,7 +2355,7 @@
     //    本文は研究doc §4-F の「旧テキスト（＝日本語の印刷版）」と逐語一致（＝2022版）。
     //    **「3ターン連続」の文言が入っていたらそれは 2023エラッタ＝誤り**（ここには無い＝正しい）。
     journey: { name: '旅行', nameEn: 'Journey', kind: 'event', expansion: 'plunderexp', cost: 4, debt: 0,
-      text: '1ターンに1回：直前のターンがあなたのものでない場合、このターンあなたはクリーンアップフェイズに場のカードを捨て札にせず、このターンの後に追加の1ターンを得る。' },
+      text: 'このターン、あなたはクリーンアップフェイズに場のカードを捨て札にしない。\nこのターンの後に追加の1ターンを得る（ただし、連続3ターンとなる場合は得られない）。' },
     // Trash 3 cards from your hand. Each other player with 5 or more cards in hand trashes one of them.
     // ⚠ 要確認: 日本語文面だけ Dominion Online 訳（＝日本語wiki）ではなく **印刷版の逐語**を採った。
     //    理由＝この1枚だけ日本語wiki 側の記載が拡張ページの一覧表の省略形（`手札3枚を廃棄する、手札を5枚以上持つ
