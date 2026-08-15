@@ -1942,6 +1942,78 @@
     if (pd.type === 'shrine_trash') return modalMultiHand(p, '秘境の社 — 廃棄（任意）',
       '財宝カードを獲得したので、手札から最大2枚を廃棄できます（しなくてもよい）。',
       (n) => (n ? '廃棄する（' + n + '枚）' : '廃棄しない'), true, (cards) => dispatch({ type: 'SHRINE_TRASH', cards }), 2);
+    /* ===== 略奪P3 ===== */
+    if (pd.type === 'grotto_set') return modalMultiHand(p, '岩屋 — 伏せて置く',
+      '手札から最大4枚を岩屋の上に伏せて置けます。次のあなたのターンの開始時、それらを捨て札にして同じ枚数を引きます。0枚でもOK。',
+      (n) => '確定（' + n + '枚 置く）', true, (cards) => dispatch({ type: 'GROTTO_SET', cards }), 4);
+    if (pd.type === 'shaman_trash') return modalSingleHand(p, 'シャーマン — 廃棄（任意）',
+      '手札1枚を廃棄できます（しなくてもよい）。', () => true,
+      (id) => dispatch({ type: 'SHAMAN_TRASH', card: id }),
+      { label: '廃棄しない', on: () => dispatch({ type: 'SHAMAN_TRASH', card: null }) });
+    if (pd.type === 'shaman_gain') {
+      const targets = DOM.engine.shamanTargets ? DOM.engine.shamanTargets(state) : [];
+      return modalPickList(state, 'シャーマン — 廃棄置き場から獲得', 'ターンの開始時：廃棄置き場からコスト6以下のカード1枚を獲得します（強制）。',
+        targets, '獲得する', (id) => dispatch({ type: 'SHAMAN_GAIN', card: id }),
+        targets.length ? null : { label: '獲得できるカードがない（閉じる）', on: () => dispatch({ type: 'SHAMAN_GAIN', card: null }) });
+    }
+    if (pd.type === 'siren' && pd.stage === 'react') return modalOptions('セイレーンを受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'SIREN_REACT' }));
+    if (pd.type === 'siren_gain') return modalSingleHand(p, 'セイレーン — 獲得時',
+      '手札からアクションカード1枚を廃棄すればセイレーンは残ります。廃棄しない場合、セイレーンを廃棄します。',
+      (id) => DOM.CARDS[id] && DOM.CARDS[id].types.includes('action'),
+      (id) => dispatch({ type: 'SIREN_GAIN', card: id }),
+      { label: '廃棄しない（セイレーンを廃棄する）', on: () => dispatch({ type: 'SIREN_GAIN', card: null }) }, '廃棄してセイレーンを守る');
+    if (pd.type === 'stowaway_react') return modalOptions('密航者 — リアクション',
+      '持続カードが獲得されました。手札の密航者を使用できます（次のあなたのターンの開始時 +2カード）。', [
+      { label: '使う', cls: 'btn-primary', on: () => dispatch({ type: 'STOWAWAY_REACT', play: true }) },
+      { label: '使わない', on: () => dispatch({ type: 'STOWAWAY_REACT', play: false }) },
+    ]);
+    if (pd.type === 'maroon_trash') return modalSingleHand(p, '置き去り — 廃棄',
+      '手札1枚を廃棄します（強制）。そのカードが持つ種別1つにつき +2カード引きます。',
+      () => true, (id) => dispatch({ type: 'MAROON_TRASH', card: id }), null, '廃棄する');
+    if (pd.type === 'crucible_trash') return modalSingleHand(p, '坩堝 — 廃棄',
+      '手札1枚を廃棄します（強制）。そのコスト$1につき +$1。',
+      () => true, (id) => dispatch({ type: 'CRUCIBLE_TRASH', card: id }), null, '廃棄する');
+    if (pd.type === 'pilgrim_put') return modalSingleHand(p, '巡礼者 — 山札の上に置く',
+      '手札1枚を山札の上に置きます（強制・引いたカードでなくてもよい）。',
+      () => true, (id) => dispatch({ type: 'PILGRIM_PUT', card: id }), null, '山札の上に置く');
+    if (pd.type === 'figurine_discard') return modalSingleHand(p, '小像 — 捨て札（任意）',
+      '手札のアクションカード1枚を捨てると +1購入 +$1。',
+      (id) => DOM.CARDS[id] && DOM.CARDS[id].types.includes('action'),
+      (id) => dispatch({ type: 'FIGURINE_DISCARD', card: id }),
+      { label: '捨てない', on: () => dispatch({ type: 'FIGURINE_DISCARD', card: null }) }, '捨てて +1購入 +$1');
+    if (pd.type === 'gondola_choose') return modalOptions('ゴンドラ', '+2 コインを、今もらうか次のあなたのターンの開始時にもらうかを選びます。', [
+      { label: '今もらう（+$2）', cls: 'btn-primary', on: () => dispatch({ type: 'GONDOLA_CHOOSE', now: true }) },
+      { label: '次のターンの開始時にもらう', on: () => dispatch({ type: 'GONDOLA_CHOOSE', now: false }) },
+    ]);
+    if (pd.type === 'gondola_play') return modalSingleHand(p, 'ゴンドラ — 獲得時（任意）',
+      'ゴンドラを獲得したので、手札のアクションカード1枚を使用できます（アクション権は消費しません）。',
+      (id) => DOM.CARDS[id] && DOM.CARDS[id].types.includes('action'),
+      (id) => dispatch({ type: 'GONDOLA_PLAY', card: id }),
+      { label: '使わない', on: () => dispatch({ type: 'GONDOLA_PLAY', card: null }) }, '使う');
+    if (pd.type === 'tools_gain') {
+      const targets = DOM.engine.toolsTargets ? DOM.engine.toolsTargets(state) : [];
+      return modalPickList(state, '工具 — 同じカードを獲得', '（自分を含む）誰かが場に出しているのと同じカード1枚を獲得します（強制）。サプライに山が無いカードは選んでも獲得できません。',
+        targets, '獲得する', (id) => dispatch({ type: 'TOOLS_GAIN', card: id }));
+    }
+    if (pd.type === 'pickaxe_trash') return modalSingleHand(p, 'つるはし — 廃棄',
+      '手札1枚を廃棄します（強制）。廃棄後のコストが3以上なら、戦利品1枚を手札に獲得します。',
+      () => true, (id) => dispatch({ type: 'PICKAXE_TRASH', card: id }), null, '廃棄する');
+    if (pd.type === 'silver_mine_gain') return modalGainSupply(state, '銀山 — 手札に獲得',
+      '銀山（コスト ' + DOM.engine.cardCost(state, 'silver_mine') + '）より安い財宝カード1枚を手札に獲得します（強制）。',
+      (id) => canUnder(state, id, DOM.engine.cardCost(state, 'silver_mine')) && DOM.engine.isTypeSupply(state, id, 'treasure'),
+      (id) => dispatch({ type: 'SILVER_MINE_GAIN', card: id }), () => dispatch({ type: 'SILVER_MINE_GAIN', card: null }));
+    if (pd.type === 'cabin_boy') return modalOptions('キャビンボーイ', 'ターンの開始時：次のうち1つを選びます。', [
+      { label: '+$2', cls: 'btn-primary', on: () => dispatch({ type: 'CABIN_BOY_RESOLVE', choice: 'coin' }) },
+      { label: 'これを廃棄して持続カード1枚を獲得', on: () => dispatch({ type: 'CABIN_BOY_RESOLVE', choice: 'gain' }) },
+    ]);
+    if (pd.type === 'cabin_boy_gain') return modalGainSupply(state, 'キャビンボーイ — 持続カードを獲得',
+      '持続カード1枚を獲得します（コストの上限はありません）。',
+      (id) => DOM.engine.gainableBase(state, id) && DOM.engine.isTypeSupply(state, id, 'duration'),
+      (id) => dispatch({ type: 'CABIN_BOY_GAIN', card: id }), () => dispatch({ type: 'CABIN_BOY_GAIN', card: null }));
+    if (pd.type === 'rope_trash') return modalSingleHand(p, '縄 — 廃棄（任意）',
+      '手札1枚を廃棄できます（しなくてもよい）。', () => true,
+      (id) => dispatch({ type: 'ROPE_TRASH', card: id }),
+      { label: '廃棄しない', on: () => dispatch({ type: 'ROPE_TRASH', card: null }) });
 
     /* ===== 拡張: 陰謀 ===== */
     if (pd.type === 'courtyard') return modalSingleHand(p, '中庭 — 山札の上に置く', '手札から1枚を選び、山札の一番上に置きます（次のターンに引きます）。',

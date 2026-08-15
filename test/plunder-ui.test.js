@@ -99,6 +99,26 @@ const CASES = [
   ['cage_set（0枚でも確定できる）', (s) => { s.players[0].hand = ['estate', 'copper']; s.pending = { type: 'cage_set', player: 0 }; }],
   ['shrine_trash（廃棄しないでも閉じられる）', (s) => { s.players[0].hand = ['copper', 'curse', 'gold']; s.pending = { type: 'shrine_trash', player: 0 }; }],
   ['discard_down(切り裂き魔)', (s) => { s.players[0].hand = ['copper', 'copper', 'copper', 'copper', 'copper']; s.pending = { type: 'discard_down', player: 0, source: 1, down: 3, queue: [], next: 'cutthroat' }; }],
+  // P3：王国カード
+  ['grotto_set', (s) => { s.players[0].hand = ['estate', 'copper']; s.pending = { type: 'grotto_set', player: 0 }; }],
+  ['shaman_trash', (s) => { s.players[0].hand = ['copper']; s.pending = { type: 'shaman_trash', player: 0 }; }],
+  ['shaman_gain（廃棄置き場から選ぶ）', (s) => { s.trash = ['silver', 'estate']; s.pending = { type: 'shaman_gain', player: 0 }; }],
+  ['shaman_gain（候補ゼロ＝閉じるボタン）', (s) => { s.trash = []; s.pending = { type: 'shaman_gain', player: 0 }; }],
+  ['siren react（堀あり）', (s) => { s.players[0].hand = ['moat']; s.pending = { type: 'siren', stage: 'react', player: 0, source: 1, victim: 0, queue: [] }; }],
+  ['siren_gain', (s) => { s.players[0].hand = ['village']; s.pending = { type: 'siren_gain', player: 0, dest: 'discard' }; }],
+  ['stowaway_react', (s) => { s.players[0].hand = ['stowaway']; s.pending = { type: 'stowaway_react', player: 0 }; }],
+  ['maroon_trash', (s) => { s.players[0].hand = ['estate', 'copper']; s.pending = { type: 'maroon_trash', player: 0 }; }],
+  ['crucible_trash', (s) => { s.players[0].hand = ['estate', 'copper']; s.pending = { type: 'crucible_trash', player: 0 }; }],
+  ['pilgrim_put', (s) => { s.players[0].hand = ['estate', 'copper']; s.pending = { type: 'pilgrim_put', player: 0 }; }],
+  ['figurine_discard', (s) => { s.players[0].hand = ['village', 'copper']; s.pending = { type: 'figurine_discard', player: 0 }; }],
+  ['gondola_choose', (s) => { s.pending = { type: 'gondola_choose', player: 0 }; }],
+  ['gondola_play', (s) => { s.players[0].hand = ['village']; s.pending = { type: 'gondola_play', player: 0 }; }],
+  ['tools_gain', (s) => { s.players[0].inPlay = ['tools', 'copper']; s.pending = { type: 'tools_gain', player: 0 }; }],
+  ['pickaxe_trash', (s) => { s.players[0].hand = ['silver', 'copper']; s.pending = { type: 'pickaxe_trash', player: 0 }; }],
+  ['silver_mine_gain', (s) => { s.players[0].inPlay = ['silver_mine']; s.pending = { type: 'silver_mine_gain', player: 0 }; }],
+  ['cabin_boy（二択）', (s) => { s.players[0].durationCards = ['cabin_boy']; s.pending = { type: 'cabin_boy', player: 0 }; }],
+  ['cabin_boy_gain', (s) => { s.pending = { type: 'cabin_boy_gain', player: 0 }; }],
+  ['rope_trash', (s) => { s.players[0].hand = ['copper']; s.pending = { type: 'rope_trash', player: 0 }; }],
 ];
 CASES.forEach(([name, setup]) => {
   const s = mkP(); setup(s); showAs(s, 0);

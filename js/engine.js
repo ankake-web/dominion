@@ -500,9 +500,14 @@
   const PLAY_TWICE_TREASURES = { tiara: 1, crown: 1, counterfeit: 1 };
   /* 夜想曲：「財宝を全部出す」で機械的に出してはいけない財宝（出すとデメリットが確定する）。
      呪われた金貨＝+3コインだが**必ず呪い1枚を獲得する**。1枚ずつタップして出す。 */
-  const PLAY_ALL_EXCLUDE = new Set(['cursed_gold']);
+  /* 略奪：坩堝/つるはし＝**出すと手札1枚の廃棄が強制**＝「財宝を全部出す」ボタン1つで事故るので除外
+     （呪われた金貨と同じ扱い。手動で出す）。 */
+  const PLAY_ALL_EXCLUDE = new Set(['cursed_gold', 'crucible', 'pickaxe']);
   function playAllOrder(a, b) {
-    const rank = (c) => (PLAY_TWICE_TREASURES[c] ? -2 : c === 'silver' ? -1 : c === 'fortune' ? 1 : 0);
+    /* 略奪：小像は**早め**（+2カードで引いた財宝を後から出せる）／ペンダントは**遅め**（場の財宝の種類が
+       増えてから数える。大金より前）。 */
+    const rank = (c) => (PLAY_TWICE_TREASURES[c] ? -2 : c === 'figurine' ? -2 : c === 'silver' ? -1 :
+      c === 'pendant' ? 1 : c === 'fortune' ? 2 : 0);
     return rank(a) - rank(b);
   }
   // 財宝1枚を手札から場に出してコインを加算。「商人」の“このターン最初の銀貨で+1コイン（商人の数だけ）”もここで処理。
@@ -840,6 +845,64 @@
        即時効果は無し（コインも出ない）。自分のターン以外で誘発したらボーナスは無駄になる（公式）。 */
     if (card === 'abundance') {
       armNextTime(state, pIndex, 'abundance', 'gain');
+    }
+    /* ===== 略奪P3：財宝 ===== */
+    // 宝飾卵＝$1 +1購入（「これを廃棄したとき戦利品1枚」は triggerOnTrash 側＝廃棄した本人が獲得）。
+    if (card === 'jewelled_egg') { t.buys += 1; }
+    // 縄＝$1 +1購入。次の自分のターンの開始時、+1カード、手札1枚を廃棄してもよい（持続）。
+    if (card === 'rope') { t.buys += 1; armDuration(state, pIndex, 'rope'); }
+    // 戦利品の袋＝$1 +1購入＋戦利品1枚を獲得（強制）。
+    if (card === 'sack_of_loot') {
+      t.buys += 1;
+      if (!gainLoot(state, pIndex)) log(state, `${p.name} は戦利品の袋を使ったが、戦利品の山が空。`);
+    }
+    // 坩堝＝手札1枚を廃棄（**強制**）。そのコスト$1につき +$1（**コイン成分だけ**＝ポーション/負債は0扱い＝公式）。
+    if (card === 'crucible') {
+      if (p.hand.length > 0) state.pending = { type: 'crucible_trash', player: pIndex };
+    }
+    /* ペンダント＝場に出ている**異なる名前の**財宝1種につき +$1。自分自身も・前ターンからの持続財宝も数える。
+       脇置き（貨物船/王子/契約書/資料庫/操舵手）は数えない。「財宝か」は isTreasureFor（資本主義対応）。
+       金額は**使用時に確定**（後から場が変わっても足し直さない＝公式）。 */
+    if (card === 'pendant') {
+      const kinds = new Set();
+      p.inPlay.concat(p.durationCards || []).forEach((c) => { if (isTreasureFor(state, c)) kinds.add(c); });
+      addCoins(state, kinds.size);
+      log(state, `${p.name} はペンダントで +$${kinds.size}（場の財宝${kinds.size}種類）。`);
+    }
+    /* 銀山＝**これより安い**財宝1枚を**手札に**獲得（強制・捨て札置き場を経由しない）。
+       「これより安い」は**自身の現在コスト**で毎回引く（橋/街道で自身が安くなると弱くなる＝公式）。
+       候補ゼロなら何も起きない（候補ゼロの pending を開かない）。 */
+    if (card === 'silver_mine') {
+      const ref = costOf(state, 'silver_mine');
+      if (anyGainable(state, (id) => gainableBase(state, id) && isTypeSupply(state, id, 'treasure') && costLT(costOf(state, id), ref))) {
+        state.pending = { type: 'silver_mine_gain', player: pIndex };
+      } else {
+        log(state, `${p.name} は銀山を使ったが、これより安い財宝がサプライに無い。`);
+      }
+    }
+    /* つるはし＝$1＋手札1枚を廃棄（**強制**）。廃棄した**後の**コストが3以上なら、戦利品1枚を**手札に**獲得
+       （コスト参照は廃棄の後＝漁師が捨て札ありで$5になる例・必読J）。 */
+    if (card === 'pickaxe') {
+      if (p.hand.length > 0) state.pending = { type: 'pickaxe_trash', player: pIndex };
+    }
+    // 小像＝+2カード。手札のアクションカード1枚を捨ててもよい→捨てたら +1購入 +$1（捨て札トリガーを通す）。
+    if (card === 'figurine') {
+      draw(state, pIndex, 2);
+      if (p.hand.some((c) => DOM.isType(c, 'action'))) state.pending = { type: 'figurine_discard', player: pIndex };
+    }
+    /* 工具＝（自分を含む）誰かが場に出しているのと同じカード1枚を獲得（強制）。
+       工具自身が場にあるので候補は常に1つ以上ある。サプライに無い札（戦利品等）は選べるが獲得は起きない（公式）。 */
+    if (card === 'tools') {
+      state.pending = { type: 'tools_gain', player: pIndex };
+    }
+    // ゴンドラ＝「今 +$2」か「次の自分のターンの開始時 +$2」を選ぶ（プレイのたびに独立に選ぶ＝アンフォラと同型）。
+    if (card === 'gondola') {
+      state.pending = { type: 'gondola_choose', player: pIndex };
+    }
+    /* 埋められた財宝＝次の自分のターンの開始時 +1購入 +$3。
+       （「これを獲得したとき、使用する」は triggerOnGain → onGainQueue の非対話項目＝獲得先から動かせたときだけ。） */
+    if (card === 'buried_treasure') {
+      armDuration(state, pIndex, 'buried_treasure');
     }
     /* 勲章＝$3＋**このターン**、カードを獲得したとき、それを山札の上に置いてよい。
        公式FAQ逐語＝`If you gain multiple cards, this applies to each of them`＝**毎回開く**ので
@@ -1531,6 +1594,13 @@
        （すり師団を先手だけが1ターン免れる非対称／初期好意1をターン1で使えない＝敵対レビューで確定）。
        持続カードもプロジェクトもターン1には存在し得ないので、ここでは Ally 窓だけを最小限で開く。 */
     allyStartOfTurn(initial, startActive);
+    /* 略奪：シャーマン＝**ゲームの最初のターンにも**「ターンの開始時」は起きる（公式＝
+       `This applies even on your first turn (relevant with Necromancer)`）。ネクロマンサー同居時は
+       廃棄置き場に最初からゾンビ3枚がある＝ターン1から獲得が発生する。 */
+    if (kingdom.includes('shaman') && shamanTargets(initial).length) {
+      initial.turn.startQueue = initial.turn.startQueue || [];
+      initial.turn.startQueue.push({ type: 'shaman_gain', player: startActive });
+    }
     if (initial.turn.startQueue && initial.turn.startQueue.length) popStartQueue(initial);
     return initial;
   }
@@ -2065,6 +2135,47 @@
       fireNextTime(state, 'play_action', { player: pi, card, viaCommand: cmd });
     }
   }
+  /* ===== 略奪P3 のヘルパ ===== */
+  // セイレーン＝他の全員が呪い1枚を獲得（使い魔と同型のアタック連鎖＝堀/灯台/チャンピオンで防げる）。
+  function sirenEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'siren', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      sirenCurse(state, source, victim, rest);
+    }
+  }
+  function sirenCurse(state, source, victim, queue) {
+    if ((state.supply.curse || 0) > 0) {
+      gain(state, victim, 'curse', 'discard');
+      log(state, `${state.players[victim].name} は呪いを獲得した（セイレーン）。`);
+    }
+    sirenEnterVictim(state, source, queue);
+  }
+  /* シャーマン＝廃棄置き場のコスト6以下（コイン≤6・ポーション0・負債0）のカード。
+     **engine 拒否・CPU 候補・UI フィルタが必ずこの述語を見る**（非サプライなので costUpTo は使えない＝
+     リッチ lichTrashTargets と同型）。 */
+  function shamanTargets(state) {
+    const out = [];
+    (state.trash || []).forEach((c) => {
+      if (out.indexOf(c) >= 0 || !C()[c]) return;
+      if (costLE(costOf(state, c), { coin: 6, pot: 0, debt: 0 })) out.push(c);
+    });
+    return out;
+  }
+  /* 工具＝（自分を含む）誰かが場に出しているカードの id 一覧（重複なし）。
+     公式＝「サプライに無いカード（戦利品など）も**選べる**が、獲得は起きない」＝候補からは消さない
+     （探索/専門家と同じ「遂行できない選択肢も選べる」方針。UI はラベルで補う）。 */
+  function toolsTargets(state) {
+    const out = [];
+    state.players.forEach((pl) => {
+      pl.inPlay.concat(pl.durationCards || []).forEach((c) => { if (out.indexOf(c) < 0 && C()[c]) out.push(c); });
+    });
+    return out;
+  }
   /* ===== 移動動物園：追放（Exile）=====
      追放マット `p.exile` は**公開**・所有者のカード（allCards に入る＝庭園/得点に数える）。
      - **「サプライから追放する」は獲得ではない**＝獲得時能力（on-gain）は一切誘発しない。ただしサプライの山は減る
@@ -2479,6 +2590,7 @@
     // 封鎖：プレイ時のアタック。堀を公開した相手はこの封鎖の呪い窓から免疫（immune 登録）＝以後同名を獲得しても呪いを受けない。
     blockade:      { onMoat: (s, pd) => { markBlockadeImmune(s, pd.source, pd.gained, pd.victim); blockadeEnterVictim(s, pd.source, pd.queue, pd.gained); } },
     familiar:      { onMoat: (s, pd) => familiarEnterVictim(s, pd.source, pd.queue) },
+    siren:         { onMoat: (s, pd) => sirenEnterVictim(s, pd.source, pd.queue) },  // 略奪：セイレーン（呪い配布）
     fortune_teller:{ onMoat: (s, pd) => fortuneTellerEnterVictim(s, pd.source, pd.queue) },
     jester:        { onMoat: (s, pd) => jesterEnterVictim(s, pd.source, pd.queue) },
     followers:     { onMoat: (s, pd) => followersEnterVictim(s, pd.source, pd.queue) },
@@ -3266,6 +3378,10 @@
        このエンジンの再演（state.replay）は記載効果で解決する＝**再演では習性を選び直せない**（許容簡略化）。 */
   function applyWay(state, wayId, card, pi) {
     const t = state.turn, p = state.players[pi];
+    /* 略奪P3：港の村＝習性(Way)として使った場合も「次のアクションの使用」なので予約は消費するが、
+       **習性由来の +$ ではボーナスを得ない**（決定D3＝2025年2月の移動動物園エラッタ側）。
+       カメレオンの習性だけは公式には得られるが、極小の mix-all 限定差＝許容簡略化（PROGRESS に記録）。 */
+    if (t && t.hvWatchers && t.hvWatchers[pi] > 0) t.hvWatchers[pi] = 0;
     switch (wayId) {
       // チョウ＝これをその山に戻してもよい。そうしたら ちょうど1コイン高いカード1枚を獲得する。
       case 'way_of_the_butterfly':
@@ -4283,7 +4399,33 @@
     return !!p && p.inPlay.includes(cardId);
   }
 
+  /* 略奪P3：港の村＝「このターン次に使用したアクションが**その効果で** +$ を出していたら +$1」。
+     applyEffect（＝アクションの使用・再演のすべての入口）をラップし、予約（t.hvWatchers[pi]）を消費して
+     効果の前後のコイン差で判定する。財源(+Coffers)・山トークン・チャンピオン等は applyEffect の外＝自然に除外。
+     効果が選択待ちを立てた場合（執事の+$2等）は解決後（reduce 末尾の hvPending 精算）で判定する。
+     習性(Way)由来の +$ は applyWay 側で予約だけ消費しボーナスを出さない（決定D3）。 */
   function applyEffect(state, cardId, pi) {
+    const t0 = state.turn;
+    let hvN = 0, hvC0 = 0;
+    if (t0 && t0.hvWatchers && t0.hvWatchers[pi] > 0) {
+      hvN = t0.hvWatchers[pi]; t0.hvWatchers[pi] = 0; hvC0 = t0.coins || 0;
+    }
+    const r = applyEffectInner(state, cardId, pi);
+    if (hvN && state.turn === t0) {
+      if (state.pending) t0.hvPending = { player: pi, n: hvN, coins0: hvC0 };
+      else settleHarborVillage(state, pi, hvN, hvC0);
+    }
+    return r;
+  }
+  function settleHarborVillage(state, pi, n, coins0) {
+    const t = state.turn;
+    if (!t || pi !== t.active) return; // 自分のターンでなければコインは得られない
+    if ((t.coins || 0) > coins0) {
+      addCoins(state, n);
+      log(state, `${state.players[pi].name} は港の村で +$${n}（次のアクションが +$ を出した）。`);
+    }
+  }
+  function applyEffectInner(state, cardId, pi) {
     const t = state.turn;
     const p = state.players[pi];
     switch (cardId) {
@@ -4326,6 +4468,87 @@
         discardDownEnter(state, pi, 3, others, 'cutthroat');
         break;
       }
+      /* ===== 略奪（Plunder）P3：王国カード ===== */
+      /* 岩屋＝+1アクション。手札を最大4枚（この上に）伏せて置いてもよい。次の自分のターンの開始時、
+         それらを**捨て札にし、その後**同じ枚数を引く（公式＝捨てる→引くの順・0枚なら持続にならない）。 */
+      case 'grotto':
+        addActions(t, 1);
+        if (p.hand.length > 0) state.pending = { type: 'grotto_set', player: pi };
+        break;
+      /* シャーマン＝+1アクション +$1、手札1枚を廃棄してもよい。
+         （ライン下＝「シャーマンを使うゲームでは各ターンの開始時に廃棄置き場からコスト6以下を獲得」は
+          resolveDurationStartEffects／createInitialState 側＝**王国にあるだけで全員に効く**。） */
+      case 'shaman':
+        addActions(t, 1); addCoins(state, 1);
+        if (p.hand.length > 0) state.pending = { type: 'shaman_trash', player: pi };
+        break;
+      /* セイレーン＝他の全員が呪い1枚を獲得（アタック・使い魔と同型の連鎖）。
+         次の自分のターンの開始時、手札が8枚になるようにカードを引く（持続）。 */
+      case 'siren': {
+        armDuration(state, pi, 'siren');
+        const vics = [];
+        for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
+        sirenEnterVictim(state, pi, vics);
+        break;
+      }
+      // 密航者＝次の自分のターンの開始時 +2カード（「誰かが持続を獲得したとき手札から使用」は triggerOnGain 側）。
+      case 'stowaway':
+        armDuration(state, pi, 'stowaway');
+        break;
+      /* 現場監督＝+1アクション +$1。このターン、**これより後に**コストちょうど$5（コイン5・ポーション0・負債0）の
+         カードを獲得した場合、次のターンの開始時にこの能力を冒頭から繰り返す。
+         ⚠ 「繰り返し」は「アクションの使用」ではない（必読11c）＝noteAllyPlay も actionsPlayed も触らない。 */
+      case 'taskmaster':
+        addActions(t, 1); addCoins(state, 1);
+        (t.taskmasterWatch = t.taskmasterWatch || []).push({ player: pi, hit: false });
+        break;
+      // キャビンボーイ＝+1カード +1アクション。次のターンの開始時に「+$2」か「これを廃棄して持続カード獲得」。
+      case 'cabin_boy':
+        draw(state, pi, 1); addActions(t, 1);
+        armDuration(state, pi, 'cabin_boy');
+        break;
+      /* 置き去り＝手札1枚を廃棄（**強制**）。それが持つ種別1つにつき +2カード。
+         種別は**静的な types**（特性や災いカードは種別を増やさない＝公式）。手札0枚なら廃棄に失敗＝何も起きない。 */
+      case 'maroon':
+        if (p.hand.length > 0) state.pending = { type: 'maroon_trash', player: pi };
+        break;
+      /* 沼地の小屋＝+2アクション。場のカード3枚（端数切り捨て）につき +1カード。
+         自分の inPlay＋durationCards（前ターンからの持続も数える＝公式）。脇置き（貨物船/王子/操舵手）は数えない。 */
+      case 'swamp_shacks': {
+        addActions(t, 2);
+        const inPlayN = p.inPlay.length + (p.durationCards || []).length;
+        const n = Math.floor(inPlayN / 3);
+        if (n > 0) draw(state, pi, n);
+        log(state, `${p.name} は沼地の小屋で +${n}カード（場に${inPlayN}枚）。`);
+        break;
+      }
+      /* 港の村＝+1カード +2アクション。このターン次に使用したアクションが**その効果で** +$ を出していたら +$1。
+         判定は applyEffect のラッパ（hvWatchers 消費→コイン差）＋選択待ちを挟む効果は reduce 末尾の hvPending 精算。
+         習性(Way)由来の +$ ではボーナスを得ない（決定D3）。 */
+      case 'harbor_village':
+        draw(state, pi, 1); addActions(t, 2);
+        if (!t.hvWatchers) t.hvWatchers = {};
+        t.hvWatchers[pi] = (t.hvWatchers[pi] || 0) + 1;
+        break;
+      // 巡礼者＝+4カード、手札1枚を山札の上に置く（**引けなくても強制**・候補は手札全部＝公式）。
+      case 'pilgrim':
+        draw(state, pi, 4);
+        if (p.hand.length > 0) state.pending = { type: 'pilgrim_put', player: pi };
+        break;
+      // ロングシップ＝+2アクション。次の自分のターンの開始時 +2カード。
+      case 'longship':
+        addActions(t, 2);
+        armDuration(state, pi, 'longship');
+        break;
+      // 価値ある村＝+1カード +2アクション（「獲得時＝場に財宝3種以上なら戦利品」は triggerOnGain 側）。
+      case 'wealthy_village':
+        draw(state, pi, 1); addActions(t, 2);
+        break;
+      // 乗組員＝+3カード。次の自分のターンの開始時、これを場から山札の上に置く（強制・捨て札置き場を経由しない）。
+      case 'crew':
+        draw(state, pi, 3);
+        armDuration(state, pi, 'crew');
+        break;
       /* ===== 冒険（Adventures）：相続＝自分のターン中、屋敷は「脇のカードを動かさずに使用する」命令アクション ===== */
       //   applyEffect に置くことで PLAY_ACTION だけでなく 玉座/王の宮廷/行進/御料車 の再演でも同じ挙動になる。
       case 'estate': {
@@ -7443,6 +7666,12 @@
     (p.eventSetAside || []).forEach(() => { state.turn.startQueue.push({ type: 'event_play', player: pi }); });
     // 帝国：資料庫＝脇にカードが残っている各資料庫につき、手番開始時に脇から1枚を手札へ（対話＝startQueueへ）。
     (p.archives || []).forEach((a) => { if (a.cards && a.cards.length) state.turn.startQueue.push({ type: 'archive_pick', player: pi, archiveId: a.id }); });
+    /* 略奪P3：シャーマン＝**王国にあるだけで**全員・毎ターン・強制（`It applies even if no-one ever gets a Shaman.`）。
+       自分の各ターンの開始時、廃棄置き場からコスト6以下のカード1枚を獲得する（候補があれば必ず＝強制）。
+       候補ゼロなら何も起きない。ターン1のぶんは createInitialState の末尾でも開く（必読6）。 */
+    if ((state.kingdom || []).includes('shaman') && shamanTargets(state).length) {
+      state.turn.startQueue.push({ type: 'shaman_gain', player: pi });
+    }
     // 繁栄：会計士＝手番開始時、手札の会計士を（アクションを消費せず）使ってよい。startQueue の最後に積む。
     const clerks = p.hand.filter((c) => c === 'clerk').length;
     for (let i = 0; i < clerks; i++) state.turn.startQueue.push({ type: 'clerk_start', player: pi });
@@ -8106,6 +8335,58 @@
     },
     /* 略奪：アンフォラ＝「次のターンの開始時」を選んだぶんだけ +1購入 +$3（回数で持つ）。 */
     amphora: (s, pi) => { addCoins(s, 3); s.turn.buys += 1; log(s, `${s.players[pi].name} はアンフォラの持続効果（+$3 +1購入）。`); },
+    /* ===== 略奪P3 ===== */
+    // 岩屋＝脇の札を**捨て札にし、その後**同じ枚数を引く（捨て札トリガーを先に解決＝坑道の金貨がリシャッフルに入る）。
+    grotto: (s, pi, e) => {
+      const pl = s.players[pi];
+      const back = (e.stashed || []).filter((c) => removeOne(pl.setAside, c));
+      if (back.length) {
+        back.forEach((c) => pl.discard.push(c));
+        log(s, `${pl.name} は岩屋で脇の${back.length}枚を捨て札にした。`);
+        triggerOnDiscard(s, pi, back);
+        draw(s, pi, back.length);
+        log(s, `${pl.name} は岩屋で +${back.length}カード。`);
+      }
+    },
+    // 縄＝+1カード、その後 手札1枚を廃棄してもよい（任意＝対話は startQueue へ）。
+    rope: (s, pi) => {
+      draw(s, pi, 1);
+      log(s, `${s.players[pi].name} は縄の持続効果（+1カード）。`);
+      if (s.players[pi].hand.length > 0) s.turn.startQueue.push({ type: 'rope_trash', player: pi });
+    },
+    // ロングシップ＝+2カード。
+    longship: (s, pi) => { draw(s, pi, 2); log(s, `${s.players[pi].name} はロングシップで +2カード。`); },
+    // ゴンドラ＝（「次のターンの開始時」を選んだぶん）+$2。
+    gondola: (s, pi) => { addCoins(s, 2); log(s, `${s.players[pi].name} はゴンドラの持続効果（+$2）。`); },
+    // 埋められた財宝＝+1購入 +$3。
+    buried_treasure: (s, pi) => { s.turn.buys += 1; addCoins(s, 3); log(s, `${s.players[pi].name} は埋められた財宝の持続効果（+1購入 +$3）。`); },
+    // セイレーン＝手札が8枚になるようにカードを引く。
+    siren: (s, pi) => {
+      const pl = s.players[pi];
+      const n = Math.max(0, 8 - pl.hand.length);
+      if (n > 0) draw(s, pi, n);
+      log(s, `${pl.name} はセイレーンで手札が8枚になるように引いた（+${n}）。`);
+    },
+    // 密航者＝+2カード。
+    stowaway: (s, pi) => { draw(s, pi, 2); log(s, `${s.players[pi].name} は密航者で +2カード。`); },
+    /* 乗組員＝これを場から**山札の上**に置く（強制・捨て札置き場を経由しない＝捨て札トリガーを通さない）。
+       既に場を離れていれば何も起きない（lose track）。 */
+    crew: (s, pi) => {
+      const pl = s.players[pi];
+      if (removeOne(pl.durationCards || [], 'crew') || removeOne(pl.inPlay, 'crew')) {
+        pl.deck.unshift('crew');
+        log(s, `${pl.name} は乗組員を山札の上に置いた。`);
+      }
+    },
+    /* 現場監督＝能力を冒頭から繰り返す（+1アクション +$1＋このターンの$5獲得をまた見張る）。
+       「繰り返し」は**アクションの使用ではない**＝noteAllyPlay・actionsPlayed・山トークンは触らない（必読11c）。 */
+    taskmaster: (s, pi) => {
+      addActions(s.turn, 1); addCoins(s, 1);
+      (s.turn.taskmasterWatch = s.turn.taskmasterWatch || []).push({ player: pi, hit: false });
+      log(s, `${s.players[pi].name} は現場監督の能力を繰り返した（+1アクション +$1）。`);
+    },
+    // キャビンボーイ＝「+$2」か「これを廃棄して持続カードを獲得」を選ぶ（対話＝startQueue へ）。
+    cabin_boy: (s, pi) => { s.turn.startQueue.push({ type: 'cabin_boy', player: pi }); },
     /* 同盟：追いはぎ＝次の自分のターンの開始時、**まずこれを場から捨て**、**その後**に +3カード
        （公式FAQ逐語＝`Discarding Highwayman happens first, so it's possible to even draw that Highwayman
         with the +3 Cards.`）。**捨てられなくてもカードは必ず3枚引く**（玉座で2回使うと捨てるのは1回・引くのは6枚）。 */
@@ -8322,6 +8603,14 @@
        切り裂き魔＝**誰かの**コスト5以上の財宝）。この時点で場にある予約だけが発火する（＝その獲得で
        場に出た1枚は誘発しない）。コストは獲得直後の現在値で測る（動的コスト×切り裂き魔は許容簡略化）。 */
     fireNextTime(state, 'gain', { gainer: pIndex, card: cardId });
+    /* 略奪P3：現場監督＝「これより後に」コストちょうど$5（コイン5・ポーション0・負債0）のカードを獲得したか。
+       1回の$5獲得で、その時点で見張っている自分の予約すべてが満たされる（以後の獲得は不要）。 */
+    if (state.turn && (state.turn.taskmasterWatch || []).length) {
+      const tmCost = costOf(state, cardId);
+      if (tmCost.coin === 5 && !tmCost.pot && !tmCost.debt) {
+        state.turn.taskmasterWatch.forEach((w) => { if (w.player === pIndex && !w.hit) w.hit = true; });
+      }
+    }
     for (let o = 0; o < n; o++) {
       const op = state.players[o];
       // サル：右隣（手番が自分の1つ前）の獲得ごとに +1カード
@@ -8360,6 +8649,42 @@
     if (cardId === 'doubloons') {
       if (gain(state, pIndex, 'gold', 'discard')) log(state, `${gp.name} はダブロン金貨で金貨1枚を獲得した。`);
       else log(state, `${gp.name} はダブロン金貨を獲得したが、金貨の山が空。`);
+    }
+    /* ===== 略奪P3：獲得時の効果 ===== */
+    /* 価値ある村＝これを獲得したとき、異なる財宝カードを3種類以上**場に**出していたら戦利品1枚を獲得
+       （自動・非対話。「獲得時の場」を見る＝アクションフェイズの獲得ではほぼ空振り＝公式）。 */
+    if (cardId === 'wealthy_village') {
+      const kinds = new Set();
+      gp.inPlay.concat(gp.durationCards || []).forEach((c) => { if (isTreasureFor(state, c)) kinds.add(c); });
+      if (kinds.size >= 3) {
+        log(state, `${gp.name} は価値ある村の獲得時、場の財宝が${kinds.size}種類あるので戦利品を獲得する。`);
+        gainLoot(state, pIndex);
+      }
+    }
+    /* 埋められた財宝＝これを獲得したとき、**使用する**（強制・誰のターンでも・獲得先がどこでも）。
+       別の獲得時効果で先に動かされていたら使用に失敗する（stop-moving）＝キュー消化時に獲得先を再確認する。 */
+    if (cardId === 'buried_treasure') {
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'buried_treasure_play', player: pIndex, dest });
+    }
+    /* セイレーン＝これを獲得したとき、手札からアクション1枚を廃棄してもよい。廃棄しないならセイレーンを廃棄する。
+       獲得先から先に動かされていたら自己廃棄は失敗する（それでもアクションの廃棄は選べる＝公式）。 */
+    if (cardId === 'siren') {
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'siren_gain', player: pIndex, dest });
+    }
+    // ゴンドラ＝これを獲得したとき、手札のアクションカード1枚を使用してもよい（アクション権は消費しない）。
+    if (cardId === 'gondola') {
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'gondola_play', player: pIndex });
+    }
+    /* 密航者＝**誰かが**持続カード1枚を獲得したとき、手札から使用してもよい（移動動物園型リアクション）。
+       手番プレイヤーの獲得時効果を全部処理した**後**に窓を開く（必読14b）＝キューの末尾に積む。
+       手札に獲得した密航者自身も、その獲得にリアクションできる（＝消化時に手札を見る）。 */
+    if (DOM.isType(cardId, 'duration')) {
+      for (let k = 0; k < n; k++) {
+        const seat = ((state.turn ? state.turn.active : pIndex) + k) % n;
+        if (state.players[seat].hand.includes('stowaway') || (seat === pIndex && dest === 'hand' && cardId === 'stowaway')) {
+          (state.onGainQueue = state.onGainQueue || []).push({ type: 'stowaway_react', player: seat });
+        }
+      }
     }
     // 大使館：獲得したとき、他の各プレイヤーは銀貨1枚を獲得。
     if (cardId === 'embassy') { for (let o = 0; o < n; o++) if (o !== pIndex && gain(state, o, 'silver', 'discard')) log(state, `${state.players[o].name} は銀貨1枚を獲得した（大使館）。`); }
@@ -8907,6 +9232,13 @@
           末尾に置いていたため、出荷済みの darkages 固定セット（城塞と青空市場が同居）で今日まで反応しなかった。 */
     if (!fromSupply && p.hand.includes('market_square') && (state.supply.gold || 0) > 0) {
       (state.onTrashQueue = state.onTrashQueue || []).push({ type: 'market_square_react', player: pIndex });
+    }
+    /* 略奪P3：宝飾卵＝これを廃棄したとき、戦利品1枚を獲得する（**廃棄した本人**＝誰のカードの効果で
+       廃棄されたかは関係ない＝公式FAQ。自動・非対話。サプライからの廃棄は「あなたのカード」ではないが、
+       宝飾卵の on-trash は所有条件が無いので fromSupply でも発動してよい＝塩まき等では実際には起きない）。 */
+    if (card === 'jewelled_egg') {
+      log(state, `${p.name} は宝飾卵の廃棄で戦利品を獲得する。`);
+      gainLoot(state, pIndex);
     }
     /* 夜想曲：呪いの鏡（家宝）＝これを廃棄したとき、手札のアクション1枚を捨てて幽霊1枚を獲得してもよい（任意）。
        対話なので onTrashQueue に積む（アタック中の廃棄や、廃棄札の続きの獲得と競合させない）。 */
@@ -9550,6 +9882,10 @@
        ⚠ 「場を離れたらトークンは無い」（公式）＝場に駐屯地が1枚も無ければ全部捨てる。
        ⚠ 玉座の間で1枚を2回使うと予約は2件（各3個＝合計6個で +6カード）だが**物理カードは1枚**＝
           場の枚数を超える予約はまとめる（除去は1回だけ＝公式FAQ「12枚ではなく6枚」）。 */
+    /* 略奪P3：現場監督＝このターン、プレイ後にコストちょうど$5のカードを獲得していた予約ぶん、
+       次のターンの開始時に能力を繰り返す（＝片付けで予約を張って持続として場に残す。駐屯地と同じ形）。 */
+    (state.turn.taskmasterWatch || []).forEach((w) => { if (w.hit) armDuration(state, w.player, 'taskmaster'); });
+    state.turn.taskmasterWatch = null;
     {
       const gt = (state.turn.garrisonTokens || []).filter((n) => n > 0);
       const physical = p.inPlay.filter((c) => c === 'garrison').length;
@@ -10599,6 +10935,14 @@
       });
       state = runReplays(state);
     }
+    /* 略奪P3：港の村＝次のアクションが選択待ちを立てた場合、その解決後（＝使用時効果を全て処理し終えた直後）に
+       コイン差で判定する（執事の「+$2 を選ぶ」等が正しく数えられる）。 */
+    if (!state.pending && !state.gameOver && state.turn && state.turn.hvPending) {
+      const hp = state.turn.hvPending;
+      state.turn.hvPending = null;
+      settleHarborVillage(state, hp.player, hp.n, hp.coins0);
+      state = runReplays(state);
+    }
     /* 同盟：専門家＝「使ったカードを**完全に解決してから**二択」（公式FAQ逐語）。 */
     if (!state.pending && !state.gameOver && state.turn && state.turn.specialistAfter) {
       const sa = state.turn.specialistAfter;
@@ -10659,6 +11003,32 @@
         if (q.type === 'gatekeeper_exile') { applyGatekeeperExile(state, q.player, q.card, q.dest); continue; }
         /* 略奪：秘境の社の廃棄窓＝消化する時点で手札が空なら無言でスキップ（任意効果＝空振りでも消費済み）。 */
         if (q.type === 'shrine_trash' && !state.players[q.player].hand.length) continue;
+        /* 略奪P3：埋められた財宝＝**非対話**＝獲得先にまだあれば使用する（先に動かされていたら失敗＝stop-moving）。 */
+        if (q.type === 'buried_treasure_play') {
+          const bp = state.players[q.player];
+          const bz = zoneOf(bp, q.dest);
+          if (bz && bz.indexOf('buried_treasure') >= 0) {
+            playCardNoAction(state, q.player, 'buried_treasure', bz, '獲得時効果で');
+          } else {
+            log(state, `${bp.name} の埋められた財宝は使用に失敗した（獲得先から動かされていた）。`);
+          }
+          if (state.pending) break;
+          continue;
+        }
+        /* 略奪P3：セイレーンの獲得時＝手札にアクションが無ければ選択の余地なし＝自己廃棄を即適用して次へ。 */
+        if (q.type === 'siren_gain' && !state.players[q.player].hand.some((c) => DOM.isType(c, 'action'))) {
+          const sp = state.players[q.player];
+          const sz = zoneOf(sp, q.dest);
+          if (sz && removeOne(sz, 'siren')) {
+            trashCard(state, q.player, 'siren');
+            log(state, `${sp.name} はセイレーンを廃棄した（手札にアクションが無い）。`);
+          }
+          continue;
+        }
+        // 略奪P3：ゴンドラの獲得時窓＝手札にアクションが無ければスキップ。
+        if (q.type === 'gondola_play' && !state.players[q.player].hand.some((c) => DOM.isType(c, 'action'))) continue;
+        // 略奪P3：密航者のリアクション窓＝消化時に手札に密航者が無ければスキップ。
+        if (q.type === 'stowaway_react' && state.players[q.player].hand.indexOf('stowaway') < 0) continue;
         /* 同盟：アタックの続き（獲得時の対話に割り込まれたぶん）＝**非対話**なのでその場で次の被害者へ進める。 */
         if (q.type === 'barbarian_next') { barbarianEnterVictim(state, q.source, q.queue); if (state.pending) break; continue; }
         if (q.type === 'archer_next') { archerEnterVictim(state, q.source, q.queue); if (state.pending) break; continue; }
@@ -11706,6 +12076,277 @@
         state.pending = null;
         cards.forEach((c) => { removeOne(pl.hand, c); trashCard(state, pd.player, c); });
         if (cards.length) log(state, `${pl.name} は秘境の社で ${cards.length}枚 を廃棄した。`);
+        return state;
+      }
+      /* ===== 略奪P3 ===== */
+      // 岩屋＝手札を最大4枚 伏せて脇（setAside）へ。0枚なら持続にならない（公式）。
+      case 'GROTTO_SET': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'grotto_set') return state;
+        const pl = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards.slice(0, 4) : [];
+        const chk = pl.hand.slice();
+        for (const c of cards) { const i = chk.indexOf(c); if (i < 0) return state; chk.splice(i, 1); }
+        state.pending = null;
+        if (cards.length) {
+          cards.forEach((c) => { removeOne(pl.hand, c); pl.setAside.push(c); });
+          armDuration(state, pd.player, 'grotto', { stashed: cards.slice() });
+          log(state, `${pl.name} は岩屋に ${cards.length}枚 を伏せて置いた（次のターンの開始時に捨てて同じ枚数を引く）。`);
+        }
+        return state;
+      }
+      // シャーマン＝手札1枚を廃棄してもよい（任意）。
+      case 'SHAMAN_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'shaman_trash') return state;
+        const pl = state.players[pd.player];
+        if (action.card == null) { state.pending = null; return state; }
+        if (!removeOne(pl.hand, action.card)) return state;
+        state.pending = null;
+        trashCard(state, pd.player, action.card);
+        log(state, `${pl.name} はシャーマンで「${C()[action.card].name}」を廃棄した。`);
+        return state;
+      }
+      /* シャーマン（常設）＝廃棄置き場からコスト6以下のカード1枚を獲得（**強制**・候補があれば必ず）。
+         候補は shamanTargets が正本（engine/CPU/UI 共通）。候補が枯れていたら null で閉じる（終端保証）。 */
+      case 'SHAMAN_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'shaman_gain') return state;
+        const targets = shamanTargets(state);
+        if (action.card == null) {
+          if (targets.length) return state; // 候補がある間は獲得が強制
+          state.pending = null; return state;
+        }
+        if (targets.indexOf(action.card) < 0) return state;
+        const ti = state.trash.indexOf(action.card);
+        if (ti < 0) return state;
+        state.pending = null;
+        state.trash.splice(ti, 1);
+        log(state, `${state.players[pd.player].name} はシャーマンの効果で廃棄置き場から「${C()[action.card].name}」を獲得した。`);
+        gainFromOutside(state, pd.player, action.card, 'discard');
+        return state;
+      }
+      // セイレーン＝アタックのリアクション（堀を出さない＝呪いを受けて次の被害者へ）。
+      case 'SIREN_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'siren' || pd.stage !== 'react') return state;
+        sirenCurse(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      /* セイレーンの獲得時＝手札のアクション1枚を廃棄すればセイレーンは残る。廃棄しなければセイレーンを廃棄。
+         獲得先から既に動かされていたら自己廃棄は失敗する（それでもアクションの廃棄は選べる＝公式）。 */
+      case 'SIREN_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'siren_gain') return state;
+        const pl = state.players[pd.player];
+        if (action.card != null) {
+          if (!DOM.isType(action.card, 'action')) return state;
+          if (!removeOne(pl.hand, action.card)) return state;
+          state.pending = null;
+          trashCard(state, pd.player, action.card);
+          log(state, `${pl.name} は「${C()[action.card].name}」を廃棄してセイレーンを守った。`);
+        } else {
+          state.pending = null;
+          const z = zoneOf(pl, pd.dest);
+          if (z && removeOne(z, 'siren')) {
+            trashCard(state, pd.player, 'siren');
+            log(state, `${pl.name} はセイレーンを廃棄した。`);
+          } else {
+            log(state, `${pl.name} のセイレーンは廃棄に失敗した（獲得先から動かされていた）。`);
+          }
+        }
+        return state;
+      }
+      /* 密航者＝誰かの持続獲得に反応して手札から使用してもよい（牧羊犬と同型＝場に出して効果を適用）。
+         使用後も手札に密航者が残っていれば、同じ獲得にもう1枚 反応できる（公式）。 */
+      case 'STOWAWAY_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'stowaway_react') return state;
+        state.pending = null;
+        if (!action.play) return state;
+        const pl = state.players[pd.player];
+        if (!removeOne(pl.hand, 'stowaway')) return state;
+        pl.inPlay.push('stowaway');
+        log(state, `${pl.name} はリアクションで「密航者」を使った（次の自分のターンの開始時 +2カード）。`);
+        noteAllyPlay(state, pd.player, 'stowaway'); // これも「カードの使用」（旗艦/上陸部隊/Ally が正しく絡む）
+        applyEffect(state, 'stowaway', pd.player);
+        if (pl.hand.indexOf('stowaway') >= 0) {
+          (state.onGainQueue = state.onGainQueue || []).push({ type: 'stowaway_react', player: pd.player });
+        }
+        return state;
+      }
+      // 置き去り＝手札1枚を廃棄（強制）→ その**静的な**種別1つにつき +2カード。
+      case 'MAROON_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'maroon_trash') return state;
+        const pl = state.players[pd.player];
+        if (action.card == null || !removeOne(pl.hand, action.card)) return state;
+        state.pending = null;
+        trashCard(state, pd.player, action.card);
+        const types = (C()[action.card].types || []).length;
+        draw(state, pd.player, 2 * types);
+        log(state, `${pl.name} は置き去りで「${C()[action.card].name}」を廃棄し +${2 * types}カード（種別${types}つ）。`);
+        return state;
+      }
+      // 坩堝＝手札1枚を廃棄（強制）→ 廃棄後のコストのコイン成分ぶん +$。
+      case 'CRUCIBLE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'crucible_trash') return state;
+        const pl = state.players[pd.player];
+        if (action.card == null || !removeOne(pl.hand, action.card)) return state;
+        state.pending = null;
+        trashCard(state, pd.player, action.card);
+        const coin = cardCost(state, action.card);
+        if (coin > 0) addCoins(state, coin);
+        log(state, `${pl.name} は坩堝で「${C()[action.card].name}」を廃棄し +$${coin}。`);
+        return state;
+      }
+      // 巡礼者＝手札1枚を山札の上に置く（強制・候補は手札全部）。
+      case 'PILGRIM_PUT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'pilgrim_put') return state;
+        const pl = state.players[pd.player];
+        if (action.card == null || !removeOne(pl.hand, action.card)) return state;
+        state.pending = null;
+        pl.deck.unshift(action.card);
+        log(state, `${pl.name} は巡礼者で手札1枚を山札の上に置いた。`);
+        return state;
+      }
+      // 小像＝手札のアクション1枚を捨ててもよい→捨てたら +1購入 +$1（捨て札トリガーを通す）。
+      case 'FIGURINE_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'figurine_discard') return state;
+        const pl = state.players[pd.player];
+        if (action.card == null) { state.pending = null; return state; }
+        if (!DOM.isType(action.card, 'action')) return state;
+        if (!removeOne(pl.hand, action.card)) return state;
+        state.pending = null;
+        pl.discard.push(action.card);
+        log(state, `${pl.name} は小像で「${C()[action.card].name}」を捨て、+1購入 +$1。`);
+        triggerOnDiscard(state, pd.player, [action.card]);
+        t.buys += 1; addCoins(state, 1);
+        return state;
+      }
+      // ゴンドラ＝「今 +$2」か「次の自分のターンの開始時 +$2」。
+      case 'GONDOLA_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'gondola_choose') return state;
+        state.pending = null;
+        if (action.now) { addCoins(state, 2); log(state, `${state.players[pd.player].name} はゴンドラで今 +$2 を得た。`); }
+        else { armDuration(state, pd.player, 'gondola'); log(state, `${state.players[pd.player].name} はゴンドラの +$2 を次のターンの開始時に受ける。`); }
+        return state;
+      }
+      // ゴンドラの獲得時＝手札のアクション1枚を使用してもよい（アクション権は消費しない）。
+      case 'GONDOLA_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'gondola_play') return state;
+        const pl = state.players[pd.player];
+        if (action.card == null) { state.pending = null; return state; }
+        if (!DOM.isType(action.card, 'action') || pl.hand.indexOf(action.card) < 0) return state;
+        if (!canPlayHandCard(state, pd.player, action.card)) return state;
+        state.pending = null;
+        playCardNoAction(state, pd.player, action.card, pl.hand, 'ゴンドラの獲得時効果で', action.way);
+        return state;
+      }
+      /* 工具＝誰かが場に出しているのと同じカード1枚を獲得（強制）。サプライに無い札（戦利品/闇市場由来）も
+         **選べるが獲得は起きない**（公式＝探索/専門家と同じ「遂行できない選択肢も選べる」）。 */
+      case 'TOOLS_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'tools_gain') return state;
+        if (action.card == null || toolsTargets(state).indexOf(action.card) < 0) return state;
+        state.pending = null;
+        const key = gainableBase(state, action.card) ? action.card : mixedPileWithTop(state, action.card);
+        if (key && gain(state, pd.player, key, 'discard')) {
+          log(state, `${state.players[pd.player].name} は工具で「${C()[action.card].name}」を獲得した。`);
+        } else {
+          log(state, `${state.players[pd.player].name} は工具で「${C()[action.card].name}」を選んだが、サプライに無いため獲得できない。`);
+        }
+        return state;
+      }
+      // つるはし＝手札1枚を廃棄（強制）→ 廃棄**後**のコストが3以上なら戦利品1枚を**手札に**獲得。
+      case 'PICKAXE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'pickaxe_trash') return state;
+        const pl = state.players[pd.player];
+        if (action.card == null || !removeOne(pl.hand, action.card)) return state;
+        state.pending = null;
+        trashCard(state, pd.player, action.card);
+        const coin = cardCost(state, action.card); // コスト参照は廃棄の「後」（必読J）
+        if (coin >= 3) {
+          log(state, `${pl.name} はつるはしで「${C()[action.card].name}」（コスト${coin}）を廃棄し、戦利品を手札に獲得する。`);
+          gainLoot(state, pd.player, 'hand');
+        } else {
+          log(state, `${pl.name} はつるはしで「${C()[action.card].name}」（コスト${coin}）を廃棄した。`);
+        }
+        return state;
+      }
+      // 銀山＝これより安い財宝1枚を**手札に**獲得（強制）。
+      case 'SILVER_MINE_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'silver_mine_gain') return state;
+        const ref = costOf(state, 'silver_mine');
+        const okId = (id) => gainableBase(state, id) && isTypeSupply(state, id, 'treasure') && costLT(costOf(state, id), ref);
+        if (action.card == null) {
+          if (anyGainable(state, okId)) return state; // 候補がある間は獲得が強制
+          state.pending = null; return state;
+        }
+        if (!okId(action.card)) return state;
+        state.pending = null;
+        if (gain(state, pd.player, action.card, 'hand')) {
+          log(state, `${state.players[pd.player].name} は銀山で「${C()[action.card].name}」を手札に獲得した。`);
+        }
+        return state;
+      }
+      /* キャビンボーイ＝次のターンの開始時の二択。「廃棄して持続を獲得」は**場から廃棄できたときだけ**獲得が起きる
+         （必読14c＝takeSelf 失敗なら獲得も無し。持続の獲得に**コスト制限は無い**＝costUpTo を掛けない）。 */
+      case 'CABIN_BOY_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'cabin_boy') return state;
+        const pl = state.players[pd.player];
+        state.pending = null;
+        if (action.choice === 'gain') {
+          if (removeOne(pl.durationCards || [], 'cabin_boy') || removeOne(pl.inPlay, 'cabin_boy')) {
+            trashCard(state, pd.player, 'cabin_boy');
+            log(state, `${pl.name} はキャビンボーイを廃棄した（持続カードを獲得する）。`);
+            if (anyGainable(state, (id) => gainableBase(state, id) && isTypeSupply(state, id, 'duration'))) {
+              state.pending = { type: 'cabin_boy_gain', player: pd.player };
+            } else {
+              log(state, `${pl.name} は獲得できる持続カードがサプライに無い。`);
+            }
+          } else {
+            log(state, `${pl.name} のキャビンボーイは場を離れていて廃棄できない（獲得も起きない）。`);
+          }
+        } else {
+          addCoins(state, 2);
+          log(state, `${pl.name} はキャビンボーイで +$2。`);
+        }
+        return state;
+      }
+      case 'CABIN_BOY_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'cabin_boy_gain') return state;
+        const okId = (id) => gainableBase(state, id) && isTypeSupply(state, id, 'duration');
+        if (action.card == null) {
+          if (anyGainable(state, okId)) return state; // 獲得は強制
+          state.pending = null; return state;
+        }
+        if (!okId(action.card)) return state;
+        state.pending = null;
+        if (gain(state, pd.player, action.card, 'discard')) {
+          log(state, `${state.players[pd.player].name} はキャビンボーイの効果で「${C()[action.card].name}」を獲得した。`);
+        }
+        return state;
+      }
+      // 縄＝次のターンの開始時、+1カードの後に手札1枚を廃棄してもよい（任意）。
+      case 'ROPE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'rope_trash') return state;
+        const pl = state.players[pd.player];
+        if (action.card == null) { state.pending = null; return state; }
+        if (!removeOne(pl.hand, action.card)) return state;
+        state.pending = null;
+        trashCard(state, pd.player, action.card);
+        log(state, `${pl.name} は縄で「${C()[action.card].name}」を廃棄した。`);
         return state;
       }
       /* 略奪：宝珠＝「捨て札からアクションか財宝1枚を使用」or「+1購入 +$3」。
@@ -19172,6 +19813,9 @@
     // 略奪（Plunder）：戦利品(Loot)
     'SHIELD_REVEAL', 'PRIZE_GOAT_TRASH', 'HAMMER_GAIN', 'SEXTANT_RESOLVE', 'PUZZLE_BOX_SET', 'STAFF_PLAY',
     'CAGE_SET', 'SHRINE_TRASH',
+    'GROTTO_SET', 'SHAMAN_TRASH', 'SHAMAN_GAIN', 'SIREN_REACT', 'SIREN_GAIN', 'STOWAWAY_REACT',
+    'MAROON_TRASH', 'CRUCIBLE_TRASH', 'PILGRIM_PUT', 'FIGURINE_DISCARD', 'GONDOLA_CHOOSE', 'GONDOLA_PLAY',
+    'TOOLS_GAIN', 'PICKAXE_TRASH', 'SILVER_MINE_GAIN', 'CABIN_BOY_RESOLVE', 'CABIN_BOY_GAIN', 'ROPE_TRASH',
     'AMPHORA_CHOOSE', 'ORB_RESOLVE', 'SPELL_SCROLL_GAIN', 'SPELL_SCROLL_PLAY',
     'MINE_TRASH', 'MINE_GAIN', 'REMODEL_TRASH', 'REMODEL_GAIN', 'WORKSHOP_GAIN',
     'COURTYARD_PUT', 'PAWN_RESOLVE', 'STEWARD_RESOLVE', 'STEWARD_TRASH',
@@ -19402,6 +20046,8 @@
     sunkenTreasureCanGain, // 沈没船の財宝＝場に同名が無いアクション（**コスト制限なし**）
     modifyCanGain,     // 改造＝廃棄したカードより最大2コイン高いカード（成分別比較）
     lichTrashTargets,  // リッチ＝廃棄置き場からこれより安いカード（**サプライではない**＝cost述語を使わない）
+    shamanTargets,     // 略奪：シャーマン＝廃棄置き場のコスト6以下（engine/CPU/UI が同じ述語を見る）
+    toolsTargets,      // 略奪：工具＝誰かが場に出しているカードの一覧（engine/CPU/UI が同じ述語を見る）
     canPlayFromHand,   // 同盟：航海の追加ターン＝手札から3枚まで（engine拒否・CPU非提案・UI無効化の3面共通）
     warlordBlocks,     // 同盟：将軍＝場に2枚以上ある同名アクションを手札から使えない（同上・3面共通）
     canPlayHandCard,   // 「その手札の1枚を今使えるか」＝航海の3枚制限＋将軍（engine/CPU/UI が同じ述語を見る）

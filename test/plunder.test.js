@@ -872,5 +872,429 @@ function handPlay(s, pi, cards) {
   ok(bad === 0 && games === 6, 'P2 CPUソーク完走（' + games + '/6・膠着0・例外0・保存則違反0）');
 }
 
+/* ============================================================
+   P3＝素直な王国カード19種
+   ============================================================ */
+console.log('\n=== P3: 王国カード（素直な系） ===');
+
+const KING_P3A = ['shaman', 'harbor_village', 'pilgrim', 'maroon', 'swamp_shacks', 'longship', 'wealthy_village', 'crew', 'village', 'militia'];
+const KING_P3B = ['grotto', 'siren', 'stowaway', 'taskmaster', 'cabin_boy', 'longship', 'village', 'smithy', 'moat', 'steward'];
+
+// --- シャーマン＋宝飾卵の on-trash ---
+{
+  let s = mk(KING_P3A.concat()); // jewelled_egg は KING_LOOT 由来でなくても手札にあれば動く（戦利品の山は…
+  s = mk(['shaman', 'jewelled_egg', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory']);
+  s = handPlay(s, 0, ['shaman', 'jewelled_egg']);
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'shaman' });
+  ok(s.turn.actions === 99 && s.turn.coins === 1, 'シャーマン＝+1アクション +$1');
+  ok(s.pending && s.pending.type === 'shaman_trash', '任意の廃棄窓が開く');
+  const lootBefore = s.loot.length;
+  s = E.reduce(s, { type: 'SHAMAN_TRASH', card: 'jewelled_egg' });
+  ok(count(s.trash, 'jewelled_egg') === 1, '宝飾卵を廃棄できる');
+  ok(s.loot.length === lootBefore - 1 && s.players[0].discard.some((c) => LOOT.indexOf(c) >= 0),
+    '宝飾卵を廃棄したとき戦利品1枚を獲得する（廃棄した本人）');
+  // シャーマンの常設効果＝次の（自分以外も含む各プレイヤーの）ターン開始時、廃棄置き場から$6以下を獲得（強制）
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });   // → B のターン開始（廃棄置き場に宝飾卵がある）
+  ok(s.pending && s.pending.type === 'shaman_gain' && s.pending.player === 1,
+    'シャーマンを使うゲームでは B のターン開始時にも廃棄置き場からの獲得が起きる');
+  const t0 = tally(s);
+  s = E.reduce(s, { type: 'SHAMAN_GAIN', card: 'jewelled_egg' });
+  ok(count(s.players[1].discard, 'jewelled_egg') === 1 && count(s.trash, 'jewelled_egg') === 0,
+    'B が廃棄置き場から宝飾卵を獲得した');
+  ok(sameTally(t0, tally(s)), '保存則が保たれる');
+}
+{
+  // シャーマン：候補がある間は null を拒否（強制）／候補ゼロなら窓を開かない
+  let s = mk(['shaman', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory', 'festival']);
+  s.trash = ['gold'];
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });   // → B のターン開始
+  ok(s.pending && s.pending.type === 'shaman_gain', '廃棄置き場に$6以下があれば窓が開く');
+  const s2 = E.reduce(s, { type: 'SHAMAN_GAIN', card: null });
+  ok(s2.pending && s2.pending.type === 'shaman_gain', '候補がある間は「獲得しない」を拒否（強制）');
+  s = E.reduce(s, { type: 'SHAMAN_GAIN', card: 'gold' });
+  ok(count(s.players[1].discard, 'gold') === 1, '金貨（$6）を獲得できる');
+}
+
+// --- 港の村（アクションを跨ぐ判定＋選択待ちを挟む判定） ---
+{
+  let s = mk(KING_P3B);
+  s = handPlay(s, 0, ['harbor_village'.replace('harbor_village', 'village'), 'steward']);
+  // 港の村→執事（選択待ちで+$2を選ぶ）＝解決後に +$1
+  s.players[0].hand = ['harbor_village', 'steward'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'harbor_village' });
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'steward' });
+  ok(s.pending && s.pending.type === 'steward', '執事の選択待ちが開く');
+  s = E.reduce(s, { type: 'STEWARD_RESOLVE', choice: 'coins' });
+  ok(s.turn.coins === 3, '執事で+$2を選ぶ→選択待ちの解決後に港の村の +$1（合計$3）');
+  // 港の村→村（+$なし）＝ボーナスなし＋予約は消費される
+  let z = mk(KING_P3B);
+  z = handPlay(z, 0, ['harbor_village', 'village', 'steward']);
+  z.players[0].hand = ['harbor_village', 'village', 'steward'];
+  z = E.reduce(z, { type: 'PLAY_ACTION', card: 'harbor_village' });
+  z = E.reduce(z, { type: 'PLAY_ACTION', card: 'village' });
+  ok(z.turn.coins === 0, '次のアクションが+$を出さなければボーナスなし');
+  z = E.reduce(z, { type: 'PLAY_ACTION', card: 'steward' });
+  z = E.reduce(z, { type: 'STEWARD_RESOLVE', choice: 'coins' });
+  ok(z.turn.coins === 2, '予約は「次の1枚」で消費済み＝その後のアクションの+$には付かない');
+}
+
+// --- 巡礼者／置き去り／沼地の小屋／ロングシップ／乗組員 ---
+{
+  let s = mk(KING_P3A);
+  s = handPlay(s, 0, ['pilgrim', 'estate']);
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'silver'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'pilgrim' });
+  ok(s.players[0].hand.length === 5 && s.pending && s.pending.type === 'pilgrim_put', '巡礼者＝+4カード→1枚戻す（強制）');
+  s = E.reduce(s, { type: 'PILGRIM_PUT', card: 'estate' });
+  ok(s.players[0].deck[0] === 'estate' && !s.pending, '手札1枚（引いた札でなくてもよい）を山札の上へ');
+}
+{
+  let s = mk(KING_P3A);
+  s = handPlay(s, 0, ['swamp_shacks']);
+  s.players[0].inPlay = ['village', 'village'];      // プレイ後に沼地の小屋も加わって3枚
+  s.players[0].durationCards = ['longship'];         // 前ターンからの持続も数える → 計4枚
+  s.players[0].deck = ['copper', 'copper', 'copper'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'swamp_shacks' });
+  ok(count(s.players[0].hand, 'copper') === 1, '沼地の小屋＝場4枚（持続込み）→ +1カード（floor(4/3)）');
+}
+{
+  let s = mk(KING_P3A);
+  s = handPlay(s, 0, ['longship', 'crew']);
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'silver', 'silver'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'longship' });
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'crew' });
+  ok(count(s.players[0].hand, 'copper') === 3, '乗組員＝+3カード');
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(count(s.players[0].durationCards, 'longship') === 1 && count(s.players[0].durationCards, 'crew') === 1, '両方とも場に残る');
+  s.turn.phase = 'buy';
+  const handBefore = s.players[0].hand.length;
+  s = E.reduce(s, { type: 'END_TURN' });   // → A のターン開始
+  ok(s.players[0].deck[0] === 'crew', '乗組員＝次のターンの開始時に山札の上へ（捨て札を経由しない）');
+  ok(count(s.players[0].durationCards, 'crew') === 0, '場からは離れる');
+  ok(s.players[0].hand.length === handBefore + 2 || s.players[0].hand.length >= 7, 'ロングシップ＝開始時 +2カード');
+}
+
+// --- 価値ある村／ペンダント（場の異なる財宝の数え方） ---
+{
+  let s = mk(KING_P3A);
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 5;
+  s.players[0].inPlay = ['copper', 'silver'];
+  s.players[0].durationCards = ['gondola'];          // 前ターンからの持続財宝も数える
+  const lootBefore = s.loot ? s.loot.length : 0;
+  // 戦利品の山：KING_P3A には LOOT_GIVERS（価値ある村）がある＝山があるはず
+  ok(Array.isArray(s.loot), '価値ある村がある王国では戦利品の山ができる');
+  s = E.reduce(s, { type: 'BUY', card: 'wealthy_village' });
+  ok(s.loot.length === lootBefore - 1, '獲得時に場の財宝が3種類（銅/銀/ゴンドラ）→戦利品を獲得');
+  // 2種類なら獲得しない
+  let z = mk(KING_P3A);
+  z.turn.phase = 'buy'; z.turn.buys = 1; z.turn.coins = 5;
+  z.players[0].inPlay = ['copper', 'copper', 'silver'];
+  const lb2 = z.loot.length;
+  z = E.reduce(z, { type: 'BUY', card: 'wealthy_village' });
+  ok(z.loot.length === lb2, '異なる財宝が2種類なら戦利品は獲得しない（同名は1種）');
+}
+{
+  let s = mk(KING_P3A);
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 0;
+  s.players[0].inPlay = ['copper', 'copper', 'silver'];
+  s.players[0].durationCards = ['gondola'];
+  s.players[0].hand = ['pendant'];
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'pendant' });
+  ok(s.turn.coins === 4, 'ペンダント＝場の異なる財宝4種（銅/銀/ゴンドラ/ペンダント自身）で +$4');
+}
+
+// --- 銀山／戦利品の袋／つるはし／小像／坩堝 ---
+{
+  let s = mk(KING_P3A);
+  s.turn.phase = 'buy'; s.turn.buys = 1;
+  s.players[0].hand = ['silver_mine'];
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'silver_mine' });
+  ok(s.pending && s.pending.type === 'silver_mine_gain', '銀山＝獲得の窓（強制）');
+  const s2 = E.reduce(s, { type: 'SILVER_MINE_GAIN', card: null });
+  ok(s2.pending, '候補がある間は「獲得しない」を拒否');
+  s = E.reduce(s, { type: 'SILVER_MINE_GAIN', card: 'silver' });
+  ok(count(s.players[0].hand, 'silver') === 1, '銀貨を**手札に**獲得（捨て札を経由しない）');
+}
+{
+  let s = mk(['wealthy_village', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory', 'festival']);
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 0;
+  s.players[0].hand = ['sack_of_loot'];
+  const lootBefore = s.loot.length;
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'sack_of_loot' });
+  ok(s.turn.coins === 1 && s.turn.buys === 2, '戦利品の袋＝$1 +1購入');
+  ok(s.loot.length === lootBefore - 1, '戦利品1枚を獲得');
+}
+{
+  let s = mk(KING_P3A);
+  s.turn.phase = 'buy'; s.turn.buys = 1;
+  s.players[0].hand = ['pickaxe', 'silver', 'estate'];
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'pickaxe' });
+  ok(s.turn.coins === 1 && s.pending && s.pending.type === 'pickaxe_trash', 'つるはし＝$1＋廃棄（強制）');
+  const lootBefore = s.loot.length;
+  s = E.reduce(s, { type: 'PICKAXE_TRASH', card: 'silver' });
+  ok(s.loot.length === lootBefore - 1 && s.players[0].hand.some((c) => LOOT.indexOf(c) >= 0),
+    'コスト3以上（銀貨）を廃棄→戦利品を**手札に**獲得');
+  let z = mk(KING_P3A);
+  z.turn.phase = 'buy'; z.turn.buys = 1;
+  z.players[0].hand = ['pickaxe', 'estate'];
+  z = E.reduce(z, { type: 'PLAY_TREASURE', card: 'pickaxe' });
+  const lb = z.loot.length;
+  z = E.reduce(z, { type: 'PICKAXE_TRASH', card: 'estate' });
+  ok(z.loot.length === lb, 'コスト2（屋敷）の廃棄では戦利品なし');
+}
+{
+  let s = mk(KING_P3A);
+  s.turn.phase = 'buy'; s.turn.buys = 1;
+  s.players[0].hand = ['figurine', 'village'];
+  s.players[0].deck = ['copper', 'copper', 'silver'];
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'figurine' });
+  ok(count(s.players[0].hand, 'copper') === 2, '小像＝+2カード');
+  ok(s.pending && s.pending.type === 'figurine_discard', 'アクションがあれば捨てる窓が開く');
+  s = E.reduce(s, { type: 'FIGURINE_DISCARD', card: 'village' });
+  ok(s.turn.buys === 2 && s.turn.coins === 1, 'アクションを捨てて +1購入 +$1');
+}
+{
+  let s = mk(KING_P3A);
+  s.turn.phase = 'buy'; s.turn.buys = 1;
+  s.players[0].hand = ['crucible', 'estate', 'copper'];
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'crucible' });
+  ok(s.pending && s.pending.type === 'crucible_trash', '坩堝＝廃棄（強制）');
+  s = E.reduce(s, { type: 'CRUCIBLE_TRASH', card: 'estate' });
+  ok(s.turn.coins === 2, '屋敷（$2）を廃棄して +$2');
+}
+
+// --- 工具（誰かの場のカードのコピー） ---
+{
+  let s = mk(KING_P3A, null, ['A', 'B']);
+  s.turn.phase = 'buy'; s.turn.buys = 1;
+  s.players[0].hand = ['tools'];
+  s.players[1].durationCards = ['longship'];   // 相手の場の持続もコピーできる
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'tools' });
+  ok(s.pending && s.pending.type === 'tools_gain', '工具＝獲得の窓（工具自身が場にある＝候補は常にある）');
+  s = E.reduce(s, { type: 'TOOLS_GAIN', card: 'longship' });
+  ok(count(s.players[0].discard, 'longship') === 1, '相手が場に出している持続のコピーを獲得できる');
+  // サプライに無い札（戦利品）は選べるが獲得は起きない
+  let z = mk(KING_P3A, null, ['A', 'B']);
+  z.turn.phase = 'buy'; z.turn.buys = 1;
+  z.players[0].hand = ['tools'];
+  z.players[0].inPlay = ['amphora'];
+  z = E.reduce(z, { type: 'PLAY_TREASURE', card: 'tools' });
+  const t0 = tally(z);
+  z = E.reduce(z, { type: 'TOOLS_GAIN', card: 'amphora' });
+  ok(!z.pending && sameTally(t0, tally(z)), '戦利品（非サプライ）を選ぶと何も獲得せず窓は閉じる');
+}
+
+// --- ゴンドラ（今/次の選択＋獲得時のアクション使用） ---
+{
+  let s = mk(KING_P3A);
+  s.turn.phase = 'buy'; s.turn.buys = 1;
+  s.players[0].hand = ['gondola'];
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'gondola' });
+  ok(s.pending && s.pending.type === 'gondola_choose', 'ゴンドラ＝今か次かを選ぶ');
+  const now = E.reduce(s, { type: 'GONDOLA_CHOOSE', now: true });
+  ok(now.turn.coins === 2, '「今」＝+$2');
+  let nxt = E.reduce(s, { type: 'GONDOLA_CHOOSE', now: false });
+  ok(nxt.turn.coins === 0, '「次のターン」＝今はもらえない');
+  nxt = E.reduce(nxt, { type: 'END_TURN' });
+  ok(count(nxt.players[0].durationCards, 'gondola') === 1, '持続として場に残る');
+  nxt.turn.phase = 'buy';
+  nxt = E.reduce(nxt, { type: 'END_TURN' });  // → A のターン
+  ok(nxt.turn.coins === 2, '次のターンの開始時に +$2');
+}
+{
+  // ゴンドラの獲得時＝手札のアクション1枚を使用してよい
+  let s = mk(['gondola', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory', 'festival']);
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 4;
+  s.players[0].hand = ['village'];
+  s.players[0].deck = ['copper', 'silver'];
+  s = E.reduce(s, { type: 'BUY', card: 'gondola' });
+  ok(s.pending && s.pending.type === 'gondola_play', '獲得時にアクション使用の窓が開く');
+  s = E.reduce(s, { type: 'GONDOLA_PLAY', card: 'village' });
+  ok(count(s.players[0].inPlay, 'village') === 1 && count(s.players[0].hand, 'copper') === 1,
+    '手札の村を（アクション権を消費せず）使用できる');
+}
+
+// --- 埋められた財宝（獲得したとき使用する） ---
+{
+  let s = mk(['buried_treasure', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory', 'festival']);
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 5;
+  s = E.reduce(s, { type: 'BUY', card: 'buried_treasure' });
+  ok(count(s.players[0].inPlay, 'buried_treasure') === 1, '埋められた財宝＝獲得したとき使用する（場に出る）');
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(count(s.players[0].durationCards, 'buried_treasure') === 1, '持続として場に残る');
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });   // → A のターン
+  ok(s.turn.coins === 3 && s.turn.buys === 2, '次のターンの開始時 +1購入 +$3');
+}
+
+// --- 岩屋／縄 ---
+{
+  let s = mk(KING_P3B);
+  s = handPlay(s, 0, ['grotto', 'estate', 'estate', 'copper']);
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'grotto' });
+  ok(s.pending && s.pending.type === 'grotto_set', '岩屋＝伏せて置く窓');
+  const t0 = tally(s);
+  s = E.reduce(s, { type: 'GROTTO_SET', cards: ['estate', 'estate'] });
+  ok(count(s.players[0].setAside, 'estate') === 2, '2枚を伏せて置いた');
+  ok(sameTally(t0, tally(s)), '保存則が保たれる');
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });
+  s.turn.phase = 'buy';
+  const discBefore = count(s.players[0].discard, 'estate');
+  s = E.reduce(s, { type: 'END_TURN' });   // → A のターン開始＝捨ててから同じ枚数引く
+  ok(count(s.players[0].discard.concat(s.players[0].deck).concat(s.players[0].hand), 'estate') >= 2 &&
+     count(s.players[0].setAside, 'estate') === 0, '開始時に脇の2枚を捨て札にした（脇は空）');
+}
+{
+  let s = mk(KING_P3A);
+  s.turn.phase = 'buy'; s.turn.buys = 1;
+  s.players[0].hand = ['rope'];
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'rope' });
+  ok(s.turn.coins === 1 && s.turn.buys === 2, '縄＝$1 +1購入');
+  s = E.reduce(s, { type: 'END_TURN' });
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });   // → A のターン開始
+  ok(s.pending && s.pending.type === 'rope_trash', '次のターンの開始時＝+1カードの後に任意の廃棄窓');
+  s = E.reduce(s, { type: 'ROPE_TRASH', card: null });
+  ok(!s.pending, '「廃棄しない」で閉じる');
+}
+
+// --- セイレーン（アタック＋持続＋獲得時の自己廃棄） ---
+{
+  let s = mk(KING_P3B, null, ['A', 'B']);
+  s = handPlay(s, 0, ['siren']);
+  s.players[1].hand = ['copper'];
+  const curses = s.supply.curse;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'siren' });
+  ok(s.supply.curse === curses - 1 && count(s.players[1].discard, 'curse') === 1, 'セイレーン＝他の全員が呪いを獲得');
+  s.players[0].hand = [];
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'silver'];
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });   // → A のターン開始
+  ok(s.players[0].hand.length === 8, '次のターンの開始時、手札が8枚になるように引く（実際=' + s.players[0].hand.length + '）');
+}
+{
+  // 獲得時＝手札のアクションを廃棄すればセイレーンは残る／廃棄しなければセイレーン自身を廃棄
+  let s = mk(KING_P3B);
+  s.turn.phase = 'buy'; s.turn.buys = 2; s.turn.coins = 6;
+  s.players[0].hand = ['village'];
+  s = E.reduce(s, { type: 'BUY', card: 'siren' });
+  ok(s.pending && s.pending.type === 'siren_gain', '獲得時の窓が開く');
+  const keep = E.reduce(s, { type: 'SIREN_GAIN', card: 'village' });
+  ok(count(keep.trash, 'village') === 1 && count(keep.players[0].discard, 'siren') === 1, 'アクションを廃棄→セイレーンは残る');
+  const drop = E.reduce(s, { type: 'SIREN_GAIN', card: null });
+  ok(count(drop.trash, 'siren') === 1 && count(drop.players[0].discard, 'siren') === 0, '廃棄しない→セイレーン自身を廃棄');
+  // 手札にアクションが無ければ窓を開かず自動で自己廃棄
+  let z = mk(KING_P3B);
+  z.turn.phase = 'buy'; z.turn.buys = 1; z.turn.coins = 6;
+  z.players[0].hand = ['copper'];
+  z = E.reduce(z, { type: 'BUY', card: 'siren' });
+  ok(!z.pending && count(z.trash, 'siren') === 1, 'アクションが無ければ窓なしで自己廃棄');
+}
+
+// --- 密航者（リアクション）＋現場監督＋キャビンボーイ ---
+{
+  let s = mk(KING_P3B, null, ['A', 'B']);
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });   // → B のターン
+  s.players[0].hand = ['stowaway'];        // ⚠ 手札は片付けで引き直されるので**ターンを渡した後**に置く
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 5;
+  s = E.reduce(s, { type: 'BUY', card: 'longship' });  // B が持続を獲得 → A の密航者が反応できる
+  ok(s.pending && s.pending.type === 'stowaway_react' && s.pending.player === 0, '誰かの持続獲得で密航者の窓が開く');
+  s = E.reduce(s, { type: 'STOWAWAY_REACT', play: true });
+  ok(count(s.players[0].inPlay, 'stowaway') === 1, '相手のターンに手札から使用できる');
+  // ※このエンジンは自分の片付けで次の手札を先引きする＝手札は直接セットした ['stowaway'] が正
+  //   （使用で0枚になった）。B の片付け → A のターン開始で +2カード＝手札はちょうど2枚になる。
+  s = E.reduce(s, { type: 'END_TURN' });   // B の片付け → A のターン開始＝+2カード
+  ok(s.players[0].hand.length === 2, '次の自分のターンの開始時 +2カード（手札' + s.players[0].hand.length + '枚）');
+}
+{
+  // 現場監督＝$5を獲得したターンの次の開始時に繰り返す（さらに$5を獲得すればまた続く）
+  let s = mk(KING_P3B);
+  s = handPlay(s, 0, ['taskmaster']);
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'taskmaster' });
+  ok(s.turn.coins === 1, '現場監督＝+1アクション +$1');
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 5;
+  s = E.reduce(s, { type: 'BUY', card: 'longship' });  // $5 を獲得
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(count(s.players[0].durationCards, 'taskmaster') === 1, '$5を獲得したので場に残る');
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });   // → A のターン開始＝繰り返し
+  ok(s.turn.coins === 1, '次のターンの開始時、能力を繰り返す（+$1）');
+  // このターンは$5を獲得しない → 片付けで捨てられる
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(count(s.players[0].durationCards, 'taskmaster') === 0, '$5を獲得しなかったターンの片付けで場を離れる');
+}
+{
+  // 現場監督＝プレイ**前**の$5獲得は数えない
+  let s = mk(KING_P3B);
+  s.turn.phase = 'buy'; s.turn.buys = 2; s.turn.coins = 10;
+  s = E.reduce(s, { type: 'BUY', card: 'longship' });   // 先に$5を獲得
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['taskmaster'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'taskmaster' });
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(count(s.players[0].durationCards, 'taskmaster') === 0, 'プレイ前の$5獲得では繰り返さない（これより後に、が条件）');
+}
+{
+  // キャビンボーイ＝次のターンの開始時に二択
+  let s = mk(KING_P3B);
+  s = handPlay(s, 0, ['cabin_boy']);
+  s.players[0].deck = ['copper', 'silver'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'cabin_boy' });
+  ok(count(s.players[0].hand, 'copper') === 1, 'キャビンボーイ＝+1カード+1アクション');
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });   // → A のターン開始
+  ok(s.pending && s.pending.type === 'cabin_boy', '次のターンの開始時に二択の窓');
+  const coin = E.reduce(s, { type: 'CABIN_BOY_RESOLVE', choice: 'coin' });
+  ok(coin.turn.coins === 2 && !coin.pending, '「+$2」を選べる');
+  let g = E.reduce(s, { type: 'CABIN_BOY_RESOLVE', choice: 'gain' });
+  ok(count(g.trash, 'cabin_boy') === 1, '「廃棄して持続を獲得」＝場から廃棄');
+  ok(g.pending && g.pending.type === 'cabin_boy_gain', '持続カードの獲得窓（コスト上限なし）');
+  g = E.reduce(g, { type: 'CABIN_BOY_GAIN', card: 'longship' });
+  ok(count(g.players[0].discard, 'longship') === 1, '持続カード（ロングシップ）を獲得');
+}
+
+// --- P3 ソーク ---
+{
+  let games = 0, bad = 0;
+  const SOAKS = [KING_P3A, KING_P3B,
+    ['shaman', 'siren', 'pickaxe'.replace('pickaxe', 'grotto'), 'harbor_village', 'crew', 'wealthy_village', 'taskmaster', 'cabin_boy', 'stowaway', 'moat']];
+  SOAKS.forEach((K3, ki) => {
+    for (let np = 2; np <= 3; np++) {
+      seed = 9600 + ki * 13 + np;
+      const names = []; for (let k = 0; k < np; k++) names.push({ name: 'P' + k, isCpu: true, level: 'normal' });
+      let s = E.createInitialState(names, K3, { startActive: 0 });
+      K3.forEach((id) => s.players.forEach((pl) => { for (let c = 0; c < 2; c++) if ((s.supply[id] | 0) > 0) { s.supply[id] -= 1; pl.deck.push(id); } }));
+      // 財宝系 P3 カードも混ぜる（購入では出にくいので直接配る）
+      ['jewelled_egg', 'crucible', 'gondola', 'tools', 'pendant', 'silver_mine', 'pickaxe', 'figurine', 'rope', 'buried_treasure', 'sack_of_loot'].forEach((id) => {
+        s.players.forEach((pl) => pl.deck.push(id));
+      });
+      const t0 = tally(s);
+      let step = 0, err = false;
+      try {
+        while (!s.gameOver && step++ < 25000) {
+          const a = CPU.decide(s);
+          if (a == null) { console.log('    P3soak ' + ki + '/' + np + ': CPU が null（' + (s.pending && s.pending.type) + '）'); err = true; break; }
+          s = E.reduce(s, a);
+        }
+      } catch (e) { console.log('    P3soak ' + ki + '/' + np + ': 例外 ' + e.message); err = true; }
+      if (!err && !s.gameOver) { console.log('    P3soak ' + ki + '/' + np + ': 未終局 pending=' + (s.pending && s.pending.type)); err = true; }
+      if (!err && !sameTally(t0, tally(s))) { console.log('    P3soak ' + ki + '/' + np + ': 保存則違反'); err = true; }
+      if (err) bad++; else games++;
+    }
+  });
+  ok(bad === 0 && games === 6, 'P3 CPUソーク完走（' + games + '/6・膠着0・例外0・保存則違反0）');
+}
+
 console.log(`\n略奪テスト結果: ${pass} 件成功, ${fail} 件失敗`);
 if (fail > 0) process.exit(1);

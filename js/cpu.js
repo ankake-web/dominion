@@ -417,17 +417,30 @@
     if (has('student')) return 'student';                 // +1アクション（循環＋廃棄。財宝なら好意＋山札上へ）
     if (has('sycophant')) return 'sycophant';             // +1アクション（3枚捨てて+3コイン）
     if (has('voyage')) return 'voyage';                   // +1アクション（追加ターン・使用は3枚まで）
-    // 略奪P2：非ターミナル
+    // 略奪P2/P3：非ターミナル
     if (has('landing_party')) return 'landing_party';     // +2カード+2アクション（次に財宝が最初の1枚なら山札の上へ）
+    if (has('harbor_village')) return 'harbor_village';   // +1カード+2アクション（次のアクションが+$なら+$1）
+    if (has('wealthy_village')) return 'wealthy_village'; // +1カード+2アクション
+    if (has('swamp_shacks')) return 'swamp_shacks';       // +2アクション（場の枚数でドロー）
+    if (has('longship')) return 'longship';               // +2アクション（次ターン+2カード・持続）
+    if (has('cabin_boy')) return 'cabin_boy';             // +1カード+1アクション（次ターンに二択・持続）
+    if (has('taskmaster')) return 'taskmaster';           // +1アクション+$1（$5獲得で繰り返し・持続）
+    if (has('shaman')) return 'shaman';                   // +1アクション+$1（任意の廃棄）
+    if (has('grotto') && dead) return 'grotto';           // +1アクション（不要札を伏せて次ターン引き直し）
     // --- ターミナル（効果の大きい順）---
     // 新プロモ：王子＝良い対象（$4以下の持続/命令以外）が手札にあるときだけ（毎ターン無料再生＝最優先）。
     if (has('prince') && bestPrinceTarget(state, p)) return 'prince';
     if (has('captain')) return 'captain';                 // サプライの$4以下アクションを今と次ターンに使う
-    // 略奪P2：ターミナル
+    // 略奪P2/P3：ターミナル
     if (has('cutthroat')) return 'cutthroat';             // アタック（手札3枚まで）＋誰かの$5以上財宝の獲得で戦利品
+    if (has('siren')) return 'siren';                     // アタック（全員に呪い）＋次ターン手札8枚まで補充
+    if (has('crew')) return 'crew';                       // +3カード（次ターン開始時に山札の上へ）
+    if (has('pilgrim')) return 'pilgrim';                 // +4カード（1枚を山札の上へ戻す）
     if (has('search')) return 'search';                   // +$2＋次にサプライ1山が空くと廃棄して戦利品
     if (has('flagship')) return 'flagship';               // +$2＋次の（命令でない）アクションを再使用
     if (has('secluded_shrine')) return 'secluded_shrine'; // +$1＋次の財宝獲得で最大2枚圧縮
+    if (has('stowaway')) return 'stowaway';               // 次ターン+2カード（持続）
+    if (has('maroon') && p.hand.some((c) => isDead(c))) return 'maroon'; // 不要札を廃棄して種別ぶんドロー
     if (has('avanto')) return 'avanto';                   // +3カード（サウナ連鎖）
     if (has('golem')) return 'golem';                     // 山札のアクション2枚を使う
     if (has('herbalist')) return 'herbalist';             // +1購入+1コイン
@@ -1506,6 +1519,123 @@
       case 'shrine_trash': {
         const junk = p.hand.filter((c) => trashValue(c) < 10).sort((a, b) => trashValue(a) - trashValue(b)).slice(0, 2);
         return { type: 'SHRINE_TRASH', cards: junk };
+      }
+      /* ===== 略奪P3 ===== */
+      // 岩屋＝不要札（keepValue の低い順）を最大4枚 伏せて引き直す。
+      case 'grotto_set': {
+        const junk = p.hand.filter((c) => keepValue(c) < 10).sort((a, b) => keepValue(a) - keepValue(b)).slice(0, 4);
+        return { type: 'GROTTO_SET', cards: junk };
+      }
+      // シャーマン＝不要札があれば1枚廃棄。
+      case 'shaman_trash': {
+        const junk = p.hand.filter((c) => trashValue(c) < 10).sort((a, b) => trashValue(a) - trashValue(b));
+        return { type: 'SHAMAN_TRASH', card: junk.length ? junk[0] : null };
+      }
+      /* シャーマン（常設）＝廃棄置き場から**必ず**1枚獲得（強制）。良い順＝コストが高く呪いでないもの。
+         候補が枯れていたら null（engine 側の終端保証が閉じる）。 */
+      case 'shaman_gain': {
+        const targets = DOM.engine.shamanTargets(state);
+        if (!targets.length) return { type: 'SHAMAN_GAIN', card: null };
+        const best = targets.slice().sort((a, b) => {
+          const ca = isType(a, 'curse') ? -1 : DOM.engine.cardCost(state, a);
+          const cb = isType(b, 'curse') ? -1 : DOM.engine.cardCost(state, b);
+          return cb - ca;
+        })[0];
+        return { type: 'SHAMAN_GAIN', card: best };
+      }
+      // セイレーン＝堀/盾があれば公開、なければ呪いを受ける。
+      case 'siren':
+        if (immuneReveal(p)) return immuneReveal(p);
+        return { type: 'SIREN_REACT' };
+      /* セイレーンの獲得時＝手札に不要なアクション（trashValue が低い）があればそれを廃棄してセイレーンを守る。
+         無ければ最も価値の低いアクションを廃棄（セイレーンの方が強いことが多い）。アクションが無いときは
+         engine 側が窓を開かない（自動で自己廃棄）。 */
+      case 'siren_gain': {
+        const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => keepValue(a) - keepValue(b));
+        return { type: 'SIREN_GAIN', card: acts.length ? acts[0] : null };
+      }
+      // 密航者＝持続の獲得に反応して手札から使う（次ターン+2カード＝ほぼ常に得）。
+      case 'stowaway_react':
+        return { type: 'STOWAWAY_REACT', play: true };
+      // 置き去り＝最も不要な札を廃棄（強制）。
+      case 'maroon_trash': {
+        const order = p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b));
+        return { type: 'MAROON_TRASH', card: order[0] };
+      }
+      // 坩堝＝不要札のうちコストが高いものを廃棄（+$が大きい）。不要札が無ければ最も価値の低い札。
+      case 'crucible_trash': {
+        const junk = p.hand.filter((c) => trashValue(c) < 10).sort((a, b) => DOM.engine.cardCost(state, b) - DOM.engine.cardCost(state, a));
+        const pick = junk.length ? junk[0] : p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0];
+        return { type: 'CRUCIBLE_TRASH', card: pick };
+      }
+      // 巡礼者＝最も価値の低い札を山札の上へ（中庭と同じ発想）。
+      case 'pilgrim_put': {
+        const order = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b));
+        return { type: 'PILGRIM_PUT', card: order[0] };
+      }
+      // 小像＝購入フェイズのアクションは死に札＝最も価値の低いアクションを捨てて +1購入 +$1。
+      case 'figurine_discard': {
+        const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => keepValue(a) - keepValue(b));
+        return { type: 'FIGURINE_DISCARD', card: acts.length ? acts[0] : null };
+      }
+      // ゴンドラ＝基本は「今」もらう。
+      case 'gondola_choose':
+        return { type: 'GONDOLA_CHOOSE', now: true };
+      // ゴンドラの獲得時＝一番良いアクションを使う（無ければ使わない）。
+      case 'gondola_play': {
+        const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => keepValue(b) - keepValue(a));
+        return { type: 'GONDOLA_PLAY', card: acts.length ? acts[0] : null };
+      }
+      // 工具＝場のカードのうち獲得できる最も高コストのものを取る（獲得できないものしか無ければ先頭＝空振り）。
+      case 'tools_gain': {
+        const targets = DOM.engine.toolsTargets(state);
+        const gainable = targets.filter((c) => DOM.engine.gainableBase(state, c) || DOM.engine.mixedPileWithTop(state, c));
+        const pool = gainable.length ? gainable : targets;
+        const best = pool.slice().sort((a, b) => DOM.engine.cardCost(state, b) - DOM.engine.cardCost(state, a))[0];
+        return { type: 'TOOLS_GAIN', card: best };
+      }
+      // つるはし＝コスト3以上の不要札があればそれ（戦利品が付く）。無ければ最も不要な札（強制）。
+      case 'pickaxe_trash': {
+        const junk = p.hand.filter((c) => trashValue(c) < 10);
+        const rich = junk.filter((c) => DOM.engine.cardCost(state, c) >= 3);
+        const pick = rich[0] || (junk.length ? junk.sort((a, b) => trashValue(a) - trashValue(b))[0]
+          : p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0]);
+        return { type: 'PICKAXE_TRASH', card: pick };
+      }
+      // 銀山＝これより安い財宝のうち一番良いものを手札へ（銀貨があれば銀貨）。
+      case 'silver_mine_gain': {
+        const ref = DOM.engine.cardCost(state, 'silver_mine');
+        let best = null, bc = -1;
+        Object.keys(state.supply).forEach((id) => {
+          if (!DOM.engine.gainableBase(state, id)) return;
+          if (!isTreasure(id)) return;
+          const c = DOM.engine.cardCost(state, id);
+          if (c >= ref) return;
+          if (c > bc) { bc = c; best = id; }
+        });
+        return { type: 'SILVER_MINE_GAIN', card: best };
+      }
+      // キャビンボーイ＝コスト4以上の持続が取れるなら廃棄して獲得、そうでなければ +$2。
+      case 'cabin_boy': {
+        let good = false;
+        Object.keys(state.supply).forEach((id) => {
+          if (DOM.engine.gainableBase(state, id) && DOM.isType(id, 'duration') && DOM.engine.cardCost(state, id) >= 4) good = true;
+        });
+        return { type: 'CABIN_BOY_RESOLVE', choice: good ? 'gain' : 'coin' };
+      }
+      case 'cabin_boy_gain': {
+        let best = null, bc = -1;
+        Object.keys(state.supply).forEach((id) => {
+          if (!DOM.engine.gainableBase(state, id) || !DOM.isType(id, 'duration')) return;
+          const c = DOM.engine.cardCost(state, id);
+          if (c > bc) { bc = c; best = id; }
+        });
+        return { type: 'CABIN_BOY_GAIN', card: best };
+      }
+      // 縄＝不要札があれば1枚廃棄。
+      case 'rope_trash': {
+        const junk = p.hand.filter((c) => trashValue(c) < 10).sort((a, b) => trashValue(a) - trashValue(b));
+        return { type: 'ROPE_TRASH', card: junk.length ? junk[0] : null };
       }
 
       /* ===== 拡張: 陰謀 ===== */
@@ -3644,8 +3774,17 @@
     //     engine が出さない札を PLAY_ALL_TREASURES で出そうとすると**状態が変わらず無限ループ**になるので、
     //     CPU は 1枚ずつの PLAY_TREASURE で出す（+3コインの価値はあるので出す判断自体は同じ）。
     const isTre = (c) => (DOM.engine.isTreasureFor ? DOM.engine.isTreasureFor(state, c) : isTreasure(c));
-    if (canHandPlay && !t.treasuresLocked && subj.hand.some((c) => isTre(c) && c !== 'cursed_gold')) return { type: 'PLAY_ALL_TREASURES' };
-    if (canHandPlay && !t.treasuresLocked && subj.hand.includes('cursed_gold')) return { type: 'PLAY_TREASURE', card: 'cursed_gold' };
+    /* 略奪：坩堝/つるはし も PLAY_ALL_TREASURES の対象外（出すと手札1枚の廃棄が**強制**）＝呪われた金貨と同じく
+       1枚ずつ PLAY_TREASURE で出す（engine の PLAY_ALL_EXCLUDE と同じ集合を見ないと無限ループになる）。 */
+    const PLAY_ALL_SKIP = ['cursed_gold', 'crucible', 'pickaxe'];
+    if (canHandPlay && !t.treasuresLocked && subj.hand.some((c) => isTre(c) && PLAY_ALL_SKIP.indexOf(c) < 0)) return { type: 'PLAY_ALL_TREASURES' };
+    if (canHandPlay && !t.treasuresLocked) {
+      // 除外財宝しか残っていない＝価値があるものだけ1枚ずつ出す（坩堝/つるはしは廃棄したい不要札があるときだけ）。
+      if (subj.hand.includes('cursed_gold')) return { type: 'PLAY_TREASURE', card: 'cursed_gold' };
+      const junkInHand = subj.hand.some((c) => trashValue(c) < 10);
+      if (subj.hand.includes('crucible') && junkInHand) return { type: 'PLAY_TREASURE', card: 'crucible' };
+      if (subj.hand.includes('pickaxe') && junkInHand) return { type: 'PLAY_TREASURE', card: 'pickaxe' };
+    }
     // 帝国：負債があるとカードを購入できない。財宝を出し切った後、コインで可能な限り返済する。
     //   返済しきれない（コイン0）なら購入不可＝END_TURN（負債は次ターンに持ち越し。財宝を出せば返せる＝非ループ）。
     if ((subj.debt || 0) > 0) {
