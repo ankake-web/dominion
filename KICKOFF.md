@@ -11,7 +11,8 @@
 3. **`docs/research/plunder_rules.md` の冒頭「実装前に必読」20項目**（＋決定 D1〜D5）と `docs/adding-cards.md` を読む。
 
 ## いまどこ
-**15拡張＋プロモ＝全676枚が実プレイ可能。略奪(Plunder)は段階0（研究）＋段階1（カタログ85種＋webp）まで完了。**
+**15拡張＋プロモ＝全676枚が実プレイ可能。略奪(Plunder)は段階0（研究）＋段階1（カタログ85種＋webp）まで完了・push済**
+（`sw.js` **v72**・本番反映を機械照合済み＝Pages の主要5ファイルが sha1 一致／Render も実 ws で確認）。
 `DOM.CARDS` 560／`DOM.LANDSCAPES` 201＝**計761枚**だが、**略奪は `CARD_SETS` 未参照＝まだ実プレイには出ない**
 （`DOM.STAGE1_POOLS = ['plunderexp','loot']` で闇市場にも出ない）。**略奪の絵は未回収＝枠＋文字だけ。**
 

@@ -104,6 +104,18 @@ PROGRESS §0-3 が「**将来 Plunder/Loot を入れる時に再考**」と先�
   （＝テストは表示名を検査していない＝本番挙動の変化はカード文・ログ・群見出しの表示だけ）。
 - `verify:e2e` 9/9（**webp 505/0**）。
 
+### ✅ push＝完了（2026-08-15・`ea0c091..9d13d32`／8コミット）＝本番反映を機械照合
+- **GitHub Pages**（Deploy ワークフロー success）：`sw.js` **v72**／
+  `js/cards.js`・`js/engine.js`・`js/cpu.js`・`js/ui.js`・`css/style.css` が**ローカルと sha1 完全一致**（改行を正規化）／
+  webp 10枚を抜き取りで**バイト一致**（`journey` / `spoils` / `marauder` / `bandit_camp` / `cage` / `shaman` /
+  `sword` / `reckless` / `kings_cache` / `amphora`）／本番 `cards.js` に `plunderexp`・
+  `STAGE1_POOLS = ['plunderexp', 'loot']`・`kind: 'trait'`・`name: '略奪品'`・旅行のエラッタ文面を確認。
+- **Render（オンライン）**：`GET /status` = `{"persist":true,"rooms":0}`。実 ws（`/ws`＋Origin 必須・`t:` キー）で
+  `allies` 対戦を開始し、**王国10種が正常に立つ**（＝**85種を足した新しい `cards.js` をサーバが読んでも壊れていない**）
+  ＋**略奪のカードが王国に出ていない**（`CARD_SETS` 未参照）ことを確認。
+- **本番の挙動が変わったのは**：`spoils`→「略奪品」の表示（カード文・ログ・カード一覧の群見出し）／
+  カード一覧に略奪85種が並ぶ（**実プレイには出ない**）。
+
 ### 【次にやること】段階1（カタログと画像）
 1. **要ユーザー確認4件を先に決める**（とくに `journey` の版と日本語文面の版）。
 2. `DOM.CARDS` +55／`DOM.LANDSCAPES` +30／孤立プール／`GAIN_ORDER`／カード一覧の群。
