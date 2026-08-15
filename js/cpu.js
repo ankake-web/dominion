@@ -1458,6 +1458,23 @@
       // ハンマー＝コスト4以下を**強制**獲得（勝利点を避けて最善を取る。候補ゼロなら engine 側が窓を開かない）。
       case 'hammer_gain':
         return { type: 'HAMMER_GAIN', card: bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) };
+      // 六分儀＝上5枚のうち不要札を捨て、良い札を山札の上に戻す（地図職人と同じ評価）。
+      case 'sextant': {
+        const look = (pd.cards || []).slice();
+        const disc = look.filter((c) => keepValue(c) < 10);
+        const top = look.filter((c) => keepValue(c) >= 10).sort((a, b) => keepValue(b) - keepValue(a));
+        return { type: 'SEXTANT_RESOLVE', discard: disc, top };
+      }
+      // パズルボックス＝良い札を1枚だけ次のターンに持ち越す（不要札しかなければ置かない）。
+      case 'puzzle_box': {
+        const best = p.hand.slice().sort((a, b) => keepValue(b) - keepValue(a))[0];
+        return { type: 'PUZZLE_BOX_SET', card: (best != null && keepValue(best) >= 10) ? best : null };
+      }
+      // 杖＝手札のアクション1枚を購入フェイズに使用してよい（使えるものがあれば使う）。
+      case 'staff_play': {
+        const acts = p.hand.filter((c) => DOM.isType(c, 'action'));
+        return { type: 'STAFF_PLAY', card: acts.length ? acts.sort((a, b) => keepValue(b) - keepValue(a))[0] : null };
+      }
 
       /* ===== 拡張: 陰謀 ===== */
       case 'courtyard': {

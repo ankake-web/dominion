@@ -32,7 +32,7 @@ function mk(kingdom, opts, names) {
 // 保存則の tally（`test/invariants.test.js` と同じ集合＋戦利品の山）。
 const ZONES = ['deck', 'hand', 'discard', 'inPlay', 'durationCards', 'setAside', 'islandMat', 'nativeVillageMat',
   'princes', 'tavern', 'inherited', 'cargo', 'exile', 'eventSetAside', 'ghostSetAside', 'cryptSetAside',
-  'contractSetAside'];
+  'contractSetAside', 'puzzleBox'];
 const MIX = E.MIXED_PILE_KEYS;
 function tally(s) {
   const t = {}; const a = (id) => { if (id != null) t[id] = (t[id] || 0) + 1; };
@@ -258,6 +258,128 @@ function fresh(kingdom, names) {
   const s4 = playT(s3, 0, 'shield');
   ok(s4.turn.coins === 3, '盾：自分のターンには +$3');
   ok(s4.turn.buys >= 2, '盾：+1購入');
+}
+
+console.log('\n=== P1b-2: 戦利品の効果（六分儀／パズルボックス／勲章／杖） ===');
+
+// --- 六分儀＝上5枚を見て任意枚数を捨て、残りを任意順で山札の上へ ---
+{
+  const s = fresh();
+  s.players[0].deck = ['gold', 'estate', 'silver', 'curse', 'copper', 'province'];
+  /* ⚠ 基準点の取り方に注意（2点）：
+     (1) 見ている5枚は `pending.cards` に抱えられ**どのゾーンにも無い**（既存の地図職人と同じ設計。
+         invariants も `if (s.pending) continue;` で対話中は検査しない）＝**解決後**と比べる。
+     (2) `playT` は手札にカードを1枚生やすので、**生やした後**に基準を取る。 */
+  s.turn.active = 0; s.turn.phase = 'buy'; s.players[0].hand.push('sextant');
+  const t0 = tally(s);
+  let s1 = E.reduce(s, { type: 'PLAY_TREASURE', card: 'sextant' });
+  ok(s1.turn.coins === 3 && s1.turn.buys >= 2, '六分儀：+$3 +1購入');
+  ok(s1.pending && s1.pending.type === 'sextant' && s1.pending.cards.length === 5, '上5枚を見る（強制）');
+  s1 = E.reduce(s1, { type: 'SEXTANT_RESOLVE', discard: ['estate', 'curse'], top: ['gold', 'silver', 'copper'] });
+  ok(!s1.pending, '窓が閉じる');
+  ok(count(s1.players[0].discard, 'estate') === 1 && count(s1.players[0].discard, 'curse') === 1, '選んだ2枚を捨てた');
+  ok(s1.players[0].deck[0] === 'gold' && s1.players[0].deck[1] === 'silver' && s1.players[0].deck[2] === 'copper',
+    '残りを指定した順番で山札の上に戻す（top[0] が一番上）');
+  ok(s1.players[0].deck[3] === 'province', '見なかった6枚目はその下のまま');
+  ok(sameTally(t0, tally(s1)), '保存則：総数は不変');
+  // 5枚全部捨てる／全部戻す
+  const s2 = fresh(); s2.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper'];
+  let s3 = playT(s2, 0, 'sextant');
+  s3 = E.reduce(s3, { type: 'SEXTANT_RESOLVE', discard: ['copper', 'copper', 'copper', 'copper', 'copper'], top: [] });
+  ok(!s3.pending && s3.players[0].discard.filter((c) => c === 'copper').length === 5, '5枚すべて捨てられる');
+  // 不正な入力（見ていないカード）は拒否して pending 据え置き
+  const s4 = fresh(); s4.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper'];
+  let s5 = playT(s4, 0, 'sextant');
+  const s6 = E.reduce(s5, { type: 'SEXTANT_RESOLVE', discard: ['gold'], top: [] });
+  ok(s6.pending && s6.pending.type === 'sextant', '見ていないカードを送ると拒否（状態不変）');
+}
+// --- パズルボックス＝脇に伏せ、ターン終了時（先引きの後）に手札へ ---
+{
+  const s = fresh();
+  s.players[0].hand = ['gold'];
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  let s1 = playT(s, 0, 'puzzle_box');
+  ok(s1.turn.coins === 3 && s1.turn.buys >= 2, 'パズルボックス：+$3 +1購入');
+  ok(s1.pending && s1.pending.type === 'puzzle_box', '脇に置く窓が開く');
+  const t0 = tally(s1);
+  s1 = E.reduce(s1, { type: 'PUZZLE_BOX_SET', card: 'gold' });
+  ok(!s1.pending && count(s1.players[0].puzzleBox, 'gold') === 1, '手札1枚を脇に伏せた');
+  ok(sameTally(t0, tally(s1)), '保存則：脇に置いても総数は不変');
+  // マスク＝所有者以外には裏
+  const m = E.maskStateFor(s1, 1);
+  ok(m.players[0].puzzleBox.every((c) => c === 'back'), 'マスク：脇札は相手からは裏向き');
+  ok(E.maskStateFor(s1, 0).players[0].puzzleBox[0] === 'gold', 'マスク：本人からは見える');
+  // ターン終了時（先引きの後）に手札へ
+  const s2 = E.reduce(s1, { type: 'END_TURN' });
+  ok((s2.players[0].puzzleBox || []).length === 0, '脇札が空になった');
+  ok(count(s2.players[0].hand, 'gold') === 1, '**先引きした手札に加わっている**');
+  ok(s2.players[0].hand.length === 6, '先引き5枚＋脇札1枚＝6枚');
+  ok(count(s2.players[0].discard, 'puzzle_box') === 1, 'パズルボックス自身は当ターンに普通に捨てられる（持続ではない）');
+  // 置かないで閉じられる
+  const s3 = fresh(); s3.players[0].hand = ['gold'];
+  let s4 = playT(s3, 0, 'puzzle_box');
+  s4 = E.reduce(s4, { type: 'PUZZLE_BOX_SET', card: null });
+  ok(!s4.pending && (s4.players[0].puzzleBox || []).length === 0, '「置かない」で閉じられる');
+  // 手札0枚なら窓を開かない
+  const s5 = fresh();
+  ok(!playT(s5, 0, 'puzzle_box').pending, '手札0枚なら窓を開かない');
+}
+// --- 勲章＝このターン、獲得したカードすべてを山札の上に置いてよい ---
+{
+  const s = fresh();
+  let s1 = playT(s, 0, 'insignia');
+  ok(s1.turn.coins === 3, '勲章：+$3');
+  ok(s1.turn.insignia === 1, 'このターン用のカウンタが立つ');
+  // 獲得すると窓が開く
+  s1.turn.coins = 6; s1.turn.buys = 2;
+  let s2 = E.reduce(s1, { type: 'BUY', card: 'silver' });
+  ok(s2.pending && s2.pending.type === 'travelling_fair' && s2.pending.source === 'insignia',
+    '獲得のたびに「山札の上に置く？」の窓が開く');
+  s2 = E.reduce(s2, { type: 'TRAVELLING_FAIR_TOPDECK', topdeck: true });
+  ok(!s2.pending && s2.players[0].deck[0] === 'silver', '山札の上に置ける');
+  // 2枚目も開く（**毎回**）
+  let s3 = E.reduce(s2, { type: 'BUY', card: 'copper' });
+  ok(s3.pending && s3.pending.type === 'travelling_fair' && s3.pending.source === 'insignia', '2枚目の獲得でも開く');
+  s3 = E.reduce(s3, { type: 'TRAVELLING_FAIR_TOPDECK', topdeck: false });
+  ok(!s3.pending && count(s3.players[0].discard, 'copper') === 1, '「そのまま」も選べる');
+  // 勲章を使っていないターンでは開かない
+  const s4 = fresh(); s4.turn.coins = 3; s4.turn.buys = 1;
+  const s5 = E.reduce(s4, { type: 'BUY', card: 'silver' });
+  ok(!s5.pending, '勲章を使っていなければ窓は開かない');
+}
+// --- 杖＝購入フェイズに手札のアクション1枚を使用 ---
+{
+  const s = fresh();
+  s.players[0].hand = ['village'];
+  s.players[0].deck = ['gold', 'gold'];
+  let s1 = playT(s, 0, 'staff');
+  ok(s1.turn.coins === 3 && s1.turn.buys >= 2, '杖：+$3 +1購入');
+  ok(s1.pending && s1.pending.type === 'staff_play', 'アクションを使う窓が開く');
+  const a0 = s1.turn.actions;
+  s1 = E.reduce(s1, { type: 'STAFF_PLAY', card: 'village' });
+  ok(!s1.pending, '窓が閉じる');
+  ok(count(s1.players[0].inPlay, 'village') === 1, '選んだアクションが場に出た');
+  ok(s1.players[0].hand.length === 1 && s1.players[0].hand[0] === 'gold', '村の +1カードが働いた');
+  ok(s1.turn.phase === 'buy', '**購入フェイズのまま**（フェイズを書き換えない）');
+  ok(s1.turn.actions === a0 + 2, 'アクション権は消費せず、村の +2アクションだけ増える');
+  // 使わないで閉じられる
+  const s2 = fresh(); s2.players[0].hand = ['village'];
+  let s3 = playT(s2, 0, 'staff');
+  s3 = E.reduce(s3, { type: 'STAFF_PLAY', card: null });
+  ok(!s3.pending && count(s3.players[0].inPlay, 'village') === 0, '「使わない」で閉じられる');
+  // 手札にアクションが無ければ窓を開かない
+  const s4 = fresh(); s4.players[0].hand = ['copper'];
+  ok(!playT(s4, 0, 'staff').pending, '手札にアクションが無ければ窓を開かない');
+  // 杖自身は当ターンのクリンナップで捨てる（玉座の間と逆＝持続を使わせても場に残らない）
+  const s5 = fresh();
+  s5.players[0].hand = ['caravan'];
+  s5.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  let s6 = playT(s5, 0, 'staff');
+  s6 = E.reduce(s6, { type: 'STAFF_PLAY', card: 'caravan' });
+  const s7 = E.reduce(s6, { type: 'END_TURN' });
+  ok(count(s7.players[0].durationCards, 'staff') === 0 && count(s7.players[0].discard, 'staff') === 1,
+    '**杖は当ターンに捨てられる**（持続を使わせても場に残らない＝玉座の間と逆）');
+  ok(count(s7.players[0].durationCards, 'caravan') === 1, '使わせた隊商のほうは持続として場に残る');
 }
 
 console.log(`\n略奪テスト結果: ${pass} 件成功, ${fail} 件失敗`);

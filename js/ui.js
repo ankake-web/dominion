@@ -1901,6 +1901,17 @@
     // ハンマー＝コスト4以下を**強制**獲得（engine は候補ゼロなら窓を開かない＝辞退ボタンは保険）。
     if (pd.type === 'hammer_gain') return modalGainSupply(state, 'ハンマー — 獲得', 'コスト 4 以下のカード1枚を獲得します（強制）。',
       (id) => canUpTo(state, id, 4), (id) => dispatch({ type: 'HAMMER_GAIN', card: id }), () => dispatch({ type: 'HAMMER_GAIN', card: null }));
+    // 六分儀＝上5枚から捨てる札をタップで選ぶ（残りは公開順のまま山札の上へ）＝地図職人と同じ操作。
+    if (pd.type === 'sextant') return modalSextant(pd);
+    // パズルボックス＝手札1枚を裏向きに脇へ置いてよい（ターン終了時に手札へ戻る）。
+    if (pd.type === 'puzzle_box') return modalSingleHand(p, 'パズルボックス — 脇に置く', '手札から1枚を裏向きに脇へ置けます（ターン終了時に手札に加わります）。',
+      () => true, (id) => dispatch({ type: 'PUZZLE_BOX_SET', card: id }),
+      { label: '置かない', on: () => dispatch({ type: 'PUZZLE_BOX_SET', card: null }) }, '脇に置く');
+    // 杖＝手札のアクション1枚を（購入フェイズのまま）使用してよい。
+    if (pd.type === 'staff_play') return modalSingleHand(p, '杖 — アクションを使う', '手札からアクションカード1枚を使用できます（アクション権は消費しません）。',
+      (id) => DOM.CARDS[id] && DOM.CARDS[id].types.includes('action'),
+      (id) => dispatch({ type: 'STAFF_PLAY', card: id }),
+      { label: '使わない', on: () => dispatch({ type: 'STAFF_PLAY', card: null }) }, '使う');
 
     /* ===== 拡張: 陰謀 ===== */
     if (pd.type === 'courtyard') return modalSingleHand(p, '中庭 — 山札の上に置く', '手札から1枚を選び、山札の一番上に置きます（次のターンに引きます）。',
@@ -3270,7 +3281,7 @@
       (card) => dispatch({ type: 'PLAN_TRASH', card }),
       { label: '廃棄しない', on: () => dispatch({ type: 'PLAN_TRASH', card: null }) }, '廃棄する');
     // 同盟：道化棒の4つ目の選択肢も同じ窓を使う（`source` で表示だけ分ける）。
-    if (pd.type === 'travelling_fair') return modalOptions((pd.source === 'bauble' ? '道化棒' : '移動遊園地') + ' — 山札の上に置く？',
+    if (pd.type === 'travelling_fair') return modalOptions((pd.source === 'bauble' ? '道化棒' : pd.source === 'insignia' ? '勲章' : '移動遊園地') + ' — 山札の上に置く？',
       '獲得した「' + (DOM.CARDS[pd.card] ? DOM.CARDS[pd.card].name : pd.card) + '」を山札の上に置けます。', [
       { label: '山札の上に置く', cls: 'btn-primary', on: () => dispatch({ type: 'TRAVELLING_FAIR_TOPDECK', topdeck: true }) },
       { label: 'そのまま（捨て札）', cls: 'btn-ghost', on: () => dispatch({ type: 'TRAVELLING_FAIR_TOPDECK', topdeck: false }) },
@@ -3902,6 +3913,19 @@
       '確定（' + UI.selection.length + '枚 捨て、残り ' + (cards.length - UI.selection.length) + '枚 を山札の上へ）');
     return modalShell('地図職人 — 山札の上4枚', 'タップして捨てるカードを選びます（選ばなかったカードは公開順のまま山札の上に戻ります）。', chips, footer);
   }
+  // 略奪：六分儀＝山札の上5枚から捨てる札をタップで選ぶ（残りは公開順のまま山札の上へ）＝地図職人と同じ操作。
+  function modalSextant(pd) {
+    pruneSelection((pd.cards || []).length);
+    const cards = pd.cards || [];
+    const chips = cards.map((id, idx) =>
+      cardEl(id, { size: 'sm', extra: UI.selection.includes(idx) ? 'selected' : 'selectable',
+        badge: UI.selection.includes(idx) ? '捨' : null,
+        onClick: () => { const i = UI.selection.indexOf(idx); if (i >= 0) UI.selection.splice(i, 1); else UI.selection.push(idx); render(); } }));
+    const footer = h('button', { class: 'btn btn-primary btn-block',
+      onclick: () => { const sel = takeSelection(); const discard = sel.map((i) => cards[i]); const top = cards.filter((c, i) => sel.indexOf(i) < 0); dispatch({ type: 'SEXTANT_RESOLVE', discard, top }); } },
+      '確定（' + UI.selection.length + '枚 捨て、残り ' + (cards.length - UI.selection.length) + '枚 を山札の上へ）');
+    return modalShell('六分儀 — 山札の上5枚', 'タップして捨てるカードを選びます（選ばなかったカードは公開順のまま山札の上に戻ります）。', chips, footer);
+  }
   // 異郷：策謀＝場のアクション（非持続）を最大 max 枚、山札の上に置く（タップで選択・0枚でもよい）。
   function modalSchemeCleanup(p, max) {
     pruneSelection(p.inPlay.length);
@@ -3946,6 +3970,9 @@
     const remain = need - UI.selection.length;
     const footer = h('div', null,
       hasMoat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'MOAT_REVEAL' }) }, '🛡 堀を公開して無効化') : null,
+      // 略奪：盾（戦利品）＝堀と同型の免疫（公開しても手札に残る）。**embedded 型のアタック用モーダルは
+      //   `reactOptions` を通らないので、ここに手で足さないと人間が盾を使えない。**
+      p.hand.includes('shield') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'SHIELD_REVEAL' }) }, '🛡 盾を公開して無効化（手札に残る）') : null,
       p.hand.includes('horse_traders') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'HORSE_TRADERS_REACT' }) }, '🐴 馬商人を脇に置く（次の手番に +1カードで戻る／攻撃は受ける）') : null,
       p.hand.includes('beggar') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'BEGGAR_REACT' }) }, '🥺 物乞いを捨てて銀貨2枚を獲得（1枚は山札の上／攻撃は受ける）') : null,
       p.hand.includes('caravan_guard') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'CARAVAN_GUARD_REACT' }) }, '🛡 隊商の護衛を先にプレイ（+1カード／次手番+$1／攻撃は受ける）') : null,
@@ -4116,6 +4143,9 @@
     const remain = need - UI.selection.length;
     const buttons = h('div', null,
       hasMoat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'MOAT_REVEAL' }) }, '🛡 堀を公開して無効化') : null,
+      // 略奪：盾（戦利品）＝堀と同型の免疫（公開しても手札に残る）。**embedded 型のアタック用モーダルは
+      //   `reactOptions` を通らないので、ここに手で足さないと人間が盾を使えない。**
+      p.hand.includes('shield') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'SHIELD_REVEAL' }) }, '🛡 盾を公開して無効化（手札に残る）') : null,
       hasSecret ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'SECRET_CHAMBER_REVEAL' }) }, '🔮 秘密の小部屋を公開（+2引いて2枚戻す）') : null,
       hasDiplomat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'DIPLOMAT_REVEAL' }) }, '🤝 外交官を公開（+2引いて3枚捨てる）') : null,
       p.hand.includes('horse_traders') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'HORSE_TRADERS_REACT' }) }, '🐴 馬商人を脇に置く（次の手番に +1カードで戻る／攻撃は受ける）') : null,
@@ -4339,6 +4369,9 @@
     const remain = need - UI.selection.length;
     const footer = h('div', null,
       hasMoat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'MOAT_REVEAL' }) }, '🛡 堀を公開して無効化') : null,
+      // 略奪：盾（戦利品）＝堀と同型の免疫（公開しても手札に残る）。**embedded 型のアタック用モーダルは
+      //   `reactOptions` を通らないので、ここに手で足さないと人間が盾を使えない。**
+      p.hand.includes('shield') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'SHIELD_REVEAL' }) }, '🛡 盾を公開して無効化（手札に残る）') : null,
       hasSecret ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'SECRET_CHAMBER_REVEAL' }) }, '🔮 秘密の小部屋を公開（+2引いて2枚戻す）') : null,
       hasDiplomat ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'DIPLOMAT_REVEAL' }) }, '🤝 外交官を公開（+2引いて3枚捨てる）') : null,
       p.hand.includes('horse_traders') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'HORSE_TRADERS_REACT' }) }, '🐴 馬商人を脇に置く（次の手番に +1カードで戻る／攻撃は受ける）') : null,

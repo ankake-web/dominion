@@ -65,6 +65,62 @@ console.log('=== P1a: 戦利品(Loot)の盤面表示 ===');
   ok(doc.body.textContent.indexOf('戦利品') < 0, '戦利品を配る札が無ければ盤面に行を出さない');
 }
 
+console.log('\n=== P1b: 戦利品の pending にモーダルと押せる選択肢があるか（人間が詰まないこと） ===');
+function $(s) { return doc.querySelector(s); }
+function $all(s) { return Array.from(doc.querySelectorAll(s)); }
+function actionable() {
+  if (runtimeError || !$('.modal')) return false;
+  const btns = $all('.modal button').filter((b) => !b.disabled);
+  const chips = $all('.modal .chip-grid .card, .modal .chip-grid .pick-supply');
+  return btns.length + chips.length > 0;
+}
+function mkP(kingdom) {
+  const s = E.createInitialState(['あなた', '相手'], (kingdom || ['jewelled_egg']).concat(FILLER).slice(0, 10), { startActive: 0 });
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.turn.phase = 'buy';
+  return s;
+}
+// 各 pending を直接立てて、モーダルが出て押せる選択肢があるかを見る
+const CASES = [
+  ['prize_goat', (s) => { s.players[0].hand = ['estate']; s.pending = { type: 'prize_goat', player: 0 }; }],
+  ['hammer_gain', (s) => { s.pending = { type: 'hammer_gain', player: 0 }; }],
+  ['sextant', (s) => { s.pending = { type: 'sextant', player: 0, cards: ['copper', 'estate', 'silver', 'gold', 'curse'] }; }],
+  ['puzzle_box', (s) => { s.players[0].hand = ['gold']; s.pending = { type: 'puzzle_box', player: 0 }; }],
+  ['staff_play', (s) => { s.players[0].hand = ['village']; s.pending = { type: 'staff_play', player: 0 }; }],
+  ['travelling_fair(勲章)', (s) => { s.pending = { type: 'travelling_fair', player: 0, card: 'silver', dest: 'discard', source: 'insignia' }; }],
+  ['discard_down(剣)', (s) => { s.players[0].hand = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper']; s.pending = { type: 'discard_down', player: 0, source: 1, down: 4, queue: [] }; }],
+  ['discard_down(剣)＋盾', (s) => { s.players[0].hand = ['shield', 'copper', 'copper', 'copper', 'copper', 'copper']; s.pending = { type: 'discard_down', player: 0, source: 1, down: 4, queue: [] }; }],
+];
+CASES.forEach(([name, setup]) => {
+  const s = mkP(); setup(s); showAs(s, 0);
+  ok(actionable(), name + '：モーダルが出て押せる選択肢がある' + (runtimeError ? '（例外: ' + runtimeError + '）' : ''));
+});
+// 盾のボタンが実際に出ていること
+{
+  const s = mkP();
+  s.players[0].hand = ['shield', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s.pending = { type: 'discard_down', player: 0, source: 1, down: 4, queue: [] };
+  showAs(s, 0);
+  ok(doc.body.textContent.indexOf('盾を公開') >= 0, '盾を持っていると「盾を公開して無効化」ボタンが出る');
+}
+// 勲章のラベルが「勲章」になっている（移動遊園地と取り違えない）
+{
+  const s = mkP();
+  s.pending = { type: 'travelling_fair', player: 0, card: 'silver', dest: 'discard', source: 'insignia' };
+  showAs(s, 0);
+  ok(doc.body.textContent.indexOf('勲章') >= 0, '勲章の窓は「勲章」と表示される');
+}
+// CPU が全 pending で null を返さない（オンラインで reduce(state,null) が落ちるのを防ぐ）
+{
+  const CPUd = DOM.cpu;
+  CASES.forEach(([name, setup]) => {
+    const s = mkP(); setup(s);
+    let a = null, err = null;
+    try { a = CPUd.decidePending ? CPUd.decidePending(s) : CPUd.decide(s); } catch (e) { err = e.message; }
+    ok(a && a.type, 'CPU：' + name + ' で有効な action を返す' + (err ? '（例外: ' + err + '）' : ''));
+  });
+}
+
 console.log('\n========================================');
 console.log(`略奪UIテスト結果: ${pass} 件成功, ${fail} 件失敗`);
 console.log('========================================');

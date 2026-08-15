@@ -807,6 +807,40 @@
     }
     // 盾＝$3＋1購入（リアクションは手札から公開する側＝`SHIELD_REVEAL`。使用時の効果はこれだけ）。
     if (card === 'shield') { t.buys += 1; }
+    /* 六分儀＝$3＋1購入＋山札の上5枚を見て、好きな枚数を捨て、残りを好きな順番で山札の上に戻す。
+       「5枚見る」は**強制**（捨てる枚数だけが任意）。地図職人と同型だが5枚。
+       ⚠ 解決中に山札の上へカードが載ることがある（捨てた坑道→金貨→山札の上）。公式は
+          「**後から戻す残りが上**」＝reducer が「捨てる→捨て札トリガー→残りを unshift」の順にすることで満たされる。 */
+    if (card === 'sextant') {
+      t.buys += 1;
+      const look = [];
+      for (let i = 0; i < 5; i++) {
+        if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
+        if (p.deck.length === 0) break;
+        look.push(p.deck.shift());
+      }
+      if (look.length) state.pending = { type: 'sextant', player: pIndex, cards: look };
+    }
+    /* パズルボックス＝$3＋1購入＋手札1枚を**裏向きに**脇へ置いてよい。ターン終了時に手札へ加える。
+       ⚠ **持続ではない**（公式FAQ逐語＝`the Puzzle Box itself is still discarded normally that turn.`）。
+       ⚠ 手札へ戻すのは**次の手札を先引きした後**（`The set-aside card goes into your hand after drawing for the next turn.`）。 */
+    if (card === 'puzzle_box') {
+      t.buys += 1;
+      if (p.hand.length > 0) state.pending = { type: 'puzzle_box', player: pIndex };
+    }
+    /* 勲章＝$3＋**このターン**、カードを獲得したとき、それを山札の上に置いてよい。
+       公式FAQ逐語＝`If you gain multiple cards, this applies to each of them`＝**毎回開く**ので
+       `t.insignia`（このターンの使用回数）で持ち、窓は `onGainQueue` 側に積む（望楼の else-if 連鎖に足さない）。
+       ※移動遊園地/追跡者と**同じ窓**なので `travelling_fair` の pending をそのまま使う（4点セットを共有）。 */
+    if (card === 'insignia') { t.insignia = (t.insignia || 0) + 1; }
+    /* 杖＝$3＋1購入＋手札からアクション1枚を使用してよい（**任意**）。
+       ⚠ **使用するのは購入フェイズ**（`turn.phase` を書き換えない）＝冠は必ず「財宝2回使用」、
+          人狼は必ず「+3ドロー」、行商人のコストは変動している、が公式どおりになる。
+       ⚠ **杖自身は当ターンのクリンナップで捨てる**（玉座の間と扱いが逆）＝持続の予約を張らないこと。 */
+    if (card === 'staff') {
+      t.buys += 1;
+      if (p.hand.some((c) => DOM.isType(c, 'action') || inheritedEstate(p, c))) state.pending = { type: 'staff_play', player: pIndex };
+    }
     // 帝国：御守り（charm）＝二択（A: +1購入+$2 ／ B: このターン次にカードを獲得したとき、同コストで名前の異なるカードを1枚獲得してよい）。
     if (card === 'charm') { state.pending = { type: 'charm_mode', player: pIndex }; }
     // 帝国：鹵獲品（plunder）＝+$2（coin:2 で計上済み）＋1勝利点トークン（プレイ毎）。
@@ -1215,6 +1249,7 @@
         guardianActive: false, // 守護者：次の自分のターン開始時までアタックの影響を受けない（灯台とは窓が違う）
         ghostSetAside: [], // 幽霊の脇札（**公開**＝公開しながら掘るので全員が見ている。物理カード）
         cryptSetAside: [], // 納骨堂の脇札（**所有者のみ可視**＝裏向き。物理カード。納骨堂1枚につき1束だが枚数だけで足りる）
+        puzzleBox: [],     // 略奪：パズルボックスで裏向きに脇へ置いた札（**所有者のみ可視**。ターン終了時＝先引きの後に手札へ）
       };
     });
     // ギルド：パン屋（Baker）のセットアップ＝ゲーム開始時、各プレイヤーは財源1枚を得る。
@@ -6898,6 +6933,7 @@
       p.cargo || [],      // ルネサンス：貨物船の脇置き（表向き＝公開。所有カード＝VPに数える）
       p.ghostSetAside || [], // 夜想曲：幽霊の脇札（公開。幽霊が場を離れても孤児化するだけで所有カードのまま）
       p.cryptSetAside || [], // 夜想曲：納骨堂の脇札（所有者のみ可視。同上）
+      p.puzzleBox || [],  // 略奪：パズルボックスの脇札（**裏向き＝所有者のみ可視**。ターン終了時に手札へ戻る物理カード）
       p.contractSetAside || [], // 同盟：契約書／王家のガレー船の脇札（**表向き＝公開**。所有カードに数える）
       ...((p.archives || []).map((a) => a.cards || []))); // 帝国：資料庫の脇置き（所有カード＝VPに数える）
   }
@@ -8043,6 +8079,12 @@
        移動遊園地と同じ窓＝onGainQueue に積む（既に山札の上に置かれた獲得は対象外）。 */
     if (state.turn && state.turn.trackerTurn && pIndex === state.turn.active && dest !== 'deck') {
       (state.onGainQueue = state.onGainQueue || []).push({ type: 'travelling_fair', player: pIndex, card: cardId, dest: dest || 'discard', src: 'tracker' });
+    }
+    /* 略奪：勲章＝**このターン**カードを獲得したとき、それを山札の上に置いてよい（任意・**毎回**）。
+       公式FAQ逐語＝`If you gain multiple cards, this applies to each of them - you can put any or all of them on top of your deck.`
+       移動遊園地/追跡者と同じ窓なので `travelling_fair` の pending を共有する（`source` でラベルだけ切り替える）。 */
+    if (state.turn && state.turn.insignia && pIndex === state.turn.active && dest !== 'deck') {
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'travelling_fair', player: pIndex, card: cardId, dest: dest || 'discard', source: 'insignia' });
     }
     /* ===== ルネサンス：獲得時の「自動」効果（対話不要＝pending を立てない）===== */
     // 追従者：獲得したとき +2村人（購入以外の獲得でも・相手のターンの獲得でも）。
@@ -9288,6 +9330,15 @@
     //     先引きの瞬間の保持者に適用する（その後に旗が奪われても引いた枚数は返さない）。
     const flagBonus = hasArtifact(state, pi, 'flag') ? 1 : 0;
     draw(state, pi, (extra ? 3 : 5) + (state.turn.extraDraw || 0) + flagBonus);
+    /* 略奪：パズルボックス＝脇に伏せた札を「ターン終了時」＝**次の手札を先引きした後**に手札へ加える
+       （公式FAQ逐語＝`The set-aside card goes into your hand after drawing for the next turn.`）。
+       ⚠ パズルボックス自身は持続ではない＝当ターンの片付けで普通に捨てられる（何もしなくてよい）。 */
+    if ((p.puzzleBox || []).length) {
+      const n = p.puzzleBox.length;
+      p.puzzleBox.forEach((c) => p.hand.push(c));
+      p.puzzleBox = [];
+      log(state, `${p.name} はパズルボックスで脇に置いた ${n}枚 を手札に加えた。`);
+    }
     // 冒険：保存（Save）＝脇に置いた1枚を「次の手札を引いた後」に手札へ加える（＝この片付けの中で戻す）。
     if (state.turn.savedCard) {
       const sv = state.turn.savedCard;
@@ -11211,6 +11262,52 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'hammer_gain') return state;
         finishGain(state, pd, action.card, (id) => costUpTo(state, id, 4), 'discard', 'ハンマーで獲得した。');
+        return state;
+      }
+      /* 略奪：六分儀＝見た5枚のうち好きな枚数を捨て、残りを好きな順番で山札の上へ（地図職人と同型）。
+         ⚠ **捨てる → 捨て札トリガー → 残りを山札の上へ** の順（公式＝後から戻す残りが上）。 */
+      case 'SEXTANT_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'sextant') return state;
+        const pl = state.players[pd.player];
+        const look = (pd.cards || []).slice();
+        const discard = Array.isArray(action.discard) ? action.discard : [];
+        const top = Array.isArray(action.top) ? action.top : [];
+        const chk = look.slice();
+        for (const c of discard.concat(top)) { const i = chk.indexOf(c); if (i < 0) return state; chk.splice(i, 1); }
+        if (chk.length !== 0) return state; // discard+top が look の並べ替えであること
+        state.pending = null;
+        discard.forEach((c) => pl.discard.push(c));
+        if (discard.length) triggerOnDiscard(state, pd.player, discard, true);
+        for (let i = top.length - 1; i >= 0; i--) pl.deck.unshift(top[i]); // top[0] が一番上・**捨て札トリガーの後**に戻す
+        log(state, `${pl.name} は六分儀（${discard.length}枚 捨て、${top.length}枚 を山札の上へ）。`);
+        return state;
+      }
+      /* 略奪：パズルボックス＝手札1枚を裏向きに脇へ置いてよい（**任意**）。ターン終了時（次の手札を引いた後）に手札へ。 */
+      case 'PUZZLE_BOX_SET': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'puzzle_box') return state;
+        const pl = state.players[pd.player];
+        if (action.card == null) { state.pending = null; return state; }
+        if (pl.hand.indexOf(action.card) < 0) return state;
+        removeOne(pl.hand, action.card);
+        (pl.puzzleBox = pl.puzzleBox || []).push(action.card);
+        log(state, `${pl.name} はパズルボックスで手札1枚を裏向きに脇へ置いた（ターン終了時に手札へ）。`);
+        state.pending = null;
+        return state;
+      }
+      /* 略奪：杖＝手札からアクション1枚を使用してよい（**任意**・アクション権を消費しない）。
+         ⚠ 使用するのは**購入フェイズ**のまま（フェイズを書き換えない）。**杖自身は当ターンに捨てる**
+            ＝持続の予約を張らない（玉座の間と扱いが逆）。 */
+      case 'STAFF_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'staff_play') return state;
+        const pl = state.players[pd.player];
+        if (action.card == null) { state.pending = null; return state; }
+        if (pl.hand.indexOf(action.card) < 0) return state;
+        if (!(DOM.isType(action.card, 'action') || inheritedEstate(pl, action.card))) return state;
+        state.pending = null;
+        playCardNoAction(state, pd.player, action.card, pl.hand, '杖で');
         return state;
       }
 
@@ -18512,6 +18609,8 @@
         // 夜想曲：納骨堂の脇札は裏向き＝所有者だけが見られる（公式逐語「other players may not」）。
         //   幽霊の脇札は**公開**（公開しながら掘るので全員が見ている）＝伏せない。
         cryptSetAside: revealHand ? (p.cryptSetAside || []).slice() : (p.cryptSetAside || []).map(() => 'back'),
+        // 略奪：パズルボックスの脇札は**裏向き**（公式逐語 `set aside a card from your hand face down`）＝所有者だけ見られる。
+        puzzleBox: revealHand ? (p.puzzleBox || []).slice() : (p.puzzleBox || []).map(() => 'back'),
         // inPlay / durationCards / islandMat / princes（王子の脇＝公開）/ ghostSetAside /
         //   contractSetAside（同盟：契約書・王家のガレー船の脇札＝公式逐語「The set-aside card is face up.」）は
         //   表向き＝そのまま（Object.assign が素通しする）。
@@ -18591,7 +18690,7 @@
     'PLAY_NIGHT', // 夜想曲：夜フェイズに夜行カードを使う（アクション権も購入権も消費しない）
     'CELLAR_RESOLVE', 'MILITIA_RESOLVE', 'MOAT_REVEAL',
     // 略奪（Plunder）：戦利品(Loot)
-    'SHIELD_REVEAL', 'PRIZE_GOAT_TRASH', 'HAMMER_GAIN',
+    'SHIELD_REVEAL', 'PRIZE_GOAT_TRASH', 'HAMMER_GAIN', 'SEXTANT_RESOLVE', 'PUZZLE_BOX_SET', 'STAFF_PLAY',
     'MINE_TRASH', 'MINE_GAIN', 'REMODEL_TRASH', 'REMODEL_GAIN', 'WORKSHOP_GAIN',
     'COURTYARD_PUT', 'PAWN_RESOLVE', 'STEWARD_RESOLVE', 'STEWARD_TRASH',
     'WISHING_RESOLVE', 'BARON_RESOLVE', 'IRONWORKS_GAIN',
