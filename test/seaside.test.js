@@ -488,6 +488,41 @@ console.log('=== CPU対CPU: 海辺の王国で最後まで止まらず終局す�
   ok(Object.values(s.supply).every((n) => n >= 0), 'CPU対CPU: 在庫が負にならない');
 }
 
+/* === 宝物庫：条件は「このターンの**購入フェイズに**勝利点を獲得したか」だけ ===
+   公式FAQ逐語＝`This only cares about Victory cards gained in the Buy phase, not ones gained in the
+   Action phase (such as via Smugglers).`
+   現行のカード文（2026エラッタで2022エラッタを差し戻し）＝
+   `When you discard this from play, if you didn't gain any Victory cards in your Buy phase this turn,
+    you may put this onto your deck.`                                                             */
+{ // ① 購入フェイズに勝利点を買ったら戻せない
+  let s = mkA(); s.players[0].hand = ['treasury']; s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'treasury' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' });
+  s.turn.coins = 5; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'estate' });
+  ok(s.turn.victoryGainedInBuy === true, '購入フェイズの勝利点の獲得を記録する');
+  s = reduce(s, { type: 'END_TURN' });
+  ok(!s.players[0].hand.includes('treasury') || count(s.players[0].hand, 'treasury') === 0,
+    '購入フェイズに勝利点を獲得したら宝物庫は山札の上に戻らない');
+}
+{ // ② アクションフェイズの勝利点の獲得は妨げない（＝公式FAQ。以前はここで戻せなくなっていた）
+  let s = mk(['treasury', 'workshop', 'fishing_village', 'caravan', 'merchant_ship', 'wharf',
+              'lighthouse', 'haven', 'tide_pools', 'sailor']);
+  s.turn.actions = 2;
+  s.players[0].hand = ['treasury', 'workshop'];
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'treasury' });
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'workshop' });
+  s = reduce(s, { type: 'WORKSHOP_GAIN', card: 'estate' });   // ★アクションフェイズで勝利点を獲得
+  ok(count(s.players[0].discard, 'estate') === 1 && s.turn.phase === 'action',
+    '前提：アクションフェイズのまま屋敷を獲得した');
+  ok(s.turn.victoryGainedInBuy !== true, 'アクションフェイズの獲得は victoryGainedInBuy を立てない');
+  s = reduce(s, { type: 'END_ACTION_PHASE' });
+  s = reduce(s, { type: 'END_TURN' });
+  ok(s.players[0].hand.includes('treasury'),
+    'アクションフェイズに勝利点を獲得しても宝物庫は山札の上に戻せる（公式FAQ＝以前は戻せなかった）');
+}
+
 console.log('\n========================================');
 console.log('海辺テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

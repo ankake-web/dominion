@@ -235,7 +235,7 @@
     bazaar:       { id: 'bazaar',       name: 'バザー',     cost: 5, types: ['action'],
                     text: '+1 カード\n+2 アクション\n+1 コイン' },
     treasury:     { id: 'treasury',     name: '宝物庫',     cost: 5, types: ['action'],
-                    text: '+1 カード\n+1 アクション\n+1 コイン\n勝利点カードを購入していなければ山札の上に戻せる' },
+                    text: '+1 カード\n+1 アクション\n+1 コイン\nこれを場から捨てるとき、このターンの購入フェイズに勝利点カードを1枚も獲得していなければ、これを山札の上に置いてよい。' },
     outpost:      { id: 'outpost',      name: '前哨地',     cost: 5, types: ['action', 'duration'],
                     text: 'このターン1度だけ、手札3枚の追加ターンを得る' },
     tactician:    { id: 'tactician',    name: '策士',       cost: 5, types: ['action', 'duration'],

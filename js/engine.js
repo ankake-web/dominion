@@ -1338,6 +1338,7 @@
       active, phase: 'action', actions: 1, buys: 1, coins: 0, potions: 0, costReduction: 0,
       actionsPlayed: 0, copperBonus: 0, merchants: 0, silverPlayed: false, buysMade: 0,
       coinPenalty: 0, // 冒険：-$1トークンの未消化ぶん（購入フェイズで最初に得る$1に食い込む。毎ターンリセット）
+      victoryGainedInBuy: false, // 海辺：宝物庫＝このターンの**購入フェイズに**勝利点を獲得したか（アクションフェイズの獲得は数えない）
       priestCount: 0, // ルネサンス：司祭＝このターン有効な司祭の数（廃棄1枚につき +2コイン × この数）
       cargoCharges: 0, // ルネサンス：貨物船＝このターン「獲得したカードを脇に置ける」残り回数（貨物船1枚につき1回）
       improvePlays: 0, // ルネサンス：増築＝このターンに使用した回数（玉座/山砦/王笏の再演も数える＝策謀 t.schemes と同型）
@@ -8964,6 +8965,13 @@
     //   ヴィラの獲得時効果はこの関数の途中で phase を 'buy'→'action' に変えるので、それより前の値を捕まえておく
     //   （さもないと購入フェイズ中のヴィラ獲得で公会堂/列柱/汚された神殿の呪い が発火しない＝過小得点）。
     const gainWasBuyPhase = !!(state.turn && state.turn.phase === 'buy');
+    /* 海辺：宝物庫＝「このターンの**購入フェイズに**勝利点カードを1枚も獲得していなければ」山札の上に戻せる。
+       公式FAQ逐語＝`This only cares about Victory cards gained in the Buy phase, not ones gained in the
+       Action phase (such as via Smugglers).` ＝**アクションフェイズの獲得（密輸人・工房で庭園 等）は妨げない**。
+       獲得した瞬間のフェイズで判定する（ヴィラが phase を戻しても正しい＝ランドマークと同じ理由）。 */
+    if (gainWasBuyPhase && state.turn && pIndex === state.turn.active && isTypeSupply(state, cardId, 'victory')) {
+      state.turn.victoryGainedInBuy = true;
+    }
     // 移動動物園：**獲得した瞬間**に追放マットにあった同名の枚数。門番（追放するか）と
     //   追放マットの払い戻し（同名を全部捨て札に戻せるか）は、どちらもこの値で判定する＝両者は排他になる。
     const exiledBefore = exileCount(state.players[pIndex], cardId);
@@ -10327,8 +10335,13 @@
         if (n) log(state, `${p.name} は城壁のある村 ${n}枚 を山札の上に戻した。`);
       }
     }
-    // 宝物庫：このターンに勝利点カードを獲得していなければ、場の宝物庫を山札の上に戻せる（常に得なので自動）。
-    if (p.inPlay.includes('treasury') && !(state.turn.gainedThisTurn || []).some((id) => DOM.isType(id, 'victory'))) {
+    /* 海辺：宝物庫＝**これを場から捨てるとき**、このターンの**購入フェイズに**勝利点カードを1枚も獲得して
+       いなければ、山札の上に置いてよい（常に得なので自動＝許容簡略化）。
+       ⚠ 判定は `t.victoryGainedInBuy`（購入フェイズの獲得だけ）。以前は `gainedThisTurn` を見ていたので、
+          **アクションフェイズに勝利点を獲得した（密輸人／工房で庭園 等）だけで戻せなくなっていた**（既存の忠実性バグ）。
+       ※現行のカード文は 2026エラッタで「購入フェイズの終わりに」→「これを場から捨てるとき」に戻っている
+         （2022エラッタの差し戻し）＝この位置（場から捨てる瞬間）が正しい。 */
+    if (p.inPlay.includes('treasury') && !state.turn.victoryGainedInBuy) {
       let n = 0;
       while (removeOne(p.inPlay, 'treasury')) { p.deck.unshift('treasury'); n++; }
       if (n) log(state, `${p.name} は宝物庫 ${n}枚 を山札の上に戻した。`);
