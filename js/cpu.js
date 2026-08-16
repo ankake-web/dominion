@@ -1601,7 +1601,7 @@
         const gainable = targets.filter((c) => DOM.engine.gainableBase(state, c) || DOM.engine.mixedPileWithTop(state, c));
         const pool = gainable.length ? gainable : targets;
         const best = pool.slice().sort((a, b) => DOM.engine.cardCost(state, b) - DOM.engine.cardCost(state, a))[0];
-        return { type: 'TOOLS_GAIN', card: best };
+        return { type: 'TOOLS_GAIN', card: best != null ? best : null }; // 候補ゼロなら null（engine が窓を閉じる）
       }
       // つるはし＝コスト3以上の不要札があればそれ（戦利品が付く）。無ければ最も不要な札（強制）。
       case 'pickaxe_trash': {
@@ -1611,15 +1611,18 @@
           : p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0]);
         return { type: 'PICKAXE_TRASH', card: pick };
       }
-      // 銀山＝これより安い財宝のうち一番良いものを手札へ（銀貨があれば銀貨）。
+      /* 銀山＝これより安い財宝のうち一番良いものを手札へ（銀貨があれば銀貨）。
+         ⚠ **engine と同じ成分別比較（costUnder）を使う**。スカラーの `cardCost` で比べると
+            賢者の石（$3+ポーション）を「$3<$5」で提案して engine が拒否し続ける＝mix-all（錬金術同居）で
+            本番 livelock（レビューのソークで再現）。種別も `isTypeSupply`（混合山は一番上）で見る。 */
       case 'silver_mine_gain': {
         const ref = DOM.engine.cardCost(state, 'silver_mine');
         let best = null, bc = -1;
         Object.keys(state.supply).forEach((id) => {
           if (!DOM.engine.gainableBase(state, id)) return;
-          if (!isTreasure(id)) return;
+          if (!DOM.engine.isTypeSupply(state, id, 'treasure')) return;
+          if (!DOM.engine.costUnder(state, id, ref)) return;
           const c = DOM.engine.cardCost(state, id);
-          if (c >= ref) return;
           if (c > bc) { bc = c; best = id; }
         });
         return { type: 'SILVER_MINE_GAIN', card: best };
@@ -1765,12 +1768,16 @@
       }
       case 'enlarge_gain':
         return { type: 'ENLARGE_GAIN', card: bestGain(state, pd.maxCost, { noVictory: pd.maxCost < 8, pot: pd.pot, debt: pd.debt }) || bestGain(state, pd.maxCost, { pot: pd.pot, debt: pd.debt }) };
-      // 一等航海士＝同名を全部使う（名前未確定なら一番多く持っている良いアクション）。
+      /* 一等航海士＝同名を全部使う（名前未確定なら一番多く持っている良いアクション）。
+         ⚠ **engine と同じ `canPlayHandCard` を通す**（同盟の航海＝手札から3枚まで／将軍＝場に2枚ある同名は
+            手札から使えない）。ここを見ないと engine が拒否する手を返し続けて mix-all で本番 livelock になる
+            （§0-29 A4 [high] 12番と同型。実際にレビューのソークで再現した）。 */
       case 'first_mate': {
+        const canPlay = (c) => !DOM.engine.canPlayHandCard || DOM.engine.canPlayHandCard(state, pd.player, c);
         if (pd.name) {
-          return { type: 'FIRST_MATE_PLAY', card: p.hand.indexOf(pd.name) >= 0 ? pd.name : null };
+          return { type: 'FIRST_MATE_PLAY', card: (p.hand.indexOf(pd.name) >= 0 && canPlay(pd.name)) ? pd.name : null };
         }
-        const acts = p.hand.filter((c) => isType(c, 'action') && c !== 'first_mate');
+        const acts = p.hand.filter((c) => isType(c, 'action') && c !== 'first_mate' && canPlay(c));
         if (!acts.length) return { type: 'FIRST_MATE_PLAY', card: null };
         const byCount = {};
         acts.forEach((c) => { byCount[c] = (byCount[c] || 0) + 1; });
@@ -1787,10 +1794,14 @@
       // 操舵手＝良い$4以下（銀貨など）が取れるなら貯める。脇に札があれば終盤は回収。単純に「取れるなら獲得」。
       case 'quartermaster': {
         const inst = (p.quartermasters || []).find((q) => q.id === pd.qmId) || { cards: [] };
-        let best = null, bc = -1;
+        /* ⚠ 「取れるか」（＝engine が skip を受理するか）と「取りたいか」（好み）を分ける。
+           勝利点/呪いを**実行可能判定からも**外すと、$4以下が屋敷/呪いだけになったとき CPU が skip を送り
+           engine が拒否して livelock になる（engine の受理条件は `anyGainable(costUpTo<=4)` だけ）。 */
+        let best = null, bc = -1, anyOk = false;
         Object.keys(state.supply).forEach((id) => {
           if (!DOM.engine.costUpTo(state, id, 4)) return;
-          if (isType(id, 'victory') || isType(id, 'curse')) return;
+          anyOk = true;
+          if (isType(id, 'victory') || isType(id, 'curse')) return; // 好みとしては避ける
           const c = DOM.engine.cardCost(state, id);
           if (c > bc) { bc = c; best = id; }
         });
@@ -1798,6 +1809,11 @@
         if ((inst.cards || []).length) {
           const take = inst.cards.slice().sort((a, b) => keepValue(b) - keepValue(a))[0];
           return { type: 'QUARTERMASTER_RESOLVE', mode: 'take', card: take };
+        }
+        if (anyOk) { // 脇が空で $4以下が勝利点/呪いしか無い＝skip は受理されないので仕方なく取る
+          let any = null;
+          Object.keys(state.supply).forEach((id) => { if (!any && DOM.engine.costUpTo(state, id, 4)) any = id; });
+          return { type: 'QUARTERMASTER_RESOLVE', mode: 'gain', card: any };
         }
         return { type: 'QUARTERMASTER_RESOLVE', mode: 'skip' };
       }

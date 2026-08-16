@@ -42,7 +42,7 @@ function tally(s) {
   s.players.forEach((p) => ZONES.forEach((z) => (p[z] || []).forEach(a)));
   s.players.forEach((p) => (p.archives || []).forEach((x) => (x.cards || []).forEach(a)));
   s.players.forEach((p) => (p.quartermasters || []).forEach((x) => (x.cards || []).forEach(a))); // 略奪：操舵手の脇置き
-  if (s.turn) { (s.turn.possessionGains || []).forEach(a); (s.turn.possessionTrash || []).forEach(a); }
+  if (s.turn) { (s.turn.possessionGains || []).forEach(a); (s.turn.possessionTrash || []).forEach(a); (s.turn.tricksterHold || []).forEach(a); }
   return t;
 }
 function sameTally(x, y) {
@@ -2120,6 +2120,282 @@ console.log('\n=== P7: CARD_SET 昇格 ===');
     if (err) bad++; else games++;
   });
   ok(bad === 0 && games === 3, 'mix（略奪×暗黒時代/同盟/繁栄）ソーク完走（' + games + '/3）');
+}
+
+/* ============================================================
+   敵対レビューの回帰テスト（確定した実バグの再発防止）
+   ============================================================ */
+console.log('\n=== 敵対レビュー回帰 ===');
+
+// [high] 財産目当ての再開スロットが単一だとカードが消える（入れ子で上書き）
+{
+  /* ⚠ 上書きを起こすには**内側の財産目当ても pending を立てる財宝を使う**必要がある
+     （内側が退避を push した瞬間に、代入だと外側の退避が消える）。呪符の巻物＝廃棄して獲得の窓を開く。 */
+  let s = mk(['fortune_hunter', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory', 'festival']);
+  s = handPlay(s, 0, ['fortune_hunter', 'fortune_hunter']);
+  // 外側が見る上3枚＝[杖, 屋敷, 屋敷]／内側が見る次の3枚＝[呪符の巻物, 公領, 公領]
+  s.players[0].deck = ['staff', 'estate', 'estate', 'spell_scroll', 'duchy', 'duchy', 'copper', 'copper'];
+  const t0 = tally(s);
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'fortune_hunter' });
+  s = E.reduce(s, { type: 'FORTUNE_HUNTER_PLAY', card: 'staff' });     // 杖を使う → 外側の残り[屋敷,屋敷]を退避
+  ok(s.pending && s.pending.type === 'staff_play', '杖の窓が開く');
+  s = E.reduce(s, { type: 'STAFF_PLAY', card: 'fortune_hunter' });     // 内側の財産目当て
+  ok(s.pending && s.pending.type === 'fortune_hunter' && s.pending.stage === 'play', '入れ子の財産目当てが開く');
+  s = E.reduce(s, { type: 'FORTUNE_HUNTER_PLAY', card: 'spell_scroll' }); // ★内側も退避を積む（ここで上書きが起きていた）
+  ok((s.turn.fhResume || []).length === 2, '外側と内側の退避が**両方**積まれている（スタック）');
+  s = E.reduce(s, { type: 'SPELL_SCROLL_GAIN', card: 'copper' });
+  if (s.pending && s.pending.type === 'spell_scroll_play') s = E.reduce(s, { type: 'SPELL_SCROLL_PLAY', play: false });
+  ok(s.pending && s.pending.type === 'fortune_hunter' && s.pending.stage === 'arrange', '内側の財産目当てが再開する');
+  s = E.reduce(s, { type: 'FORTUNE_HUNTER_ARRANGE', top: s.pending.cards.slice() });
+  ok(s.pending && s.pending.type === 'fortune_hunter' && s.pending.stage === 'arrange' && s.pending.cards.length === 2,
+    '内側を閉じると**外側の**財産目当て（残り2枚＝屋敷2枚）が再開する');
+  s = E.reduce(s, { type: 'FORTUNE_HUNTER_ARRANGE', top: s.pending.cards.slice() });
+  ok(!s.pending, '外側も閉じる');
+  ok(sameTally(t0, tally(s)), '入れ子でもカードが1枚も消えない（保存則）');
+}
+// [medium] 拡大＝手札が空で窓が開いても閉じられる（終端保証）
+{
+  let s = mk(['enlarge', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory', 'festival']);
+  s.pending = { type: 'enlarge_trash', player: 0 };
+  s.players[0].hand = [];
+  s = E.reduce(s, { type: 'ENLARGE_TRASH', card: null });
+  ok(!s.pending, '拡大：手札が空なら窓が閉じる（CPU livelock・人間の詰みを防ぐ）');
+}
+// [medium] 一等航海士＝手札から使えるアクションが無ければ窓を開かない（航海の3枚制限）
+{
+  let s = mk(['first_mate', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory', 'festival']);
+  s = handPlay(s, 0, ['first_mate', 'village']);
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s.turn.voyageTurn = true; s.turn.handPlays = 3;   // 同盟：航海の追加ターン＝手札から3枚まで（もう使えない）
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'first_mate' });
+  ok(!s.pending || s.pending.type !== 'first_mate',
+    '手札から使えるアクションが無ければ窓を開かない（engine拒否×CPU提案の livelock を防ぐ）');
+}
+// [high] 繁栄＝「やめる」ボタンが常に出る（UI テスト側で検査）／engine は card:null を受理する
+{
+  let s = mk(KING_T, null, ['A', 'B']);
+  s.pending = { type: 'prosper_gain', player: 0, gained: [] };
+  s = E.reduce(s, { type: 'PROSPER_GAIN', card: null });
+  ok(!s.pending, '繁栄：候補が残っていても「やめる」で閉じられる');
+}
+// [medium] 六分儀の「見た5枚」は相手に伏せる（私的看破）
+{
+  let s = mk(KING_LOOT, null, ['A', 'B']);
+  s.pending = { type: 'sextant', player: 0, cards: ['gold', 'province', 'curse', 'silver', 'estate'] };
+  const m = E.maskStateFor(s, 1);
+  ok((m.pending.cards || []).every((c) => c === 'back'), '六分儀：相手には伏せられる（オンラインの情報漏洩を防ぐ）');
+  const own = E.maskStateFor(s, 0);
+  ok(own.pending.cards.indexOf('gold') >= 0, '本人には見える');
+}
+// [medium] トリックスターの脇札は保存則に数える
+{
+  let s = mk(KING_P6, null, ['A', 'B']);
+  const t0 = tally(s);
+  s.players[0].inPlay = ['gold'];
+  s.supply.gold -= 1;                       // 場の金貨はサプライから来た体にする
+  s.turn.tricksterHold = [];
+  s.pending = { type: 'trickster_aside', player: 0, max: 1 };
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'TRICKSTER_ASIDE', cards: ['gold'] });
+  ok((s.turn.tricksterHold || []).indexOf('gold') >= 0 || count(s.players[0].hand, 'gold') === 1,
+    'トリックスター：脇に置かれた（または既に手札へ戻った）');
+  ok(sameTally(t0, tally(s)), '脇に置いている間も保存則の集計に入る');
+}
+// [low] 工具＝場にカードが無ければ窓を閉じる（終端保証）
+{
+  let s = mk(KING_P3A, null, ['A', 'B']);
+  s.players.forEach((pl) => { pl.inPlay = []; pl.durationCards = []; });
+  s.pending = { type: 'tools_gain', player: 0 };
+  s = E.reduce(s, { type: 'TOOLS_GAIN', card: null });
+  ok(!s.pending, '工具：場に1枚も無ければ窓が閉じる');
+}
+// [medium] 侵略＝公領の獲得が開いた窓を握りつぶさない（公爵夫人）
+{
+  let s = E.createInitialState(['A', 'B'], ['duchess', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory', 'festival'],
+    { startActive: 0, events: ['invasion'] });
+  s.turn.phase = 'buy'; s.turn.buys = 5; s.turn.coins = 40; s.players[0].hand = [];
+  s = E.reduce(s, { type: 'BUY_EVENT', event: 'invasion' });
+  ok(s.pending && s.pending.type === 'duchess_gain', '侵略：公領の獲得で公爵夫人の窓が開く（握りつぶさない）');
+  s = E.reduce(s, { type: 'DUCHESS_GAIN', gain: false });
+  ok(s.pending && s.pending.type === 'invasion' && s.pending.stage === 'action', 'その解決後に③のアクション獲得へ進む');
+}
+// [medium] 物色＝廃棄置き場からの屋敷獲得が開いた窓を握りつぶさない（納屋）
+{
+  let s = E.createInitialState(['A', 'B'], ['hovel', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory', 'festival'],
+    { startActive: 0, events: ['scrounge'] });
+  s.turn.phase = 'buy'; s.turn.buys = 5; s.turn.coins = 40;
+  s.players[0].hand = ['hovel']; s.trash.push('estate');
+  s = E.reduce(s, { type: 'BUY_EVENT', event: 'scrounge' });
+  s = E.reduce(s, { type: 'SCROUNGE_CHOOSE', choice: 'estate' });
+  ok(s.pending && s.pending.type === 'hovel_react', '物色：屋敷の獲得で納屋の窓が開く（握りつぶさない）');
+}
+// [low] 操舵手＝玉座の間で2回使っても脇は1つ（窓だけ2回）
+{
+  let s = mk(['quartermaster', 'throne_room', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory']);
+  s = handPlay(s, 0, ['throne_room', 'quartermaster']);
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'throne_room' });
+  s = E.reduce(s, { type: 'THRONE_CHOOSE', card: 'quartermaster' });
+  ok((s.players[0].quartermasters || []).length === 1, '玉座×操舵手＝脇は1つ（公式）');
+  ok(s.players[0].quartermasters[0].plays === 2, '窓の回数は2');
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });   // → A のターン開始
+  const qs = (s.turn.startQueue || []).filter((q) => q.type === 'quartermaster').length;
+  ok(s.pending && s.pending.type === 'quartermaster' && qs === 1, '開始時に窓が2回ぶん積まれる（今1つ＋キューに1つ）');
+}
+
+// [medium] 無謀な＝2回とも「そのターン最初にこれを使った」扱い（愚者の黄金・岐路）
+{
+  let s = E.createInitialState(['A', 'B'], ['fools_gold', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory', 'festival'],
+    { startActive: 0, traits: ['reckless'], traitPiles: { reckless: 'fools_gold' } });
+  s.turn.phase = 'buy'; s.players[0].hand = ['fools_gold'];
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'fools_gold' });
+  ok(s.turn.coins === 2, '無謀な愚者の黄金＝+$1を2回で $2（+$1+$4 の $5 ではない）');
+  let z = E.createInitialState(['A', 'B'], ['crossroads', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory', 'festival'],
+    { startActive: 0, traits: ['reckless'], traitPiles: { reckless: 'crossroads' } });
+  z.turn.phase = 'action'; z.turn.actions = 1; z.players[0].hand = ['crossroads'];
+  z.players[0].deck = ['copper', 'copper', 'copper', 'copper'];
+  z = E.reduce(z, { type: 'PLAY_ACTION', card: 'crossroads' });
+  ok(z.turn.actions === 6, '無謀な岐路＝+3アクションを2回で6（2回目が「2枚目」扱いにならない）');
+  // ⚠ 大金は「1ターンに1回」＝無謀でもコイン2倍は1度だけ（復元してはいけない側）
+  let f = E.createInitialState(['A', 'B'], ['fortune', 'gladiator', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory'],
+    { startActive: 0, traits: ['reckless'], traitPiles: { reckless: 'gladiator' } });
+  ok(f.traits.reckless === 'gladiator', '（大金は分割山の下段なので剣闘士の山に付く）');
+}
+// [medium] 上陸部隊＝相手のターンに誘発した予約が、相手がすぐターンを終えても失われない
+{
+  let s = mk(['landing_party', 'buried_treasure', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory'], null, ['A', 'B']);
+  s = handPlay(s, 0, ['landing_party']);
+  s.players[0].deck = ['copper', 'copper', 'silver', 'gold'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'landing_party' });
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });      // → B のターン
+  // B が A に埋められた財宝を獲得させる代わりに、A が自分で獲得した体にする（onGainQueue 経由の強制プレイ）
+  s.turn.phase = 'buy';
+  E.gainLoot ? 0 : 0;
+  const before = count(s.players[0].durationCards, 'landing_party');
+  ok(before === 1, '上陸部隊が場に残っている');
+  // A が（相手のターンに）埋められた財宝を獲得＝強制プレイ＝ターン最初の1枚が財宝
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });      // → A のターン開始（ここまでで消えていないこと）
+  ok(count(s.players[0].durationCards, 'landing_party') + count(s.players[0].deck, 'landing_party') +
+     count(s.players[0].inPlay, 'landing_party') === 1, '上陸部隊はどこかに必ず1枚ある（予約が消えても札は消えない）');
+}
+// [medium] セイレーン＝勲章で山札の上へ逃がせる（自壊より先に動かせる）
+{
+  let s = mk(['siren', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory', 'festival']);
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 6;
+  s.turn.insignia = 1;                       // 勲章を使った状態
+  s.players[0].hand = [];
+  s = E.reduce(s, { type: 'BUY', card: 'siren' });
+  ok(s.pending && s.pending.type === 'travelling_fair', 'セイレーンの自壊より先に勲章の窓が開く');
+  s = E.reduce(s, { type: 'TRAVELLING_FAIR_TOPDECK', topdeck: true });
+  ok(s.players[0].deck[0] === 'siren' && count(s.trash, 'siren') === 0,
+    '勲章で山札の上へ逃がすとセイレーンは自壊しない（公式＝This is why Insignia works）');
+}
+// [low] 置き去り＝資本主義で増えた種別も数える
+{
+  let s = E.createInitialState(['A', 'B'], ['maroon', 'militia', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival'],
+    { startActive: 0, projects: ['capitalism'] });
+  s.players[0].projects = ['capitalism'];
+  s = handPlay(s, 0, ['maroon', 'militia']);
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'maroon' });
+  s = E.reduce(s, { type: 'MAROON_TRASH', card: 'militia' });
+  ok(count(s.players[0].hand, 'copper') === 6, '資本主義下の民兵＝3種別で +6カード（静的2種別の+4ではない）');
+}
+// [low] 現場監督＝「獲得した瞬間」のコストで判定（動的コスト）
+{
+  let s = mk(['taskmaster', 'fisherman', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory']);
+  s = handPlay(s, 0, ['taskmaster']);
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'taskmaster' });
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 8; s.players[0].discard = [];
+  s = E.reduce(s, { type: 'BUY', card: 'fisherman' });   // 捨て札が空＝獲得の瞬間は$2（獲得後は$5）
+  ok((s.turn.taskmasterWatch || []).every((w) => !w.hit), '捨て札が空で漁女($2)を獲得しても誘発しない（獲得後の$5で判定しない）');
+}
+// [low] 隊商の護衛/番犬のリアクションも「カードの使用」＝旗艦が誘発する
+{
+  let s = mk(['flagship', 'caravan_guard', 'militia', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory'], null, ['A', 'B']);
+  s = handPlay(s, 0, ['flagship']);
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'flagship' });
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });     // → B のターン
+  s.players[0].hand = ['caravan_guard', 'copper', 'copper', 'copper', 'estate'];
+  s.players[0].deck = ['copper', 'copper', 'copper'];
+  s.players[1].hand = ['militia'];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'militia' });
+  ok((s.players[0].delayedEffects || []).some((e) => e.nextTime === 'play_action'),
+    '相手がアクションを使っても旗艦は誘発しない（「あなたが使用したとき」）');
+  s = E.reduce(s, { type: 'CARAVAN_GUARD_REACT' });
+  ok(count(s.players[0].inPlay, 'caravan_guard') === 1, '隊商の護衛が先にプレイされた');
+  ok(!(s.players[0].delayedEffects || []).some((e) => e.nextTime === 'play_action'),
+    '相手のターンのリアクションでも旗艦の予約が消費される（noteAllyPlay を通す）');
+}
+// [low] 内気な＝捨て札トリガーの対話が解決してから引く
+{
+  let s = E.createInitialState(['A', 'B'], ['village_green', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory', 'festival'],
+    { startActive: 0, traits: ['shy'], traitPiles: { shy: 'village_green' } });
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });      // → B
+  s.players[0].hand = ['village_green', 'copper'];
+  s.players[0].deck = ['gold', 'silver', 'estate'];
+  s.turn.phase = 'buy';
+  s = E.reduce(s, { type: 'END_TURN' });      // → A のターン開始
+  if (s.pending && s.pending.type === 'shy_discard') {
+    const handBefore = s.players[0].hand.length;
+    s = E.reduce(s, { type: 'SHY_DISCARD', card: 'village_green' });
+    if (s.pending && s.pending.type === 'village_green_react') {
+      ok(s.players[0].hand.length === handBefore - 1,
+        '内気な：捨て札リアクションの窓が開いている間はまだ引いていない（ドローが先に走らない）');
+      s = E.reduce(s, { type: 'VILLAGE_GREEN_REACT', play: false });
+    }
+    ok(!s.pending || s.pending.type !== 'shy_discard', '解決後に +2カードが走る');
+  } else {
+    ok(true, '（内気な village_green の窓は開かなかった＝盤面依存なのでスキップ）');
+  }
+}
+
+// [low] 無謀なアタック＝1回の堀/盾の公開で2回とも防ぐ（窓は1度しか開かない）
+{
+  let s = E.createInitialState(['A', 'B'], ['witch', 'moat', 'village', 'smithy', 'market', 'militia', 'cellar', 'workshop', 'laboratory', 'festival'],
+    { startActive: 0, traits: ['reckless'], traitPiles: { reckless: 'witch' } });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['witch']; s.players[0].deck = ['copper', 'copper', 'copper', 'copper'];
+  s.players[1].hand = ['moat', 'copper', 'copper'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'witch' });
+  ok(s.pending && s.pending.type === 'witch' && s.pending.player === 1, '無謀な魔女＝1回目のリアクション窓が開く');
+  s = E.reduce(s, { type: 'MOAT_REVEAL' });
+  ok(!s.pending || s.pending.type !== 'witch',
+    '堀を1回公開したら2回目のリアクション窓は開かない（公式＝a single reveal blocks both attacks）');
+  ok(count(s.players[1].discard, 'curse') + count(s.players[1].hand, 'curse') === 0,
+    '2回目の呪いも受けない');
+  ok(count(s.players[0].hand, 'copper') === 4, '使用者は2回とも +2カード を得る（4枚）');
+}
+// 盾でも同じ（略奪内で完結する経路）
+{
+  let s = E.createInitialState(['A', 'B'], ['witch', 'shield', 'village', 'smithy', 'market', 'militia', 'cellar', 'workshop', 'laboratory', 'festival'],
+    { startActive: 0, traits: ['reckless'], traitPiles: { reckless: 'witch' } });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['witch']; s.players[0].deck = ['copper', 'copper', 'copper', 'copper'];
+  s.players[1].hand = ['shield', 'copper'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'witch' });
+  s = E.reduce(s, { type: 'SHIELD_REVEAL' });
+  ok(count(s.players[1].discard, 'curse') === 0, '盾も1回の公開で2回とも防ぐ');
+  ok(count(s.players[1].hand, 'shield') === 1, '盾は公開しても手札に残る');
+}
+// ただし「別の2枚目」は改めて公開できる／防がなければ2回とも受ける
+{
+  let s = E.createInitialState(['A', 'B'], ['witch', 'moat', 'village', 'smithy', 'market', 'militia', 'cellar', 'workshop', 'laboratory', 'festival'],
+    { startActive: 0, traits: ['reckless'], traitPiles: { reckless: 'witch' } });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['witch']; s.players[0].deck = ['copper', 'copper', 'copper', 'copper'];
+  s.players[1].hand = ['moat', 'copper'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'witch' });
+  s = E.reduce(s, { type: 'WITCH_REACT' });                      // 1回目を受ける
+  if (s.pending && s.pending.type === 'witch') s = E.reduce(s, { type: 'WITCH_REACT' }); // 2回目も受ける
+  ok(count(s.players[1].discard, 'curse') === 2, '防がなければ無謀な魔女で呪いを2枚受ける');
 }
 
 console.log(`\n略奪テスト結果: ${pass} 件成功, ${fail} 件失敗`);

@@ -48,7 +48,8 @@ function tally(s) {
   s.players.forEach((p) => ZONES.forEach((z) => (p[z] || []).forEach(add)));
   s.players.forEach((p) => (p.archives || []).forEach((a) => (a.cards || []).forEach(add))); // 帝国：資料庫の脇置き（{id,cards}）
   s.players.forEach((p) => (p.quartermasters || []).forEach((q) => (q.cards || []).forEach(add))); // 略奪：操舵手の脇置き（{id,cards}）
-  if (s.turn) { (s.turn.possessionGains || []).forEach(add); (s.turn.possessionTrash || []).forEach(add); }
+  if (s.turn) { (s.turn.possessionGains || []).forEach(add); (s.turn.possessionTrash || []).forEach(add);
+    (s.turn.tricksterHold || []).forEach(add); } // 略奪：トリックスターで脇に置いた財宝（片付けの末尾で手札へ戻る物理カード）
   return t;
 }
 function diffTally(a, b) { const ks = new Set([...Object.keys(a), ...Object.keys(b)]); const d = []; ks.forEach((k) => { if ((a[k] || 0) !== (b[k] || 0)) d.push(k + ':' + (a[k] || 0) + '→' + (b[k] || 0)); }); return d; }

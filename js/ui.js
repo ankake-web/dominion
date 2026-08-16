@@ -2006,7 +2006,8 @@
     if (pd.type === 'tools_gain') {
       const targets = DOM.engine.toolsTargets ? DOM.engine.toolsTargets(state) : [];
       return modalPickList(state, '工具 — 同じカードを獲得', '（自分を含む）誰かが場に出しているのと同じカード1枚を獲得します（強制）。サプライに山が無いカードは選んでも獲得できません。',
-        targets, '獲得する', (id) => dispatch({ type: 'TOOLS_GAIN', card: id }));
+        targets, '獲得する', (id) => dispatch({ type: 'TOOLS_GAIN', card: id }),
+        targets.length ? null : { label: '対象がない（閉じる）', on: () => dispatch({ type: 'TOOLS_GAIN', card: null }) });
     }
     if (pd.type === 'pickaxe_trash') return modalSingleHand(p, 'つるはし — 廃棄',
       '手札1枚を廃棄します（強制）。廃棄後のコストが3以上なら、戦利品1枚を手札に獲得します。',
@@ -2087,10 +2088,13 @@
       'アクションカード1枚を山札の上に獲得します（強制・コストの上限はありません）。',
       (id) => DOM.engine.gainableBase(state, id) && DOM.engine.isTypeSupply(state, id, 'action'),
       (id) => dispatch({ type: 'INVASION_ACTION', card: id }), () => dispatch({ type: 'INVASION_ACTION', card: null }));
+    /* 繁栄＝**任意・何枚でも**（公式＝`You don't have to gain any Treasures you don't want`）。
+       ⚠ 第7引数 `alwaysSkip=true` が必須。無いと `modalGainSupply` は「候補が尽きたときだけ」辞退ボタンを出す＝
+          サプライの財宝を全部押し付けられて人間だけが止められない（CPU は card:null でやめられる）。 */
     if (pd.type === 'prosper_gain') return modalGainSupply(state, '繁栄 — 財宝を獲得（任意・何枚でも）',
       '互いに名前の異なる財宝カードを1枚ずつ獲得できます（もうやめてもかまいません）。',
       (id) => DOM.engine.gainableBase(state, id) && DOM.engine.isTreasureFor(state, id) && (pd.gained || []).indexOf(id) < 0,
-      (id) => dispatch({ type: 'PROSPER_GAIN', card: id }), () => dispatch({ type: 'PROSPER_GAIN', card: null }));
+      (id) => dispatch({ type: 'PROSPER_GAIN', card: id }), () => dispatch({ type: 'PROSPER_GAIN', card: null }), true);
     if (pd.type === 'prepare_play') {
       const aside = p.prepareAside || [];
       const playable = [...new Set(aside.filter((id) => (DOM.CARDS[id] && DOM.CARDS[id].types.includes('action')) || DOM.engine.isTreasureFor(state, id)))];
@@ -2123,9 +2127,12 @@
       { label: '使う', cls: 'btn-primary', on: () => dispatch({ type: 'MAPMAKER_REACT', play: true }) },
       { label: '使わない', on: () => dispatch({ type: 'MAPMAKER_REACT', play: false }) },
     ]);
+    // 拡大＝廃棄は強制だが、**手札が空**なら閉じられないと人間が詰む（engine 側にも終端保証あり）。
     if (pd.type === 'enlarge_trash') return modalSingleHand(p, '拡大 — 廃棄',
       '手札1枚を廃棄します（強制）。それよりコストが最大2高いカード1枚を獲得します。',
-      () => true, (id) => dispatch({ type: 'ENLARGE_TRASH', card: id }), null, '廃棄する');
+      () => true, (id) => dispatch({ type: 'ENLARGE_TRASH', card: id }),
+      p.hand.length ? null : { label: '手札が無い（閉じる）', on: () => dispatch({ type: 'ENLARGE_TRASH', card: null }) },
+      '廃棄する');
     if (pd.type === 'enlarge_gain') return modalGainSupply(state, '拡大 — 獲得',
       'コスト ' + pd.maxCost + ' 以下のカード1枚を獲得します（強制）。',
       (id) => canUpTo(state, id, pd.maxCost, pd), (id) => dispatch({ type: 'ENLARGE_GAIN', card: id }),

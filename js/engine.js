@@ -428,6 +428,32 @@
     if (!tp) return false;
     return pileKeyOf(state, cardId) === tp;
   }
+  /* 略奪：内気な(Shy)／岩屋(Grotto)＝「捨てる →（対話つきを含む）捨て札トリガー → **その後で**引く」。
+     ⚠ 捨て札トリガーは同期解決とは限らない（織工＝獲得の選択・村有緑地／忠犬＝使用の選択が
+        `pending`／`onGainQueue` に積まれる）。素直に `triggerOnDiscard` の直後に `draw` すると
+        **ドローが先に走る**＝織工で獲得した銀貨が引き直しのリシャッフルに入らない
+        （§0-28 の羊飼い・§0-29 A3 の砂漠の案内人と同型の罠）。
+     → 窓が開いていたら `t.discardThenDraw` に積み、reduce 末尾の再開網が解決後に引く。 */
+  function discardThenDraw(state, pi, n, note) {
+    if (n <= 0) return;
+    if (state.pending || (state.onGainQueue && state.onGainQueue.length)) {
+      (state.turn.discardThenDraw = state.turn.discardThenDraw || []).push({ player: pi, n, note });
+      return;
+    }
+    const got = draw(state, pi, n);
+    log(state, `${state.players[pi].name} は ${note}（+${got.length}カード）。`);
+  }
+  /* 略奪：置き去り(Maroon)＝「そのカードが持つ種別の数」。
+     ⚠ **動的に種別が増えるカードがある**（公式逐語＝`Inheritance, Capitalism, and Charlatan will add types to cards.`）＝
+        資本主義で財宝になったアクション／相続した屋敷（アクション）を数に入れる。
+     ⚠ 逆に**特性(Trait) と災いカード(Bane) は種別を増やさない**（公式）＝`state.traits` は見ない。 */
+  function typeCountFor(state, pi, id) {
+    const base = (C()[id] && C()[id].types) || [];
+    let n = base.length;
+    if (!base.includes('treasure') && isTreasureFor(state, id)) n += 1;             // 資本主義
+    if (!base.includes('action') && inheritedEstate(state.players[pi], id)) n += 1; // 相続した屋敷
+    return n;
+  }
   /* 鼓舞する(Inspiring)＝「場に出していないアクション」の候補（engine拒否・CPU候補・UIフィルタが同じ述語を見る）。
      場＝inPlay＋durationCards（前ターンからの持続も「場」＝公式）。脇置き（貨物船/王子など）は場ではない。 */
   function inspiringTargets(state, pi) {
@@ -1928,6 +1954,10 @@
       if (splitLocked(state, cardId)) return false; // 分割山：下段は上段が尽きるまで獲得できない
     }
     const realId = isMixed ? state[cardId][0] : cardId;
+    /* 略奪：現場監督＝「**獲得した瞬間**のコスト」で判定する（公式逐語＝`It only matters what the card cost
+       when you gained it`／`if you gain a Destrier that costs [$6], that won't count`）。
+       山を減らす前・捨て札に置く前に測る（デストリエ＝獲得枚数で安くなる／漁師＝捨て札が空だと安い）。 */
+    const costAtGain = costOf(state, realId);
     /* 夜想曲：**既定の獲得先が手札**のカード（悪人のアジト／ゴーストタウン／守護者／夜警）。
        「捨て札置き場に置く代わりに手札に加える」＝**捨て札に獲得する場合だけ**置き換える
        （武器庫などで山札の上に獲得したときはそのまま＝公式）。相手のターンの獲得でも自分の手札に入る。 */
@@ -1953,7 +1983,7 @@
       (t.possessionGains = t.possessionGains || []).push(realId);
       log(state, `${state.players[pIndex].name} が獲得した「${C()[realId].name}」は脇に置かれた（支配：${state.players[t.possessedBy].name} が受け取る）。`);
       if (emptiedP) pileEmptied(state, cardId); // 略奪：調査（サプライの山が空になった瞬間）
-      triggerOnGain(state, t.possessedBy, realId, dest);
+      triggerOnGain(state, t.possessedBy, realId, dest, costAtGain);
       return true;
     }
     if (isMixed) { state[cardId].shift(); if (state.supply[cardId] != null) state.supply[cardId] -= 1; }
@@ -1983,7 +2013,7 @@
     /* 略奪：調査（Search）＝「次にサプライ1山が空になったとき」。獲得の帳簿（lastGainedAny 等）を付けた後・
        獲得時トリガーの前に発火する（公式：獲得時効果との順序は選べる＝本アプリは調査を先に固定）。 */
     if (pileNowEmpty) pileEmptied(state, cardId);
-    triggerOnGain(state, pIndex, realId, dest); // サル/封鎖/船乗りの「獲得時」フック（§手6で実装）
+    triggerOnGain(state, pIndex, realId, dest, costAtGain); // サル/封鎖/船乗りの「獲得時」フック（§手6で実装）
     return true;
   }
 
@@ -4602,6 +4632,13 @@
      習性(Way)由来の +$ は applyWay 側で予約だけ消費しボーナスを出さない（決定D3）。 */
   function applyEffect(state, cardId, pi) {
     const t0 = state.turn;
+    /* 略奪P4：新しいカードの使用が始まったら「無謀な2回目の解決中」の印を落とす
+       （＝1回目に堀/盾を公開した相手を2回目でも免疫にする窓を閉じる）。
+       この1枚ぶんの記録も捨てる＝同じターンに同名の2枚目を使ったら改めて公開できる。 */
+    if (t0 && state._recklessIter !== cardId) {
+      if (t0.recklessIter) t0.recklessIter = null;
+      if (t0.recklessBlock && t0.recklessBlock[cardId]) delete t0.recklessBlock[cardId];
+    }
     let hvN = 0, hvC0 = 0;
     if (t0 && t0.hvWatchers && t0.hvWatchers[pi] > 0) {
       hvN = t0.hvWatchers[pi]; t0.hvWatchers[pi] = 0; hvC0 = t0.coins || 0;
@@ -4790,7 +4827,14 @@
          一等航海士で一等航海士を使うと**入れ子**になる（外側の宣言は生き続ける）＝スタックで持つ。 */
       case 'first_mate':
         (t.firstMateStack = t.firstMateStack || []).push({ player: pi, name: null });
-        state.pending = { type: 'first_mate', player: pi, name: null };
+        /* 手札から使えるアクションが1枚も無ければ窓を開かず、そのまま draw-to-6 へ
+           （`canPlayHandCard`＝同盟の航海の3枚制限／将軍。engine拒否・CPU候補・UIフィルタの3面が同じ述語）。
+           窓を開いてしまうと engine が全部拒否して mix-all で livelock になる（§0-29 A4 [high] 12番と同型）。 */
+        if (p.hand.some((c) => DOM.isType(c, 'action') && canPlayHandCard(state, pi, c))) {
+          state.pending = { type: 'first_mate', player: pi, name: null };
+        } else {
+          firstMateFinish(state);
+        }
         break;
       /* フリゲート船＝+$3＋「次の自分のターンの開始時まで、他のプレイヤーはアクションを使用するたび、
          その解決後に手札が4枚になるように捨てる」（持続アタック＝沼の妖婆/将軍と同じ linger モデル。
@@ -4813,9 +4857,19 @@
         break;
       /* 操舵手＝ゲーム終了まで、各ターンの開始時に「$4以下を1枚この脇に獲得」か「脇の1枚を手札へ」。
          **インスタンス単位の脇**（資料庫と同型＝p.quartermasters=[{id,cards}]）。永続持続（雇人と同型）。 */
+      /* 操舵手＝インスタンス単位の脇。**玉座の間などで同じ1枚を2回使っても脇は1つ**で、
+         窓だけが毎ターン2回になる（公式逐語＝`if you Throne Room a Quartermaster, you just have one set of
+         cards for it, and twice on each of your turns, either add one or take one.`）。
+         ＝再演（`state._replaying`）では新インスタンスを作らず、直前のインスタンスの窓の回数を増やす。 */
       case 'quartermaster': {
-        state.qmSeq = (state.qmSeq || 0) + 1;
-        (p.quartermasters = p.quartermasters || []).push({ id: state.qmSeq, cards: [] });
+        const qs = (p.quartermasters = p.quartermasters || []);
+        if (state._replaying && qs.length) {
+          const last = qs[qs.length - 1];
+          last.plays = (last.plays || 1) + 1;
+        } else {
+          state.qmSeq = (state.qmSeq || 0) + 1;
+          qs.push({ id: state.qmSeq, cards: [], plays: 1 });
+        }
         break;
       }
       /* トリックスター＝他の全員が呪い1枚を獲得（アタック）。このターンに1度（使用回数ぶん累積）、
@@ -7958,7 +8012,8 @@
         (p.inPlay.filter((c) => c === 'quartermaster').length + (p.durationCards || []).filter((c) => c === 'quartermaster').length) > 0) {
       p.quartermasters.forEach((q) => {
         if ((q.cards || []).length || anyGainable(state, (cid) => costUpTo(state, cid, 4))) {
-          state.turn.startQueue.push({ type: 'quartermaster', player: pi, qmId: q.id });
+          // 玉座で2回使った操舵手は**同じ脇に対して窓が2回**開く（脇は分割しない）。
+          for (let k = 0; k < (q.plays || 1); k++) state.turn.startQueue.push({ type: 'quartermaster', player: pi, qmId: q.id });
         }
       });
     }
@@ -8645,8 +8700,7 @@
         back.forEach((c) => pl.discard.push(c));
         log(s, `${pl.name} は岩屋で脇の${back.length}枚を捨て札にした。`);
         triggerOnDiscard(s, pi, back);
-        draw(s, pi, back.length);
-        log(s, `${pl.name} は岩屋で +${back.length}カード。`);
+        discardThenDraw(s, pi, back.length, '岩屋');
       }
     },
     // 縄＝+1カード、その後 手札1枚を廃棄してもよい（任意＝対話は startQueue へ）。
@@ -8698,7 +8752,12 @@
     highwayman: (s, pi) => {
       const pl = s.players[pi];
       if (removeOne(pl.durationCards || [], 'highwayman') || removeOne(pl.inPlay, 'highwayman')) {
-        pl.discard.push('highwayman');
+        /* 略奪の特性を通す＝**無謀な追いはぎは山へ戻り／疲れ知らずの追いはぎは脇に置かれる**
+           （公式が名指しで書いている「片付け以外で場から捨てる」経路）。脇に置いたぶんは
+           `t.tirelessPending` に貯め、片付けの**先引きの後**に山札の上へ流す。 */
+        const hold = [];
+        discardFromPlayRouted(s, pi, 'highwayman', hold);
+        if (hold.length) (s.turn.tirelessPending = s.turn.tirelessPending || []).push(...hold);
         log(s, `${pl.name} は追いはぎを場から捨てた（ターン開始時）。`);
       }
       const got = draw(s, pi, 3);
@@ -8893,7 +8952,7 @@
   };
 
   // 「獲得時」フック（サル＝右隣の獲得で+1カード／封鎖＝同名獲得で呪い）。gain から常に呼ばれる。
-  function triggerOnGain(state, pIndex, cardId, dest) {
+  function triggerOnGain(state, pIndex, cardId, dest, costAtGain) {
     state._gainDepth = (state._gainDepth || 0) + 1;
     if (state._gainDepth > 6) { state._gainDepth--; return; } // 連鎖の暴走防止
     const n = state.players.length;
@@ -8911,7 +8970,7 @@
     /* 略奪P3：現場監督＝「これより後に」コストちょうど$5（コイン5・ポーション0・負債0）のカードを獲得したか。
        1回の$5獲得で、その時点で見張っている自分の予約すべてが満たされる（以後の獲得は不要）。 */
     if (state.turn && (state.turn.taskmasterWatch || []).length) {
-      const tmCost = costOf(state, cardId);
+      const tmCost = costAtGain || costOf(state, cardId); // **獲得した瞬間**のコスト（動的コスト対応）
       if (tmCost.coin === 5 && !tmCost.pot && !tmCost.debt) {
         state.turn.taskmasterWatch.forEach((w) => { if (w.player === pIndex && !w.hit) w.hit = true; });
       }
@@ -8970,11 +9029,6 @@
        別の獲得時効果で先に動かされていたら使用に失敗する（stop-moving）＝キュー消化時に獲得先を再確認する。 */
     if (cardId === 'buried_treasure') {
       (state.onGainQueue = state.onGainQueue || []).push({ type: 'buried_treasure_play', player: pIndex, dest });
-    }
-    /* セイレーン＝これを獲得したとき、手札からアクション1枚を廃棄してもよい。廃棄しないならセイレーンを廃棄する。
-       獲得先から先に動かされていたら自己廃棄は失敗する（それでもアクションの廃棄は選べる＝公式）。 */
-    if (cardId === 'siren') {
-      (state.onGainQueue = state.onGainQueue || []).push({ type: 'siren_gain', player: pIndex, dest });
     }
     // ゴンドラ＝これを獲得したとき、手札のアクションカード1枚を使用してもよい（アクション権は消費しない）。
     if (cardId === 'gondola') {
@@ -9088,6 +9142,14 @@
        移動遊園地/追跡者と同じ窓なので `travelling_fair` の pending を共有する（`source` でラベルだけ切り替える）。 */
     if (state.turn && state.turn.insignia && pIndex === state.turn.active && dest !== 'deck') {
       (state.onGainQueue = state.onGainQueue || []).push({ type: 'travelling_fair', player: pIndex, card: cardId, dest: dest || 'discard', source: 'insignia' });
+    }
+    /* セイレーン＝これを獲得したとき、手札からアクション1枚を廃棄してもよい。廃棄しないならセイレーンを廃棄する。
+       ⚠ **獲得札を動かす効果（勲章／移動遊園地／追跡者／せっかちな／配達…）より後に積む**。
+          先に積むと FIFO で必ず自壊が先に走り、公式の代表的な回避コンボ
+          （`This is why Insignia works` ＝勲章で山札の上へ逃がす）が原理的に成立しなくなる。
+          reducer 側は獲得先にまだ在るかを再確認するので、動かされていれば自壊は失敗する（stop-moving）。 */
+    if (cardId === 'siren') {
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'siren_gain', player: pIndex, dest });
     }
     /* ===== ルネサンス：獲得時の「自動」効果（対話不要＝pending を立てない）===== */
     // 追従者：獲得したとき +2村人（購入以外の獲得でも・相手のターンの獲得でも）。
@@ -9731,8 +9793,26 @@
     state.pending = { type: 'pirate_react', player: seat, queue: queue.slice(1) };
   }
   // アタック無効化（灯台が場/持続にある被害者はアタックを受けない）。§手6で各アタックに配線。
+  /* 略奪P4：無謀な(Reckless)アタックは「指示に2回従う」だけで**プレイは1回**＝
+     公式逐語 `a single Shield reveal (which you have to reveal before the first iteration of the
+     Reckless card) will block both attacks (even if you want to get attacked the 2nd time).`
+     ＝1回目に堀/盾を公開した相手は、2回目のリアクション窓を開かずそのまま免疫にする。
+     記録は「そのカード1回のプレイ」の間だけ有効＝2回目の解決が終わったら runReplays が捨てる
+     （同じターンに同名の2枚目を使ったら改めて公開できる）。 */
+  function noteRecklessBlock(state, pd) {
+    if (!state.turn || !state.traits || !pd || !pd.type) return;
+    if (!hasTrait(state, pd.type, 'reckless')) return;
+    const m = (state.turn.recklessBlock = state.turn.recklessBlock || {});
+    const arr = (m[pd.type] = m[pd.type] || []);
+    if (arr.indexOf(pd.player) < 0) arr.push(pd.player);
+  }
   function attackImmune(state, victim) {
     const v = state.players[victim];
+    const rIter = state.turn && state.turn.recklessIter;
+    if (rIter && state.turn.recklessBlock) {
+      const arr = state.turn.recklessBlock[rIter];
+      if (arr && arr.indexOf(victim) >= 0) return true;
+    }
     // 冒険：チャンピオン＝場にある間（永続持続）、他プレイヤーのアタックの影響を受けない。
     /* 夜想曲：守護者＝使用してから**次の自分のターンの開始時まで**アタックの影響を受けない。
        灯台（"While this is in play"＝次の自分のターン中も守られる）とは窓が違うので、
@@ -10209,6 +10289,20 @@
       }
     });
     state.turn.nextTimeSweep = null;
+    /* 略奪P6：上陸部隊＝「その財宝の解決後に山札の上へ」の予約が**まだ残っていれば必ずここで流す**。
+       ⚠ 予約は `state.turn` に載るので、片付けで turn ごと捨てられると**永久に消える**（＝予約ゼロのまま
+          場に残り続け、後で捨て札へ行ってしまう）。相手のターンに `onGainQueue` 経由で
+          （埋められた財宝の強制プレイなどで）誘発し、相手がそのまま END_TURN した場合に起きる
+          ＝reduce 末尾の再開網は `onGainQueue` の消化より**前**にあるため、そのreduceでは動けない。
+       この位置なら手番プレイヤーの先引きより前だが、対象は**別プレイヤー**の山札なので影響しない。 */
+    ((state.turn.landingPartyMove) || []).forEach((seat) => {
+      const pl = state.players[seat];
+      if (removeOne(pl.inPlay, 'landing_party') || removeOne(pl.durationCards || [], 'landing_party')) {
+        pl.deck.unshift('landing_party');
+        log(state, `${pl.name} は上陸部隊を山札の上に置いた（ターン最初の1枚が財宝）。`);
+      }
+    });
+    state.turn.landingPartyMove = null;
     // 帝国：女魔術師の enchanted（「その手番で最初のアクションが置換」）は、その相手の手番が終われば消える。
     p.enchanted = false;
     // 帝国：陣地＝金貨/鹵獲品を公開しなかった陣地を脇から自分の分割山（サプライ）へ戻す（片付け開始時）。
@@ -10496,6 +10590,9 @@
     state.turn.tricksterHold = null;
     /* 略奪P4：疲れ知らずの(Tireless)＝ターン終了時、脇に置いた札を山札の上へ（**次の手札を先引きした後**＝
        公式 `You draw your next hand before putting the card onto your deck.`。旗/探検の追加ドローも先）。 */
+    // 片付け以外で場から捨てたぶん（追いはぎのターン開始時など）もここで合流させる。
+    (state.turn.tirelessPending || []).forEach((m) => tirelessHold.push(m));
+    state.turn.tirelessPending = null;
     tirelessHold.forEach((m) => {
       state.players[m.player].deck.unshift(m.card);
       log(state, `${state.players[m.player].name} は疲れ知らずの「${C()[m.card].name}」を山札の上に置いた（ターンの終了時）。`);
@@ -10735,8 +10832,14 @@
   function invasionAfterAttack(state, pi) {
     const me = state.players[pi];
     if (gain(state, pi, 'duchy', 'discard')) log(state, `${me.name} は侵略で公領1枚を獲得した。`);
+    /* ⚠ 公領の獲得が対話（公爵夫人/望楼/ティアラ/納屋/複製/御守り…）を開いていたら**上書きしない**。
+       `state.pending` を無条件に代入すると、その窓が無言で消える（§0-26 の要求(demand) で踏んだのと同型）。 */
     if (anyGainable(state, (cid) => gainableBase(state, cid) && isTypeSupply(state, cid, 'action'))) {
-      state.pending = { type: 'invasion', stage: 'action', player: pi };
+      const w = { type: 'invasion', stage: 'action', player: pi };
+      if (state.pending) (state.onGainQueue = state.onGainQueue || []).push(w);
+      else state.pending = w;
+    } else if (state.pending) {
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'invasion_loot', player: pi });
     } else {
       invasionLoot(state, pi);
     }
@@ -11585,6 +11688,18 @@
       });
       state = runReplays(state);
     }
+    /* 略奪：内気な／岩屋＝捨て札トリガーの対話が解決してから引く（ドローを先に走らせない）。 */
+    if (!state.pending && !state.gameOver && state.turn && (state.turn.discardThenDraw || []).length &&
+        !(state.onGainQueue && state.onGainQueue.length)) {
+      const q = state.turn.discardThenDraw;
+      while (q.length && !state.pending) {
+        const e = q.shift();
+        const got = draw(state, e.player, e.n);
+        log(state, `${state.players[e.player].name} は ${e.note}（+${got.length}カード）。`);
+      }
+      if (!q.length) state.turn.discardThenDraw = null;
+      state = runReplays(state);
+    }
     /* 略奪P6：フリゲート船＝アクションの使用が**完全に解決してから**手札4枚まで捨てさせる再開網。 */
     if (!state.pending && !state.gameOver && state.turn && (state.turn.frigateQueue || []).length) {
       const fq = state.turn.frigateQueue;
@@ -11612,10 +11727,14 @@
         state = runReplays(state);
       }
     }
-    /* 略奪P6：財産目当て＝使った財宝の解決後、残りを山札の上に戻す再開網。 */
-    if (!state.pending && !state.gameOver && state.turn && state.turn.fhResume) {
-      const fh = state.turn.fhResume;
-      state.turn.fhResume = null;
+    /* 略奪P6：財産目当て＝使った財宝の解決後、残りを山札の上に戻す再開網。
+       ⚠ **スタックで持つ**（単一スロットで代入すると入れ子で上書きされ、外側が見ていた札が
+          全ゾーンから消える＝保存則違反）。入れ子は純略奪だけで揃う＝杖／呪符の巻物／旗艦の再使用／
+          一等航海士が「財産目当てで使った財宝」の中からもう1枚の財産目当てを使わせる経路。
+          一等航海士（`t.firstMateStack`）と同じ形にする。**内側から先に閉じる（pop）**。 */
+    if (!state.pending && !state.gameOver && state.turn && (state.turn.fhResume || []).length) {
+      const fh = state.turn.fhResume.pop();
+      if (!state.turn.fhResume.length) state.turn.fhResume = null;
       if ((fh.cards || []).length) state.pending = { type: 'fortune_hunter', stage: 'arrange', player: fh.player, cards: fh.cards };
       state = runReplays(state);
     }
@@ -11771,6 +11890,8 @@
           }
           continue;
         }
+        /* 略奪P5：侵略＝②③の獲得が開いた窓の解決後に、続き（③のアクション獲得／④の戦利品）へ進む。 */
+        if (q.type === 'invasion_loot') { invasionLoot(state, q.player); if (state.pending) break; continue; }
         /* 略奪P5：侵略＝獲得した戦利品を（まだ捨て札にあれば）使用する（望楼で動かされていたら失敗＝公式）。 */
         if (q.type === 'invasion_play_loot') {
           const ip = state.players[q.player];
@@ -11948,15 +12069,26 @@
       }
       /* 略奪P4：無謀な(Reckless)＝指示に従う2回目（**プレイではない**＝actionsPlayed・noteAllyPlay・
          山トークン・チャンピオンは動かさない。共謀者にも数えない＝公式）。 */
-      if (r.label === 'reckless') {
+      if (r.label === 'reckless' || r.label === 'reckless_treasure') {
         log(state, `${state.players[r.player].name} は無謀な「${C()[r.card].name}」の指示にもう一度従う。`);
+        /* ⚠ **2回とも「そのターン最初にこれを使った」扱い**（公式逐語＝`if it's Reckless, both iterations
+           will be the 1st time you played it. So your 1st Reckless Fool's Gold gives +[$2], and your
+           1st Reckless Crossroads gives +6 Actions.`）＝1回目が立てた「もう使った」旗を退避して復元する。
+           ⚠ **大金(fortune)の `fortunePlayed` は復元してはいけない**（あれは「このターンに1度だけ」であって
+              「最初のコピーか」ではない＝無謀でもコインの2倍は1度だけ＝日本語wiki が明示）。 */
+        const t2 = state.turn;
+        const savedFG = t2 ? t2.foolsGoldPlayed : undefined;
+        const savedXR = t2 ? t2.crossroadsPlayed : undefined;
+        if (t2) { t2.foolsGoldPlayed = savedFG === undefined ? undefined : false; if (savedXR !== undefined) t2.crossroadsPlayed = 0; }
         state._recklessIter = r.card;
-        try { applyEffect(state, r.card, r.player); } finally { delete state._recklessIter; }
-        continue;
-      }
-      if (r.label === 'reckless_treasure') {
-        log(state, `${state.players[r.player].name} は無謀な「${C()[r.card].name}」の指示にもう一度従う。`);
-        applyTreasureEffect(state, r.player, r.card);
+        if (t2) t2.recklessIter = r.card; // pending を跨いでも残す印（attackImmune が見る）
+        try {
+          if (r.label === 'reckless_treasure') applyTreasureEffect(state, r.player, r.card);
+          else applyEffect(state, r.card, r.player);
+        } finally {
+          delete state._recklessIter;
+          if (t2) { if (savedFG !== undefined) t2.foolsGoldPlayed = true; if (savedXR !== undefined) t2.crossroadsPlayed = (savedXR || 0) + 1; }
+        }
         continue;
       }
       /* 略奪：旗艦＝「次に使用した命令でないアクションカード」を再使用する（1回目の解決後）。
@@ -12768,6 +12900,7 @@
         // 段階アタック(詐欺師など)の gain ステップ(攻撃側が操作)では撃てない。
         if (!isAttackReactPending(pd)) return state;
         log(state, `${p.name} は「堀」を公開し、アタックを無効化した。`);
+        noteRecklessBlock(state, pd);
         ATTACKS[pd.type].onMoat(state, pd); // 登録表を引いて「この被害者を飛ばして次へ」
         return state;
       }
@@ -12781,6 +12914,7 @@
         if (p.hand.indexOf('shield') < 0) return state;
         if (!isAttackReactPending(pd)) return state;
         log(state, `${p.name} は「盾」を公開し、アタックを無効化した。`);
+        noteRecklessBlock(state, pd);
         ATTACKS[pd.type].onMoat(state, pd);
         return state;
       }
@@ -12976,7 +13110,7 @@
         if (action.card == null || !removeOne(pl.hand, action.card)) return state;
         state.pending = null;
         trashCard(state, pd.player, action.card);
-        const types = (C()[action.card].types || []).length;
+        const types = typeCountFor(state, pd.player, action.card); // 資本主義/相続で増えた種別も数える（公式）
         draw(state, pd.player, 2 * types);
         log(state, `${pl.name} は置き去りで「${C()[action.card].name}」を廃棄し +${2 * types}カード（種別${types}つ）。`);
         return state;
@@ -13046,6 +13180,9 @@
       case 'TOOLS_GAIN': {
         const pd = state.pending;
         if (!pd || pd.type !== 'tools_gain') return state;
+        /* 【終端保証】場に1枚もカードが無ければ選べない＝窓を閉じる（工具自身が場にあるので普通は到達しないが、
+           他の強制窓＝shaman_gain/quartermaster と同じ形に揃える＝§0-22「候補ゼロなら閉じる」）。 */
+        if (!toolsTargets(state).length) { state.pending = null; return state; }
         if (action.card == null || toolsTargets(state).indexOf(action.card) < 0) return state;
         state.pending = null;
         const key = gainableBase(state, action.card) ? action.card : mixedPileWithTop(state, action.card);
@@ -13201,8 +13338,7 @@
         pl.discard.push(action.card);
         log(state, `${pl.name} は内気な「${C()[action.card].name}」を捨てた。`);
         triggerOnDiscard(state, pd.player, [action.card]);
-        draw(state, pd.player, 2);
-        log(state, `${pl.name} は +2カード（内気な）。`);
+        discardThenDraw(state, pd.player, 2, '内気な');
         return state;
       }
       // 鼓舞する(Inspiring)＝場に出していないアクション1枚を手札から使用してもよい（アクション権は消費しない）。
@@ -13277,8 +13413,12 @@
             state.trash.splice(ti, 1);
             log(state, `${pl.name} は物色で廃棄置き場から屋敷1枚を獲得した。`);
             gainFromOutside(state, pd.player, 'estate', 'discard');
+            /* ⚠ 屋敷の獲得が対話（納屋/望楼/公爵夫人…）を開いていたら**上書きしない**。
+               `gainFromOutside` は `triggerOnGain` を通すので窓が立ち得る（侵略と同型）。 */
             if (anyGainable(state, (cid) => costUpTo(state, cid, 5))) {
-              state.pending = { type: 'scrounge', stage: 'gain', player: pd.player };
+              const w = { type: 'scrounge', stage: 'gain', player: pd.player };
+              if (state.pending) (state.onGainQueue = state.onGainQueue || []).push(w);
+              else state.pending = w;
             }
           } else {
             log(state, `${pl.name} は物色で屋敷の獲得を選んだが、廃棄置き場に屋敷が無い。`);
@@ -13366,7 +13506,9 @@
         if (gain(state, pd.player, action.card, 'deck')) {
           log(state, `${state.players[pd.player].name} は侵略で「${C()[action.card].name}」を山札の上に獲得した。`);
         }
-        invasionLoot(state, pd.player);
+        // ③の獲得が窓を開いたら、その解決後に④へ進む（順序を公式どおりに保つ）。
+        if (state.pending) (state.onGainQueue = state.onGainQueue || []).push({ type: 'invasion_loot', player: pd.player });
+        else invasionLoot(state, pd.player);
         return state;
       }
       /* 繁栄＝互いに名前の異なる財宝を1枚ずつ獲得（各獲得を解決してから次を選ぶ・やめられる）。
@@ -13436,7 +13578,8 @@
         if (pd.cards.indexOf(action.card) < 0 || !isTreasureFor(state, action.card)) return state;
         state.pending = null;
         playCardNoAction(state, pd.player, action.card, pd.cards, '財産目当てで');
-        if (state.pending) t.fhResume = { player: pd.player, cards: pd.cards };
+        // ⚠ **push**（代入にすると入れ子の財産目当てで外側の札が消える＝保存則違反）
+        if (state.pending) (t.fhResume = t.fhResume || []).push({ player: pd.player, cards: pd.cards });
         else if (pd.cards.length) state.pending = { type: 'fortune_hunter', stage: 'arrange', player: pd.player, cards: pd.cards };
         return state;
       }
@@ -13493,6 +13636,10 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'enlarge_trash') return state;
         const pl = state.players[pd.player];
+        /* 【終端保証】手札が空なら廃棄できない＝窓を閉じる。窓を**積む**時点（開始時キュー）では手札があっても、
+           pop されるのは他の開始時項目の後なので、その間に手札が空になり得る（拡大を1ターンに2回使い、
+           1枚目の廃棄で手札が尽きるケース）。§0-22 の「回数制限つきの窓は解決時に必ず再検査する」と同型。 */
+        if (!pl.hand.length) { state.pending = null; return state; }
         if (action.card == null || pl.hand.indexOf(action.card) < 0) return state;
         const ref = costOf(state, action.card);
         removeOne(pl.hand, action.card);
@@ -18138,6 +18285,8 @@
         const pl = state.players[pd.player];
         if (!removeOne(pl.hand, 'guard_dog')) return state;
         pl.inPlay.push('guard_dog');
+        // これも「カードの使用」＝旗艦の再演／上陸部隊の「最初の1枚」／Ally の窓が誘発する（公式＝相手のターンでも）。
+        noteAllyPlay(state, pd.player, 'guard_dog');
         draw(state, pd.player, 2);
         const extra = pl.hand.length <= 5;
         if (extra) draw(state, pd.player, 2);
@@ -18151,6 +18300,8 @@
         const pl = state.players[pd.player];
         if (!removeOne(pl.hand, 'caravan_guard')) return state;
         pl.inPlay.push('caravan_guard');
+        // これも「カードの使用」＝旗艦の再演／上陸部隊の「最初の1枚」／Ally の窓が誘発する（公式＝相手のターンでも）。
+        noteAllyPlay(state, pd.player, 'caravan_guard');
         // +1カードは反応した本人が引く。+1アクションは「相手の手番」なので無意味＝現在ターン(攻撃側)には加えない（相手に手番を与えない）。
         draw(state, pd.player, 1);
         armDuration(state, pd.player, 'caravan_guard'); // 自分の次の手番開始時 +$1
@@ -21029,8 +21180,10 @@
     // 冒険：偵察隊（scouting_party）の「山札の上5枚を見る」も私的な看破＝本人と支配者以外には伏せる。
     // 夜想曲：`look_arrange`（夜警＝山札の上5枚／太陽の恵み＝4枚）は「**見る**」＝本人だけの私的情報。
     // 同盟：粉屋（山札の上4枚）／歩哨（上5枚）も「**見る**」＝私的看破なので相手には伏せる（§0-21/§0-28 と同型）。
-    // 略奪：財産目当て（上3枚）／地図作り（上4枚）も「**見る**」＝私的看破（§0-21/§0-28/§0-29 A4 と同型）。
-    if (s.pending && (s.pending.type === 'sentry' || s.pending.type === 'lookout' || s.pending.type === 'catacombs' || s.pending.type === 'survivors' || s.pending.type === 'scouting_party' || s.pending.type === 'look_arrange' || s.pending.type === 'miller_pick' || s.pending.type === 'sentinel' || s.pending.type === 'fortune_hunter' || s.pending.type === 'mapmaker') && Array.isArray(s.pending.cards) && seat !== s.pending.player && seat !== secretSeer) {
+    /* 略奪：財産目当て（上3枚）／地図作り（上4枚）／**六分儀（上5枚）** も「**見る**」＝私的看破。
+       ⚠ 六分儀は P1b、財産目当て/地図作りは P6 の実装で、このリストを更新したのが P6 のときだけだったため
+          六分儀が漏れていた（§0-21 偵察隊／§0-28 夜警／§0-29 A4 粉屋・歩哨 と**4回目の同一クラス**）。 */
+    if (s.pending && (s.pending.type === 'sentry' || s.pending.type === 'lookout' || s.pending.type === 'catacombs' || s.pending.type === 'survivors' || s.pending.type === 'scouting_party' || s.pending.type === 'look_arrange' || s.pending.type === 'miller_pick' || s.pending.type === 'sentinel' || s.pending.type === 'fortune_hunter' || s.pending.type === 'mapmaker' || s.pending.type === 'sextant') && Array.isArray(s.pending.cards) && seat !== s.pending.player && seat !== secretSeer) {
       // 暗黒時代：地下墓所/生存者の「山札の上N枚を見る」は私的（公開ではない）＝本人と支配者以外には伏せる。
       s.pending = Object.assign({}, s.pending, { cards: new Array(s.pending.cards.length).fill('back') });
     }
