@@ -9,14 +9,14 @@
  - ページ名は日本語そのまま渡してよい（URLエンコードはこちらでやる）。
  - 出力は UTF-8。編集用リンク・コメント欄・サイドバーは落としてある。
 """
-import re, sys, html, io, urllib.request, urllib.parse
+import re, sys, html, io, os, time, urllib.request, urllib.parse, urllib.error
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 BASE = 'https://wikiwiki.jp/dominiondeck/'
 
 
-def fetch(page):
+def fetch_once(page):
     url = BASE + urllib.parse.quote(page)
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0',
                                                'Accept-Encoding': 'identity'})
@@ -26,6 +26,24 @@ def fetch(page):
         import gzip
         raw = gzip.decompress(raw)
     return raw.decode('utf-8', 'replace')
+
+
+def fetch(page):
+    """429（Too Many Requests）はバックオフして再試行する。
+
+    ⚠ wikiwiki.jp は **数ページ続けて叩くと 429 を返す**（旭日の段階0で 50ページ中36ページが 429 になった）。
+       2.5 秒では足りない。既定は 6 秒間隔＋429 なら 20/40/80/120 秒待って再試行。
+       404 など他のエラーは即座に上へ投げる（存在しないページを待っても無駄なため）。
+    """
+    backoff = [20, 40, 80, 120]
+    for i in range(len(backoff) + 1):
+        try:
+            return fetch_once(page)
+        except urllib.error.HTTPError as e:
+            if e.code != 429 or i >= len(backoff):
+                raise
+            sys.stderr.write('[jpwiki] 429: %s → %d秒待って再試行\n' % (page, backoff[i]))
+            time.sleep(backoff[i])
 
 
 def strip(s):
@@ -44,7 +62,12 @@ def strip(s):
 
 
 def main():
-    for page in sys.argv[1:]:
+    # wikiwiki.jp は 429 を出すので **必ず逐次＋6秒あける**（複数ページを渡しても自動で待つ）。
+    # 急ぎたいときだけ環境変数 JPWIKI_DELAY で短くできる（短くすると 429 で全滅する）。
+    delay = float(os.environ.get('JPWIKI_DELAY', '6'))
+    for i, page in enumerate(sys.argv[1:]):
+        if i:
+            time.sleep(delay)
         print('\n' + '=' * 70)
         try:
             s = fetch(page)
