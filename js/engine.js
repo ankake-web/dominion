@@ -8671,11 +8671,28 @@
      **好意は消費しない**（マット上の枚数をそのまま使う）。「ちょうど$2」は3成分の厳密一致
      （薬草商＝$2+ポーション は数えない＝公式FAQ）。得点計算時はコスト軽減が効かない＝素のコストで判定する。
      cards＝そのプレイヤーの全所持カード（allCards 相当。CPU は仮デッキを渡して engine と一致させる）。 */
+  /* 同盟：高原の羊飼い（Plateau Shepherds）＝得点計算で「好意」と「**ちょうど $2** のカード」を1枚ずつ組にして +2VP。
+     公式の "Other rules clarifications" 逐語：
+       `Cards must cost exactly [$2] to count, which means that Apothecary can't be paired with a Favor.
+        **Most forms of cost reduction (e.g. Bridge) have no effect when scoring. However, Cheap cards still
+        cost [$1] less when scoring**, which may matter for Plateau Shepherds, and Flourishing Trade remains
+        in effect, which definitely matters.`
+     ＝**橋/街道/王女/運河/石切場のような「場にある間」型の軽減は得点計算では効かない**が、
+       **略奪の特性「安価な(Cheap)」は得点計算でも効く**（＝$3の山に付いていればその山のカードは $2 として数える）。
+     ⚠ `cardCost` をそのまま使ってはいけない（最終ターンの `t.costReduction` や場の街道を拾ってしまう）。
+     ⚠ **旭日の予言「盛大な取引(Flourishing Trade)」も得点計算で効き続ける**＝実装したらここに足すこと。 */
+  function scoringCost(state, id) {
+    const cd = C()[id];
+    if (!cd) return null;
+    let coin = cd.cost || 0;
+    if (state && state.traits && state.traits.cheap && state.traits.cheap === pileKeyOf(state, id)) coin -= 1;
+    return { coin: Math.max(0, coin), pot: cd.potion ? 1 : 0, debt: cd.debt || 0 };
+  }
   function allyScoreForCards(state, cards, p) {
     if (!state || state.ally !== 'plateau_shepherds') return 0;
     const two = (cards || []).filter((c) => {
-      const cd = C()[c];
-      return cd && cd.cost === 2 && !cd.potion && !cd.debt;
+      const sc = scoringCost(state, c);
+      return sc && sc.coin === 2 && !sc.pot && !sc.debt;
     }).length;
     return 2 * Math.min(p.favors || 0, two);
   }
@@ -10396,13 +10413,27 @@
       }
       state.turn.garrisonTokens = null;
     }
+    /* 永続持続（ゲーム終了まで場に残る）は `p.delayedEffects` に予約を積まず**専用のカウンタ**で持つ。
+       ここで先に集計しておく＝旗艦の linger の解除判定（下）と、持続の仕分け（`cnt`）の両方が同じ集合を見る。
+       ⚠ ここを取りこぼすと「旗艦が永続持続を再演したのに旗艦だけ捨てられる」＝**出荷済みの実バグ**だった
+          （`random-plunder` の 旗艦×操舵手 で到達。node で再現して修正した）。 */
+    const perm = {};
+    if ((p.princes || []).length) perm.prince = p.princes.length;                  // 新プロモ：王子
+    if (p.hirelings) perm.hireling = p.hirelings;                                  // 冒険：雇人
+    if (p.endlessChalices) perm.endless_chalice = p.endlessChalices;               // 略奪：尽きぬ杯
+    if (p.champions) perm.champion = p.champions;                                  // 冒険：チャンピオン
+    if ((p.archives || []).length) perm.archive = p.archives.length;               // 帝国：資料庫（脇が尽きるまで）
+    if ((p.quartermasters || []).length) perm.quartermaster = p.quartermasters.length; // 略奪：操舵手
     /* 略奪：旗艦＝持続を再演した場合、**その持続が場を離れるまで**旗艦も場に残す（決定D4）。
        再演相手（withCard）の予約が尽きた＝この片付けで場を離れる なら、旗艦の linger も一緒に落とす
-       （＝旗艦もこの片付けで捨てられる。同名複数のインスタンス追跡はしない＝許容簡略化）。 */
+       （＝旗艦もこの片付けで捨てられる。同名複数のインスタンス追跡はしない＝許容簡略化）。
+       ⚠ **再演相手が永続持続なら `delayedEffects` に予約が無い**ので `perm` も見ること。 */
     if ((p.delayedEffects || []).some((e) => e.type === 'flagship_linger')) {
       const des = p.delayedEffects;
       p.delayedEffects = des.filter((e) =>
-        e.type !== 'flagship_linger' || des.some((o) => o !== e && o.type !== 'flagship_linger' && o.card === e.withCard));
+        e.type !== 'flagship_linger'
+        || (perm[e.withCard] || 0) > 0
+        || des.some((o) => o !== e && o.type !== 'flagship_linger' && o.card === e.withCard));
     }
     /* 略奪P6：フリゲート船＝**誰にも影響しない**（他の全員が免疫）なら「次のターンに何もすることが無い」＝
        このターンの片付けで捨てる（公式＝Unlike Swamp Hag, Frigate does nothing at the start of your next turn）。 */
@@ -10419,19 +10450,10 @@
     // --- 海辺：持続カードの仕分け（捨てずに持ち越す）---
     // 予約（delayedEffects）が残っている枚数ぶんだけ durationCards に保持。出し切った持続は捨て札へ。
     const cnt = {}; (p.delayedEffects || []).forEach((e) => { cnt[e.card] = (cnt[e.card] || 0) + 1; });
-    // 新プロモ：王子＝カードを脇に置いた王子は（毎ターン開始時効果を持つ持続として）ゲーム終了まで
-    // 場に残り続ける。稼働中の王子（princes の要素数）ぶんだけ物理カードを保持する。
-    if ((p.princes || []).length) cnt.prince = (cnt.prince || 0) + p.princes.length;
-    // 冒険：雇人＝永続持続。稼働数ぶん物理カードを durationCards に残す（princes と同型）。
-    if (p.hirelings) cnt.hireling = (cnt.hireling || 0) + p.hirelings;
-    // 略奪：尽きぬ杯＝永続持続。稼働数ぶん物理カードを durationCards に残す（雇人と同型）。
-    if (p.endlessChalices) cnt.endless_chalice = (cnt.endless_chalice || 0) + p.endlessChalices;
-    // 冒険：チャンピオン＝永続持続（ゲーム終了まで場に残る）。稼働数ぶん物理カードを durationCards に残す。
-    if (p.champions) cnt.champion = (cnt.champion || 0) + p.champions;
-    // 帝国：資料庫＝脇にカードが残っている資料庫の数ぶん、物理カードを durationCards に残す（stashが尽きたら捨て札へ）。
-    if ((p.archives || []).length) cnt.archive = (cnt.archive || 0) + p.archives.length;
-    // 略奪P6：操舵手＝**ゲーム終了まで**場に残る永続持続（インスタンスの数ぶん物理カードを保持）。
-    if ((p.quartermasters || []).length) cnt.quartermaster = (cnt.quartermaster || 0) + p.quartermasters.length;
+    /* 永続持続（王子／雇人／尽きぬ杯／チャンピオン／資料庫／操舵手）は上の `perm` で集計済み＝
+       稼働数ぶん物理カードを durationCards に残す。**新しい永続持続を足すときは `perm` の側に足す**
+       （ここだけに足すと旗艦の linger の解除判定が取りこぼす＝実際にそのバグを出した）。 */
+    Object.keys(perm).forEach((k) => { cnt[k] = (cnt[k] || 0) + perm[k]; });
     const used = {}; const newDur = [];
     for (const c of (p.durationCards || [])) {
       if ((used[c] || 0) < (cnt[c] || 0)) { newDur.push(c); used[c] = (used[c] || 0) + 1; }

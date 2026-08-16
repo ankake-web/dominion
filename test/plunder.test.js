@@ -2398,5 +2398,35 @@ console.log('\n=== 敵対レビュー回帰 ===');
   ok(count(s.players[1].discard, 'curse') === 2, '防がなければ無謀な魔女で呪いを2枚受ける');
 }
 
+/* === 旗艦 × 永続持続＝旗艦も場に残る（公式＝`that card also stays in play until the Duration card
+   is discarded`）。永続持続は delayedEffects に予約を積まず専用カウンタで持つので、
+   linger の解除判定が `perm`（カウンタ）も見る必要がある。**random-plunder で到達する出荷済みバグだった。** */
+{
+  const perm = [
+    ['quartermaster', '操舵手'],   // 略奪（同じ拡張＝random-plunder で同居する）
+    ['hireling', '雇人'],          // 冒険（mix-all）
+    ['champion', 'チャンピオン'],  // 冒険（非サプライだが場には出る）
+  ];
+  for (const [card, name] of perm) {
+    let s = mk(['flagship', 'quartermaster', 'hireling', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory']);
+    s.turn.phase = 'action'; s.turn.actions = 3;
+    s.players[0].hand = ['flagship', card];
+    s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'flagship' });
+    s = E.reduce(s, { type: 'PLAY_ACTION', card });
+    let g = 0;
+    while (s.pending && g++ < 10) {
+      if (s.pending.type === 'quartermaster') s = E.reduce(s, { type: 'QUARTERMASTER_GAIN', card: 'silver' });
+      else break;
+    }
+    s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+    s = E.reduce(s, { type: 'END_TURN' });
+    const p = s.players[0];
+    ok(count(p.durationCards, card) >= 1, `旗艦×${name}：${name}は永続持続として場に残る`);
+    ok(count(p.durationCards, 'flagship') === 1 && count(p.discard, 'flagship') === 0,
+      `旗艦×${name}：**旗艦も一緒に場に残る**（永続持続はカウンタで持つので linger の解除判定が取りこぼしていた）`);
+  }
+}
+
 console.log(`\n略奪テスト結果: ${pass} 件成功, ${fail} 件失敗`);
 if (fail > 0) process.exit(1);

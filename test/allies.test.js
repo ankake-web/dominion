@@ -2243,6 +2243,44 @@ console.log('=== A5: 出荷セット（allies / random-allies）の CPU ソー�
 }
 
 console.log('\n========================================');
+/* === 高原の羊飼い × 特性「安価な(Cheap)」＝**得点計算でも $1 安い** ===
+   公式 "Other rules clarifications" 逐語＝`Most forms of cost reduction (e.g. Bridge) have no effect
+   when scoring. **However, Cheap cards still cost [$1] less when scoring, which may matter for
+   Plateau Shepherds**, and Flourishing Trade remains in effect, which definitely matters.`
+   ⚠ `cardCost` をそのまま使うと最終ターンの橋/街道まで拾ってしまうので `scoringCost` を使う。 */
+{
+  let s = E.createInitialState(['A', 'B'],
+    ['bauble', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory', 'festival'],
+    { startActive: 0, traits: ['cheap'], traitPiles: { cheap: 'village' } });
+  s.ally = 'plateau_shepherds';
+  s.players[0].favors = 20;   // 好意を多めにして「$2のカードの枚数」がそのまま出るようにする
+  // 開始デッキ＝銅貨7($0)＋屋敷3($2)。そこに村2枚と堀1枚を足す。
+  s.players[0].discard = s.players[0].discard.concat(['village', 'village', 'moat']);
+  const cards = E.allCards(s.players[0]);
+  ok(E.allyScoreForCards(s, cards, s.players[0]) === 2 * 6,
+    '安価な($3→$2)の村2＋堀1＋屋敷3＝$2が6枚 ＝ 12VP（安価なは得点計算に効く）');
+  // 「安価な」が別の山に付いていれば村は $3 のまま＝堀1枚ぶんだけ
+  let z = E.createInitialState(['A', 'B'],
+    ['bauble', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory', 'festival'],
+    { startActive: 0, traits: ['cheap'], traitPiles: { cheap: 'smithy' } });
+  z.ally = 'plateau_shepherds';
+  z.players[0].favors = 20;
+  z.players[0].discard = z.players[0].discard.concat(['village', 'village', 'moat']);
+  ok(E.allyScoreForCards(z, E.allCards(z.players[0]), z.players[0]) === 2 * 4,
+    '安価なが別の山なら村($3)は数えない＝堀1＋屋敷3の4枚で 8VP');
+  // 橋のような「場にある間」型の軽減は得点計算では効かない（公式）
+  let b = E.createInitialState(['A', 'B'],
+    ['bauble', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'workshop', 'laboratory', 'festival'],
+    { startActive: 0 });
+  b.ally = 'plateau_shepherds';
+  b.players[0].favors = 20;
+  b.players[0].discard = b.players[0].discard.concat(['village', 'village']);
+  b.turn.costReduction = 1;                    // 橋を使った直後のような状態
+  b.players[0].inPlay = ['highway'];           // 街道が場にある状態
+  ok(E.allyScoreForCards(b, E.allCards(b.players[0]), b.players[0]) === 2 * 3,
+    '橋/街道は得点計算に効かない＝村($3)は数えず屋敷3枚だけで 6VP（公式＝Most forms of cost reduction ... have no effect when scoring）');
+}
+
 console.log('同盟テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');
 process.exit(fail ? 1 : 0);
