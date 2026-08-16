@@ -124,11 +124,23 @@ function strip(s) {
   const rawDir = process.env.RAW_DIR || '';
   if (rawDir) fs.mkdirSync(rawDir, { recursive: true });
   for (const page of pages) {
-    const p = '/index.php/' + encodeURIComponent(page);
-    let r;
-    try { r = await authed(p); } catch (e) { console.log('\n=== PAGE: ' + page + ' FAILED: ' + e.message); continue; }
+    /* ⚠ スペースは %20 ではなく `_`（アンダースコア）にする＝そうしないと 301 が返る。
+       さらに **301/302 の Location を追いかける**（拡張の総論ページ `Rising Sun` などは
+       正規URLへリダイレクトされるので、追わないと本文が1バイトも取れない）。 */
+    let p = '/index.php/' + encodeURIComponent(page).replace(/%20/g, '_');
+    let r, hops = 0, failed = false;
+    while (hops++ < 6) {
+      try { r = await authed(p); } catch (e) { console.log('\n=== PAGE: ' + page + ' FAILED: ' + e.message); failed = true; break; }
+      if ([301, 302, 303, 307, 308].indexOf(r.status) >= 0 && r.headers.location) {
+        const L = r.headers.location;
+        p = L.indexOf('http') === 0 ? new URL(L).pathname : L;
+        continue;
+      }
+      break;
+    }
+    if (failed) continue;
     console.log('\n' + '='.repeat(70));
-    console.log('### PAGE: ' + page + '   (status=' + r.status + ')');
+    console.log('### PAGE: ' + page + '   final=' + p + '   (status=' + r.status + ')');
     console.log('='.repeat(70));
     if (rawDir) fs.writeFileSync(path.join(rawDir, 'raw_' + page.replace(/[^A-Za-z0-9_]/g, '') + '.html'), r.body);
     console.log(strip(r.body));
