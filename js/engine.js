@@ -421,6 +421,23 @@
     const red = (t && t.costReduction) || 0;
     return Math.max(0, base - red);
   }
+  /* 「予約(delayedEffects)を積まずに、ゲーム終了まで（または脇が尽きるまで）場に残り続ける持続」の**唯一の正本**。
+     ⚠ **新しい永続持続を足すときは必ずここに足す**。以前は `cleanupAndAdvance`（持続の仕分け）と
+        `stayingCounts`（増築の対象除外）に**同じリストが二重に書かれていて**、
+        操舵手(quartermaster) が `stayingCounts` 側だけ漏れていた
+        ＝**増築が「ゲーム終了まで場に残る操舵手」を廃棄できた**（出荷済みの実バグ）。
+     さらに `cleanupAndAdvance` の `flagship_linger` の解除判定もこの集合を見る
+     （＝旗艦が永続持続を再演したら旗艦も残す）。 */
+  function permanentDurationCounts(p) {
+    const perm = {};
+    if ((p.princes || []).length) perm.prince = p.princes.length;                      // 新プロモ：王子
+    if (p.hirelings) perm.hireling = p.hirelings;                                      // 冒険：雇人
+    if (p.endlessChalices) perm.endless_chalice = p.endlessChalices;                   // 略奪：尽きぬ杯
+    if (p.champions) perm.champion = p.champions;                                      // 冒険：チャンピオン
+    if ((p.archives || []).length) perm.archive = p.archives.length;                   // 帝国：資料庫（脇が尽きるまで）
+    if ((p.quartermasters || []).length) perm.quartermaster = p.quartermasters.length; // 略奪：操舵手
+    return perm;
+  }
   /* ===== 略奪：特性(Trait) ＝「山」に付く（カードではない）。判定は必ず pileKeyOf を通す ＝
      分割山の中身・混合山の中身にも効き、**山が空になっても効き続ける**。種別は増やさない。 */
   function hasTrait(state, cardId, traitId) {
@@ -10417,13 +10434,7 @@
        ここで先に集計しておく＝旗艦の linger の解除判定（下）と、持続の仕分け（`cnt`）の両方が同じ集合を見る。
        ⚠ ここを取りこぼすと「旗艦が永続持続を再演したのに旗艦だけ捨てられる」＝**出荷済みの実バグ**だった
           （`random-plunder` の 旗艦×操舵手 で到達。node で再現して修正した）。 */
-    const perm = {};
-    if ((p.princes || []).length) perm.prince = p.princes.length;                  // 新プロモ：王子
-    if (p.hirelings) perm.hireling = p.hirelings;                                  // 冒険：雇人
-    if (p.endlessChalices) perm.endless_chalice = p.endlessChalices;               // 略奪：尽きぬ杯
-    if (p.champions) perm.champion = p.champions;                                  // 冒険：チャンピオン
-    if ((p.archives || []).length) perm.archive = p.archives.length;               // 帝国：資料庫（脇が尽きるまで）
-    if ((p.quartermasters || []).length) perm.quartermaster = p.quartermasters.length; // 略奪：操舵手
+    const perm = permanentDurationCounts(p);
     /* 略奪：旗艦＝持続を再演した場合、**その持続が場を離れるまで**旗艦も場に残す（決定D4）。
        再演相手（withCard）の予約が尽きた＝この片付けで場を離れる なら、旗艦の linger も一緒に落とす
        （＝旗艦もこの片付けで捨てられる。同名複数のインスタンス追跡はしない＝許容簡略化）。
@@ -11526,12 +11537,9 @@
     const p = state.players[pi];
     const cnt = {};
     (p.delayedEffects || []).forEach((e) => { cnt[e.card] = (cnt[e.card] || 0) + 1; });
-    if ((p.princes || []).length) cnt.prince = (cnt.prince || 0) + p.princes.length;
-    if (p.hirelings) cnt.hireling = (cnt.hireling || 0) + p.hirelings;
-    // 略奪：尽きぬ杯＝永続持続。稼働数ぶん物理カードを durationCards に残す（雇人と同型）。
-    if (p.endlessChalices) cnt.endless_chalice = (cnt.endless_chalice || 0) + p.endlessChalices;
-    if (p.champions) cnt.champion = (cnt.champion || 0) + p.champions;
-    if ((p.archives || []).length) cnt.archive = (cnt.archive || 0) + p.archives.length;
+    // 永続持続は `permanentDurationCounts` が唯一の正本（二重管理をやめた＝操舵手の取りこぼしを出したため）。
+    const perm = permanentDurationCounts(p);
+    Object.keys(perm).forEach((k) => { cnt[k] = (cnt[k] || 0) + perm[k]; });
     return cnt;
   }
   function improveTargets(state, pi) {
@@ -12930,6 +12938,12 @@
           p.discard.push(c);
         });
         log(state, `${p.name} は手札を ${discardCards.length}枚 捨てた。`);
+        /* ⚠ **捨て札トリガーを通す**（坑道＝金貨／小道／織工）。以前はここだけ呼んでおらず、
+           **民兵で坑道を捨てても金貨が出なかった**（辺境伯・拷問人・軍団兵は呼んでいる＝engine 内で非対称）。
+           出荷済みの `promo-pack` は民兵と闇市場を両方含み、闇市場デッキに坑道が入る＝**今日到達できた**。
+           `noPrompt=true` は拷問人/軍団兵と同じ慣行（相手のアタックによる捨て札では対話を出さない＝
+           攻撃キューを壊さないための既存の許容簡略化。村有緑地/忠犬はここでは出ない）。 */
+        if (discardCards.length) triggerOnDiscard(state, pd.player, discardCards, true);
         advanceMilitia(state, pd);
         return state;
       }
@@ -15701,6 +15715,9 @@
         for (const c of cards) if (!removeOne(copy, c)) return state;
         cards.forEach((c) => { removeOne(p.hand, c); p.discard.push(c); });
         log(state, `${p.name} は手札を ${cards.length}枚 捨てた。`);
+        // ⚠ 捨て札トリガー（坑道/小道/織工）を通す。`noPrompt=true` は相手のアタックによる捨て札の慣行。
+        //    **軍団兵の +1カード より前**に解決する（坑道の金貨が引き直しのリシャッフルに入るため）。
+        if (cards.length) triggerOnDiscard(state, pd.player, cards, true);
         // 帝国：軍団兵＝手札2枚まで捨てた各相手は、その後カードを1枚引く（drawAfter）。
         if (pd.drawAfter) { draw(state, pd.player, pd.drawAfter); log(state, `${p.name} は +${pd.drawAfter}カード。`); }
         advanceDiscardDown(state, pd);
@@ -17461,6 +17478,10 @@
         cards.forEach((c) => { removeOne(owner.hand, c); owner.discard.push(c); });
         log(state, `${owner.name} は公共広場で手札${cards.length}枚を捨てた。`);
         state.pending = null;
+        /* ⚠ 捨て札トリガー（坑道/小道/織工/村有緑地/忠犬）を通す。**自分のターンの自分の捨て札**なので
+           `noPrompt` は付けない（村有緑地・忠犬の窓も開く＝公式）。以前は呼んでおらず、
+           公共広場で坑道を捨てても金貨が出なかった。 */
+        if (cards.length) triggerOnDiscard(state, pd.player, cards);
         return state;
       }
       // 資料庫：脇の3枚（この資料庫の stash）から1枚を選んで手札へ（必須＝1枚）。空になった資料庫は除去。

@@ -2428,5 +2428,26 @@ console.log('\n=== 敵対レビュー回帰 ===');
   }
 }
 
+/* === 増築(Improve)は「ゲーム終了まで場に残る持続」を廃棄できない ===
+   `stayingCounts` に永続持続のカウンタが漏れていると、**増築が操舵手を廃棄して $6 を獲得できた**
+   （出荷済みの実バグ）。永続持続の一覧は `permanentDurationCounts` の1箇所だけに置いた。 */
+{
+  const perm = [
+    ['quartermaster', (pl) => { pl.quartermasters = [{ id: 1, cards: [], plays: 1 }]; }, '操舵手'],
+    ['hireling', (pl) => { pl.hirelings = 1; }, '雇人'],
+    ['endless_chalice', (pl) => { pl.endlessChalices = 1; }, '尽きぬ杯'],
+    ['champion', (pl) => { pl.champions = 1; }, 'チャンピオン'],
+  ];
+  for (const [card, setup, name] of perm) {
+    let s = mk(['improve', 'quartermaster', 'hireling', 'village', 'smithy', 'market', 'moat', 'cellar', 'laboratory', 'festival']);
+    s.players[0].durationCards = [card];
+    setup(s.players[0]);
+    ok(E.improveTargets(s, 0).indexOf(card) < 0, `増築は${name}（永続持続）を廃棄対象にしない`);
+  }
+  let z = mk(['improve', 'quartermaster', 'hireling', 'village', 'smithy', 'market', 'moat', 'cellar', 'laboratory', 'festival']);
+  z.players[0].inPlay = ['village'];
+  ok(E.improveTargets(z, 0).indexOf('village') >= 0, '対照：場の普通のアクション（村）は増築の対象になる');
+}
+
 console.log(`\n略奪テスト結果: ${pass} 件成功, ${fail} 件失敗`);
 if (fail > 0) process.exit(1);

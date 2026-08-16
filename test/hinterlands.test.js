@@ -478,6 +478,56 @@ console.log('=== 異郷: CPU通し（stuck/例外なし・保存則）===');
 }
 
 console.log('\n========================================');
+/* === 坑道(Tunnel)の捨て札トリガーは「手札を捨てさせる」全経路で誘発する ===
+   ⚠ 以前は 民兵(MILITIA_RESOLVE)／軍団兵ほか(DISCARD_DOWN_RESOLVE)／公共広場(FORUM_DISCARD) が
+      `triggerOnDiscard` を呼んでおらず、坑道を捨てても金貨が出なかった（辺境伯だけ呼んでいた＝非対称）。
+      **出荷済みの `promo-pack` は民兵と闇市場を両方含み、闇市場デッキに坑道が入る＝今日到達できた。** */
+{
+  let s = E.createInitialState(['A', 'B'],
+    ['militia', 'tunnel', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival'],
+    { startActive: 0 });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['militia']; s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper'];
+  s.players[1].hand = ['tunnel', 'copper', 'copper', 'copper', 'estate'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'militia' });
+  s = E.reduce(s, { type: 'MILITIA_RESOLVE', cards: ['tunnel', 'copper'] });
+  ok(s.players[1].discard.filter((c) => c === 'gold').length === 1,
+    '民兵で坑道を捨てさせたら被害者は金貨を獲得する');
+}
+{
+  let s = E.createInitialState(['A', 'B'],
+    ['forum', 'tunnel', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival'],
+    { startActive: 0 });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['forum', 'tunnel', 'copper'];
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'forum' });
+  const h = s.players[0].hand.slice();
+  s = E.reduce(s, { type: 'FORUM_DISCARD', cards: ['tunnel', h.filter((c) => c !== 'tunnel')[0]] });
+  ok(s.players[0].discard.filter((c) => c === 'gold').length === 1,
+    '公共広場で坑道を捨てたら金貨を獲得する（自分の捨て札＝対話も出る経路）');
+}
+{
+  let s = E.createInitialState(['A', 'B'],
+    ['legionary', 'tunnel', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival'],
+    { startActive: 0 });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['legionary', 'gold']; s.players[0].deck = ['copper', 'copper', 'copper', 'copper'];
+  s.players[1].hand = ['tunnel', 'copper', 'copper', 'copper', 'estate'];
+  s.players[1].deck = ['silver', 'silver', 'silver'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'legionary' });
+  let g = 0;
+  while (s.pending && g++ < 12) {
+    const pd = s.pending;
+    if (pd.type === 'legionary_reveal') s = E.reduce(s, { type: 'LEGIONARY_REVEAL', reveal: true });
+    else if (pd.type === 'discard_down' && pd.stage === 'react') s = E.reduce(s, { type: 'LINGER_REACT' });
+    else if (pd.type === 'discard_down') s = E.reduce(s, { type: 'DISCARD_DOWN_RESOLVE', cards: ['tunnel', 'copper', 'copper'] });
+    else break;
+  }
+  ok(s.players[1].discard.filter((c) => c === 'gold').length + s.players[1].hand.filter((c) => c === 'gold').length >= 1,
+    '軍団兵（discard_down）で坑道を捨てさせても金貨を獲得する');
+}
+
 console.log('異郷テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');
 if (fail > 0) process.exit(1);
