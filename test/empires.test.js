@@ -151,6 +151,34 @@ console.log('=== 帝国: 元手 ===');
   ok(tdiff(t0base, tally(s)).length === 0, '保存則OK（capitalはデッキ内に残る）');
 }
 
+/* ============ 回帰：元手×支配（Possession）＝場から捨てるときの負債6は支配者が負う ============
+   公式FAQ＝"You also get any D tokens that player would have gotten"（takeDebt/BUY_EVENT と同じ振り分け）。
+   修正前は cleanupAndAdvance の capital ブロックが p.debt（＝被支配者）に直接加算していた。 */
+console.log('=== 帝国: 元手×支配（負債6は支配者へ・回帰） ===');
+{ // 被支配ターン（active=B=1, possessedBy=A=0）：B の場の元手→負債6は支配者 A に付く
+  let s = mk(); s.turn.active = 1; s.turn.possessedBy = 0;
+  s.turn.phase = 'buy'; s.turn.coins = 0;
+  s.supply.capital -= 1; s.players[1].inPlay.push('capital'); // B の場に元手（保存則を保って山から移す）
+  s = reduce(s, { type: 'END_TURN' });
+  ok(s.players[0].debt === 6, '支配者A が負債6 を負う（修正前は0のままだった）');
+  ok((s.players[1].debt || 0) === 0, '被支配者B の負債は 0（修正前は6を押し付けられていた）');
+}
+{ // 被支配ターンで t.coins が残っていても**支配者の負債は即時返済されない**（被支配ターンのコインで返さない）
+  let s = mk(); s.turn.active = 1; s.turn.possessedBy = 0;
+  s.turn.phase = 'buy'; s.turn.coins = 5;
+  s.supply.capital -= 1; s.players[1].inPlay.push('capital');
+  s = reduce(s, { type: 'END_TURN' });
+  ok(s.players[0].debt === 6, '支配者A の負債は 6 のまま（残コイン5で即返済しない）');
+  ok((s.players[1].debt || 0) === 0, '被支配者B の負債は 0');
+}
+{ // 退行なし：支配なしの通常ターンは従来どおり本人に負債6→残コインで部分即返済
+  let s = mk(); s.turn.phase = 'buy'; s.turn.coins = 4;
+  s.supply.capital -= 1; s.players[0].inPlay.push('capital');
+  s = reduce(s, { type: 'END_TURN' });
+  ok(s.players[0].debt === 2, '通常ターン：本人に負債6→残コイン4を即返済して負債2');
+  ok((s.players[1].debt || 0) === 0, '相手B の負債は 0（支配なしでは振り替えない）');
+}
+
 /* ============ 敵対レビュー回帰：闇市場×負債 ============ */
 console.log('=== 帝国: 闇市場×負債（回帰） ===');
 { // 負債カードを闇市場で買うと負債を負う（gain非経由でも付与）

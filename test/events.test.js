@@ -178,6 +178,67 @@ console.log('=== EV2＝重量イベント（tax / donate / annex）===');
 // --- tax: CPU が tax_pile を終端 ---
 { let s = mk(['tax'], 2, 1); s = reduce(s, { type: 'BUY_EVENT', event: 'tax' }); s = cpuResolve(s);
   ok(!s.pending, 'tax：CPUが tax_pile を終端する'); }
+// --- tax: 【回帰】空のサプライ山にも負債を置ける（公式：カード文 "Add [2D] to a Supply pile." に非空条件なし。
+//     旧実装は (supply[raw]||0)<=0 で拒否＝pending が閉じず pileDebt も増えなかった） ---
+{ let s = mk(['tax'], 2, 1); s.supply.curse = 0; // 呪い山を空にする
+  s = reduce(s, { type: 'BUY_EVENT', event: 'tax' });
+  ok(s.pending && s.pending.type === 'tax_pile', 'tax×空山：窓は開く');
+  s = reduce(s, { type: 'TAX_PILE', pile: 'curse' });
+  ok(!s.pending && (s.pileDebt.curse || 0) === 3, 'tax×空山：空の呪い山を受理して +2（準備1+2=3・pending解決）'); }
+// --- tax: 【回帰】全サプライ山が空でも窓が開き、置ける（ゲート＝「supply キーが1つでもあれば」に緩和） ---
+{ let s = mk(['tax'], 2, 1); Object.keys(s.supply).forEach((k) => { s.supply[k] = 0; });
+  s = reduce(s, { type: 'BUY_EVENT', event: 'tax' });
+  ok(s.pending && s.pending.type === 'tax_pile', 'tax×全山空：それでも tax_pile の窓が開く');
+  s = reduce(s, { type: 'TAX_PILE', pile: 'province' });
+  ok(!s.pending && (s.pileDebt.province || 0) === 3, 'tax×全山空：空の属州山に +2 で解決'); }
+// --- tax: 【回帰】非サプライは supply にキーが生えていても拒否・存在しないキーも拒否（緩めすぎていない） ---
+{ let s = mk(['tax'], 2, 1); s.supply.bag_of_gold = 1; // 賞品キーを人工的に用意（NON_SUPPLY ガードの確認）
+  s = reduce(s, { type: 'BUY_EVENT', event: 'tax' });
+  s = reduce(s, { type: 'TAX_PILE', pile: 'bag_of_gold' });
+  ok(s.pending && s.pending.type === 'tax_pile' && (s.pileDebt.bag_of_gold || 0) === 0, 'tax：賞品（NON_SUPPLY）は supply キーがあっても拒否＝pending維持');
+  s = reduce(s, { type: 'TAX_PILE', pile: 'no_such_pile' });
+  ok(s.pending && (s.pileDebt.no_such_pile || 0) === 0, 'tax：supply に無いキーは拒否＝pending維持');
+  s = reduce(s, { type: 'TAX_PILE', pile: 'gold' });
+  ok(!s.pending && (s.pileDebt.gold || 0) === 3, 'tax：拒否の後も正当な山で解決できる'); }
+// --- tax: 【回帰】分割山が丸ごと空でも、下段キー指定→上段キーへの正規化が働く（正規化×空山の複合） ---
+{ let s = mk(['tax'], 2, 1); s.supply.settlers = 0; s.supply.bustling_village = 0; // 分割山を丸ごと空に
+  s = reduce(s, { type: 'BUY_EVENT', event: 'tax' });
+  s = reduce(s, { type: 'TAX_PILE', pile: 'bustling_village' }); // 下段を指定
+  ok(!s.pending && (s.pileDebt.settlers || 0) === 3 && (s.pileDebt.bustling_village || 0) === 0,
+    'tax×空の分割山：下段指定でも上段(settlers)キーに +2（孤児化しない）'); }
+// --- tax: 【回帰】全サプライ山が空でも CPU が「非null」の山を返し、engine が受理して終端する
+//   （窓ゲートを「supply キーがあれば開く」に緩めた対＝CPU decidePending tax_pile に
+//     「非空の候補ゼロなら在庫条件を外して選ぶ」フォールバックが無いと、pile:null を
+//     engine が拒否し続ける livelock になる） ---
+{ let s = mk(['tax'], 2, 1); Object.keys(s.supply).forEach((k) => { s.supply[k] = 0; });
+  s = reduce(s, { type: 'BUY_EVENT', event: 'tax' });
+  ok(s.pending && s.pending.type === 'tax_pile', 'tax×全山空CPU：窓が開く');
+  const a = CPU.decide(s);
+  ok(a && a.type === 'TAX_PILE' && a.pile != null, 'tax×全山空CPU：CPUが非nullの山を返す（pile=' + (a && a.pile) + '）');
+  const before = (a && a.pile && (s.pileDebt[a.pile] || 0)) || 0;
+  s = reduce(s, a);
+  ok(!s.pending, 'tax×全山空CPU：engineが受理して pending が閉じる（livelockしない）');
+  ok(a && a.pile != null && (s.pileDebt[a.pile] || 0) === before + 2,
+    'tax×全山空CPU：選んだ山に +2（' + before + '→' + (a && a.pile ? (s.pileDebt[a.pile] || 0) : '?') + '）'); }
+// --- tax: 【回帰】全山空でも cpuResolve が有限手で終端する（フォールバック無しだと30手上限まで空回りして pending が残る） ---
+{ let s = mk(['tax'], 2, 1); Object.keys(s.supply).forEach((k) => { s.supply[k] = 0; });
+  s = reduce(s, { type: 'BUY_EVENT', event: 'tax' }); s = cpuResolve(s);
+  ok(!s.pending, 'tax×全山空CPU：cpuResolve が終端する'); }
+// --- tax: 【退行なし】通常状態（非空あり）では従来どおり非空の山（属州優先）を返す ---
+{ let s = mk(['tax'], 2, 1); s = reduce(s, { type: 'BUY_EVENT', event: 'tax' });
+  const a = CPU.decide(s);
+  ok(a && a.type === 'TAX_PILE' && a.pile === 'province' && s.supply.province > 0,
+    'tax通常CPU：非空の属州を選ぶ（従来どおり・pile=' + (a && a.pile) + '）');
+  s = reduce(s, a);
+  ok(!s.pending && (s.pileDebt.province || 0) === 3, 'tax通常CPU：属州山 1+2=3 で解決'); }
+// --- tax: 【退行なし】属州だけ空なら「在庫のある山」から選ぶ（フォールバックで在庫条件を外しすぎていない） ---
+{ let s = mk(['tax'], 2, 1); s.supply.province = 0;
+  s = reduce(s, { type: 'BUY_EVENT', event: 'tax' });
+  const a = CPU.decide(s);
+  ok(a && a.type === 'TAX_PILE' && a.pile != null && s.supply[a.pile] > 0,
+    'tax属州空CPU：非空の山を選ぶ（空の属州には落ちない・pile=' + (a && a.pile) + '）');
+  s = reduce(s, a);
+  ok(!s.pending, 'tax属州空CPU：解決する'); }
 
 // --- donate: 購入で負債8＋次の自分のターン開始でデッキ掃討→廃棄→5枚引く ---
 { let s = mk(['donate'], 0, 1); s = reduce(s, { type: 'BUY_EVENT', event: 'donate' });

@@ -2383,10 +2383,10 @@
     // Choose one: Trash a card from your hand; / or gain an Estate from the trash, and if you did, gain a card costing up to [$5].
     scrounge: { name: '物色', nameEn: 'Scrounge', kind: 'event', expansion: 'plunderexp', cost: 3, debt: 0,
       text: '次から1つを選ぶ：\n・手札1枚を廃棄する\n・廃棄置き場から屋敷1枚を獲得する。獲得した場合、コスト5以下のカード1枚を獲得する' },
-    // Once per turn: If the previous turn wasn't yours, you don't discard cards from play in Clean-up this turn, and take an extra turn after this one.
-    // ⚠ 検証で訂正: 旧=`1ターンに1度のみ：` → `1ターンに1回：`（launch と同じ理由＝既存カタログ 5/5 の表記）。
-    //    本文は研究doc §4-F の「旧テキスト（＝日本語の印刷版）」と逐語一致（＝2022版）。
-    //    **「3ターン連続」の文言が入っていたらそれは 2023エラッタ＝誤り**（ここには無い＝正しい）。
+    // You don't discard cards from play in Clean-up this turn. Take an extra turn after this one (but not a 3rd turn in a row).
+    // ⚠ 版＝**2023年9月の Extra turn errata 側を採用**（決定 D1・PROGRESS §4）。engine もこの版
+    //    （`ONCE_PER_TURN_EVENTS` に journey は入れない／「3ターン連続不可」は島民・航海と同じ共通機構）。
+    //    **`Once per turn:` の前置句が付いていたらそれは 2022印刷版＝誤り**（ここには無い＝正しい）。
     journey: { name: '旅行', nameEn: 'Journey', kind: 'event', expansion: 'plunderexp', cost: 4, debt: 0,
       text: 'このターン、あなたはクリーンアップフェイズに場のカードを捨て札にしない。\nこのターンの後に追加の1ターンを得る（ただし、連続3ターンとなる場合は得られない）。' },
     // Trash 3 cards from your hand. Each other player with 5 or more cards in hand trashes one of them.

@@ -298,6 +298,20 @@ try {
     ok(pile('village') && pile('village').className.indexOf('buyable') < 0, '錯乱中はアクションカードの山が「買える」表示にならない');
     ok(pile('silver') && pile('silver').className.indexOf('buyable') >= 0, '錯乱中でも銀貨は買える');
   }
+  console.log('\n=== 辞退ボタン（skip=true の死にボタン回帰）===');
+  {
+    /* 聖域（移動動物園）＝mix-all で夜想曲と同居する。modalSingleHand の skip 引数に
+       boolean true を渡すと label/onclick が undefined の「空文字で押しても何も起きないボタン」になり、
+       手札0枚（候補ゼロ）のとき人間が完全に詰む。正しくは { label, on } で card:null を dispatch する。 */
+    showPend({ type: 'sanctuary_exile', player: 0 }, (st) => { st.players[0].hand = []; });
+    ok($all('.modal .chip-grid .card').length === 0, '聖域：手札が空なら候補チップは0');
+    const btn = byText('.modal button', '追放しない');
+    ok(!!btn, '聖域：ラベル付きの「追放しない」ボタンがある');
+    ok($all('.modal button').every((b) => b.textContent.trim() !== ''),
+      '聖域：モーダルにラベルが空のボタンが無い（skip=true 退行の直接検出）');
+    if (btn) btn.click();
+    ok(!!btn && UI.store.state.pending == null, '聖域：「追放しない」で SANCTUARY_EXILE {card:null} が通り窓が閉じる');
+  }
 } catch (e) {
   fail++; console.log('  x 例外: ' + (e && e.stack ? e.stack : e));
 }

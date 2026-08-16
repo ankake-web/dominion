@@ -1330,6 +1330,9 @@
       // サプライの山1つに負債2を置く（強制）。相手が買いそうな高コスト札（属州＞最高コスト）を狙う。
       // 分割山は上段キーで一元管理するので下段は候補から除く（engine 側でも正規化されるが候補も揃える）。
       const cand = Object.keys(state.supply).filter((id) => C()[id] && !NON_SUPPLY_SET.has(id) && sup(state, id) > 0 && !(DOM.SPLIT_PILES && DOM.SPLIT_PILES[id]));
+      // 空の山にも置ける（engine は受理する）＝非空が1つも無ければ在庫条件を外して選ぶ
+      //   （窓ゲートの緩和と対＝ここで null を返すと engine拒否×CPU再提案の livelock）。
+      if (!cand.length) cand.push(...Object.keys(state.supply).filter((id) => C()[id] && !NON_SUPPLY_SET.has(id) && !(DOM.SPLIT_PILES && DOM.SPLIT_PILES[id])));
       cand.sort((a, b) => (C()[b].cost || 0) - (C()[a].cost || 0));
       const pick = (cand.indexOf('province') >= 0 ? 'province' : cand[0]) || null;
       return { type: 'TAX_PILE', pile: pick };
@@ -2096,13 +2099,15 @@
         return { type: 'OVERLORD_PLAY', card: cands[0] }; // 終端保証（GAIN_ORDER 外でも必ず選ぶ）
       }
       case 'crown': {
+        // ⚠ 同盟：航海の3枚制限／将軍で使えない札を返し続けると engine拒否×CPU提案の livelock（玉座と同型）。
+        const okC = (c) => DOM.engine.canPlayHandCard(state, pd.player, c);
         if (pd.mode === 'action') {
           // 2回使う価値が高いアクションを選ぶ（玉座と同じ throneValue）。無ければ辞退。
-          const acts = p.hand.filter((c) => isType(c, 'action') && c !== 'crown').sort((a, b) => throneValue(b) - throneValue(a));
+          const acts = p.hand.filter((c) => isType(c, 'action') && c !== 'crown' && okC(c)).sort((a, b) => throneValue(b) - throneValue(a));
           return { type: 'CROWN_CHOOSE', card: acts[0] || null };
         }
         // mode 'treasure'：最もコインの高い財宝を2回使う。無ければ辞退。
-        const tre = p.hand.filter((c) => isTreasure(c)).sort((a, b) => (C()[b].coin || 0) - (C()[a].coin || 0))[0];
+        const tre = p.hand.filter((c) => isTreasure(c) && okC(c)).sort((a, b) => (C()[b].coin || 0) - (C()[a].coin || 0))[0];
         return { type: 'CROWN_CHOOSE', card: tre || null };
       }
       case 'church':
@@ -2244,7 +2249,8 @@
       case 'disciple_play': {
         // 手札のアクション（門下生自身以外）を2度使い＋コピー獲得。最も再演価値の高いものを選ぶ。
         //   冒険：相続した屋敷もアクション（命令）＝対象にできる（engine と同じ述語を見る）。
-        const acts = p.hand.filter((c) => (isType(c, 'action') || DOM.engine.inheritedEstate(p, c)) && c !== 'disciple');
+        //   ⚠ canPlayHandCard（航海の3枚制限／将軍）も engine と同じに見る（見ないと livelock）。
+        const acts = p.hand.filter((c) => (isType(c, 'action') || DOM.engine.inheritedEstate(p, c)) && c !== 'disciple' && DOM.engine.canPlayHandCard(state, pd.player, c));
         if (!acts.length) return { type: 'DISCIPLE_PLAY', card: null };
         const best = acts.slice().sort((a, b) => throneValue(b) - throneValue(a))[0];
         return { type: 'DISCIPLE_PLAY', card: best };
@@ -2445,7 +2451,8 @@
         return { type: 'HUNTING_LODGE_CHOOSE', discard: p.hand.length <= 2 };
       // 首謀者＝手札で一番強いアクションを3回使う。
       case 'mastermind_play': {
-        const acts = p.hand.filter((c) => DOM.isType(c, 'action'));
+        // ⚠ canPlayHandCard（航海の3枚制限／将軍）を engine と同じに見る（見ないと livelock）。
+        const acts = p.hand.filter((c) => DOM.isType(c, 'action') && DOM.engine.canPlayHandCard(state, pd.player, c));
         if (!acts.length) return { type: 'MASTERMIND_PLAY', card: null };
         return { type: 'MASTERMIND_PLAY', card: acts.slice().sort((a, b) => throneValue(b) - throneValue(a))[0] };
       }

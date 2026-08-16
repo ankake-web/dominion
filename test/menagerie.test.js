@@ -178,6 +178,58 @@ console.log('\n=== M2: コストが動くカード（デストリエ／漁師／
   ok(E.cardCost(s, 'wayfarer') === 8, '行人＝直前に獲得したカード（属州）と同じ $8');
 }
 
+console.log('\n=== 回帰: 行人×サプライ外からの獲得（gainFromOutside が lastGainedAny を記録する） ===');
+{
+  // 待ち伏せ（lurker）で廃棄置き場から村を獲得 → 行人のコストが村($3)に連動する。
+  //   修正前は gainFromOutside（廃棄置き場/闇市場からの獲得の共通入口）が t.lastGainedAny を
+  //   更新しておらず、行人のコストが $6 のまま動かなかった（公式違反）。
+  const s = act(['lurker', 'wayfarer', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'harbinger', 'workshop']);
+  s.trash = ['village'];
+  ok(E.cardCost(s, 'wayfarer') === 6, '（前提）獲得前の行人は $6');
+  let s2 = playFrom(s, 'lurker');
+  s2 = reduce(s2, { type: 'LURKER_CHOOSE', choice: 'gain' });
+  s2 = reduce(s2, { type: 'LURKER_GAIN', card: 'village' });
+  ok(me(s2).discard.indexOf('village') >= 0, '（前提）待ち伏せで廃棄置き場の村を獲得できる');
+  ok(s2.turn.lastGainedAny === 'village', 'サプライ外からの獲得でも lastGainedAny に記録される');
+  ok(E.cardCost(s2, 'wayfarer') === 3, '行人のコストが直前に獲得した村と同じ $3 になる（修正前は $6 のまま）');
+}
+{
+  // 行人自身をサプライ外から獲得しても lastGainedAny は動かない（「直前の**他の**カード」だけを見る）。
+  //   ガードが無いと lastGainedAny='wayfarer' に上書きされ、cardCost 側のフォールバックで $6 に化ける。
+  const s = act(['lurker', 'wayfarer', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'harbinger', 'workshop']);
+  s.trash = ['wayfarer'];
+  s.turn.lastGainedAny = 'silver';
+  let s2 = playFrom(s, 'lurker');
+  s2 = reduce(s2, { type: 'LURKER_CHOOSE', choice: 'gain' });
+  s2 = reduce(s2, { type: 'LURKER_GAIN', card: 'wayfarer' });
+  ok(me(s2).discard.indexOf('wayfarer') >= 0, '（前提）待ち伏せで廃棄置き場の行人を獲得できる');
+  ok(s2.turn.lastGainedAny === 'silver', '行人自身のサプライ外獲得では lastGainedAny を上書きしない');
+  ok(E.cardCost(s2, 'wayfarer') === 3, '行人のコストは直前の銀貨($3)のまま（上書きされると $6 に化ける）');
+}
+{
+  // 既存挙動の回帰確認：通常の購入（gain() 経由）でも lastGainedAny が動く。
+  const s = act(['lurker', 'wayfarer', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'harbinger', 'workshop']);
+  s.turn.phase = 'buy'; s.turn.coins = 3; s.turn.buys = 1;
+  const s2 = reduce(s, { type: 'BUY', card: 'village' });
+  ok(me(s2).discard.indexOf('village') >= 0, '（前提）村を購入できる');
+  ok(E.cardCost(s2, 'wayfarer') === 3, '購入（サプライからの獲得）でも行人のコストが $3 に動く（既存挙動の維持）');
+}
+{
+  // 回帰: 行人×支配(Possession)＝被支配ターンの獲得（gain() の支配分岐＝脇へ避ける経路）でも
+  //   lastGainedAny を記録する。修正前は支配分岐が t.lastGainedAny を更新せず、
+  //   支配ターン中だけ行人のコストが $6 のまま動かなかった（公式＝帳簿はカードidだけ＝所有者に依存しない）。
+  const s = act(['lurker', 'wayfarer', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'harbinger', 'workshop']);
+  s.turn.phase = 'buy'; s.turn.coins = 3; s.turn.buys = 1;
+  s.turn.possessedBy = 1; // 相手（席1）があなた（席0）のターンを支配している
+  ok(E.cardCost(s, 'wayfarer') === 6, '（前提）獲得前の行人は $6');
+  const s2 = reduce(s, { type: 'BUY', card: 'silver' });
+  ok((s2.turn.possessionGains || []).indexOf('silver') >= 0,
+    '（前提）支配中の獲得は脇に避けられる（gain() の支配分岐を通った）');
+  ok(me(s2).discard.indexOf('silver') < 0, '（前提）被支配者の捨て札には入らない');
+  ok(s2.turn.lastGainedAny === 'silver', '支配分岐の獲得でも lastGainedAny に記録される（修正前は未記録）');
+  ok(E.cardCost(s2, 'wayfarer') === 3, '支配ターン中でも行人のコストが直前の銀貨($3)に動く（修正前は $6 のまま）');
+}
+
 console.log('\n=== M2: 空の山を数えるカード（動物見本市／パドック） ===');
 {
   const s = act();

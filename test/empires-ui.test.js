@@ -281,6 +281,25 @@ try {
     }
     showPend({ type: 'tax_pile', player: 0 }, (x) => { x.events = ['tax']; });
     ok(modalOk(), '徴税：山選択モーダル');
+    /* 【回帰】modalGainSupply の allowEmpty 分岐（徴税＝空の山にも負債を置ける）が
+       **非サプライ山**（supply に数値キーを持つ賞品/馬/成長先/戦利品等）を弾くこと。
+       engine の TAX_PILE は NON_SUPPLY を拒否するので、チップに出すと
+       「押しても何も起きない」死にチップになる（DOM.engine.isNonSupplyPile を見る修正の回帰）。 */
+    {
+      showPend({ type: 'tax_pile', player: 0 }, (x) => {
+        x.events = ['tax'];
+        x.supply.bag_of_gold = 1;  // 賞品（収穫祭・非サプライだが supply の数値キーを持つ）
+        x.supply.horse = 30;       // 馬（移動動物園・非サプライ）
+        x.supply.curse = 0;        // 空になったサプライ山（allowEmpty の本来の対象）
+      });
+      ok(modalOk(), '徴税：非サプライ山が supply に混ざっていてもモーダルが描ける');
+      const chipNames = $all('.modal .pick-supply .cname').map((e) => e.textContent);
+      ok(chipNames.length > 0, '前提：徴税モーダルに山のチップが並ぶ');
+      ok(!chipNames.includes(DOM.CARDS.bag_of_gold.name), '徴税モーダルに非サプライ山（賞品＝金貨袋）の死にチップが出ない');
+      ok(!chipNames.includes(DOM.CARDS.horse.name), '徴税モーダルに非サプライ山（馬）の死にチップが出ない');
+      ok(chipNames.includes(DOM.CARDS.curse.name), '徴税モーダルに空のサプライ山（呪い＝0枚）のチップは出る（allowEmpty の本来機能）');
+      ok(chipNames.includes(DOM.CARDS.copper.name), '徴税モーダルに通常の非空の山（銅貨）のチップも出る（退行なし）');
+    }
     showPend({ type: 'donate_trash', player: 0 }, (x) => { x.events = ['donate']; x.players[0].hand = ['copper', 'estate', 'silver', 'gold', 'curse']; });
     ok(modalOk(), '寄付：廃棄モーダル');
     showPend({ type: 'annex_keep', player: 0 }, (x) => { x.events = ['annex']; x.players[0].discard = ['copper', 'estate', 'silver', 'gold', 'curse', 'village']; });

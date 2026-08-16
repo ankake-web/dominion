@@ -362,6 +362,90 @@ console.log('=== E8: 倒壊 × 命令（はみだし者）と pending.self の�
   ok(s.turn.coins === 0 && count(s.trash, 'death_cart') === 0, '後方互換: 「これ」は廃棄されない');
 }
 
+/* ============================================================================
+   回帰：ヴィラ/騎兵隊で購入フェイズ→アクションフェイズに戻るとき、
+   「購入フェイズの終了時」効果＝ワイン商の呼び出し窓 → 野外劇 が1回起きる
+   （公式＝Cavalry FAQ `it does make "end of Buy phase" abilities happen` ／ Villa 現行FAQ）。
+   実装＝on-gain が onGainQueue に {type:'buy_phase_end_mid'} を積み、reduce 末尾の
+   キュー消化が midBuyPhaseEnd() で mid:true 付きの既存 pending を開く。
+   **mid の解決は endBuyTail へ進まない**（ターンが途中で終わってしまう）。
+   ============================================================================ */
+console.log('=== 回帰: ヴィラ/騎兵隊 × 購入フェイズ終了時効果（ワイン商/野外劇・mid）===');
+{ // 1+2. ワイン商が酒場マットにある購入フェイズで BUY villa → mid:true の窓が開き、捨ててもターンは終わらない
+  const K = ['villa', 'wine_merchant', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'laboratory', 'festival'];
+  let s = setup(K, ['estate'], Array(8).fill('copper'));
+  s.players[0].tavern = ['wine_merchant']; s.supply.wine_merchant -= 1;
+  s.turn.phase = 'buy'; s.turn.coins = 6; s.turn.buys = 2;
+  s = reduce(s, { type: 'BUY', card: 'villa' });     // $4 → 残$2（ワイン商の条件を満たす）
+  ok(s.pending && s.pending.type === 'wine_merchant' && s.pending.mid === true,
+    'ヴィラ購入→ワイン商の窓が {type:wine_merchant, mid:true} で開く（修正前は pending=null）actual=' + JSON.stringify(s.pending));
+  ok(s.turn.phase === 'action', 'ヴィラ購入→アクションフェイズに戻っている');
+  ok(s.players[0].hand.includes('villa'), 'ヴィラは手札に入っている（獲得時効果）');
+  s = reduce(s, { type: 'WINE_MERCHANT_DISCARD', discard: true });
+  ok(count(s.players[0].discard, 'wine_merchant') === 1 && !(s.players[0].tavern || []).includes('wine_merchant'),
+    'mid のワイン商：マット→捨て札へ移った');
+  ok(!s.pending && s.turn.phase === 'action' && s.turn.active === 0,
+    'mid 解決後もターンは終わらない（phase=action・active=0・pending 解消）');
+  ok(s.players[0].hand.includes('villa') && s.players[0].hand.includes('estate'),
+    '片付けが走っていない（手札が引き直されずヴィラ/屋敷が手札のまま）');
+}
+{ // 3. 辞退（discard:false）でもターンは終わらず pending が閉じる（野外劇なし）
+  const K = ['villa', 'wine_merchant', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'laboratory', 'festival'];
+  let s = setup(K, [], Array(8).fill('copper'));
+  s.players[0].tavern = ['wine_merchant']; s.supply.wine_merchant -= 1;
+  s.turn.phase = 'buy'; s.turn.coins = 6; s.turn.buys = 2;
+  s = reduce(s, { type: 'BUY', card: 'villa' });
+  ok(s.pending && s.pending.type === 'wine_merchant' && s.pending.mid === true, '辞退テスト前提: mid の窓が開いている');
+  s = reduce(s, { type: 'WINE_MERCHANT_DISCARD', discard: false });
+  ok((s.players[0].tavern || []).includes('wine_merchant'), '辞退：ワイン商はマットに残る');
+  ok(!s.pending && s.turn.phase === 'action' && s.turn.active === 0,
+    '辞退でもターンは終わらず pending が閉じる（窓を開き直さない＝livelock しない）');
+}
+{ // 4. 野外劇（pageant）＝ヴィラの mid で +1財源・ターン継続 → 通常の購入フェイズ終了でもう一度誘発（公式＝購入フェイズごと）
+  const K = ['villa', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'laboratory', 'festival', 'chapel'];
+  let s = setup(K, [], Array(8).fill('copper'));
+  s.projects = ['pageant']; s.players[0].projects = ['pageant'];
+  s.turn.phase = 'buy'; s.turn.coins = 6; s.turn.buys = 2;
+  s = reduce(s, { type: 'BUY', card: 'villa' });     // $4 → 残$2
+  ok(s.pending && s.pending.type === 'pageant' && s.pending.mid === true,
+    'ヴィラ購入→野外劇が {type:pageant, mid:true} で開く actual=' + JSON.stringify(s.pending));
+  s = reduce(s, { type: 'PAGEANT_PAY', pay: true });
+  ok(s.players[0].coffers === 1 && s.turn.coins === 1, '野外劇(mid)：$1払って +1財源（coins 2→1）actual coffers=' + s.players[0].coffers + ' coins=' + s.turn.coins);
+  ok(!s.pending && s.turn.phase === 'action' && s.turn.active === 0, '野外劇(mid)解決後もターンは終わらない');
+  // その後の通常の購入フェイズ終了でもう一度誘発できる（END_ACTION_PHASE が pageantDone をリセット）
+  s = reduce(s, { type: 'END_ACTION_PHASE' });
+  ok(s.turn.phase === 'buy', 'END_ACTION_PHASE で購入フェイズへ入り直す');
+  s = reduce(s, { type: 'END_TURN' });
+  ok(s.pending && s.pending.type === 'pageant' && !s.pending.mid,
+    '通常の購入フェイズ終了でも野外劇がもう一度開く（mid なし・pageantDone リセット）actual=' + JSON.stringify(s.pending));
+  s = reduce(s, { type: 'PAGEANT_PAY', pay: true });
+  ok(s.players[0].coffers === 2, '野外劇：2回目も +1財源（合計2）');
+  ok(!s.pending && s.turn.active === 1, '通常経路（mid なし）はそのまま片付けへ進みターンが移る');
+}
+{ // 5. 通常の END_TURN 経由のワイン商（mid なし）＝従来どおり endBuyTail に続く（退行なし）
+  const K = ['villa', 'wine_merchant', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'laboratory', 'festival'];
+  let s = setup(K, [], Array(8).fill('copper'));
+  s.players[0].tavern = ['wine_merchant']; s.supply.wine_merchant -= 1;
+  s.turn.phase = 'buy'; s.turn.coins = 3; s.turn.buys = 1;
+  s = reduce(s, { type: 'END_TURN' });
+  ok(s.pending && s.pending.type === 'wine_merchant' && !s.pending.mid, '通常の END_TURN：ワイン商の窓（mid なし）');
+  s = reduce(s, { type: 'WINE_MERCHANT_DISCARD', discard: true });
+  ok(!s.pending && s.turn.active === 1, '通常経路：捨てた後 endBuyTail に続きターンが終わる（active=1）');
+  ok(count(s.players[0].discard, 'wine_merchant') === 1, 'ワイン商は捨て札にある');
+}
+{ // 騎兵隊（cavalry）も同型＝購入フェイズ中の獲得でフェイズ復帰＋mid の窓
+  const K = ['cavalry', 'wine_merchant', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'laboratory', 'festival'];
+  let s = setup(K, [], Array(8).fill('copper'));
+  s.players[0].tavern = ['wine_merchant']; s.supply.wine_merchant -= 1;
+  s.turn.phase = 'buy'; s.turn.coins = 6; s.turn.buys = 2;
+  s = reduce(s, { type: 'BUY', card: 'cavalry' });   // $4 → 残$2
+  ok(s.pending && s.pending.type === 'wine_merchant' && s.pending.mid === true,
+    '騎兵隊購入→ワイン商の窓が mid:true で開く actual=' + JSON.stringify(s.pending));
+  ok(s.turn.phase === 'action', '騎兵隊購入→アクションフェイズに戻っている');
+  s = reduce(s, { type: 'WINE_MERCHANT_DISCARD', discard: false });
+  ok(!s.pending && s.turn.phase === 'action' && s.turn.active === 0, '騎兵隊：mid 解決後もターンは終わらない');
+}
+
 console.log('\n========================================');
 console.log('冒険テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

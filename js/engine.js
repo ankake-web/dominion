@@ -923,8 +923,10 @@
     if (card === 'sextant') {
       t.buys += 1;
       const look = [];
+      // 回避/メイソン団が捨て札に残した札のために同じアクセスで2度目のシャッフルをしない（draw() と同じ契約）。
+      let noMoreShuffle = false;
       for (let i = 0; i < 5; i++) {
-        if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
+        if (p.deck.length === 0) { if (p.discard.length === 0 || noMoreShuffle) break; noMoreShuffle = reshuffleDeck(p, state) === true; }
         if (p.deck.length === 0) break;
         look.push(p.deck.shift());
       }
@@ -1135,9 +1137,10 @@
     const buyPhase = !!(state.turn && state.turn.phase === 'buy');
     const kind = buyPhase ? 'treasure' : 'action';
     // 財宝の候補判定は動的（資本主義で財宝になったアクションも対象＝受理側 CROWN_CHOOSE と同じ述語）。
+    //   canPlayHandCard（航海の3枚制限／将軍）も受理側と同じに見る（玉座 5565 と同型＝候補ゼロなら窓を開かない）。
     const has = kind === 'treasure'
-      ? p.hand.some((c) => isTreasureFor(state, c))
-      : p.hand.some((c) => DOM.isType(c, 'action'));
+      ? p.hand.some((c) => isTreasureFor(state, c) && canPlayHandCard(state, pIndex, c))
+      : p.hand.some((c) => DOM.isType(c, 'action') && canPlayHandCard(state, pIndex, c));
     if (has) state.pending = { type: 'crown', mode: kind, player: pIndex };
   }
 
@@ -1197,7 +1200,17 @@
         ＝**実際に何枚戻ったかは問わない**（メイソン団で0枚になっても成立する）ので、
         「捨て札が1枚以上あった」時点で数える。 */
   let shuffleTicks = 0;
+  /* reduce() が今まさに処理している state。reshuffleDeck の呼び出しサイト（84箇所）の大半は state を
+     渡していないため、回避(avoid)・占星術師団/メイソン団のログが**経路によって発動したりしなかったり**する
+     実バグがあった（書庫/六分儀などで回避が発動しない＝plunder-events で到達・§0-31 候補5）。
+     reduce は同期実行（再入なし）なので、入口で保持した state へのフォールバックで全経路を一括救済する。
+     ※reduce の外から state 無しで呼ばれる経路は存在しない（createInitialState は reshuffleDeck を通さない）。
+     ⚠ **reshuffleDeck を通らないシャッフルには効かない**＝併合(ANNEX_KEEP)/宿屋(INN_GAIN)/飢饉は
+       `shuffle(deck.concat(...))` を直接呼ぶ「山札に混ぜる」経路＝回避/運命の/占星術師団は発動しない
+       （公式の回避は宿屋のケースも発動する＝**許容簡略化**。根治は「山札に混ぜる」共通ヘルパ化）。 */
+  let _reduceState = null;
   function reshuffleDeck(p, state) {
+    state = state || _reduceState;
     if (p.discard.length > 0) shuffleTicks += 1;
     const shuffled = shuffle(p.discard);
     p.discard.length = 0;
@@ -1937,6 +1950,9 @@
      （物見やぐら/交易商人 等の獲得時対話が立てられるように）。 */
   function gainFromOutside(state, pIndex, cardId, dest) {
     const t = state.turn;
+    // 移動動物園：行人（wayfarer）＝サプライ外からの獲得（廃棄置き場/闇市場）も「獲得」なので記録する
+    //   （gain() 側と同じ帳簿。無いと待ち伏せ/墓暴き/リッチ等の獲得で行人のコストが動かない＝公式違反）。
+    if (t && cardId !== 'wayfarer') t.lastGainedAny = cardId;
     // ⚠ ここで負債は付けない（「獲得」では負債を負わない＝公式）。闇市場の**購入**は BLACK_MARKET_BUY 側で付ける。
     // 「サプライ由来でない獲得」を獲得トリガーに伝える＝交易商人（獲得を銀貨に置換して**山へ戻す**）の窓を開かない。
     //   開くと廃棄置き場/闇市場から得た札がサプライの山に生えて、空の山が復活する（3山終了が巻き戻る）。
@@ -2003,6 +2019,8 @@
       else state.supply[cardId] -= 1;
       const emptiedP = isMixed ? state[cardId].length === 0 : state.supply[cardId] === 0;
       (t.possessionGains = t.possessionGains || []).push(realId);
+      // 移動動物園：行人＝支配中の獲得も「このターンに獲得されたカード」（帳簿はカードidだけ＝所有者に依存しない）。
+      if (realId !== 'wayfarer') t.lastGainedAny = realId;
       log(state, `${state.players[pIndex].name} が獲得した「${C()[realId].name}」は脇に置かれた（支配：${state.players[t.possessedBy].name} が受け取る）。`);
       if (emptiedP) pileEmptied(state, cardId); // 略奪：調査（サプライの山が空になった瞬間）
       triggerOnGain(state, t.possessedBy, realId, dest, costAtGain);
@@ -2164,6 +2182,7 @@
     // （戦利品は $7* で負債コストを持たないが、方針として「獲得では負債を負わない」＝ここでも付けない）
     if (t && t.possessedBy != null && pIndex === t.active) {
       (t.possessionGains = t.possessionGains || []).push(id);
+      t.lastGainedAny = id; // 行人＝支配中の獲得も記録（戦利品に wayfarer は無い＝ガード不要）
       log(state, `${state.players[pIndex].name} が獲得した「${C()[id].name}」は脇に置かれた（支配：${state.players[t.possessedBy].name} が受け取る）。`);
       triggerOnGain(state, t.possessedBy, id, dest || 'discard');
       return id;
@@ -2920,10 +2939,12 @@
   /* ---------- 書庫（手札が7枚になるまで引く。引いたアクションは脇に置ける）---------- */
   function libraryStep(state, pi, aside) {
     const p = state.players[pi];
+    // 回避/メイソン団が捨て札に残した札のために**同じアクセスの中で2度目のシャッフルをしない**（draw() と同じ契約）。
+    let noMoreShuffle = false;
     while (p.hand.length < 7) {
       if (p.deck.length === 0) {
-        if (p.discard.length === 0) break;
-        reshuffleDeck(p);
+        if (p.discard.length === 0 || noMoreShuffle) break;
+        noMoreShuffle = reshuffleDeck(p, state) === true;
       }
       if (p.deck.length === 0) break;
       const c = p.deck.shift();
@@ -6889,7 +6910,7 @@
       // 門下生：手札のアクションカード1枚を2度使用してよい。それと同じカード1枚を獲得する。
       //   冒険：相続した屋敷もアクション（命令）＝対象になる（公式）。
       case 'disciple':
-        if (p.hand.some((c) => DOM.isType(c, 'action') || inheritedEstate(p, c))) state.pending = { type: 'disciple_play', player: pi };
+        if (p.hand.some((c) => (DOM.isType(c, 'action') || inheritedEstate(p, c)) && canPlayHandCard(state, pi, c))) state.pending = { type: 'disciple_play', player: pi };
         break;
       // 教師（Reserve）：効果なし → 酒場マットへ。ターン開始時に呼び出してトークンをアクション山に置く。
       case 'teacher':
@@ -8984,7 +9005,7 @@
     },
     // 首謀者＝次の自分のターン開始時、手札のアクション1枚を3回使用してよい（対話＝startQueue に積む）。
     mastermind: (s, pi) => {
-      if (s.players[pi].hand.some((c) => DOM.isType(c, 'action') || inheritedEstate(s.players[pi], c))) {
+      if (s.players[pi].hand.some((c) => (DOM.isType(c, 'action') || inheritedEstate(s.players[pi], c)) && canPlayHandCard(s, pi, c))) {
         (s.turn.startQueue = s.turn.startQueue || []).push({ type: 'mastermind_play', player: pi });
       }
     },
@@ -9268,8 +9289,12 @@
         addActions(state.turn, 1);
         // 帝国：ヴィラで購入フェイズ→アクションフェイズに戻ると、次に購入フェイズへ入るとき闘技場が再度発動できる
         //   （公式：闘技場は購入フェイズ開始のたびに発動）。arenaFired を解除して再武装する。
-        if (state.turn.phase === 'buy') { state.turn.phase = 'action'; state.turn.arenaFired = false; log(state, `${gp.name} はヴィラを獲得し手札に加え +1アクション（アクションフェイズに戻る）。`); }
-        else log(state, `${gp.name} はヴィラを獲得し手札に加え +1アクション。`);
+        if (state.turn.phase === 'buy') {
+          state.turn.phase = 'action'; state.turn.arenaFired = false;
+          log(state, `${gp.name} はヴィラを獲得し手札に加え +1アクション（アクションフェイズに戻る）。`);
+          // 「購入フェイズの終了時」効果（ワイン商/野外劇）＝獲得処理と競合しないよう onGainQueue で後から開く。
+          (state.onGainQueue = state.onGainQueue || []).push({ type: 'buy_phase_end_mid', player: pIndex });
+        } else log(state, `${gp.name} はヴィラを獲得し手札に加え +1アクション。`);
       }
     }
     // 帝国：公共広場（forum）＝獲得したとき +1購入（2022エラッタ＝「購入時」から「獲得時」に変更）。自分の手番でのみ意味がある。
@@ -9329,6 +9354,8 @@
       if (gainWasBuyPhase && state.turn.phase === 'buy') {
         state.turn.phase = 'action'; state.turn.arenaFired = false;
         log(state, `${gp.name} は騎兵隊の獲得で +2カード +1購入（アクションフェイズに戻る）。`);
+        // 「購入フェイズの終了時」効果（ワイン商/野外劇）＝ヴィラと同型（midBuyPhaseEnd を参照）。
+        (state.onGainQueue = state.onGainQueue || []).push({ type: 'buy_phase_end_mid', player: pIndex });
       } else log(state, `${gp.name} は騎兵隊の獲得で +2カード +1購入。`);
     }
     // ラクダの隊列＝これを獲得したとき、サプライから金貨1枚を追放する（獲得ではない・誰の手番でも）。
@@ -10481,10 +10508,19 @@
     if (!state.turn.journeyKeep) {
       const caps = restInPlay.filter((c) => c === 'capital').length;
       if (caps > 0) {
-        p.debt = (p.debt || 0) + 6 * caps;
-        const r = Math.min(p.debt, state.turn.coins || 0);
-        if (r > 0) { p.debt -= r; state.turn.coins -= r; }
-        log(state, `${p.name} は元手を捨て 負債${6 * caps} を負った${r > 0 ? `（うち${r}を即返済）` : ''}。`);
+        /* 支配(Possession)中に発生する負債は**支配者**が負う（公式FAQ＝"You also get any D tokens that player
+           would have gotten"。takeDebt / BUY_EVENT と同じ振り分け述語）。被支配ターンのクリンナップも
+           「そのターンの内」なので支配者行き＝被支配者に押し付けない。 */
+        const dwho = (state.turn.possessedBy != null && pi === state.turn.active) ? state.turn.possessedBy : pi;
+        const dp = state.players[dwho];
+        dp.debt = (dp.debt || 0) + 6 * caps;
+        // 残コインでの即返済は本人のターンだけ（被支配ターンのコインで支配者の負債を返す公式根拠は無い）。
+        let r = 0;
+        if (dwho === pi) {
+          r = Math.min(dp.debt, state.turn.coins || 0);
+          if (r > 0) { dp.debt -= r; state.turn.coins -= r; }
+        }
+        log(state, `${dp.name} は元手${dwho === pi ? 'を捨て' : '（支配中のプレイ）で'} 負債${6 * caps} を負った${r > 0 ? `（うち${r}を即返済）` : ''}。`);
       }
     }
     /* ルネサンス：角笛（Horn・アーティファクト）＝各ターンに1度、場から国境警備隊を捨て札にするとき、
@@ -11056,8 +11092,8 @@
       }
       // 帝国：徴税＝サプライの山1つに負債トークンを2個置く（強制。準備で全山に1個ずつ・購入フェイズの獲得で受け取る）。
       case 'tax': {
-        // 対象山があるうちは選択必須。全山が空という事はまず無いが、候補ゼロなら何もしない。
-        if (Object.keys(state.supply).some((sid) => !NON_SUPPLY.has(sid) && (state.supply[sid] || 0) > 0)) {
+        // 対象山があるうちは選択必須。**空の山も選べる**（TAX_PILE の受理と対＝サプライのキーがあれば候補）。
+        if (Object.keys(state.supply).some((sid) => !NON_SUPPLY.has(sid))) {
           state.pending = { type: 'tax_pile', player: pi };
         }
         break;
@@ -11452,6 +11488,29 @@
     }
     endBuyTailExploration(state, pi);
   }
+  /* ヴィラ／騎兵隊で購入フェイズ→アクションフェイズへ戻るとき＝**「購入フェイズの終了時」が1回起きる**
+     （公式＝Cavalry FAQ `it does make "end of Buy phase" abilities happen` ／ Villa 現行FAQ
+     `Gaining a Villa during your Buy phase counts as ending it (for cards like Wine Merchant and Pageant).
+      If you take multiple Buy phases, those cards will trigger multiple times.`）。
+     - ワイン商（呼び出し窓）→ 野外劇 の順に mid:true 付きの既存 pending を開く。
+       **mid の解決は片付け（endBuyTail）へ進まない**（ターンが途中で終わってしまう）。
+     - 探査(exploration)は対象外＝ヴィラ/騎兵隊の獲得自体で bpGained>=1 になるので「獲得ゼロ」条件を満たせない。
+     - 発進(launch)のフェイズ復帰は従来どおり誘発しない＝許容簡略化として PROGRESS に明記済み。
+     戻り値＝窓を開いたか。skipWine＝ワイン商の窓を抜けた後（辞退した窓を開き直すと livelock）。 */
+  function midBuyPhaseEnd(state, pi, skipWine) {
+    const me = state.players[pi];
+    const t = state.turn;
+    if (!skipWine && (t.coins || 0) >= 2 && (me.tavern || []).includes('wine_merchant')) {
+      state.pending = { type: 'wine_merchant', player: pi, mid: true };
+      return true;
+    }
+    if (hasMyProject(state, pi, 'pageant') && !t.pageantDone && (t.coins || 0) >= 1) {
+      t.pageantDone = true; // 「その購入フェイズ」単位＝END_ACTION_PHASE（次の購入フェイズ入り）でリセットされる
+      state.pending = { type: 'pageant', player: pi, mid: true };
+      return true;
+    }
+    return false;
+  }
   function endBuyTailExploration(state, pi) {
     const me = state.players[pi];
     if (hasMyProject(state, pi, 'exploration') && (state.turn.bpGained || 0) === 0) {
@@ -11635,7 +11694,9 @@
      ============================================================ */
   function reduce(state, action) {
     state = clone(state);
+    _reduceState = state;            // reshuffleDeck の state 省略呼び出しの救済（回避/占星術師団のログ）
     state = applyAction(state, action);
+    _reduceState = state;            // NEW_GAME 等で applyAction が別オブジェクトを返した場合に追従
     // 冒険：語り部＝中断していた財宝プレイ→コイン変換を、玉座/王の宮廷の再演(runReplays)より先に完了させる。
     //   （順次玉座の意味論＝1回目の語り部が基本+1カード＋コイン変換まで完全に解決してから2回目が始まる。
     //    ここで解決しないと、割り込み財宝の解決後に runReplays が2回目を先に立て、1回目の基本ドローが失われる。）
@@ -11982,6 +12043,12 @@
             if ((q.immune || []).indexOf(seat) < 0 && !attackImmune(state, seat)) vic.push(seat);
           }
           if (vic.length) { discardDownEnter(state, q.player, 3, vic); if (state.pending) break; }
+          continue;
+        }
+        /* 帝国/移動動物園：ヴィラ/騎兵隊のフェイズ復帰＝「購入フェイズの終了時」（ワイン商→野外劇）。
+           窓を開けなければ非対話でスキップ（探査は bpGained>=1 のため対象外＝midBuyPhaseEnd を参照）。 */
+        if (q.type === 'buy_phase_end_mid') {
+          if (midBuyPhaseEnd(state, q.player, false)) break;
           continue;
         }
         // 同盟：獲得時の Ally 窓は、積んでから解決までに条件が崩れることがある（好意が減った／札が動いた）＝再検査。
@@ -12768,7 +12835,10 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'tax_pile') return state;
         const raw = action.pile;
-        if (!raw || NON_SUPPLY.has(raw) || (state.supply[raw] || 0) <= 0) return state;
+        // 空の山にも置ける（公式：カード文 "Add [2D] to a Supply pile." に非空条件は無い。
+        //   同じ Empires ルールブックが神殿/ワイルドハント/農家の市場で「山が空でもトークンは置く」と明記・
+        //   教師の山トークン＝空の山にも置ける前例と同じ。supply キーの不存在（非サプライ等）だけ拒否）。
+        if (!raw || NON_SUPPLY.has(raw) || state.supply[raw] == null) return state;
         // 分割山の下段を選んでも上段キーに正規化して置く（読み取り側 triggerOnGain の pileKeyOf と一致＝負債の孤児化を防ぐ）。
         const id = pileKeyOf(state, raw);
         state.pileDebt = state.pileDebt || {};
@@ -15597,7 +15667,10 @@
         if (card == null) { state.pending = null; return state; } // 使わない
         // 冒険：相続＝自分のターン中、屋敷もアクション（命令）＝門下生の対象にできる（公式）。
         if (p.hand.indexOf(card) < 0 || !(DOM.isType(card, 'action') || inheritedEstate(p, card))) return state;
+        // 同盟：航海の3枚制限／将軍は「手札から使わせる」経路も止める（玉座と同型）。
+        if (!canPlayHandCard(state, pd.player, card)) return state;
         removeOne(p.hand, card); p.inPlay.push(card);
+        notePlayFromHand(state, pd.player); // 同盟：航海＝門下生が選んだ手札のカードも数える（再演は数えない）
         t.actionsPlayed = (t.actionsPlayed || 0) + 1;
         state.pending = null;
         log(state, `${p.name} は門下生で「${C()[card].name}」を使った（1回目）。`);
@@ -15994,8 +16067,11 @@
           p.discard.push('wine_merchant');
           log(state, `${p.name} はワイン商を酒場マットから捨てた。`);
           // まだ$2以上残り＆マットにワイン商があれば続けて捨ててよい。
-          if (t.coins >= 2 && (p.tavern || []).includes('wine_merchant')) { state.pending = { type: 'wine_merchant', player: pd.player }; return state; }
+          if (t.coins >= 2 && (p.tavern || []).includes('wine_merchant')) { state.pending = { type: 'wine_merchant', player: pd.player, mid: pd.mid }; return state; }
         }
+        /* mid＝ヴィラ/騎兵隊のフェイズ復帰による「購入フェイズの終了時」＝**片付けへ進まない**
+           （endBuyTail を呼ぶとそのまま夜フェイズ→片付けに進みターンが途中で終わる）。残るのは野外劇だけ。 */
+        if (pd.mid) { midBuyPhaseEnd(state, pd.player, true); return state; }
         endBuyTail(state); // 呼び出し窓を抜けたら購入フェイズ終了の後処理へ
         return state;
       }
@@ -17128,6 +17204,8 @@
           log(state, `${pl.name} は野外劇で $1 を支払い +1財源。`);
         }
         state.pending = null;
+        // mid＝ヴィラ/騎兵隊のフェイズ復帰による誘発＝片付け（探査→夜→片付け）へ進まない。
+        if (pd.mid) return state;
         endBuyTailExploration(state, pd.player);
         return state;
       }
@@ -17721,8 +17799,10 @@
         const card = action.card; // null = 使わない
         state.pending = null;
         if (pd.mode === 'action') {
-          if (card != null && p2.hand.indexOf(card) >= 0 && DOM.isType(card, 'action')) {
+          // 同盟：航海の3枚制限／将軍は「手札から使わせる」経路も止める（公式FAQが玉座を名指し＝冠も同じクラス）。
+          if (card != null && p2.hand.indexOf(card) >= 0 && DOM.isType(card, 'action') && canPlayHandCard(state, pd.player, card)) {
             removeOne(p2.hand, card); p2.inPlay.push(card);
+            notePlayFromHand(state, pd.player); // 同盟：航海＝冠が選んだ手札のカードも数える（玉座と同型・再演は数えない）
             t.actionsPlayed = (t.actionsPlayed || 0) + 1;
             log(state, `${p2.name} は冠で「${C()[card].name}」を使った（1回目）。`);
             noteAllyPlay(state, pd.player, card); // 同盟：これも「カードの使用」＝Ally の窓が開く
@@ -17731,7 +17811,8 @@
             state.replay.push({ player: pd.player, card, label: 'crown' }); // 2回目は選択待ち解消後に runReplays が適用
           }
         } else { // mode === 'treasure'
-          if (card != null && p2.hand.indexOf(card) >= 0 && isTreasureFor(state, card)) {
+          // 航海の3枚制限は財宝も数える（playTreasureCard が notePlayFromHand を呼ぶ＝ここはゲートだけ）。
+          if (card != null && p2.hand.indexOf(card) >= 0 && isTreasureFor(state, card) && canPlayHandCard(state, pd.player, card)) {
             log(state, `${p2.name} は冠で「${C()[card].name}」を2回使う。`);
             playTreasureCard(state, pd.player, card); // 1回目（移動＋効果）
             state.replay = state.replay || [];
@@ -18928,10 +19009,13 @@
         if (card != null) {
           if (pl.hand.indexOf(card) < 0) return state;
           if (!DOM.isType(card, 'action') && !inheritedEstate(pl, card)) return state;
+          // 同盟：航海の3枚制限／将軍は「手札から使わせる」経路も止める（玉座と同型）。
+          if (!canPlayHandCard(state, pd.player, card)) return state;
         }
         state.pending = null;
         if (card == null) return state;
         removeOne(pl.hand, card); pl.inPlay.push(card);
+        notePlayFromHand(state, pd.player); // 同盟：航海＝首謀者が選んだ手札のカードも数える（再演2回は数えない）
         t.actionsPlayed = (t.actionsPlayed || 0) + 1;
         log(state, `${pl.name} は首謀者で「${C()[card].name}」を3回使用する。`);
         noteAllyPlay(state, pd.player, card); // 同盟：これも「カードの使用」＝Ally の窓が開く
@@ -21542,6 +21626,7 @@
     canPlayFromHand,   // 同盟：航海の追加ターン＝手札から3枚まで（engine拒否・CPU非提案・UI無効化の3面共通）
     warlordBlocks,     // 同盟：将軍＝場に2枚以上ある同名アクションを手札から使えない（同上・3面共通）
     canPlayHandCard,   // 「その手札の1枚を今使えるか」＝航海の3枚制限＋将軍（engine/CPU/UI が同じ述語を見る）
+    isNonSupplyPile: (id) => NON_SUPPLY.has(id), // 非サプライ山か（賞品/成長先/馬/戦利品等）。UI の allowEmpty モーダルが死にチップを弾くのに使う
     barbarianCanGain,  // 同盟：蛮族＝廃棄札と種別を共有しより安いカードの候補（連携/分割山種別も種別に数える）
     canReturnToPile,   // そのカードを元の山へ戻せるか（交換／交易商人／取り替え子が共通で見る）
     swapCanGain,       // 同盟：交換＝$5以下・名前の異なるアクション（混合山は一番上の実カード名で比べる）

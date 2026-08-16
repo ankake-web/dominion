@@ -1590,6 +1590,84 @@ function buyEv(s, id) { return E.reduce(s, { type: 'BUY_EVENT', event: id }); }
   ok(count(s.players[0].hand, 'curse') === 0 && s.players[0].hand.length <= 3, '捨て札に残した札のために2度目のシャッフルはしない（引けた分だけ・呪いは引かない）');
 }
 
+/* --- 回避 × draw() を通らないシャッフル（書庫/六分儀）＝回帰
+   reshuffleDeck の呼び出しの大半（84箇所中72箇所）は state 引数を省略しており、reduce() 入口の
+   _reduceState フォールバックが無いと「回避」が deck.shift() 直読み系（書庫/六分儀など）のシャッフルで
+   一切発動しなかった。あわせて書庫/六分儀のシャッフルループに「残した札のために同じアクセスで
+   2度目のシャッフルをしない」ガード（draw() と同じ masonsLeft 契約）が要る。
+   ※このブロック群は途中挿入なので、後続テストの乱数列を変えないようシードを退避・復元する。 */
+const __seedKeepAvoid = seed;
+{
+  // 書庫(library)＝deck.shift() 直読みのドローが起こすシャッフルでも回避が発動する
+  let s = mkE();
+  s = buyEv(s, 'avoid');
+  ok(s.turn.avoidPicks === 3, '回避を1回買うと3枚まで残せる');
+  const p = s.players[0];
+  p.hand = ['library', 'copper']; p.deck = []; p.inPlay = [];
+  p.discard = ['curse', 'curse', 'estate', 'gold', 'silver', 'copper'];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'library' });
+  ok(s.turn.avoidPicks === 0, '書庫のドローが起こすシャッフルでも回避が消費される（state 省略呼び出しの救済）');
+  const p2 = s.players[0];
+  ok(count(p2.discard, 'curse') === 2 && count(p2.discard, 'estate') === 1,
+    '書庫：ジャンク（呪い2＋屋敷1）はシャッフルに混ぜず捨て札に残る');
+  ok(count(p2.hand, 'curse') === 0, '書庫：残した呪いを引かない');
+  // 残した札のために同じ書庫の解決中に2度目のシャッフルをしない（していれば呪いまで引いて手札7枚になる）
+  ok(p2.hand.length === 4, '書庫：2度目のシャッフルをしない（銅貨＋引けた3枚＝4枚で打ち切り・実際=' + p2.hand.length + '枚）');
+}
+{
+  // 書庫のガードの単独検査＝回避が残した札だけが捨て札にある状態で山札が尽きても混ぜ直さない
+  let s = mkE();
+  s = buyEv(s, 'avoid');
+  const p = s.players[0];
+  p.hand = ['library']; p.deck = []; p.inPlay = [];
+  p.discard = ['curse', 'curse', 'curse', 'gold', 'silver'];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'library' });
+  const p2 = s.players[0];
+  ok(count(p2.discard, 'curse') === 3, '書庫：回避が残した呪い3枚は山札に混ざり直さず捨て札に残ったまま');
+  ok(p2.hand.length === 2 && count(p2.hand, 'curse') === 0,
+    '書庫：手札7枚に満たなくても2度目のシャッフルをしない（金貨＋銀貨の2枚で打ち切り・実際=' + p2.hand.length + '枚）');
+}
+{
+  // 六分儀(sextant)＝財宝のプレイが起こすシャッフルでも回避が発動する
+  let s = mkE();
+  s = buyEv(s, 'avoid');
+  s.turn.treasuresLocked = false; // テスト都合：イベント購入で立つ財宝ロックを解除（発進で戻った状況と同じ）
+  const p = s.players[0];
+  p.hand = ['sextant']; p.deck = []; p.inPlay = [];
+  p.discard = ['curse', 'curse', 'gold', 'silver', 'copper'];
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'sextant' });
+  ok(s.turn.avoidPicks === 0, '六分儀のシャッフルでも回避が消費される');
+  const p2 = s.players[0];
+  ok(count(p2.discard, 'curse') === 2 && count(p2.discard, 'copper') === 1,
+    '六分儀：ジャンク（呪い2＋銅貨1）はシャッフルに混ぜず捨て札に残る');
+  ok(s.pending && s.pending.type === 'sextant' && s.pending.cards.length === 2,
+    '六分儀：見るのは残った2枚だけ（残した札のために2度目のシャッフルをしない）');
+  ok(!!s.pending && (s.pending.cards || []).indexOf('curse') < 0, '六分儀：残した呪いを見ない');
+  if (s.pending && s.pending.type === 'sextant') {
+    s = E.reduce(s, { type: 'SEXTANT_RESOLVE', discard: [], top: s.pending.cards.slice() });
+    ok(!s.pending, '六分儀の解決で窓が閉じる');
+  } else {
+    ok(false, '六分儀の解決で窓が閉じる（窓が開いていない）');
+  }
+}
+{
+  // 既存の draw() 経由（研究所＝山札の途中でシャッフル）の回避が退行していないこと
+  let s = mkE();
+  s = buyEv(s, 'avoid');
+  const p = s.players[0];
+  p.hand = ['laboratory']; p.deck = ['gold']; p.inPlay = [];
+  p.discard = ['curse', 'curse', 'silver', 'festival', 'market'];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'laboratory' });
+  ok(s.turn.avoidPicks === 0, 'draw() 経由（研究所）でも回避が消費される（退行なし）');
+  const p2 = s.players[0];
+  ok(count(p2.discard, 'curse') === 2, 'draw() 経由：呪い2枚が捨て札に残る');
+  ok(count(p2.hand, 'curse') === 0 && count(p2.hand, 'gold') === 1, 'draw() 経由：金貨は引き、呪いは引かない');
+}
+seed = __seedKeepAvoid; // 乱数列を復元（後続の既存テストは挿入前と同じシャッフル結果になる）
+
 // --- 配達 ---
 {
   let s = mkE();

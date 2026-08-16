@@ -307,6 +307,49 @@ try {
   }
 
   /* ============================================================
+     4c) modalSingleHand の辞退ボタン回帰（skip=true は死にボタン）
+     skip 引数に boolean true を渡すと label/onclick が undefined の「空文字で押しても
+     何も起きないボタン」になり、候補ゼロのとき人間が完全に詰む。
+     首謀者＝首謀者2枚→翌ターンの2窓目で手札にアクション0、は正規経路で到達する。
+     正しくは { label, on } で card:null（辞退）を dispatch する。
+     ============================================================ */
+  console.log('=== 辞退ボタン（skip=true の死にボタン回帰）===');
+  {
+    // 首謀者＝手札にアクションが無い状態でも「使わない」で窓を閉じられる
+    showPend({ type: 'mastermind_play', player: 0 }, (st) => { st.players[0].hand = ['copper', 'estate']; });
+    ok($all('.modal .chip-grid .card').length === 0, '首謀者：手札にアクションが無ければ候補チップは0');
+    const btn = byText('.modal button', '使わない');
+    ok(!!btn, '首謀者：ラベル付きの「使わない」ボタンがある');
+    ok($all('.modal button').every((b) => b.textContent.trim() !== ''),
+      '首謀者：モーダルにラベルが空のボタンが無い（skip=true 退行の直接検出）');
+    if (btn) btn.click();
+    ok(!!btn && UI.store.state.pending == null, '首謀者：「使わない」で MASTERMIND_PLAY {card:null} が通り窓が閉じる');
+  }
+  {
+    // ヤギ飼い＝手札0枚でも「廃棄しない」で閉じられる
+    showPend({ type: 'goatherd_trash', player: 0 }, (st) => { st.players[0].hand = []; });
+    const btn = byText('.modal button', '廃棄しない');
+    ok(!!btn, 'ヤギ飼い：ラベル付きの「廃棄しない」ボタンがある');
+    ok($all('.modal button').every((b) => b.textContent.trim() !== ''),
+      'ヤギ飼い：モーダルにラベルが空のボタンが無い（skip=true 退行の直接検出）');
+    if (btn) btn.click();
+    ok(!!btn && UI.store.state.pending == null, 'ヤギ飼い：「廃棄しない」で GOATHERD_TRASH {card:null} が通り窓が閉じる');
+  }
+  {
+    // ドブネズミの習性＝手札に財宝が無くても「捨てない」で閉じられる
+    showPend({ type: 'way_rat_discard', player: 0, card: 'village' }, (st) => { st.players[0].hand = ['estate']; },
+      ['village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'harbinger', 'vassal', 'workshop', 'bandit'],
+      { ways: ['way_of_the_rat'] });
+    ok($all('.modal .chip-grid .card').length === 0, 'ドブネズミの習性：財宝が無ければ候補チップは0');
+    const btn = byText('.modal button', '捨てない');
+    ok(!!btn, 'ドブネズミの習性：ラベル付きの「捨てない」ボタンがある');
+    ok($all('.modal button').every((b) => b.textContent.trim() !== ''),
+      'ドブネズミの習性：モーダルにラベルが空のボタンが無い（skip=true 退行の直接検出）');
+    if (btn) btn.click();
+    ok(!!btn && UI.store.state.pending == null, 'ドブネズミの習性：「捨てない」で WAY_RAT_DISCARD {card:null} が通り窓が閉じる');
+  }
+
+  /* ============================================================
      5) engine の PLAYER_ACTIONS と UI の網羅チェック
      ============================================================ */
   console.log('=== PLAYER_ACTIONS の網羅 ===');

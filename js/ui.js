@@ -2359,7 +2359,8 @@
     ]);
     // ヤギ飼い＝手札1枚を廃棄してもよい。
     if (pd.type === 'goatherd_trash') return modalSingleHand(p, 'ヤギ飼い — 廃棄', '手札から1枚を廃棄してもよい（しなくてもかまいません）。',
-      () => true, (card) => dispatch({ type: 'GOATHERD_TRASH', card }), true);
+      () => true, (card) => dispatch({ type: 'GOATHERD_TRASH', card }),
+      { label: '廃棄しない', on: () => dispatch({ type: 'GOATHERD_TRASH', card: null }) }); // skip=true は死にボタン（首謀者と同型）
     // 馬丁＝$4以下を獲得（種別ごとにボーナス）。
     if (pd.type === 'groom_gain') return modalGainSupply(state, '馬丁 — 獲得', 'コスト4コイン以下のカード1枚を獲得します（アクション＝馬1枚／財宝＝銀貨1枚／勝利点＝+1カード +1アクション）。',
       (id) => canUpTo(state, id, 4), (id) => dispatch({ type: 'GROOM_GAIN', card: id }));
@@ -2375,11 +2376,15 @@
     ]);
     // 首謀者＝手札のアクション1枚を3回使用してよい。
     if (pd.type === 'mastermind_play') return modalSingleHand(p, '首謀者 — 3回使用', '手札のアクションカード1枚を3回使用できます（使わなくてもかまいません）。',
-      (id) => DOM.isType(id, 'action') || inheritedEstate(state, id),
-      (card) => dispatch({ type: 'MASTERMIND_PLAY', card }), true, '3回使用する');
+      (id) => (DOM.isType(id, 'action') || inheritedEstate(state, id)) && DOM.engine.canPlayHandCard(state, pd.player, id), // 航海の3枚制限／将軍（engine と同じ述語）
+      (card) => dispatch({ type: 'MASTERMIND_PLAY', card }),
+      // ⚠ skip は {label,on} オブジェクト必須（true を渡すと label/onclick が undefined の**死にボタン**になり、
+      //   候補ゼロのとき閉じる手段が無く人間が詰む＝敵対レビュー [high]。engine は null 辞退を受理する）。
+      { label: '使わない', on: () => dispatch({ type: 'MASTERMIND_PLAY', card: null }) }, '3回使用する');
     // 聖域＝手札1枚を追放してもよい。
     if (pd.type === 'sanctuary_exile') return modalSingleHand(p, '聖域 — 追放', '手札から1枚を追放してもよい（しなくてもかまいません）。追放したカードは追放マットに置かれ、同名を獲得したときに戻せます。',
-      () => true, (card) => dispatch({ type: 'SANCTUARY_EXILE', card }), true, '追放する');
+      () => true, (card) => dispatch({ type: 'SANCTUARY_EXILE', card }),
+      { label: '追放しない', on: () => dispatch({ type: 'SANCTUARY_EXILE', card: null }) }, '追放する'); // skip=true は死にボタン（首謀者と同型）
     // がらくた＝手札1枚を廃棄 → そのコスト分だけ異なる効果を選ぶ。
     if (pd.type === 'scrap_trash') return modalSingleHand(p, 'がらくた — 廃棄', '手札から1枚を廃棄します。そのコスト1コインにつき1つ、異なる効果を選べます。',
       () => true, (card) => dispatch({ type: 'SCRAP_TRASH', card }), false, '廃棄する');
@@ -2444,7 +2449,8 @@
       () => true, (card) => dispatch({ type: 'WAY_GOAT_TRASH', card }), false, '廃棄する');
     if (pd.type === 'way_rat_discard') return modalSingleHand(p, 'ドブネズミの習性 — 財宝を捨てる',
       '手札の財宝1枚を捨て札にすると、「' + ((DOM.CARDS[pd.card] || {}).name || pd.card) + '」をもう1枚獲得できます（しなくてもかまいません）。',
-      (id) => isTreasureNow(state, id), (card) => dispatch({ type: 'WAY_RAT_DISCARD', card }), true, '捨てて獲得する');
+      (id) => isTreasureNow(state, id), (card) => dispatch({ type: 'WAY_RAT_DISCARD', card }),
+      { label: '捨てない', on: () => dispatch({ type: 'WAY_RAT_DISCARD', card: null }) }, '捨てて獲得する'); // skip=true は死にボタン（首謀者と同型）
     if (pd.type === 'way_seal_topdeck') return modalOptions('アザラシの習性', '「' + ((DOM.CARDS[pd.card] || {}).name || pd.card) + '」を獲得しました。山札の上に置けます。', [
       { label: '山札の上に置く', cls: 'btn-primary', on: () => dispatch({ type: 'WAY_SEAL_TOPDECK', top: true }) },
       { label: 'そのまま（捨て札へ）', on: () => dispatch({ type: 'WAY_SEAL_TOPDECK', top: false }) },
@@ -3445,8 +3451,8 @@
         (id) => dispatch({ type: 'OVERLORD_PLAY', card: id }),
         () => dispatch({ type: 'OVERLORD_PLAY', card: null }), false, '使う');
     }
-    if (pd.type === 'crown' && pd.mode === 'action') return modalSingleHand(p, '冠 — 2回使うアクション', '手札のアクションカードを1枚選ぶと、それを2回使います（使わなくてもよい）。', (id) => DOM.isType(id, 'action'), (card) => dispatch({ type: 'CROWN_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'CROWN_CHOOSE', card: null }) }, '2回使う');
-    if (pd.type === 'crown' && pd.mode === 'treasure') return modalSingleHand(p, '冠 — 2回使う財宝', '手札の財宝カードを1枚選ぶと、それを2回使います（使わなくてもよい）。', (id) => isTreasureNow(state, id), (card) => dispatch({ type: 'CROWN_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'CROWN_CHOOSE', card: null }) }, '2回使う');
+    if (pd.type === 'crown' && pd.mode === 'action') return modalSingleHand(p, '冠 — 2回使うアクション', '手札のアクションカードを1枚選ぶと、それを2回使います（使わなくてもよい）。', (id) => DOM.isType(id, 'action') && DOM.engine.canPlayHandCard(state, pd.player, id), (card) => dispatch({ type: 'CROWN_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'CROWN_CHOOSE', card: null }) }, '2回使う');
+    if (pd.type === 'crown' && pd.mode === 'treasure') return modalSingleHand(p, '冠 — 2回使う財宝', '手札の財宝カードを1枚選ぶと、それを2回使います（使わなくてもよい）。', (id) => isTreasureNow(state, id) && DOM.engine.canPlayHandCard(state, pd.player, id), (card) => dispatch({ type: 'CROWN_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'CROWN_CHOOSE', card: null }) }, '2回使う');
     /* ===== 帝国：横型ランドスケープ（ランドマーク＝闘技場・峠）===== */
     if (pd.type === 'arena') return modalSingleHand(p, '闘技場', 'アクションカード1枚を捨ててもよい（捨てたら +2勝利点）。捨てても廃棄ではありません。',
       (id) => DOM.CARDS[id].types.includes('action'),
@@ -3476,8 +3482,8 @@
       (id) => dispatch({ type: 'ADVANCE_GAIN', card: id }));
     if (pd.type === 'ritual') return modalSingleHand(p, '儀式 — 廃棄', '手札から1枚を廃棄します（その廃棄カードのコスト$1につき +1勝利点）。',
       () => true, (id) => dispatch({ type: 'RITUAL_TRASH', card: id }), null, '廃棄する');
-    if (pd.type === 'tax_pile') return modalGainSupply(state, '徴税 — 山を選ぶ', 'サプライの山を1つ選び、負債トークンを2個置きます（その山から次に購入フェイズで獲得したプレイヤーが、負債をすべて受け取ります）。',
-      (id) => !(DOM.SPLIT_PILES && DOM.SPLIT_PILES[id]), (id) => dispatch({ type: 'TAX_PILE', pile: id }), null, null, '負債を置く');
+    if (pd.type === 'tax_pile') return modalGainSupply(state, '徴税 — 山を選ぶ', 'サプライの山を1つ選び、負債トークンを2個置きます（その山から次に購入フェイズで獲得したプレイヤーが、負債をすべて受け取ります）。空の山にも置けます。',
+      (id) => !(DOM.SPLIT_PILES && DOM.SPLIT_PILES[id]), (id) => dispatch({ type: 'TAX_PILE', pile: id }), null, null, '負債を置く', true); // allowEmpty＝公式は空の山にも置ける（教師の山トークンと同じ）
     if (pd.type === 'donate_trash') return modalMultiHand(p, '寄付 — 廃棄（任意）',
       '山札と捨て札をすべて手札に集めました。好きな枚数を廃棄できます（残りをシャッフルして山札に戻し、5枚引きます）。0枚でもOK。',
       (n) => '確定（' + n + '枚 廃棄）', true, (cards) => dispatch({ type: 'DONATE_TRASH', cards }), p.hand.length);
@@ -3652,7 +3658,7 @@
     if (pd.type === 'fugitive_discard') return modalSingleHand(p, '脱走兵 — 手札を1枚捨てる', '手札からカード1枚を選んで捨てます。', () => true, (card) => dispatch({ type: 'FUGITIVE_DISCARD', card }), null, '捨てる');
     // 冒険：相続した屋敷もアクション（命令）＝門下生の対象にできる（engine と同じ述語 inheritedEstate を見る）。
     if (pd.type === 'disciple_play') return modalSingleHand(p, '門下生 — 2回使うアクションを選ぶ', '手札のアクション1枚を選ぶと、それを2回使い、同じカード1枚を獲得します。',
-      (id) => DOM.isType(id, 'action') || (DOM.engine.inheritedEstate && DOM.engine.inheritedEstate(p, id)),
+      (id) => (DOM.isType(id, 'action') || (DOM.engine.inheritedEstate && DOM.engine.inheritedEstate(p, id))) && DOM.engine.canPlayHandCard(state, pd.player, id), // 航海の3枚制限／将軍
       (card) => dispatch({ type: 'DISCIPLE_PLAY', card }), { label: '使わない', on: () => dispatch({ type: 'DISCIPLE_PLAY', card: null }) }, '2回使う');
     if (pd.type === 'teacher_call' && pd.stage === 'token') {
       const TL = { card: '+1 カード', action: '+1 アクション', buy: '+1 購入', coin: '+1 コイン' };
@@ -4681,7 +4687,10 @@
     //   （非サプライ＝賞品/略奪品/成長先・ロック中の分割山下段・在庫切れ）＝人間が詰む選択肢を1か所で吸収する。
     //   allowEmpty＝「山が空でもよい」用途（教師の山トークン置き先＝公式は空の山にも置ける）。
     const elig = all.filter((id) => filter(id) &&
-      (allowEmpty ? (state.supply[id] != null) : ((state.supply[id] || 0) > 0 && canBase(state, id))));
+      // allowEmpty でも**非サプライ山（賞品/成長先/馬/戦利品等）は弾く**＝engine（徴税の TAX_PILE 等）が
+      //   NON_SUPPLY を拒否するので、出すと「押しても何も起きない」死にチップになる（敵対レビュー）。
+      (allowEmpty ? (state.supply[id] != null && !(E() && E().isNonSupplyPile && E().isNonSupplyPile(id)))
+        : ((state.supply[id] || 0) > 0 && canBase(state, id))));
     /* 混合山（騎士/城/同盟の分割山）は**一番上の実カード**を描く（プレースホルダを出すと
        「卜占官 $3」と表示して実際には「巫女 $6」を獲得する、という食い違いになる）。
        dispatch は山キーのまま＝engine は山から一番上を配る（盤面の pileEl・植民のチップと同じ扱い）。 */

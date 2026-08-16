@@ -1797,6 +1797,141 @@ console.log('=== A4: 敵対レビュー確定分の回帰 ===');
   ok(count(s.players[1].inPlay, 'village') === before, '玉座の間でも3枚目の村は使えない（公式FAQが名指しで禁止）');
 }
 {
+  /* [回帰] 将軍：冠(actionモード)／首謀者／門下生 の「手札から使わせる」経路も止まる
+     （canPlayHandCard のゲート漏れ＝玉座の間と同じクラス。修正前は3枚目の村を使えた）。 */
+  const WK = ['warlord', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival', 'gold'];
+  const armWarlord = () => {
+    let w = mkA4(WK, 2);
+    w.players[0].hand = ['warlord']; w.turn.actions = 1;
+    w = reduce(w, { type: 'PLAY_ACTION', card: 'warlord' });
+    while (w.pending && w.pending.type === 'warlord') w = reduce(w, { type: 'LINGER_REACT' });
+    w = reduce(w, { type: 'END_ACTION_PHASE' }); w = reduce(w, { type: 'END_TURN' });
+    // ここから将軍の予約が立った相手（プレイヤー1）のターン。場に村2枚＝村は使えない。
+    w.players[1].inPlay = ['village', 'village'];
+    w.players[1].deck = new Array(20).fill('copper'); w.players[1].discard = [];
+    w.turn.actions = 5;
+    return w;
+  };
+  // 冠（actionモード）：受理側 CROWN_CHOOSE が3枚目の村を拒否する
+  let c = armWarlord();
+  c.players[1].hand = ['crown', 'village', 'smithy'];
+  c = reduce(c, { type: 'PLAY_ACTION', card: 'crown' });
+  ok(c.pending && c.pending.type === 'crown' && c.pending.mode === 'action',
+    '冠：合法候補（鍛冶屋）があるので窓は開く');
+  c = reduce(c, { type: 'CROWN_CHOOSE', card: 'village' });
+  ok(count(c.players[1].inPlay, 'village') === 2 && c.players[1].hand.includes('village'),
+    '**冠でも3枚目の村は使えない**（inPlay が増えず手札に残る）');
+  // 冠：合法候補が1枚も無ければ窓自体を開かない（開くと人間の死に窓）
+  let c2 = armWarlord();
+  c2.players[1].hand = ['crown', 'village'];
+  c2 = reduce(c2, { type: 'PLAY_ACTION', card: 'crown' });
+  ok(c2.pending === null, '冠：将軍で全部止まっているなら窓を開かない（crownOpenPending も同じ述語）');
+  // 首謀者：受理側 MASTERMIND_PLAY が拒否する（状態不変＝pending が残る）
+  let m = armWarlord();
+  m.players[1].hand = ['village', 'smithy'];
+  m.pending = { type: 'mastermind_play', player: 1 };
+  m = reduce(m, { type: 'MASTERMIND_PLAY', card: 'village' });
+  ok(m.pending && m.pending.type === 'mastermind_play' && count(m.players[1].inPlay, 'village') === 2
+    && m.players[1].hand.includes('village'),
+    '**首謀者でも3枚目の村は使えない**（拒否＝状態不変）');
+  m = reduce(m, { type: 'MASTERMIND_PLAY', card: null });
+  ok(m.pending === null, '首謀者：辞退で窓は閉じられる（人間が詰まない）');
+  // 門下生：受理側 DISCIPLE_PLAY が拒否する（プレイもコピー獲得も起きない）
+  let d = armWarlord();
+  d.players[1].hand = ['disciple', 'village', 'smithy'];
+  d = reduce(d, { type: 'PLAY_ACTION', card: 'disciple' });
+  ok(d.pending && d.pending.type === 'disciple_play', '門下生：合法候補（鍛冶屋）があるので窓は開く');
+  d = reduce(d, { type: 'DISCIPLE_PLAY', card: 'village' });
+  ok(d.pending && d.pending.type === 'disciple_play' && count(d.players[1].inPlay, 'village') === 2
+    && !d.players[1].discard.includes('village'),
+    '**門下生でも3枚目の村は使えない**（プレイもコピー獲得も起きない）');
+}
+{
+  /* [回帰] 航海の3枚制限：冠(両モード)／首謀者／門下生 も止まる（修正前は素通しだった）。 */
+  const voyageTurn = () => {
+    let v = mkA4(SPLIT_K, 2);
+    digPile(v, 'odysseys', 1); // 航海が一番上
+    v.players[0].hand = ['voyage']; v.turn.actions = 1;
+    v.players[0].deck = new Array(30).fill('copper');
+    v = reduce(v, { type: 'PLAY_ACTION', card: 'voyage' });
+    v = reduce(v, { type: 'END_ACTION_PHASE' }); v = reduce(v, { type: 'END_TURN' });
+    v.turn.handPlays = 3; v.turn.actions = 5;
+    return v;
+  };
+  let a = voyageTurn();
+  ok(a.turn.active === 0 && a.turn.voyageTurn === true, '前提：航海の追加ターンになっている');
+  a.players[0].hand = ['village'];
+  a.pending = { type: 'crown', mode: 'action', player: 0 };
+  a = reduce(a, { type: 'CROWN_CHOOSE', card: 'village' });
+  ok(!a.players[0].inPlay.includes('village') && a.players[0].hand.includes('village'),
+    '冠(action)：手札3枚を使い切った後はアクションを使えない');
+  let b = voyageTurn();
+  b.players[0].hand = ['copper'];
+  b.pending = { type: 'crown', mode: 'treasure', player: 0 };
+  const coin0 = b.turn.coins;
+  b = reduce(b, { type: 'CROWN_CHOOSE', card: 'copper' });
+  ok(b.players[0].hand.includes('copper') && !b.players[0].inPlay.includes('copper') && b.turn.coins === coin0,
+    '冠(treasure)：手札3枚を使い切った後は財宝も使えない（財宝も数える）');
+  let m2 = voyageTurn();
+  m2.players[0].hand = ['village'];
+  m2.pending = { type: 'mastermind_play', player: 0 };
+  m2 = reduce(m2, { type: 'MASTERMIND_PLAY', card: 'village' });
+  ok(m2.pending && m2.pending.type === 'mastermind_play' && !m2.players[0].inPlay.includes('village'),
+    '首謀者：手札3枚を使い切った後は拒否される');
+  let d2 = voyageTurn();
+  d2.players[0].hand = ['village'];
+  d2.pending = { type: 'disciple_play', player: 0 };
+  d2 = reduce(d2, { type: 'DISCIPLE_PLAY', card: 'village' });
+  ok(d2.pending && d2.pending.type === 'disciple_play' && !d2.players[0].inPlay.includes('village'),
+    '門下生：手札3枚を使い切った後は拒否される');
+}
+{
+  /* [回帰] 航海×冠：冠が選んだ手札のカードも handPlays に数える（notePlayFromHand。
+     冠自身1＋選んだ村1＝2。修正前は冠の1だけ＝実質4枚使えた）。 */
+  let s = mkA4(SPLIT_K, 2);
+  digPile(s, 'odysseys', 1);
+  s.players[0].hand = ['voyage']; s.turn.actions = 1;
+  s.players[0].deck = new Array(30).fill('copper');
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'voyage' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  ok(s.turn.voyageTurn === true && (s.turn.handPlays || 0) === 0, '追加ターン開始時は handPlays=0');
+  s.players[0].hand = ['crown', 'village', 'smithy']; s.turn.actions = 5;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'crown' });
+  ok((s.turn.handPlays || 0) === 1 && s.pending && s.pending.type === 'crown', '冠自身で handPlays=1');
+  s = reduce(s, { type: 'CROWN_CHOOSE', card: 'village' });
+  ok(count(s.players[0].inPlay, 'village') === 1, '村は使えた（handPlays 1<3 なので合法）');
+  ok((s.turn.handPlays || 0) === 2, '**冠が選んだ村も handPlays に数える**（冠1＋村1＝2。再演の2回目は数えない）');
+}
+{
+  /* [回帰] CPU：将軍ブロック下の crown / mastermind_play / disciple_play の decidePending が
+     ブロックされた札を返さない（返すと engine拒否×CPU提案の livelock）。 */
+  const armWarlordCPU = (hand, pending) => {
+    let w = mkA4(['warlord', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival', 'gold'], 2);
+    w.players[0].hand = ['warlord']; w.turn.actions = 1;
+    w = reduce(w, { type: 'PLAY_ACTION', card: 'warlord' });
+    while (w.pending && w.pending.type === 'warlord') w = reduce(w, { type: 'LINGER_REACT' });
+    w = reduce(w, { type: 'END_ACTION_PHASE' }); w = reduce(w, { type: 'END_TURN' });
+    w.players[1].inPlay = ['village', 'village'];
+    w.players[1].hand = hand.slice(); w.turn.actions = 5;
+    w.pending = pending;
+    return w;
+  };
+  [['crown', { type: 'crown', mode: 'action', player: 1 }, 'CROWN_CHOOSE'],
+   ['mastermind', { type: 'mastermind_play', player: 1 }, 'MASTERMIND_PLAY'],
+   ['disciple', { type: 'disciple_play', player: 1 }, 'DISCIPLE_PLAY']].forEach(([name, pd, ty]) => {
+    // 合法候補ゼロ＝null 辞退（修正前はブロックされた村を返し続けた）
+    const s1 = armWarlordCPU(['village'], JSON.parse(JSON.stringify(pd)));
+    const a1 = CPU.decide(s1);
+    ok(a1 && a1.type === ty && a1.card === null,
+      name + '：CPU はブロックされた村を返さず null 辞退（実際 ' + JSON.stringify(a1 && a1.card) + '）');
+    // 合法札があるならそれを返す（ブロックされた札は返さない）
+    const s2 = armWarlordCPU(['village', 'smithy'], JSON.parse(JSON.stringify(pd)));
+    const a2 = CPU.decide(s2);
+    ok(a2 && a2.type === ty && a2.card != null && a2.card !== 'village',
+      name + '：合法札があるときはブロックされていない札を返す（実際 ' + JSON.stringify(a2 && a2.card) + '）');
+  });
+}
+{
   // [medium] 航海：使い切れなかった予約が後のターンに持ち越されない
   let s = mkA4(SPLIT_K, 2);
   digPile(s, 'odysseys', 1);
