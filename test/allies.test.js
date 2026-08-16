@@ -881,7 +881,10 @@ console.log('=== A3: 木工ギルド（アクション廃棄→**コスト上限
   ok(E.woodworkersCanGain(s)('engineer') === true, '**負債コストのアクション（技術者）も獲得できる**（コスト上限なし）');
   s = reduce(s, { type: 'ALLY_WOODWORKERS', card: 'engineer' });
   ok(count(s.players[0].discard, 'engineer') === 1 && s.pending == null, '技術者を獲得して閉じる');
-  ok(s.players[0].debt === 4, '負債コストは通常どおり負う（技術者＝負債4）');
+  /* ⚠ 木工ギルドの獲得は「効果での獲得」なので **負債を負わない**（公式＝`Although buying a card with
+     [D] in its cost gives you Debt tokens, gaining such a card in other ways does not.`）。
+     以前はここが 4 で、**旧い誤った挙動（gain() で負債を付けていた）を固定してしまっていた**。 */
+  ok((s.players[0].debt || 0) === 0, '効果での獲得では負債を負わない（技術者を獲得しても負債0）');
 }
 {
   let s = mkAlly('woodworkers_guild');

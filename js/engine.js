@@ -1896,7 +1896,13 @@
   }
 
   /* ---------- 獲得の共通部品（支配 Possession の振り分けを1か所に集約）----------
-     帝国：負債コスト（debt）は購入でも効果での獲得でも負う。
+     帝国：負債コスト（debt）を負うのは **「購入」したときだけ**（BUY / BUY_EVENT / 闇市場の購入）。
+     公式（英語wiki `Debt` の "Other rules clarifications" 逐語）＝
+       `Although buying a card with [D] in its cost gives you Debt tokens,
+        gaining such a card in other ways does not.`
+     ＝**工房/建て直し/密輸人/命令 などの「獲得」では負債を負わない**。
+     ⚠ 以前はここを `gain()` の中で呼んでいたので、効果での獲得でも負債が付いていた（出荷済みの実バグ）。
+       旭日のルールブックの公式例 `Tanuki trashing an Artist can gain a Daimyo` がまさにこの経路。
      **支配中は「獲得するのは支配者」＝負債も支配者が負う**（被支配者に負債を押し付けられない）。 */
   function takeDebt(state, pIndex, cardId) {
     const dbt = (C()[cardId] && C()[cardId].debt) || 0;
@@ -1913,7 +1919,7 @@
      （物見やぐら/交易商人 等の獲得時対話が立てられるように）。 */
   function gainFromOutside(state, pIndex, cardId, dest) {
     const t = state.turn;
-    takeDebt(state, pIndex, cardId);
+    // ⚠ ここで負債は付けない（「獲得」では負債を負わない＝公式）。闇市場の**購入**は BLACK_MARKET_BUY 側で付ける。
     // 「サプライ由来でない獲得」を獲得トリガーに伝える＝交易商人（獲得を銀貨に置換して**山へ戻す**）の窓を開かない。
     //   開くと廃棄置き場/闇市場から得た札がサプライの山に生えて、空の山が復活する（3山終了が巻き戻る）。
     state._gainOutside = true;
@@ -1963,10 +1969,8 @@
        （武器庫などで山札の上に獲得したときはそのまま＝公式）。相手のターンの獲得でも自分の手札に入る。 */
     if (dest === 'discard' && GAIN_TO_HAND.has(realId)) dest = 'hand';
     const t = state.turn;
-    // 帝国：負債コスト（debt）を持つカードは、購入でも効果での獲得でも、その数だけ負債トークンを負う。
-    //   gain() は全ての獲得の一元入口なので、ここで付与すれば購入/工房/密輸人/命令 等どの経路でも効く。
-    //   支配中は「獲得するのは支配者」＝負債も支配者が負う（takeDebt が振り分ける）。
-    takeDebt(state, pIndex, realId);
+    /* ⚠ **ここで負債を付けてはいけない**（公式＝負債を負うのは「購入」したときだけ。
+       `gaining such a card in other ways does not.`）。付与は BUY / BUY_EVENT / BLACK_MARKET_BUY 側。 */
     // 錬金術・支配：被支配者（手番のactive）が獲得するカードは脇に避け、ターン終了時に
     // 支配者の捨て札へ渡す（獲得先が手札/山札でも脇に置く＝公式のルーリング）。
     //   **獲得するのは支配者**（公式：Possession＝"any cards they would gain, you gain instead"）＝
@@ -2139,7 +2143,7 @@
     const id = state.loot.shift();
     reveal(state, pIndex, [id], '戦利品を獲得');
     const t = state.turn;
-    takeDebt(state, pIndex, id);
+    // （戦利品は $7* で負債コストを持たないが、方針として「獲得では負債を負わない」＝ここでも付けない）
     if (t && t.possessedBy != null && pIndex === t.active) {
       (t.possessionGains = t.possessionGains || []).push(id);
       log(state, `${state.players[pIndex].name} が獲得した「${C()[id].name}」は脇に置かれた（支配：${state.players[t.possessedBy].name} が受け取る）。`);
@@ -12341,6 +12345,9 @@
         t.buys -= 1;
         t.buysMade = (t.buysMade || 0) + 1; // 冒険：使者の「そのターン最初の購入か」判定用（購入回数）
         t.treasuresLocked = true;           // 公式：購入したら、そのターンはもう財宝を出せない
+        // 帝国：負債コストのカードは**購入したとき**にその数だけ負債を負う（獲得では負わない＝公式）。
+        //   支払いの一部なので gain() の前に行う（交易商人で銀貨に置換されても購入した事実は変わらない）。
+        takeDebt(state, pi, card);
         gain(state, pi, card, 'discard');
         log(state, `${me.name} は「${C()[card].name}」を購入した。`);
         // 繁栄：造幣所を購入したとき、場の財宝をすべて廃棄する。
@@ -14854,6 +14861,8 @@
         // ※闇市場はアクションフェイズに解決する（自前の財宝プレイ手順を持つ）ので、ここで treasuresLocked は立てない
         //   （立てると購入フェイズで財宝を出せなくなる＝実プレイが壊れる）。
         log(state, `${state.players[pd.player].name} は闇市場で「${C()[card].name}」を購入した。`);
+        // 闇市場の購入も「購入」＝負債コストのカードならその数だけ負債を負う（gainFromOutside は付けない）。
+        takeDebt(state, pd.player, card);
         applyHoardOnBuy(state, pd.player, card);
         triggerMerchantGuild(state, pd.player); // ギルド：闇市場の購入でも商人ギルドの財源が付く
         const rest = pd.revealed.filter((c) => c !== card);
@@ -17334,7 +17343,19 @@
       // 帝国：負債（Debt）を返済する。購入フェイズに $1=1個。購入権は消費しない（購入の前でも後でも・交互でも可）。
       case 'REPAY_DEBT': {
         if (state.pending) return state;
-        if (t.phase !== 'buy') return state;
+        /* 【2024エラッタ・帝国にも遡及】負債は **そのターン中ならいつでも** 返済できる
+           （公式逐語＝`A player can remove Debt tokens at any point in their turn by paying [$1] per Debt
+           token to remove it. Removing Debt does not use up a Buy or an Action, and can be done multiple
+           times in a turn. **This does not let players play Treasures at any time.**`）。
+           旧ルール（購入フェイズのみ）は wiki が `Prior official rules (amended by the release of the
+           Rising Sun expansion)` として明示的に過去扱いにしている。Donald X. 本人も
+           `no more screwing over Black Market` と述べており、**アクションフェイズの闇市場で
+           負債持ちが詰む**のがこの変更の動機。
+           ⚠ 返済できるようにしても**財宝を出せるようにはならない**（`PLAY_TREASURE` は購入フェイズ判定のまま）。
+           ⚠ **許容簡略化**＝選択待ち（`state.pending`）がある間は返せない（上のガード）。
+              公式は「いつでも」なので、闇市場の解決中に返す手だけは再現できない。
+              **アクションフェイズで +$ を出してから闇市場を使う前に返す**のは可能＝Donald X. の
+              挙げた事象（負債持ちが闇市場で詰む）は解消している。 */
         // amount 未指定なら可能な限り返済（min(負債, コイン)）。
         const want = (action.amount == null) ? Infinity : (action.amount | 0);
         const amount = Math.min(me.debt || 0, t.coins || 0, want);

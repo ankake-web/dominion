@@ -272,7 +272,11 @@ console.log('=== 帝国E2: 御守り（モードB＝同コスト別名・負債�
   const cop = count(s.players[0].discard, 'copper'); s = reduce(s, { type: 'CHARM_GAIN', card: 'copper' });
   ok(count(s.players[0].discard, 'copper') === cop && s.pending, '御守り：$0(copper)は負債不一致で獲得不可（pending維持）');
   s = reduce(s, { type: 'CHARM_GAIN', card: 'royal_blacksmith' });
-  ok(count(s.players[0].discard, 'royal_blacksmith') === 1 && s.players[0].debt === 16, '御守り：同コスト(d8)別名を獲得（負債16）'); }
+  /* ⚠ 負債は **8**（市街を「購入」したぶんだけ）。御守りの獲得は「効果での獲得」なので負債を負わない
+     （公式＝`Although buying a card with [D] in its cost gives you Debt tokens, gaining such a card in
+     other ways does not.`）。以前はここが 16 で、**旧い誤った挙動を固定してしまっていた**。 */
+  ok(count(s.players[0].discard, 'royal_blacksmith') === 1 && s.players[0].debt === 8,
+    '御守り：同コスト(d8)別名を獲得（負債は購入ぶんの8だけ＝効果の獲得では負債を負わない）'); }
 
 console.log('=== 帝国E2: 軍団兵（金貨公開→手札2に減+1引・堀免疫）===');
 { let s = mk2(); s.turn.phase = 'action'; s.turn.actions = 1; s.players[0].hand = ['legionary', 'gold'];
@@ -1131,6 +1135,52 @@ const K8 = (extra) => [extra, 'village', 'smithy', 'market', 'workshop', 'moat',
   ok(count(s.trash, 'feast') === 1, '内側の本物の祝宴は自身を廃棄する（_cmd.as で識別）');
   ok(count(s.trash, 'overlord') === 0, '大君主は廃棄されない');
   ok(tdiff(t0, tally(s)).length === 0, '保存則（大君主×伝令官×祝宴）');
+}
+
+/* ===== 【2024エラッタ】負債は「購入」でだけ負う／「ターン中いつでも」返済できる =====
+   公式（英語wiki `Debt`）：
+   - Other rules clarifications: `Although buying a card with [D] in its cost gives you Debt tokens,
+     gaining such a card in other ways does not.`
+   - Official rules: `A player can remove Debt tokens **at any point in their turn** by paying [$1] per
+     Debt token to remove it.`（旧＝購入フェイズのみ は "Prior official rules" として過去扱い）      */
+{ // ① 購入では負債を負う
+  let s = mkK8(['engineer', 'city_quarter', 'workshop', 'remodel', 'market', 'smithy', 'moat', 'cellar', 'militia', 'laboratory']);
+  s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = 0;
+  s = reduce(s, { type: 'BUY', card: 'engineer' });
+  ok(count(s.players[0].discard, 'engineer') === 1, '購入：技術者を獲得した');
+  ok((s.players[0].debt || 0) === 4, '購入では負債を負う（技術者＝負債4）');
+}
+{ // ② 効果での獲得では負債を負わない（工房で技術者は取れないので、建て直しで市街を取る）
+  let s = mkK8(['engineer', 'city_quarter', 'fortune', 'gladiator', 'remodel', 'smithy', 'moat', 'cellar', 'militia', 'laboratory']);
+  setup8(s, ['remodel', 'fortune']);
+  const before = s.players[0].debt || 0;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'remodel' });
+  s = reduce(s, { type: 'REMODEL_TRASH', card: 'fortune' });   // $8+8D を廃棄 → 「$2高いまで」＝市街(8D)が候補
+  if (s.pending && s.pending.type === 'remodel' && s.pending.stage === 'gain') {
+    s = reduce(s, { type: 'REMODEL_GAIN', card: 'city_quarter' });
+    ok(count(s.players[0].discard, 'city_quarter') === 1, '建て直しで市街(8D)を獲得できた');
+    ok((s.players[0].debt || 0) === before,
+      '**効果での獲得では負債を負わない**（公式＝gaining such a card in other ways does not）');
+  } else { ok(false, '建て直しの獲得窓が開かなかった（テストの前提が崩れている）'); }
+}
+{ // ③ 負債はアクションフェイズでも返済できる（2024エラッタ）
+  let s = mkK8(['engineer', 'city_quarter', 'market', 'smithy', 'moat', 'cellar', 'militia', 'laboratory', 'village', 'festival']);
+  setup8(s, ['festival']);
+  s.players[0].debt = 3;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'festival' });    // +2アクション +1購入 +$2
+  ok((s.turn.coins || 0) === 2 && s.turn.phase === 'action', '前提：アクションフェイズで $2 を得た');
+  s = reduce(s, { type: 'REPAY_DEBT' });
+  ok((s.players[0].debt || 0) === 1 && (s.turn.coins || 0) === 0,
+    'アクションフェイズでも負債を返済できる（2024エラッタ＝at any point in their turn）');
+  ok(s.turn.phase === 'action' && (s.turn.buys || 0) === 2, '返済は購入権もアクション権も消費しない');
+}
+{ // ④ 相手のターンには返せない／選択待ちがある間は返せない（許容簡略化）
+  let s = mkK8(['engineer', 'city_quarter', 'market', 'smithy', 'moat', 'cellar', 'militia', 'laboratory', 'village', 'festival']);
+  s.turn.phase = 'buy'; s.turn.coins = 5; s.players[0].debt = 3;
+  s.pending = { type: 'workshop', player: 0 };
+  const before = s.players[0].debt;
+  s = reduce(s, { type: 'REPAY_DEBT' });
+  ok((s.players[0].debt || 0) === before, '選択待ちがある間は返済できない（許容簡略化）');
 }
 
 console.log('\n' + (fail === 0 ? '✅ 帝国 全' + pass + '件 PASS' : '❌ 帝国 ' + fail + '件 FAIL / ' + pass + '件 PASS'));

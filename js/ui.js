@@ -1786,6 +1786,15 @@
       return h('button', { class: 'btn btn-block', onclick: () => dispatch({ type: 'FAVOR_SHUFFLE_SETTING', player: viewer, value: (cur + 1) % 4 }) },
         '🤝 ' + nm + '：1回のシャッフルに使う好意 ' + cur + '個（タップで変更・持っている好意 ' + (mp.favors || 0) + '）');
     })();
+    /* 帝国：負債(Debt)の返済ボタン。
+       【2024エラッタ】負債は **そのターン中ならいつでも** 返済できる（購入フェイズ限定ではない）。
+       アクションフェイズで +$ を出したあと闇市場を使う、といった手のために全フェイズで出す
+       （engine の `REPAY_DEBT` も同じ条件＝3面を揃える）。 */
+    const debtNow0 = state.players[viewer].debt || 0;
+    const repayBtn = (t.active === viewer && debtNow0 > 0 && t.coins > 0)
+      ? h('button', { class: 'btn btn-block', style: 'background:#d2691e;color:#fff', onclick: () => dispatch({ type: 'REPAY_DEBT', amount: Math.min(debtNow0, t.coins) }) },
+          '🟠 負債を返済（' + Math.min(debtNow0, t.coins) + '返済／残' + debtNow0 + '）')
+      : null;
     if (t.phase === 'action') {
       // ルネサンス：村人(Villagers)を持っていれば「村人を使う」ボタン（アクションフェイズ・1個=+1アクション）。
       const villagerBtn = (t.active === viewer && (state.players[viewer].villagers || 0) > 0)
@@ -1794,14 +1803,17 @@
         : null;
       return h('div', { class: 'actions-bar' },
         villagerBtn,
+        repayBtn,
         stashBtn,
         favorShuffleBtn,
         h('button', { class: 'btn btn-primary btn-block', onclick: () => endActionPhase(state, viewer) }, '購入フェーズへ ▶'));
     }
-    /* 夜想曲：夜フェイズ＝購入フェイズは終わっている。財宝/財源/負債返済/購入はできず、
-       できるのは「夜行カードを使う」（手札のカードをタップ）と「ターンを終える」だけ。 */
+    /* 夜想曲：夜フェイズ＝購入フェイズは終わっている。財宝/財源/購入はできず、
+       できるのは「夜行カードを使う」（手札のカードをタップ）と「ターンを終える」だけ。
+       ⚠ ただし**負債の返済だけは 2024エラッタで「ターン中いつでも」**になったので夜でも出す。 */
     if (t.phase === 'night') {
       return h('div', { class: 'actions-bar' },
+        repayBtn,
         stashBtn,
         favorShuffleBtn,
         h('button', { class: 'btn btn-primary btn-block', onclick: () => endTurnTap(state, viewer) }, 'ターンを終える'));
@@ -1817,11 +1829,7 @@
     const cofferBtn = (t.active === viewer && (state.players[viewer].coffers || 0) > 0)
       ? h('button', { class: 'btn btn-block', style: 'background:#b8860b;color:#fff', onclick: () => { UI.coffersOpen = true; UI.amount = null; render(); } }, '💰 財源を使う（' + state.players[viewer].coffers + '）')
       : null;
-    // 帝国：負債(Debt)を持っていれば「返済する」ボタン（購入フェイズ・$1=負債1個。負債0にしないと購入できない）。
-    const debtNow = state.players[viewer].debt || 0;
-    const repayBtn = (t.active === viewer && debtNow > 0 && t.coins > 0)
-      ? h('button', { class: 'btn btn-block', style: 'background:#d2691e;color:#fff', onclick: () => dispatch({ type: 'REPAY_DEBT', amount: Math.min(debtNow, t.coins) }) }, '🟠 負債を返済（' + Math.min(debtNow, t.coins) + '返済／残' + debtNow + '）')
-      : null;
+    // （負債の返済ボタン `repayBtn` は上でフェイズ共通に作ってある＝$1=負債1個。負債0にしないと購入できない）
     return h('div', { class: 'actions-bar' },
       h('button', { class: 'btn btn-block', disabled: hasTreasure ? null : 'disabled', onclick: () => dispatch({ type: 'PLAY_ALL_TREASURES' }) }, '財宝を全部出す'),
       repayBtn,
