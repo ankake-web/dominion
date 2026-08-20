@@ -287,6 +287,17 @@
   }
   /* 「手札から使う」ために1枚を取り出す（手札を優先し、無ければ山札の影札を抜く）。
      戻り値＝取り出せたか。**手札にある影札は普通に手札から出す**（公式＝どちらからでも使える）。 */
+  /* 「手札から使わせる」窓（群A）が `playCardNoAction` を呼ぶときの共通ラッパ。
+     手札にあれば手札から、無ければ**山札の影札**から使う。**`asHand: true` を必ず渡す**ので
+     航海(Voyage)の3枚制限・将軍(Warlord)・`t.handPlays` の計上が `PLAY_ACTION` と対称になる。 */
+  function playPlayable(state, pi, card, note, way) {
+    const p = state.players[pi];
+    const fromHand = p.hand.indexOf(card) >= 0;
+    const zone = fromHand ? p.hand : p.deck;
+    // 山札から使ったことをログに残す（`takePlayable` 経路と表記を揃える。どこから出したかは公開情報）。
+    const note2 = fromHand ? note : (note + '（山札の影カードを）');
+    return playCardNoAction(state, pi, card, zone, note2, way, true);
+  }
   function takePlayable(state, pi, card) {
     const p = state.players[pi];
     if (!p) return false;
@@ -605,7 +616,8 @@
     const p = state.players[pi];
     const inPlay = p.inPlay.concat(p.durationCards || []);
     const out = [];
-    p.hand.forEach((c) => {
+    // 旭日：山札の影札も選べる（群A＝最終的に場に出る窓）。この述語1つで4面が揃う。
+    handPlayable(state, pi).forEach((c) => {
       if (out.indexOf(c) >= 0) return;
       if (!DOM.isType(c, 'action')) return;
       if (inPlay.indexOf(c) >= 0) return;
@@ -796,9 +808,14 @@
        （持続カードなら場に残る）。
      - **習性（Way）を指定できる**（公式：アクションカードを使用するときはいつでも代わりに習性を使える）。
      - 炉（kiln）の「次に使うカードの解決前に同名を獲得」も通す＝これも「カードの使用」だから。 */
-  function playCardNoAction(state, pi, card, zone, note, way) {
+  /* ⚠ 旭日 R2：`zone` に `p.deck`（山札の影札）を渡すときは **`asHand: true` を必ず添える**。
+     素で渡すと `fromHand` が偽になり、**航海(Voyage)の3枚制限・将軍(Warlord)・`t.handPlays` の計上が
+     黙って全部スキップされる**（＝「玉座経由なら航海の3枚制限を突破できる」抜け道になる）。
+     `PLAY_ACTION` は `takePlayable` を使って山札の影札でもこれらを通すので、**対称でなければならない**。 */
+  function playCardNoAction(state, pi, card, zone, note, way, asHand) {
     const p = state.players[pi];
-    const fromHand = zone === p.hand; // 同盟：航海の3枚制限は「**手札から**使用したカード」だけ数える
+    // 同盟：航海の3枚制限は「**手札から**使用したカード」だけ数える（影札は手札と同じ扱い＝asHand）
+    const fromHand = zone === p.hand || !!asHand;
     if (fromHand && !canPlayFromHand(state, pi)) return false;
     /* 同盟：将軍＝「場に2枚以上ある同名のアクションを**手札から**使用できない」。
        ⚠ 公式FAQが玉座の間を名指しで禁止しているとおり、`PLAY_ACTION` 以外の「手札から使わせる」経路
@@ -1153,7 +1170,7 @@
        ⚠ **杖自身は当ターンのクリンナップで捨てる**（玉座の間と扱いが逆）＝持続の予約を張らないこと。 */
     if (card === 'staff') {
       t.buys += 1;
-      if (p.hand.some((c) => DOM.isType(c, 'action') || inheritedEstate(p, c))) state.pending = { type: 'staff_play', player: pIndex };
+      if (handPlayable(state, pIndex).some((c) => DOM.isType(c, 'action') || inheritedEstate(p, c))) state.pending = { type: 'staff_play', player: pIndex };
     }
     /* 尽きぬ杯＝**現在**と、**ゲーム終了まで各ターンの開始時**に $1 +1購入（永続持続）。
        ⚠ 「現在」ぶんの $1 は `coin:1` で計上済み＝ここでは +1購入 と稼働数の加算だけ。
@@ -1266,9 +1283,13 @@
     const kind = buyPhase ? 'treasure' : 'action';
     // 財宝の候補判定は動的（資本主義で財宝になったアクションも対象＝受理側 CROWN_CHOOSE と同じ述語）。
     //   canPlayHandCard（航海の3枚制限／将軍）も受理側と同じに見る（玉座 5565 と同型＝候補ゼロなら窓を開かない）。
+    /* ⚠ 旭日：アクションモードは**山札の影札も選べる**（群A）。財宝モードは**手札だけ**に据え置く
+       ＝影が財宝になるのは「mix-all × 資本主義 × 魚屋」だけ（他4種は +$ を持たない）＝**許容簡略化**
+       （財宝の経路 `playTreasureCard` は `removeOne(p.hand, card)` 決め打ちで、直すと
+        PLAY_ALL_TREASURES の一括ボタンにも影が混ざる恐れがある＝§0-24 の `playAllResume` の轍）。 */
     const has = kind === 'treasure'
       ? p.hand.some((c) => isTreasureFor(state, c) && canPlayHandCard(state, pIndex, c))
-      : p.hand.some((c) => DOM.isType(c, 'action') && canPlayHandCard(state, pIndex, c));
+      : handPlayable(state, pIndex).some((c) => DOM.isType(c, 'action') && canPlayHandCard(state, pIndex, c));
     if (has) state.pending = { type: 'crown', mode: kind, player: pIndex };
   }
 
@@ -5042,7 +5063,7 @@
         /* 手札から使えるアクションが1枚も無ければ窓を開かず、そのまま draw-to-6 へ
            （`canPlayHandCard`＝同盟の航海の3枚制限／将軍。engine拒否・CPU候補・UIフィルタの3面が同じ述語）。
            窓を開いてしまうと engine が全部拒否して mix-all で livelock になる（§0-29 A4 [high] 12番と同型）。 */
-        if (p.hand.some((c) => DOM.isType(c, 'action') && canPlayHandCard(state, pi, c))) {
+        if (handPlayable(state, pi).some((c) => DOM.isType(c, 'action') && canPlayHandCard(state, pi, c))) {
           state.pending = { type: 'first_mate', player: pi, name: null };
         } else {
           firstMateFinish(state);
@@ -5749,7 +5770,7 @@
       case 'throne_room':
         /* 手札にアクションがあれば、2回使うカードを選ぶ。
            ⚠ 同盟：航海の3枚制限／将軍で**使える対象がゼロ**なら窓を開かない（開くと閉じられず人間が詰む）。 */
-        if (p.hand.some((c) => DOM.isType(c, 'action') && canPlayHandCard(state, pi, c))) state.pending = { type: 'throne', player: pi };
+        if (handPlayable(state, pi).some((c) => DOM.isType(c, 'action') && canPlayHandCard(state, pi, c))) state.pending = { type: 'throne', player: pi };
         break;
       case 'tribute': {
         // 左隣のプレイヤーが山札の上2枚を公開して捨てる
@@ -6151,7 +6172,7 @@
         state.pending = { type: 'hermit', stage: 'trash', player: pi };
         break;
       case 'procession': // 手札の非持続アクションを2回使う→廃棄→ちょうど+$1高いアクションを獲得（使わなくてよい）
-        if (p.hand.some((c) => DOM.isType(c, 'action') && !DOM.isType(c, 'duration') && canPlayHandCard(state, pi, c))) state.pending = { type: 'procession', player: pi };
+        if (handPlayable(state, pi).some((c) => DOM.isType(c, 'action') && !DOM.isType(c, 'duration') && canPlayHandCard(state, pi, c))) state.pending = { type: 'procession', player: pi };
         break;
       case 'marauder': { // 略奪品を獲得（自分）＋各相手が廃墟を獲得（アタック）
         if (gain(state, pi, 'spoils', 'discard')) log(state, `${p.name} は略奪者で略奪品を獲得した。`);
@@ -6435,7 +6456,7 @@
         state.pending = { type: 'forge', stage: 'trash', player: pi }; // 任意枚数廃棄→合計コストちょうどを獲得
         break;
       case 'kings_court':
-        if (p.hand.some((c) => DOM.isType(c, 'action') && canPlayHandCard(state, pi, c))) state.pending = { type: 'kings_court', player: pi };
+        if (handPlayable(state, pi).some((c) => DOM.isType(c, 'action') && canPlayHandCard(state, pi, c))) state.pending = { type: 'kings_court', player: pi };
         break;
       case 'rabble': {
         draw(state, pi, 3);
@@ -7079,7 +7100,7 @@
       // 門下生：手札のアクションカード1枚を2度使用してよい。それと同じカード1枚を獲得する。
       //   冒険：相続した屋敷もアクション（命令）＝対象になる（公式）。
       case 'disciple':
-        if (p.hand.some((c) => (DOM.isType(c, 'action') || inheritedEstate(p, c)) && canPlayHandCard(state, pi, c))) state.pending = { type: 'disciple_play', player: pi };
+        if (handPlayable(state, pi).some((c) => (DOM.isType(c, 'action') || inheritedEstate(p, c)) && canPlayHandCard(state, pi, c))) state.pending = { type: 'disciple_play', player: pi };
         break;
       // 教師（Reserve）：効果なし → 酒場マットへ。ターン開始時に呼び出してトークンをアクション山に置く。
       case 'teacher':
@@ -7820,7 +7841,7 @@
             本プロジェクトの方針では採らない。採る場合は脇置きを廃して `state.replay` に寄せるだけでよい。 */
       case 'royal_galley':
         draw(state, pi, 1);
-        if (p.hand.some((c) => (DOM.isType(c, 'action') || inheritedEstate(p, c)) && !DOM.isType(c, 'duration') && canPlayHandCard(state, pi, c))) {
+        if (handPlayable(state, pi).some((c) => (DOM.isType(c, 'action') || inheritedEstate(p, c)) && !DOM.isType(c, 'duration') && canPlayHandCard(state, pi, c))) {
           state.pending = { type: 'royal_galley_play', player: pi };
         }
         break;
@@ -7834,7 +7855,7 @@
          ⚠ **Command 種別を持たない**＝「命令は命令を使えない」ガードを適用しない／
             カードは手札から場へ普通に出る（＝「動かさずに使用」ではない）。 */
       case 'specialist':
-        if (p.hand.some((c) => (DOM.isType(c, 'action') || isTreasureFor(state, c) || inheritedEstate(p, c)) && canPlayHandCard(state, pi, c))) {
+        if (handPlayable(state, pi).some((c) => (DOM.isType(c, 'action') || isTreasureFor(state, c) || inheritedEstate(p, c)) && canPlayHandCard(state, pi, c))) {
           state.pending = { type: 'specialist_play', player: pi };
         }
         break;
@@ -7843,7 +7864,7 @@
          ⚠ 長老は「1回だけ」使わせるので**持続を使わせても長老自身は場に残らない**（専門家とは逆）。 */
       case 'elder':
         addCoins(state, 2);
-        if (p.hand.some((c) => (DOM.isType(c, 'action') || inheritedEstate(p, c)) && canPlayHandCard(state, pi, c))) {
+        if (handPlayable(state, pi).some((c) => (DOM.isType(c, 'action') || inheritedEstate(p, c)) && canPlayHandCard(state, pi, c))) {
           state.pending = { type: 'elder_play', player: pi };
         }
         break;
@@ -8322,9 +8343,18 @@
      ターン開始時だけでなく購入フェイズ開始時の窓もここに積んでよい（キューは phase 非依存）。
      ※**複数の開始時効果の解決順は公式ではプレイヤーが選べる**が、本エンジンは先入れ順の既存簡略化に従う
        （すり師団だけは手札が少ないほど得なので **先頭に unshift** して最初に解決させる）。 */
-  function allyHandHasAction(state, pi) {
+  /* ⚠ この述語は**2つの Ally が共有していたが、意味が正反対**なので分けた（旭日 R2）：
+     - 市場の町(Market Towns)＝手札のアクションを**使用する**（群A）＝**山札の影札も選べる**。
+     - 木工ギルド(Woodworkers' Guild)＝手札のアクションを**廃棄する**（群B）＝**影札は選べない**
+       （公式＝`this does not mean the Shadow card is in your hand`）。
+     共有のまま影対応にすると木工ギルドが山札の影札を廃棄できてしまう（公式違反）。 */
+  function allyHandHasAction(state, pi) {          // 群B（廃棄）＝手札だけ
     const p = state.players[pi];
     return p.hand.some((c) => DOM.isType(c, 'action') || inheritedEstate(p, c));
+  }
+  function allyPlayableHasAction(state, pi) {      // 群A（使用）＝手札＋山札の影札
+    const p = state.players[pi];
+    return handPlayable(state, pi).some((c) => DOM.isType(c, 'action') || inheritedEstate(p, c));
   }
   function queueAllyWindow(state, pd, front) {
     const t = state.turn;
@@ -8368,7 +8398,7 @@
     if (state.ally === 'family_of_inventors' && fav >= 1 && favorPileTargets(state).length) {
       queueAllyWindow(state, { type: 'ally_inventors', player: pi });
     }
-    if (state.ally === 'market_towns' && fav >= 1 && allyHandHasAction(state, pi) && canPlayFromHand(state, pi)) {
+    if (state.ally === 'market_towns' && fav >= 1 && allyPlayableHasAction(state, pi) && canPlayFromHand(state, pi)) {
       queueAllyWindow(state, { type: 'ally_market_towns', player: pi });
     }
     if (state.ally === 'peaceful_cult' && fav >= 1 && p.hand.length > 0) {
@@ -9174,7 +9204,7 @@
     },
     // 首謀者＝次の自分のターン開始時、手札のアクション1枚を3回使用してよい（対話＝startQueue に積む）。
     mastermind: (s, pi) => {
-      if (s.players[pi].hand.some((c) => (DOM.isType(c, 'action') || inheritedEstate(s.players[pi], c)) && canPlayHandCard(s, pi, c))) {
+      if (handPlayable(s, pi).some((c) => (DOM.isType(c, 'action') || inheritedEstate(s.players[pi], c)) && canPlayHandCard(s, pi, c))) {
         (s.turn.startQueue = s.turn.startQueue || []).push({ type: 'mastermind_play', player: pi });
       }
     },
@@ -10368,7 +10398,8 @@
   function conclaveTargets(state, pi) {
     const p = state.players[pi];
     const inPlay = new Set(p.inPlay.concat(p.durationCards || []));
-    return [...new Set(p.hand.filter((c) => (DOM.isType(c, 'action') || inheritedEstate(p, c)) && !inPlay.has(c)))];
+    // 旭日：山札の影札も「手札から使う」窓で選べる（群A。この述語1つで engine窓/受理/CPU/UI の4面が揃う）。
+    return [...new Set(handPlayable(state, pi).filter((c) => (DOM.isType(c, 'action') || inheritedEstate(p, c)) && !inPlay.has(c)))];
   }
   /* ===== 夜想曲：交換（exchange）＝**獲得でも廃棄でもない** =====
      - `triggerOnGain` も `triggerOnTrash` も呼ばない（望楼/そり/追跡者/追放の払い戻し等は発火しない）。
@@ -11498,7 +11529,7 @@
       // 苦労（$2）＝+1購入。手札からアクションカード1枚を使用してよい（アクション権を消費しない）。
       case 'toil': {
         t.buys += 1;
-        if (me.hand.some((c) => DOM.isType(c, 'action') || inheritedEstate(me, c))) state.pending = { type: 'toil', player: pi };
+        if (handPlayable(state, pi).some((c) => DOM.isType(c, 'action') || inheritedEstate(me, c))) state.pending = { type: 'toil', player: pi };
         break;
       }
       // 進軍（$3）＝捨て札置き場を見て、その中のアクションカード1枚を使用してよい（アクション権を消費しない）。
@@ -11996,7 +12027,7 @@
       if (fm.waiting) {
         fm.waiting = false;
         const pl = state.players[fm.player];
-        if (fm.name && pl.hand.indexOf(fm.name) >= 0 && canPlayHandCard(state, fm.player, fm.name)) {
+        if (fm.name && canPlayFromHandOrShadow(state, fm.player, fm.name) && canPlayHandCard(state, fm.player, fm.name)) {
           state.pending = { type: 'first_mate', player: fm.player, name: fm.name };
         } else {
           firstMateFinish(state);
@@ -12139,7 +12170,9 @@
           continue;
         }
         // 略奪P3：ゴンドラの獲得時窓＝手札にアクションが無ければスキップ。
-        if (q.type === 'gondola_play' && !state.players[q.player].hand.some((c) => DOM.isType(c, 'action'))) continue;
+        // 旭日：山札の影札も使えるので、消化側の「候補ゼロならスキップ」判定も handPlayable で見る
+        //   （手札限定のままだと「山札に影札しか無い」局面で窓が開かない＝取りこぼし）。
+        if (q.type === 'gondola_play' && !handPlayable(state, q.player).some((c) => DOM.isType(c, 'action'))) continue;
         /* 略奪P5：突貫＝**非対話**＝獲得先にまだあれば使用する（先に動かされていたら失敗＝stop-moving）。 */
         if (q.type === 'rush_play') {
           const rp = state.players[q.player];
@@ -13473,10 +13506,10 @@
         if (!pd || pd.type !== 'gondola_play') return state;
         const pl = state.players[pd.player];
         if (action.card == null) { state.pending = null; return state; }
-        if (!DOM.isType(action.card, 'action') || pl.hand.indexOf(action.card) < 0) return state;
+        if (!DOM.isType(action.card, 'action') || !canPlayFromHandOrShadow(state, pd.player, action.card)) return state;
         if (!canPlayHandCard(state, pd.player, action.card)) return state;
         state.pending = null;
-        playCardNoAction(state, pd.player, action.card, pl.hand, 'ゴンドラの獲得時効果で', action.way);
+        playPlayable(state, pd.player, action.card, 'ゴンドラの獲得時効果で', action.way); // 旭日：山札の影札も使える
         return state;
       }
       /* 工具＝誰かが場に出しているのと同じカード1枚を獲得（強制）。サプライに無い札（戦利品/闇市場由来）も
@@ -13653,7 +13686,7 @@
         if (action.card == null) { state.pending = null; return state; }
         if (inspiringTargets(state, pd.player).indexOf(action.card) < 0) return state;
         state.pending = null;
-        playCardNoAction(state, pd.player, action.card, pl.hand, '鼓舞するカードの効果で', action.way);
+        playPlayable(state, pd.player, action.card, '鼓舞するカードの効果で', action.way); // 旭日：山札の影札も使える
         return state;
       }
       /* ===== 略奪P5：イベント ===== */
@@ -13788,9 +13821,9 @@
         const pl = state.players[pd.player];
         state.pending = null;
         if (action.card != null) {
-          if (!DOM.isType(action.card, 'attack') || pl.hand.indexOf(action.card) < 0) { state.pending = pd; return state; }
+          if (!DOM.isType(action.card, 'attack') || !canPlayFromHandOrShadow(state, pd.player, action.card)) { state.pending = pd; return state; }
           if (!canPlayHandCard(state, pd.player, action.card)) { state.pending = pd; return state; }
-          playCardNoAction(state, pd.player, action.card, pl.hand, '侵略で', action.way);
+          playPlayable(state, pd.player, action.card, '侵略で', action.way); // 旭日：山札の影札も使える
         }
         if (state.pending) t.invasionAfter = { player: pd.player }; // アタックの解決後に②以降（reduce 末尾の再開網）
         else invasionAfterAttack(state, pd.player);
@@ -13982,11 +14015,11 @@
         const card = action.card;
         if (!DOM.isType(card, 'action')) return state;
         if (fm.name && card !== fm.name) return state;    // 名前は最初の1枚で確定
-        if (pl.hand.indexOf(card) < 0 || !canPlayHandCard(state, pd.player, card)) return state;
+        if (!canPlayFromHandOrShadow(state, pd.player, card) || !canPlayHandCard(state, pd.player, card)) return state;
         state.pending = null;
         fm.name = card;
         fm.waiting = true;   // 解決後に reduce 末尾の再開網が「もう1枚使うか」を聞く
-        playCardNoAction(state, pd.player, card, pl.hand, '一等航海士で', action.way);
+        playPlayable(state, pd.player, card, '一等航海士で', action.way); // 旭日：山札の影札も選べる
         return state;
       }
       /* 操舵手＝「$4以下を1枚この脇に獲得」か「この脇の1枚を手札へ」。獲得は捨て札を経由しない
@@ -14127,10 +14160,10 @@
         if (!pd || pd.type !== 'staff_play') return state;
         const pl = state.players[pd.player];
         if (action.card == null) { state.pending = null; return state; }
-        if (pl.hand.indexOf(action.card) < 0) return state;
+        if (!canPlayFromHandOrShadow(state, pd.player, action.card)) return state; // 旭日：山札の影札も使える
         if (!(DOM.isType(action.card, 'action') || inheritedEstate(pl, action.card))) return state;
         state.pending = null;
-        playCardNoAction(state, pd.player, action.card, pl.hand, '杖で');
+        playPlayable(state, pd.player, action.card, '杖で');
         return state;
       }
 
@@ -14412,10 +14445,11 @@
         const p = state.players[pd.player];
         const card = action.card;
         if (card == null) { state.pending = null; return state; } // 公式は "You **may** play"＝辞退できる（終端保証）
-        if (p.hand.indexOf(card) < 0 || !DOM.isType(card, 'action')) return state;
+        if (!canPlayFromHandOrShadow(state, pd.player, card) || !DOM.isType(card, 'action')) return state;
         // 同盟：航海の3枚制限／将軍（場に2枚以上ある同名）は「手札から使わせる」経路も止める（公式FAQが玉座を名指し）。
         if (!canPlayHandCard(state, pd.player, card)) return state;
-        removeOne(p.hand, card);
+        // 旭日：山札の影札も「手札から使う」窓で選べる（公式＝玉座の間を名指し）。
+        if (!takePlayable(state, pd.player, card)) return state;
         p.inPlay.push(card);
         notePlayFromHand(state, pd.player); // 同盟：航海＝玉座が選んだ手札のカードも数える（再演は数えない）
         t.actionsPlayed = (t.actionsPlayed || 0) + 1;
@@ -15722,9 +15756,10 @@
         const p = state.players[pd.player];
         const card = action.card;
         if (card == null) { state.pending = null; return state; } // 使わない
-        if (p.hand.indexOf(card) < 0 || !DOM.isType(card, 'action') || DOM.isType(card, 'duration')) return state;
+        if (!canPlayFromHandOrShadow(state, pd.player, card) || !DOM.isType(card, 'action') || DOM.isType(card, 'duration')) return state;
         if (!canPlayHandCard(state, pd.player, card)) return state; // 同盟：航海の3枚制限／将軍
-        removeOne(p.hand, card); p.inPlay.push(card);
+        if (!takePlayable(state, pd.player, card)) return state; // 旭日：山札の影札も選べる
+        p.inPlay.push(card);
         t.actionsPlayed = (t.actionsPlayed || 0) + 1;
         state.pending = null;
         log(state, `${p.name} は行進で「${C()[card].name}」を使った（1回目）。`);
@@ -15844,10 +15879,11 @@
         const card = action.card;
         if (card == null) { state.pending = null; return state; } // 使わない
         // 冒険：相続＝自分のターン中、屋敷もアクション（命令）＝門下生の対象にできる（公式）。
-        if (p.hand.indexOf(card) < 0 || !(DOM.isType(card, 'action') || inheritedEstate(p, card))) return state;
+        if (!canPlayFromHandOrShadow(state, pd.player, card) || !(DOM.isType(card, 'action') || inheritedEstate(p, card))) return state;
         // 同盟：航海の3枚制限／将軍は「手札から使わせる」経路も止める（玉座と同型）。
         if (!canPlayHandCard(state, pd.player, card)) return state;
-        removeOne(p.hand, card); p.inPlay.push(card);
+        if (!takePlayable(state, pd.player, card)) return state; // 旭日：山札の影札も選べる
+        p.inPlay.push(card);
         notePlayFromHand(state, pd.player); // 同盟：航海＝門下生が選んだ手札のカードも数える（再演は数えない）
         t.actionsPlayed = (t.actionsPlayed || 0) + 1;
         state.pending = null;
@@ -16773,9 +16809,10 @@
         const p = state.players[pd.player];
         const card = action.card;
         if (card == null) { state.pending = null; return state; } // 辞退できる（終端保証）
-        if (p.hand.indexOf(card) < 0 || !DOM.isType(card, 'action')) return state;
+        if (!canPlayFromHandOrShadow(state, pd.player, card) || !DOM.isType(card, 'action')) return state;
         if (!canPlayHandCard(state, pd.player, card)) return state; // 同盟：航海の3枚制限／将軍
-        removeOne(p.hand, card); p.inPlay.push(card);
+        if (!takePlayable(state, pd.player, card)) return state; // 旭日：山札の影札も選べる
+        p.inPlay.push(card);
         t.actionsPlayed = (t.actionsPlayed || 0) + 1;
         state.pending = null;
         log(state, `${p.name} は王の宮廷で「${C()[card].name}」を使った（1回目）。`);
@@ -17978,8 +18015,9 @@
         state.pending = null;
         if (pd.mode === 'action') {
           // 同盟：航海の3枚制限／将軍は「手札から使わせる」経路も止める（公式FAQが玉座を名指し＝冠も同じクラス）。
-          if (card != null && p2.hand.indexOf(card) >= 0 && DOM.isType(card, 'action') && canPlayHandCard(state, pd.player, card)) {
-            removeOne(p2.hand, card); p2.inPlay.push(card);
+          if (card != null && canPlayFromHandOrShadow(state, pd.player, card) && DOM.isType(card, 'action') && canPlayHandCard(state, pd.player, card)
+              && takePlayable(state, pd.player, card)) { // 旭日：山札の影札も使える
+            p2.inPlay.push(card);
             notePlayFromHand(state, pd.player); // 同盟：航海＝冠が選んだ手札のカードも数える（玉座と同型・再演は数えない）
             t.actionsPlayed = (t.actionsPlayed || 0) + 1;
             log(state, `${p2.name} は冠で「${C()[card].name}」を使った（1回目）。`);
@@ -19185,14 +19223,15 @@
         const pl = state.players[pd.player];
         const card = action.card;
         if (card != null) {
-          if (pl.hand.indexOf(card) < 0) return state;
+          if (!canPlayFromHandOrShadow(state, pd.player, card)) return state;
           if (!DOM.isType(card, 'action') && !inheritedEstate(pl, card)) return state;
           // 同盟：航海の3枚制限／将軍は「手札から使わせる」経路も止める（玉座と同型）。
           if (!canPlayHandCard(state, pd.player, card)) return state;
         }
         state.pending = null;
         if (card == null) return state;
-        removeOne(pl.hand, card); pl.inPlay.push(card);
+        if (!takePlayable(state, pd.player, card)) return state; // 旭日：山札の影札も選べる
+        pl.inPlay.push(card);
         notePlayFromHand(state, pd.player); // 同盟：航海＝首謀者が選んだ手札のカードも数える（再演2回は数えない）
         t.actionsPlayed = (t.actionsPlayed || 0) + 1;
         log(state, `${pl.name} は首謀者で「${C()[card].name}」を3回使用する。`);
@@ -19515,9 +19554,9 @@
         const card = action.card;
         state.pending = null;
         if (card == null) return state;
-        if (pl.hand.indexOf(card) < 0) return state;
+        if (!canPlayFromHandOrShadow(state, pd.player, card)) return state; // 旭日：山札の影札も使える
         if (!DOM.isType(card, 'action') && !inheritedEstate(pl, card)) return state;
-        playCardNoAction(state, pd.player, card, pl.hand, '苦労で', action.way);
+        playPlayable(state, pd.player, card, '苦労で', action.way);
         return state;
       }
       // 進軍＝捨て札置き場のアクション1枚を使用してよい（アクション権を消費しない）。
@@ -19836,8 +19875,11 @@
         state.pending = null;
         if (card == null) return state;
         if (conclaveTargets(state, pd.player).indexOf(card) < 0) return state;
-        (state.replay = state.replay || []).push({ label: 'conclave_bonus', player: pd.player });
-        playCardNoAction(state, pd.player, card, pl.hand, 'コンクラーベで', action.way);
+        // 旭日：山札の影札も使える。**プレイに成功したときだけ** +1アクションの予約を積む
+        //   （先に積むと、使えなかったときに +1アクションだけ湧く＝専門家/王家のガレー船と同じ形）。
+        if (playPlayable(state, pd.player, card, 'コンクラーベで', action.way)) {
+          (state.replay = state.replay || []).push({ label: 'conclave_bonus', player: pd.player });
+        }
         return state;
       }
       // ドルイド＝脇に置かれた祝福3枚から1つを受ける（強制。祝福は脇に置いたまま）。
@@ -20134,7 +20176,7 @@
         state.pending = null;
         if (card == null) return state;
         if (conclaveTargets(state, pd.player).indexOf(card) < 0) return state;
-        playCardNoAction(state, pd.player, card, pl.hand, 'インプで', action.way);
+        playPlayable(state, pd.player, card, 'インプで', action.way); // 旭日：山札の影札も使える
         return state;
       }
       // 願い＝山に戻せたらコスト6以下のカード1枚を**手札に**獲得する（強制）。
@@ -20519,7 +20561,7 @@
         const pl = state.players[pd.player];
         const c = action.card;
         if (c == null) { state.pending = null; return state; }
-        if (pl.hand.indexOf(c) < 0) return state;
+        if (!canPlayFromHandOrShadow(state, pd.player, c)) return state; // 旭日：山札の影札も使える
         if (!(DOM.isType(c, 'action') || inheritedEstate(pl, c))) return state;
         if ((pl.favors || 0) < 1) return state;
         /* ⚠ 同盟：航海の3枚制限／将軍は「手札から使わせる能力」も上書きする（公式逐語＝
@@ -20528,9 +20570,9 @@
         if (!canPlayHandCard(state, pd.player, c)) return state;
         spendFavors(state, pd.player, 1);
         state.pending = null;
-        playCardNoAction(state, pd.player, c, pl.hand, '市場の町で', action.way);
+        playPlayable(state, pd.player, c, '市場の町で', action.way); // 旭日：山札の影札も選べる
         // 途中で得た好意もそのまま使える（公式FAQ＝仲買人で好意を得たら続けて使ってよい）。
-        if ((pl.favors || 0) >= 1 && allyHandHasAction(state, pd.player)) {
+        if ((pl.favors || 0) >= 1 && allyPlayableHasAction(state, pd.player)) {
           queueAllyWindow(state, { type: 'ally_market_towns', player: pd.player }, true);
         }
         return state;
@@ -20934,11 +20976,12 @@
         const card = action.card;
         state.pending = null;
         if (card == null) return state;                      // 辞退＝持続にならない
-        if (owner.hand.indexOf(card) < 0) return state;
+        if (!canPlayFromHandOrShadow(state, pd.player, card)) return state; // 旭日：山札の影札も使える
         if ((!DOM.isType(card, 'action') && !inheritedEstate(owner, card)) || DOM.isType(card, 'duration')) return state;
         // ⚠ **プレイに成功したときだけ**脇置きの予約を立てる（失敗すると再開網が場の別の同名コピーを脇に置く）。
         if (!canPlayHandCard(state, pd.player, card)) return state;
-        if (playCardNoAction(state, pd.player, card, owner.hand, '王家のガレー船で', action.way)) {
+        // 旭日：山札の影札も選べる（playPlayable が手札／山札の影を自動で選ぶ）
+        if (playPlayable(state, pd.player, card, '王家のガレー船で', action.way)) {
           t.galleySetAside = { player: pd.player, card };
         }
         return state;
@@ -20964,11 +21007,12 @@
         const card = action.card;
         state.pending = null;
         if (card == null) return state;                      // 辞退
-        if (owner.hand.indexOf(card) < 0) return state;
+        if (!canPlayFromHandOrShadow(state, pd.player, card)) return state; // 旭日：山札の影札も使える
         if (!DOM.isType(card, 'action') && !isTreasureFor(state, card) && !inheritedEstate(owner, card)) return state;
         // ⚠ **プレイに成功したときだけ**二択の予約を立てる（失敗すると specialist_play が無限に開く＝レビューで実測）。
         if (!canPlayHandCard(state, pd.player, card)) return state;
-        if (playCardNoAction(state, pd.player, card, owner.hand, '専門家で', action.way)) {
+        // 旭日：山札の影札も選べる
+        if (playPlayable(state, pd.player, card, '専門家で', action.way)) {
           t.specialistAfter = { player: pd.player, card };
         }
         return state;
@@ -20992,11 +21036,12 @@
         const card = action.card;
         state.pending = null;
         if (card == null) return state;                      // 辞退（+$2 だけ）
-        if (owner.hand.indexOf(card) < 0) return state;
+        if (!canPlayFromHandOrShadow(state, pd.player, card)) return state; // 旭日：山札の影札も使える
         if (!DOM.isType(card, 'action') && !inheritedEstate(owner, card)) return state;
         if (!canPlayHandCard(state, pd.player, card)) return state;
         t.elderBoost = inheritedEstate(owner, card) ? 'estate' : card;
-        if (!playCardNoAction(state, pd.player, card, owner.hand, '長老で', action.way)) t.elderBoost = null;
+        // 旭日：山札の影札も選べる
+        if (!playPlayable(state, pd.player, card, '長老で', action.way)) t.elderBoost = null;
         return state;
       }
       // 改造＝手札1枚を廃棄（強制）→ 二択（+1カード+1アクション ／ 廃棄した札より最大2コイン高いカードを獲得）。

@@ -115,6 +115,12 @@
     'gold_mine', 'imperial_envoy', 'tea_house', 'kitsune', 'litter', 'rice_broker', 'ronin', 'tanuki',
     'mountain_shrine', 'daimyo', 'artist', 'rice', 'samurai',
     'copper', 'curse'];
+  /* 旭日：影(Shadow)は**山札のどこにあっても手札と同じように使える**＝「手札から使わせる」窓（群A）の
+     候補は engine の handPlayable（手札＋山札の影札）と同じ集合を見る。
+     ⚠ **群B（手札から捨てる／廃棄する／脇に置く／山に戻す窓）には使わない**（影札は手札ではない）。
+     ⚠ engine が受理する集合より狭いのは安全（CPU が影を使わないだけ）だが、**広いと engine拒否×CPU提案の
+        本番 livelock になる**ので必ず engine の述語を呼ぶこと。 */
+  const playPool = (state, pi) => (DOM.engine.handPlayable ? DOM.engine.handPlayable(state, pi) : (state.players[pi].hand || []));
   /* 同盟：女魔導士／魔導士の「カード名を宣言する」＝自分の山札の一番上として**一番ありそうな名前**を推定する
      （山札が空なら捨て札から。どちらも空なら銅貨）。**null を返さない**（engine が拒否すると livelock）。 */
   function mostLikelyTop(p) {
@@ -572,7 +578,8 @@
     if (has('hermit')) return 'hermit';                     // 非財宝廃棄→$3以下獲得（無獲得ターンで狂人化）
     // 行進＝アップグレード先(ちょうど+$1のアクション)がある非持続アクションが手札にあるとき
     if (has('procession')) {
-      const cands = p.hand.filter((c) => isType(c, 'action') && !isType(c, 'duration') && c !== 'procession');
+      // 旭日：行進の対象には山札の影札も選べる（engine の handPlayable と同じ集合を見る）
+      const cands = playPool(state, t.active).filter((c) => isType(c, 'action') && !isType(c, 'duration') && c !== 'procession');
       const upOK = cands.some((c) => {
         const mx = cost(state, c) + 1, pot = C()[c].potion || 0, dbt = C()[c].debt || 0;
         return !!firstGainable(state, (id) => costExact(state, id, mx, pot, dbt) && isTypeSup(state, id, 'action'));
@@ -1513,7 +1520,7 @@
       }
       // 杖＝手札のアクション1枚を購入フェイズに使用してよい（使えるものがあれば使う）。
       case 'staff_play': {
-        const acts = p.hand.filter((c) => DOM.isType(c, 'action'));
+        const acts = playPool(state, pd.player).filter((c) => DOM.isType(c, 'action'));
         return { type: 'STAFF_PLAY', card: acts.length ? acts.sort((a, b) => keepValue(b) - keepValue(a))[0] : null };
       }
       // アンフォラ＝購入フェイズに出しているので基本は「今」もらう（次ターンに回すのは手番終了間際の判断が要る）。
@@ -1604,7 +1611,7 @@
         return { type: 'GONDOLA_CHOOSE', now: true };
       // ゴンドラの獲得時＝一番良いアクションを使う（無ければ使わない）。
       case 'gondola_play': {
-        const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => keepValue(b) - keepValue(a));
+        const acts = playPool(state, pd.player).filter((c) => isType(c, 'action')).sort((a, b) => keepValue(b) - keepValue(a));
         return { type: 'GONDOLA_PLAY', card: acts.length ? acts[0] : null };
       }
       // 工具＝場のカードのうち獲得できる最も高コストのものを取る（獲得できないものしか無ければ先頭＝空振り）。
@@ -1722,7 +1729,7 @@
         return { type: 'MAELSTROM_VICTIM', card: p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0] };
       case 'invasion':
         if (pd.stage === 'attack') {
-          const atk = p.hand.filter((c) => isType(c, 'attack')).sort((a, b) => keepValue(b) - keepValue(a));
+          const atk = playPool(state, pd.player).filter((c) => isType(c, 'attack')).sort((a, b) => keepValue(b) - keepValue(a));
           return { type: 'INVASION_ATTACK', card: atk.length ? atk[0] : null };
         }
         {
@@ -1787,9 +1794,9 @@
       case 'first_mate': {
         const canPlay = (c) => !DOM.engine.canPlayHandCard || DOM.engine.canPlayHandCard(state, pd.player, c);
         if (pd.name) {
-          return { type: 'FIRST_MATE_PLAY', card: (p.hand.indexOf(pd.name) >= 0 && canPlay(pd.name)) ? pd.name : null };
+          return { type: 'FIRST_MATE_PLAY', card: (DOM.engine.canPlayFromHandOrShadow(state, pd.player, pd.name) && canPlay(pd.name)) ? pd.name : null };
         }
-        const acts = p.hand.filter((c) => isType(c, 'action') && c !== 'first_mate' && canPlay(c));
+        const acts = playPool(state, pd.player).filter((c) => isType(c, 'action') && c !== 'first_mate' && canPlay(c));
         if (!acts.length) return { type: 'FIRST_MATE_PLAY', card: null };
         const byCount = {};
         acts.forEach((c) => { byCount[c] = (byCount[c] || 0) + 1; });
@@ -1921,8 +1928,9 @@
         // 2回使う価値が高いアクション（玉座以外で最も高コスト）を選ぶ
         // ⚠ 同盟：航海の3枚制限／将軍で使えない札を返し続けると engine拒否×CPU提案の livelock になる。
         const ok2 = (c) => isType(c, 'action') && DOM.engine.canPlayHandCard(state, pd.player, c);
-        const acts = p.hand.filter((c) => ok2(c) && c !== 'throne_room').sort((a, b) => throneValue(b) - throneValue(a));
-        const pick = acts[0] || p.hand.filter(ok2)[0] || null;
+        const pool = playPool(state, pd.player);
+        const acts = pool.filter((c) => ok2(c) && c !== 'throne_room').sort((a, b) => throneValue(b) - throneValue(a));
+        const pick = acts[0] || pool.filter(ok2)[0] || null;
         return { type: 'THRONE_CHOOSE', card: pick };
       }
       case 'library':
@@ -2112,7 +2120,7 @@
         const okC = (c) => DOM.engine.canPlayHandCard(state, pd.player, c);
         if (pd.mode === 'action') {
           // 2回使う価値が高いアクションを選ぶ（玉座と同じ throneValue）。無ければ辞退。
-          const acts = p.hand.filter((c) => isType(c, 'action') && c !== 'crown' && okC(c)).sort((a, b) => throneValue(b) - throneValue(a));
+          const acts = playPool(state, pd.player).filter((c) => isType(c, 'action') && c !== 'crown' && okC(c)).sort((a, b) => throneValue(b) - throneValue(a));
           return { type: 'CROWN_CHOOSE', card: acts[0] || null };
         }
         // mode 'treasure'：最もコインの高い財宝を2回使う。無ければ辞退。
@@ -2259,7 +2267,7 @@
         // 手札のアクション（門下生自身以外）を2度使い＋コピー獲得。最も再演価値の高いものを選ぶ。
         //   冒険：相続した屋敷もアクション（命令）＝対象にできる（engine と同じ述語を見る）。
         //   ⚠ canPlayHandCard（航海の3枚制限／将軍）も engine と同じに見る（見ないと livelock）。
-        const acts = p.hand.filter((c) => (isType(c, 'action') || DOM.engine.inheritedEstate(p, c)) && c !== 'disciple' && DOM.engine.canPlayHandCard(state, pd.player, c));
+        const acts = playPool(state, pd.player).filter((c) => (isType(c, 'action') || DOM.engine.inheritedEstate(p, c)) && c !== 'disciple' && DOM.engine.canPlayHandCard(state, pd.player, c));
         if (!acts.length) return { type: 'DISCIPLE_PLAY', card: null };
         const best = acts.slice().sort((a, b) => throneValue(b) - throneValue(a))[0];
         return { type: 'DISCIPLE_PLAY', card: best };
@@ -2461,7 +2469,7 @@
       // 首謀者＝手札で一番強いアクションを3回使う。
       case 'mastermind_play': {
         // ⚠ canPlayHandCard（航海の3枚制限／将軍）を engine と同じに見る（見ないと livelock）。
-        const acts = p.hand.filter((c) => DOM.isType(c, 'action') && DOM.engine.canPlayHandCard(state, pd.player, c));
+        const acts = playPool(state, pd.player).filter((c) => DOM.isType(c, 'action') && DOM.engine.canPlayHandCard(state, pd.player, c));
         if (!acts.length) return { type: 'MASTERMIND_PLAY', card: null };
         return { type: 'MASTERMIND_PLAY', card: acts.slice().sort((a, b) => throneValue(b) - throneValue(a))[0] };
       }
@@ -2556,7 +2564,7 @@
       }
       // 苦労＝手札で一番強いアクションを使う（アクション権を消費しない）。
       case 'toil': {
-        const acts = p.hand.filter((c) => DOM.isType(c, 'action'));
+        const acts = playPool(state, pd.player).filter((c) => DOM.isType(c, 'action'));
         if (!acts.length) return { type: 'TOIL_PLAY', card: null };
         return { type: 'TOIL_PLAY', card: acts.slice().sort((a, b) => throneValue(b) - throneValue(a))[0] };
       }
@@ -2956,7 +2964,7 @@
         if (pd.stage === 'trash') return { type: 'FORGE_TRASH', cards: p.hand.filter((c) => c === 'estate') };
         return { type: 'FORGE_GAIN', card: bestGainExact(state, pd.exact, { noVictory: true }) || bestGainExact(state, pd.exact) };
       case 'kings_court': {
-        const acts = p.hand.filter((c) => isType(c, 'action') && DOM.engine.canPlayHandCard(state, pd.player, c));
+        const acts = playPool(state, pd.player).filter((c) => isType(c, 'action') && DOM.engine.canPlayHandCard(state, pd.player, c));
         const nonKc = acts.filter((c) => c !== 'kings_court').sort((a, b) => throneValue(b) - throneValue(a));
         const card = nonKc[0] || acts.slice().sort((a, b) => throneValue(b) - throneValue(a))[0] || null;
         return { type: 'KINGS_COURT_CHOOSE', card };
@@ -3338,7 +3346,7 @@
         return { type: 'HERMIT_GAIN', card: bestGain(state, 3) }; // stage 'gain'（コスト3以下の最善＝通常は銀貨）
       }
       case 'procession': {
-        const cands = p.hand.filter((c) => isType(c, 'action') && !isType(c, 'duration') && c !== 'procession');
+        const cands = playPool(state, pd.player).filter((c) => isType(c, 'action') && !isType(c, 'duration') && c !== 'procession');
         const upgradeable = (c) => {
           const mx = cost(state, c) + 1, pot = C()[c].potion || 0, dbt = C()[c].debt || 0;
           return !!firstGainable(state, (id) => costExact(state, id, mx, pot, dbt) && isTypeSup(state, id, 'action'));
@@ -3614,7 +3622,7 @@
       }
       case 'ally_market_towns': { // 市場の町＝好意1で手札のアクションを使う（購入フェイズなのでコインを増やす札を優先）
         if ((p.favors || 0) < 1) return { type: 'ALLY_MARKET_TOWNS', card: null };
-        const acts = p.hand.filter((c) => (isType(c, 'action') || DOM.engine.inheritedEstate(p, c)) && DOM.engine.canPlayHandCard(state, pd.player, c));
+        const acts = playPool(state, pd.player).filter((c) => (isType(c, 'action') || DOM.engine.inheritedEstate(p, c)) && DOM.engine.canPlayHandCard(state, pd.player, c));
         if (!acts.length) return { type: 'ALLY_MARKET_TOWNS', card: null };
         for (const id of GAIN_ORDER) if (acts.indexOf(id) >= 0) return { type: 'ALLY_MARKET_TOWNS', card: id };
         return { type: 'ALLY_MARKET_TOWNS', card: acts[0] };
@@ -3822,7 +3830,7 @@
         return immuneReveal(p) ? immuneReveal(p) : { type: 'LINGER_REACT' };
 
       case 'royal_galley_play': { // 王家のガレー船＝手札の持続でないアクションを1枚（次のターンにもう一度使える）
-        const cands = p.hand.filter((c) => isType(c, 'action') && !isType(c, 'duration') && DOM.engine.canPlayHandCard(state, pd.player, c));
+        const cands = playPool(state, pd.player).filter((c) => isType(c, 'action') && !isType(c, 'duration') && DOM.engine.canPlayHandCard(state, pd.player, c));
         if (!cands.length) return { type: 'ROYAL_GALLEY_PLAY', card: null };
         for (const id of GAIN_ORDER) if (cands.indexOf(id) >= 0) return { type: 'ROYAL_GALLEY_PLAY', card: id };
         return { type: 'ROYAL_GALLEY_PLAY', card: cands[0] };
@@ -3833,7 +3841,7 @@
         return { type: 'CONJURER_GAIN', card: g };
       }
       case 'specialist_play': { // 専門家＝手札のアクション/財宝で一番強いもの（辞退可）
-        const cands = p.hand.filter((c) => (isType(c, 'action') || isTreasureNow(state, c)) && DOM.engine.canPlayHandCard(state, pd.player, c));
+        const cands = playPool(state, pd.player).filter((c) => (isType(c, 'action') || isTreasureNow(state, c)) && DOM.engine.canPlayHandCard(state, pd.player, c));
         if (!cands.length) return { type: 'SPECIALIST_PLAY', card: null };
         for (const id of GAIN_ORDER) if (cands.indexOf(id) >= 0) return { type: 'SPECIALIST_PLAY', card: id };
         return { type: 'SPECIALIST_PLAY', card: cands[0] };
@@ -3844,7 +3852,7 @@
         return { type: 'SPECIALIST_CHOOSE', choices: (pd.elder && canCopy) ? ['again', 'copy'] : [main] };
       }
       case 'elder_play': { // 長老＝手札のアクションで一番強いもの（辞退可）
-        const cands = p.hand.filter((c) => isType(c, 'action') && DOM.engine.canPlayHandCard(state, pd.player, c));
+        const cands = playPool(state, pd.player).filter((c) => isType(c, 'action') && DOM.engine.canPlayHandCard(state, pd.player, c));
         if (!cands.length) return { type: 'ELDER_PLAY', card: null };
         for (const id of GAIN_ORDER) if (cands.indexOf(id) >= 0) return { type: 'ELDER_PLAY', card: id };
         return { type: 'ELDER_PLAY', card: cands[0] };

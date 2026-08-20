@@ -1989,7 +1989,7 @@
     if (pd.type === 'staff_play') return modalSingleHand(p, '杖 — アクションを使う', '手札からアクションカード1枚を使用できます（アクション権は消費しません）。',
       (id) => DOM.CARDS[id] && DOM.CARDS[id].types.includes('action'),
       (id) => dispatch({ type: 'STAFF_PLAY', card: id }),
-      { label: '使わない', on: () => dispatch({ type: 'STAFF_PLAY', card: null }) }, '使う');
+      { label: '使わない', on: () => dispatch({ type: 'STAFF_PLAY', card: null }) }, '使う', DOM.engine.handPlayable(state, pd.player));
     // アンフォラ＝「今」か「次のターンの開始時」を選ぶ（プレイのたびに独立に選べる）。
     if (pd.type === 'amphora') return modalOptions('アンフォラ', '+1 購入 と +3 コインを、今もらうか次のターンの開始時にもらうかを選びます。', [
       { label: '今もらう（+$3 +1購入）', cls: 'btn-primary', on: () => dispatch({ type: 'AMPHORA_CHOOSE', now: true }) },
@@ -2063,7 +2063,7 @@
       'ゴンドラを獲得したので、手札のアクションカード1枚を使用できます（アクション権は消費しません）。',
       (id) => DOM.CARDS[id] && DOM.CARDS[id].types.includes('action'),
       (id) => dispatch({ type: 'GONDOLA_PLAY', card: id }),
-      { label: '使わない', on: () => dispatch({ type: 'GONDOLA_PLAY', card: null }) }, '使う');
+      { label: '使わない', on: () => dispatch({ type: 'GONDOLA_PLAY', card: null }) }, '使う', DOM.engine.handPlayable(state, pd.player));
     if (pd.type === 'tools_gain') {
       const targets = DOM.engine.toolsTargets ? DOM.engine.toolsTargets(state) : [];
       return modalPickList(state, '工具 — 同じカードを獲得', '（自分を含む）誰かが場に出しているのと同じカード1枚を獲得します（強制）。サプライに山が無いカードは選んでも獲得できません。',
@@ -2112,7 +2112,7 @@
       '鼓舞するカードを使用したので、場に出していないアクションカード1枚を手札から使用できます（アクション権は消費しません）。',
       (id) => (DOM.engine.inspiringTargets ? DOM.engine.inspiringTargets(state, pd.player) : []).indexOf(id) >= 0,
       (id) => dispatch({ type: 'INSPIRING_PLAY', card: id }),
-      { label: '使わない', on: () => dispatch({ type: 'INSPIRING_PLAY', card: null }) }, '使う');
+      { label: '使わない', on: () => dispatch({ type: 'INSPIRING_PLAY', card: null }) }, '使う', DOM.engine.handPlayable(state, pd.player));
     /* ===== 略奪P5：イベント ===== */
     if (pd.type === 'bury_put') return modalPickList(state, '埋葬 — 山札の一番下へ',
       '捨て札のカード1枚を山札の一番下に置きます（強制）。',
@@ -2144,7 +2144,8 @@
       '手札のアタックカード1枚を使用できます（アクション権は消費しません）。',
       (id) => DOM.CARDS[id] && DOM.CARDS[id].types.includes('attack'),
       (id) => dispatch({ type: 'INVASION_ATTACK', card: id }),
-      { label: '使わない', on: () => dispatch({ type: 'INVASION_ATTACK', card: null }) }, '使う');
+      { label: '使わない', on: () => dispatch({ type: 'INVASION_ATTACK', card: null }) }, '使う',
+      DOM.engine.handPlayable(state, pd.player)); // 旭日：山札の影札（忍者）も選べる
     if (pd.type === 'invasion' && pd.stage === 'action') return modalGainSupply(state, '侵略 — アクションを山札の上に獲得',
       'アクションカード1枚を山札の上に獲得します（強制・コストの上限はありません）。',
       (id) => DOM.engine.gainableBase(state, id) && DOM.engine.isTypeSupply(state, id, 'action'),
@@ -2203,7 +2204,7 @@
         : '手札のアクションカード1枚を使用できます（以後は同じ名前だけ続けて使えます。使わずに引いてもOK）。',
       (id) => DOM.CARDS[id] && DOM.CARDS[id].types.includes('action') && (!pd.name || id === pd.name),
       (id) => dispatch({ type: 'FIRST_MATE_PLAY', card: id }),
-      { label: '使わない（手札が6枚になるように引く）', on: () => dispatch({ type: 'FIRST_MATE_PLAY', card: null }) }, '使う');
+      { label: '使わない（手札が6枚になるように引く）', on: () => dispatch({ type: 'FIRST_MATE_PLAY', card: null }) }, '使う', DOM.engine.handPlayable(state, pd.player));
     if (pd.type === 'frigate' && pd.stage === 'react') return modalOptions('フリゲート船を受ける',
       '次の相手のターンの開始時まで、あなたがアクションカードを使用するたび、その後に手札が4枚になるように捨てます。',
       reactOptions(p, pd, { type: 'LINGER_REACT' }));
@@ -2433,7 +2434,7 @@
       (card) => dispatch({ type: 'MASTERMIND_PLAY', card }),
       // ⚠ skip は {label,on} オブジェクト必須（true を渡すと label/onclick が undefined の**死にボタン**になり、
       //   候補ゼロのとき閉じる手段が無く人間が詰む＝敵対レビュー [high]。engine は null 辞退を受理する）。
-      { label: '使わない', on: () => dispatch({ type: 'MASTERMIND_PLAY', card: null }) }, '3回使用する');
+      { label: '使わない', on: () => dispatch({ type: 'MASTERMIND_PLAY', card: null }) }, '3回使用する', DOM.engine.handPlayable(state, pd.player));
     // 聖域＝手札1枚を追放してもよい。
     if (pd.type === 'sanctuary_exile') return modalSingleHand(p, '聖域 — 追放', '手札から1枚を追放してもよい（しなくてもかまいません）。追放したカードは追放マットに置かれ、同名を獲得したときに戻せます。',
       () => true, (card) => dispatch({ type: 'SANCTUARY_EXILE', card }),
@@ -2570,7 +2571,7 @@
     }
     // 苦労／進軍／博打／脇に置いたカード＝「アクション権を消費しない使用」（習性を選べる）。
     if (pd.type === 'toil') return modalPlayCardEvent(state, p, '苦労 — アクションを使う',
-      '手札からアクションカード1枚を使用できます（アクション権は使いません）。', p.hand,
+      '手札からアクションカード1枚を使用できます（山札の影カードも選べます／アクション権は使いません）。', DOM.engine.handPlayable(state, pd.player),
       (id) => DOM.isType(id, 'action') || inheritedEstate(state, id), 'TOIL_PLAY',
       { label: '使用しない', on: () => dispatch({ type: 'TOIL_PLAY', card: null }) });
     if (pd.type === 'march') return modalPlayCardEvent(state, p, '進軍 — 捨て札から使う',
@@ -2727,7 +2728,7 @@
       const cand = DOM.engine.conclaveTargets(state, pd.player);
       return modalSingleHand(p, 'コンクラーベ — 手札のアクションを使う', 'あなたの場に同じカードが出ていないアクションカード1枚を使えます（使えば +1アクション）。',
         (id) => cand.indexOf(id) >= 0, (card) => dispatch({ type: 'CONCLAVE_PLAY', card }),
-        { label: '使わない', on: () => dispatch({ type: 'CONCLAVE_PLAY', card: null }) }, '使う');
+        { label: '使わない', on: () => dispatch({ type: 'CONCLAVE_PLAY', card: null }) }, '使う', DOM.engine.handPlayable(state, pd.player));
     }
     if (pd.type === 'druid_boon' || pd.type === 'boon_choose') {
       const isDruid = pd.type === 'druid_boon';
@@ -2849,7 +2850,7 @@
       const cand = DOM.engine.conclaveTargets(state, pd.player);
       return modalSingleHand(p, 'インプ — 手札のアクションを使う', 'あなたの場に同じカードが出ていないアクションカード1枚を使えます（任意）。',
         (id) => cand.indexOf(id) >= 0, (card) => dispatch({ type: 'IMP_PLAY', card }),
-        { label: '使わない', on: () => dispatch({ type: 'IMP_PLAY', card: null }) }, '使う');
+        { label: '使わない', on: () => dispatch({ type: 'IMP_PLAY', card: null }) }, '使う', DOM.engine.handPlayable(state, pd.player));
     }
     if (pd.type === 'wish_gain') {
       return modalGainSupply(state, '願い — 手札に獲得', 'コスト6以下のカード1枚を獲得し、手札に加えます。',
@@ -2994,7 +2995,7 @@
       return modalPlayCardEvent(state, p, '市場の町 — アクションを使う',
         '好意1 を使って 手札のアクションカード1枚を使用できます（アクションフェイズには戻りません＝+アクションは無意味）。'
         + '好意 ' + (p.favors || 0) + ' 個。好きな回数くり返せます。',
-        p.hand, (id) => (DOM.isType(id, 'action') || DOM.engine.inheritedEstate(p, id)) && DOM.engine.canPlayHandCard(state, pd.player, id), 'ALLY_MARKET_TOWNS',
+        DOM.engine.handPlayable(state, pd.player), (id) => (DOM.isType(id, 'action') || DOM.engine.inheritedEstate(p, id)) && DOM.engine.canPlayHandCard(state, pd.player, id), 'ALLY_MARKET_TOWNS',
         { label: 'やめる', on: () => dispatch({ type: 'ALLY_MARKET_TOWNS', card: null }) });
     }
     if (pd.type === 'ally_peaceful_cult') {
@@ -3251,7 +3252,7 @@
     if (pd.type === 'royal_galley_play') {
       return modalPlayCardEvent(state, p, '王家のガレー船 — カードを使う',
         '手札の**持続でない**アクションカード1枚を使用できます（脇に置き、次のターンの開始時にもう一度使用します）。しなくてもよい。',
-        p.hand, (id) => (DOM.isType(id, 'action') || DOM.engine.inheritedEstate(p, id)) && !DOM.isType(id, 'duration') && DOM.engine.canPlayHandCard(state, pd.player, id),
+        DOM.engine.handPlayable(state, pd.player), (id) => (DOM.isType(id, 'action') || DOM.engine.inheritedEstate(p, id)) && !DOM.isType(id, 'duration') && DOM.engine.canPlayHandCard(state, pd.player, id),
         'ROYAL_GALLEY_PLAY', { label: '使わない', on: () => dispatch({ type: 'ROYAL_GALLEY_PLAY', card: null }) });
     }
     if (pd.type === 'conjurer_gain') {
@@ -3261,7 +3262,7 @@
     if (pd.type === 'specialist_play') {
       return modalPlayCardEvent(state, p, '専門家 — カードを使う',
         '手札のアクションカードまたは財宝カード1枚を使用できます（その後、もう一度使うか同じカードを獲得するかを選びます）。しなくてもよい。',
-        p.hand, (id) => DOM.isType(id, 'action') || DOM.engine.isTreasureFor(state, id) || DOM.engine.inheritedEstate(p, id),
+        DOM.engine.handPlayable(state, pd.player), (id) => DOM.isType(id, 'action') || DOM.engine.isTreasureFor(state, id) || DOM.engine.inheritedEstate(p, id),
         'SPECIALIST_PLAY', { label: '使わない', on: () => dispatch({ type: 'SPECIALIST_PLAY', card: null }) });
     }
     if (pd.type === 'specialist_choose') {
@@ -3277,7 +3278,7 @@
     if (pd.type === 'elder_play') {
       return modalPlayCardEvent(state, p, '長老 — アクションを使う',
         '手札のアクションカード1枚を使用できます（アクション権は使いません）。そのカードが「次から1つを選ぶ」なら、追加で異なるもの1つも選べます。しなくてもよい。',
-        p.hand, (id) => (DOM.isType(id, 'action') || DOM.engine.inheritedEstate(p, id)) && DOM.engine.canPlayHandCard(state, pd.player, id),
+        DOM.engine.handPlayable(state, pd.player), (id) => (DOM.isType(id, 'action') || DOM.engine.inheritedEstate(p, id)) && DOM.engine.canPlayHandCard(state, pd.player, id),
         'ELDER_PLAY', { label: '使わない', on: () => dispatch({ type: 'ELDER_PLAY', card: null }) });
     }
     if (pd.type === 'modify_trash') {
@@ -3430,7 +3431,7 @@
       { label: '獲得する', cls: 'btn-primary', on: () => dispatch({ type: 'THIEF_GAIN', take: true }) },
       { label: '廃棄のまま', on: () => dispatch({ type: 'THIEF_GAIN', take: false }) }]);
     // 同盟：航海の3枚制限／将軍で使えない札は候補に出さない（engine が拒否する死に選択肢を作らない）＋辞退できる。
-    if (pd.type === 'throne') return modalSingleHand(p, '玉座の間 — 2回使うアクションを選ぶ', '手札のアクションカードを1枚選ぶと、それを2回使います。', (id) => DOM.isType(id, 'action') && DOM.engine.canPlayHandCard(state, pd.player, id), (card) => dispatch({ type: 'THRONE_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'THRONE_CHOOSE', card: null }) }, '2回使う');
+    if (pd.type === 'throne') return modalSingleHand(p, '玉座の間 — 2回使うアクションを選ぶ', '手札のアクションカードを1枚選ぶと、それを2回使います。', (id) => DOM.isType(id, 'action') && DOM.engine.canPlayHandCard(state, pd.player, id), (card) => dispatch({ type: 'THRONE_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'THRONE_CHOOSE', card: null }) }, '2回使う', DOM.engine.handPlayable(state, pd.player));
     if (pd.type === 'secret_chamber_putback') { const scn = Math.min(2, p.hand.length); return modalSelectN(p, '秘密の小部屋 — 山札の上に戻す', '手札から' + scn + '枚を選んで山札の上に戻します（最初のタップが一番上）。', scn, '確定（戻す）', (cards) => dispatch({ type: 'SECRET_CHAMBER_PUTBACK', cards })); }
 
     /* ===== 基本セット 第二版 ===== */
@@ -3504,7 +3505,7 @@
         (id) => dispatch({ type: 'OVERLORD_PLAY', card: id }),
         () => dispatch({ type: 'OVERLORD_PLAY', card: null }), false, '使う');
     }
-    if (pd.type === 'crown' && pd.mode === 'action') return modalSingleHand(p, '冠 — 2回使うアクション', '手札のアクションカードを1枚選ぶと、それを2回使います（使わなくてもよい）。', (id) => DOM.isType(id, 'action') && DOM.engine.canPlayHandCard(state, pd.player, id), (card) => dispatch({ type: 'CROWN_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'CROWN_CHOOSE', card: null }) }, '2回使う');
+    if (pd.type === 'crown' && pd.mode === 'action') return modalSingleHand(p, '冠 — 2回使うアクション', '手札のアクションカードを1枚選ぶと、それを2回使います（使わなくてもよい）。', (id) => DOM.isType(id, 'action') && DOM.engine.canPlayHandCard(state, pd.player, id), (card) => dispatch({ type: 'CROWN_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'CROWN_CHOOSE', card: null }) }, '2回使う', DOM.engine.handPlayable(state, pd.player));
     if (pd.type === 'crown' && pd.mode === 'treasure') return modalSingleHand(p, '冠 — 2回使う財宝', '手札の財宝カードを1枚選ぶと、それを2回使います（使わなくてもよい）。', (id) => isTreasureNow(state, id) && DOM.engine.canPlayHandCard(state, pd.player, id), (card) => dispatch({ type: 'CROWN_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'CROWN_CHOOSE', card: null }) }, '2回使う');
     /* ===== 帝国：横型ランドスケープ（ランドマーク＝闘技場・峠）===== */
     if (pd.type === 'arena') return modalSingleHand(p, '闘技場', 'アクションカード1枚を捨ててもよい（捨てたら +2勝利点）。捨てても廃棄ではありません。',
@@ -3712,7 +3713,7 @@
     // 冒険：相続した屋敷もアクション（命令）＝門下生の対象にできる（engine と同じ述語 inheritedEstate を見る）。
     if (pd.type === 'disciple_play') return modalSingleHand(p, '門下生 — 2回使うアクションを選ぶ', '手札のアクション1枚を選ぶと、それを2回使い、同じカード1枚を獲得します。',
       (id) => (DOM.isType(id, 'action') || (DOM.engine.inheritedEstate && DOM.engine.inheritedEstate(p, id))) && DOM.engine.canPlayHandCard(state, pd.player, id), // 航海の3枚制限／将軍
-      (card) => dispatch({ type: 'DISCIPLE_PLAY', card }), { label: '使わない', on: () => dispatch({ type: 'DISCIPLE_PLAY', card: null }) }, '2回使う');
+      (card) => dispatch({ type: 'DISCIPLE_PLAY', card }), { label: '使わない', on: () => dispatch({ type: 'DISCIPLE_PLAY', card: null }) }, '2回使う', DOM.engine.handPlayable(state, pd.player));
     if (pd.type === 'teacher_call' && pd.stage === 'token') {
       const TL = { card: '+1 カード', action: '+1 アクション', buy: '+1 購入', coin: '+1 コイン' };
       const tk = p.pileTokens || {};
@@ -3788,7 +3789,7 @@
     if (pd.type === 'expand' && pd.stage === 'gain') return modalGainSupply(state, '拡張 — 獲得', 'コスト ' + pd.maxCost + ' 以下のカードを1枚獲得します。', (id) => canUpTo(state, id, pd.maxCost, pd), (id) => dispatch({ type: 'EXPAND_GAIN', card: id }));
     if (pd.type === 'forge' && pd.stage === 'trash') return modalMultiHand(p, '溶鉱炉 — 廃棄', '好きな枚数を廃棄します（合計コストちょうどのカードを獲得）。', (n) => '確定（' + n + '枚廃棄）', true, (cards) => dispatch({ type: 'FORGE_TRASH', cards }));
     if (pd.type === 'forge' && pd.stage === 'gain') return modalGainSupply(state, '溶鉱炉 — 獲得', 'ちょうどコスト $' + pd.exact + ' のカードを1枚獲得します。', (id) => canExact(state, id, pd.exact, 0, 0), (id) => dispatch({ type: 'FORGE_GAIN', card: id }));
-    if (pd.type === 'kings_court') return modalSingleHand(p, '王の宮廷 — 3回使う', '3回使うアクションカードを選びます。', (id) => DOM.isType(id, 'action') && DOM.engine.canPlayHandCard(state, pd.player, id), (card) => dispatch({ type: 'KINGS_COURT_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'KINGS_COURT_CHOOSE', card: null }) }, '3回使う');
+    if (pd.type === 'kings_court') return modalSingleHand(p, '王の宮廷 — 3回使う', '3回使うアクションカードを選びます。', (id) => DOM.isType(id, 'action') && DOM.engine.canPlayHandCard(state, pd.player, id), (card) => dispatch({ type: 'KINGS_COURT_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'KINGS_COURT_CHOOSE', card: null }) }, '3回使う', DOM.engine.handPlayable(state, pd.player));
     if (pd.type === 'war_chest' && pd.stage === 'name') return modalGainSupply(state, '軍用金 — カードを指定', state.players[pd.source].name + ' が獲得できないカードを1つ指定します。', () => true, (id) => dispatch({ type: 'WAR_CHEST_NAME', card: id }));
     if (pd.type === 'war_chest' && pd.stage === 'gain') return modalGainSupply(state, '軍用金 — 獲得', 'コスト$5以下で、指定されていないカードを1枚獲得します。', (id) => canUpTo(state, id, 5) && (state.turn.warChestNamed || []).indexOf(id) < 0, (id) => dispatch({ type: 'WAR_CHEST_GAIN', card: id }));
     if (pd.type === 'watchtower') return modalOptions('物見やぐら', '獲得した「' + DOM.CARDS[pd.card].name + '」をどうしますか？', [
@@ -4034,7 +4035,7 @@
     }
     if (pd.type === 'hermit' && pd.stage === 'trash') return modalHermitTrash(p, state);
     if (pd.type === 'hermit' && pd.stage === 'gain') return modalGainSupply(state, '隠遁者 — 獲得', 'コスト3以下のカードを1枚獲得します。', (id) => canUpTo(state, id, 3), (id) => dispatch({ type: 'HERMIT_GAIN', card: id }), () => dispatch({ type: 'HERMIT_GAIN', card: null }));
-    if (pd.type === 'procession') return modalSingleHand(p, '行進 — 2回使うアクション', '手札の非持続アクション1枚を選ぶと2回使い、廃棄して、ちょうど+$1高いアクションを獲得します（使わなくてもよい）。', (id) => DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && DOM.engine.canPlayHandCard(state, pd.player, id), (card) => dispatch({ type: 'PROCESSION_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'PROCESSION_CHOOSE', card: null }) }, '2回使う');
+    if (pd.type === 'procession') return modalSingleHand(p, '行進 — 2回使うアクション', '手札の非持続アクション1枚を選ぶと2回使い、廃棄して、ちょうど+$1高いアクションを獲得します（使わなくてもよい）。', (id) => DOM.isType(id, 'action') && !DOM.isType(id, 'duration') && DOM.engine.canPlayHandCard(state, pd.player, id), (card) => dispatch({ type: 'PROCESSION_CHOOSE', card }), { label: '使わない', on: () => dispatch({ type: 'PROCESSION_CHOOSE', card: null }) }, '2回使う', DOM.engine.handPlayable(state, pd.player));
     if (pd.type === 'procession_gain') return modalGainSupply(state, '行進 — 獲得', 'ちょうどコスト $' + pd.exact + (pd.pot ? 'P' : '') + ' のアクションを1枚獲得します。', (id) => isTypeSup(state, id, 'action') && canExact(state, id, pd.exact, pd.pot, pd.debt), (id) => dispatch({ type: 'PROCESSION_GAIN', card: id }));
     if (pd.type === 'counterfeit') return modalSingleHand(p, '偽造通貨 — 2回使う財宝', '手札の非持続財宝1枚を選ぶと2回使い、それを廃棄します（使わなくてもよい）。', (id) => isTreasureNow(state, id) && !DOM.isType(id, 'duration'), (card) => dispatch({ type: 'COUNTERFEIT_PLAY', card }), { label: '使わない', on: () => dispatch({ type: 'COUNTERFEIT_PLAY', card: null }) }, '2回使う');
     // --- Group D（アタック）---
@@ -4501,9 +4502,12 @@
         remain === 0 ? '確定（捨てる）' : 'あと ' + remain + ' 枚 選ぶ'));
     return modalShell('民兵を受ける', '手札が3枚になるまで捨てます。' + (hasMoat ? '「堀」で無効化もできます。' : ''), chips, buttons);
   }
-  function modalSingleHand(p, title, desc, filter, onPick, skip, pickLabel) {
+  /* pool＝候補の差し替え（旭日 R2：**手札から「使用する」窓だけ** `DOM.engine.handPlayable(state, pi)`＝
+     手札＋山札の影札 を渡す）。**渡さなければ従来どおり手札だけ**＝「捨てる/廃棄する/脇に置く」窓（群B）は
+     1ビットも変わらない（影札は手札ではないので選ばせてはいけない）。 */
+  function modalSingleHand(p, title, desc, filter, onPick, skip, pickLabel, pool) {
     const lbl = pickLabel || '廃棄する';
-    const elig = p.hand.map((id, idx) => ({ id, idx })).filter((x) => filter(x.id));
+    const elig = (pool || p.hand).map((id, idx) => ({ id, idx })).filter((x) => filter(x.id));
     const chips = elig.length
       ? elig.map((x) => cardEl(x.id, { size: 'sm', extra: 'selectable', onClick: () => openPickZoom(x.id, lbl, () => onPick(x.id)) }))
       : [h('p', { class: 'muted' }, '対象のカードがありません')];

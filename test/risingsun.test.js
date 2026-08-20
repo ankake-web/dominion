@@ -437,6 +437,356 @@ console.log('=== R2: 影は「手札」ではない（数えない）／「所�
     '**相手**の山札は影札も伏せたまま（公式が許すのは自分の山札の裏面を見ることだけ＝許容簡略化）');
 }
 
+/* ============================================================================
+   R2：群A（手札から「使用させる」窓）の **4面整合** を機械検査する
+   ----------------------------------------------------------------------------
+   本プロジェクトで最も再発する事故は「engine の窓・engine の受理・CPU の候補・UI のフィルタ」の
+   **4面のうち1面だけ直す**ことで、engine拒否×CPU提案の**本番 livelock**／人間が詰む になる
+   （§0-29 A4 [high] 12＝将軍×玉座で60戦中11戦が膠着／§0-23「engine の受理側だけを締めるのが
+   最も再発する事故」）。旭日 R2 は**18窓すべて**に同じ改修を入れたので、
+   「1窓ずつ手で確かめる」のではなく**表を回して構造的に**守る。
+
+   検査する4面（各窓を「**手札にアクション0枚・山札に影札1枚**」の局面で駆動する）：
+     ① engine が受理する ＝ その action で state が変わり（拒否＝状態不変にならない）、
+        影札が**山札から出て実際に使われる**（ログに「使った」が出る）。
+     ② CPU が提案する ＝ `decide` が影札を指す action を返し、engine がそれを受理する
+        （＝同じ手を返し続ける livelock にならない。実際に数手回して進むことも確かめる）。
+     ③ UI が選べる ＝ jsdom でモーダルを描いて影札のチップが出る（下の jsdom 節）。
+     ④ 群B に漏れていない ＝「手札から捨てる/廃棄する/脇に置く/山に戻す」窓では影札を選べない
+        （公式逐語＝`this does not mean the Shadow card is in your hand`）。
+
+   ⚠ この表に窓を足したら4面すべてが自動で検査される。**新しい「手札から使わせる」窓を作ったら
+      必ずここに1行足すこと**（足さないと次の実装者が1面だけ直しても誰も気づかない）。
+   ============================================================================ */
+console.log('=== R2: 群A＝「手札から使用させる」18窓 × engine受理／CPU の整合 ===');
+
+const A_KINGDOM = ['gondola', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory', 'festival'];
+// 既定の影札＝魚屋（アクション-影・アタックではない＝相手のリアクション窓を開かないので判定が濁らない）。
+const A_SH = 'fishmonger';
+/* 群Aの局面を作る：**手札にアクションは置かず**、山札の3枚目に影札1枚だけを仕込む。
+   ＝「その窓で選べるアクションは山札の影札だけ」という、影対応が効いていなければ必ず破綻する局面。 */
+function mkA(shadow, extraHand) {
+  const s = E.createInitialState([{ name: 'あなた' }, { name: '相手', isCpu: true }], A_KINGDOM, { startActive: 0 });
+  s.turn.active = 0;
+  const p = s.players[0];
+  p.hand = [];
+  p.deck = shadow ? ['copper', 'copper', shadow, 'copper'] : ['copper', 'copper', 'copper', 'copper'];
+  p.discard = []; p.inPlay = [];
+  s.turn.phase = 'action'; s.turn.actions = 1; s.turn.buys = 1; s.turn.coins = 0;
+  s._extraHand = extraHand || [];   // 対照局面（手札の普通のアクションを使う）用の追加手札
+  return s;
+}
+// setup が手札を組むときの唯一の入口（対照局面の追加手札を必ず混ぜる）
+const setHand = (s, arr) => { s.players[0].hand = arr.concat(s._extraHand || []); return s; };
+const PLAY = (s, card) => E.reduce(s, { type: 'PLAY_ACTION', card });
+const ENDTURN = (s) => E.reduce(E.reduce(s, { type: 'END_ACTION_PHASE' }), { type: 'END_TURN' });
+
+/* 18窓の表。setup は「その窓が開いた state」を返す（＝窓を開く面も一緒に検査される）。
+   shadow を省略すると魚屋。侵略だけは**アタック**の影札が要るので忍者。 */
+const A_WINDOWS = [
+  { key: 'throne', jp: '玉座の間', pending: 'throne', act: 'THRONE_CHOOSE',
+    setup: (s) => PLAY(setHand(s, ['throne_room']), 'throne_room') },
+  { key: 'kings_court', jp: '王の宮廷', pending: 'kings_court', act: 'KINGS_COURT_CHOOSE',
+    setup: (s) => PLAY(setHand(s, ['kings_court']), 'kings_court') },
+  { key: 'procession', jp: '行進', pending: 'procession', act: 'PROCESSION_CHOOSE',
+    setup: (s) => PLAY(setHand(s, ['procession']), 'procession') },
+  { key: 'first_mate', jp: '一等航海士', pending: 'first_mate', act: 'FIRST_MATE_PLAY',
+    setup: (s) => PLAY(setHand(s, ['first_mate']), 'first_mate') },
+  { key: 'royal_galley', jp: '王家のガレー船', pending: 'royal_galley_play', act: 'ROYAL_GALLEY_PLAY',
+    setup: (s) => PLAY(setHand(s, ['royal_galley']), 'royal_galley') },
+  { key: 'specialist', jp: '専門家', pending: 'specialist_play', act: 'SPECIALIST_PLAY',
+    setup: (s) => PLAY(setHand(s, ['specialist']), 'specialist') },
+  { key: 'elder', jp: '長老', pending: 'elder_play', act: 'ELDER_PLAY',
+    setup: (s) => PLAY(setHand(s, ['elder']), 'elder') },
+  { key: 'market_towns', jp: '市場の町', pending: 'ally_market_towns', act: 'ALLY_MARKET_TOWNS',
+    setup: (s) => { s.ally = 'market_towns'; s.players[0].favors = 3; setHand(s, []); return E.reduce(s, { type: 'END_ACTION_PHASE' }); } },
+  /* ゴンドラ／苦労／侵略は「手札にアクション（アタック）が1枚もない」と**窓自体を開かない**ので、
+     影札だけの局面を作れない＝手札にも1枚置く（`needsHandAction`）。
+     この3窓では「CPU が影札を選ぶ」は要求しない（手札の札を選ぶのも正しい）＝
+     engine が受理する集合の**部分集合**であることだけ確かめる。 */
+  { key: 'gondola', jp: 'ゴンドラ', pending: 'gondola_play', act: 'GONDOLA_PLAY', needsHandAction: true,
+    setup: (s) => {
+      setHand(s, ['village']); s.turn.phase = 'buy'; s.turn.coins = 4;
+      return E.reduce(s, { type: 'BUY', card: 'gondola' });
+    } },
+  { key: 'toil', jp: '苦労', pending: 'toil', act: 'TOIL_PLAY', needsHandAction: true,
+    setup: (s) => {
+      s.events = ['toil']; setHand(s, ['village']); s.turn.phase = 'buy'; s.turn.coins = 2;
+      return E.reduce(s, { type: 'BUY_EVENT', event: 'toil' });
+    } },
+  { key: 'conclave', jp: 'コンクラーベ', pending: 'conclave', act: 'CONCLAVE_PLAY',
+    setup: (s) => PLAY(setHand(s, ['conclave']), 'conclave') },
+  { key: 'imp', jp: 'インプ', pending: 'imp_play', act: 'IMP_PLAY',
+    setup: (s) => PLAY(setHand(s, ['imp']), 'imp') },
+  { key: 'staff', jp: '杖', pending: 'staff_play', act: 'STAFF_PLAY',
+    setup: (s) => { setHand(s, ['staff']); s.turn.phase = 'buy'; return E.reduce(s, { type: 'PLAY_TREASURE', card: 'staff' }); } },
+  { key: 'crown', jp: '冠（アクションモード）', pending: 'crown', act: 'CROWN_CHOOSE',
+    setup: (s) => PLAY(setHand(s, ['crown']), 'crown') },
+  { key: 'mastermind', jp: '首謀者', pending: 'mastermind_play', act: 'MASTERMIND_PLAY',
+    setup: (s, sh) => {
+      const p = s.players[0];
+      /* 次のターン開始時に開く窓＝クリンナップで5枚引かせてから手番を戻す。
+         影札の局面＝5枚とも銅貨を引かせ**山札に残るのは影札だけ**／
+         対照局面＝鍛冶屋を引かせて**手札に普通のアクション**を持たせる。 */
+      setHand(s, ['mastermind']);
+      p.deck = sh ? ['copper', 'copper', 'copper', 'copper', 'copper', sh]
+        : ['smithy', 'copper', 'copper', 'copper', 'copper'];
+      let x = ENDTURN(PLAY(s, 'mastermind'));
+      let n = 0;
+      while (x.turn.active !== 0 && !x.gameOver && n++ < 5) x = ENDTURN(x);
+      return x;
+    } },
+  { key: 'disciple', jp: '門下生', pending: 'disciple_play', act: 'DISCIPLE_PLAY',
+    setup: (s) => PLAY(setHand(s, ['disciple']), 'disciple') },
+  { key: 'invasion', jp: '侵略', pending: 'invasion', act: 'INVASION_ATTACK', shadow: 'ninja',
+    needsHandAction: true, handAlt: 'militia',
+    setup: (s) => {
+      s.events = ['invasion']; setHand(s, ['militia']); s.turn.phase = 'buy'; s.turn.coins = 10;
+      return E.reduce(s, { type: 'BUY_EVENT', event: 'invasion' });
+    } },
+  { key: 'inspiring', jp: '鼓舞する', pending: 'inspiring_play', act: 'INSPIRING_PLAY',
+    setup: (s) => { s.traits = { inspiring: 'village' }; return PLAY(setHand(s, ['village']), 'village'); } },
+];
+
+ok(A_WINDOWS.length === 18, '群Aの窓は18個ぜんぶ表に載っている（実: ' + A_WINDOWS.length + '）');
+
+const J = (x) => JSON.stringify(x);
+// 「その影札が実際に使われたか」＝**山札から**減り、かつログに「〜を使った」が出ている。
+function shadowWasPlayed(before, after, sh) {
+  const cnt = (s) => s.players[0].deck.filter((c) => c === sh).length;
+  const nm = DOM.CARDS[sh].name;
+  return cnt(after) < cnt(before) && (after.log || []).some((l) => l.indexOf(nm) >= 0 && /使/.test(l));
+}
+// 対照局面用＝「手札からでも山札の影札からでも、とにかくその1枚が使われたか」。
+function cardWasPlayed(before, after, id) {
+  const cnt = (s) => s.players[0].deck.concat(s.players[0].hand).filter((c) => c === id).length;
+  const nm = DOM.CARDS[id].name;
+  return cnt(after) < cnt(before) && (after.log || []).some((l) => l.indexOf(nm) >= 0 && /使/.test(l));
+}
+/* 窓を開いた state を作る（jsdom 節・対照局面でも使い回す）。
+   mode='shadow'（既定）＝山札に影札1枚・手札にアクション0（needsHandAction の窓だけ1枚）。
+   mode='hand'  ＝影札を1枚も置かず、代わりに**手札に普通のアクション**を持たせた対照局面。 */
+function openA(w, mode) {
+  const useShadow = mode !== 'hand';
+  const sh = useShadow ? (w.shadow || A_SH) : null;
+  const alt = w.handAlt || 'smithy';
+  let s;
+  try { s = w.setup(mkA(sh, useShadow ? [] : [alt]), sh); } catch (e) { return { err: e.message || String(e) }; }
+  return { s, sh: useShadow ? sh : alt, opened: !!(s && s.pending && s.pending.type === w.pending) };
+}
+
+A_WINDOWS.forEach((w) => {
+  const r = openA(w);
+  const tag = w.jp + '(' + w.key + ')';
+  if (r.err) { ok(false, tag + '：局面の準備で例外＝' + r.err); return; }
+  // --- 窓を開く面 ---
+  ok(r.opened, tag + '：手札にアクション0＋山札に影札1 で窓が開く（実 pending: '
+    + (r.s.pending ? r.s.pending.type : 'null') + '）');
+  if (!r.opened) return;
+  const s = r.s, sh = r.sh, before = J(s);
+  ok(E.handPlayable(s, 0).indexOf(sh) >= 0, tag + '：handPlayable に山札の影札が入っている（前提）');
+
+  // --- ① engine が受理する ---
+  let after = s, err = null;
+  try { after = E.reduce(s, { type: w.act, card: sh }); } catch (e) { err = e.message || String(e); }
+  ok(err === null, tag + '：影札を指定した ' + w.act + ' で例外が出ない（実: ' + err + '）');
+  ok(J(after) !== before, tag + '：engine が影札を**状態不変で拒否しない**（拒否＝pending が閉じず人間が詰む）');
+  ok(shadowWasPlayed(s, after, sh), tag + '：影札が**山札から出て実際に使われる**（空振りしない）');
+
+  // --- ② CPU が提案する（＝engine が受理する集合の部分集合／livelock しない）---
+  let ca = null, cerr = null;
+  try { ca = DOM.cpu.decide(s); } catch (e) { cerr = e.message || String(e); }
+  ok(cerr === null, tag + '：CPU が例外を出さない（実: ' + cerr + '）');
+  ok(ca != null, tag + '：CPU が null を返さない（オンラインは reduce(state,null) で部屋が固まる）');
+  if (ca) {
+    ok(J(E.reduce(s, ca)) !== before,
+      tag + '：CPU の手を engine が受理する（engine拒否×CPU提案の livelock を作らない。実: '
+      + ca.type + ':' + ca.card + '）');
+    /* 「CPU が影札を選ぶ」を要求できるのは**影札しか選べない局面を作れる窓**だけ。
+       needsHandAction の3窓は手札のアクションが無いと窓が開かないので、手札の札を選ぶのも正しい
+       ＝ここでは「engine が受理する手を返す（＝部分集合）」で十分。 */
+    if (!w.needsHandAction) {
+      ok(ca.card === sh, tag + '：CPU が**山札の影札**を提案する（実: ' + ca.card + '）');
+    }
+  }
+  // CPU に数手まかせても局面が必ず前に進む（同じ state を返し続けない＝膠着の直接検出）。
+  {
+    let x = s, stuckAt = -1;
+    for (let i = 0; i < 8 && !x.gameOver; i++) {
+      const a = DOM.cpu.decide(x);
+      if (!a) { stuckAt = i; break; }
+      const nx = E.reduce(x, a);
+      if (J(nx) === J(x)) { stuckAt = i; break; }
+      x = nx;
+    }
+    ok(stuckAt < 0, tag + '：窓が開いた局面から CPU に8手まかせても膠着しない（実: ' + stuckAt + '手目で停止）');
+  }
+});
+
+console.log('=== R2: 群B＝「手札から捨てる/廃棄する/脇に置く/山に戻す」窓に影札が漏れない ===');
+{
+  /* 公式逐語＝`this does not mean the Shadow card is in your hand`。
+     群Aと同じ `handPlayable` をうっかり群Bに使うと、**山札の影札を捨てたり廃棄したりできてしまう**。
+     ここは「窓を開いた状態で影札を指定しても、影札が山札から1枚も減らない」ことを直接見る。 */
+  const B_WINDOWS = [
+    ['figurine_discard', '小像', 'FIGURINE_DISCARD'],
+    ['ally_woodworkers', '木工ギルド', 'ALLY_WOODWORKERS'],
+    ['zombie_apprentice', 'ゾンビの弟子', 'ZOMBIE_APPRENTICE'],
+    ['swap_return', '交換', 'SWAP_RETURN'],
+    ['arena', '闘技場', 'ARENA_RESOLVE'],
+    ['cellar', '地下貯蔵庫', 'CELLAR_RESOLVE'],
+    ['chapel', '礼拝堂', 'CHAPEL_RESOLVE'],
+    ['discard_down', '民兵型の捨て札', 'DISCARD_DOWN_RESOLVE'],
+  ];
+  B_WINDOWS.forEach(([type, jp, act]) => {
+    const s = mkA(A_SH);
+    const p = s.players[0];
+    p.hand = ['village', 'copper', 'copper']; p.deck = ['copper', A_SH, 'copper'];
+    p.favors = 3;
+    s.pending = { type, player: 0, stage: type === 'ally_woodworkers' ? 'trash' : undefined, n: 3 };
+    let out = s, err = null;
+    try { out = E.reduce(s, { type: act, card: A_SH, cards: [A_SH] }); } catch (e) { err = e.message || String(e); }
+    ok(err === null, jp + '(' + type + ')：影札を指定しても例外が出ない（実: ' + err + '）');
+    const n0 = s.players[0].deck.filter((c) => c === A_SH).length;
+    const n1 = out.players[0].deck.filter((c) => c === A_SH).length;
+    ok(n1 === n0, jp + '(' + type + ')：**山札の影札が動かない**（群Bは影札を受け付けない）');
+    const q = out.players[0];
+    const leaked = ['discard', 'inPlay', 'setAside', 'hand'].filter((z) => (q[z] || []).indexOf(A_SH) >= 0)
+      .concat((out.trash || []).indexOf(A_SH) >= 0 ? ['trash'] : []);
+    ok(leaked.length === 0, jp + '(' + type + ')：影札が捨て札/廃棄/脇/手札へ漏れない（実: ' + leaked.join(',') + '）');
+  });
+  // 述語そのものが分かれていること（市場の町＝群A／木工ギルド＝群B を同じ関数で判定しない）
+  {
+    const s = mkA(A_SH);
+    s.players[0].hand = ['copper']; s.players[0].deck = ['copper', A_SH];
+    ok(E.handPlayable(s, 0).indexOf(A_SH) >= 0, 'handPlayable（群A用）は山札の影札を含む');
+    ok((s.players[0].hand || []).indexOf(A_SH) < 0, '手札そのもの（群B用）は影札を含まない');
+  }
+}
+
+console.log('=== R2: playPlayable の対称性＝航海(Voyage)の3枚制限・将軍(Warlord)が山札の影札にも効く ===');
+{
+  /* ⚠ `playCardNoAction` に素で `p.deck` を渡すと `fromHand` が偽になり、
+     **航海の3枚制限・将軍・`t.handPlays` の計上が黙って全部スキップされる**
+     （＝「玉座経由なら航海の3枚制限を突破できる」抜け道）。`PLAY_ACTION` と対称でなければならない。 */
+  // (a) PLAY_ACTION で山札の影札を使うと handPlays が増える
+  {
+    let s = mkA(A_SH); s.turn.voyageTurn = true; s.turn.handPlays = 0;
+    s = PLAY(s, A_SH);
+    ok(s.players[0].inPlay.indexOf(A_SH) >= 0, '航海ターンでも山札の影札を使える（前提）');
+    ok(s.turn.handPlays === 1, 'PLAY_ACTION の影札は「手札から使った1枚」に数える（実: ' + s.turn.handPlays + '）');
+  }
+  // (b) 3枚使い切ったら山札の影札も使えない
+  {
+    const s = mkA(A_SH); s.turn.voyageTurn = true; s.turn.handPlays = 3;
+    ok(E.canPlayHandCard(s, 0, A_SH) === false, '航海で3枚使い切ったら canPlayHandCard(影札) は偽');
+    const before = J(s);
+    ok(J(PLAY(s, A_SH)) === before, '航海で3枚使い切ったら山札の影札を使えない（state 不変で拒否）');
+  }
+  // (c) 将軍＝場に同名が2枚あると山札の影札も使えない
+  {
+    const s = mkA(A_SH);
+    s.players[1].durationCards = ['warlord'];
+    s.players[1].delayedEffects = [{ card: 'warlord', type: 'warlord' }];
+    s.players[0].inPlay = [A_SH, A_SH];
+    ok(E.warlordBlocks(s, 0, A_SH) === true, '将軍は山札の影札にも効く述語を返す（前提）');
+    const before = J(s);
+    ok(J(PLAY(s, A_SH)) === before, '将軍が場に2枚ある同名の影札を止める（state 不変で拒否）');
+  }
+  /* (d) 群Aの各窓：**影札を使ったときの handPlays の増分**が、
+         **同じ窓で手札の普通のアクションを使ったときの増分**と等しいこと（＝差分検査）。
+     絶対値で「必ず +1」とは書かない：王の宮廷/行進など、もともと handPlays を数えない窓が
+     既存の許容簡略化として在り（§0-29 A4「主要経路にだけ通してある」）、それを赤にしても意味がないため。
+     ここで守りたいのは**「影札のときだけ数えない抜け道ができていないか」**という対称性そのもの。 */
+  A_WINDOWS.forEach((w) => {
+    const rs = openA(w), rh = openA(w, 'hand');
+    if (rs.err || !rs.opened || rh.err || !rh.opened) return; // 窓が開かない不整合は上の節が赤にしている
+    const delta = (r) => {
+      const s = r.s;
+      s.turn.voyageTurn = true;
+      const h0 = s.turn.handPlays || 0;
+      let after = s;
+      try { after = E.reduce(s, { type: w.act, card: r.sh }); } catch (e) { return null; }
+      if (!cardWasPlayed(s, after, r.sh)) return null;        // 使えていない＝上の節が赤にしている
+      return (after.turn.handPlays || 0) - h0;
+    };
+    const dS = delta(rs), dH = delta(rh);
+    if (dS == null || dH == null) return;
+    ok(dS === dH,
+      w.jp + '(' + w.key + ')：航海の「手札から使った枚数」を**影札でも手札の札と同じだけ**数える'
+      + '（影札 +' + dS + ' / 手札 +' + dH + '）');
+  });
+}
+
+/* ============================================================================
+   UI 面（jsdom）＝影札のチップが実際にモーダルに出るか。
+   engine と CPU が正しくても、UI のフィルタが手札だけを見ていると**人間だけが影札を使えない**
+   （§0-30 P1b の「盾のボタンが embedded 型アタックの3モーダルに無かった」と同じクラス）。
+   逆に UI だけが影札を出して engine が拒否すると**人間が押しても何も起きない／詰む**。
+   ============================================================================ */
+console.log('=== R2: 群A窓の UI（jsdom）＝影札のチップが出る／群Bには出ない ===');
+{
+  const { JSDOM } = require('jsdom');
+  const jd = new JSDOM('<!DOCTYPE html><html><body><div id="app"></div></body></html>',
+    { url: 'https://example.com/', runScripts: 'outside-only', pretendToBeVisual: true });
+  const win = jd.window;
+  let tid = 1;
+  win.setTimeout = () => tid++; win.clearTimeout = () => {};
+  win.requestAnimationFrame = (fn) => { fn(); return 1; };
+  let uiErr = null;
+  win.addEventListener('error', (e) => { uiErr = e.error || e.message; });
+  ['js/cards.js', 'js/engine.js', 'js/cpu.js', 'js/store.js', 'js/net.js', 'js/audio.js', 'js/ui.js']
+    .forEach((f) => win.eval(fs.readFileSync(path.join(__dirname, '..', f), 'utf8')));
+  win.document.dispatchEvent(new win.Event('DOMContentLoaded'));
+  const WDOM = win.DOM, UI = WDOM.UI, doc = win.document;
+
+  // vm sandbox で作った state を jsdom 側の realm の素のオブジェクトに移してから描画する
+  // （配列の生成 realm が混ざると ui.js 側の判定で事故りうるため。JSON 往復＝オンライン配信と同じ経路）。
+  /* ⚠ render() の同期例外は window の 'error' では拾えない＝ここで捕まえないと
+     **テストプロセスごと落ちて残りの検査が1件も走らない**（＝スイート全体の感度が消える）。 */
+  function showPending(s) {
+    uiErr = null;
+    UI.view = 'game'; UI.mode = 'local'; UI.mySeat = null; UI.amount = null; UI.selection = [];
+    UI.pickZoom = null; UI.sheet = null; UI.confirm = null; UI.lmZoom = null;
+    UI.localViewer = s.pending ? s.pending.player : (s.turn ? s.turn.active : 0);
+    try {
+      UI.store = WDOM.LocalStore(win.JSON.parse(JSON.stringify(s)));
+      WDOM.render();
+    } catch (e) {
+      uiErr = e.message || String(e);
+      doc.getElementById('app').innerHTML = '';
+    }
+  }
+  // モーダルの中で「押せるカードのチップ」として並んでいるカード名の一覧
+  const modalChipNames = () => Array.from(doc.querySelectorAll('.modal .card.selectable .cname'))
+    .map((el) => el.textContent);
+
+  A_WINDOWS.forEach((w) => {
+    const r = openA(w);
+    const tag = w.jp + '(' + w.key + ')';
+    if (r.err || !r.opened) return;             // 窓が開かない不整合は engine 節が既に赤にしている
+    const nm = WDOM.CARDS[r.sh].name;
+    showPending(r.s);
+    ok(!uiErr, tag + '：モーダルの描画で例外が出ない（実: ' + (uiErr || '') + '）');
+    ok(doc.querySelector('.modal') != null, tag + '：モーダルが描画される（人間が操作できる）');
+    ok(modalChipNames().indexOf(nm) >= 0,
+      tag + '：**山札の影札「' + nm + '」のチップが押せる状態で並ぶ**（実: ' + modalChipNames().join(',') + '）');
+  });
+
+  // 群B は逆＝影札のチップが**出てはいけない**（出ると engine が拒否して人間が詰む）
+  [['cellar', '地下貯蔵庫', 3], ['chapel', '礼拝堂', 0], ['figurine_discard', '小像', 0],
+    ['zombie_apprentice', 'ゾンビの弟子', 0], ['discard_down', '民兵型の捨て札', 3]].forEach(([type, jp, n]) => {
+    const s = mkA(A_SH);
+    s.players[0].hand = ['village', 'copper', 'copper'];
+    s.players[0].deck = ['copper', A_SH, 'copper'];
+    s.pending = { type, player: 0, n };
+    showPending(s);
+    ok(!uiErr, jp + '(' + type + ')：描画で例外が出ない（実: ' + (uiErr || '') + '）');
+    ok(modalChipNames().indexOf(WDOM.CARDS[A_SH].name) < 0,
+      jp + '(' + type + ')：群Bのモーダルに**山札の影札を出さない**（実: ' + modalChipNames().join(',') + '）');
+  });
+}
+
 console.log('\n========================================');
 console.log('旭日テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');
