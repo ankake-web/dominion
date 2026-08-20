@@ -143,6 +143,89 @@ console.log('=== R1: 旭日のカード一覧（王国25／イベント10／予�
   UI.view = 'game';
 }
 
+/* ===== R4〜R6：新 pending 全種にモーダルと「押せる選択肢」があるか（人間が詰まないことの担保）=====
+   🛑 本プロジェクトで最も再発する事故＝**engine と CPU は受理するのに UI に導線が無く人間だけ詰む**
+   （§0-29 A4 の [high]「追いはぎ/将軍のリアクション窓に UI が無い」／§0-30 P1b の「盾のボタンが無い」）。
+   pending を**直接注入して**描画し、`.modal` が出て**押せるボタンかカードチップが1つ以上ある**ことを見る。 */
+console.log('=== R4〜R6: 旭日の新 pending にモーダルと押せる選択肢がある ===');
+{
+  const K = ['tea_house', 'kitsune', 'river_shrine', 'riverboat', 'artist', 'rice', 'samurai', 'daimyo', 'ninja', 'litter'];
+  const PENDINGS = [
+    // R4：予言
+    { p: { type: 'growth_gain', player: 0, coin: 6, pot: 0, debt: 0 }, jp: '成長' },
+    { p: { type: 'kind_emperor_gain', player: 0 }, jp: '神器' },
+    { p: { type: 'sickness', player: 0 }, jp: '病' },
+    // R3/R4：前兆（R3 で漏れていた2種）
+    { p: { type: 'kitsune', stage: 'choose', player: 0 }, jp: '狐' },
+    { p: { type: 'river_shrine_trash', player: 0 }, jp: '川の社（廃棄）' },
+    { p: { type: 'river_shrine_gain', player: 0 }, jp: '川の社（獲得）' },
+    // R6：川船
+    { p: { type: 'riverboat_play', player: 0 }, jp: '川船' },
+    // R5：イベント
+    { p: { type: 'amass_gain', player: 0 }, jp: '蓄積' },
+    { p: { type: 'asceticism_pay', player: 0, max: 3 }, jp: '苦行（額）' },
+    { p: { type: 'asceticism_trash', player: 0, need: 2 }, jp: '苦行（廃棄）' },
+    { p: { type: 'credit_gain', player: 0 }, jp: '信用' },
+    { p: { type: 'kintsugi_trash', player: 0 }, jp: '金継ぎ（廃棄）' },
+    { p: { type: 'kintsugi_gain', player: 0, coin: 4, pot: 0, debt: 0 }, jp: '金継ぎ（獲得）' },
+    { p: { type: 'practice_play', player: 0 }, jp: '稽古' },
+    { p: { type: 'sea_trade_trash', player: 0, max: 2 }, jp: '海上交易' },
+    { p: { type: 'receive_tribute_gain', player: 0, gained: [] }, jp: '賛辞' },
+    { p: { type: 'gather_gain', player: 0, need: 4 }, jp: '参集' },
+    { p: { type: 'continue_gain', player: 0 }, jp: '継続' },
+  ];
+  PENDINGS.forEach((row) => {
+    const s = E.createInitialState(['あなた', '相手'], K.slice(), { startActive: 0, prophecy: 'good_harvest' });
+    // どの窓でも「押せる候補」が作れるように手札を整える（廃棄/使用の窓は手札が要る）。
+    s.players[0].hand = ['village', 'copper', 'estate', 'smithy', 'militia'];
+    s.turn.phase = 'buy'; s.turn.coins = 8; s.turn.actions = 1;
+    s.pending = row.p;
+    showAs(s, 0);
+    ok(!runtimeError, row.jp + '：描画で例外が出ない: ' + (runtimeError || ''));
+    const modal = doc.querySelector('.modal');
+    ok(modal != null, row.jp + '：モーダルが出る');
+    if (modal) {
+      const btns = modal.querySelectorAll('button:not([disabled])').length;
+      const chips = modal.querySelectorAll('.card, .chip, .choose-tile').length;
+      ok(btns + chips > 0, row.jp + '：押せる選択肢が1つ以上ある（ボタン' + btns + '／チップ' + chips + '）');
+    }
+  });
+}
+
+/* 稽古（群A）＝**山札の影(Shadow)カードもチップに並ぶ**／
+   川の社の廃棄（群B）＝**山札の影札は並ばない**（影札は手札ではない＝公式）。 */
+console.log('=== R5: 稽古（群A）は山札の影札を選べる／川の社の廃棄（群B）は選べない ===');
+{
+  const K = ['tea_house', 'ninja', 'river_shrine', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'litter'];
+  const mkS = (pend) => {
+    const s = E.createInitialState(['あなた', '相手'], K.slice(), { startActive: 0, prophecy: 'good_harvest' });
+    s.players[0].hand = ['village'];
+    s.players[0].deck = ['ninja', 'copper', 'copper'];   // 山札の影札
+    s.turn.phase = 'buy'; s.turn.actions = 1;
+    s.pending = pend;
+    showAs(s, 0);
+    return doc.querySelector('.modal');
+  };
+  {
+    const m = mkS({ type: 'practice_play', player: 0 });
+    ok(m != null && /忍者/.test(m.textContent), '稽古（群A）：山札の影札「忍者」が選べる');
+  }
+  {
+    const m = mkS({ type: 'river_shrine_trash', player: 0 });
+    ok(m != null && !/忍者/.test(m.textContent), '川の社の廃棄（群B）：山札の影札は並ばない');
+  }
+}
+
+console.log('=== R4: 好機到来の脇札と洞察の脇札が盤面に出る ===');
+{
+  const s = E.createInitialState(['あなた', '相手'], ['tea_house'].concat(FILLER),
+    { startActive: 0, prophecy: 'biding_time' });
+  s.players[0].bidingAside = ['copper', 'estate'];
+  s.players[0].foresightAside = ['village'];
+  showAs(s, 0);
+  ok(!runtimeError, '描画で例外が出ない: ' + (runtimeError || ''));
+}
+
 console.log('\n========================================');
 console.log('旭日UIテスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');
