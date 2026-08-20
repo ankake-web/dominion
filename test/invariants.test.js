@@ -59,7 +59,11 @@ function hasBack(s) { return s.players.some((p) => ZONES.some((z) => (p[z] || []
 // 1ゲームを最後まで進め、安定点ごとに全不変条件を検査。違反があれば false と詳細を返す。
 function runGame(kingdom, players, landmarks, events, projects, ways, traits) {
   let s = E.createInitialState(players, kingdom, { startActive: 0, landmarks: landmarks || [], events: events || [], projects: projects || [], ways: ways || [], traits: traits || [] });
-  const init = tally(s);
+  let init = tally(s);
+  /* 旭日：神風(Divine Wind)＝王国10山を撤去して新しく10山を配り直す＝**本アプリで唯一、カードが
+     ゲームから消えて別のカードが湧く機構**。保存則の基準はここで取り直すしかない（正本 §6-5b）。
+     `state.kingdomEpoch` が変わった瞬間だけ取り直す＝それ以外の保存則違反は従来どおり全部捕まえる。 */
+  let epoch = s.kingdomEpoch || 0;
   const n = s.players.length;
   let step = 0;
   while (!s.gameOver && step++ < 20000) {
@@ -72,6 +76,7 @@ function runGame(kingdom, players, landmarks, events, projects, ways, traits) {
       if (!(t.active >= 0 && t.active < n) || (t.phase !== 'action' && t.phase !== 'buy' && t.phase !== 'night')) return { okp: false, why: '手番/フェーズ不正 step' + step + ' active=' + t.active + ' phase=' + t.phase };
     }
     if (s.pending) continue;
+    if ((s.kingdomEpoch || 0) !== epoch) { epoch = s.kingdomEpoch || 0; init = tally(s); } // 神風で王国が入れ替わった
     const d = diffTally(init, tally(s));
     if (d.length) return { okp: false, why: '保存則 step' + step + ': ' + d.join(' ') };
     if (Object.values(s.supply).some((v) => v < 0)) return { okp: false, why: 'supply負 step' + step };

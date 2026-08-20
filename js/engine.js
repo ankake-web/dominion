@@ -249,6 +249,140 @@
     if (state.prophecy === 'kind_emperor' && anyGainable(state, woodworkersCanGain(state))) {
       queueProphecy(state, { type: 'kind_emperor_gain', player: pi });
     }
+    // 神風(Divine Wind)＝王国10山を撤去して新しく10山を配り直す（非対話＝その場で適用する）。
+    if (state.prophecy === 'divine_wind') applyDivineWind(state, pi);
+  }
+  /* ===== 旭日 R4c：神風（Divine Wind）＝準備手順がゲーム中に再走する唯一の例 =====
+     ルールブック逐語＝
+     `The 10 Kingdom card Supply piles used this game are removed, as well as an 11th pile if something added
+      one (such as Young Witch's Bane pile). Ruins, Potions, and Platinum and Colony are not removed.
+      Deal out 10 new Kingdom cards. Do any Setup for them that they require, including things like putting
+      out the Potions if necessary. Do not give out Heirlooms. Do not re-determine whether or not to use
+      Shelters or Platinum and Colony. Deal out an Ally if you get a Liaison and didn't already have one.
+      The removed piles are gone; they no longer count as empty piles if empty, and cards can't be returned
+      to those piles. Players can continue playing with cards they got from those piles though.
+      Tokens on the removed piles are no longer on them. Traits and Obelisk still affect their removed piles,
+      and the Bane is still the Bane. Search does not trigger when piles are removed.`
+     🛑 **`supply[id] = 0` にしてはいけない**＝`emptyPileCount` がキーの存在で「空」と数えるので、
+        10山撤去した瞬間に3山終了が成立して即死する。**`delete` する**（`canReturnToPile` も自動で false になる）。
+     🛑 **保存則テストは必ず基準を取り直す必要がある**＝`state.kingdomEpoch` を上げて harness に知らせる。
+     ⚠ **予言は配り直さない**（`Deal out an Ally` とは書いてあるが `Deal out a Prophecy` とは書いていない）
+        ＝新しい10種に前兆が入っても以後の「+1 Sun」は空振り。
+     ⚠ **特性(Trait)・オベリスク・災いカード(Bane) は撤去された山にも効き続ける**＝`state.traits` /
+        `state.obeliskPile` / `state.baneCard` は**触らない**。
+     ⚠ **調査(Search) は撤去では誘発しない**＝ここで `fireNextTime('pile_empty')` を呼ばない。
+     ⚠ 抽選元＝**公式の逐語では定義されていない**。作者発言（`if say Horses might appear, well odds are
+        they're already on the table.`）＝「その卓に出している拡張から引く」前提なので、
+        **今の王国カードが属する拡張プールの和集合**から引く（`MIX_KINGDOM_POOLS` の16プールが正本）。
+        ＝PROGRESS に「作者発言からの推定」と明記すること。
+     ⚠ 一意カード（`Riverboat` の脇札・ハツカネズミの習性・闇市場デッキの中身）は新しい10山に選ばない。 */
+  function applyDivineWind(state, pi) {
+    const n = state.players.length;
+    /* ① 撤去＝いま王国にある山キー（＝Bane も 来寇の11山目も `state.kingdom` に入っている）。
+          分割山の相方・混合山の実カード配列も一緒に始末する。 */
+    const removed = (state.kingdom || []).slice();
+    const killKeys = new Set();
+    removed.forEach((id) => {
+      killKeys.add(id);
+      if (SPLIT_BOTTOM[id]) killKeys.add(SPLIT_BOTTOM[id]);
+      if (SPLIT_TOP[id]) killKeys.add(SPLIT_TOP[id]);
+    });
+    killKeys.forEach((k) => {
+      delete state.supply[k];
+      if (MIXED_PILE_SET.has(k)) state[k] = null; // 廃墟(ruins)は撤去対象外なので killKeys に入らない
+      // 山の上に載っていたトークンは「もう山の上に無い」（特性/オベリスクだけが残る＝触らない）。
+      if (state.pileVP) delete state.pileVP[k];
+      if (state.pileDebt) delete state.pileDebt[k];
+      if (state.pileFavor) delete state.pileFavor[k];
+    });
+    // 冒険：撤去された山の上の山トークンは**持ち主に返る**（また置き直せる）。
+    state.players.forEach((pl) => {
+      if (!pl.pileTokens) return;
+      Object.keys(pl.pileTokens).forEach((kind) => { if (killKeys.has(pl.pileTokens[kind])) pl.pileTokens[kind] = null; });
+    });
+    /* ② 新しい10山を抽選する。抽選元＝今の王国カードが属する拡張プールの和集合。
+          除外＝撤去した山／サプライに既にあるキー／闇市場デッキの中身／一意カード（川船・ハツカネズミ）。 */
+    const mixPools = Object.keys(DOM.MIX_KINGDOM_POOLS || {});
+    const src = new Set();
+    mixPools.forEach((pk) => {
+      const pool = (DOM.POOLS || {})[pk] || [];
+      if (removed.some((id) => pool.indexOf(id) >= 0)) pool.forEach((id) => src.add(id));
+    });
+    if (!src.size) ((DOM.POOLS || {}).basic || []).forEach((id) => src.add(id)); // 保険（抽選元が特定できないとき）
+    const singular = new Set([].concat(state.blackMarket || [], state.mouseCard ? [state.mouseCard] : [],
+      state.players.reduce((a, pl) => a.concat(pl.riverboatCard ? [pl.riverboatCard] : []), [])));
+    const cand = Array.from(src).filter((id) =>
+      !killKeys.has(id) && !Object.prototype.hasOwnProperty.call(state.supply, id) &&
+      !singular.has(id) && !NON_SUPPLY.has(id) && !MIXED_PILE_CONTENTS.has(id) && C()[id]);
+    const fresh = DOM.randomKingdom(10, cand);
+    // 分割山の相互補完（randomKingdom は上段に正規化するので下段を足す）。
+    Object.keys(SPLIT_TOP).forEach((bottom) => {
+      const top = SPLIT_TOP[bottom];
+      if (fresh.includes(bottom) && !fresh.includes(top)) fresh.push(top);
+      if (fresh.includes(top) && !fresh.includes(bottom)) fresh.push(bottom);
+    });
+    /* ③ 新しい山の準備＝`initSupply` を新王国で1度走らせ、**基本カードの山は上書きしない**
+          （公式＝廃墟／ポーション／プラチナ・植民地は撤去しないし、避難所・植民地の再判定もしない）。
+          ⚠ ただし **ポーションは「必要なら出す」**（`including things like putting out the Potions if necessary`）。 */
+    const ns = initSupply(n, fresh);
+    const BASE_KEEP = new Set(['copper', 'silver', 'gold', 'estate', 'duchy', 'province', 'curse', 'platinum', 'colony']);
+    Object.keys(ns).forEach((k) => {
+      if (BASE_KEEP.has(k)) return;
+      if (k === 'potion') { if (state.supply.potion == null) state.supply.potion = ns.potion; return; }
+      if (Object.prototype.hasOwnProperty.call(state.supply, k)) return; // 既にある非サプライ山（賞品/馬…）は作り直さない
+      state.supply[k] = ns[k];
+    });
+    // 混合山の中身（騎士／城／同盟の分割山）を新しく積む。廃墟は撤去されないので触らない。
+    if (fresh.includes('knights') && !state.knights) {
+      state.knights = shuffle(((DOM.POOLS || {}).knights || []).slice());
+      state.supply.knights = state.knights.length;
+    }
+    if (fresh.includes('castles') && !state.castles) {
+      const base = ((DOM.POOLS || {}).castles || []).slice()
+        .sort((a, b) => (C()[a].cost || 0) - (C()[b].cost || 0));
+      state.castles = n <= 2 ? base : base.reduce((acc, id) =>
+        acc.concat(['humble_castle', 'small_castle', 'opulent_castle', 'kings_castle'].includes(id) ? [id, id] : [id]), [])
+        .sort((a, b) => (C()[a].cost || 0) - (C()[b].cost || 0));
+      state.supply.castles = state.castles.length;
+    }
+    (DOM.ALLIES_SPLIT_PILES ? Object.keys(DOM.ALLIES_SPLIT_PILES) : []).forEach((k) => {
+      if (!fresh.includes(k) || state[k]) return;
+      const ids = DOM.ALLIES_SPLIT_PILES[k] || [];
+      const arr = []; ids.forEach((id) => { for (let i = 0; i < 4; i++) arr.push(id); });
+      state[k] = arr; state.supply[k] = arr.length;
+    });
+    /* ④ 王国依存の派生セットアップを追加で走らせる（**既にあるものは作り直さない**＝公式）。 */
+    if (!state.boons && fresh.some((k) => DOM.isType(k, 'fate'))) {
+      const deck = shuffle((DOM.BOONS_NOCTURNE || []).slice());
+      state.boons = { deck, discard: [], druid: fresh.includes('druid') ? deck.splice(0, 3) : [] };
+    }
+    if (!state.hexes && fresh.some((k) => DOM.isType(k, 'doom'))) {
+      state.hexes = { deck: shuffle((DOM.HEXES_NOCTURNE || []).slice()), discard: [] };
+    }
+    (DOM.artifactsForKingdom ? DOM.artifactsForKingdom(fresh) : []).forEach((id) => {
+      state.artifacts = state.artifacts || {};
+      if (state.artifacts[id] === undefined) state.artifacts[id] = null;
+    });
+    if (!state.loot && fresh.some((k) => (DOM.LOOT_GIVERS || []).indexOf(k) >= 0)) {
+      state.loot = shuffle([].concat(LOOT_IDS, LOOT_IDS));
+    }
+    // ネクロマンサー＝準備でゾンビ3枚を廃棄置き場へ（**カードが3枚増える**＝保存則の基準取り直しが要る）。
+    if (fresh.includes('necromancer') && !(state.trash || []).some((c) => ZOMBIES.indexOf(c) >= 0)) {
+      ZOMBIES.forEach((z) => state.trash.push(z));
+    }
+    /* 同盟：**連携が出てきて、まだ Ally が居なければ**配る（公式が名指し）。
+       ⚠ 好意の初期配布は**最初の1回だけ**（`Players only get an initial Favor token the first time a Liaison
+          is added`）＝ここでは配らない。 */
+    if (!state.ally && alliesHasLiaison(fresh)) {
+      const apool = DOM.ALLIES_ALLY || [];
+      state.ally = apool.length ? apool[Math.floor(Math.random() * apool.length)] : null;
+      if (state.ally === 'order_of_astrologers' || state.ally === 'order_of_masons') {
+        state.players.forEach((pl) => { pl.shuffleAlly = state.ally; if (pl.favorShuffle == null) pl.favorShuffle = pl.isCpu ? 1 : 0; });
+      }
+    }
+    state.kingdom = fresh;
+    state.kingdomEpoch = (state.kingdomEpoch || 0) + 1; // 保存則ハーネスに「基準を取り直せ」と伝える印
+    log(state, `${state.players[pi].name} が最後のSunトークンを取り除き、神風が吹いた ── 王国の山がすべて入れ替わった（新しい10種: ${fresh.map((k) => (C()[k] || {}).name || k).join('／')}）。`);
   }
   // 予言の「窓が要る即時効果」を積む唯一の入口（pending 直代入の代わり）。R4 で使う。
   function queueProphecy(state, item) {
@@ -2006,6 +2140,10 @@
       prophecy,
       sunTokens,
       armyCard, // 旭日：来寇が追加した11山目（無ければ null）＝表示・テスト用。普通のサプライ山。
+      /* 旭日：神風(Divine Wind)が王国を入れ替えた回数（非カード・公開）。0 のあいだは何も起きていない。
+         **保存則テストはこの値が変わったら基準（tally）を取り直す**＝神風は「カードがゲームから消えて
+         別のカードが湧く」本アプリで唯一の機構なので、取り直さないと必ず赤になる（正本の §6-5b）。 */
+      kingdomEpoch: 0,
       prophecyOn: false,
       prophecyOnBy: null,   // 最後の Sun を取り除いた席（神器＝この席だけが獲得する）。未発動なら null。
       // 予言の「窓が要る即時効果」の待ち行列（非カード）。`queueProphecy` だけが積み、reduce 末尾が消化する。
