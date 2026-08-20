@@ -183,6 +183,86 @@
      ⚠ **好意の支払いは常に任意**。「1回の誘発につき1回だけ」（`Repeat as desired.` のある
         穴居民／砂漠の案内人／市場の町 だけが繰り返せる）。 */
   function hasAlly(state, id) { return !!state && state.ally === id; }
+  /* ========== 旭日（Rising Sun）R1：前兆(Omen)／予言(Prophecy)／Sunトークンの共通基盤 ==========
+     正本＝docs/research/risingsun_rules.md 第1章 §1（ルールブック p.3〜4 の逐語）。
+     - **王国に前兆(Omen)が1枚でもあれば予言を1枚だけ配る**（前兆が何枚あっても1つ＝
+       `Only use one Prophecy no matter how many Omens you have.`）。Ally とまったく同じ形＝
+       `createInitialState` で1回だけ決める（サーバ権威・再戦も自動で安全）。
+     - **予言は「カード」ではない**（公式逐語＝`Prophecies are not considered "cards" at all`）＝
+       `allCards`／保存則 tally／庭園・品評会／「カード名を宣言」に**入れない**。Sun トークンも非カード。
+       横型の「合計2枚まで」にも数えない（Ally と同型）。
+     - Sun トークンは **2人5／3人8／4人10／5人12／6人13**（箱は13個＝6人戦が上限）。
+     - **「+1 Sun」＝予言からトークンを1個取り除く**。**最後の1個を取り除いた瞬間**に予言が有効になり
+       （`right then`）、**以後ゲーム終了までずっと有効**。全部取り除いた後の「+1 Sun」は**何もしない**
+       （空振りでも前兆の残りの効果は普通に解決する）。
+     - ⚠ **「+1 Sun」は前兆カードの記載の一番最初に必ず来る**＝**予言はそのカードの残りの効果より前に
+       発動しうる**。さらに **`Kind Emperor`（神器）と `Divine Wind`（神風）は「最後の Sun を取り除いた
+       瞬間」に即時発火する**（`in the middle of resolving the Omen`）＝**発動を「次のターン開始時に
+       まとめて」に遅延させる実装は公式違反**。だから `removeSun` が**その場で** `onProphecyActivated`
+       （汎用の発動フック）を呼ぶ。予言ごとの効果は R4 で足す。 */
+  /* 予言を配るかの判定＝**王国の山 ＋ 準備で脇に置いた札**で見る（闇市場デッキは含めない＝中身が秘密なので
+     準備の判定に使うと情報が漏れる）。前例＝馬の山（`DOM.HORSE_GIVERS` を kingdom / events / ハツカネズミの
+     脇札 `mouseCard` まで見る）／戦利品の山（kingdom / events / traits を走査する）。
+     ⚠ **R6 で川船(Riverboat) を実装したら `extraIds` に脇札を渡すこと**＝川船の準備は「未使用・非持続・
+        ちょうど $5 のアクション」を1枚脇に置き毎ターン使わせるので、**茶屋($5)／狐($5) が脇に来ると
+        サプライに前兆が1枚も無いのに「+1 Sun」が走る**（正本 §1-8 の訂正I が名指しで警告している）。 */
+  function hasOmen(kingdom, extraIds) {
+    const ids = (kingdom || []).concat(extraIds || []);
+    return ids.some((id) => DOM.isType(id, 'omen') || (ALLIES_SPLIT[id] || []).some((c) => DOM.isType(c, 'omen')));
+  }
+  // 人数別の Sun トークン数（2人5／3人8／4人10／5人12／6人13。それ以外の人数は最も近い値へ丸める）。
+  function sunTokensFor(numPlayers) {
+    const T = { 2: 5, 3: 8, 4: 10, 5: 12, 6: 13 };
+    return T[numPlayers] || (numPlayers < 2 ? 5 : 13);
+  }
+  /* そのゲームの予言がこの1枚か。**⚠ 予言の効果を書くときに使ってはいけない**（`prophecyActive` を使う）。
+     これはゲーム開始時から真＝**まだ発動していない**状態でも真になる。
+     用途は「発動と無関係に起きる準備処理」だけ（来寇 Approaching Army の11山目＝予言が発動しなくても追加する）。
+     ⚠ 隣の `hasAlly` は同盟カードの効果を書く正しい述語なので**形がそっくりで取り違えやすい**（レビュー指摘）。 */
+  function hasProphecy(state, id) { return !!state && state.prophecy === id; }
+  // 予言が**発動済み**（最後の Sun を取り除いた後）か。予言のテキストはそれまで一切効かない。
+  function prophecyActive(state, id) { return hasProphecy(state, id) && !!state.prophecyOn; }
+  /* 予言が有効になった瞬間に1回だけ走る汎用フック（R4 で各予言の即時効果をここに足す）。
+     ⚠ 専用フックにしないこと＝`Kind Emperor` も `Divine Wind` も同じ「最後の Sun を取り除いたとき」型。
+     pi ＝最後の Sun を取り除いた本人（`only the player who removed the [Sun] gains an Action then.`）。
+
+     🛑 **ここで `state.pending` を直接代入してはいけない**（レビューが実証済み）。
+        このフックは前兆カードの効果の**一番最初**（「+1 Sun」）から呼ばれるので、
+        **前兆6種のうち4種（川の社／田舎の村／狐／山の社）は直後に自分の選択窓を開いて上書きする**
+        ＝神器(Kind Emperor)の「アクションを手札に獲得」が黙って消える（狐で実測＝pending が kitsune_choose に）。
+        窓が要る予言は **`state.prophecyQueue` に積む**（reduce 末尾の再開網が pending の空きを待って1件ずつ開く）。
+        対話の要らない予言（神風＝王国10山の入れ替え）は**その場で適用してよい**。
+     ※ 公式は「前兆の解決の途中で」即時発火だが、本エンジンは pending が単一スロットなので
+        **窓を開く予言だけは前兆の窓の後に回る**（同じプレイ・同じターン・同じ本人の中では解決する）＝許容簡略化。 */
+  function onProphecyActivated(state, pi) {
+    /* **最後の Sun を取り除いた席**を残す（＝神器 Kind Emperor が獲得する唯一の席／R4 で使う）。
+       公式逐語＝`only the player who removed the [Sun] gains an Action then.`
+       ここに残さないと「フックに渡す席がずれても誰も気づかない」（レビューのバグ注入Cが素通りした）。 */
+    state.prophecyOnBy = pi;
+    const who = state.players[pi] ? state.players[pi].name : '';
+    log(state, `${who} が最後のSunトークンを取り除いた ── 予言「${(DOM.LANDSCAPES[state.prophecy] || {}).name || state.prophecy}」が有効になった（以後ゲーム終了までずっと効く）。`);
+    // R4：ここで state.prophecy ごとの即時効果を分岐する。
+    //   窓が要るもの（神器＝アクションを手札に獲得）→ queueProphecy(state, { type:'kind_emperor_gain', player: pi })
+    //   対話が要らないもの（神風＝王国10山の入れ替え）→ その場で適用する
+  }
+  // 予言の「窓が要る即時効果」を積む唯一の入口（pending 直代入の代わり）。R4 で使う。
+  function queueProphecy(state, item) {
+    (state.prophecyQueue = state.prophecyQueue || []).push(item);
+  }
+  /* 「+1 Sun」の唯一の入口。前兆カードの効果の**一番最初**で呼ぶこと。
+     トークンが残っていなければ何もしない（空振り＝前兆の残りは普通に解決する）。戻り値＝実際に取り除いたか。
+     ⚠ pi は**必ず前兆を使った本人の席**を渡す（神器はこの席だけが獲得する）。不正な席は何もしない。 */
+  function removeSun(state, pi) {
+    if (!state.prophecy || !state.players[pi] || (state.sunTokens || 0) <= 0) return false;
+    state.sunTokens -= 1;
+    const who = state.players[pi] ? state.players[pi].name : '';
+    log(state, `${who} は +1 Sun（予言の残り ${state.sunTokens}個）。`);
+    if (state.sunTokens === 0 && !state.prophecyOn) {
+      state.prophecyOn = true;      // **その瞬間**に有効化（遅延させない＝公式）
+      onProphecyActivated(state, pi);
+    }
+    return true;
+  }
   // ALLY_SIMPLE（好意を使う／使わない だけの窓）が受け付ける pending 種別。
   const ALLY_SIMPLE_PENDINGS = new Set([
     'ally_mountain_folk', 'ally_desert', 'ally_scribes', 'ally_circle',
@@ -1561,6 +1641,20 @@
         }
       }
     }
+    /* 旭日：**王国に前兆(Omen)が1枚でもあれば予言(Prophecy)を1枚だけ**配る（前兆が何枚あっても1つ）。
+       Sun トークンは人数別（2人5／3人8／4人10／5人12／6人13）。**予言は最初から表向き＝全員に見えている**が、
+       **最後の Sun を取り除くまでテキストは一切効かない**（`state.prophecyOn` が false のあいだ）。
+       ⚠ 予言は「カード」ではない＝`allCards`・保存則 tally には入れない（Ally と同じ扱い）。
+       ⚠ `Approaching Army`（来寇）の準備＝アタックの王国カードの山を1つ追加する（**予言が発動しなくても
+          準備の追加は起きる**）は R4 で実装する（若き魔女の災いカード Bane と同型の11山目）。 */
+    let prophecy = null, sunTokens = 0;
+    if (hasOmen(kingdom)) {
+      const ppool = DOM.PROPHECIES_RISINGSUN || [];
+      prophecy = (opts.prophecy && DOM.LANDSCAPES[opts.prophecy] && DOM.LANDSCAPES[opts.prophecy].kind === 'prophecy')
+        ? opts.prophecy
+        : (ppool.length ? ppool[Math.floor(Math.random() * ppool.length)] : null);
+      if (prophecy) sunTokens = sunTokensFor(players.length);
+    }
     // プロモ/帝国：分割山＝1つの山枠（上段5＋下段5）。上段/下段どちらかが王国にあれば両方をサプライに
     // 置く（emptyPileCount では1山として数える）。抽選は上段に正規化済み（DOM.randomKingdom）だが、
     // 固定セットや外部指定に下段単独が来ても補正する。
@@ -1720,6 +1814,16 @@
       // 同盟：発明家の家族＝サプライ山の上に置かれた好意トークン数 {[山キー]:個数}（**非カード**・公開＝
       //   state.pileVP / state.pileDebt と同型で保存則 tally に混ぜない）。その Ally のときだけ作る。
       pileFavor: ally === 'family_of_inventors' ? {} : null,
+      /* 旭日：このゲームの予言(Prophecy)id（王国に前兆が無ければ null）。**公開・対局中不変・非カード**。
+         `sunTokens` ＝予言の上に残っている Sun トークン数（人数別。0 になった瞬間に prophecyOn が立つ）。
+         `prophecyOn` ＝予言のテキストが有効か（**取り除き切るまで一切効かない**）。3つとも非カード＝
+         保存則 tally・allCards・庭園/品評会 に混ぜない。maskStateFor は clone でそのまま残す（全員に見える）。 */
+      prophecy,
+      sunTokens,
+      prophecyOn: false,
+      prophecyOnBy: null,   // 最後の Sun を取り除いた席（神器＝この席だけが獲得する）。未発動なら null。
+      // 予言の「窓が要る即時効果」の待ち行列（非カード）。`queueProphecy` だけが積み、reduce 末尾が消化する。
+      prophecyQueue: [],
       trash,    // 廃棄置き場（夜想曲：ネクロマンサーがあればゾンビ3枚が最初から入っている）
       trashFaceDown: {}, // 夜想曲：ネクロマンサーで裏返した廃棄置き場のカード（id→枚数。ターン終了で全解除）
       blackMarket, // 闇市場デッキ（無ければ null）
@@ -12057,6 +12161,14 @@
       }
       state = runReplays(state);
     }
+    /* 旭日 R1：予言の「窓が要る即時効果」（神器＝アクションを手札に獲得）を、pending が空いたら1件ずつ開く。
+       ⚠ `onProphecyActivated` は前兆の効果の**一番最初**から呼ばれるので pending を直接代入できない
+          （前兆6種のうち4種が直後に自分の窓を開いて上書きする）＝`queueProphecy` に積んでここで消化する。
+       R4 で予言の即時効果を足すまで、このキューには何も積まれない（`rotatePile` を A2 で先に用意したのと同じ）。 */
+    if (!state.pending && !state.gameOver && state.prophecyQueue && state.prophecyQueue.length) {
+      state.pending = state.prophecyQueue.shift();
+      state = runReplays(state);
+    }
     // 移動動物園：植民（Populate）＝アクションのサプライ山それぞれから1枚ずつ獲得する。
     //   1枚獲得するたびに獲得時対話（望楼/そり/追放の払い戻し等）が挟まるので、それを解決してから次の選択待ちを開く。
     //   空になった山・獲得できなくなった山はここで落とす（残りゼロなら窓を閉じる）。
@@ -21627,6 +21739,13 @@
     warlordBlocks,     // 同盟：将軍＝場に2枚以上ある同名アクションを手札から使えない（同上・3面共通）
     canPlayHandCard,   // 「その手札の1枚を今使えるか」＝航海の3枚制限＋将軍（engine/CPU/UI が同じ述語を見る）
     isNonSupplyPile: (id) => NON_SUPPLY.has(id), // 非サプライ山か（賞品/成長先/馬/戦利品等）。UI の allowEmpty モーダルが死にチップを弾くのに使う
+    // 旭日 R1：前兆(Omen)／予言(Prophecy)／Sun トークン（engine/CPU/UI が同じ述語を見る）
+    hasOmen,           // 王国に前兆が1枚でもあるか（＝予言を1枚配るゲームか。分割山の中身も見る）
+    sunTokensFor,      // 人数別の Sun トークン数（2人5／3人8／4人10／5人12／6人13）
+    hasProphecy,       // そのゲームの予言がこの1枚か（**準備処理専用**。予言の効果には prophecyActive を使う）
+    prophecyActive,    // その予言が**発動済み**か（最後の Sun を取り除いた後。それまでテキストは一切効かない）
+    removeSun,         // 「+1 Sun」の唯一の入口（前兆の効果の**一番最初**で呼ぶ。空振りでもよい）
+    queueProphecy,     // 予言の「窓が要る即時効果」を積む（**pending 直代入は禁止**＝前兆の窓に上書きされる）
     barbarianCanGain,  // 同盟：蛮族＝廃棄札と種別を共有しより安いカードの候補（連携/分割山種別も種別に数える）
     canReturnToPile,   // そのカードを元の山へ戻せるか（交換／交易商人／取り替え子が共通で見る）
     swapCanGain,       // 同盟：交換＝$5以下・名前の異なるアクション（混合山は一番上の実カード名で比べる）

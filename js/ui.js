@@ -1470,8 +1470,32 @@
               h('span', { class: 'muted', style: 'font-size:12px;margin-left:8px' }, (al.text || '').replace(/\n/g, ' ')))));
       })()
       : null;
+    /* 旭日：予言（横型・1ゲームに1枚だけ・買わない）＝王国に前兆(Omen)があるときだけ登場する。
+       **残りの Sun トークン数は公開情報**（誰が「+1 Sun」を出すと発動するかは全員の戦略に直結する）。
+       最後の1個を取り除くとテキストが有効になり、以後ゲーム終了までずっと効く。 */
+    const prophecyBlock = state.prophecy
+      ? (() => {
+        const pr = (DOM.LANDSCAPES || {})[state.prophecy] || { name: state.prophecy, text: '' };
+        const sun = state.sunTokens || 0;
+        const status = state.prophecyOn ? '発動中（ゲーム終了まで有効）' : '残り ' + sun + '個';
+        return h('div', { class: 'supply-section' },
+          h('div', { class: 'sup-title' }, '予言（横型・Sunトークンが尽きると発動）'),
+          h('div', { class: 'mats' },
+            h('div', { class: 'mat-row prophecy-row', title: (pr.text || '') },
+              h('img', { class: 'landmark-thumb', src: 'asset/cards/' + state.prophecy + '.webp', alt: pr.name, loading: 'lazy',
+                style: 'height:40px;width:60px;object-fit:cover;border-radius:4px;flex:0 0 auto;cursor:pointer',
+                onclick: () => openLandmarkZoom(state.prophecy),
+                onerror: function () { this.style.display = 'none'; } }),
+              h('span', { class: 'mat-label', role: 'button', tabindex: '0', style: 'cursor:pointer',
+                  onclick: () => openLandmarkZoom(state.prophecy),
+                  onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLandmarkZoom(state.prophecy); } } },
+                '🔮 ' + pr.name + '（☀' + status + '）'),
+              h('span', { class: 'muted', style: 'font-size:12px;margin-left:8px' }, (pr.text || '').replace(/\n/g, ' ')))));
+      })()
+      : null;
     const supply = h('div', null,
       allyBlock,
+      prophecyBlock,
       landscapeBlock,
       eventBlock,
       projectBlock,
