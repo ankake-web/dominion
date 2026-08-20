@@ -888,6 +888,20 @@
     if (!hasMyProject(state, t.active, 'capitalism')) return false; // 「あなたのターン中」＝手番プレイヤーが資本主義を持つ
     return isCapitalismTreasure(id);
   }
+  /* 旭日 R4：悟り（Enlightenment・予言）＝**財宝カードはアクションカードでもある**。
+     `isTreasureFor`（資本主義）の完全な鏡像。公式逐語＝`Treasures are Actions for all purposes.`
+     （例＝札差で銅貨を廃棄すると財宝でもアクションでもあるので **計7枚**引く）。
+     🛑 **例外＝「山の種別」は変わらない**（公式逐語＝`Enlightenment only affects cards and not piles.`
+        ＝銅貨の山は 教師の山トークン や 植民(Populate) にとってアクションの山ではない）。
+        本アプリの線引き（§0-29 A2b）＝**randomizer を見る側**（植民／若き魔女の災い／冒険の山トークンの置き先／
+        発明家の家族／汚された神殿／オベリスク）**は `isActionFor` に置き換えない**。
+     ⚠ **得点計算には効く**（`Treasures still remain as Actions when scoring (for e.g. Vineyard).`）
+        ＝資本主義とは**真逆**（資本主義は得点だけ静的判定に戻す）。 */
+  function isActionFor(state, id) {
+    id = mixedTopCard(state, id) || id;
+    if (DOM.isType(id, 'action')) return true;
+    return prophecyActive(state, 'enlightenment') && isTreasureFor(state, id);
+  }
   // 錬金術：ポーション費用（「橋」等のコイン軽減では下がらない＝公式どおり固定）。
   function potionCost(id) { return (C()[id] && C()[id].potion) || 0; }
   // 財宝1枚を出したときのコイン。銅細工師の「このターン銅貨+1」(t.copperBonus)を銅貨にだけ加算。
@@ -8499,7 +8513,10 @@
       ...((p.quartermasters || []).map((q) => q.cards || [])), // 略奪：操舵手の脇置き（公開・所有カード＝VPに数える）
       ...((p.archives || []).map((a) => a.cards || []))); // 帝国：資料庫の脇置き（所有カード＝VPに数える）
   }
-  function vpOf(p) {
+  /* ⚠ 旭日：悟り(Enlightenment) が有効なら**得点計算でも財宝はアクション**（公式＝ブドウ園/果樹園/凱旋門）。
+     そのため state を受け取る（資本主義は逆に得点だけ静的判定に戻す＝真逆なので混同しない）。 */
+  function vpOf(p, state) {
+    const isAct = (c) => (state ? isActionFor(state, c) : DOM.isType(c, 'action'));
     const cards = allCards(p);
     let vp = cards.reduce((sum, c) => sum + (C()[c].vp || 0), 0);
     // 公爵：所持する公領1枚につき1勝利点
@@ -8510,7 +8527,7 @@
     if (gardens) vp += gardens * Math.floor(cards.length / 10);
     // 錬金術：ブドウ園＝所持アクションカード3枚につき1勝利点（端数切り捨て）
     const vineyards = cards.filter((c) => c === 'vineyard').length;
-    if (vineyards) vp += vineyards * Math.floor(cards.filter((c) => DOM.isType(c, 'action')).length / 3);
+    if (vineyards) vp += vineyards * Math.floor(cards.filter(isAct).length / 3);
     // 収穫祭：品評会＝所持カードの異なる名前5種類につき2勝利点（端数切り捨て・品評会1枚ごと）
     const fairgrounds = cards.filter((c) => c === 'fairgrounds').length;
     if (fairgrounds) vp += fairgrounds * 2 * Math.floor(new Set(cards).size / 5);
@@ -8575,12 +8592,12 @@
     if (has('bandit_fort')) vp += -2 * cnt((c) => c === 'silver' || c === 'gold');
     if (has('fountain') && cnt((c) => c === 'copper') >= 10) vp += 15;
     if (has('museum')) vp += 2 * Object.keys(names).length;
-    if (has('orchard')) Object.keys(names).forEach((c) => { if (DOM.isType(c, 'action') && names[c] >= 3) vp += 4; });
+    if (has('orchard')) Object.keys(names).forEach((c) => { if (isActionFor(state, c) && names[c] >= 3) vp += 4; }); // 旭日：悟りは得点にも効く
     if (has('palace')) vp += 3 * Math.min(cnt((c) => c === 'copper'), cnt((c) => c === 'silver'), cnt((c) => c === 'gold'));
     if (has('wall')) vp += -1 * Math.max(0, cards.length - 15);
     if (has('wolf_den')) Object.keys(names).forEach((c) => { if (names[c] === 1) vp += -3; });
     if (has('triumphal_arch')) {
-      const cs = Object.keys(names).filter((c) => DOM.isType(c, 'action')).map((c) => names[c]).sort((a, b) => b - a);
+      const cs = Object.keys(names).filter((c) => isActionFor(state, c)).map((c) => names[c]).sort((a, b) => b - a); // 旭日：悟りは得点にも効く
       vp += 3 * (cs.length >= 2 ? cs[1] : 0);
     }
     /* オベリスク：「その山から出たカード」＝分割山なら**その山の全種**を同一山として数える
@@ -8633,7 +8650,7 @@
       const alVp = allyScoreForCards(state, cards, p); // 同盟：高原の羊飼い（好意×コスト$2ちょうどのカードのペア）
       // deckSize は庭園の得点表示用（デッキ10枚につき1点）
       // tieTurns＝同点時のタイブレーク用のターン数。移動動物園「今を生きる」の追加ターンは数えない（公式）。
-      return { name: p.name, vp: vpOf(p) + lmVp + alVp, landmarkVp: lmVp, allyVp: alVp, turns: p.turns,
+      return { name: p.name, vp: vpOf(p, state) + lmVp + alVp, landmarkVp: lmVp, allyVp: alVp, turns: p.turns,
         tieTurns: p.turns - (p.freeTurns || 0), vpCards, deckCards, deckSize: cards.length };
     });
     // 勝者判定：勝利点が多い → 同点ならターン数が少ない（今を生きるの追加ターンは数えない＝tieTurns）
@@ -13153,7 +13170,8 @@
         const card = action.card;
         // 冒険：相続＝自分のターン中、屋敷はアクション（命令）としてもプレイできる（脇のカードを動かさずに使用）。
         const asInherited = inheritedEstate(me, card);
-        if (!DOM.isType(card, 'action') && !asInherited) return state;
+        // 旭日：悟り＝財宝もアクションとして使える（アクション権は普通に消費する＝公式）。
+        if (!isActionFor(state, card) && !asInherited) return state;
         /* 旭日 R2：影(Shadow)は**山札のどこにあっても手札と同じように使える**（アクション権は普通に消費する）。
            手札にあればそちらを優先。無ければ山札から抜く（`takePlayable`）。 */
         if (!takePlayable(state, pi, card)) return state;
@@ -13197,6 +13215,22 @@
         //   窓を開いたら中断し、KILN_GAIN の解決で applyEffect（習性を使うなら applyWay）を呼ぶ。
         if (maybeKiln(state, card, pi, 'action', useWay)) return state;
         if (useWay) { applyWay(state, useWay, card, pi); return state; }
+        /* 旭日 R4：悟り（Enlightenment・予言）＝**アクションフェイズに財宝を使用するとき、
+           その指示に従う代わりに +1カード +1アクション**。
+           ⚠ 「代わりに」の対象は**使用時の指示だけ**＝カードは普通に場に出て「使用した」と数え、
+              使用したことで誘発する効果（アタックのリアクション窓・`noteAllyPlay`・炉・山トークン）は全部生きる
+              （＝ここまでの処理は素通しし、`applyEffect` を呼ぶ直前でだけ差し替える）。
+           ⚠ **コインは出ない**（公式＝`they didn't make $`）＝`playTreasureCard` を通らないので自動的にそうなる。
+           ⚠ 持続財宝は `armDuration` を呼ばないので使用したターンの片付けで捨て札になる（公式）。
+           ⚠ 自己廃棄/自己移動する財宝（略奪品・備蓄品・呪符の巻物）は動かず場に残る（公式）。
+           ⚠ **購入フェイズでは通常どおり**（`PLAY_TREASURE` はこの分岐を通らない）。
+           ⚠ 【許容簡略化】商人の「このターン最初の銀貨」とサウナの `t.saunaPlays` は `playTreasureCard` の中に
+              あるので、この経路では誘発しない（mix-all 限定の差）。 */
+        if (!DOM.isType(card, 'action') && !asInherited && prophecyActive(state, 'enlightenment') && isTreasureFor(state, card)) {
+          draw(state, pi, 1); addActions(t, 1);
+          log(state, `${me.name} は悟りで「${C()[card].name}」の指示の代わりに +1カード +1アクション。`);
+          return state;
+        }
         applyEffect(state, card, pi);
         return state;
       }
@@ -22815,6 +22849,7 @@
     architectsCanGain,   // 建築家ギルド：獲得したカードより安い・勝利点でないカードの候補（解決時に測り直す）
     woodworkersCanGain,  // 木工ギルド：獲得できるアクション（**コスト上限なし**＝負債/ポーション費用でもよい）
     buysAvailable,       // 旭日：使える購入権（盛大な取引＝購入フェイズの残アクション権も数える）。engine拒否・CPU・UI が同じ述語を見る
+    isActionFor,         // 旭日：悟り＝財宝はアクションでもある（`isTreasureFor` の鏡像）。**山の種別は変わらない**ので randomizer 参照には使わない
     allyScoreForCards,   // 高原の羊飼い：得点計算（CPU も同じ算出を使う）
     returnToPile,         // 獲得しかけたカードを山へ戻す（交易商人）。混合山は一番上に載せる
     improveTargets,    // ルネサンス：増築の廃棄対象（engine/CPU/UI が同じ候補を参照）

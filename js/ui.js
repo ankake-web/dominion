@@ -1747,7 +1747,8 @@
        **engine拒否・CPU非提案・UI（見た目とタップの両方）が同じ述語を見る**（見た目だけ明るいと
        「押したのに何も起きない＝バグ」に見える）。 */
     if (DOM.engine.canPlayFromHand && !DOM.engine.canPlayFromHand(state, t.active)) return false;
-    if (t.phase === 'action') return (DOM.CARDS[id].types.includes('action') || inheritedEstate(state, id)) && t.actions > 0
+    // 旭日：悟り＝財宝もアクションとして使える（engine の isActionFor が正本）。
+    if (t.phase === 'action') return (isActionNow(state, id) || inheritedEstate(state, id)) && t.actions > 0
       && !(DOM.engine.warlordBlocks && DOM.engine.warlordBlocks(state, t.active, id));
     // 公式：一度でも購入したら、そのターンはもう財宝を出せない（t.treasuresLocked）。
     // ルネサンス：資本主義＝「+$を含むアクション」も自分のターン中は財宝＝engine の isTreasureFor が正本。
@@ -1755,6 +1756,10 @@
     // 夜想曲：夜フェイズは夜行カードだけ使える（アクション権も購入権も要らない＝何枚でも使える）。
     if (t.phase === 'night') return DOM.isType(id, 'night');
     return false;
+  }
+  // engine と同じアクション判定（旭日：悟りの動的なアクション化を含む）。engine が拒否する手をUIに出さない。
+  function isActionNow(state, id) {
+    return DOM.engine.isActionFor ? DOM.engine.isActionFor(state, id) : DOM.CARDS[id].types.includes('action');
   }
   // engine と同じ財宝判定（資本主義の動的な財宝化を含む）。engine が拒否する手をUIに出さない。
   function isTreasureNow(state, id) {

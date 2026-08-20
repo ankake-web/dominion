@@ -748,6 +748,14 @@
     if (has('crown') && p.hand.some((c) => c !== 'crown' && isType(c, 'action'))) return 'crown';
     // 冒険：相続の屋敷（ターミナル系の脇札）＝他に使うアクションが無くなってから使う（アクション権を食うため）。
     if (has('estate') && DOM.engine.inheritedEstate(p, 'estate')) return 'estate';
+    /* 旭日：悟り（予言）＝アクションフェイズに財宝を使うと **+1カード +1アクション**（＝完全なキャントリップ）。
+       アクション権が減らないので**常に得**（デッキが薄くなるだけ）。他に使うアクションが無くなってから、
+       手札の一番弱い財宝を出す。⚠ **コインは出ない**ので購入フェイズ用の財宝は温存する必要がある……が、
+       キャントリップなので引いた枚数ぶん財宝も増える＝実測でも購入額は落ちない。 */
+    if (DOM.engine.isActionFor && state.turn.actions > 0) {
+      const ench = p.hand.filter((c) => !isType(c, 'action') && DOM.engine.isActionFor(state, c));
+      if (ench.length) return ench.sort((a, b) => cost(state, a) - cost(state, b))[0];
+    }
     return null;
   }
   // 相続の脇札が「+アクションが付く（非ターミナル）」なら、屋敷を早めに使ってよい。
