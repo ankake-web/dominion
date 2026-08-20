@@ -3494,6 +3494,10 @@
     if (pd.type === 'prince_play') return modalOptions('王子 — ターン開始時',
       '王子の脇の「' + (DOM.CARDS[pd.card] ? DOM.CARDS[pd.card].name : pd.card) + '」を（脇に置いたまま）使用します。',
       [{ label: '「' + (DOM.CARDS[pd.card] ? DOM.CARDS[pd.card].name : pd.card) + '」を使う', cls: 'btn-primary', on: () => dispatch({ type: 'PRINCE_PLAY' }) }]);
+    // 旭日：川船＝次のターンの開始時、脇に準備した札を動かさずに使用する（強制）。
+    if (pd.type === 'riverboat_play') return modalOptions('川船 — 脇の札を使う',
+      '準備で脇に置いたカードを、脇に置いたまま使用します（強制）。',
+      [{ label: '「' + ((DOM.CARDS[state.riverboatCard] || {}).name || state.riverboatCard) + '」を使う', cls: 'btn-primary', on: () => dispatch({ type: 'RIVERBOAT_PLAY' }) }]);
     if (pd.type === 'captain') {
       const cands = (E() && E().captainTargets) ? E().captainTargets(state) : [];
       return modalGainSupply(state, '船長 — サプライのカードを使う',

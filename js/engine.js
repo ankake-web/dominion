@@ -561,6 +561,41 @@
      （"non-Duration" は2025年2月エラッタで追加）。
      置くのは**1枚だけ**＝山ではない。サプライではないので購入も獲得もできず、3山終了にも数えない。
      コストは成分一致（ポーション費用・負債コストの札は対象外）。 */
+  /* 旭日 R6：川船(Riverboat) の準備＝**このゲームで使わない、持続でないコスト$5のアクションカード1枚を脇に置く**。
+     公式FAQ＝`You can use the randomizers to find such a card. If that card also requires setup, do that setup too.`
+     Other rules clarifications（そのまま候補述語の仕様）：
+       `This can't choose non-Supply cards that cost $5 (like Disciple).`
+       `This can choose $5's in a split pile (like Bustling Village).`
+       `If you get the Knights randomizer, you randomly pick one of the 9 Knights that cost $5.`
+       `The chosen card does not have a pile` ／ `Unlike Band of Misfits, Riverboat is not a Command card.`
+     🛑 **`costExact` を使ってはいけない**＝内部で `gainableBase`（`supply[id] > 0`）を要求するが、
+        川船が選ぶのは定義上**サプライに山が無い札**＝候補が常にゼロになる（§0-28 悪魔祓いの裏返し）。
+        **静的コスト（`C()[id].cost`）で判定する**。
+     🛑 **`pickMouseCard` の最後の1行（分割山・城・騎士の除外）をコピーしてはいけない**＝
+        公式が名指しした唯一の例（騒がしい村＝分割山の下段／$5の騎士9種）が落ちる。
+        混合山の中身（**小さい城**＝$5・アクション+勝利点）も候補（山の randomizer は勝利点だが**カード自身**は $5 の非持続アクション）。 */
+  function pickRiverboatCard(kingdom) {
+    const inK = new Set(kingdom);
+    const eligible = (id) => {
+      const c = C()[id];
+      if (!c || inK.has(id) || NON_SUPPLY.has(id)) return false;
+      if (c.potion || c.debt || c.cost !== 5) return false;   // 「ちょうど$5」＝成分一致
+      if (!c.types.includes('action')) return false;
+      if (c.types.includes('duration')) return false;         // カード文が明示
+      if (isMixedPileKey(id)) return false;                   // 山キー（プレースホルダ）は実在するカードではない
+      return true;
+    };
+    // 抽選元＝旭日を優先し、無ければ基本＋陰謀（pickBane / pickMouseCard と同じ方針）。
+    // ⚠ 混合山・分割山の**中身**も候補に入れる（公式が名指し）。
+    const extra = [].concat((DOM.POOLS && DOM.POOLS.castles) || [], (DOM.POOLS && DOM.POOLS.knights) || []);
+    const pools = [((DOM.POOLS && DOM.POOLS.risingsun) || []).concat(extra),
+                   ((DOM.POOLS && DOM.POOLS.basic) || []).concat((DOM.POOLS && DOM.POOLS.intrigue) || [], extra)];
+    for (const pool of pools) {
+      const cands = pool.filter(eligible);
+      if (cands.length) return cands[Math.floor(Math.random() * cands.length)];
+    }
+    return null;
+  }
   function pickMouseCard(kingdom) {
     const inK = new Set(kingdom);
     const eligible = (id) => {
@@ -770,6 +805,7 @@
     if (p.champions) perm.champion = p.champions;                                      // 冒険：チャンピオン
     if ((p.archives || []).length) perm.archive = p.archives.length;                   // 帝国：資料庫（脇が尽きるまで）
     if ((p.quartermasters || []).length) perm.quartermaster = p.quartermasters.length; // 略奪：操舵手
+    if (p.samurais) perm.samurai = p.samurais;                                         // 旭日：侍（ゲーム終了まで場に残る）
     return perm;
   }
   /* ===== 略奪：特性(Trait) ＝「山」に付く（カードではない）。判定は必ず pileKeyOf を通す ＝
@@ -798,12 +834,33 @@
      ⚠ **動的に種別が増えるカードがある**（公式逐語＝`Inheritance, Capitalism, and Charlatan will add types to cards.`）＝
         資本主義で財宝になったアクション／相続した屋敷（アクション）を数に入れる。
      ⚠ 逆に**特性(Trait) と災いカード(Bane) は種別を増やさない**（公式）＝`state.traits` は見ない。 */
-  function typeCountFor(state, pi, id) {
-    const base = (C()[id] && C()[id].types) || [];
-    let n = base.length;
-    if (!base.includes('treasure') && isTreasureFor(state, id)) n += 1;             // 資本主義
-    if (!base.includes('action') && inheritedEstate(state.players[pi], id)) n += 1; // 相続した屋敷
-    return n;
+  /* 「そのカードが今どの種別を持つか」の**唯一の正本**（動的に増える種別を全部足す）。
+     ⚠ 種別を数える効果（略奪の置き去り＝種別数／旭日の米＝場の**異なる**種別数）は必ずここを通す。
+        **2つに分けて書くと必ずズレる**（`typeCountFor` は `typesFor(...).length` と定義する）。
+     - 資本主義（ルネサンス）＝+$ を持つアクションは財宝でもある。
+     - 相続した屋敷（冒険）＝**アクション-勝利点-命令**の3種別（公式）。
+       ⚠ 以前は `'action'` しか足しておらず `'command'` を取りこぼしていた。
+     - 悟り（旭日の予言）＝**財宝はアクションでもある**（`Treasures are Actions for all purposes.`）。
+       ⚠ 公式は `an Action–Treasure doesn't become an "Action–Action–Treasure"` ＝**集合で持てば自然に正しい**。
+     ⚠ 特性(Trait)・災いカード(Bane)・予言そのものは種別を増やさない。 */
+  function typesFor(state, pi, id) {
+    const out = ((C()[id] && C()[id].types) || []).slice();
+    const add = (ty) => { if (out.indexOf(ty) < 0) out.push(ty); };
+    if (isTreasureFor(state, id)) add('treasure');   // 資本主義
+    if (isActionFor(state, id)) add('action');       // 旭日：悟り
+    if (inheritedEstate(state.players[pi], id)) { add('action'); add('victory'); add('command'); } // 冒険：相続した屋敷
+    return out;
+  }
+  function typeCountFor(state, pi, id) { return typesFor(state, pi, id).length; }
+  /* 「場に**ちょうど1枚だけ**あるカードの種類数」（夜想曲の魔法のランプ／旭日の絵師）。
+     🛑 `new Set(場).size`（＝異なる名前の数）とは**別物**。銅貨3枚は「0」であって「1」ではない。
+     ⚠ 「場」＝`inPlay` ＋ `durationCards`（**前ターンから残る持続も場**＝公式が侍を名指し）。
+        脇置き（貨物船/王子/研究/操舵手/準備/島マット/未使用のリザーブ）は場ではない。 */
+  function singlesInPlay(state, pi) {
+    const p = state.players[pi];
+    const cnt = {};
+    p.inPlay.concat(p.durationCards || []).forEach((c) => { cnt[c] = (cnt[c] || 0) + 1; });
+    return Object.keys(cnt).filter((k) => cnt[k] === 1).length;
   }
   /* 鼓舞する(Inspiring)＝「場に出していないアクション」の候補（engine拒否・CPU候補・UIフィルタが同じ述語を見る）。
      場＝inPlay＋durationCards（前ターンからの持続も「場」＝公式）。脇置き（貨物船/王子など）は場ではない。 */
@@ -949,8 +1006,12 @@
   function playAllOrder(a, b) {
     /* 略奪：小像は**早め**（+2カードで引いた財宝を後から出せる）／ペンダントは**遅め**（場の財宝の種類が
        増えてから数える。大金より前）。 */
+    /* 旭日：米(Rice)は**出した瞬間の場の異なる種別数**で額が決まるので遅め。
+       🛑 **ペンダントと同じ rank にしてはいけない**（`sort` は同順位を入れ替えないので手札の並び順で
+          前後が決まり、取りこぼす）。正しい順＝**米 → ペンダント → 大金**
+          （米が先に場にあるとペンダントの数える種類が1つ増える／逆は得しない）。 */
     const rank = (c) => (PLAY_TWICE_TREASURES[c] ? -2 : c === 'figurine' ? -2 : c === 'silver' ? -1 :
-      c === 'pendant' ? 1 : c === 'fortune' ? 2 : 0);
+      c === 'rice' ? 1 : c === 'pendant' ? 2 : c === 'fortune' ? 3 : 0);
     return rank(a) - rank(b);
   }
   // 財宝1枚を手札から場に出してコインを加算。「商人」の“このターン最初の銀貨で+1コイン（商人の数だけ）”もここで処理。
@@ -1358,6 +1419,21 @@
       addCoins(state, kinds.size);
       log(state, `${p.name} はペンダントで +$${kinds.size}（場の財宝${kinds.size}種類）。`);
     }
+    /* 旭日 R6：米（$7・財宝）＝+1購入／**場に出しているカードの異なる種別1つにつき +$1**。
+       公式FAQ の検算例＝`Daimyo(Action,Command) / Litter(Action) / Fishmonger(Action,Shadow) /
+       Copper×3(Treasure) / Rice(Treasure)` → `{Action, Command, Shadow, Treasure}` ＝ **+$4**。
+       ⚠ **米自身の Treasure も数える**（`playTreasureCard` が先に場へ入れるので自動的にそうなる）／
+          **同じ種別は何枚あっても1回**／**「場」＝`inPlay` ＋ `durationCards`**（脇置き・マット上は数えない）。
+       ⚠ 種別は**動的**＝`typesFor`（資本主義／相続した屋敷／**悟り**）を必ず通す。
+          悟りが有効なら場の財宝が全部 `Action` も供給する＝**旭日単独で到達する**（mix-all 限定ではない）。
+       ⚠ 金額は**使用時に確定**（後から場が変わっても足し直さない＝ペンダントと同じ）。 */
+    if (card === 'rice') {
+      state.turn.buys += 1;
+      const kinds = new Set();
+      p.inPlay.concat(p.durationCards || []).forEach((c) => typesFor(state, pIndex, c).forEach((ty) => kinds.add(ty)));
+      addCoins(state, kinds.size);
+      log(state, `${p.name} は米で +1購入 +$${kinds.size}（場の異なる種別${kinds.size}個）。`);
+    }
     /* 銀山＝**これより安い**財宝1枚を**手札に**獲得（強制・捨て札置き場を経由しない）。
        「これより安い」は**自身の現在コスト**で毎回引く（橋/街道で自身が安くなると弱くなる＝公式）。
        候補ゼロなら何も起きない（候補ゼロの pending を開かない）。 */
@@ -1474,9 +1550,7 @@
     /* 魔法のランプ（家宝）＝+1コイン（coin:1）。**場にちょうど1枚だけ出ているカードが（これを含めて）6種類以上**なら
        これを廃棄して願い3枚を獲得する。 */
     if (card === 'magic_lamp') {
-      const cnt = {};
-      p.inPlay.concat(p.durationCards || []).forEach((c) => { cnt[c] = (cnt[c] || 0) + 1; });
-      const singles = Object.keys(cnt).filter((k) => cnt[k] === 1).length;
+      const singles = singlesInPlay(state, pIndex);
       if (singles >= 6 && takeSelf(state, pIndex, 'magic_lamp')) {
         trashCard(state, pIndex, 'magic_lamp');
         let g = 0; for (let i = 0; i < 3; i++) if (gain(state, pIndex, 'wish', 'discard')) g++;
@@ -1941,6 +2015,13 @@
       baneCard = pickBane(kingdom);
       if (baneCard) kingdom.push(baneCard);
     }
+    /* 旭日：川船＝準備で「このゲームで使わない・持続でない・ちょうど$5のアクション」1枚を脇に置く。
+       ⚠ **サプライではない**＝`supply` に載せない／**カードとして数えない**（`set a **copy** of it aside`＝
+          誰も所有していない）＝`allCards` にも invariants の ZONES にも入れない（`mouseCard` と同じ扱い）。
+       ⚠ **公開情報**＝トップレベルのスカラー1個で持つ（`maskStateFor` の Object.assign でそのまま残る）。
+       ⚠ **その札が要求する準備も走らせる**＝下の派生セットアップの走査対象に含める（馬／戦利品／祝福／呪詛／
+          アーティファクト／Ally の6系統。`HORSE_GIVERS` が `id === mouseCard` を見ているのが前例）。 */
+    const riverboatCard = kingdom.includes('riverboat') ? pickRiverboatCard(kingdom) : null;
     /* 同盟：王国に連携(Liaison)カードが1枚でもあれば、同盟(Ally)カード23枚から**1枚だけ**無作為に決め、
        全員に好意マット（＝p.favors）を配る。開始時の好意は1個、**輸入者があるゲームは5個**
        （輸入者の `準備：各プレイヤーは +4 好意 を得る。`）。連携が1枚も無ければ Ally も好意も一切登場しない。
@@ -1949,7 +2030,7 @@
        ※Ally は横型の合計2枚制限（イベント/ランドマーク/プロジェクト/習性）には数えない＝別デッキ。
        ※若き魔女の災いカード(Bane)と同じく createInitialState で1回だけ決める＝サーバ権威・再戦も自動で安全。 */
     let ally = null;
-    if (alliesHasLiaison(kingdom)) {
+    if (alliesHasLiaison(riverboatCard ? kingdom.concat([riverboatCard]) : kingdom)) {
       const pool = DOM.ALLIES_ALLY || [];
       ally = (opts.ally && DOM.LANDSCAPES[opts.ally] && DOM.LANDSCAPES[opts.ally].kind === 'ally')
         ? opts.ally
@@ -1973,7 +2054,7 @@
        ⚠ `Approaching Army`（来寇）の準備＝アタックの王国カードの山を1つ追加する（**予言が発動しなくても
           準備の追加は起きる**）は R4 で実装する（若き魔女の災いカード Bane と同型の11山目）。 */
     let prophecy = null, sunTokens = 0;
-    if (hasOmen(kingdom)) {
+    if (hasOmen(kingdom, riverboatCard ? [riverboatCard] : null)) {
       const ppool = DOM.PROPHECIES_RISINGSUN || [];
       prophecy = (opts.prophecy && DOM.LANDSCAPES[opts.prophecy] && DOM.LANDSCAPES[opts.prophecy].kind === 'prophecy')
         ? opts.prophecy
@@ -2060,7 +2141,7 @@
     const mouseCard = ways.indexOf('way_of_the_mouse') >= 0 ? pickMouseCard(kingdom) : null;
     // 移動動物園：馬（Horse）＝非サプライ30枚。「馬を獲得する」カード／イベント（＋ハツカネズミの脇札）が
     //   あるときだけ用意する（公式）。
-    if ((DOM.HORSE_GIVERS || []).some((id) => kingdom.includes(id) || events.includes(id) || id === mouseCard)) supply.horse = 30;
+    if ((DOM.HORSE_GIVERS || []).some((id) => kingdom.includes(id) || events.includes(id) || id === mouseCard || id === riverboatCard)) supply.horse = 30;
     const landmarkVP = {};    // ランドマーク上の有限リザーブ（6×人数 等）
     const landmarkStash = {}; // 水道橋/汚された神殿が山→ランドマークへ移した一時VP
     const pileVP = {};        // 集合＋水道橋(銀貨/金貨の山)/汚された神殿(各アクション山)の「山上VP」
@@ -2099,20 +2180,20 @@
     // ルネサンス：アーティファクト（非カード・1人しか持てない・奪い合う）。付与カード（旗手/国境警備隊/剣客/出納官）が
     //   王国にあるときだけ盤面に出す。{[id]: 席番号|null}＝トップレベルの公開スカラーマップ（state.pileVP と同型＝保存則tally対象外）。
     const artifacts = {};
-    (DOM.artifactsForKingdom ? DOM.artifactsForKingdom(kingdom) : []).forEach((id) => { artifacts[id] = null; });
+    (DOM.artifactsForKingdom ? DOM.artifactsForKingdom(riverboatCard ? kingdom.concat([riverboatCard]) : kingdom) : []).forEach((id) => { artifacts[id] = null; });
 
     /* 夜想曲：祝福(Boon)／呪詛(Hex) のデッキ。**カードではない**（保存則 tally に数えない）。
        - 祝福＝王国に幸運(Fate)が1枚でもあれば12枚をシャッフル。ドルイドがあれば上から3枚を表向きで脇に置く（山は9枚）。
        - 呪詛＝王国に不運(Doom)が1枚でもあれば12枚をシャッフル。
        - 山の中身は**全員に対して完全に秘密**、捨て札は**一番上の1枚だけ**が公開情報（maskStateFor が担保）。 */
     let boons = null, hexes = null;
-    if (kingdom.some((k) => DOM.isType(k, 'fate'))) {
+    if (kingdom.some((k) => DOM.isType(k, 'fate')) || (riverboatCard && DOM.isType(riverboatCard, 'fate'))) {
       const deck = shuffle((DOM.BOONS_NOCTURNE || []).slice());
       // ドルイド＝準備で祝福3枚を表向きに脇へ（そのゲーム中ずっと使う3つ。山には戻らない）。
       const druid = kingdom.includes('druid') ? deck.splice(0, 3) : [];
       boons = { deck, discard: [], druid };
     }
-    if (kingdom.some((k) => DOM.isType(k, 'doom'))) hexes = { deck: shuffle((DOM.HEXES_NOCTURNE || []).slice()), discard: [] };
+    if (kingdom.some((k) => DOM.isType(k, 'doom')) || (riverboatCard && DOM.isType(riverboatCard, 'doom'))) hexes = { deck: shuffle((DOM.HEXES_NOCTURNE || []).slice()), discard: [] };
     /* 略奪：戦利品(Loot)の山＝**15種×2枚＝30枚を裏向きにシャッフルした1山**。**カードなので保存則 tally に数える**
        （祝福/呪詛と違う）。RGG ルールブック逐語＝
        `There are 15 Loot cards, with 2 copies of each. Shuffle them into a face-down pile before the game if
@@ -2124,7 +2205,7 @@
        - **戦利品を配るカード（`DOM.LOOT_GIVERS`）が1枚でもあるときだけ作る**。イベント/特性も配るので
          kingdom だけでなく **events / traits も走査する**。 */
     const lootGivers = new Set(DOM.LOOT_GIVERS || []);
-    const usesLoot = kingdom.some((k) => lootGivers.has(k)) ||
+    const usesLoot = kingdom.some((k) => lootGivers.has(k)) || (riverboatCard && lootGivers.has(riverboatCard)) ||
       events.some((e) => lootGivers.has(e)) || (opts.traits || []).some((t) => lootGivers.has(t));
     const loot = usesLoot ? shuffle([].concat(LOOT_IDS, LOOT_IDS)) : null;
     // 夜想曲：森の迷子（Lost in the Woods）＝ゲーム中1枚だけの状態。持ち主の席番号（誰も持っていなければ null）。
@@ -2175,6 +2256,7 @@
       events,         // 帝国：使用中のイベントid列（横型・買う・公開・対局中不変）
       ways,           // 移動動物園：使用中の習性id列（横型・買わない・公開・対局中不変）
       mouseCard,      // 移動動物園：ハツカネズミの習性で脇に置いた1枚（サプライではない・公開・対局中不変）
+      riverboatCard,  // 旭日：川船が脇に置いた1枚（サプライではない・公開・対局中不変・**カードとして数えない**）
       projects,       // ルネサンス：使用中のプロジェクトid列（横型・買う・公開・対局中不変）
       artifacts,      // ルネサンス：アーティファクトの現所有者 {[id]: 席番号|null}（非カード・公開。付与カードが王国に無ければ空）
 
@@ -2741,7 +2823,8 @@
       }
     }
     if (trigger === 'pile_empty') return e.card === 'search';
-    if (trigger === 'play_action') return e.card === 'flagship' && ctx.player === seat;
+    // 旭日：大名(Daimyo) も同じ誘発点（旗艦＝「次回・後のターンでも」／大名＝「このターン中」）。
+    if (trigger === 'play_action') return (e.card === 'flagship' || e.card === 'daimyo') && ctx.player === seat;
     if (trigger === 'first_treasure') return e.card === 'landing_party' && ctx.player === seat;
     return false;
   }
@@ -2832,16 +2915,23 @@
       if (t) { t.landingPartyMove = t.landingPartyMove || []; for (let i = 0; i < k; i++) t.landingPartyMove.push(seat); }
       return;
     }
-    if (card === 'flagship') {
+    /* 旭日 R6：大名（6D・アクション-命令）＝**このターン、次に使用した命令でないアクションカードを再使用する**。
+       ⚠ 旗艦とほぼ同型（旗艦＝持続で「次回・後のターンでも」／大名＝**このターン中だけ**）。
+       ⚠ **累積する**（大名2枚＋名匠＝計3回。公式FAQ）＝突貫のような「累積しない旗」ではない。
+       ⚠ **強制**（）。**自身を廃棄したカードでも再演する**（移動そのものは2回目に起きない）。
+       ⚠ 持続を再演したら大名も場に残る（旗艦の決定D4と同じ＝ の器を共有する）。 */
+    if (card === 'flagship' || card === 'daimyo') {
       /* 旗艦＝次に使用した命令でないアクションカードを再使用する（**強制**・自分のターンでなくても）。
          2枚出していれば合計3回（公式FAQ）。再演は state.replay（1回目の解決後に runReplays が適用）。
          持続を再演したら、その持続が場を離れるまで旗艦も場に残す（決定D4＝flagship_linger）。 */
       state.replay = state.replay || [];
-      for (let i = 0; i < k; i++) state.replay.push({ player: seat, card: ctx.card, label: 'flagship', viaCommand: ctx.viaCommand || null });
-      log(state, `${p.name} の旗艦が誘発した＝「${C()[ctx.card].name}」を再使用する${k > 1 ? `（×${k}）` : ''}。`);
+      for (let i = 0; i < k; i++) state.replay.push({ player: seat, card: ctx.card, label: card, viaCommand: ctx.viaCommand || null });
+      log(state, `${p.name} の${C()[card].name}が誘発した＝「${C()[ctx.card].name}」を再使用する${k > 1 ? `（×${k}）` : ''}。`);
       if (DOM.isType(ctx.card, 'duration')) {
-        for (let i = 0; i < k; i++) armDuration(state, seat, 'flagship', { type: 'flagship_linger', withCard: ctx.card });
-      } else {
+        // 持続を再演したら再演元も場に残す（旗艦の決定D4＝大名も同じ器 `flagship_linger` を共有する）。
+        for (let i = 0; i < k; i++) armDuration(state, seat, card, { type: 'flagship_linger', withCard: ctx.card });
+      } else if (card === 'flagship') {
+        // 旗艦は持続なので「相手のターンに誘発したら相手の片付けで捨てる」経路が要る。大名はこのターン中だけ＝不要。
         scheduleNextTimeDiscard(state, seat, 'flagship');
       }
       return;
@@ -5253,6 +5343,28 @@
       case 'flagship':
         addCoins(state, 2);
         armNextTime(state, pi, 'flagship', 'play_action');
+        break;
+      /* 旭日 R6：大名（6D・アクション-命令）＝+1カード／+1アクション／
+         **このターン、次に命令でないアクションカードを使用したとき、それを再使用する**（強制）。
+         ⚠ **命令(Command) は再演しない**＝`types:['action','command']` にしてあるので `notePlunderPlay` の
+            既存の Command 除外が自動で効く（公式の List of Commands は8種＝はみだし者/船長/大君主/王子/
+            相続した屋敷/王笏/旗艦/大名）。**ネクロマンサー・御料車・川船は Command ではない＝再演の対象**。
+         ⚠ **累積する**（大名2枚＋名匠＝計3回）＝予約を1つずつ積む。
+         ⚠ **このターン中だけ**＝使い切れなかった予約は自分の片付けで捨てる（旗艦は後のターンまで持ち越す）。
+         ⚠ `+1カード` が先＝シャッフルが起きうる（運命の／回避／占星術師団と噛む）。 */
+      case 'daimyo':
+        draw(state, pi, 1); addActions(t, 1);
+        armNextTime(state, pi, 'daimyo', 'play_action');
+        break;
+      /* 旭日 R6：川船（$3・アクション-持続）＝あなたの**次のターンの開始時**に、
+         準備で脇に置いた札を**動かさずに使用する**（はみだし者と同じ命令型の処理＝`playAsCommand`）。
+         ⚠ **川船は Command ではない**（公式が明示）＝`isType(card,'command')` の除外リストに入れない
+            （入れると大名/旗艦が川船を再演できなくなり、公式より弱くなる）。
+         ⚠ 脇の札は**サプライに山が無い**＝山を参照する効果（陣地の山戻し・野生の狩りの山上VP）は空振りする（公式）。
+         ⚠ 川船自身は「その札が場を離れたであろう手番の片付け」まで場に残る＝`armDuration` の予約数で表す。 */
+      case 'riverboat':
+        if (state.riverboatCard) armDuration(state, pi, 'riverboat', { type: 'riverboat' });
+        else log(state, `${p.name} は川船を使ったが、脇に置いたカードが無い。`);
         break;
       // 上陸部隊＝+2カード +2アクション。次にターン中最初に使用するカードが財宝であるとき、その後にこれを山札の上に置く。
       case 'landing_party':
@@ -8402,6 +8514,36 @@
         draw(state, pi, 1); addActions(t, 2);
         if (p.hand.length >= 2) state.pending = { type: 'rustic_village', player: pi };
         break;
+      /* 旭日 R6：絵師（8D・アクション）＝+1アクション／**場にちょうど1枚だけあるカード1枚につき +1カード**。
+         🛑 `new Set(場).size`（＝異なる名前の数）**ではない**（銅貨3枚は 0 に数える）＝`singlesInPlay` が正本。
+         ⚠ **自分自身を数える**（場に出した後に数えるので自動的にそうなる）／**種別を問わない**／
+            **前ターンから残る持続も場**（公式が侍を名指し）。
+         ⚠ **0枚ドローは正常系**（場が銅貨3枚だけなら +0カード）＝「候補ゼロだから」の補正を入れてはいけない。
+         ⚠ `+1アクション` が先・ドローが後（ドローでシャッフルが起きうる）。 */
+      case 'artist': {
+        addActions(t, 1);
+        const singles = singlesInPlay(state, pi);
+        if (singles > 0) draw(state, pi, singles);
+        log(state, `${p.name} は絵師で +${singles}カード（場に1枚だけのカードが${singles}種類）。`);
+        break;
+      }
+      /* 旭日 R6：侍（$6・アクション-持続-アタック）＝他の全員が手札3枚になるまで捨てる（**1度のみ**）／
+         **ゲーム終了まで**各ターン開始時 +$1。
+         🛑 アタックは**使用した瞬間の1回だけ**＝呪いの森／沼の妖婆／門番／フリゲート船が使う
+            `lingerAttackEnter`（相手のターンをフックする持続アタック）と**別物**。
+         ⚠ 忍者とまったく同じ `discardDownEnter(..., 3, ...)` を共有する
+            （自前のモーダルを新設すると「人間だけ堀/盾を使えない」穴を再発させる）。
+         ⚠ 永続持続＝`p.samurais` を増やし `permanentDurationCounts` が場に残す（雇人と同型）。 */
+      case 'samurai': {
+        p.samurais = (p.samurais || 0) + 1;
+        const svic = [];
+        for (let k = 1; k < state.players.length; k++) {
+          const idx = (pi + k) % state.players.length;
+          if (state.players[idx].hand.length > 3 && !attackImmune(state, idx)) svic.push(idx);
+        }
+        if (svic.length) discardDownEnter(state, pi, 3, svic);
+        break;
+      }
       /* 山の社（5D・アクション-前兆）＝+1 Sun／+2コイン／手札1枚を廃棄してもよい／
          **その後**、廃棄置き場にアクションカードがあれば +2カード。
          ⚠ 判定は**廃棄しなくても必ず走る**（手札0枚でも廃棄置き場にアクションがあれば +2カード）。 */
@@ -8737,6 +8879,14 @@
     if (p.endlessChalices) {
       addCoins(state, p.endlessChalices); state.turn.buys += p.endlessChalices;
       log(state, `${p.name} は尽きぬ杯の持続効果（+$${p.endlessChalices} +${p.endlessChalices}購入）。`);
+    }
+    /* 旭日 R6：侍＝永続持続。**ゲーム終了まで**、各ターン開始時に +$1（非対話）。アタックは使用時の1回だけ。
+       ⚠ 【許容簡略化】公式は「場を離れたら止まる」が、本アプリの永続持続（雇人／チャンピオン／尽きぬ杯）は
+          すべて「場を離れても止まらない」で統一されている＝侍だけ減算を入れると挙動が割れる。
+          到達経路（増築で廃棄／玉座の再演／無謀なの山戻し）はいずれも mix-all 限定。 */
+    if (p.samurais) {
+      addCoins(state, p.samurais);
+      log(state, `${p.name} は侍の持続効果（+$${p.samurais}）。`);
     }
     // 新プロモ：王子＝脇に置いたカードを毎ターン開始時に（脇に置いたまま）使用する（強制・アクション権不要）。
     (p.princes || []).forEach((card, i) => {
@@ -9459,6 +9609,10 @@
   }
   // 各持続カードの「次の手番開始時」効果（カードidをキーに登録）。対話分は §手5/手6 で startQueue に積む。
   const DURATION_RESOLVERS = {
+    /* 旭日 R6：川船＝あなたの次のターンの開始時、脇の札を**動かさずに使用する**（強制）。
+       ⚠ `state.pending` を直代入せず `t.startQueue` に積む（§0-29 A3。使う札がアタックならそこで
+          リアクション窓が開く）。 */
+    riverboat: (s, pi) => { if (s.riverboatCard) s.turn.startQueue.push({ type: 'riverboat_play', player: pi }); },
     // 略奪：船首像＝あなたの次のターンの開始時 +2カード（$3 は使用時に計上済み）。
     figurehead: (s, pi) => { draw(s, pi, 2); log(s, `${s.players[pi].name} は船首像で +2カード。`); },
     /* 略奪：宝石＝あなたの次のターンの開始時、**これを山札の一番下に置く**（強制）。
@@ -11261,6 +11415,12 @@
        ⚠ ここを取りこぼすと「旗艦が永続持続を再演したのに旗艦だけ捨てられる」＝**出荷済みの実バグ**だった
           （`random-plunder` の 旗艦×操舵手 で到達。node で再現して修正した）。 */
     const perm = permanentDurationCounts(p);
+    /* 旭日 R6：大名＝「**このターン**、次に命令でないアクションを使用したら再使用する」＝
+       使い切れなかった予約はこの片付けで捨てる（旗艦の "next time" と違い後のターンへ持ち越さない）。
+       ⚠ `flagship_linger`（持続を再演したので場に残る）は残す＝落とすと大名が1ターン早く捨てられる。 */
+    if ((p.delayedEffects || []).some((e) => e.nextTime && e.card === 'daimyo')) {
+      p.delayedEffects = p.delayedEffects.filter((e) => !(e.nextTime && e.card === 'daimyo'));
+    }
     /* 略奪：旗艦＝持続を再演した場合、**その持続が場を離れるまで**旗艦も場に残す（決定D4）。
        再演相手（withCard）の予約が尽きた＝この片付けで場を離れる なら、旗艦の linger も一緒に落とす
        （＝旗艦もこの片付けで捨てられる。同名複数のインスタンス追跡はしない＝許容簡略化）。
@@ -11298,7 +11458,8 @@
     }
     const restInPlay = [];
     for (const c of p.inPlay) {
-      if (DOM.isType(c, 'duration') && (used[c] || 0) < (cnt[c] || 0)) { newDur.push(c); used[c] = (used[c] || 0) + 1; }
+      // 旭日：大名は  種別を持たないが、持続を再演したときは linger の予約が付く＝予約があれば場に残す。
+      if ((DOM.isType(c, 'duration') || (cnt[c] || 0) > 0) && (used[c] || 0) < (cnt[c] || 0)) { newDur.push(c); used[c] = (used[c] || 0) + 1; }
       else restInPlay.push(c);
     }
     // 帝国：元手（capital）＝場から捨てるとき、それ1枚につき負債6を負い、そのターンの残コインで可能な限り即返済。
@@ -13090,9 +13251,9 @@
       /* 略奪：旗艦＝「次に使用した命令でないアクションカード」を再使用する（1回目の解決後）。
          命令（はみだし者等）経由でプレイされたカードの再演は**サプライに残したまま**行う（playAsCommand）＝
          「これ」の自己移動が場の同名の本物を巻き込まない（§0-17 の [MED] と同じ罠を避ける）。 */
-      if (r.label === 'flagship') {
+      if (r.label === 'flagship' || r.label === 'daimyo') {
         state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
-        log(state, `${state.players[r.player].name} は旗艦で「${C()[r.card].name}」を再使用した。`);
+        log(state, `${state.players[r.player].name} は${C()[r.label].name}で「${C()[r.card].name}」を再使用した。`);
         if (r.viaCommand) {
           playAsCommand(state, r.player, r.viaCommand, r.card); // noteAllyPlay は playAsCommand が呼ぶ
         } else {
@@ -15935,6 +16096,23 @@
           t.actionsPlayed = (t.actionsPlayed || 0) + 1; // アクションの使用に数える（共謀者等）。カードは場に出ない。
           log(state, `${p.name} は王子で「${C()[card].name}」を使った（脇に置いたまま）。`);
           playAsCommand(state, pd.player, 'prince', card);
+        }
+        return state; // 残りの開始時キューは reduce の startQueue 安全網が進める
+      }
+      /* 旭日 R6：川船＝次のターンの開始時、脇の札を**動かさずに使用する**（強制・選択なし＝王子と同型）。
+         ⚠ `playAsCommand` を通すので、その札の「これ（this）」の自己移動は失敗する（祝宴の獲得・島の手札1枚など
+            移動に条件づかない効果は普通に起きる＝§0-17 の現行ルール）。
+         ⚠ **川船は Command ではない**が、脇の札を「動かさずに使う」処理そのものは命令と同じ経路を使う。 */
+      case 'RIVERBOAT_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'riverboat_play') return state;
+        const rp = state.players[pd.player];
+        const rcard = state.riverboatCard;
+        state.pending = null; // 先に閉じる（applyEffect が新たな選択待ちを立てることがある）
+        if (rcard) {
+          t.actionsPlayed = (t.actionsPlayed || 0) + 1; // アクションの使用に数える（共謀者等）。カードは場に出ない。
+          log(state, `${rp.name} は川船で「${C()[rcard].name}」を使った（脇に置いたまま）。`);
+          playAsCommand(state, pd.player, 'riverboat', rcard);
         }
         return state; // 残りの開始時キューは reduce の startQueue 安全網が進める
       }
@@ -22608,7 +22786,7 @@
     'ENVOY_PICK', 'GOVERNOR_CHOOSE', 'GOVERNOR_REMODEL_TRASH', 'GOVERNOR_REMODEL_GAIN',
     'DISMANTLE_TRASH', 'DISMANTLE_GAIN', 'BLACK_MARKET_PLAY_TREASURES', 'BLACK_MARKET_BUY', 'BLACK_MARKET_SKIP',
     // 新プロモ（王子/船長/教会/サウナ/アヴァント/へそくり）
-    'PRINCE_SETASIDE', 'PRINCE_PLAY', 'CAPTAIN_PLAY', 'CHURCH_SETASIDE', 'CHURCH_TRASH',
+    'PRINCE_SETASIDE', 'PRINCE_PLAY', 'RIVERBOAT_PLAY', 'CAPTAIN_PLAY', 'CHURCH_SETASIDE', 'CHURCH_TRASH',
     'SAUNA_CHAIN', 'SAUNA_TRASH', 'STASH_SETTING',
     // 冒険（Adventures）
     'DUNGEON_DISCARD', 'GEAR_SETASIDE', 'AMULET_RESOLVE', 'AMULET_TRASH',

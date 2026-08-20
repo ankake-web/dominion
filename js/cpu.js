@@ -2137,6 +2137,9 @@
       }
       case 'prince_play':
         return { type: 'PRINCE_PLAY' }; // ターン開始時の強制プレイ（選択なし）
+      // 旭日：川船＝ターン開始時に脇の札を動かさず使用（強制・選択なし）。
+      case 'riverboat_play':
+        return { type: 'RIVERBOAT_PLAY' };
       case 'captain': {
         // 対象があれば必ず使用（公式＝mayではない）。GAIN_ORDER の実強度順で最良を選ぶ。
         const cands = (DOM.engine && DOM.engine.captainTargets) ? DOM.engine.captainTargets(state) : [];
