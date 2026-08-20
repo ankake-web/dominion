@@ -1112,7 +1112,7 @@
   // 今のコインで買える中から、序盤に強い財宝＆勝ち筋を提案（盤面で黄色枠ハイライト）。
   function recommendedBuys(state) {
     const t = state.turn;
-    if (t.phase !== 'buy' || t.buys <= 0) return [];
+    if (t.phase !== 'buy' || DOM.engine.buysAvailable(state, t.active) <= 0) return []; // 旭日：盛大な取引
     const can = (id) => (state.supply[id] || 0) > 0 && effCost(state, id) <= t.coins && potCost(id) <= (t.potions || 0);
     const recs = [];
     if (can('colony')) recs.push('colony');       // 繁栄：植民地(10点)が買えるなら最優先

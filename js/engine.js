@@ -499,11 +499,33 @@
     if (pi !== t.active) return false;                         // 買えるのは手番のプレイヤーだけ
     if (t.phase !== 'buy') return false;
     if ((p.debt || 0) > 0) return false;                       // 負債があるとカードもイベントもプロジェクトも買えない
-    if (t.buys <= 0) return false;                             // 購入権を1消費する
+    if (buysAvailable(state, pi) <= 0) return false;           // 購入権を1消費する（旭日：盛大な取引ならアクション権も可）
     if ((pr.cost || 0) > t.coins) return false;                // プロジェクトはコスト軽減を受けない（定数コスト）
     if ((p.projects || []).indexOf(id) >= 0) return false;     // 同じプロジェクトに2個目のキューブは置けない
     if ((p.projects || []).length >= PROJECT_CUBES) return false; // キューブ切れ
     return true;
+  }
+  /* ===== 旭日 R4：盛大な取引（Flourishing Trade）＝「アクション権を購入権として使ってよい」=====
+     公式逐語＝`If you have Action plays left **in your Buy phase**, you can use them as Buys instead.`／
+     `What's relevant here is **Action plays, not Action cards**; you get one Action play per turn normally.`
+     ＝1枚もアクションを使わなかったターンでも素の1権を購入に回せる／村を使えば余った2権を両方回せる。
+     ⚠ **置換型**で実装する（購入権が尽きたら自動でアクション権を1消費する）＝新 action を作らない。
+        変換型（先に何権かをまとめて購入権に変える）との観測差は「王冠のコイン量調節」と
+        「ヴィラ/騎兵でフェイズを出入りしたときの残アクション権」だけ＝**許容簡略化として記録**。
+     ⚠ 逆（購入権→アクション権）はできない（作者の Secret history＝設計過程で捨てられている）。
+     ⚠ 影札は**アクション権を消費して**山札から使うので、購入に回した分だけ影札が使えなくなる（公式どおり）。 */
+  function buysAvailable(state, pi) {
+    const t = state.turn;
+    let n = t.buys || 0;
+    if (prophecyActive(state, 'flourishing_trade') && t.phase === 'buy' && pi === t.active) n += (t.actions || 0);
+    return n;
+  }
+  // 購入権を1つ消費する（尽きていれば盛大な取引でアクション権を1つ消費する）。呼ぶ前に buysAvailable > 0 を確認すること。
+  function spendBuy(state, pi) {
+    const t = state.turn;
+    if ((t.buys || 0) > 0) { t.buys -= 1; return; }
+    t.actions -= 1;
+    log(state, `${state.players[pi].name} は盛大な取引でアクション権1つを購入権として使った。`);
   }
   // 帝国：徴税＝獲得カードが属する「山キー」（負債は山に1個）。
   //   分割山は1山＝負債を上段キーで一元管理（下段を獲得しても上段キーの負債を受け取る）。
@@ -588,6 +610,14 @@
        **全員に・常時**（手番に依存しない）。ポーション/負債の成分は下げない（coin だけ）。
        山キーは pileKeyOf で正規化（分割山/混合山の中身にも効く）。 */
     if (state.traits && state.traits.cheap && state.traits.cheap === pileKeyOf(state, id)) base -= 1;
+    /* 旭日 R4：盛大な取引（Flourishing Trade・予言）＝**すべてのカードのコストが $1 下がる**。
+       公式逐語＝`applies to all cards everywhere, including cards in the Supply, in hands, and in Decks`／
+       `It's cumulative with other things that lower costs, like Bridge.`
+       ⚠ **コイン成分だけ**（rulebook 逐語＝`has no effect on the cost of Daimyo`＝負債のみのカードには効かない）。
+       ⚠ **イベント/プロジェクト/特性は「カード」ではないので下がらない**（`BUY_EVENT`/`BUY_PROJECT` は
+          `cardCost` を通さないので自動的に正しい）。
+       ⚠ **得点計算にも効く**（`scoringCost` 側に別途足してある。`cardCost` は最終ターンの橋/街道を拾うので使えない）。 */
+    if (prophecyActive(state, 'flourishing_trade')) base -= 1;
     const red = (t && t.costReduction) || 0;
     return Math.max(0, base - red);
   }
@@ -805,6 +835,16 @@
         state.turn.buys += 1; addCoins(state, 1);
         log(state, `${p.name} は豊作で +1購入 +$1（このターン最初の「${C()[card].name}」）。`);
       }
+    }
+    /* 旭日 R4：狼狽（Panic・予言）＝**財宝カードを1枚使用したとき +2購入**（毎回・名前ごとではない）。
+       ⚠ 使用フェイズは無関係（アクションフェイズの冠／資本主義下のアクションでも出る）＝`isTreasureFor` 判定は
+          この関数に入っている時点で済んでいる。
+       🛑 **効果適用の外（入口）に置く**＝追いはぎ(Highwayman)で記載効果を丸ごと消された財宝でも +2購入は出る
+          （公式逐語＝`does not change anything about the Treasure, just prevents on-play`）。
+       ⚠ 「場から捨てたら山に戻す」は**完全に独立した効果**＝`discardFromPlayRouted` 側に別で書いてある。 */
+    if (prophecyActive(state, 'panic')) {
+      state.turn.buys += 2;
+      log(state, `${p.name} は狼狽で +2購入。`);
     }
     // 同盟：「カードを使用した後」に働く Ally（道化棒/契約書＝**財宝の連携**なので購入フェイズでも誘発する）。
     noteAllyPlay(state, pIndex, card);
@@ -9248,6 +9288,10 @@
     if (!cd) return null;
     let coin = cd.cost || 0;
     if (state && state.traits && state.traits.cheap && state.traits.cheap === pileKeyOf(state, id)) coin -= 1;
+    /* 旭日 R4：盛大な取引＝**得点計算にも効く**（公式逐語＝`Cards still cost $1 less when scoring
+       (which matters for Plateau Shepherds).`）。得点に効くコスト軽減は**安価な と 盛大な取引だけ**で、
+       橋のような「場にある間」型は効かない＝だからここ（`scoringCost`）に書く（`cardCost` ではない）。 */
+    if (prophecyActive(state, 'flourishing_trade')) coin -= 1;
     return { coin: Math.max(0, coin), pot: cd.potion ? 1 : 0, debt: cd.debt || 0 };
   }
   function allyScoreForCards(state, cards, p) {
@@ -10909,6 +10953,20 @@
      - どちらでもなければ捨て札へ。⚠ 山札の上へ置く効果（策謀/カエル/宝物庫）は**この前に**場から
        抜き取っている＝先に動いた方が勝つ（lose track）＝公式どおり。 */
   function discardFromPlayRouted(state, seat, card, tirelessHold) {
+    /* 旭日 R4：狼狽(Panic・予言)＝**財宝を場から捨て札にしたとき、それをそのカードの山に戻す**。
+       🛑 カード文の2つの効果（+2購入／山へ戻す）は**完全に独立**（公式FAQ逐語＝
+          `If you play a Treasure and then activate Panic while the Treasure is in play, you don't get
+          the +2 Buys but do return the Treasure to its pile.`）＝「使用時に旗を立てて片付けで見る」実装は公式違反。
+       ⚠ 判定は**片付けの時点**で `isTreasureFor`（資本主義で購入フェイズ中に財宝になった札も戻る）。
+       ⚠ **山が無い財宝は戻せない**（家宝／川船の脇札／闇市場のサプライ外カード）＝`canReturnToPile` が false。
+          **空になった山にも戻せる**（`canReturnToPile` は在庫を見ない）＝3山終了が巻き戻る（公式）。
+       ⚠ 元手(Capital)の「場から捨てるとき負債6」は**戻す前に必ず起きる**（負債の処理はこの関数より前）。
+       ⚠ 無謀な(Reckless)と同じ形＝先に判定した方が勝つ（どちらも「山に戻す」なので結果は同じ）。 */
+    if (prophecyActive(state, 'panic') && isTreasureFor(state, card) && canReturnToPile(state, card)) {
+      returnToPile(state, card);
+      log(state, `${state.players[seat].name} の「${C()[card].name}」は狼狽でその山に戻った。`);
+      return;
+    }
     if (state.traits) {
       if (hasTrait(state, card, 'reckless') && canReturnToPile(state, card)) {
         returnToPile(state, card);
@@ -13114,13 +13172,13 @@
         const pot = potionCost(card);       // 錬金術：ポーション費用（あれば）
         const boughtRef = costOf(state, card); // 値切り屋の基準＝**購入時点**のコスト3成分（混合山は gain 後に変わる）
         if ((state.supply[card] || 0) <= 0) return state;
-        if (t.buys <= 0) return state;
+        if (buysAvailable(state, pi) <= 0) return state; // 旭日：盛大な取引ならアクション権も購入権に使える
         if (cost > t.coins) return state;
         if (pot > (t.potions || 0)) return state; // ポーションが足りなければ買えない
         if (!canBuyCard(state, pi, card)) return state; // 繁栄：高級市場は場に銅貨があると買えない
         t.coins -= cost;
         t.potions = (t.potions || 0) - pot;
-        t.buys -= 1;
+        spendBuy(state, pi);
         t.buysMade = (t.buysMade || 0) + 1; // 冒険：使者の「そのターン最初の購入か」判定用（購入回数）
         t.treasuresLocked = true;           // 公式：購入したら、そのターンはもう財宝を出せない
         // 帝国：負債コストのカードは**購入したとき**にその数だけ負債を負う（獲得では負わない＝公式）。
@@ -13169,11 +13227,11 @@
         if (!ev || ev.kind !== 'event') return state;   // イベントでない/未知
         if (!hasEvent(state, id)) return state;         // この対局で採用されていない
         const cost = ev.cost || 0, debt = ev.debt || 0;
-        if (t.buys <= 0) return state;                  // 購入権が必要
+        if (buysAvailable(state, pi) <= 0) return state; // 購入権が必要（旭日：盛大な取引ならアクション権も可）
         if (cost > t.coins) return state;               // コイン不足（イベントはコスト軽減を受けない）
         if (!canBuyEvent(state, pi, id)) return state;  // 1ターン1回／1ゲーム1回の制限
         t.coins -= cost;
-        t.buys -= 1;
+        spendBuy(state, pi);
         t.treasuresLocked = true; // 公式：イベントを買った後も、そのターンはもう財宝を出せない
         t.buysMade = (t.buysMade || 0) + 1; // 冒険：使者の「そのターン最初に買ったもの」＝イベントも「買ったもの」に数える
         (t.eventsBought = t.eventsBought || []).push(id);
@@ -13197,7 +13255,7 @@
         if (!canBuyProject(state, pi, id)) return state;
         const pr = DOM.LANDSCAPES[id];
         t.coins -= (pr.cost || 0);
-        t.buys -= 1;
+        spendBuy(state, pi);
         t.treasuresLocked = true; // 公式：何かを買った後は、そのターンもう財宝を出せない
         t.buysMade = (t.buysMade || 0) + 1; // 冒険：使者の「そのターン最初に買ったもの」に数える
         (me.projects = me.projects || []).push(id);
@@ -22618,6 +22676,7 @@
     favorPileTargets,    // 発明家の家族：好意トークンを置ける山（**randomizer の種別**で判定＝勝利点の山は不可）
     architectsCanGain,   // 建築家ギルド：獲得したカードより安い・勝利点でないカードの候補（解決時に測り直す）
     woodworkersCanGain,  // 木工ギルド：獲得できるアクション（**コスト上限なし**＝負債/ポーション費用でもよい）
+    buysAvailable,       // 旭日：使える購入権（盛大な取引＝購入フェイズの残アクション権も数える）。engine拒否・CPU・UI が同じ述語を見る
     allyScoreForCards,   // 高原の羊飼い：得点計算（CPU も同じ算出を使う）
     returnToPile,         // 獲得しかけたカードを山へ戻す（交易商人）。混合山は一番上に載せる
     improveTargets,    // ルネサンス：増築の廃棄対象（engine/CPU/UI が同じ候補を参照）

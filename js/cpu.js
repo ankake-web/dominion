@@ -1029,8 +1029,13 @@
     return cands[0] || null;
   }
 
+  // 旭日：盛大な取引＝購入フェイズに残ったアクション権も購入権として使える（engine の buysAvailable と同じ）。
+  function buysLeft(state) {
+    return (DOM.engine.buysAvailable ? DOM.engine.buysAvailable(state, state.turn.active) : (state.turn.buys || 0));
+  }
   function chooseBuy(state, p, level) {
-    if (state.turn.buys <= 0) return null;
+    // 旭日：盛大な取引＝アクション権も購入権として使える（engine の述語と同じものを見る）。
+    if (buysLeft(state) <= 0) return null;
     const real = state.turn.coins;
     const potions = state.turn.potions || 0;
     // 「橋」等の軽減は“使える額が増える”のと等価なので、判断はその換算額で行う
@@ -1097,7 +1102,7 @@
   function bestProjectBuy(state, p, level, cardBuy) {
     const t = state.turn;
     if (!state.projects || !state.projects.length) return null;
-    if (t.buys <= 0 || (p.debt || 0) > 0) return null;
+    if (buysLeft(state) <= 0 || (p.debt || 0) > 0) return null;
     if ((p.projects || []).length >= 2) return null; // キューブ切れ
     const canBuy = (id) => DOM.engine.canBuyProject && DOM.engine.canBuyProject(state, t.active, id);
     // 終盤（属州が残り少ない）＝プロジェクトより勝利点。ただし属州が買えないなら取ってよい。
@@ -1121,7 +1126,7 @@
   function bestEventBuy(state, p, level, cardBuy) {
     const t = state.turn;
     if (!state.events || !state.events.length) return null;
-    if (t.buys <= 0 || (p.debt || 0) > 0) return null;
+    if (buysLeft(state) <= 0 || (p.debt || 0) > 0) return null;
     const coins = t.coins;
     const has = (id) => state.events.indexOf(id) >= 0;
     const L = (id) => DOM.LANDSCAPES[id] || {};
@@ -4130,7 +4135,7 @@
   // 財源を何枚使うか：現状の最善買いより価値の高い買いに届く最小の財源枚数を返す（届かなければ0＝温存）。
   function coffersToSpend(state, p, level) {
     const coffers = p.coffers || 0;
-    if (coffers <= 0 || state.turn.buys <= 0) return 0;
+    if (coffers <= 0 || buysLeft(state) <= 0) return 0;
     const buyValue = (id) => id ? ((C()[id].vp || 0) * 100 + cost(state, id) * 2 + (isTreasure(id) ? 1 : 0)) : -1;
     const saved = state.turn.coins;
     let baseVal;
