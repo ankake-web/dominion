@@ -3161,6 +3161,26 @@
       /* ===== 拡張: 異郷（Hinterlands）===== */
       case 'oasis':
         return { type: 'OASIS_RESOLVE', card: pickDiscards(p.hand, 1)[0] };
+      // 旭日 R4：成長（予言）＝財宝を獲得したとき、それより安いカードを獲得（強制）。
+      case 'growth_gain':
+        return { type: 'GROWTH_GAIN', card: bestGain(state, pd.coin - 1, { noVictory: true, pot: pd.pot, debt: pd.debt })
+          || bestGain(state, pd.coin - 1, { pot: pd.pot, debt: pd.debt }) };
+      /* 旭日 R4：神器（予言）＝アクション1枚を**手札に**獲得（強制・**コスト上限なし**）。
+         ⚠ 述語は engine と同じ `woodworkersCanGain`（片側だけずらすと本番 livelock）。 */
+      case 'kind_emperor_gain': {
+        const okKe = DOM.engine.woodworkersCanGain(state);
+        const cands = GAIN_ORDER.filter(okKe);
+        return { type: 'KIND_EMPEROR_GAIN', card: cands.length ? cands[0] : null };
+      }
+      /* 旭日 R4：病（予言）＝ターン開始時の二択（強制）。
+         呪いを取ると得点が下がるので、**手札があるうちは3枚捨てる**方を選ぶ。
+         ⚠ ただし手札3枚は重い＝手札が3枚未満なら「あるだけ捨てる」で済むのでそちらが得。
+         呪いの山が空なら呪いを選んでも何も起きない＝タダで済むのでそちらを選ぶ。 */
+      case 'sickness': {
+        if ((state.supply.curse || 0) <= 0) return { type: 'SICKNESS_CHOOSE', mode: 'curse' };
+        if (p.hand.length >= 4) return { type: 'SICKNESS_CHOOSE', mode: 'curse' };
+        return { type: 'SICKNESS_CHOOSE', mode: 'discard', cards: pickDiscards(p.hand, Math.min(3, p.hand.length)) };
+      }
       /* ===== 旭日（Rising Sun）R3 ===== */
       // 小路＝手札1枚を捨てる（強制）。⚠ 候補は**手札だけ**（山札の影札は捨てられない＝公式）。
       case 'alley':
@@ -3181,6 +3201,28 @@
         return { type: 'SNAKE_WITCH_RESOLVE', doIt: sup(state, 'curse') > 0 };
       case 'snake_witch_attack':
         return immuneReveal(p) || { type: 'SNAKE_WITCH_REACT' };
+      /* 狐＝異なる2つを選ぶ。呪いを配れるなら配る＋残りは +2コイン（アクション権が余っていれば +2アクション）。 */
+      case 'kitsune': {
+        const opts = [];
+        if (sup(state, 'curse') > 0) opts.push('curse');
+        if (state.turn.actions > 0 && p.hand.some((c) => isType(c, 'action'))) opts.push('actions');
+        opts.push('coins');
+        if (sup(state, 'silver') > 0) opts.push('silver');
+        opts.push('actions', 'coins'); // 保険（必ず2つ埋まる）
+        const pick = [];
+        opts.forEach((o) => { if (pick.length < 2 && pick.indexOf(o) < 0) pick.push(o); });
+        return { type: 'KITSUNE_CHOOSE', choices: pick };
+      }
+      case 'kitsune_attack':
+        return immuneReveal(p) || { type: 'KITSUNE_REACT' };
+      // 川の社＝手札を最大2枚廃棄してよい（任意）。ゴミ（呪い/銅貨/屋敷）だけ捨てる。
+      case 'river_shrine_trash': {
+        const junk = p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b)).filter((c) => trashValue(c) <= 2).slice(0, 2);
+        return { type: 'RIVER_SHRINE_TRASH', cards: junk };
+      }
+      // 川の社（クリンナップ）＝コスト4以下を1枚獲得（強制）。engine が候補ゼロなら窓を開かない。
+      case 'river_shrine_gain':
+        return { type: 'RIVER_SHRINE_GAIN', card: bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) };
       // 名匠＝コスト5以下を獲得（強制）。候補ゼロで null を返さない（engine が窓を開かないので到達しない）。
       case 'craftsman':
         return { type: 'CRAFTSMAN_GAIN', card: bestGain(state, 5, { noVictory: true }) || bestGain(state, 5) };

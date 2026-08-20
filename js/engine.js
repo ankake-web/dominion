@@ -241,9 +241,14 @@
     state.prophecyOnBy = pi;
     const who = state.players[pi] ? state.players[pi].name : '';
     log(state, `${who} が最後のSunトークンを取り除いた ── 予言「${(DOM.LANDSCAPES[state.prophecy] || {}).name || state.prophecy}」が有効になった（以後ゲーム終了までずっと効く）。`);
-    // R4：ここで state.prophecy ごとの即時効果を分岐する。
-    //   窓が要るもの（神器＝アクションを手札に獲得）→ queueProphecy(state, { type:'kind_emperor_gain', player: pi })
-    //   対話が要らないもの（神風＝王国10山の入れ替え）→ その場で適用する
+    /* 神器(Kind Emperor)＝`When the last [Sun] is removed, this applies **immediately, in the middle of
+       resolving the Omen**, and **only the player who removed the [Sun]** gains an Action then.`
+       ＝**最後の Sun を取り除いた席だけ**がアクションを手札に獲得する（他の席は次の自分のターン開始時から）。
+       🛑 ここで `state.pending` を直接立てると、前兆6種のうち4種が直後に自分の窓を開いて**上書きする**
+          ＝必ず `queueProphecy` に積む（reduce 末尾の再開網が pending の空きを待って開く）。 */
+    if (state.prophecy === 'kind_emperor' && anyGainable(state, woodworkersCanGain(state))) {
+      queueProphecy(state, { type: 'kind_emperor_gain', player: pi });
+    }
   }
   // 予言の「窓が要る即時効果」を積む唯一の入口（pending 直代入の代わり）。R4 で使う。
   function queueProphecy(state, item) {
@@ -384,6 +389,32 @@
       (C()[id].cost === 2 || C()[id].cost === 3) &&
       (C()[id].types.includes('action') || C()[id].types.includes('treasure') || C()[id].types.includes('victory'));
     const pools = [(DOM.POOLS && DOM.POOLS.cornucopia) || [],
+                   ((DOM.POOLS && DOM.POOLS.basic) || []).concat((DOM.POOLS && DOM.POOLS.intrigue) || [])];
+    for (const pool of pools) {
+      const cands = pool.filter(eligible);
+      if (cands.length) return cands[Math.floor(Math.random() * cands.length)];
+    }
+    return null;
+  }
+  /* 旭日 R4：来寇(Approaching Army) の準備＝**アタックである王国カードの山を1つ追加する**。
+     公式逐語＝`The Attack card added in setup is in addition to the usual 10 Kingdom cards, **even if those
+     already included an Attack card.** … The added pile is a regular Kingdom card pile, and can be gained from
+     like other piles. **This setup occurs at the start of the game, and so affects the game even if the
+     Prophecy never happens.**`
+     ＝**予言が発動しなくても11山目は増える**（＝`hasProphecy` を使う数少ない場所）。
+     ⚠ 若き魔女の災いカード(Bane)と同型＝**普通のサプライ山（購入可・3山終了に数える）**。
+     🛑 **アタック判定は「randomizer（山キー）の種別」**＝素の `DOM.isType(山キー,'attack')` が正
+        （`isTypeSupply`＝一番上の実カード を使ってはいけない）。実測＝投石機○／騎士○／
+        卜占官・衝突・魔法使い×（randomizer がアタックでない）／ページ・農民×。
+     🛑 **コスト制限は一切無い**＝`costIsPlainCoin` を掛けてはいけない（ファミリアーが落ちる）。
+        除外は `NON_SUPPLY` と「既に王国にある」と「分割山の下段」だけ。
+     ⚠ 抽選元は `pickBane` と同じ方針（自拡張＝旭日を優先し、無ければ基本＋陰謀）。
+     ⚠ 候補ゼロ（アタックが全部サプライに並んでいる）なら**山を足さない**（例外を投げず終端する）。 */
+  function pickApproachingArmy(kingdom) {
+    const inK = new Set(kingdom);
+    const eligible = (id) => C()[id] && !inK.has(id) && !NON_SUPPLY.has(id) && !SPLIT_TOP[id] &&
+      C()[id].types.includes('attack');
+    const pools = [(DOM.POOLS && DOM.POOLS.risingsun) || [],
                    ((DOM.POOLS && DOM.POOLS.basic) || []).concat((DOM.POOLS && DOM.POOLS.intrigue) || [])];
     for (const pool of pools) {
       const cands = pool.filter(eligible);
@@ -764,6 +795,17 @@
        make +[$1] when played.`（帝国の分割山も同型＝石／鹵獲品／大金が該当）。
        ※PLAY_ACTION 側と同じく「効果解決より前」に適用する。炉(kiln)で中断しても取りこぼさないよう先頭に置く。 */
     applyPileTokens(state, pIndex, card);
+    /* 旭日 R4：豊作（Good Harvest・予言）＝各ターン、**名前の異なる財宝を初めて使うたび**、**先に** +1購入 +$1。
+       ⚠ 「先に」＝そのカードの記載効果より前（山トークンと同じ位置）。⚠ **発動後だけ**効く。
+       ⚠ 「名前ごとに1ターン1回」＝`t.goodHarvest` に使った名前を貯める（プレイ回数ではない）。 */
+    if (prophecyActive(state, 'good_harvest')) {
+      const gh = (state.turn.goodHarvest = state.turn.goodHarvest || []);
+      if (gh.indexOf(card) < 0) {
+        gh.push(card);
+        state.turn.buys += 1; addCoins(state, 1);
+        log(state, `${p.name} は豊作で +1購入 +$1（このターン最初の「${C()[card].name}」）。`);
+      }
+    }
     // 同盟：「カードを使用した後」に働く Ally（道化棒/契約書＝**財宝の連携**なので購入フェイズでも誘発する）。
     noteAllyPlay(state, pIndex, card);
     /* 同盟：追いはぎ＝「他のプレイヤーが**各ターンに最初に使用する財宝**は、何もしない」。
@@ -1688,6 +1730,7 @@
         ghostSetAside: [], // 幽霊の脇札（**公開**＝公開しながら掘るので全員が見ている。物理カード）
         cryptSetAside: [], // 納骨堂の脇札（**所有者のみ可視**＝裏向き。物理カード。納骨堂1枚につき1束だが枚数だけで足りる）
         puzzleBox: [],     // 略奪：パズルボックスで裏向きに脇へ置いた札（**所有者のみ可視**。ターン終了時＝先引きの後に手札へ）
+        bidingAside: [],   // 旭日：好機到来(Biding Time)でクリンナップ開始時に伏せて脇へ置いた手札（**所有者のみ可視**。次の自分のターンの開始時に手札へ）
         cage: [],          // 略奪：檻に伏せて置いた札（**所有者のみ可視**・物理カード。勝利点を獲得したターンの終了時に手札へ）
         cageDue: false,    // 略奪：檻が誘発した（＝このターンの終了時に cage を手札へ加える）。非カード。
         deliverAside: [],  // 略奪：配達（イベント）で脇に置いた札（**公開**・物理カード。ターン終了時＝先引きの後に手札へ）
@@ -1748,6 +1791,14 @@
         ? opts.prophecy
         : (ppool.length ? ppool[Math.floor(Math.random() * ppool.length)] : null);
       if (prophecy) sunTokens = sunTokensFor(players.length);
+    }
+    /* 旭日 R4：来寇(Approaching Army) の準備＝11山目（アタックの王国カードの山）を追加する。
+       ⚠ **予言が発動しなくても起きる**（準備はゲーム開始時＝`hasProphecy` 相当の判定でよい）。
+       ⚠ `initSupply` の**前**に kingdom へ push する（Bane と同じ位置）。 */
+    let armyCard = null;
+    if (prophecy === 'approaching_army') {
+      armyCard = pickApproachingArmy(kingdom);
+      if (armyCard) kingdom.push(armyCard);
     }
     // プロモ/帝国：分割山＝1つの山枠（上段5＋下段5）。上段/下段どちらかが王国にあれば両方をサプライに
     // 置く（emptyPileCount では1山として数える）。抽選は上段に正規化済み（DOM.randomKingdom）だが、
@@ -1914,6 +1965,7 @@
          保存則 tally・allCards・庭園/品評会 に混ぜない。maskStateFor は clone でそのまま残す（全員に見える）。 */
       prophecy,
       sunTokens,
+      armyCard, // 旭日：来寇が追加した11山目（無ければ null）＝表示・テスト用。普通のサプライ山。
       prophecyOn: false,
       prophecyOnBy: null,   // 最後の Sun を取り除いた席（神器＝この席だけが獲得する）。未発動なら null。
       // 予言の「窓が要る即時効果」の待ち行列（非カード）。`queueProphecy` だけが積み、reduce 末尾が消化する。
@@ -2162,6 +2214,23 @@
       log(state, `${state.players[victim].name} は濡女で呪い1枚を獲得した。`);
     }
     snakeWitchEnterVictim(state, source, queue);
+  }
+  /* 旭日：狐＝4択のうち「他のプレイヤーは全員、呪い1枚を獲得する」を選んだときのアタック（濡女と同型）。 */
+  function kitsuneEnterVictim(state, source, queue) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'kitsune_attack', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      kitsuneApply(state, source, victim, rest);
+    }
+  }
+  function kitsuneApply(state, source, victim, queue) {
+    if (gain(state, victim, 'curse', 'discard')) {
+      log(state, `${state.players[victim].name} は狐で呪い1枚を獲得した。`);
+    }
+    kitsuneEnterVictim(state, source, queue);
   }
   function mountainShrineDraw(state, pi) {
     if ((state.trash || []).some((c) => DOM.isType(c, 'action'))) {
@@ -2594,6 +2663,18 @@
   function notePlunderPlay(state, pi, card) {
     if (!card || !state.turn) return;
     const t = state.turn;
+    /* ===== 旭日 R4：予言の「カードを使用した**後**」型（偉大な指導者／来寇）=====
+       🛑 **`t.allyPlayed` に相乗りしてはいけない**（`noteAllyPlay` は `state.ally` が3種のときしか積まない
+          ＝同盟が混ざっていない対局では1度も発火しない）。ここ（ally ガードの**前**）に専用キューを積む。
+       🛑 **有効判定（＝最後の日の出トークンが取り除かれたか）は必ず消化側で行う**＝
+          公式逐語 `the Omen that removed the last token will receive +1 Action.`
+          （前兆のカード文は「+1 Sun」が先頭なので、**その前兆自身の解決中に予言が有効になり、自身も恩恵を受ける**）。
+          ＝略奪の "next time" 型（その1枚自身は誘発しない）とは**正反対**なので `fireNextTime` を流用しない。
+       ⚠ `noteAllyPlay` は PLAY_ACTION / PLAY_NIGHT / playCardNoAction / playAsCommand / runReplays など
+          32箇所すべてから呼ばれる＝ここに乗せれば全経路（購入フェイズの冠・夜フェイズの人狼・再演）を自動で拾う。 */
+    if (state.prophecy === 'great_leader' || state.prophecy === 'approaching_army') {
+      (t.prophecyPlayed = t.prophecyPlayed || []).push({ player: pi, card });
+    }
     const fp = (t.firstPlayDone = t.firstPlayDone || {});
     const isFirst = !fp[pi];
     fp[pi] = true;
@@ -3084,6 +3165,10 @@
     witch:         { onMoat: (s, pd) => witchEnterVictim(s, pd.source, pd.queue) },
     // 旭日：濡女＝山に戻せたときだけ呪いを配る（魔女と同型）。忍者は `discard_down`（embedded）を流用＝登録不要。
     snake_witch_attack: { onMoat: (s, pd) => snakeWitchEnterVictim(s, pd.source, pd.queue) },
+    /* 旭日：狐＝4択のうち「他の全員が呪い1枚を獲得」を選んだときだけ攻撃が起きる（濡女と同型）。
+       ⚠ 【許容簡略化】公式は**アタックカードを使用した瞬間**に堀を公開できるので、呪いを選ばなくても
+          公開は起こり得る（パトロンの +1財源が動く差）。本実装は呪いを選んだときだけ窓を開く。 */
+    kitsune_attack: { onMoat: (s, pd) => kitsuneEnterVictim(s, pd.source, pd.queue) },
     bureaucrat:    { onMoat: (s, pd) => bureaucratEnterVictim(s, pd.source, pd.queue) },
     spy:           { onMoat: (s, pd) => spyEnterTarget(s, pd.source, pd.queue) },
     thief:         { onMoat: (s, pd) => thiefEnterVictim(s, pd.source, pd.queue) },
@@ -8027,6 +8112,25 @@
       case 'ronin':
         if (p.hand.length < 7) draw(state, pi, 7 - p.hand.length);
         break;
+      /* 狐（$5・アクション-アタック-前兆）＝+1 Sun／次から**異なる2つ**を選ぶ：
+         +2アクション／+2コイン／他の全員が呪い1枚を獲得／銀貨1枚を獲得。
+         ⚠ **「+1 Sun」が先頭**＝ここで予言が有効になり得る（＝来寇なら**この狐自身が +$1 を受ける**）。
+         ⚠ 「異なる2つ」＝従者(pawn)と同型。**選択肢はカード記載順に解決する**。
+         ⚠ アタックなので `ATTACKS` に登録し堀/灯台の免疫を通す（呪い配布を選んだときだけ実害があるが、
+            公式は**アタックカードの使用**そのものに反応するので**選択の前に**リアクション窓を開く）。 */
+      case 'kitsune':
+        removeSun(state, pi);
+        state.pending = { type: 'kitsune', stage: 'choose', player: pi };
+        break;
+      /* 川の社（$4・アクション-前兆）＝+1 Sun／手札を最大2枚廃棄してもよい（任意）／
+         ————／クリンナップの開始時、**このターンの購入フェイズに1枚も獲得していなければ** $4以下を1枚獲得。
+         ⚠ 「購入フェイズに獲得したか」は**既存の `t.buyPhaseGained` を使う**（新しい旗を作らない）。
+            隣の `t.bpGained` は `END_ACTION_PHASE` で 0 に戻るので掴むと公式違反。 */
+      case 'river_shrine':
+        removeSun(state, pi);
+        state.turn.riverShrine = (state.turn.riverShrine || 0) + 1; // クリンナップ開始時の窓の回数（再演で増える）
+        if (p.hand.length > 0) state.pending = { type: 'river_shrine_trash', player: pi };
+        break;
       // 茶屋（$5・アクション-前兆）＝+1 Sun／+1カード／+1アクション／+2コイン（記載順どおり）。
       case 'tea_house':
         removeSun(state, pi);
@@ -8209,6 +8313,7 @@
       p.ghostSetAside || [], // 夜想曲：幽霊の脇札（公開。幽霊が場を離れても孤児化するだけで所有カードのまま）
       p.cryptSetAside || [], // 夜想曲：納骨堂の脇札（所有者のみ可視。同上）
       p.puzzleBox || [],  // 略奪：パズルボックスの脇札（**裏向き＝所有者のみ可視**。ターン終了時に手札へ戻る物理カード）
+      p.bidingAside || [], // 旭日：好機到来の脇札（**裏向き＝所有者のみ可視**。次の自分のターン開始時に手札へ戻る物理カード）
       p.cage || [],       // 略奪：檻の脇札（**裏向き＝所有者のみ可視**。勝利点を獲得したターンの終了時に手札へ戻る物理カード）
       p.deliverAside || [], // 略奪：配達の脇札（公開・ターン終了時に手札へ戻る物理カード）
       p.prepareAside || [], // 略奪：準備の脇札（公開・次のターンの開始時に使用する物理カード）
@@ -8411,6 +8516,16 @@
       log(state, `${p.name} は寄付：山札と捨て札をすべて手札に集めた（好きな枚数を廃棄できる）。`);
       return; // 残りの開始時効果は DONATE_TRASH の解決後に resolveDurationStartEffects を再入して処理する
     }
+    /* 旭日 R4：好機到来(Biding Time)＝前のクリンナップで伏せて脇に置いた手札を**手札に加える**（強制）。
+       ⚠ 本エンジンは片付けで次の手札を**先引き**するので、ここに置けば「5枚＋脇の枚数」になる（＝公式）。
+       ⚠ 対話が無いので `startQueue` に積まない。予言が途中で無効に戻ることは無いので `prophecyActive` を
+          見ずに「脇にあれば戻す」＝安全側（有効化前に脇へ入ることは無い）。 */
+    if ((p.bidingAside || []).length) {
+      const nb = p.bidingAside.length;
+      p.bidingAside.forEach((c) => p.hand.push(c));
+      p.bidingAside = [];
+      log(state, `${p.name} は好機到来で脇に置いた ${nb}枚 を手札に加えた。`);
+    }
     /* 略奪："next time" 型の予約（nextTime 付き）と旗艦の linger は**ターン開始時に消費しない**
        （条件が満たされるまで何ターンでも持ち越す＝ここで一緒に取り出すと予約が黙って消える）。 */
     const allEntries = (p.delayedEffects || []);
@@ -8458,6 +8573,13 @@
        候補ゼロなら何も起きない。ターン1のぶんは createInitialState の末尾でも開く（必読6）。 */
     if ((state.kingdom || []).includes('shaman') && shamanTargets(state).length) {
       state.turn.startQueue.push({ type: 'shaman_gain', player: pi });
+    }
+    /* ===== 旭日 R4：ターン開始時に働く予言（**発動後だけ**）===== */
+    // 病(Sickness)＝二択（強制）：呪い1枚を**山札の上に**獲得する／手札**ちょうど3枚**を捨てる。
+    if (prophecyActive(state, 'sickness')) state.turn.startQueue.push({ type: 'sickness', player: pi });
+    // 神器(Kind Emperor)＝アクションカード1枚を**手札に**獲得する（コスト制限なし・強制）。
+    if (prophecyActive(state, 'kind_emperor') && anyGainable(state, woodworkersCanGain(state))) {
+      state.turn.startQueue.push({ type: 'kind_emperor_gain', player: pi });
     }
     /* 略奪P4：特性「内気な(Shy)」＝自分のターンの開始時、手札の内気なカード1枚を捨てて +2カード（任意・1回）。
        ①捨てる→捨て札トリガー→②引く の一連の処理（1項目として積む＝間に他の開始時効果は挟まらない）。 */
@@ -9985,6 +10107,64 @@
        （相手のターン中の獲得でも発火する／購入以外の獲得＝工房等でも発火する）。分割山の下段は上段キーに正規化。 */
     if (gp.pileTokens && gp.pileTokens.trash && gp.hand.length > 0 && gp.pileTokens.trash === pileKeyOf(state, cardId)) {
       (state.onGainQueue = state.onGainQueue || []).push({ type: 'plan_trash', player: pIndex });
+    }
+    /* ===== 旭日 R4：予言(Prophecy) の「カードを獲得したとき」型（**発動後だけ**効く）=====
+       🛑 必ず `prophecyActive` で書く（`hasProphecy` はゲーム開始直後から真＝使うと公式違反）。 */
+    // 官僚制（Bureaucracy）＝**コスト0でない**カードを1枚獲得したとき、銅貨1枚を獲得する（誰の獲得でも本人へ）。
+    if (prophecyActive(state, 'bureaucracy') && costOf(state, cardId).coin !== 0 && cardId !== 'copper') {
+      if (gain(state, pIndex, 'copper', 'discard')) log(state, `${gp.name} は官僚制で銅貨1枚を獲得した。`);
+    }
+    /* 成長（Growth）＝**財宝カード**を1枚獲得したとき、**それより安い**カード1枚を獲得する。
+       ⚠ 獲得した安い札がまた財宝なら連鎖しうるが、`triggerOnGain` の `_gainDepth > 6` ガードで止まる。
+       ⚠ 「安い」は3成分の厳密比較＝既存の `costUnder`（`costUpTo` ではない）。 */
+    if (prophecyActive(state, 'growth') && isTypeSupply(state, cardId, 'treasure')) {
+      const ref = costOf(state, cardId);
+      if (anyGainable(state, (id) => costUnder(state, id, ref.coin, ref))) {
+        (state.onGainQueue = state.onGainQueue || []).push({ type: 'growth_gain', player: pIndex, coin: ref.coin, pot: ref.pot, debt: ref.debt });
+      }
+    }
+    /* 進歩（Progress）＝カードを1枚獲得したとき、それを**山札の上に置く**。
+       ⚠ 既に山札の上に獲得した場合（dest==='deck'）は何もしない。移動遊園地と同じ窓を使うが**強制**なので
+          非対話項目として `onGainQueue` に積む（消化側がその場で適用する）。 */
+    if (prophecyActive(state, 'progress') && dest !== 'deck') {
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'progress_topdeck', player: pIndex, card: cardId, dest: dest || 'discard' });
+    }
+    /* 急速拡大（Rapid Expansion）＝**アクションか財宝**を1枚獲得したとき、脇に置き、
+       **あなたの次のターンの開始時に使用する**。
+       ⚠ 略奪の特性「せっかちな(Hasty)」とまったく同じ挙動＝**既存の `hasty_aside` をそのまま使う**
+          （非対話・stop-moving・`p.eventSetAside`＋`event_play` が次ターン開始時に強制使用）。
+       ⚠ 種別は**山の一番上**で見る（`isTypeSupply`＝分割山／悟りで財宝がアクションになる場合にも追随）。 */
+    if (prophecyActive(state, 'rapid_expansion')
+        && (isTypeSupply(state, cardId, 'action') || isTypeSupply(state, cardId, 'treasure'))) {
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'hasty_aside', player: pIndex, card: cardId, dest, source: 'rapid_expansion' });
+    }
+    /* 厳冬（Harsh Winter）＝**あなたのターンに**カード1枚を獲得したとき、
+       その山に負債トークンがあるなら**それを受け取る**。無いなら**その山に負債を2個置く**。
+       ⚠ 山キーは必ず `pileKeyOf` で正規化（分割山は上段キー／混合山は集約キー）＝帝国の徴税(Tax)と同じ器
+          （`state.pileDebt`）を共有する。⚠ **非サプライ山（戦利品/馬/賞品…）には置かない**。
+       ⚠ 「あなたのターン」＝獲得者が手番プレイヤーのときだけ（相手のターンに獲得しても何も起きない）。
+          🛑 **成長(Growth)と共通化してはいけない**（成長は "on your turn" が無い＝相手のターンでも誘発する）。
+       🛑 **支配(Possession)のターンでは丸ごと発動しない**（公式逐語＝`no player gains cards on their own turn`）。
+          ＝**帝国の徴税(Tax) は逆に支配者へ振り替える実装なので、そこをコピーしてはいけない**。
+       ⚠ **既存の徴税は `gainWasBuyPhase`（購入フェイズ限定）**＝厳冬は購入以外の獲得でも起きるので同じ `if` に混ぜない。
+       ⚠ 【許容簡略化】公式は**非サプライ山（戦利品/褒賞/馬）にも負債を置ける**が、本アプリの戦利品は
+          `state.loot`（`supply` キーを持たない）ので置き場が無い＝**除外する**（mix-all 限定の差）。
+       ⚠ 【許容簡略化】徴税(Tax) と同居したら公式は解決順を選べる（通常は徴税が先が得）。
+          本アプリは「同時に誘発した効果の解決順を選べない」既存の横断簡略化に従う（mix-all 限定）。 */
+    if (prophecyActive(state, 'harsh_winter') && pIndex === state.turn.active
+        && state.turn.possessedBy == null && !NON_SUPPLY.has(cardId)) {
+      const hwKey = pileKeyOf(state, cardId);
+      if (hwKey != null && state.supply && Object.prototype.hasOwnProperty.call(state.supply, hwKey)) {
+        state.pileDebt = state.pileDebt || {};
+        const have = state.pileDebt[hwKey] || 0;
+        if (have > 0) {
+          state.pileDebt[hwKey] = 0;
+          addDebt(state, pIndex, have, `厳冬で「${C()[hwKey] ? C()[hwKey].name : hwKey}」の山から`);
+        } else {
+          state.pileDebt[hwKey] = 2;
+          log(state, `${gp.name} は厳冬で「${C()[hwKey] ? C()[hwKey].name : hwKey}」の山に負債トークンを2個置いた。`);
+        }
+      }
     }
     /* ===== 冒険：移動遊園地＝このターン、獲得したカードを山札の上に置いてよい（獲得のたびに任意）=====
        gainer の pending 中の獲得（工房/改築等）でも取りこぼさないよう onGainQueue に積む（城の on-gain 対話と同型）。
@@ -12045,6 +12225,19 @@
       state.pending = { type: 'patient_set', player: pi };
       return;
     }
+    /* 旭日 R3：川の社＝クリンナップフェイズの開始時、**このターンの購入フェイズにカードを1枚も獲得していなければ**
+       コスト4以下のカード1枚を獲得する（強制）。使用した枚数ぶん独立に判定する。
+       ⚠ 「購入フェイズに獲得したか」は**既存の `t.buyPhaseGained`**（隣の `t.bpGained` は
+          `END_ACTION_PHASE` で 0 に戻るので掴んではいけない）。
+       ⚠ 好機到来(Biding Time) より**前**に置く（後だと手札が脇に行った後になるが、川の社の獲得先は
+          捨て札なので実害は無い。それでも「クリンナップ開始時」バケツの順序として前に揃える）。 */
+    if ((state.turn.riverShrine || 0) > 0 && !state.turn.buyPhaseGained) {
+      state.turn.riverShrine -= 1;
+      if (anyGainable(state, (id) => costUpTo(state, id, 4))) {
+        state.pending = { type: 'river_shrine_gain', player: pi };
+        return;
+      }
+    }
     /* 略奪P6：トリックスター＝このターンに1度（使用回数ぶん）、場から捨てる財宝1枚を脇に置き、
        ターン終了時（先引きの後）に手札へ加えてよい。選択はクリンナップ開始時に前倒しで行う。
        ⚠ 公式では「一度実際に捨ててから脇へ」＝元手(Capital)の負債は発生するが、本実装は捨てる前に
@@ -12064,6 +12257,25 @@
       return;
     }
     state.turn.cleanupWaiting = null;
+    /* 旭日 R4：好機到来(Biding Time・予言)＝**クリンナップの開始時に手札をすべて伏せて脇に置く**（強制）。
+       ⚠⚠ **置き換わるのは「手札を捨てる」ステップだけ＝5枚のドローは普通に行う**
+          （公式 Other rules clarifications 逐語 `you still draw 5 cards`／沿岸の避難港のカード文 `(you still draw 5)`）
+          ＝次の自分の手札は **5枚＋脇の枚数**。相手のターン中も手札は空にならない
+          ＝リアクション機構もアタック機構も一切変更不要。
+       🛑 **「捨てる」ではない**＝坑道／村有緑地／忠犬／織工／疲れ知らずの の**捨て札トリガーを1つも通さない**。
+       🛑 **同じ「クリンナップ開始時」バケツの 友好的な／忍耐強い／川の社 より必ず「後」**
+          （前者2つは**手札から**札を取るので、先に手札を空にすると完全に死ぬ）。
+       🛑 **脇の札はリアクションに使えない**（`hasReaction`／`immuneReveal`／`reactOptions` は
+          `p.bidingAside` を絶対に走査しない＝走査すると「脇の堀で免疫」という公式違反）。
+       ⚠ 沿岸の避難港(Coastal Haven) は "When discarding" バケツ＝好機到来が先に手札を全部持っていくので
+          残す札が無い（公式どおりの順序＝設計判断の余地は無い）。
+       ⚠ 旅行(Journey・略奪) とは別物（旅行は**場**のカードを捨てない）＝共通化しない。 */
+    if (prophecyActive(state, 'biding_time') && me.hand.length) {
+      const n = me.hand.length;
+      (me.bidingAside = me.bidingAside || []).push(...me.hand);
+      me.hand = [];
+      log(state, `${me.name} は好機到来で手札 ${n}枚 を伏せて脇に置いた（次の自分のターンの開始時に手札へ加える）。`);
+    }
     /* 同盟：天幕／商人の野営地＝「**あなたがこのカードを場から捨て札にするとき**、山札の一番上に置いてよい」。
        - 場に複数あれば**何枚置くかを選べる**（公式FAQ逐語）。**任意**（0枚でよい）。
        - **本エンジンは片付けで次の手札を先引きする**ので、置く処理は**必ず先引きより前**（＝この位置。
@@ -12290,6 +12502,32 @@
       settleHarborVillage(state, hp.player, hp.n, hp.coins0);
       state = runReplays(state);
     }
+    /* ===== 旭日 R4：予言の「カードを使用した**後**」型＝解決が終わってから精算する =====
+       🛑 有効判定はここ（消化側）で行う＝前兆の解決中に予言が有効になった場合、**その前兆自身も恩恵を受ける**。
+       ⚠ どちらも非対話なので `pending` が空くまで待ってから一気に処理する。 */
+    if (!state.gameOver && state.turn && (state.turn.prophecyPlayed || []).length && !state.pending) {
+      const pq = state.turn.prophecyPlayed;
+      state.turn.prophecyPlayed = null;
+      pq.forEach((e) => {
+        const pl = state.players[e.player];
+        if (!pl) return;
+        /* 偉大な指導者＝`After each Action card you play, +1 Action.`
+           ⚠ **必ず `addActions` を通す**（雪深い村＝公式が名指しした唯一の例外が効かなくなる）。 */
+        if (prophecyActive(state, 'great_leader') && DOM.isType(e.card, 'action') && e.player === state.turn.active) {
+          addActions(state.turn, 1);
+          log(state, `${pl.name} は偉大な指導者で +1アクション。`);
+        }
+        /* 来寇＝`After you play an Attack card, +$1.`
+           ⚠ 公式逐語＝`You get the +$1 even if you didn't follow the instructions on the Attack card`
+              （習性(Way)で書き換えても出る）／`for Duration Attacks, this applies only on the turn it was played`
+              （＝使用したターンだけ＝この誘発点そのもの）。
+           ⚠ **手番プレイヤーだけ**（`After **you** play`）＝相手のターンにリアクションで出した札では出ない。 */
+        if (prophecyActive(state, 'approaching_army') && DOM.isType(e.card, 'attack') && e.player === state.turn.active) {
+          addCoins(state, 1);
+          log(state, `${pl.name} は来寇で +$1。`);
+        }
+      });
+    }
     /* 同盟：専門家＝「使ったカードを**完全に解決してから**二択」（公式FAQ逐語）。 */
     if (!state.pending && !state.gameOver && state.turn && state.turn.specialistAfter) {
       const sa = state.turn.specialistAfter;
@@ -12376,6 +12614,20 @@
         // 旭日：山札の影札も使えるので、消化側の「候補ゼロならスキップ」判定も handPlayable で見る
         //   （手札限定のままだと「山札に影札しか無い」局面で窓が開かない＝取りこぼし）。
         if (q.type === 'gondola_play' && !handPlayable(state, q.player).some((c) => DOM.isType(c, 'action'))) continue;
+        /* 旭日 R4：進歩（Progress）＝獲得したカードを**山札の上に置く**（強制・非対話）。
+           先に動かされていたら失敗＝stop-moving（移動遊園地と同じ扱い）。 */
+        if (q.type === 'progress_topdeck') {
+          const pp = state.players[q.player];
+          const zones = [zoneOf(pp, q.dest), pp.discard, pp.hand];
+          const zone = zones.find((z) => z && z.indexOf(q.card) >= 0);
+          if (zone && removeOne(zone, q.card)) {
+            pp.deck.unshift(q.card);
+            log(state, `${pp.name} は進歩で「${C()[q.card].name}」を山札の上に置いた。`);
+          }
+          continue;
+        }
+        // 旭日 R4：成長（Growth）＝消化するときに候補が残っているか再検査（間に山が空になることがある）。
+        if (q.type === 'growth_gain' && !anyGainable(state, (id) => costUnder(state, id, q.coin, q))) continue;
         /* 略奪P5：突貫＝**非対話**＝獲得先にまだあれば使用する（先に動かされていたら失敗＝stop-moving）。 */
         if (q.type === 'rush_play') {
           const rp = state.players[q.player];
@@ -12422,7 +12674,8 @@
           const hz = zoneOf(hp, q.dest);
           if (hz && removeOne(hz, q.card)) {
             (hp.eventSetAside = hp.eventSetAside || []).push(q.card);
-            log(state, `${hp.name} はせっかちな「${C()[q.card].name}」を脇に置いた（次のターンの開始時に使用する）。`);
+            // 旭日 R4：急速拡大(Rapid Expansion) も同じ器を使う（`source` で表示だけ分ける）。
+            log(state, `${hp.name} は${q.source === 'rapid_expansion' ? '急速拡大で' : 'せっかちな'}「${C()[q.card].name}」を脇に置いた（次のターンの開始時に使用する）。`);
           }
           continue;
         }
@@ -16958,6 +17211,54 @@
         state.pending = null;
         return state;
       }
+      /* ===== 旭日（Rising Sun）R4：予言の窓 ===== */
+      // 成長（Growth）＝財宝を獲得したとき、**それより安い**カード1枚を獲得する（強制）。
+      case 'GROWTH_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'growth_gain') return state;
+        if (!finishGain(state, pd, action.card, (id) => costUnder(state, id, pd.coin, pd), 'discard', '成長で獲得した。')) return state;
+        return state;
+      }
+      /* 神器（Kind Emperor）＝アクションカード1枚を**手札に**獲得する（強制・**コスト制限なし**）。
+         ⚠ 述語は同盟の木工ギルドと同じ `woodworkersCanGain`（`costUpTo` を掛けてはいけない）。
+         ⚠ 手札に直接獲得＝**捨て札置き場を経由しない**（捨て札トリガーを1つも通さない）。 */
+      case 'KIND_EMPEROR_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'kind_emperor_gain') return state;
+        if (!anyGainable(state, woodworkersCanGain(state))) { state.pending = null; return state; } // 終端保証
+        if (!finishGain(state, pd, action.card, woodworkersCanGain(state), 'hand', '神器でアクションカードを手札に獲得した。')) return state;
+        return state;
+      }
+      /* 病（Sickness）＝ターン開始時の二択（**強制**）：
+         ①呪い1枚を**山札の上に**獲得する ②手札**ちょうど3枚**を捨てる。
+         🛑 「3枚になるまで」ではない＝`discardDownEnter` を流用しない（`FORUM_DISCARD` の `Math.min` 型）。
+         ⚠ 公式は「遂行できない選択肢も選べる」（呪いが空でも①を選べる＝何も起きない）。 */
+      case 'SICKNESS_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'sickness') return state;
+        const pl = state.players[pd.player];
+        if (action.mode === 'curse') {
+          state.pending = null;
+          if (gain(state, pd.player, 'curse', 'deck')) log(state, `${pl.name} は病で呪い1枚を山札の上に獲得した。`);
+          else log(state, `${pl.name} は病で呪いを獲得しようとしたが山が空だった。`);
+          // 獲得が別の窓（望楼・交易商人…）を開いていたら潰さない。残りは reduce 末尾の安全網が進める。
+          if (!state.pending) popStartQueue(state);
+          return state;
+        }
+        if (action.mode !== 'discard') return state;
+        const need = Math.min(3, pl.hand.length);
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length !== need) return state;
+        const copy = pl.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        state.pending = null;
+        cards.forEach((c) => { removeOne(pl.hand, c); pl.discard.push(c); });
+        log(state, `${pl.name} は病で手札${cards.length}枚を捨てた。`);
+        // 自分のターンの自分の捨て札＝`noPrompt` は付けない（坑道・村有緑地・忠犬の窓も開く）。
+        if (cards.length) triggerOnDiscard(state, pd.player, cards);
+        if (!state.pending) popStartQueue(state);
+        return state;
+      }
       /* ===== 旭日（Rising Sun）R3 の選択解決 ===== */
       // 小路＝手札1枚を捨てる（強制）。⚠ 候補は **手札だけ**（山札の影札は捨てられない＝公式）。
       case 'ALLEY_DISCARD': {
@@ -17029,6 +17330,63 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'snake_witch_attack' || pd.stage !== 'react') return state;
         snakeWitchApply(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      /* 狐＝次から**異なる2つ**を選ぶ（従者 pawn と同型）：+2アクション／+2コイン／
+         他の全員が呪い1枚を獲得／銀貨1枚を獲得。⚠ **カード記載順に解決する**。 */
+      case 'KITSUNE_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'kitsune' || pd.stage !== 'choose') return state;
+        const order = ['actions', 'coins', 'curse', 'silver'];
+        const raw = Array.isArray(action.choices) ? action.choices : [];
+        const ch = order.filter((o) => raw.indexOf(o) >= 0);
+        if (ch.length !== 2 || raw.filter((c, i) => raw.indexOf(c) === i && order.indexOf(c) >= 0).length !== 2) return state;
+        const kp = state.players[pd.player];
+        state.pending = null;
+        let attack = false;
+        ch.forEach((o) => {
+          if (o === 'actions') { addActions(t, 2); log(state, `${kp.name} は狐で +2アクション。`); }
+          else if (o === 'coins') { addCoins(state, 2); log(state, `${kp.name} は狐で +2コイン。`); }
+          else if (o === 'silver') { if (gain(state, pd.player, 'silver', 'discard')) log(state, `${kp.name} は狐で銀貨1枚を獲得した。`); }
+          else attack = true;
+        });
+        // 呪い配布は最後にまとめて開く（選択肢の解決が pending を立てても攻撃を潰さない）。
+        if (attack) {
+          const q = [];
+          for (let k = 1; k < state.players.length; k++) q.push((pd.player + k) % state.players.length);
+          kitsuneEnterVictim(state, pd.player, q);
+        }
+        return state;
+      }
+      case 'KITSUNE_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'kitsune_attack' || pd.stage !== 'react') return state;
+        kitsuneApply(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      /* 川の社＝手札を**最大2枚**廃棄してもよい（任意・0枚可）。 */
+      case 'RIVER_SHRINE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'river_shrine_trash') return state;
+        const pl = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length > 2) return state;
+        const copy = pl.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        state.pending = null;
+        cards.forEach((c) => { if (removeOne(pl.hand, c)) trashCard(state, pd.player, c); });
+        if (cards.length) log(state, `${pl.name} は川の社で ${cards.length}枚を廃棄した。`);
+        return state;
+      }
+      /* 川の社（クリンナップ開始時）＝このターンの購入フェイズに1枚も獲得していなければ $4以下を1枚獲得（強制）。
+         ⚠ 獲得先は**手札**ではなく捨て札（カード文に "to your hand" は無い）。 */
+      case 'RIVER_SHRINE_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'river_shrine_gain') return state;
+        if (!anyGainable(state, (id) => costUpTo(state, id, 4))) { state.pending = null; endBuyTailSchemeOrCleanup(state, pd.player); return state; }
+        if (!finishGain(state, pd, action.card, (id) => costUpTo(state, id, 4), 'discard', '川の社で獲得した。')) return state;
+        // 同じクリンナップ窓に戻る（川の社が複数あれば次の1枚／無ければ片付けへ進む）。
+        if (!state.pending) endBuyTailSchemeOrCleanup(state, pd.player);
         return state;
       }
       // 名匠＝コスト5以下のカード1枚を獲得（強制）。⚠ 5D（山の社）は "up to $5" ではない＝costUpTo が正しく弾く。
@@ -21898,6 +22256,7 @@
         cryptSetAside: revealHand ? (p.cryptSetAside || []).slice() : (p.cryptSetAside || []).map(() => 'back'),
         // 略奪：パズルボックスの脇札は**裏向き**（公式逐語 `set aside a card from your hand face down`）＝所有者だけ見られる。
         puzzleBox: revealHand ? (p.puzzleBox || []).slice() : (p.puzzleBox || []).map(() => 'back'),
+        bidingAside: revealHand ? (p.bidingAside || []).slice() : (p.bidingAside || []).map(() => 'back'),
         cage: revealHand ? (p.cage || []).slice() : (p.cage || []).map(() => 'back'), // 略奪：檻の脇札は伏せる（枚数だけ公開）
         // inPlay / durationCards / islandMat / princes（王子の脇＝公開）/ ghostSetAside /
         //   contractSetAside（同盟：契約書・王家のガレー船の脇札＝公式逐語「The set-aside card is face up.」）は
@@ -22104,7 +22463,9 @@
     // 旭日（Rising Sun）R3：影5種＋前兆6種＋素直な王国カード
     'ALLEY_DISCARD', 'RUSTIC_VILLAGE_DISCARD', 'MOUNTAIN_SHRINE_TRASH',
     'SNAKE_WITCH_RESOLVE', 'SNAKE_WITCH_REACT', 'CRAFTSMAN_GAIN', 'GOLD_MINE_CHOOSE',
+    'KITSUNE_CHOOSE', 'KITSUNE_REACT', 'RIVER_SHRINE_TRASH', 'RIVER_SHRINE_GAIN',
     'RICE_BROKER_TRASH', 'CHANGE_TRASH', 'CHANGE_GAIN', 'TANUKI_TRASH', 'TANUKI_GAIN',
+    'GROWTH_GAIN', 'KIND_EMPEROR_GAIN', 'SICKNESS_CHOOSE', // 旭日 R4：予言
     'WAR_CHEST_NAME', 'WAR_CHEST_GAIN', 'WATCHTOWER', 'TIARA_TOPDECK', 'TIARA_PLAY',
     'ANVIL_DISCARD', 'ANVIL_GAIN', 'INVESTMENT', 'INVESTMENT_TRASH', 'CRYSTAL_BALL',
     // 収穫祭

@@ -3895,6 +3895,24 @@
 
     /* ===== 拡張: 異郷（Hinterlands）===== */
     if (pd.type === 'oasis') return modalSingleHand(p, 'オアシス — 捨てる', '手札1枚を捨てます。', () => true, (card) => dispatch({ type: 'OASIS_RESOLVE', card }), null, '捨てる');
+    // 旭日 R4：成長（予言）＝財宝を獲得したとき、それより安いカード1枚を獲得（強制）。
+    if (pd.type === 'growth_gain') return modalGainSupply(state, '成長 — 獲得',
+      '財宝カードを獲得したので、それより安いカード1枚を獲得します（強制）。',
+      (id) => canUnder(state, id, pd.coin, pd), (id) => dispatch({ type: 'GROWTH_GAIN', card: id }));
+    // 旭日 R4：神器（予言）＝アクション1枚を**手札に**獲得（強制・**コスト上限なし**＝木工ギルドと同じ述語）。
+    if (pd.type === 'kind_emperor_gain') return modalGainSupply(state, '神器 — 手札に獲得',
+      'アクションカード1枚を手札に獲得します（強制・コストの上限はありません）。',
+      (id) => DOM.engine.woodworkersCanGain(state)(id), (id) => dispatch({ type: 'KIND_EMPEROR_GAIN', card: id }));
+    /* 旭日 R4：病（予言）＝ターン開始時の二択（強制）。
+       ⚠ 「手札が3枚になるまで」ではなく**ちょうど3枚**（手札が3枚未満ならあるだけ）。 */
+    if (pd.type === 'sickness') {
+      const needSick = Math.min(3, p.hand.length);
+      return modalSelectN(p, '病 — 次から1つを選ぶ',
+        '「呪い1枚を山札の上に獲得する」か「手札ちょうど' + needSick + '枚を捨てる」かを選びます（強制）。',
+        needSick, '手札' + needSick + '枚を捨てる',
+        (cards) => dispatch({ type: 'SICKNESS_CHOOSE', mode: 'discard', cards }),
+        { label: '呪い1枚を山札の上に獲得する', on: () => dispatch({ type: 'SICKNESS_CHOOSE', mode: 'curse' }) });
+    }
     /* ===== 旭日（Rising Sun）R3 =====
        ⚠ **手札から「捨てる／廃棄する」窓（群B）には `pool` を渡さない**＝山札の影札は選べない（公式）。 */
     if (pd.type === 'alley') return modalSingleHand(p, '小路 — 捨てる', '手札1枚を捨てます（強制）。山札の影カードは捨てられません。',
@@ -3914,6 +3932,24 @@
       ]);
     if (pd.type === 'snake_witch_attack' && pd.stage === 'react') return modalOptions('濡女を受ける', '呪い1枚を獲得します。',
       reactOptions(p, pd, { type: 'SNAKE_WITCH_REACT' }));
+    // 旭日：狐＝次から**異なる2つ**を選ぶ（従者と同じ汎用モーダル。選択肢はカード記載順）。
+    if (pd.type === 'kitsune' && pd.stage === 'choose') return modalChooseTwo(p, [
+      { v: 'actions', label: '+2 アクション' },
+      { v: 'coins', label: '+2 コイン' },
+      { v: 'curse', label: '他のプレイヤー全員が呪い1枚を獲得' },
+      { v: 'silver', label: '銀貨1枚を獲得' },
+    ], 'KITSUNE_CHOOSE', '狐', '次から異なる2つを選びます（カード記載順に解決します）。');
+    if (pd.type === 'kitsune_attack' && pd.stage === 'react') return modalOptions('狐を受ける', '呪い1枚を獲得します。',
+      reactOptions(p, pd, { type: 'KITSUNE_REACT' }));
+    // 旭日：川の社＝手札を最大2枚廃棄してよい（任意・0枚可）。
+    if (pd.type === 'river_shrine_trash') return modalMultiHand(p, '川の社 — 廃棄（任意）',
+      '手札を最大2枚まで廃棄できます（0枚でもかまいません）。',
+      (n) => (n === 0 ? '廃棄しない' : n + '枚を廃棄する'), true,
+      (cards) => dispatch({ type: 'RIVER_SHRINE_TRASH', cards }), 2);
+    // 旭日：川の社（クリンナップ開始時）＝このターンの購入フェイズに1枚も獲得しなかったので $4以下を1枚獲得（強制）。
+    if (pd.type === 'river_shrine_gain') return modalGainSupply(state, '川の社 — 獲得',
+      'このターンの購入フェイズにカードを1枚も獲得しなかったので、コスト4以下のカード1枚を獲得します（強制）。',
+      (id) => canUpTo(state, id, 4), (id) => dispatch({ type: 'RIVER_SHRINE_GAIN', card: id }));
     if (pd.type === 'craftsman') return modalGainSupply(state, '名匠 — 獲得', 'コスト5以下のカード1枚を獲得します（強制）。',
       (id) => canUpTo(state, id, 5), (id) => dispatch({ type: 'CRAFTSMAN_GAIN', card: id }));
     if (pd.type === 'gold_mine') return modalOptions('金山 — 金貨と負債4（任意）',
@@ -4607,8 +4643,11 @@
     { v: 'card', label: '+1 カード' }, { v: 'action', label: '+1 アクション' },
     { v: 'buy', label: '+1 購入' }, { v: 'coin', label: '+1 コイン' },
   ];
-  function modalChooseTwo(p) {
-    const tiles = PAWN_OPTS.map((o) =>
+  /* 「次から異なる2つを選ぶ」の汎用モーダル（従者 pawn／旭日の狐 kitsune）。
+     opts＝[{v,label}]（**カード記載順**）／actionType＝送る action の type。 */
+  function modalChooseTwo(p, opts, actionType, title, desc) {
+    const OPTS = opts || PAWN_OPTS;
+    const tiles = OPTS.map((o) =>
       h('button', { class: 'choose-tile' + (UI.selection.includes(o.v) ? ' on' : ''),
         onclick: () => {
           const i = UI.selection.indexOf(o.v);
@@ -4618,9 +4657,10 @@
         } }, o.label));
     const n = UI.selection.length;
     const footer = h('button', { class: 'btn btn-primary btn-block', disabled: n === 2 ? null : 'disabled',
-      onclick: () => dispatch({ type: 'PAWN_RESOLVE', choices: UI.selection.slice() }) },
+      // ⚠ 確定したら必ず選択を捨てる（同じ pending キーで再度開くと前回の選択が残って人間が詰む＝§0-24）。
+      onclick: () => { const picks = UI.selection.slice(); UI.selection = []; dispatch({ type: actionType || 'PAWN_RESOLVE', choices: picks }); } },
       n === 2 ? '決定' : '異なる2つを選ぶ（あと ' + (2 - n) + '）');
-    return modalShell('従者', '次から異なる2つを選びます。', tiles, footer);
+    return modalShell(title || '従者', desc || '次から異なる2つを選びます。', tiles, footer);
   }
 
   // 指定したカードid配列から1枚を選ぶ（任意でスキップ）。前駆者の捨て札・使者・待ち伏せ獲得など。
