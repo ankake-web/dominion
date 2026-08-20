@@ -1777,7 +1777,7 @@
     // 同盟：将軍＝場に2枚以上ある同名のアクションは手札から使えない（engine が拒否する手をUIに出さない）。
     const warlordBlocked = DOM.engine.warlordBlocks && DOM.engine.warlordBlocks(state, t.active, id);
     if (interactive && !state.pending && t.phase === 'action' && !warlordBlocked
-        && (c.types.includes('action') || inheritedEstate(state, id)) && t.actions > 0) {
+        && (isActionNow(state, id) || inheritedEstate(state, id)) && t.actions > 0) {
       // 移動動物園：習性（Way）が採用されていれば「記載効果の代わりに習性で使う」ボタンも並べる。
       const wayList = (state.ways || []).filter((w) => (DOM.LANDSCAPES || {})[w]);
       const btns = [{ label: wayList.length ? '使う（カードの効果）' : '使う', cls: 'btn-primary', on: () => dispatch({ type: 'PLAY_ACTION', card: id }) }];
@@ -5281,7 +5281,7 @@
     const t = state.turn;
     // 支配中は操作対象（被支配者）の手札で判定する。
     const hp = (t.possessedBy != null && t.possessedBy === viewer) ? state.players[t.active] : state.players[viewer];
-    const hasAction = t.actions > 0 && hp.hand.some((c) => DOM.CARDS[c] && DOM.CARDS[c].types.includes('action'));
+    const hasAction = t.actions > 0 && hp.hand.some((c) => DOM.CARDS[c] && isActionNow(state, c));
     if (hasAction) {
       UI.confirm = {
         message: 'まだアクションカードが使えます。購入フェーズに進みますか？',
@@ -5321,7 +5321,8 @@
     if (UI.mode === 'local' ? actor !== UI.localViewer : actor !== UI.mySeat) return;
     // 支配中は操作対象＝被支配者(t.active)の手札でアクション有無を判定する（支配者の手札で誤って飛ばさない）。
     const handOf = (st, ac) => (st.turn.possessedBy != null && st.turn.possessedBy === ac) ? st.players[st.turn.active] : st.players[ac];
-    if (handOf(s, actor).hand.some((c) => DOM.isType(c, 'action'))) return;
+    // 旭日：悟り＝財宝もアクションとして使える＝自動スキップで飛ばしてはいけない（人間だけ悟りが使えなくなる）。
+    if (handOf(s, actor).hand.some((c) => isActionNow(s, c))) return;
     if (UI._autoSkipTimer) return;
     UI._autoSkipTimer = setTimeout(() => {
       UI._autoSkipTimer = null;
@@ -5331,7 +5332,7 @@
       const a2 = E().actor(cur);
       if (!cur.players[a2] || cur.players[a2].isCpu) return;
       if (UI.mode === 'local' ? a2 !== UI.localViewer : a2 !== UI.mySeat) return;
-      if (handOf(cur, a2).hand.some((c) => DOM.isType(c, 'action'))) return;
+      if (handOf(cur, a2).hand.some((c) => isActionNow(cur, c))) return;
       UI.store.dispatch({ type: 'END_ACTION_PHASE' });
     }, 350);
   }

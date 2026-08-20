@@ -6119,7 +6119,7 @@
         const distinct = revealed.filter((c, i, a) => a.indexOf(c) === i);
         let addCard = 0, addA = 0, addC = 0;
         distinct.forEach((c) => {
-          if (DOM.isType(c, 'action')) { addActions(t, 2); addA += 2; }
+          if (isActionFor(state, c)) { addActions(t, 2); addA += 2; } // 旭日：悟りで財宝もアクション
           if (isTreasureFor(state, c)) { addCoins(state, 2); addC += 2; }
           if (DOM.isType(c, 'victory')) { draw(state, pi, 2); addCard += 2; }
         });
@@ -9786,7 +9786,10 @@
     // 帝国：徴税（Tax）＝自分の購入フェイズにサプライから獲得したカードの山に負債があれば、その山の負債を全部受け取る。
     //   （「獲得時点のフェイズ」で見る＝ヴィラの phase 変更に負けない。誰の獲得でも「その人の購入フェイズ」＝手番プレイヤーのみ。）
     //   支配中は「獲得するのは支配者」＝支配者が山の負債を受け取る（gainer が possessedBy として渡ってくる）。
-    if (state.pileDebt && state.turn && gainWasBuyPhase &&
+    /* 🛑 **`hasEvent(state,'tax')` を必ず見る**＝`state.pileDebt` は徴税を採用していないゲームでも `{}` として
+       常に存在するので、条件から外すと**山に負債を置く他の効果（旭日の厳冬 Harsh Winter）の負債を横取りする**。
+       実際に「厳冬が置いた2個を徴税が受け取り、厳冬がまた2個置く」という無限に負債が湧く形になっていた。 */
+    if (state.pileDebt && state.turn && gainWasBuyPhase && hasEvent(state, 'tax') &&
         (pIndex === state.turn.active || (state.turn.possessedBy != null && pIndex === state.turn.possessedBy))) {
       const pk = pileKeyOf(state, cardId);
       const d = state.pileDebt[pk] || 0;
@@ -15023,7 +15026,7 @@
         gain(state, pd.player, card, 'discard');
         log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した。`);
         // 該当する種別すべてのボーナス（後宮=財宝+勝利点 等は両方）
-        if (DOM.isType(card, 'action')) addActions(t, 1);
+        if (isActionFor(state, card)) addActions(t, 1); // 旭日：悟りで財宝もアクション
         if (isTreasureFor(state, card)) addCoins(state, 1);
         if (DOM.isType(card, 'victory')) draw(state, pd.player, 1);
         state.pending = null;
@@ -17237,7 +17240,7 @@
         trashCard(state, pd.player, card);
         log(state, `${p.name} は「${C()[card].name}」を廃棄した（変成）。`);
         // 多重タイプは各該当ぶん獲得（例：大広間=アクション+勝利点→公領+金貨）。
-        if (DOM.isType(card, 'action') && gain(state, pd.player, 'duchy', 'discard')) log(state, `${p.name} は公領を獲得した（変成）。`);
+        if (isActionFor(state, card) && gain(state, pd.player, 'duchy', 'discard')) log(state, `${p.name} は公領を獲得した（変成）。`);
         if (isTreasureFor(state, card) && gain(state, pd.player, 'transmute', 'discard')) log(state, `${p.name} は変成を獲得した（変成）。`);
         if (DOM.isType(card, 'victory') && gain(state, pd.player, 'gold', 'discard')) log(state, `${p.name} は金貨を獲得した（変成）。`);
         state.pending = null;
@@ -17649,7 +17652,7 @@
         const card = action.card;
         if (card == null || pl.hand.indexOf(card) < 0) return state;
         const wasTreasure = isTreasureFor(state, card);
-        const wasAction = DOM.isType(card, 'action');
+        const wasAction = isActionFor(state, card); // 旭日：悟り＝財宝もアクション＝銅貨を廃棄すると**計7枚**引く（公式FAQ の看板例）
         removeOne(pl.hand, card);
         state.pending = null;
         trashCard(state, pd.player, card);
@@ -18712,7 +18715,7 @@
         if (card == null || owner.hand.indexOf(card) < 0) return state;
         removeOne(owner.hand, card); trashCard(state, pd.player, card);
         const bonus = [];
-        if (DOM.isType(card, 'action')) { draw(state, pd.player, 2); addActions(t, 2); bonus.push('+2カード +2アクション'); }
+        if (isActionFor(state, card)) { draw(state, pd.player, 2); addActions(t, 2); bonus.push('+2カード +2アクション'); } // 旭日：悟り
         if (isTreasureFor(state, card)) { addCoins(state, 2); bonus.push('+$2'); }
         if (DOM.isType(card, 'victory')) { owner.vpTokens = (owner.vpTokens || 0) + 2; bonus.push('+2勝利点'); }
         log(state, `${owner.name} は生贄で「${C()[card].name}」を廃棄（${bonus.join(' ') || 'ボーナス無し'}）。`);
@@ -20138,7 +20141,7 @@
         const card = action.card;
         if (!finishGain(state, pd, card, (id) => costUpTo(state, id, 4), 'discard', 'を馬丁で獲得した。')) return state;
         if (card != null) {
-          if (DOM.isType(card, 'action')) { if (gainHorse(state, pd.player)) log(state, `${state.players[pd.player].name} は馬丁で馬1枚を獲得した。`); }
+          if (isActionFor(state, card)) { if (gainHorse(state, pd.player)) log(state, `${state.players[pd.player].name} は馬丁で馬1枚を獲得した。`); }
           if (isTreasureFor(state, card)) { if (gain(state, pd.player, 'silver', 'discard')) log(state, `${state.players[pd.player].name} は馬丁で銀貨1枚を獲得した。`); }
           if (DOM.isType(card, 'victory')) { draw(state, pd.player, 1); addActions(t, 1); log(state, `${state.players[pd.player].name} は馬丁で +1カード +1アクション。`); }
         }
@@ -22849,6 +22852,7 @@
     architectsCanGain,   // 建築家ギルド：獲得したカードより安い・勝利点でないカードの候補（解決時に測り直す）
     woodworkersCanGain,  // 木工ギルド：獲得できるアクション（**コスト上限なし**＝負債/ポーション費用でもよい）
     buysAvailable,       // 旭日：使える購入権（盛大な取引＝購入フェイズの残アクション権も数える）。engine拒否・CPU・UI が同じ述語を見る
+    scoringCost,         // 得点計算用のコスト（安価な／盛大な取引だけが効く。橋などの「場にある間」型は効かない）
     isActionFor,         // 旭日：悟り＝財宝はアクションでもある（`isTreasureFor` の鏡像）。**山の種別は変わらない**ので randomizer 参照には使わない
     allyScoreForCards,   // 高原の羊飼い：得点計算（CPU も同じ算出を使う）
     returnToPile,         // 獲得しかけたカードを山へ戻す（交易商人）。混合山は一番上に載せる

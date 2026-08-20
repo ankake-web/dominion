@@ -780,7 +780,10 @@
      大差リード中に山切れで勝ち確で閉じられる手を逃したりする。 */
   // engine.vpOf と同等（公爵=公領数、庭園=デッキ10枚毎に1点 の変動得点も加算）。
   // これが無いと hard CPU の終局判定が庭園/公爵を 0 点と誤算し、勝ち/負けの読みを誤る。
-  function vpOfPlayer(p) {
+  /* ⚠ 旭日：悟り(Enlightenment) が有効なら**得点計算でも財宝はアクション**（公式＝ブドウ園）。
+     engine の vpOf と同じ判定にしないと **hard CPU の終局読みが実得点とズレる**（§0-19／§0-26 で2度直したクラス）。 */
+  function vpOfPlayer(p, state) {
+    const isActVP = (c) => (state && DOM.engine.isActionFor ? DOM.engine.isActionFor(state, c) : isType(c, 'action'));
     const cards = allCards(p);
     let vp = cards.reduce((sum, c) => sum + (C()[c].vp || 0), 0);
     const dukes = cards.filter((c) => c === 'duke').length;
@@ -788,7 +791,7 @@
     const gardens = cards.filter((c) => c === 'gardens').length;
     if (gardens) vp += gardens * Math.floor(cards.length / 10);
     const vineyards = cards.filter((c) => c === 'vineyard').length;
-    if (vineyards) vp += vineyards * Math.floor(cards.filter((c) => isType(c, 'action')).length / 3);
+    if (vineyards) vp += vineyards * Math.floor(cards.filter(isActVP).length / 3);
     const fairgrounds = cards.filter((c) => c === 'fairgrounds').length; // 収穫祭：品評会（engine.vpOf と同等に）
     if (fairgrounds) vp += fairgrounds * 2 * Math.floor(new Set(cards).size / 5);
     const silkRoads = cards.filter((c) => c === 'silk_road').length; // 異郷：絹の道（勝利点カード4枚毎に1点）
@@ -855,7 +858,7 @@
     // 遠隔地（冒険）は「酒場マット上にあるときだけ4点」＝ゾーン依存の得点。hypo は全ゾーンを deck にまとめるので
     // vpOfPlayer では 0 点になる。相手は実オブジェクト（tavern あり）で評価されるため、足さないと自分だけ過小評価になる。
     // （hypo.tavern に入れ直すと allCards で二重に数えてしまう＝庭園/品評会/絹の道/城が狂う。ここで加算するのが正しい。）
-    const myVp = vpOfPlayer(hypo) + 4 * (me.tavern || []).filter((c) => c === 'distant_lands').length
+    const myVp = vpOfPlayer(hypo, state) + 4 * (me.tavern || []).filter((c) => c === 'distant_lands').length
       + landmarkVp(state, allCards(me).concat(id), seat) // 帝国：ランドマーク得点（engineと同一算出）
       + allyVp(state, allCards(me).concat(id), me);      // 同盟：高原の羊飼い（engineと同一算出）
     // 同点決勝は**タイブレーク用のターン数**で比べる（engine の scoreGame と同じ算出＝食い違うと
@@ -866,7 +869,7 @@
     const myTurns = me.turns + 1 - (me.freeTurns || 0) - seizeNow; // 今のターンはクリーンアップで+1される
     return state.players.every((p, i) => {
       if (i === seat) return true;
-      const v = vpOfPlayer(p) + landmarkVp(state, allCards(p), i) + allyVp(state, allCards(p), p);
+      const v = vpOfPlayer(p, state) + landmarkVp(state, allCards(p), i) + allyVp(state, allCards(p), p);
       if (v > myVp) return false;
       if (v === myVp && (p.turns - (p.freeTurns || 0)) < myTurns) return false;
       return true;
