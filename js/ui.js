@@ -126,7 +126,8 @@
     looter: '略奪者', // 暗黒時代
     night: '夜行', fate: '幸運', doom: '不運', heirloom: '家宝', spirit: '精霊', zombie: 'ゾンビ', // 夜想曲
     liaison: '連携', townsfolk: '町民', augur: '卜占官', clash: '衝突', fort: '城砦', odyssey: '叙事詩', wizard: '魔法使い', // 同盟
-    loot: '戦利品' }; // 略奪（Loot。⚠ 暗黒時代の looter＝「略奪者」・spoils＝「略奪品」と別物）
+    loot: '戦利品', // 略奪（Loot。⚠ 暗黒時代の looter＝「略奪者」・spoils＝「略奪品」と別物）
+    omen: '前兆', shadow: '影' }; // 旭日（Omen＝予言の Sun を減らす／Shadow＝裏面が違い山札から使える）
   function typeClass(id) {
     const c = DOM.CARDS[id];
     if (c.types.includes('treasure')) return 'type-treasure';
@@ -838,12 +839,20 @@
   }
 
   // 横型（ランドマーク／イベント／プロジェクト／アーティファクト）の種別アイコンとラベル。
-  const LS_ICON = { landmark: '🏛 ', event: '🎫 ', project: '🏗 ', artifact: '🗝 ' };
+  const LS_ICON = { landmark: '🏛 ', event: '🎫 ', project: '🏗 ', artifact: '🗝 ',
+    way: '🦉 ', boon: '🌟 ', hex: '🌑 ', state: '🎭 ', ally: '🤝 ', trait: '🏷 ', prophecy: '🔮 ' };
+  /* ⚠ **DOM.LANDSCAPES に新しい kind を足したらここにも足す**（無いと拡大表示で「ランドマーク」と誤表示される）。
+     ally/trait/boon/hex/state は長らく抜けていた（＝この4種は「ランドマーク / Landmark」と出ていた）。 */
   const LS_KIND_LABEL = {
     landmark: 'ランドマーク / Landmark', event: 'イベント / Event',
     project: 'プロジェクト / Project', artifact: 'アーティファクト / Artifact',
     way: '習性 / Way', // 移動動物園：買わない横型（アクションの記載効果の代わりに使う）
+    boon: '祝福 / Boon', hex: '呪詛 / Hex', state: '状態 / State', // 夜想曲
+    ally: '同盟 / Ally', // 同盟：1ゲームに1枚・好意トークンの使い道
+    trait: '特性 / Trait', // 略奪：サプライの山1つに付く
+    prophecy: '予言 / Prophecy', // 旭日：前兆があれば1枚配る（Sun トークンが尽きると発動）
   };
+  UI.LS_KIND_LABEL = LS_KIND_LABEL; // テストが「全 kind を網羅しているか」を検査する（新 kind の足し忘れ防止）
   // 横型ランドマークは DOM.CARDS に無い（DOM.LANDSCAPES が正本・cardEl/viewSheet は使えない）ので専用のミニ表示＋拡大を持つ。
   function landmarkMini(id) {
     const ls = (DOM.LANDSCAPES || {})[id] || { name: id };
@@ -943,6 +952,7 @@
     // 略奪：戦利品(Loot)は非サプライ（15種×2枚＝30枚を1山に伏せる）＝王国とは別の群に出す。
     addC('王国カード（略奪）', P.plunderexp ? byCost(P.plunderexp) : null);
     addC('戦利品（略奪・非サプライ。15種×2枚を1山に伏せ、獲得したら公開する）', P.loot ? byCost(P.loot) : null);
+    addC('王国カード（旭日）', P.risingsun ? byCost(P.risingsun) : null);
     addL('ランドマーク（帝国・横型）', DOM.LANDMARKS_EMPIRES);
     addL('イベント（帝国・横型・購入フェイズに買う）', DOM.EVENTS_EMPIRES);
     addL('イベント（冒険・横型・購入フェイズに買う）', DOM.EVENTS_ADVENTURES);
@@ -954,6 +964,8 @@
     addL('同盟（同盟拡張・横型・1ゲームに1枚だけ／好意トークンの使い道を決める）', DOM.ALLIES_ALLY);
     addL('イベント（略奪・横型・購入フェイズに買う）', DOM.EVENTS_PLUNDER);
     addL('特性（略奪・横型・準備でサプライの王国の山1つに付ける／その山のカード全部に効く）', DOM.TRAITS_PLUNDER);
+    addL('イベント（旭日・横型・購入フェイズに買う）', DOM.EVENTS_RISINGSUN);
+    addL('予言（旭日・横型・王国に前兆があれば1枚だけ／Sunトークンが尽きると発動する）', DOM.PROPHECIES_RISINGSUN);
     addL('プロジェクト（ルネサンス・横型・1人2つまで）', DOM.PROJECTS_RENAISSANCE);
     addL('アーティファクト（ルネサンス・横型・1人だけが持てる）', DOM.ARTIFACTS_RENAISSANCE);
     addC('プロモカード', P.promo ? byCost(P.promo) : null);

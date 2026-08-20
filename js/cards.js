@@ -1408,6 +1408,253 @@
     // $3 / +1 Buy / ――― / Each other player discards down to 4 cards in hand.
     sword: { id: 'sword', name: '剣', cost: 7, types: ['treasure', 'attack', 'loot'], coin: 3,
                  text: '3 コイン\n+1 購入\n————\n他のプレイヤーは全員、手札が4枚になるように捨て札にする。' },
+
+    /* ========== 旭日（Rising Sun）王国カード 1/? ＝ $2〜$3 の6枚 ==========
+       正本＝docs/research/risingsun_rules.md 第2章（1756行〜。多エージェント研究＋敵対検証＋完全性の批評を反映した第2稿）。
+       日本語のカード文面は Dominion Online 訳（＝日本語wiki 掲載。§4 決定3の方針）を既存カタログの言い回しへ寄せたもの
+       （「+N カードを引く」→「+N カード」の正規化。EN/JP 対応表＝C:/tmp/risingsun_research/g0_jp_pairs.md）。
+       6枚とも Versions 表は `First edition / August 2024` の1行のみ＝**機能エラッタ無し・刷りは初版のみ**。
+       ⚠ Aristocrat／Craftsman の Secret history にある「$4 → $3 にした」は**開発中の話でエラッタではない**。
+       ⚠ 区切り線（————）を持つのは fishmonger / riverboat の2枚だけ（英語wiki の生HTML の <hr> をカード文の中だけ数えて確認）。
+         snake_witch / aristocrat / craftsman / root_cellar の行間は段落の切れ目であって区切り線ではない。
+       ⚠ **新種別 `shadow`（影）** をここで初めて使う（魚屋）。表示ラベルの登録は**この作業ツリーで既に済んでいる**
+         （検証時に実測＝`js/carddata.js:116-117` の ALLIES_TYPE_JP/EN・`js/ui.js:130` の TYPE_JP・
+          `test/integrity.test.js:120-121` の JP/EN の4箇所すべてに `shadow: '影'` / `omen: '前兆'` が入っている）
+         ＝**二重に足さないこと**（登録漏れは §A2 の「全カード種別が TYPE_JP にあるか」の恒久検査が捕まえる）。
+         影カードは**裏面が5種とも違う絵**＝webp の扱いを別途決める（研究doc 第2章 Fishmonger の ⚠2）。
+       ⚠ `+2 負債` / `+3 負債`（名匠・室）＝**効果で負債を得る新しい入口**。カタログ上は表示テキストだけ。
+         **表記は「+N 負債」に統一した**＝既存761枚の資源行が `+N コイン` / `+N カード` 形で
+         **696箇所すべてこの語順**（`+資源N` 形は0箇所）＋文中形は `+8 勝利点を得て`（mountain_pass）。
+         コスト$5群の起草（金山＝`+4 負債` / 勅使＝`+2 負債` / 駕籠＝`+1 負債`）とも一致させてある。
+         ※研究doc の例示は `+負債2` だが、同doc 自身が「表記は実装時に統一を決めること」と保留している箇所。
+         既存の負債は「コスト」だけだったので `debt:` フィールドは**付けない**（`debt:` はコスト用＝技術者/大金と同じ意味）。
+         段階2では `takeDebt`（カードの負債"コスト"を読む関数）を流用せず `addDebt` を新設すること（研究doc 第2章 Craftsman ⚠1）。
+       ⚠ 川船は `Setup:` を持つ唯一の王国カード＝`state.riverboatCard`（サプライに載せない脇の1枚）が要る。
+         前例＝ハツカネズミの習性の `state.mouseCard`（若き魔女の災いカード Bane とは構造が違う＝あちらは11山目）。
+       ⚠ 公家は「場に出している公家の枚数」であって「このターン使用した回数」ではない（公式FAQ）。 */
+    // --- コスト$2（2種） ---
+    // +1 Buy / +[$1] / --- / You can play this from your deck as if in your hand.
+    fishmonger: { id: 'fishmonger', name: '魚屋', cost: 2, types: ['action', 'shadow'],
+                 text: '+1 購入\n+1 コイン\n————\nこれは手札からと同様に山札からも使用できる。' },
+    // +1 Card / +1 Action / If your hand has no duplicate cards, you may reveal it and return this to its pile, to have each other player gain a Curse.
+    snake_witch: { id: 'snake_witch', name: '濡女', cost: 2, types: ['action', 'attack'],
+                 text: '+1 カード\n+1 アクション\n手札のカードがすべて異なる場合、手札を公開しこれをこのカードの山に戻してもよい。\nそうした場合、他のプレイヤーは全員、呪い1枚を獲得する。' },
+    // --- コスト$3（4種） ---
+    // If the number of Aristocrats you have in play is: / 1 or 5: +3 Actions; / 2 or 6: +3 Cards; / 3 or 7: +[$3]; / 4 or 8: +3 Buys.
+    aristocrat: { id: 'aristocrat', name: '公家', cost: 3, types: ['action'],
+                 // ⚠ 行頭に全角空白を置かない（webp のレンダラが「折返しの継続行」に同じ U+3000 を使うため紛れる）。
+                 text: '場に出している公家の枚数が\n1枚か5枚の場合、+3 アクション\n2枚か6枚の場合、+3 カード\n3枚か7枚の場合、+3 コイン\n4枚か8枚の場合、+3 購入' },
+    // +[2D] / Gain a card costing up to [$5].
+    craftsman: { id: 'craftsman', name: '名匠', cost: 3, types: ['action'],
+                 text: '+2 負債\nコスト5以下のカード1枚を獲得する。' },
+    // +3 Cards / +1 Action / +[3D]
+    root_cellar: { id: 'root_cellar', name: '室', cost: 3, types: ['action'],
+                 text: '+3 カード\n+1 アクション\n+3 負債' },
+    // At the start of your next turn, play the set aside card, leaving it there. / --- / Setup: Set aside an unused non-Duration Action card costing [$5].
+    riverboat: { id: 'riverboat', name: '川船', cost: 3, types: ['action', 'duration'],
+                 text: 'あなたの次のターンの開始時に、脇に準備したカードを動かさずに使用する。\n————\n準備：このゲームで使わない、持続ではなくアクションであるコスト5の王国カード1枚を脇に置く。' },
+    /* ---------- 旭日（Rising Sun）王国カード ＝ コスト$4 の6枚 ----------
+       正本＝docs/research/risingsun_rules.md 第3章（2611行〜。多エージェント研究＋敵対検証＋完全性の批評で確定）。
+       日本語のカード文面は Dominion Online 訳（＝日本語wiki 掲載。決定D1）を既存カタログの言い回しへ寄せたもの。
+       6枚とも 2024年8月の初版のみ＝**機能エラッタ 0件**（各カードページの Errata 出現数 0 を機械確認）。
+       ⚠ 区切り線（————）を持つのは alley / ninja の2枚だけ（＝影(Shadow)の裏面ではなく表の線の下に
+         「これは手札からと同様に山札からも使用できる。」が入る）。change / poet / river_shrine /
+         rustic_village は <hr> が0本。
+       ⚠ 新種別は **omen（前兆）／shadow（影）** の2つ。表示ラベルの登録先は**5箇所**＝js/carddata.js の
+         `ALLIES_TYPE_JP`／`ALLIES_TYPE_EN`・js/ui.js の `TYPE_JP`・test/integrity.test.js の `JP`／`EN`
+         （登録漏れは恒久検査が即赤にする）。**枠スキンの新設は不要**＝`frameType` が ninja→attack・他4枚→action に落とす。
+       ⚠ 「+1 Sun」は前兆カードの記載の**一番最初**に必ず来る（poet / river_shrine / rustic_village）。
+         ＝予言(Prophecy)がそのカードの残りの効果より前に有効化されうる（段階2で効く。カタログ文の順序は変えないこと）。 */
+    // +1 Card / +1 Action / Discard a card. / --- / You can play this from your deck as if in your hand.
+    alley: { id: 'alley', name: '小路', cost: 4, types: ['action', 'shadow'],
+                 text: '+1 カード\n+1 アクション\n手札1枚を捨て札にする。\n————\nこれは手札からと同様に山札からも使用できる。' },
+    // If you have any [D], +[$3]. Otherwise, trash a card from your hand, and gain a card costing more [$] than it. +[D] equal to the difference in [$].
+    // ⚠ 段階2: 「more [$]」は**コイン成分だけの厳密比較**（公式FAQ逐語 `This ignores other special aspects of cost`
+    //   ＝屋敷$2 を廃棄して 錬金術師$3+P を獲得できる）。既存の costUnder/costUpTo/costLE は3成分すべてを見るので使えない。
+    //   → `gainableBase(state, id) && cardCost(state, id) > cardCost(state, 廃棄したid)` と書く。
+    // ⚠ 段階2: 負債の差は**獲得を完全に解決した後に両方を測り直す**（Other rules clarifications 1・2）。本アプリは
+    //   行人(wayfarer)／漁師(fisherman)／デストリエ(destrier) の動的コストで実際に踏む＝廃棄時に差を確定すると壊れる。
+    //   **獲得できなければ負債は取らない**（支配で獲得者が別人になった場合も0）。
+    // ⚠ 段階2: `takeDebt(state, pi, cardId)` は **cardId から `C()[cardId].debt` を読む**（engine.js:1938）＝
+    //   change に debt 欄が無いので**黙って0**になる。個数を渡す汎用版を作ること（支配の振り分けは engine.js:1942 に倣う）。
+    change: { id: 'change', name: '交替', cost: 4, types: ['action'],
+                 // ⚠ 改行は2行（公式カードは改行なしの1段落）。「コインコストの差だけ負債」は**獲得できた場合だけ**＝
+                 //    3行に割ると無条件の効果に見える（公式FAQ＝`You don't take any [D] if you don't gain a card`）。
+                 text: '負債を持っている場合、+3 コイン。\nそれ以外の場合、手札1枚を廃棄し、それよりコインコストが高いカード1枚を獲得する。コインコストの差に等しい数だけ負債を得る。' },
+    // +1 Card / Each other player discards down to 3 cards in hand. / --- / You can play this from your deck as if in your hand.
+    ninja: { id: 'ninja', name: '忍者', cost: 4, types: ['action', 'attack', 'shadow'],
+                 text: '+1 カード\n他のプレイヤーは全員、手札が3枚になるように捨て札にする。\n————\nこれは手札からと同様に山札からも使用できる。' },
+    // +1 [Sun] / +1 Card / +1 Action / Reveal the top card of your deck. If it costs [$3] or less, put it into your hand.
+    // ⚠ 段階2: 「コスト3以下」に **`costUpTo` を使ってはいけない**（`gainableBase` 込み＝非サプライ・在庫切れを弾く。
+    //   見るのは山札の一番上＝サプライと無関係）。`costLE(costOf(state, top), { coin: 3, pot: 0, debt: 0 })` と書く
+    //   ＝**ウィル・オ・ウィスプ（`will_o_wisp`）の case が文面まで同型**なのでコピーして 2→3 にするのが最短。
+    //   手札に入れなかった1枚は**山札の上に残る**（捨て札置き場を経由しない）＝pending 不要。
+    poet: { id: 'poet', name: '歌人', cost: 4, types: ['action', 'omen'],
+                 text: '+1 Sun\n+1 カード\n+1 アクション\n山札の一番上のカードを公開する。それがコスト3以下の場合、手札に加える。' },
+    // +1 [Sun] / Trash up to 2 cards from your hand. At the start of Clean-up, if you didn't gain any cards in your Buy phase this turn, gain a card costing up to [$4].
+    // ⚠ 段階2: 「購入フェイズに獲得したか」は**既存の `t.buyPhaseGained`（ターン単位）**を使う。**新しい旗を作らない**。
+    //   隣の `t.bpGained` は `END_ACTION_PHASE` で0に戻るので掴むと公式違反（ヴィラ／発進／継続で購入フェイズに
+    //   入り直すと不当に獲得する）。クリンナップ開始時の窓は増築(Improve)と同型＝`t.cleanupWaiting` の再入に乗せる。
+    //   **累積する**（2枚使えば2枚獲得）＝場の枚数ではなく `t.improvePlays` と同型の**プレイ回数**で数える。
+    river_shrine: { id: 'river_shrine', name: '川の社', cost: 4, types: ['action', 'omen'],
+                 text: '+1 Sun\n手札を最大2枚廃棄してもよい。\nクリーンアップフェイズの開始時、このターン購入フェイズにカードを獲得しなかった場合、コスト4以下のカード1枚を獲得する。' },
+    // +1 [Sun] / +1 Card / +2 Actions / You may discard 2 cards for +1 Card.
+    // ⚠ 段階2: 「**ちょうど2枚**」＝手札1枚以下では窓を開かない。民兵型の `discardDownEnter`（N枚に*なるまで*捨てる）
+    //   を流用してはいけない（剣・切り裂き魔の `down` 指定とも別物）。任意なので「やめる」ボタン必須。
+    //   順序＝**捨てる → `triggerOnDiscard` を解決 → その後に +1 カードを引く**（逆順だと坑道の金貨がリシャッフルに入らない）。
+    rustic_village: { id: 'rustic_village', name: '田舎の村', cost: 4, types: ['action', 'omen'],
+                 text: '+1 Sun\n+1 カード\n+2 アクション\n+1 カードを引くために手札2枚を捨て札にしてもよい。' },
+    /* ===== 旭日（Rising Sun）王国カード ＝ コスト$5 の8枚 =====
+       ⚠ この$5群は **Tea House（茶屋）** を含む。**Kabuki というカードは Rising Sun に存在しない**
+         （英語wiki・日本語wiki・研究doc 第4章・g0_jp_pairs.md のいずれにも無い）＝起草時に混入した誤りで、
+         `DOM.POOLS.risingsun` / `GAIN_ORDER` とも `tea_house` で確定済み。次に触るとき戻さないこと。
+       正本＝docs/research/risingsun_rules.md 第4章（英語wiki 8ページ＋日本語wiki 8ページを敵対検証済み）。
+       8枚とも Versions 表は「First edition / August 2024」の1行のみ＝**機能エラッタ 0件**。
+       8枚とも素のコイン費用$5（負債コスト・ポーション費用は持たない＝`costIsPlainCoin` が真）。
+       ⚠ 金山／勅使／駕籠 の負債は**コスト欄ではなく使用時に負う負債**＝`debt:` フィールドは付けない
+         （既存 `takeDebt(state, pIndex, cardId)` は `C()[cardId].debt`＝コスト欄を読むので 0 になる。
+          段階2で「金額を引数で受ける on-play 版」を新設すること。支配(Possession)の振り分けは必ず引き継ぐ）。
+       日本語文面＝Dominion Online 訳（PROGRESS §4 の2026-08-15 決定3／研究doc の決定D1）。
+       研究doc の逐語からの意図的な差分は次の4種だけ：
+         (1) 資源行を既存761枚の慣習へ正規化＝「+N カードを引く」→「+N カード」。
+         (2) 負債の記号 `+<N>` を文字へ＝**「+N 負債」**（既存の資源行 `+1 コイン` と同じ形。
+             文中に置く場合は `+8 勝利点を得て`＝mountain_pass の書き方に合わせ、助詞の前に空白を入れない）。
+         (3) 区切り線を既存カタログの形へ＝「--------------------」→「————」（U+2014×4・cards.js の73箇所と同一）。
+         (4) 「選ぶ」の書式を既存カタログの形へ＝「次のうち異なる2つを選ぶ：」＋「「〜」：」
+             → **「次から異なる2つを選ぶ：」＋「／」区切りの1行**（狐）。
+             ＝「異なる2つを選ぶ」を持つ既存3枚（従者 js/cards.js:96／執事:386／道化棒:1015）が**3枚とも「／」1行**で、
+               道化棒は長い節（「このターン、あなたがカード1枚を獲得するとき、…」）を含んでなお「／」＝その系統に揃えた。
+             ⚠ 検証で訂正＝**pawn は「・」ではない**（旧コメントの「pawn/cabin_boy と同じ house style」は誤り）。
+               ・見出し「次から異なる2つを選ぶ：」は **pawn（js/cards.js:96）と一字一句同じ**＝ここは正しい。
+               ・箇条書き「・」の前例は **cabin_boy(1193) / 待ち伏せ(168) / 宝珠(1379) / 町民(1112) 等16件以上**＝
+                 「選択肢が節（文）になっているカード」はすべてこの形。狐は4択のうち2つが節なのでこの形を採った。
+               ・⚠ ただし**「異なる2つを選ぶ」を持つ既存3枚（pawn:96／386／道化棒:1015）は3枚とも「／」区切りの1行形式**。
+                 道化棒は長い節を含んでいてなお「／」なので、**その系統に揃えるなら「／」1行が正解**。
+                 ＝忠実性には無関係な表記の選択。**変えるならこの4行を消して1行に畳むだけ**（機能・検査に影響なし）。
+       ⚠ 区切り線（————）を持つのは **浪人(ronin) と 狸(tanuki) の2枚だけ**
+         （研究doc 第4章の `<hr>` 機械検算＝カード文セル内の `<hr style="width:66%;...">` を8ファイル全部で実測。
+          Ronin/Tanuki は本文と Shadow の但し書きの間に1本。他6枚は0本）。
+       ⚠ 狐(kitsune) の選択肢の並びは**英語原文の順**（+2 アクション → +2 コイン → 呪い → 銀貨）に揃えてある。
+         日本語wiki の訳文だけが `+2 コイン` を先に置いているが、公式FAQ が「**カード記載順**に解決する」と定めており、
+         その記載順は英語原文の順（研究doc 第4章 Kitsune ⚠1／⚠4）。
+       ⚠ 新種別＝**`omen`（前兆）** と **`shadow`（影）**。表示ラベルは js/carddata.js の ALLIES_TYPE_JP/EN・
+         js/ui.js の TYPE_JP・test/integrity.test.js の JP/EN の**計5箇所**へ登録すること（1つでも漏れると恒久検査が赤）。 */
+    // +1 Card / +1 Action / +1 Buy / You may gain a Gold and get +4D.
+    // ⚠ 「You may」は「金貨獲得」と「+4負債」の**セット**に掛かる（公式FAQ＝`You can't gain a Gold without taking 4D.`）。
+    //   DO訳は「金貨1枚と +4負債 を*獲得*してもよい」と書くが、原文は `gain a Gold and **get** +4D`＝負債は負う側。
+    //   ⚠ サプライに金貨が無くても「やる」を選べる（＝負債4だけ負う。日本語wiki の裁定。交替(Change) との併用で実利がある）。
+    gold_mine: { id: 'gold_mine', name: '金山', cost: 5, types: ['action'],
+                 text: '+1 カード\n+1 アクション\n+1 購入\n金貨1枚と +4 負債を獲得してもよい。' },
+    // +5 Cards / +1 Buy / +2D
+    // ⚠ 強制（"may" 無し）＝窓を開かず自動で負う。記載順（+5カード → +1購入 → +2負債）を守ること。
+    imperial_envoy: { id: 'imperial_envoy', name: '勅使', cost: 5, types: ['action'],
+                 text: '+5 カード\n+1 購入\n+2 負債' },
+    // +1 Sun / Choose two different options: +2 Actions; +$2; each other player gains a Curse; gain a Silver.
+    // ⚠ 区切り線なし（+1 Sun の後は同じカード文の続き）。⚠ アタックのリアクション窓は**選択より前**に開く
+    //   （呪いを選ばなかった場合でも開く＝日本語wiki の裁定）。呪いの山が空でも他の3択は普通に働く。
+    kitsune: { id: 'kitsune', name: '狐', cost: 5, types: ['action', 'attack', 'omen'],
+                 text: '+1 Sun\n次から異なる2つを選ぶ：\n+2 アクション／+2 コイン／他のプレイヤーは全員、呪い1枚を獲得する／銀貨1枚を獲得する' },
+    // +2 Cards / +2 Actions / +1D
+    // ⚠ 強制（"may" 無し）。⚠ 支配(Possession)では負債を負うのは**支配者**（英語wiki `Debt` ページに明文あり）。
+    litter: { id: 'litter', name: '駕籠', cost: 5, types: ['action'],
+                 text: '+2 カード\n+2 アクション\n+1 負債' },
+    // +1 Action / Trash a card from your hand. If it's a Treasure, +2 Cards. If it's an Action, +5 Cards.
+    // ⚠ 「財宝かつアクション」なら +2 と +5 の**両方**（合計7枚）＝排他の if/else で書くと壊れる（公式FAQ 明記）。
+    //   静的に該当するのは全761枚中 crown（帝国）と spell_scroll（略奪）の2枚＋資本主義＋予言 Enlightenment
+    //   （検証で機械確認＝`types` に action と treasure を両方持つ既存カードはこの2枚ちょうど）。
+    // ⚠ 表記メモ（検証・未変更）＝DO訳は「+2 カードを引く、…、+5 カードを引く。」だが「を引く」を落とした。
+    //   根拠＝同型の条件つきボーナスは既存カタログでも「を引く」を落とすのが優勢
+    //   （馬丁 js/cards.js:856「勝利点カードの場合、+1 カード、+1 アクション。」＝種別で分岐する完全な同型／
+    //    寂れた村:98「アクションが無ければ +2 カード。」ほか計8件。付ける側は封土:598・内気な:2477 の3件）。
+    //   ⚠ **旭日の他の群も同じ判断で揃っている**（山の社＝「…ある場合、+2 カード。」）＝ここだけ戻すと不揃いになる。
+    rice_broker: { id: 'rice_broker', name: '札差', cost: 5, types: ['action'],
+                 text: '+1 アクション\n手札1枚を廃棄する。\nそれが財宝カードの場合、+2 カード。\nそれがアクションカードの場合、+5 カード。' },
+    // Draw until you have 7 cards in hand. / ———— / You can play this from your deck as if in your hand.
+    // ⚠ 区切り線 **1本**（実測）。⚠ 専用の裏面を持つ（Info に `Card back` 行あり）。
+    //   ⚠ Secret history＝元はアタック枠だったが差し替え済み＝**現行にアタック要素は無い**（`ATTACKS` に登録しない）。
+    ronin: { id: 'ronin', name: '浪人', cost: 5, types: ['action', 'shadow'],
+                 text: '手札が7枚になるようにカードを引く。\n————\nこれは手札からと同様に山札からも使用できる。' },
+    // Trash a card from your hand. Gain a card costing up to $2 more than it. / ———— / You can play this from your deck as if in your hand.
+    // ⚠ 区切り線 **1本**（実測）。⚠ 専用の裏面を持つ。効果は改築(remodel)と同型＝既存 REMODEL_TRASH/GAIN と `costUpTo` の
+    //   `spec` 引数をそのまま流用すること（Artist[$0+負債8] を廃棄して Daimyo[$0+負債6] を取れるのが公式例）。
+    tanuki: { id: 'tanuki', name: '狸', cost: 5, types: ['action', 'shadow'],
+                 text: '手札1枚を廃棄する。\nそれよりコストが最大2コイン高いカード1枚を獲得する。\n————\nこれは手札からと同様に山札からも使用できる。' },
+    // +1 Sun / +1 Card / +1 Action / +$2
+    // ⚠ 区切り線なし。⚠ +1 Sun は「may」ではない＝強制（Sun を進めたくない局面があっても避けられない）。
+    tea_house: { id: 'tea_house', name: '茶屋', cost: 5, types: ['action', 'omen'],
+                 text: '+1 Sun\n+1 カード\n+1 アクション\n+2 コイン' },
+    /* ---------- 旭日（Rising Sun）王国カード ＝ 負債コスト3枚 ＋ $6 ＋ $7 の5枚 ----------
+       正本＝docs/research/risingsun_rules.md 第5章（4230〜4930行）＋ C:/tmp/risingsun_research/g0_jp_pairs.md。
+       日本語のカード文面は Dominion Online 訳（＝日本語wiki 掲載）を既存カタログの言い回しへ寄せたもの（決定D1）。
+       5枚とも初版（2024年8月）のみ＝**機能エラッタ無し**。
+       ⚠ 区切り線（————）は**5枚とも0本**（研究doc が生HTMLの <hr> を機械カウント／侍は実物カード画像でも横線なしを確認）。
+         侍は持続カードなので線が入っていそうに見えるが実際は無い。取り違えないこと。
+       ✅ 表示ラベルは**この5枚については追加作業ゼロ**（実際に carddata.js を通して機械確認した）：
+         山の社＝「アクション・前兆 / Action - Omen」／大名＝「アクション・命令 / Action - Command」／
+         侍＝「アクション・持続・アタック / Action - Duration - Attack」／米＝「財宝 / Treasure」／絵師＝「アクション / Action」。
+         `omen`/`shadow` は js/carddata.js の ALLIES_TYPE_JP/EN・js/ui.js の TYPE_JP・test/integrity.test.js の
+         JP/EN マップに**登録済み**（同盟の「types 配列の順に連ねる」汎用規則にそのまま乗る）。
+         枠スキンも frameType が既存の action/treasure/duration に落ちるので新設不要。
+       🛑 **ただし「表示以外」で1つだけテストが赤くなる＝資本主義(Capitalism)の財宝集合が 140 → 142 になる**
+         （`DOM.engine.capitalismTreasures()` を実行して機械確認した。増えるのは
+          **`mountain_shrine`（+2 コイン）と `samurai`（+1 コイン）の2枚**＝どちらもカード文に「+N コイン」を持つアクション）。
+         `test/integrity.test.js` の「資本主義：財宝になるアクションの集合が固定されている」は**期待集合と枚数を直書きで固定している**
+         ので、**組み立て時に必ずこの2枚と枚数を追記すること**（PROGRESS §0-22 の「カタログ文を1文字触ると集合が静かに変わる」）。
+         ⚠ **これは公式どおり＝除外してはいけない**。侍の +$1 は「次のターン以降の開始時」だが、
+         既存カタログも隊商の護衛/魔除け/ワイン商など**将来ターンの +$ を持つアクションを資本主義の対象に入れている**
+         （§0-22 の `CAPITALISM_EXTRA`）＝侍だけ外すと非対称になる。
+         ※ 米は元から財宝／大名・絵師はカード文に「コイン」が無い＝この3枚は集合に入らない（確認済み）。
+       ⚠ **`+1 Sun` の "Sun" は英語のまま**が正（DO訳＝日本語wiki のカード文がそのまま `+1 Sun`。
+         正本の §1-4 の前兆6種の表も6枚すべて `+1 Sun` で統一されている）。訳語は「Sunトークン」。
+         **前兆は6種あり別の担当群に散っている**（山の社＝この群／歌人・川の社・田舎の村・茶屋・狐＝別群）ので、
+         組み立て時に**6枚とも `+1 Sun` で揃っているか**を必ず突き合わせること（1枚だけ「+1 日の出」等になると表記が割れる）。
+       ⚠ 負債コストは cost:0 + debt:N（帝国の技術者/大君主と同じ形）。**コイン成分ゼロ**なので
+         costUpTo の既定（debt:0）で自動的に「コスト$N以下」の候補から外れる＝公式どおり
+         （rulebook が名指し＝`Craftsman can't gain a Mountain Shrine` / `Poet cannot draw a Mountain Shrine` /
+          `Change can't gain a Mountain Shrine`）。段階2で素の `cardCost(state,id) <= N` を書くと壊れる。
+       ⚠ 逆に「$2高いカードまで」「これより安い」系（狸 Tanuki／金継ぎ Kintsugi／石工／墓暴き…）は
+         `spec`（pot/debt の3成分）を渡さないと Artist(8D) を廃棄しても Daimyo(6D) が候補から消える
+         （公式例＝`Tanuki trashing an Artist can gain a Daimyo`）。段階2の必読事項。
+       ※ 並びはコスト昇順→負債の順にしてあるが、最終的な js/cards.js への配置順は組み立て側で自由に変えてよい。 */
+    // --- コスト$6（1種） ---
+    // Each other player discards down to 3 cards in hand (once). / At the start of each of your turns this game, +[$1]. / (This stays in play.)
+    // ⚠ 種別は「アクション-持続-アタック」＝実物カードの種別行 `Action - Duration - Attack`（研究doc が m_samurai.jpg で目視確認）。
+    //   日本語wiki のヘッダ表は「アクション-アタック」と書きカード文の途中に「持続」を挟んでいるが、それは表の作りの都合。
+    //   ＝米(Rice)の「異なる種別」の数え上げに直結するので取り違えないこと（侍1枚で3種別を供給する）。
+    // ⚠ 永続持続（ゲーム終了まで場に残る）＝段階2では armDuration ではなく p.samurais のカウンタで持つ
+    //   （雇人/チャンピオン/尽きぬ杯/操舵手と同型。`permanentDurationCounts` に足す）。
+    samurai: { id: 'samurai', name: '侍', cost: 6, types: ['action', 'duration', 'attack'],
+                 text: '他のプレイヤーは全員、手札が3枚になるように捨て札にする（1度のみ）。\nゲーム終了まで、あなたのターンの開始時に、+1 コイン。\n（このカードは場に残り続ける。）' },
+    // --- コスト$7（1種） ---
+    // +1 Buy / +[$1] per different type among cards you have in play.
+    // ⚠ coin: 0 ＝コイン量が動的（場のカードの異なる種別数）なので静的コインは持たせない（坩堝 crucible と同じ扱い）。
+    //   段階2では applyTreasureEffect に書くこと（applyEffect に書くと財宝では呼ばれず空振りする）。
+    // ⚠ 数えるのは「種別」であってカードではない（大名＝Action+Command／魚屋＝Action+Shadow／侍＝Action+Duration+Attack）。
+    //   米自身の Treasure も数える。公式例＝大名・駕籠・魚屋・銅貨×3・米 で {Action, Command, Shadow, Treasure} ＝ +$4。
+    rice: { id: 'rice', name: '米', cost: 7, types: ['treasure'], coin: 0,
+                 text: '+1 購入\n場に出しているカードの異なる種別1つにつき、+1 コイン。' },
+    // --- 負債コスト（3種） ---
+    // +1 [Sun] / +[$2] / You may trash a card from your hand. Then if there are any Action cards in the trash, +2 Cards.
+    // ⚠ 前兆(Omen)＝「+1 Sun」は必ず記載の一番最初に来る（公式逐語）。予言(Prophecy)が有効化されるのはこの位置。
+    // ⚠ 廃棄は任意だが判定は廃棄しなくても必ず走る（手札0枚でも廃棄置き場にアクションがあれば +2 カード）。
+    mountain_shrine: { id: 'mountain_shrine', name: '山の社', cost: 0, debt: 5, types: ['action', 'omen'],
+                 text: '+1 Sun\n+2 コイン\n手札1枚を廃棄してもよい。\nその後、廃棄置き場にアクションカードがある場合、+2 カード。' },
+    // +1 Card / +1 Action / The next time you play a non-Command Action card this turn, replay it afterwards.
+    // ⚠ 略奪の旗艦(Flagship)とほぼ同型だが **DO訳の言い回しが原文どおり違う**
+    //   （旗艦＝「命令カード以外のアクションカード1枚」／大名＝「命令でないアクションカード」）＝誤記ではないので揃えない。
+    // ⚠ 旗艦は「次に〜したとき」で何ターンでも持ち越すが、**大名は "this turn" ＝そのターン限り**
+    //   （公式FAQ逐語＝`or fails to do anything more if the turn ends before you play one`）。
+    //   段階2で armNextTime の器をそのまま流用すると翌ターンへ漏れて存在しない再演が湧く。
+    daimyo: { id: 'daimyo', name: '大名', cost: 0, debt: 6, types: ['action', 'command'],
+                 text: '+1 カード\n+1 アクション\nこのターン、次に命令でないアクションカードを使用したとき、それを再使用する。' },
+    // +1 Action / +1 Card per card you have exactly one copy of in play.
+    // ⚠ 数えるのは「ちょうど1枚だけ場にあるカードの種類数」（種別は問わない＝銅貨も数える）。自分自身も数える。
+    //   0枚ドローは正常系（場が銅貨3枚だけなら +0 カード）＝「候補ゼロだから窓を開かない」補正を入れてはいけない。
+    //   ⚠ 米(Rice)の「異なる種別」とはまったく別の数え方＝ヘルパを共用しないこと。
+    // ⚠ ホビージャパン印刷版は「あなたの場に1枚だけ出ているカード1種類につき、＋1 カードを引く。」＝
+    //   「1枚につき」／「1種類につき」の1語違いだけで機能差ゼロ。方針どおり DO訳を採用。
+    artist: { id: 'artist', name: '絵師', cost: 0, debt: 8, types: ['action'],
+                 text: '+1 アクション\n1枚だけ場に出しているカード1枚につき +1 カード。' },
   };
 
   /* ---------- 王国カードのセット ----------
@@ -1631,10 +1878,19 @@
      一等航海士のループ／港の村（村枠＋$判定）。コスト分布＝$2×3・$3×1・$4×1・$5×4・$6×1。 */
   DOM.KINGDOM_PLUNDER = ['jewelled_egg', 'search', 'shaman', 'taskmaster', 'harbor_village',
                          'cutthroat', 'crew', 'pilgrim', 'first_mate', 'sack_of_loot'];
+  /* 旭日（Rising Sun）＝段階1（画像・カタログのみ）。王国25種が抽選/闇市場の母集団になる枠。
+     ⚠ プール名は `risingsun`（既存プール名と衝突しない）。横型＝イベント10＋予言15 は `DOM.LANDSCAPES` 側。
+     新種別＝**前兆(omen) 6種**（山の社/歌人/川の社/田舎の村/茶屋/狐）＝予言を1枚配る条件になる／
+     **影(shadow) 5種**（魚屋/小路/忍者/浪人/狸）＝裏面が違い山札から使える。 */
+  DOM.POOLS.risingsun = ['fishmonger', 'snake_witch', 'aristocrat', 'craftsman', 'root_cellar', 'riverboat',
+    'change', 'alley', 'ninja', 'poet', 'river_shrine', 'rustic_village',
+    'gold_mine', 'imperial_envoy', 'tea_house', 'kitsune', 'litter', 'rice_broker', 'ronin', 'tanuki',
+    'mountain_shrine', 'daimyo', 'artist', 'rice', 'samurai'];
   // 段階1（効果が未実装）のプール＝闇市場デッキに入れない（買っても何も起きない死に札になるため）。
   //   実プレイ化（段階2＝CARD_SET 昇格）のときに、この配列から外す。
   //   略奪は P7 で昇格済み＝空に戻した（戦利品 Loot は NON_SUPPLY なので闇市場には元々入らない）。
-  DOM.STAGE1_POOLS = [];
+  //   旭日は段階1（2026-08-20）＝ここに入れる。**段階2の R7 で外すこと**。
+  DOM.STAGE1_POOLS = ['risingsun'];
   // 移動動物園の固定10種（自作 showcase）。追放（ラクダの隊列）・馬（そり/騎兵隊/馬丁/貸し馬屋）・
   //   持続（艀/村有緑地）・アタック（魔女の集会）・獲得に反応するリアクション（牧羊犬/村有緑地）を一通り味わえる。
   //   コスト分布＝$2×1／$3×3／$4×3／$5×3。
@@ -2469,6 +2725,240 @@
     // When you discard a Tireless card from play, set it aside, and put it onto your deck at end of turn.
     tireless: { name: '疲れ知らずの', nameEn: 'Tireless', kind: 'trait', expansion: 'plunderexp', cost: 0, debt: 0,
       text: '疲れ知らずのカードを場から捨て札にしたとき、それを脇に置き、ターン終了時に山札の上に置く。' },
+
+    /* ---------- 旭日（Rising Sun）イベント 10種（横型・購入フェイズに買う） ----------
+       正本＝docs/research/risingsun_rules.md 第6章（英語wiki 全10ページ＋日本語wiki 全10ページを敵対検証済み）。
+       日本語のカード文面は Dominion Online 訳（＝日本語wiki 掲載）を既存カタログの言い回しへ寄せたもの（決定D1）。
+
+       ⚠ **`expansion: 'risingsun'` を書き忘れると `DOM.EVENTS_RISINGSUN` が空になる**（しかもテストは赤にならない）。
+          `DOM.EVENTS_*` は `kind === 'event' && expansion === '<プール名>'` の filter で派生する
+          （js/cards.js の `DOM.EVENTS_PLUNDER` を参照）。段階1で必要なのは**この派生1行だけ**（登録済み）。
+       🛑 **段階1では `DOM.eventPoolFor` にも `DOM.MIX_LANDSCAPE_POOLS` にも足さないこと**。
+          この10種は**まだ効果が未実装**なので、配線すると mix-all の横型抽選に出て
+          「買っても何も起きない死に札イベント」を$2〜$7で買わされる（縦型を `DOM.STAGE1_POOLS` で
+          闇市場から塞いでいるのと同じ理由）。**配線は段階2の R7（CARD_SET 昇格）で、効果を実装してから**行う。
+          （起草時のコメントは「段階1で3箇所配線せよ」と誤って書いていた＝独立監査2件が指摘して訂正）
+       ⚠ 横型 kind `event` のスキンは既存（茶褐色・コスト円あり）＝`tools/build-landscape.js` の新設は不要。
+          **新スキンが要るのは予言(Prophecy) だけ**（kind: 'prophecy'）。ここを混同しないこと。
+
+       ⚠ 版＝10枚とも `First edition / August 2024` の1行のみ＝**機能エラッタ ゼロ**
+          （略奪の Journey のような「版の選択」問題はこの10枚には無い）。
+       ⚠ 区切り線（————）＝**10枚とも0本**。英語wiki の生HTML 10ファイルで `<hr` が 0
+          （同じ手法で旭日の王国カードは 4〜5本を返す＝取りこぼしではないことを対照実験で確認済み。
+           正本の第6章 §0-3 逐語＝`Alley=4／Ninja=4／Ronin=4／Tanuki=4／Fishmonger=5／Riverboat=4`）。
+          ＋ `g0_jp_pairs.md` のイベント10行にも `--------------------` が1つも無い（独立2ソースで一致）。
+          `Foresight` の "at end of turn"、`Kintsugi` の "If you've gained a Gold this game" も
+          **区切り線では分かれていない**（＝1つの文の連なり）。
+       ⚠ 改行＝**洞察 が2行／継続 が3行／残り8枚は1行**。
+          英語wiki の "Event text" セルは改行を落とすことがある（`Launch` も英語wiki では0改行だが
+          既存カタログは `\n` を入れている）ので、**日本語wiki のカード文表（`<br>` を保つ）を正とした**。
+          `g0_jp_pairs.md` の EN/JP 両行の区切り位置とも一致する。
+       ⚠ 負債コストを持つのは **継続(Continue)＝`cost: 0, debt: 8`** の1枚だけ。他9枚はプレーンなコインのみ。
+       ⚠ `ONCE_PER_TURN_EVENTS` に足すのは **`continue` の1枚だけ**（生HTML 10枚を `Once per turn` で
+          機械検索＝Continue のみヒット／他9枚は0）。残り9種は購入権と $ がある限り同じターンに何度でも買える。
+
+       ⚠ id の注意（既存761枚と機械照合済み＝衝突ゼロ）：
+        - **`continue` は JavaScript の予約語**なので **キーを引用符で囲む**（`'continue': { … }`）。
+          参照も `DOM.LANDSCAPES['continue']` / `case 'continue':` とブラケット記法で統一する。
+        - `sea_trade`（海上交易）は冒険のイベント `trade`（交易・$5）と**別物**。id は衝突しないが、
+          カード一覧の全文検索で「交易」が2件出る。
+        - `gather`（参集・イベント）と `DOM.GATHERING_CARDS`（帝国の「集合」＝山の上にVPトークンを貯める機構）は
+          **まったくの別物**。英語wiki も Gather ページ冒頭で注記している。取り違えないこと。 ---- */
+    // If you have no Action cards in play, gain an Action card costing up to [$5].
+    // ⚠ 「場にアクションが無い」の判定は p.inPlay ＋ p.durationCards の両方を見る（公式FAQ が
+    //    「前のターンに使った持続カードが場にあると獲得できない」と名指し）。段階2の注意点。
+    amass: { name: '蓄積', nameEn: 'Amass', kind: 'event', expansion: 'risingsun', cost: 2, debt: 0,
+      text: 'アクションカードを1枚も場に出していない場合、コスト5以下のアクションカード1枚を獲得する。' },
+    // Pay any amount of [$] to trash that many cards from your hand.
+    asceticism: { name: '苦行', nameEn: 'Asceticism', kind: 'event', expansion: 'risingsun', cost: 2, debt: 0,
+      text: 'コインを好きなだけ支払い、それと同じ枚数の手札を廃棄する。' },
+    // Gain an Action or Treasure costing up to [$8]. +[D] equal to its cost.
+    // ⚠ DO訳の末尾は「そのコストに等しい数だけ、+〈負債トークンのアイコン〉。」＝アイコンを文字で書けないため、
+    //    既存カタログの言い回し（元手 capital＝「負債6を得て」／峠 mountain_pass＝「入札した額の負債を負う」）に
+    //    合わせて **「負債を得る」** と語で表記した。**本アプリでカード文が負債を与える最初の1枚**。
+    credit: { name: '信用', nameEn: 'Credit', kind: 'event', expansion: 'risingsun', cost: 2, debt: 0,
+      text: 'コスト8以下のアクションカードまたは財宝カードを獲得する。そのコストに等しい数だけ負債を得る。' },
+    // Reveal cards from your deck until revealing an Action. / Set it aside and discard the rest. Put it into your hand at end of turn.
+    // ⚠ 「ターン終了時に手札へ」＝本アプリでは**次の手札を先引きした後**（公式FAQ＝`added to your hand after
+    //    drawing your next hand`）。既存の同型＝配達 deliver／パズルボックス／トリックスター／疲れ知らずの。
+    foresight: { name: '洞察', nameEn: 'Foresight', kind: 'event', expansion: 'risingsun', cost: 2, debt: 0,
+      text: 'アクションカード1枚が公開されるまで山札を上から公開する。\nその1枚を脇に置き、残りを捨て札にする。ターン終了時、そのカードを手札に加える。' },
+    // Trash a card from your hand. If you've gained a Gold this game, gain a card costing up to [$2] more than the trashed card.
+    kintsugi: { name: '金継ぎ', nameEn: 'Kintsugi', kind: 'event', expansion: 'risingsun', cost: 3, debt: 0,
+      text: '手札1枚を廃棄する。このゲーム中に金貨1枚を獲得していた場合、廃棄したカードよりコストが最大2コイン高いカード1枚を獲得する。' },
+    // You may play an Action card from your hand twice.
+    practice: { name: '稽古', nameEn: 'Practice', kind: 'event', expansion: 'risingsun', cost: 3, debt: 0,
+      text: '手札のアクションカード1枚を2回使用してもよい。' },
+    // +1 Card per Action card you have in play. Trash up to that many cards from your hand.
+    // ⚠ DO訳は「+1 カードを引く」＝既存カタログの表記（沼地の小屋／市街 と同じ「〜につき、+1 カード。」）に正規化した。
+    //    「場に出しているアクション」は DO訳の逐語（英語原文は "per Action card you have in play"）。
+    sea_trade: { name: '海上交易', nameEn: 'Sea Trade', kind: 'event', expansion: 'risingsun', cost: 4, debt: 0,
+      text: '場に出しているアクション1枚につき、+1 カード。その枚数以下の手札を廃棄してもよい。' },
+    // If you've gained at least 3 cards this turn, gain up to 3 differently named Action cards you don't have copies of in play.
+    receive_tribute: { name: '賛辞', nameEn: 'Receive Tribute', kind: 'event', expansion: 'risingsun', cost: 5, debt: 0,
+      text: 'このターン3枚以上カードを獲得していた場合、場に出していないアクションカードを1枚ずつ3種類まで獲得してもよい。' },
+    // Gain a card costing exactly [$3], a card costing exactly [$4], and a card costing exactly [$5].
+    // ⚠ DO訳に "exactly" に当たる語は無いが、日本語ドミニオンでは「コスト3のカード」＝**ちょうど$3**
+    //    （「コスト3以下」と書き分ける）＝訳の欠落ではない。段階2は英語原文どおり costExact で書くこと。
+    gather: { name: '参集', nameEn: 'Gather', kind: 'event', expansion: 'risingsun', cost: 7, debt: 0,
+      text: 'コスト3、コスト4、コスト5のカードを1枚ずつ獲得する。' },
+    // Once per turn: Gain a non-Attack Action card costing up to [$4]. / Return to your Action phase and play it. / +1 Action and +1 Buy.
+    // ⚠ キーは予約語なので引用符付き（上の注意を参照）。**この10枚で唯一の負債コスト**（$0＋負債8）。
+    // ⚠ "Once per turn:" は既存カタログ **6/6**（施し／借入／保存／巡礼／絶望／**発進**）と同じ **`1ターンに1回：`** に揃えた
+    //    （逐語検証で機械確認＝`kind:'event'` の既存68種のうち `1ターンに1回：` を持つのはこの6枚だけ・
+    //      `1ターンに1度のみ：` を持つカード文は0件）
+    //    （DO訳の字面は「1ターンに1度のみ：」。意味の差はゼロ）。末尾の `+1 アクション、+1 購入` を句点なしに
+    //    したのも既存の発進 launch（`+1 カード、+1 アクション、+1 購入`）に合わせたもの。
+    'continue': { name: '継続', nameEn: 'Continue', kind: 'event', expansion: 'risingsun', cost: 0, debt: 8,
+      text: '1ターンに1回：アタックでないコスト4以下のアクションカード1枚を獲得する。\nアクションフェイズに戻り、それを使用する。\n+1 アクション、+1 購入' },
+    /* ---------- 旭日（Rising Sun）＝予言(Prophecy) 15種（横型・買わない・獲得しない） ----------
+       ⚠ プール名/expansion は 'risingsun'（`rising_sun` ではない＝既存の expansion 名は全部1語＝
+          empires / adventures / renaissance / menagerie / nocturne / allies / plunderexp）。
+       ⚠ `kind: 'prophecy'` は**新 kind**。段階1で `tools/build-landscape.js` に3行足すこと：
+          `SKIN` に `prophecy: { base: [...] }`＝**iris blue（菖蒲色＝青紫）**（研究doc 逐語
+          `the Prophecy effects are printed on cards in a landscape orientation with iris blue frames.`）／
+          `WITH_COIN` に `prophecy: false`（**コスト欄なし**）／`KIND_LABEL` に `prophecy: '予言 / Prophecy'`。
+          直近の前例＝同盟の `ally`（濃い藍）／略奪の `trait`（深い臙脂）。
+          ⚠ 既存の landmark(深い青緑) / artifact(灰青) / ally(濃い藍) / hex(濃い紫) と**混ざらない**色にすること。
+       ⚠ 予言は「カード」ではない（英語wiki `Prophecy` 導入文 逐語＝
+          `In fact, Prophecies are not considered "cards" at all; any text referring to a "card"
+          (such as instructions to "name a card") does not apply to Prophecies.`）
+          ＝**`DOM.CARDS` に入れない**／保存則 tally・`allCards`・庭園/品評会・
+          「カード名を宣言」（建て直し/秘術師/医者/熟練工）から除外する。＝`ally` / `trait` と同じ扱い。
+       ⚠ **1ゲームに使う予言は必ず1枚だけ**（前兆(Omen)が何枚あっても1つ。ルールブック逐語
+          `Only use one Prophecy no matter how many Omens you have.`）
+          ＝**予言どうしは絶対に同居しない＝相互作用の実装もテストも不要**。
+       ⚠ 横型の「合計2枚まで」には**数えない**（ルールブックの2枚制限の列挙は
+          `Events, Traits, Landmarks, Projects, and Ways` で予言は入っておらず、
+          別段落の「オーメンがあれば1枚配る」手順に乗る）＝**同盟の Ally と同型と判断**。
+          ⚠ ただし「予言は数えない」という**否定形の明文は取れていない**＝PROGRESS にそう明記すること。
+       ⚠ Sunトークン＝2人5／3人8／4人10／5人12／6人13。「+1 Sun」で1個取り除き、
+          **最後の1個を取り除いた瞬間**に予言の効果が有効になり、以後ずっと有効
+          （全部取り除いた後の「+1 Sun」は何もしない）。**予言のテキストはそれまで一切効かない**。
+          例外＝**来寇(Approaching Army) の `準備：` だけはゲーム開始時から効く**（下記）。
+       ✅ **15種とも英語wiki の Versions 表は `First edition / August 2024` の1行だけ＝機能エラッタ 0件**
+          （研究doc 第7章 §7-1 で機械確認済み）。
+       日本語文面＝Dominion Online 訳（＝日本語wiki／`C:/tmp/risingsun_research/g0_jp_pairs.md`。決定D1）。
+       研究doc の逐語からの**意図的な差分は次の5種だけ**（(1)〜(3) は略奪の段階1と同じ正規化規則）。
+       **15件を機械照合し、下記の4枚以外は DO訳と1文字も違わないことを確認済み**：
+         (1) 「+N カードを引く」→「+N カード」（悟り 1枚のみ該当）。
+             ⚠ **【逐語検証で訂正】起草時の理由づけ（「既存は『+N カード』が多数派だから」）は根拠として弱い**。
+             `js/cards.js` L2474-2476 に**逆のこと**を書いた既存コメント（「文中に埋まる +N カードは
+             『を引く』を付ける」＝略奪の検証時に足されたもの）があり、多数決だけを理由にすると
+             統合者がそのコメントを読んで「を引く」に戻してしまう。**実測した本当の規則は単複で決まる**：
+               ・**文中の資源が1つだけ** → 「+N カードを引く」（実在3件＝封土 L598／船首像 L1357／内気な L2477。
+                 `grep -P "text: '.*\+[0-9] カードを引く"` ＝ちょうどこの3件）。
+               ・**文中の資源が読点区切りの2つ以上の並び** → 「+N カード」（＝「を引く」なし）。
+                 実在6件。**反例ゼロ**（`grep -c "カードを引く、+"` ＝ **0**）。
+             悟りの `…代わりに、+1 カード、+1 アクション。` は**後者の形**＝「を引く」なしが正しい。
+             **完全に同形の既存カード＝花婿(groom, L856)『勝利点カードの場合、+1 カード、+1 アクション。』**
+             （ほか 馬上槍試合(tournament, L364)『公開しなければ、+1 カード、+1 コイン。』）。
+         (2) 区切り線を既存カタログの形へ＝「--------------------」→「————」（U+2014×4。来寇 1枚のみ該当）。
+         (3) 「選ぶ」の書式を既存カタログの形へ＝「次のうち1つを選ぶ：」＋「「〜」」
+             → 「次から1つを選ぶ：」＋「・〜」（病 1枚のみ該当。cards.js は選択肢に「」を使わず ・ で並べる）。
+         (4) 半角コロン「準備:」→全角「準備：」（来寇 1枚のみ該当＝wikiwiki 側の表記ゆれ。
+             既存カタログは 16/16 すべて全角＝半角は0件）。
+         (5) 厳冬 1枚のみ該当。**⚠【逐語検証で訂正】ここは1つではなく2つの変更がある**
+             （起草時の記載はアイコンの件しか挙げておらず、差分の棚卸しとして不完全だった）：
+               (5a) 負債トークンのアイコン `<X>` / `<2>` を語に開いた（カタログにアイコンを出す手段が無い）。
+               (5b) **「それを得る」→「それを受け取る」**（DO訳の字面からの変更）。
+             どちらも**徴税(tax・帝国イベント／同じ `state.pileDebt` を使う唯一の既存機構）の言い回しに揃えたもの**＝
+             `js/cards.js` L2019-2020 逐語 `サプライの山1つに負債トークンを2個置く。` /
+             `その山の負債トークンをすべて受け取る。`（「山から負債を取る」を **受け取る** と書く既存の唯一の前例）。
+             ＝**山へ置く側・山から取る側の両方が徴税と同じ動詞になる**ので、この2枚を並べても表記がぶれない。
+       ⚠ 区切り線があるのは **来寇(Approaching Army) の1枚だけ**（残り14枚は生HTML の `<hr` = 0 を機械計数済み）。
+       ⚠ 本15枚に「ホビージャパン印刷版との文面差」は**1枚も確認されていない**
+          （日本語wiki の `※ホビージャパン…版のテキストについては余談を参照` 注記が付くのは川船 1枚だけ）。
+       ⚠ **【要判断・書式】この15件は指示どおり `cost` / `debt` を書いていない**が、
+          **既存の横型は 201/201 が `cost` と `debt` を両方持っている**（逐語検証で実測。
+          起草時の「171枚」は略奪を入れる前の古い数字だった）。コスト欄が無い kind も例外ではない＝
+          landmark 21／event 68／project 20／artifact 5／way 20／boon 12／hex 12／state 5／ally 23／trait 15
+          ＝**全 kind で 100%**。
+          省略しても**機能は同じ**ことは実コードで確認済み＝コスト円を描くかは `WITH_COIN[kind]` が決め、
+          `tools/build-landscape.js` の参照は `card.cost > 0`(L319) / `card.debt > 0`(L327) / `c.cost || 0`(L419)
+          ＝いずれも `undefined` で false / 0 に落ちる。`js/ui.js` 側も `ls.cost || 0`。
+          **統合時に house style へ揃えるなら `cost: 0, debt: 0,` を各行に足すだけでよい（挙動は1ビットも変わらない）。**
+       正本＝docs/research/risingsun_rules.md 第7章（前半8種）・第8章（後半7種） ---- */
+    // After you play an Attack card, +[$1]. / --- / Setup: Add an Attack kingdom card pile to the Supply.
+    // ⚠ 15種で唯一 `Setup:` を持つ＝**予言が有効になっていなくてもゲーム開始時から効く**（11山目を作る）。
+    //    山がアタックかは「randomizer（山キー）の種別」で判定（分割山も randomizer で見る）＝`isTypeSupply` ではない。
+    //    既にアタックが王国に居ても追加する（`even if there already is one`）。
+    approaching_army: { name: '来寇', nameEn: 'Approaching Army', kind: 'prophecy', expansion: 'risingsun', cost: 0, debt: 0,
+      text: 'アタックカード1枚を使用したとき、+1 コイン。\n————\n準備：ゲームにアタックである王国カードの山1つを追加する。' },
+    // At the start of your Clean-up, set aside your hand face down. At the start of your next turn, put those cards into your hand.
+    biding_time: { name: '好機到来', nameEn: 'Biding Time', kind: 'prophecy', expansion: 'risingsun', cost: 0, debt: 0,
+      text: 'クリーンアップフェイズの開始時に、手札をすべて伏せて脇に置く。\nあなたの次のターンの開始時に、それらのカードを手札に加える。' },
+    // When you gain a card that doesn't cost [$0], gain a Copper.
+    // ⚠ 既存の `bureaucrat`（役人・基本）と id が紛らわしい（日本語名は 官僚制／役人 で別）。
+    bureaucracy: { name: '官僚制', nameEn: 'Bureaucracy', kind: 'prophecy', expansion: 'risingsun', cost: 0, debt: 0,
+      text: 'コスト0でないカードを1枚獲得したとき、銅貨1枚を獲得する。' },
+    // When you remove the last [Sun], remove all Kingdom card piles from the Supply, and set up 10 new random piles.
+    // ⚠ 旭日 最大の難所（本アプリに前例が無い破壊的な操作＝王国10山を丸ごと入れ替える）。段階2で最後に実装すること。
+    divine_wind: { name: '神風', nameEn: 'Divine Wind', kind: 'prophecy', expansion: 'risingsun', cost: 0, debt: 0,
+      text: '最後のSunトークンを取り除いたとき、サプライにある王国カードの山をすべて取り除き、新しくランダムに王国カードの山10個を追加する。' },
+    // Treasures are also Actions. When you play a Treasure in an Action phase, instead of following its instructions, +1 Card and +1 Action.
+    // ⚠ 正規化(1)＝DO訳は「…代わりに、+1 カードを引く、+1 アクション。」。「を引く」を落とした。意味は不変。
+    //    根拠＝**読点区切りで資源を2つ以上並べる文中では既存カタログは必ず「を引く」を書かない**
+    //    （反例0＝`grep -c "カードを引く、+" js/cards.js` が 0）。完全に同形の前例＝
+    //    **花婿(groom, js/cards.js:856)『勝利点カードの場合、+1 カード、+1 アクション。』**。
+    //    ⚠ `js/cards.js` L2474-2476 の既存コメントは「文中に埋まる +N カードは『を引く』を付ける」と書いているが、
+    //    それは**資源が1つだけの文**の規則（封土/船首像/内気な の3件）＝この行に適用してはいけない。
+    enlightenment: { name: '悟り', nameEn: 'Enlightenment', kind: 'prophecy', expansion: 'risingsun', cost: 0, debt: 0,
+      text: '財宝カードはアクションカードでもある。\nアクションフェイズに財宝カードを使用するとき、その指示に従う代わりに、+1 カード、+1 アクション。' },
+    // Cards cost [$1] less. You may use Action plays as Buys.
+    // ⚠ 既存の `trade`（交易・冒険イベント）／`trader`（交易商人・異郷）と id が紛らわしい。
+    flourishing_trade: { name: '盛大な取引', nameEn: 'Flourishing Trade', kind: 'prophecy', expansion: 'risingsun', cost: 0, debt: 0,
+      text: 'すべてのカードのコストは1コイン下がる。アクション権を購入権として使ってよい。' },
+    // The first time you play each differently named Treasure each turn, first, +1 Buy and +[$1].
+    // ⚠ 既存の `harvest`（収穫・収穫祭）と id が紛らわしい。
+    good_harvest: { name: '豊作', nameEn: 'Good Harvest', kind: 'prophecy', expansion: 'risingsun', cost: 0, debt: 0,
+      text: '各ターン中、名前の異なる財宝カードを初めて使用するたび、先に、+1 購入、+1 コイン。' },
+    // After each Action card you play, +1 Action.
+    // ⚠ 既存の `great_hall`（大広間・陰謀）と id が紛らわしい。
+    great_leader: { name: '偉大な指導者', nameEn: 'Great Leader', kind: 'prophecy', expansion: 'risingsun', cost: 0, debt: 0,
+      text: 'アクションカード1枚を使用するたび、その後に、+1 アクション。' },
+    // When you gain a Treasure, gain a cheaper card.
+    growth: { name: '成長', nameEn: 'Growth', kind: 'prophecy', expansion: 'risingsun', cost: 0, debt: 0,
+      text: '財宝カード1枚を獲得したとき、それより安いカード1枚を獲得する。' },
+    // When you gain a card on your turn, if there's [D] on its pile, take it; otherwise put [2D] on its pile.
+    // ⚠ 正規化(5)＝DO訳「その山に〈負債〉がある場合、**それを得る**／その山に〈負債2〉を置く」からの変更が**2つ**ある
+    //    （(5a) アイコン `<X>`/`<2>` を語に開いた ／ (5b) **「得る」→「受け取る」**）。どちらも意味は不変。
+    //    根拠＝**徴税(tax・帝国イベント)＝同じ `state.pileDebt` を使う唯一の既存機構**の言い回しに揃えた。
+    //    `js/cards.js` L2019-2020 逐語＝`サプライの山1つに負債トークンを2個置く。` /
+    //    `その山の負債トークンをすべて受け取る。`（「山から負債を取る」は既存では **受け取る** の1例のみ）。
+    //    ⚠ この2枚は mix-all で同居しうる（徴税×厳冬）＝表記を揃えておかないと同じ操作が2通りの語で出る。
+    harsh_winter: { name: '厳冬', nameEn: 'Harsh Winter', kind: 'prophecy', expansion: 'risingsun', cost: 0, debt: 0,
+      text: 'あなたのターンにカード1枚を獲得したとき、その山に負債トークンがある場合、それを受け取る。\nそれ以外の場合、その山に負債トークンを2個置く。' },
+    // At the start of your turn, and when you remove the last [Sun]: Gain an Action to your hand.
+    // ⚠ 「最後の Sun を取り除いた瞬間」に**その場で即発火する**（`in the middle of resolving the Omen`）＝
+    //    「次のターン開始時にまとめて」に遅延させる実装は公式違反。取り除いた本人だけが獲得する。
+    kind_emperor: { name: '神器', nameEn: 'Kind Emperor', kind: 'prophecy', expansion: 'risingsun', cost: 0, debt: 0,
+      text: 'あなたのターンの開始時とあなたが最後のSunトークンを取り除いたとき、アクションカード1枚を手札に獲得する。' },
+    // When you play a Treasure, +2 Buys, and when you discard one from play, return it to its pile.
+    // ⚠⚠ **表示は DO訳のままだが、実装はこの訳のとおりに読んではいけない**（決定D1＝日本語文面は DO訳で統一）。
+    //    DO訳の「そのカードを場から捨て札にしたとき」は原文 `when you discard one from play` の `one`
+    //    （＝a Treasure＝**任意の財宝**）の訳で、「+2 購入 を得たその1枚」ではない。日本語wiki が明記＝
+    //    「【狼狽+2購入】が適用されていないカードでも【狼狽戻り処理】が行われる」
+    //    ＝**有効化より前に場に出した財宝も含め、場から捨てられる財宝はすべて山へ戻る**。
+    //    ⚠ 表示文だけを「そのカード」→「財宝カード」に直す案もある（1語）。統合時に判断すること。
+    panic: { name: '狼狽', nameEn: 'Panic', kind: 'prophecy', expansion: 'risingsun', cost: 0, debt: 0,
+      text: '財宝カード1枚を使用したとき、+2 購入。そのカードを場から捨て札にしたとき、それをそのカードの山に戻す。' },
+    // When you gain a card, put it onto your deck.
+    // ⚠ engine の内部フラグ名（`t.progress` 等）と紛れやすい＝段階2で命名に注意（研究doc 第8章 §5）。
+    progress: { name: '進歩', nameEn: 'Progress', kind: 'prophecy', expansion: 'risingsun', cost: 0, debt: 0,
+      text: 'カード1枚を獲得したとき、それを山札の上に置く。' },
+    // When you gain an Action or Treasure, set it aside, and play it at the start of your next turn.
+    // ⚠ 略奪の特性「せっかちな(Hasty)」そのもの＝既存機構（`p.eventSetAside` ＋ `event_play`）を流用する。
+    //    （カタログ文も hasty と同一構文：'…1枚を獲得したとき、それを脇に置き、あなたの次のターンの開始時に使用する。'）
+    rapid_expansion: { name: '急速拡大', nameEn: 'Rapid Expansion', kind: 'prophecy', expansion: 'risingsun', cost: 0, debt: 0,
+      text: 'アクションカードか財宝カード1枚を獲得したとき、それを脇に置き、あなたの次のターンの開始時に使用する。' },
+    // At the start of your turn, choose one: Gain a Curse onto your deck; or discard 3 cards.
+    // ⚠ 正規化(3)＝DO訳は「次のうち1つを選ぶ：「呪い1枚を…」「手札3枚を…」」。既存カタログは選択肢を
+    //    「」で囲まず `・` で並べる（quartermaster と同じ直し方）ので ・ 形式へ。
+    // ⚠ 「**ちょうど3枚捨てる**」＝民兵型の `discardDownEnter`（N枚に**なるまで**捨てる）を流用してはいけない。
+    //    正しい前例は `FORUM_DISCARD` の `Math.min(3, hand.length)`。呪い山が空でも「獲得する」側を選べる。
+    sickness: { name: '病', nameEn: 'Sickness', kind: 'prophecy', expansion: 'risingsun', cost: 0, debt: 0,
+      text: 'あなたのターンの開始時に、次から1つを選ぶ：\n・呪い1枚を山札の上に獲得する\n・手札3枚を捨て札にする' },
   };
   // 帝国ランドマーク21種（抽選元）。イベントは未実装（docs/research/landscape_cards.md §2 にデータあり）。
   DOM.LANDMARKS_EMPIRES = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'landmark');
@@ -2492,6 +2982,10 @@
   // 略奪：イベント15種／特性(Trait)15種（段階1＝どの CARD_SET からも参照していない）。
   DOM.EVENTS_PLUNDER = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'event' && DOM.LANDSCAPES[id].expansion === 'plunderexp');
   DOM.TRAITS_PLUNDER = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'trait');
+  /* 旭日：イベント10種／予言(Prophecy)15種（段階1＝どの CARD_SET からも参照していない）。
+     予言は**王国に前兆(Omen)が1枚でもあれば1枚だけ**配る（Ally と同じ扱い＝横型の「合計2枚まで」に数えない）。 */
+  DOM.EVENTS_RISINGSUN = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'event' && DOM.LANDSCAPES[id].expansion === 'risingsun');
+  DOM.PROPHECIES_RISINGSUN = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'prophecy');
   // ルネサンス プロジェクト20種（抽選元）。買う横型＝BUY_PROJECT で発火（1人2つまで・同じものは1回だけ）。
   DOM.PROJECTS_RENAISSANCE = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'project' && DOM.LANDSCAPES[id].expansion === 'renaissance');
   // ルネサンス アーティファクト5種（抽選しない＝付与カードが王国にあれば自動で盤面に出る）。

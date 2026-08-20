@@ -154,17 +154,25 @@ const SKIN = {
     const ctx = cv.getContext('2d');
     const load = uri => new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = uri; });
 
-    // 絵（窓にcover）
+    // 絵（窓に cover）。絵が無ければ暗い地の板を敷く（透明の穴が空いたままにしない）。
+    //   ⚠ 穴のままだと UI の .card.has-art / .zoom-wrap のクリーム色の地が透けて、
+    //     「絵が未回収」ではなく「画像が壊れている」ように見える（横型 build-landscape.js と同型の処理）。
     const WR = { x: 54, y: 298, w: 914, h: 804 };
     const art = artURI ? await load(artURI) : null;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(WR.x, WR.y, WR.w, WR.h); ctx.clip();
     if (art) {
-      ctx.save();
-      ctx.beginPath(); ctx.rect(WR.x, WR.y, WR.w, WR.h); ctx.clip();
       const s = Math.max(WR.w/art.naturalWidth, WR.h/art.naturalHeight);
       const iw = art.naturalWidth*s, ih = art.naturalHeight*s;
       ctx.drawImage(art, WR.x + (WR.w-iw)/2, WR.y + (WR.h-ih)/2, iw, ih);
-      ctx.restore();
+    } else {
+      const g = ctx.createLinearGradient(WR.x, WR.y, WR.x, WR.y+WR.h);
+      const dk = (i, f) => Math.max(0, Math.min(255, Math.round((discBase[i]||0)*f)));
+      g.addColorStop(0, 'rgb(' + dk(0,0.55) + ',' + dk(1,0.55) + ',' + dk(2,0.55) + ')');
+      g.addColorStop(1, 'rgb(' + dk(0,0.25) + ',' + dk(1,0.25) + ',' + dk(2,0.25) + ')');
+      ctx.fillStyle = g; ctx.fillRect(WR.x, WR.y, WR.w, WR.h);
     }
+    ctx.restore();
     // フレーム（透明窓から絵が見える）
     const fr = await load(frameURI);
     if (fr) ctx.drawImage(fr, 0, 0, W, H);
@@ -286,7 +294,8 @@ const SKIN = {
       const lineH = Math.round(fs*1.34);
       const rows = [];
       for (const eff of card.effects) {
-        const prefix = '・';
+        // カタログ側が選択肢を「・」で始めている行（待ち伏せ/宝珠/キャビンボーイ等）は二重の中黒になるので字下げにする。
+        const prefix = eff.startsWith('・') ? '　' : '・';
         let cur = prefix;
         for (const ch of Array.from(eff)) {
           const t = cur + ch;

@@ -108,6 +108,12 @@
     // 戦利品(Loot)15種＝非サプライ（NON_SUPPLY_SET）＝汎用獲得の候補にならない（GAIN_ORDER=全カードの整合性のためだけ）。
     'amphora', 'doubloons', 'endless_chalice', 'figurehead', 'hammer', 'insignia', 'jewels', 'orb', 'prize_goat', 'puzzle_box',
     'sextant', 'shield', 'spell_scroll', 'staff', 'sword',
+    // 段階1追加（旭日。CARD_SETS 未参照＝実際には獲得されないが GAIN_ORDER=全カードの整合性を満たす）。
+    //   ⚠ 段階2の R7（CARD_SET 昇格）で**実強度順の位置へ移す**こと（略奪の P7 と同じ宿題）。
+    'fishmonger', 'snake_witch', 'aristocrat', 'craftsman', 'root_cellar', 'riverboat',
+    'change', 'alley', 'ninja', 'poet', 'river_shrine', 'rustic_village',
+    'gold_mine', 'imperial_envoy', 'tea_house', 'kitsune', 'litter', 'rice_broker', 'ronin', 'tanuki',
+    'mountain_shrine', 'daimyo', 'artist', 'rice', 'samurai',
     'copper', 'curse'];
   /* 同盟：女魔導士／魔導士の「カード名を宣言する」＝自分の山札の一番上として**一番ありそうな名前**を推定する
      （山札が空なら捨て札から。どちらも空なら銅貨）。**null を返さない**（engine が拒否すると livelock）。 */

@@ -73,8 +73,12 @@ const SKIN = {
   ally:       { base: [44, 62, 118] },
   // 略奪：特性(Trait)＝深い臙脂。サプライの山1つに付ける横型（コスト無し）。
   trait:      { base: [104, 38, 46] },
+  /* 旭日：予言(Prophecy)＝iris blue（菖蒲色）。王国に前兆(Omen)があれば1枚だけ配る横型（買わない＝コスト無し）。
+     ⚠ 初案 [86,74,150] は **hex（濃い紫）と ally（濃い藍）に全パレット中で最も近い**（ΔE76 で 14.1／14.8＝
+       既存10色の最小ペア artifact–state 18.4 より悪い）と監査が実測。**青寄り・明度高め**へ振って離した。 */
+  prophecy:   { base: [78, 104, 190] },
 };
-const WITH_COIN = { event: true, project: true, landmark: false, artifact: false, way: false, boon: false, hex: false, state: false, ally: false, trait: false };
+const WITH_COIN = { event: true, project: true, landmark: false, artifact: false, way: false, boon: false, hex: false, state: false, ally: false, trait: false, prophecy: false };
 const KIND_LABEL = {
   event: 'イベント / Event', landmark: 'ランドマーク / Landmark',
   project: 'プロジェクト / Project', artifact: 'アーティファクト / Artifact',
@@ -82,6 +86,7 @@ const KIND_LABEL = {
   boon: '祝福 / Boon', hex: '呪詛 / Hex', state: '状態 / State',
   ally: '同盟 / Ally',
   trait: '特性 / Trait',
+  prophecy: '予言 / Prophecy',
 };
 
 const W = 1536, H = 1024;             // 合成解像度（縦型 1024×1536 の 90度相当）
@@ -366,7 +371,8 @@ const LAY = {
       const lineH = Math.round(fs*1.34);
       const rows = [];
       for (const eff of lines) {
-        const prefix = '・';
+        // カタログ側が選択肢を「・」で始めている行（次から1つを選ぶ：の下）は二重の中黒になるので字下げにする。
+        const prefix = eff.startsWith('・') ? '　' : '・';
         let cur = prefix;
         for (const ch of Array.from(eff)) {
           const t = cur + ch;

@@ -466,6 +466,22 @@ try {
     ok(bad.length === 0, 'ui.js の TYPE_JP に全カード種別がある（欠け: ' + (bad.join(', ') || 'なし') + '）');
   }
 
+  /* 横型（DOM.LANDSCAPES）の kind ラベルの表記漏れ検知＝縦型の TYPE_JP と対になる検査。
+     ここに無い kind は拡大表示で既定値の「ランドマーク / Landmark」と誤表示される
+     （ally / trait / boon / hex / state が長らくそうなっていた＝2026-08-20 に修正）。
+     **新しい kind を DOM.LANDSCAPES に足したら ui.js の LS_KIND_LABEL にも足すこと**を構造的に守らせる。 */
+  {
+    console.log('=== 横型：ui.js の LS_KIND_LABEL が全 kind を網羅している ===');
+    const D = win.DOM;
+    const MAP = (win.DOM.UI && win.DOM.UI.LS_KIND_LABEL) || {};
+    const kinds = new Set();
+    Object.values(D.LANDSCAPES || {}).forEach((ls) => { if (ls && ls.kind) kinds.add(ls.kind); });
+    const missing = [...kinds].filter((k) => !MAP[k]);
+    ok(Object.keys(MAP).length > 0, 'ui.js の LS_KIND_LABEL を検査できる');
+    ok(kinds.size >= 10, '横型の kind を検査できている（実: ' + kinds.size + '種）');
+    ok(missing.length === 0, 'ui.js の LS_KIND_LABEL に全 kind がある（欠け: ' + (missing.join(', ') || 'なし') + '）');
+  }
+
   ok(runtimeError === null, '実行時エラーなし: ' + (runtimeError ? (runtimeError.stack || runtimeError) : ''));
 } catch (e) {
   fail++;

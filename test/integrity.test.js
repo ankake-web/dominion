@@ -117,8 +117,8 @@ console.log('=== 表示データと DOM.CARDS の id/名前/コストが一致 =
 console.log('=== 種別ラベルが全 type を含む（表記漏れ検知）===');
 {
   const cd = DOM.CARD_DATA || {};
-  const JP = { treasure: '財宝', victory: '勝利点', curse: '呪い', action: 'アクション', attack: 'アタック', reaction: 'リアクション', duration: '持続', knight: '騎士', ruins: '廃墟', shelter: '避難所', looter: '略奪者', reserve: 'リザーブ', traveller: 'トラベラー', castle: '城', command: '命令', night: '夜行', fate: '幸運', doom: '不運', heirloom: '家宝', spirit: '精霊', zombie: 'ゾンビ', liaison: '連携', townsfolk: '町民', augur: '卜占官', clash: '衝突', fort: '城砦', odyssey: '叙事詩', wizard: '魔法使い', loot: '戦利品' };
-  const EN = { treasure: 'Treasure', victory: 'Victory', curse: 'Curse', action: 'Action', attack: 'Attack', reaction: 'Reaction', duration: 'Duration', knight: 'Knight', ruins: 'Ruins', shelter: 'Shelter', looter: 'Looter', reserve: 'Reserve', traveller: 'Traveller', castle: 'Castle', command: 'Command', night: 'Night', fate: 'Fate', doom: 'Doom', heirloom: 'Heirloom', spirit: 'Spirit', zombie: 'Zombie', liaison: 'Liaison', townsfolk: 'Townsfolk', augur: 'Augur', clash: 'Clash', fort: 'Fort', odyssey: 'Odyssey', wizard: 'Wizard', loot: 'Loot' };
+  const JP = { treasure: '財宝', victory: '勝利点', curse: '呪い', action: 'アクション', attack: 'アタック', reaction: 'リアクション', duration: '持続', knight: '騎士', ruins: '廃墟', shelter: '避難所', looter: '略奪者', reserve: 'リザーブ', traveller: 'トラベラー', castle: '城', command: '命令', night: '夜行', fate: '幸運', doom: '不運', heirloom: '家宝', spirit: '精霊', zombie: 'ゾンビ', liaison: '連携', townsfolk: '町民', augur: '卜占官', clash: '衝突', fort: '城砦', odyssey: '叙事詩', wizard: '魔法使い', loot: '戦利品', omen: '前兆', shadow: '影' };
+  const EN = { treasure: 'Treasure', victory: 'Victory', curse: 'Curse', action: 'Action', attack: 'Attack', reaction: 'Reaction', duration: 'Duration', knight: 'Knight', ruins: 'Ruins', shelter: 'Shelter', looter: 'Looter', reserve: 'Reserve', traveller: 'Traveller', castle: 'Castle', command: 'Command', night: 'Night', fate: 'Fate', doom: 'Doom', heirloom: 'Heirloom', spirit: 'Spirit', zombie: 'Zombie', liaison: 'Liaison', townsfolk: 'Townsfolk', augur: 'Augur', clash: 'Clash', fort: 'Fort', odyssey: 'Odyssey', wizard: 'Wizard', loot: 'Loot', omen: 'Omen', shadow: 'Shadow' };
   Object.keys(DOM.CARDS).forEach((id) => {
     const d = cd[id]; if (!d) return;
     (DOM.CARDS[id].types || []).forEach((t) => {
@@ -155,13 +155,19 @@ console.log('=== 資本主義：財宝になるアクションの集合が固定
     // 同盟（+$ を持つアクション16枚）。仲買人は「そのコスト$1につき +$1」なので対象／
     //   触れ役・町・要塞は「選ぶ」の選択肢に +$ があるので対象／天幕・駐屯地・要塞は分割山の中身。
     'sycophant', 'merchant_camp', 'broker', 'courier', 'town', 'barbarian', 'capital_city', 'galleria',
-    'guildmaster', 'skirmisher', 'archer', 'tent', 'garrison', 'stronghold', 'town_crier', 'elder']
+    'guildmaster', 'skirmisher', 'archer', 'tent', 'garrison', 'stronghold', 'town_crier', 'elder',
+    // 旭日（+$ を持つアクション7枚）。公家/狐は「選ぶ」や条件分岐の中に +$ があるので対象／
+    //   侍・山の社は「次のターン以降の開始時 +$」だがカード文に +$ があるので対象（隊商の護衛・秘密の洞窟と同じ扱い）。
+    'fishmonger', 'aristocrat', 'change', 'kitsune', 'tea_house', 'samurai', 'mountain_shrine']
     .forEach((id) => ok(set.indexOf(id) >= 0, '資本主義：' + id + ' は財宝になる（+$ を持つ）'));
+  // 旭日：金山/勅使/駕籠は「+N 負債」であって +$ ではない／米は元から財宝／大名・絵師は +$ を持たない（番人）。
+  ['gold_mine', 'imperial_envoy', 'litter', 'rice', 'daimyo', 'artist', 'craftsman', 'root_cellar']
+    .forEach((id) => ok(set.indexOf(id) < 0, '資本主義：' + id + ' は財宝にならない（+$ 記号を持たない）'));
   // 夜想曲の夜行カード（守護者 +$1／夜襲 +$3）は**アクションではない**ので資本主義の対象にならない。
   ['guardian', 'raider', 'werewolf', 'vampire', 'changeling', 'monastery', 'night_watchman', 'exorcist', 'devils_workshop']
     .forEach((id) => ok(set.indexOf(id) < 0, '資本主義：' + id + ' は財宝にならない（夜行カード＝アクションではない）'));
   ok(set.every((id) => DOM.isType(id, 'action') && !DOM.isType(id, 'treasure')), '資本主義の対象は「財宝でないアクション」だけ');
-  ok(set.length === 140, '資本主義で財宝になるアクションは140枚（カタログ文を変えたらこの数を見直す。実: ' + set.length + '）');
+  ok(set.length === 147, '資本主義で財宝になるアクションは147枚（カタログ文を変えたらこの数を見直す。実: ' + set.length + '）');
 }
 
 console.log('\n========================================');
