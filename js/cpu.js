@@ -3180,6 +3180,63 @@
       /* ===== 拡張: 異郷（Hinterlands）===== */
       case 'oasis':
         return { type: 'OASIS_RESOLVE', card: pickDiscards(p.hand, 1)[0] };
+      /* ===== 旭日 R5：イベント10種 ===== */
+      // 蓄積＝コスト5以下のアクション1枚を獲得（強制）。
+      /* ⚠ engine は「コスト5以下**かつアクション**」しか受理しない＝`bestGain` が財宝/勝利点を返すと
+         engine が拒否し続けて**本番 livelock**（強制購入ソークで実際に踏んだ）。engine と同じ述語を見る。 */
+      case 'amass_gain': {
+        const okAm = (id) => DOM.engine.costUpTo(state, id, 5) && DOM.engine.isTypeSupply(state, id, 'action');
+        const cands = GAIN_ORDER.filter(okAm);
+        return { type: 'AMASS_GAIN', card: cands.length ? cands[0] : null };
+      }
+      // 苦行①＝追加でいくら払うか。手札のゴミ（呪い/銅貨/屋敷）の枚数ぶんだけ払う（コインの余りの範囲で）。
+      case 'asceticism_pay': {
+        const junk = p.hand.filter((x) => trashValue(x) <= 2).length;
+        return { type: 'ASCETICISM_PAY', amount: Math.max(0, Math.min(pd.max, junk)) };
+      }
+      // 苦行②＝ちょうど pd.need 枚を廃棄（強制）。
+      case 'asceticism_trash': {
+        const need = Math.min(pd.need, p.hand.length);
+        return { type: 'ASCETICISM_TRASH', cards: p.hand.slice().sort((x, y) => trashValue(x) - trashValue(y)).slice(0, need) };
+      }
+      // 信用＝コスト8以下のアクションか財宝を獲得（負債を負う）。負債はターン中いつでも返せる。
+      case 'credit_gain': {
+        const okC = DOM.engine.creditCanGain(state);
+        const cs = GAIN_ORDER.filter(okC);
+        return { type: 'CREDIT_GAIN', card: cs.length ? cs[0] : null };
+      }
+      // 金継ぎ①＝手札1枚を廃棄（強制）。ゴミを優先。⚠ 候補ゼロで null を返さない。
+      case 'kintsugi_trash': {
+        const j = p.hand.slice().sort((x, y) => trashValue(x) - trashValue(y))[0];
+        return { type: 'KINTSUGI_TRASH', card: j || p.hand[0] || null };
+      }
+      case 'kintsugi_gain':
+        return { type: 'KINTSUGI_GAIN', card: bestGain(state, pd.coin, { noVictory: true, pot: pd.pot, debt: pd.debt })
+          || bestGain(state, pd.coin, { pot: pd.pot, debt: pd.debt }) };
+      /* 稽古＝手札のアクション1枚を2回使用してよい（任意）。⚠ 群A＝engine と同じ述語を見る。 */
+      case 'practice_play': {
+        const pt = DOM.engine.practiceTargets(state, pd.player);
+        const best = pt.slice().sort((x, y) => throneValue(state, y) - throneValue(state, x))[0];
+        return { type: 'PRACTICE_PLAY', card: best || null };
+      }
+      // 海上交易＝最大 pd.max 枚まで廃棄してよい（任意）。ゴミだけ捨てる。
+      case 'sea_trade_trash':
+        return { type: 'SEA_TRADE_TRASH', cards: p.hand.slice().sort((x, y) => trashValue(x) - trashValue(y)).filter((x) => trashValue(x) <= 2).slice(0, pd.max) };
+      // 賛辞＝場に出していないアクションを最大3種類まで獲得してよい（強い順に取る）。
+      case 'receive_tribute_gain': {
+        const rt = DOM.engine.receiveTributeTargets(state, pd.player, pd.gained || []);
+        const pick = GAIN_ORDER.filter((id) => rt.indexOf(id) >= 0)[0];
+        return { type: 'RECEIVE_TRIBUTE_GAIN', card: pick || null };
+      }
+      // 参集＝ちょうど pd.need を1枚（強制）。
+      case 'gather_gain':
+        return { type: 'GATHER_GAIN', card: bestGainExact(state, pd.need, { noVictory: true }) || bestGainExact(state, pd.need) };
+      // 継続＝アタックでないコスト4以下のアクションを獲得して使用（強制）。
+      case 'continue_gain': {
+        const okK = DOM.engine.continueCanGain(state);
+        const ks = GAIN_ORDER.filter(okK);
+        return { type: 'CONTINUE_GAIN', card: ks.length ? ks[0] : null };
+      }
       // 旭日 R4：成長（予言）＝財宝を獲得したとき、それより安いカードを獲得（強制）。
       case 'growth_gain':
         return { type: 'GROWTH_GAIN', card: bestGain(state, pd.coin - 1, { noVictory: true, pot: pd.pot, debt: pd.debt })

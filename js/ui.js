@@ -3904,6 +3904,61 @@
 
     /* ===== 拡張: 異郷（Hinterlands）===== */
     if (pd.type === 'oasis') return modalSingleHand(p, 'オアシス — 捨てる', '手札1枚を捨てます。', () => true, (card) => dispatch({ type: 'OASIS_RESOLVE', card }), null, '捨てる');
+    /* ===== 旭日 R5：イベント10種 ===== */
+    // 蓄積＝コスト5以下のアクション1枚を獲得（強制）。
+    if (pd.type === 'amass_gain') return modalGainSupply(state, '蓄積 — 獲得',
+      '場にアクションカードが1枚も無いので、コスト5以下のアクションカード1枚を獲得します（強制）。',
+      (id) => canUpTo(state, id, 5) && isTypeSup(state, id, 'action'),
+      (id) => dispatch({ type: 'AMASS_GAIN', card: id }));
+    // 苦行①＝追加でいくら払うか（0＝払わない）。
+    if (pd.type === 'asceticism_pay') return modalAmount('苦行 — 追加で支払う',
+      'コインを好きなだけ支払い、それと同じ枚数の手札を廃棄します（0 なら何も起きません）。',
+      pd.max, 0, (n) => (n === 0 ? '支払わない' : n + 'コイン 払って ' + n + '枚 廃棄する'),
+      (n) => dispatch({ type: 'ASCETICISM_PAY', amount: n }));
+    // 苦行②＝支払った額とちょうど同じ枚数を廃棄（強制）。
+    if (pd.type === 'asceticism_trash') {
+      const needA = Math.min(pd.need, p.hand.length);
+      return modalSelectN(p, '苦行 — 廃棄', '支払った ' + pd.need + 'コイン と同じ ' + needA + '枚 を廃棄します（強制）。',
+        needA, needA + '枚を廃棄する', (cards) => dispatch({ type: 'ASCETICISM_TRASH', cards }));
+    }
+    // 信用＝コスト8以下のアクションか財宝を獲得し、そのコストぶんの負債を得る（強制）。
+    if (pd.type === 'credit_gain') return modalGainSupply(state, '信用 — 獲得',
+      'コスト8以下のアクションカードか財宝カード1枚を獲得します。そのコストに等しい負債を得ます（強制）。',
+      (id) => DOM.engine.creditCanGain(state)(id), (id) => dispatch({ type: 'CREDIT_GAIN', card: id }));
+    // 金継ぎ①＝手札1枚を廃棄（強制）。
+    if (pd.type === 'kintsugi_trash') return modalSingleHand(p, '金継ぎ — 廃棄',
+      '手札1枚を廃棄します（強制）。このゲーム中に金貨を獲得していれば、そのカードより最大2コイン高いカードを獲得します。',
+      () => true, (card) => dispatch({ type: 'KINTSUGI_TRASH', card }), null, '廃棄する');
+    // 金継ぎ②＝廃棄したカードより最大2コイン高いカードを獲得（強制）。
+    if (pd.type === 'kintsugi_gain') return modalGainSupply(state, '金継ぎ — 獲得',
+      '廃棄したカードよりコストが最大2コイン高いカード1枚を獲得します（強制）。',
+      (id) => canUpTo(state, id, pd.coin, pd), (id) => dispatch({ type: 'KINTSUGI_GAIN', card: id }));
+    /* 稽古＝手札のアクション1枚を2回使用してよい（任意）。**群A**＝山札の影カードも選べる。 */
+    if (pd.type === 'practice_play') return modalSingleHand(p, '稽古 — 2回使用する（任意）',
+      '手札のアクションカード1枚を2回使用できます。山札の影カードも選べます。',
+      (id) => DOM.engine.practiceTargets(state, pd.player).indexOf(id) >= 0,
+      (card) => dispatch({ type: 'PRACTICE_PLAY', card }),
+      { label: '使わない', on: () => dispatch({ type: 'PRACTICE_PLAY', card: null }) }, '2回使う',
+      DOM.engine.practiceTargets(state, pd.player));
+    // 海上交易＝引いた枚数（＝場のアクション枚数）以下の手札を廃棄してよい（任意）。
+    if (pd.type === 'sea_trade_trash') return modalMultiHand(p, '海上交易 — 廃棄（任意）',
+      '手札を最大 ' + pd.max + '枚 まで廃棄できます（0枚でもかまいません）。',
+      (n) => (n === 0 ? '廃棄しない' : n + '枚を廃棄する'), true,
+      (cards) => dispatch({ type: 'SEA_TRADE_TRASH', cards }), pd.max);
+    // 賛辞＝場に出していないアクションを1枚ずつ最大3種類まで獲得してよい（任意・やめられる）。
+    if (pd.type === 'receive_tribute_gain') return modalGainSupply(state, '賛辞 — 獲得（任意）',
+      '場に出していないアクションカードを、名前が異なるように1枚ずつ最大3種類まで獲得できます（'
+      + ((pd.gained || []).length) + '/3）。コストの上限はありません。',
+      (id) => DOM.engine.receiveTributeTargets(state, pd.player, pd.gained || []).indexOf(id) >= 0,
+      (id) => dispatch({ type: 'RECEIVE_TRIBUTE_GAIN', card: id }), null, true);
+    // 参集＝ちょうど3／4／5コインを1枚ずつ（強制・記載順）。
+    if (pd.type === 'gather_gain') return modalGainSupply(state, '参集 — 獲得',
+      'コストがちょうど ' + pd.need + 'コイン のカード1枚を獲得します（強制）。',
+      (id) => canExact(state, id, pd.need), (id) => dispatch({ type: 'GATHER_GAIN', card: id }));
+    // 継続＝アタックでないコスト4以下のアクションを獲得し、アクションフェイズに戻って使用する（強制）。
+    if (pd.type === 'continue_gain') return modalGainSupply(state, '継続 — 獲得',
+      'アタックでないコスト4以下のアクションカード1枚を獲得します。その後アクションフェイズに戻り、それを使用します（強制）。',
+      (id) => DOM.engine.continueCanGain(state)(id), (id) => dispatch({ type: 'CONTINUE_GAIN', card: id }));
     // 旭日 R4：成長（予言）＝財宝を獲得したとき、それより安いカード1枚を獲得（強制）。
     if (pd.type === 'growth_gain') return modalGainSupply(state, '成長 — 獲得',
       '財宝カードを獲得したので、それより安いカード1枚を獲得します（強制）。',

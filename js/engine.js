@@ -574,6 +574,53 @@
      🛑 **`pickMouseCard` の最後の1行（分割山・城・騎士の除外）をコピーしてはいけない**＝
         公式が名指しした唯一の例（騒がしい村＝分割山の下段／$5の騎士9種）が落ちる。
         混合山の中身（**小さい城**＝$5・アクション+勝利点）も候補（山の randomizer は勝利点だが**カード自身**は $5 の非持続アクション）。 */
+  /* ===== 旭日 R5：イベントの候補述語（engine拒否・CPU候補・UIフィルタが**同じ関数**を見る）===== */
+  // 信用（Credit）＝コスト8以下の**アクションか財宝**（負債コスト・ポーション費用のカードは取れない＝公式）。
+  function creditCanGain(state) {
+    return (id) => costUpTo(state, id, 8) && costIsPlainCoin(id) &&
+      (isTypeSupply(state, id, 'action') || isTypeSupply(state, id, 'treasure'));
+  }
+  /* 賛辞（Receive Tribute）＝「場に出していないアクション」で「既に取ったものと名前が違う」もの。
+     🛑 **コスト制限は一切無い**（公式＝負債/ポーション費用のカードも取れて負債も負わない）＝
+        `costUpTo` を掛けてはいけない。`gainableBase` から**コスト比較だけを外した形**にする
+        （在庫・非サプライ・分割山のロックの除外は残す）。 */
+  function receiveTributeTargets(state, pi, taken) {
+    const p = state.players[pi];
+    const inPlayNames = new Set(p.inPlay.concat(p.durationCards || []).map((c) => mixedTopCard(state, c) || c));
+    const got = new Set(taken || []);
+    return Object.keys(state.supply).filter((id) =>
+      gainableBase(state, id) && isTypeSupply(state, id, 'action') &&
+      !inPlayNames.has(mixedTopCard(state, id) || id) && !got.has(mixedTopCard(state, id) || id));
+  }
+  // 継続（Continue）＝**アタックでない**コスト4以下のアクション。
+  function continueCanGain(state) {
+    return (id) => costUpTo(state, id, 4) && isTypeSupply(state, id, 'action') && !isTypeSupply(state, id, 'attack');
+  }
+  /* 稽古（Practice）＝手札のアクション1枚を2回使用してよい（**群A**＝山札の影札も選べる）。
+     鼓舞する(Inspiring) と違い「場に出していない」条件は無い。 */
+  function practiceTargets(state, pi) {
+    const out = [];
+    handPlayable(state, pi).forEach((c) => {
+      if (out.indexOf(c) >= 0) return;
+      if (!isActionFor(state, c)) return;
+      if (!canPlayHandCard(state, pi, c)) return; // 航海の3枚制限・将軍
+      out.push(c);
+    });
+    return out;
+  }
+  /* 継続＝購入フェイズ→アクションフェイズへ戻る（ヴィラと同じクラス）。
+     ⚠ 闘技場の再武装／`treasuresLocked` 解除／「購入フェイズ終了時」窓（ワイン商→野外劇）を通す。 */
+  function continueReturnToAction(state, pi) {
+    const t = state.turn;
+    if (t.phase === 'buy') {
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'buy_phase_end_mid', player: pi });
+      t.phase = 'action';
+      t.treasuresLocked = false;
+      t.arenaFired = false;
+    }
+    addActions(t, 1); t.buys += 1;
+    log(state, `${state.players[pi].name} は継続：アクションフェイズに戻り +1アクション +1購入。`);
+  }
   function pickRiverboatCard(kingdom) {
     const inK = new Set(kingdom);
     const eligible = (id) => {
@@ -1992,6 +2039,8 @@
         ghostSetAside: [], // 幽霊の脇札（**公開**＝公開しながら掘るので全員が見ている。物理カード）
         cryptSetAside: [], // 納骨堂の脇札（**所有者のみ可視**＝裏向き。物理カード。納骨堂1枚につき1束だが枚数だけで足りる）
         puzzleBox: [],     // 略奪：パズルボックスで裏向きに脇へ置いた札（**所有者のみ可視**。ターン終了時＝先引きの後に手札へ）
+        foresightAside: [], // 旭日：洞察(Foresight)で脇に置いた札（**公開**。ターン終了時＝先引きの後に手札へ）
+        gainedGoldThisGame: false, // 旭日：金継ぎ(Kintsugi)＝このゲーム中に金貨を獲得したか（非カード・公開・ターンをまたぐ）
         bidingAside: [],   // 旭日：好機到来(Biding Time)でクリンナップ開始時に伏せて脇へ置いた手札（**所有者のみ可視**。次の自分のターンの開始時に手札へ）
         cage: [],          // 略奪：檻に伏せて置いた札（**所有者のみ可視**・物理カード。勝利点を獲得したターンの終了時に手札へ）
         cageDue: false,    // 略奪：檻が誘発した（＝このターンの終了時に cage を手札へ加える）。非カード。
@@ -8647,6 +8696,7 @@
       p.ghostSetAside || [], // 夜想曲：幽霊の脇札（公開。幽霊が場を離れても孤児化するだけで所有カードのまま）
       p.cryptSetAside || [], // 夜想曲：納骨堂の脇札（所有者のみ可視。同上）
       p.puzzleBox || [],  // 略奪：パズルボックスの脇札（**裏向き＝所有者のみ可視**。ターン終了時に手札へ戻る物理カード）
+      p.foresightAside || [], // 旭日：洞察の脇札（**公開**。ターン終了時に手札へ戻る物理カード）
       p.bidingAside || [], // 旭日：好機到来の脇札（**裏向き＝所有者のみ可視**。次の自分のターン開始時に手札へ戻る物理カード）
       p.cage || [],       // 略奪：檻の脇札（**裏向き＝所有者のみ可視**。勝利点を獲得したターンの終了時に手札へ戻る物理カード）
       p.deliverAside || [], // 略奪：配達の脇札（公開・ターン終了時に手札へ戻る物理カード）
@@ -9892,6 +9942,12 @@
   function triggerOnGain(state, pIndex, cardId, dest, costAtGain) {
     state._gainDepth = (state._gainDepth || 0) + 1;
     if (state._gainDepth > 6) { state._gainDepth--; return; } // 連鎖の暴走防止
+    /* 旭日 R5：金継ぎ（Kintsugi）＝「**このゲーム中に金貨を1枚でも獲得していたか**」（非カード・公開・
+       ターンをまたいで残る＝`freshTurn` で消さない）。**所持ではなく獲得歴**（廃棄・追放しても消えない）。
+       ⚠ **相手のターンに獲得した金貨も数える**（海賊／盗賊／密輸人／獲得時リアクション経由も全部）。
+       ⚠ `gain()` / `gainFromOutside()`（廃棄置き場からの盗賊・墓暴き・物色）の両方から呼ばれるこの関数に
+          置けば1箇所で足りる。**白金貨は数えない**（金貨だけ）。 */
+    if (cardId === 'gold' && state.players[pIndex]) state.players[pIndex].gainedGoldThisGame = true;
     const n = state.players.length;
     // 帝国：ランドマークの購入フェイズ判定は「獲得が起きた時点のフェイズ」で見る。
     //   ヴィラの獲得時効果はこの関数の途中で phase を 'buy'→'action' に変えるので、それより前の値を捕まえておく
@@ -11578,6 +11634,14 @@
       p.puzzleBox = [];
       log(state, `${p.name} はパズルボックスで脇に置いた ${n}枚 を手札に加えた。`);
     }
+    /* 旭日 R5：洞察（Foresight）＝脇に置いた札を「ターン終了時」＝**次の手札を先引きした後**に手札へ加える
+       （公式FAQ逐語＝`The card is added to your hand after drawing your next hand.`）＝手札は6枚になる。 */
+    if ((p.foresightAside || []).length) {
+      const nf = p.foresightAside.length;
+      p.foresightAside.forEach((c) => p.hand.push(c));
+      p.foresightAside = [];
+      log(state, `${p.name} は洞察で脇に置いた ${nf}枚 を手札に加えた。`);
+    }
     // 冒険：保存（Save）＝脇に置いた1枚を「次の手札を引いた後」に手札へ加える（＝この片付けの中で戻す）。
     if (state.turn.savedCard) {
       const sv = state.turn.savedCard;
@@ -11819,7 +11883,8 @@
      ⚠ 旅行（journey・2023エラッタ版＝決定D1）は前置句が消えている＝**ここに入れない**
        （何回でも買えて2枚目以降の追加ターンだけが空振り＝使節団と同じ形）。
      ⚠ 配達（deliver）も "once per turn" が無い（買えるが2回目は空振り＝Donald X. 明言）＝入れない。 */
-  const ONCE_PER_TURN_EVENTS = new Set(['alms', 'borrow', 'save', 'pilgrimage', 'desperation', 'launch']);
+  // 旭日：継続(Continue) は 'Once per turn:' 付き＝**購入自体を拒否する**（無いと無限ループする＝作者が明言）。
+  const ONCE_PER_TURN_EVENTS = new Set(['alms', 'borrow', 'save', 'pilgrimage', 'desperation', 'launch', 'continue']);
   // 相続は1ゲーム1回（既に脇置きを持っていれば買えない）。移動動物園：今を生きる（seize_the_day）も1ゲーム1回。
   function canBuyEvent(state, pi, id) {
     const t = state.turn, p = state.players[pi];
@@ -11944,6 +12009,137 @@
         t.arenaFired = false;
         draw(state, pi, 1); addActions(t, 1); t.buys += 1;
         log(state, `${me.name} は発進：アクションフェイズに戻り +1カード +1アクション +1購入。`);
+        break;
+      }
+      /* ===== 旭日 R5：イベント10種（正本＝第6章）=====
+         ⚠ 10枚とも区切り線0本・機能エラッタ0件。`Once per turn:` が付くのは **継続(Continue) だけ**。
+         ⚠ イベントのコストは**盛大な取引で下がらない**（`BUY_EVENT` が `ev.cost` を直に見る＝既に正しい）。 */
+      /* 蓄積（$2）＝**アクションカードを1枚も場に出していない**なら、コスト5以下のアクション1枚を獲得。
+         ⚠ 公式FAQ＝`Duration cards in play that were played on previous turns will stop Amass`／
+            `Cards you played this turn but which are no longer in play, such as Horse, will not.`
+            ＝**場の実物だけを見る**（`inPlay` ＋ `durationCards`。プレイ履歴カウンタを見てはいけない）。
+         ⚠ 条件を満たさなくても**買える**（engine は拒否しない）。候補ゼロなら窓を開かない。 */
+      case 'amass': {
+        const inPlayAll = me.inPlay.concat(me.durationCards || []);
+        if (inPlayAll.some((c) => DOM.isType(c, 'action'))) {
+          log(state, `${me.name} は蓄積を買ったが、場にアクションカードがあるので何も獲得しない。`);
+        } else if (anyGainable(state, (id) => costUpTo(state, id, 5) && isTypeSupply(state, id, 'action'))) {
+          state.pending = { type: 'amass_gain', player: pi };
+        }
+        break;
+      }
+      /* 苦行（$2）＝**コインを好きなだけ支払い、それと同じ枚数の手札を廃棄する**。
+         ⚠ 公式FAQ＝`you could pay an additional $3 — so $5 total — and trash 3 cards`
+            ＝$2 を払った**後**の「追加でN」。0枚でよい（"any amount"）。
+         ⚠ 【裁定未確認】手札枚数を超えて払えるかの公式文が取れていない＝`min(残コイン, 手札枚数)` に丸める
+            （払い損を出させない安全側）。
+         🛑 **過払い(Overpay) 機構に乗せてはいけない**（wiki が `its text doesn't use that term` と明示）。 */
+      case 'asceticism': {
+        const maxPay = Math.min(t.coins, me.hand.length);
+        if (maxPay > 0) state.pending = { type: 'asceticism_pay', player: pi, max: maxPay };
+        break;
+      }
+      /* 信用（$2）＝コスト8以下の**アクションか財宝**を獲得し、**そのコストに等しい負債**を得る。
+         ⚠ 公式FAQ＝`This can't gain cards with D in the cost.`／`It also can't gain cards with P in the cost.`
+            ＝`costIsPlainCoin` を併用する（＝二重に負債を負う形にならない）。
+         ⚠ **人狼のような「アクション+夜行」も取れる**（除外リストを書かない）。
+         ⚠ 負債は**獲得後**のコストのコイン成分（`addDebt` を使う＝`takeDebt` はコスト欄を読むので0になる）。 */
+      case 'credit': {
+        if (anyGainable(state, creditCanGain(state))) state.pending = { type: 'credit_gain', player: pi };
+        break;
+      }
+      /* 洞察（$2）＝アクションが1枚公開されるまで山札を公開し、**その1枚を脇に置いて残りを捨てる**。
+         ターン終了時（＝**次の手札を先引きした後**）に手札へ加える（公式FAQ＝`after drawing your next hand`）。
+         ⚠ **公開＝相手にも見える**（`p.foresightAside` はマスクしない）。
+         ⚠ 公開を全部終えてから捨てる（捨て札トリガーがリシャッフルの母集団を変えないように）。
+         ⚠ `revealFromDeck` が尽きた山札のリシャッフルまで面倒を見る（自前でループを書かない）。 */
+      case 'foresight': {
+        const fr = revealFromDeck(state, pi, (c) => DOM.isType(c, 'action'));
+        const shown = fr.skipped.concat(fr.matched ? [fr.matched] : []);
+        if (shown.length) reveal(state, pi, shown, '洞察で山札を公開');
+        if (fr.matched) {
+          (me.foresightAside = me.foresightAside || []).push(fr.matched);
+          log(state, `${me.name} は洞察で「${C()[fr.matched].name}」を脇に置いた（ターン終了時に手札へ）。`);
+        } else if (shown.length) {
+          log(state, `${me.name} は洞察で山札を全部公開したがアクションカードが無かった。`);
+        }
+        if (fr.skipped.length) {
+          fr.skipped.forEach((c) => me.discard.push(c));
+          triggerOnDiscard(state, pi, fr.skipped);
+        }
+        break;
+      }
+      /* 金継ぎ（$3）＝手札1枚を廃棄する。**このゲーム中に金貨を1枚でも獲得していたら**、
+         廃棄したカードより**コストが最大2コイン高い**カード1枚を獲得する。
+         ⚠ 判定は**廃棄の後**（青空市場が金継ぎの廃棄で金貨を得たら、そのおかげで獲得段が有効になる）＝
+            `onTrashQueue` が空になってから読む再開網（`t.kintsugiResume`）。
+         ⚠ 「最大2コイン高い」＝3成分（ポーション/負債はそのまま引き継ぐ）＝狸(Tanuki) と同じ述語。
+         ⚠ 手札0枚なら窓を開かない（開いて閉じないと人間が詰む）。 */
+      case 'kintsugi': {
+        if (me.hand.length) state.pending = { type: 'kintsugi_trash', player: pi };
+        break;
+      }
+      /* 稽古（$3）＝手札のアクション1枚を2回使用してもよい（任意）。
+         ⚠ **フェイズを絶対に触らない**（`t.phase` は 'buy' のまま）＝冠(Crown) が財宝モードになる。
+            **継続(Continue) と真逆**なので共通化してはいけない（同じ拡張に両方ある）。
+         ⚠ **群A**＝山札の影(Shadow)カードも選べる（`inspiringTargets` と同じ `handPlayable` 経由）。
+         ⚠ 1ターンに何度でも買える（`ONCE_PER_TURN_EVENTS` に入れない）。 */
+      case 'practice': {
+        if (practiceTargets(state, pi).length) state.pending = { type: 'practice_play', player: pi };
+        break;
+      }
+      /* 海上交易（$4）＝**場のアクション1枚につき +1カード**、その枚数以下の手札を廃棄してよい（任意）。
+         🛑 上限は「最初に数えた**場のアクション枚数**」＝「実際に引けた枚数」ではない（公式FAQ がどちらも `that many`）。
+            引けなくても廃棄枠は減らない（-1カードトークンで実測できる）。
+         ⚠ 「場」＝`inPlay` ＋ `durationCards`（蓄積とまったく同じ穴＝同じ数え方を共有する）。 */
+      case 'sea_trade': {
+        const acts = me.inPlay.concat(me.durationCards || []).filter((c) => DOM.isType(c, 'action')).length;
+        if (acts > 0) {
+          draw(state, pi, acts);
+          if (me.hand.length) state.pending = { type: 'sea_trade_trash', player: pi, max: acts };
+        } else {
+          log(state, `${me.name} は海上交易を買ったが、場にアクションカードが無い。`);
+        }
+        break;
+      }
+      /* 賛辞（$5）＝**このターン3枚以上獲得していたら**、場に出していないアクションを1枚ずつ3種類まで獲得してよい。
+         🛑 **コスト制限がまったく無い**（公式＝`Actions with D or P in their cost can be gained.
+            You do not take any D for this or need to have any Potion in play.`）
+            ＝`costUpTo`/`gainableBase` のコスト比較を掛けてはいけない（本アプリが繰り返し livelock を出した形）。
+         ⚠ 「異なる名前」＝互いに／かつ**自分の場のカード**とも異なる（相手の場は無関係）。
+         ⚠ 1枚ずつ・順番は任意・途中でやめられる＝**「やめる」ボタン必須**（略奪の繁栄 Prosper と同型の再開網）。 */
+      case 'receive_tribute': {
+        if ((t.gainedThisTurn || []).length >= 3 && receiveTributeTargets(state, pi, []).length) {
+          t.receiveTributeResume = { player: pi, gained: [] };
+          state.pending = { type: 'receive_tribute_gain', player: pi, gained: [] };
+        } else {
+          log(state, `${me.name} は賛辞を買ったが、このターンの獲得が3枚未満（${(t.gainedThisTurn || []).length}枚）。`);
+        }
+        break;
+      }
+      /* 参集（$7）＝**ちょうど$3・ちょうど$4・ちょうど$5**のカードを1枚ずつ獲得する（強制）。
+         🛑 **獲得順は選べない＝$3→$4→$5 の固定順**（`in the order listed`。賛辞は逆に `in any order`）。
+         ⚠ 取れないコストがあればその段を飛ばす（`If you can't gain one … you still gain the others.`）。
+         ⚠ **コストは各段の直前に評価し直す**（1枚目の獲得で橋／街道／デストリエ／行人 が動く）＝
+            最初に3組まとめて確定する実装は必ず壊れる。 */
+      case 'gather': {
+        t.gatherQueue = [3, 4, 5];
+        t.gatherPlayer = pi;
+        break;
+      }
+      /* 継続（$0+負債8・**1ターンに1度**）＝アタックでないコスト4以下のアクション1枚を獲得し、
+         **アクションフェイズに戻って**それを使用する。+1アクション +1購入。
+         🛑 **獲得は購入フェイズ扱い／使用はアクションフェイズ扱い**（公式 Other rules clarifications 逐語）＝
+            `t.phase` を戻すのは「獲得を完全に解決した**後**・使用の**前**」。1行ずらすと両方壊れる。
+         ⚠ 使用はアクション権を消費しない（`playCardNoAction`）。獲得札が動かされていたら使用は失敗するが
+            フェイズ復帰と +1アクション +1購入 は起きる（stop-moving）。
+         ⚠ ヴィラ／騎兵隊と同じく「購入フェイズ終了時」窓（ワイン商→野外劇）を開く（`buy_phase_end_mid`）。 */
+      case 'continue': {
+        if (anyGainable(state, continueCanGain(state))) {
+          state.pending = { type: 'continue_gain', player: pi };
+        } else {
+          continueReturnToAction(state, pi);
+        }
         break;
       }
       // 鏡映＝+1購入。このターン次にアクションカードを獲得したとき、追加で同じカード1枚を獲得。**累積する**。
@@ -12977,6 +13173,21 @@
           if (state.pending) break;
           continue;
         }
+        /* 旭日 R5：継続＝**非対話**＝獲得を完全に解決した後に、アクションフェイズへ戻ってから使用する。
+           🛑 **フェイズを戻すのは獲得の解決後・使用の前**（公式＝獲得は購入フェイズ扱い／使用はアクションフェイズ扱い）。
+           ⚠ 獲得札が動かされていたら使用は失敗するが、フェイズ復帰と +1アクション +1購入 は起きる（stop-moving）。 */
+        if (q.type === 'continue_play') {
+          const cp = state.players[q.player];
+          continueReturnToAction(state, q.player);   // 先にアクションフェイズへ戻す（冠がアクションモードになる）
+          if (removeOne(cp.discard, q.card)) {
+            cp.discard.push(q.card);                 // 位置を戻してから playCardNoAction に取らせる
+            playCardNoAction(state, q.player, q.card, cp.discard, '継続で');
+          } else {
+            log(state, `${cp.name} の継続は「${C()[q.card].name}」の使用に失敗した（獲得先から動かされていた）。`);
+          }
+          if (state.pending) break;
+          continue;
+        }
         /* 略奪P3：セイレーンの獲得時＝手札にアクションが無ければ選択の余地なし＝自己廃棄を即適用して次へ。 */
         if (q.type === 'siren_gain' && !state.players[q.player].hand.some((c) => DOM.isType(c, 'action'))) {
           const sp = state.players[q.player];
@@ -13103,6 +13314,44 @@
     // 移動動物園：植民（Populate）＝アクションのサプライ山それぞれから1枚ずつ獲得する。
     //   1枚獲得するたびに獲得時対話（望楼/そり/追放の払い戻し等）が挟まるので、それを解決してから次の選択待ちを開く。
     //   空になった山・獲得できなくなった山はここで落とす（残りゼロなら窓を閉じる）。
+    /* 旭日 R5：参集＝ちょうど$3／$4／$5 を**記載順に**1枚ずつ獲得する（強制）。
+       ⚠ **コストは各段の直前に評価し直す**（1枚目の獲得で橋／街道／デストリエ／行人 が動く）。
+       ⚠ 候補ゼロの段は窓を開かず次へ（`If you can't gain one … you still gain the others.`）。 */
+    if (!state.pending && !state.gameOver && state.turn && (state.turn.gatherQueue || []).length) {
+      const gq = state.turn.gatherQueue;
+      while (gq.length && !state.pending) {
+        const need = gq.shift();
+        if (anyGainable(state, (id) => costExact(state, id, need))) {
+          state.pending = { type: 'gather_gain', player: state.turn.gatherPlayer, need };
+        }
+      }
+      if (!gq.length) { state.turn.gatherQueue = null; state.turn.gatherPlayer = null; }
+      state = runReplays(state);
+    }
+    /* 旭日 R5：賛辞＝1枚ずつ・最大3種類・途中でやめられる（略奪の繁栄 Prosper と同型の再開網）。 */
+    if (!state.pending && !state.gameOver && state.turn && state.turn.receiveTributeResume) {
+      const rr = state.turn.receiveTributeResume;
+      state.turn.receiveTributeResume = null;
+      if (receiveTributeTargets(state, rr.player, rr.gained).length) {
+        state.turn.receiveTributeResume = rr;
+        state.pending = { type: 'receive_tribute_gain', player: rr.player, gained: rr.gained };
+      }
+      state = runReplays(state);
+    }
+    /* 旭日 R5：金継ぎ＝**廃棄の on-trash を全部解決してから**「このゲーム中に金貨を獲得していたか」を読む
+       （青空市場が金継ぎの廃棄で金貨を得たら、そのおかげで獲得段が有効になる＝公式）。 */
+    if (!state.pending && !state.gameOver && state.turn && state.turn.kintsugiResume
+        && !(state.onTrashQueue && state.onTrashQueue.length) && !(state.onGainQueue && state.onGainQueue.length)) {
+      const kr = state.turn.kintsugiResume;
+      state.turn.kintsugiResume = null;
+      const kp = state.players[kr.player];
+      if (!kp.gainedGoldThisGame) {
+        log(state, `${kp.name} は金継ぎで廃棄したが、このゲーム中まだ金貨を獲得していない（獲得しない）。`);
+      } else if (anyGainable(state, (id) => costUpTo(state, id, kr.coin, kr))) {
+        state.pending = { type: 'kintsugi_gain', player: kr.player, coin: kr.coin, pot: kr.pot, debt: kr.debt };
+      }
+      state = runReplays(state);
+    }
     if (!state.pending && !state.gameOver && state.turn && state.turn.populateQueue && state.turn.populateQueue.length) {
       const t3 = state.turn;
       const left = t3.populateQueue.filter((k) => populatePiles(state).indexOf(k) >= 0);
@@ -17872,6 +18121,160 @@
         return state;
       }
       // 狸＝手札1枚を廃棄し、それより最大2コイン高いカードを獲得（改築/拡張と同型）。
+      /* ===== 旭日 R5：イベントの選択解決（すべて4点セット）===== */
+      // 蓄積＝コスト5以下のアクション1枚を獲得（強制）。
+      case 'AMASS_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'amass_gain') return state;
+        const okA = (id) => costUpTo(state, id, 5) && isTypeSupply(state, id, 'action');
+        if (!anyGainable(state, okA)) { state.pending = null; return state; } // 終端保証
+        if (!finishGain(state, pd, action.card, okA, 'discard', '蓄積で獲得した。')) return state;
+        return state;
+      }
+      // 苦行①＝追加で支払う額を決める（0＝払わない＝2段目を開かない）。
+      case 'ASCETICISM_PAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'asceticism_pay') return state;
+        const n = action.amount | 0;
+        if (n < 0 || n > pd.max) return state;
+        state.pending = null;
+        if (n === 0) return state;
+        t.coins -= n;
+        log(state, `${state.players[pd.player].name} は苦行で追加 $${n} を支払った（手札${n}枚を廃棄する）。`);
+        state.pending = { type: 'asceticism_trash', player: pd.player, need: n };
+        return state;
+      }
+      // 苦行②＝支払った額とちょうど同じ枚数の手札を廃棄する（強制）。
+      case 'ASCETICISM_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'asceticism_trash') return state;
+        const pl = state.players[pd.player];
+        const need = Math.min(pd.need, pl.hand.length);
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length !== need) return state;
+        const copy = pl.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        state.pending = null;
+        // 廃棄は1枚ずつ（既存の礼拝堂/神殿と揃える）。廃棄が別の窓を開くので pending を先に閉じてある。
+        cards.forEach((c) => { if (removeOne(pl.hand, c)) trashCard(state, pd.player, c); });
+        log(state, `${pl.name} は苦行で ${cards.length}枚を廃棄した。`);
+        return state;
+      }
+      // 信用＝コスト8以下のアクションか財宝を獲得し、そのコイン成分ぶんの負債を得る（強制）。
+      case 'CREDIT_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'credit_gain') return state;
+        if (!anyGainable(state, creditCanGain(state))) { state.pending = null; return state; } // 終端保証
+        const card = action.card;
+        if (card == null || !creditCanGain(state)(card)) return state;
+        // ⚠ 負債は**獲得後**のコストで取る（デストリエ等でコストが動く＝公式）。
+        if (!finishGain(state, pd, card, creditCanGain(state), 'discard', '信用で獲得した。')) return state;
+        const dn = costOf(state, card).coin;
+        /* 🛑 支配(Possession) 中は**どのプレイヤーも負債を負わない**（公式逐語＝`they don't gain the card
+           (you do), which means there's no D given to any player`）＝§0-23 の「負債は支配者が負う」と逆。 */
+        if (dn > 0 && state.turn.possessedBy == null) addDebt(state, pd.player, dn, `信用で「${C()[card].name}」を獲得して`);
+        return state;
+      }
+      // 金継ぎ①＝手札1枚を廃棄（強制）。②の判定は on-trash を全部解決してから（再開網）。
+      case 'KINTSUGI_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'kintsugi_trash') return state;
+        const pl = state.players[pd.player];
+        if (!pl.hand.length) { state.pending = null; return state; } // 終端保証
+        const card = action.card;
+        if (card == null || pl.hand.indexOf(card) < 0) return state;
+        const kr = costOf(state, card);
+        removeOne(pl.hand, card);
+        state.pending = null;
+        trashCard(state, pd.player, card);
+        log(state, `${pl.name} は金継ぎで「${C()[card].name}」を廃棄した。`);
+        /* ⚠ 判定は**廃棄の後**＝青空市場が金継ぎの廃棄で金貨を獲得したら、そのおかげで獲得段が有効になる。
+           `onTrashQueue` が空になってから読む再開網に載せる。 */
+        t.kintsugiResume = { player: pd.player, coin: kr.coin + 2, pot: kr.pot, debt: kr.debt };
+        return state;
+      }
+      // 金継ぎ②＝廃棄したカードより最大2コイン高いカード1枚を獲得（強制）。
+      case 'KINTSUGI_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'kintsugi_gain') return state;
+        if (!finishGain(state, pd, action.card, (id) => costUpTo(state, id, pd.coin, pd), 'discard', '金継ぎで獲得した。')) return state;
+        return state;
+      }
+      /* 稽古＝手札のアクション1枚を2回使用してもよい（任意）。群A＝山札の影札も選べる。
+         ⚠ **フェイズを触らない**（購入フェイズのまま＝冠が財宝モードにならないよう `t.phase` は 'buy'）。
+         ⚠ `playCardNoAction` の戻り値を見てから replay を積む（§0-29 A4 の [high] 12）。 */
+      case 'PRACTICE_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'practice_play') return state;
+        if (action.card == null) { state.pending = null; return state; } // 辞退（"You may"）
+        if (practiceTargets(state, pd.player).indexOf(action.card) < 0) return state;
+        state.pending = null;
+        if (playPlayable(state, pd.player, action.card, '稽古で', action.way)) {
+          state.replay = state.replay || [];
+          state.replay.push({ player: pd.player, card: action.card, way: action.way || null });
+          log(state, `${state.players[pd.player].name} は稽古で「${C()[action.card].name}」をもう一度使う。`);
+        }
+        return state;
+      }
+      // 海上交易＝引いた後、**最初に数えた場のアクション枚数**以下の手札を廃棄してよい（任意）。
+      case 'SEA_TRADE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'sea_trade_trash') return state;
+        const pl = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (cards.length > pd.max) return state;
+        const copy = pl.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        state.pending = null;
+        cards.forEach((c) => { if (removeOne(pl.hand, c)) trashCard(state, pd.player, c); });
+        if (cards.length) log(state, `${pl.name} は海上交易で ${cards.length}枚を廃棄した。`);
+        return state;
+      }
+      /* 賛辞＝場に出していないアクションを1枚ずつ**3種類まで**獲得してよい（任意・途中でやめられる）。
+         ⚠ **コスト制限なし**（`receiveTributeTargets` が正本）。再開網が次の1枚をオファーする。 */
+      case 'RECEIVE_TRIBUTE_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'receive_tribute_gain') return state;
+        const taken = (pd.gained || []).slice();
+        if (action.card == null) { state.pending = null; t.receiveTributeResume = null; return state; } // やめる
+        if (receiveTributeTargets(state, pd.player, taken).indexOf(action.card) < 0) return state;
+        state.pending = null;
+        const real = mixedTopCard(state, action.card) || action.card;
+        if (gain(state, pd.player, action.card, 'discard')) {
+          taken.push(real);
+          log(state, `${state.players[pd.player].name} は賛辞で「${C()[real].name}」を獲得した（${taken.length}/3）。`);
+        }
+        t.receiveTributeResume = taken.length >= 3 ? null : { player: pd.player, gained: taken };
+        return state;
+      }
+      // 参集＝ちょうど$3／$4／$5 を1枚ずつ（強制・**記載順**）。段ごとに候補ゼロなら飛ばす。
+      case 'GATHER_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'gather_gain') return state;
+        const okG = (id) => costExact(state, id, pd.need);
+        if (!anyGainable(state, okG)) { state.pending = null; return state; } // 終端保証
+        if (!finishGain(state, pd, action.card, okG, 'discard', `参集でちょうど $${pd.need} を獲得した。`)) return state;
+        return state;
+      }
+      /* 継続＝アタックでないコスト4以下のアクション1枚を獲得（強制）→ 獲得を完全に解決した後に
+         アクションフェイズへ戻り、それを使用する。
+         🛑 **獲得は購入フェイズ扱い／使用はアクションフェイズ扱い**＝フェイズを戻すのは
+            `onGainQueue` の `continue_play` 側（＝獲得時対話が全部片付いた後）。 */
+      case 'CONTINUE_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'continue_gain') return state;
+        if (!anyGainable(state, continueCanGain(state))) { state.pending = null; continueReturnToAction(state, pd.player); return state; }
+        const card = action.card;
+        if (card == null || !continueCanGain(state)(card)) return state;
+        state.pending = null;
+        const realC = mixedTopCard(state, card) || card;
+        if (gain(state, pd.player, card, 'discard')) {
+          (state.onGainQueue = state.onGainQueue || []).push({ type: 'continue_play', player: pd.player, card: realC });
+        } else {
+          continueReturnToAction(state, pd.player);
+        }
+        return state;
+      }
       case 'TANUKI_TRASH': {
         const pd = state.pending;
         if (!pd || pd.type !== 'tanuki' || pd.stage !== 'trash') return state;
@@ -22877,6 +23280,8 @@
     'KITSUNE_CHOOSE', 'KITSUNE_REACT', 'RIVER_SHRINE_TRASH', 'RIVER_SHRINE_GAIN',
     'RICE_BROKER_TRASH', 'CHANGE_TRASH', 'CHANGE_GAIN', 'TANUKI_TRASH', 'TANUKI_GAIN',
     'GROWTH_GAIN', 'KIND_EMPEROR_GAIN', 'SICKNESS_CHOOSE', // 旭日 R4：予言
+    'AMASS_GAIN', 'ASCETICISM_PAY', 'ASCETICISM_TRASH', 'CREDIT_GAIN', 'KINTSUGI_TRASH', 'KINTSUGI_GAIN',
+    'PRACTICE_PLAY', 'SEA_TRADE_TRASH', 'RECEIVE_TRIBUTE_GAIN', 'GATHER_GAIN', 'CONTINUE_GAIN', // 旭日 R5：イベント
     'WAR_CHEST_NAME', 'WAR_CHEST_GAIN', 'WATCHTOWER', 'TIARA_TOPDECK', 'TIARA_PLAY',
     'ANVIL_DISCARD', 'ANVIL_GAIN', 'INVESTMENT', 'INVESTMENT_TRASH', 'CRYSTAL_BALL',
     // 収穫祭
@@ -23031,6 +23436,7 @@
     woodworkersCanGain,  // 木工ギルド：獲得できるアクション（**コスト上限なし**＝負債/ポーション費用でもよい）
     buysAvailable,       // 旭日：使える購入権（盛大な取引＝購入フェイズの残アクション権も数える）。engine拒否・CPU・UI が同じ述語を見る
     scoringCost,         // 得点計算用のコスト（安価な／盛大な取引だけが効く。橋などの「場にある間」型は効かない）
+    creditCanGain, receiveTributeTargets, continueCanGain, practiceTargets, // 旭日 R5：イベントの候補述語（3面共通）
     isActionFor,         // 旭日：悟り＝財宝はアクションでもある（`isTreasureFor` の鏡像）。**山の種別は変わらない**ので randomizer 参照には使わない
     allyScoreForCards,   // 高原の羊飼い：得点計算（CPU も同じ算出を使う）
     returnToPile,         // 獲得しかけたカードを山へ戻す（交易商人）。混合山は一番上に載せる

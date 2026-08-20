@@ -582,9 +582,16 @@ const A_WINDOWS = [
     } },
   { key: 'inspiring', jp: '鼓舞する', pending: 'inspiring_play', act: 'INSPIRING_PLAY',
     setup: (s) => { s.traits = { inspiring: 'village' }; return PLAY(setHand(s, ['village']), 'village'); } },
+  /* 旭日 R5：稽古（Practice・イベント）＝手札のアクション1枚を2回使用してよい＝**群A の新設窓**
+     （正本の群A表に新設行として明記／必読18項目にも `本拡張の Practice も同じ` とある）。 */
+  { key: 'practice', jp: '稽古', pending: 'practice_play', act: 'PRACTICE_PLAY',
+    setup: (s) => {
+      s.events = ['practice']; s.turn.phase = 'buy'; s.turn.coins = 10;
+      return E.reduce(s, { type: 'BUY_EVENT', event: 'practice' });
+    } },
 ];
 
-ok(A_WINDOWS.length === 18, '群Aの窓は18個ぜんぶ表に載っている（実: ' + A_WINDOWS.length + '）');
+ok(A_WINDOWS.length === 19, '群Aの窓は19個ぜんぶ表に載っている（実: ' + A_WINDOWS.length + '）');
 
 const J = (x) => JSON.stringify(x);
 // 「その影札が実際に使われたか」＝**山札から**減り、かつログに「〜を使った」が出ている。
