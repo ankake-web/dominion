@@ -177,7 +177,8 @@ console.log('=== カード保存則: 出荷セット（固定/ランダム各種
     'menagerie', 'menagerie-ways', 'menagerie-events', 'random-menagerie',
     'nocturne', 'random-nocturne',
     'allies', 'random-allies',
-    'plunder', 'plunder-events', 'plunder-traits', 'random-plunder']; // 略奪（P7 で昇格）
+    'plunder', 'plunder-events', 'plunder-traits', 'random-plunder', // 略奪（P7 で昇格）
+    'risingsun', 'risingsun-events', 'random-risingsun']; // 旭日（R7 で昇格）
   let allOk = true;
   for (const setId of sets) {
     for (let sd = 0; sd < 3; sd++) {

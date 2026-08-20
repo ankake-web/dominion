@@ -1878,6 +1878,15 @@
      一等航海士のループ／港の村（村枠＋$判定）。コスト分布＝$2×3・$3×1・$4×1・$5×4・$6×1。 */
   DOM.KINGDOM_PLUNDER = ['jewelled_egg', 'search', 'shaman', 'taskmaster', 'harbor_village',
                          'cutthroat', 'crew', 'pilgrim', 'first_mate', 'sack_of_loot'];
+  /* 旭日の固定10種（自作 showcase。公式の旭日専用10種は存在しない）＝新機構をひと通り味わえる構成。
+     - **前兆(Omen) 2種**（茶屋 $5／歌人 $4）＝これがあるので**予言が必ず1枚配られる**（＝Sunトークンが出る）。
+     - **影(Shadow) 2種**（魚屋 $2／忍者 $4）＝山札から使える裏面違いのカード。忍者はアタックでもある。
+     - **命令**＝大名（6D）／**準備を持つ持続**＝川船（$3）／**永続持続＋アタック**＝侍（$6）。
+     - **負債コスト**＝大名（6D）＝帝国の負債機構がそのまま効く。
+     - 素直な村枠＝駕籠（$5＝+1カード+2アクション相当）／trash-to-gain＝狸（$5）／ドロー＝札差（$5）。
+     コスト分布＝$2×1／$3×1／$4×2／$5×4／$6×1／6D×1。 */
+  DOM.KINGDOM_RISINGSUN = ['fishmonger', 'riverboat', 'ninja', 'poet', 'litter',
+                           'rice_broker', 'tanuki', 'tea_house', 'samurai', 'daimyo'];
   /* 旭日（Rising Sun）＝段階1（画像・カタログのみ）。王国25種が抽選/闇市場の母集団になる枠。
      ⚠ プール名は `risingsun`（既存プール名と衝突しない）。横型＝イベント10＋予言15 は `DOM.LANDSCAPES` 側。
      新種別＝**前兆(omen) 6種**（山の社/歌人/川の社/田舎の村/茶屋/狐）＝予言を1枚配る条件になる／
@@ -1890,7 +1899,7 @@
   //   実プレイ化（段階2＝CARD_SET 昇格）のときに、この配列から外す。
   //   略奪は P7 で昇格済み＝空に戻した（戦利品 Loot は NON_SUPPLY なので闇市場には元々入らない）。
   //   旭日は段階1（2026-08-20）＝ここに入れる。**段階2の R7 で外すこと**。
-  DOM.STAGE1_POOLS = ['risingsun'];
+  DOM.STAGE1_POOLS = [];
   // 移動動物園の固定10種（自作 showcase）。追放（ラクダの隊列）・馬（そり/騎兵隊/馬丁/貸し馬屋）・
   //   持続（艀/村有緑地）・アタック（魔女の集会）・獲得に反応するリアクション（牧羊犬/村有緑地）を一通り味わえる。
   //   コスト分布＝$2×1／$3×3／$4×3／$5×3。
@@ -1947,6 +1956,8 @@
     { id: 'plunder',         kind: 'standard', name: '略奪セット', desc: '戦利品・"次に〜したとき"の持続・シャーマンの廃棄置き場ルール', kingdom: DOM.KINGDOM_PLUNDER },
     { id: 'plunder-events',  kind: 'standard', name: '略奪＋イベント', desc: '略奪10種＋イベント2枚（旅行の追加ターン・戦利品を買う横型）', kingdom: DOM.KINGDOM_PLUNDER, eventsFrom: 'plunderexp' },
     { id: 'plunder-traits',  kind: 'standard', name: '略奪＋特性', desc: '略奪10種＋特性2枚（サプライの山に付く横型＝山ごと性格が変わる）', kingdom: DOM.KINGDOM_PLUNDER, traitsFrom: 'plunderexp' },
+    { id: 'risingsun',       kind: 'standard', name: '旭日セット', desc: '前兆と予言（Sunトークン）・裏面の違う影カード・命令の大名', kingdom: DOM.KINGDOM_RISINGSUN },
+    { id: 'risingsun-events', kind: 'standard', name: '旭日＋イベント', desc: '旭日10種＋イベント2枚（稽古の2回使用・継続のアクションフェイズ復帰）', kingdom: DOM.KINGDOM_RISINGSUN, eventsFrom: 'risingsun' },
     // ---- おすすめ（テーマ別・固定10種）----
     { id: 'big-money',       kind: 'recommend', name: 'ビッグマネー', desc: 'お金を伸ばして属州を狙う王道',
       kingdom: ['chapel', 'moneylender', 'harbinger', 'throne_room', 'bureaucrat', 'poacher', 'market', 'mine', 'laboratory', 'sentry'] },
@@ -1991,6 +2002,7 @@
     //   createInitialState が16枚積む（＝混合山なので randomKingdom の2段分割山の正規化は通らない）。
     { id: 'random-allies',   kind: 'random', name: '同盟から',       randomFrom: ['allies'] },
     { id: 'random-plunder',  kind: 'random', name: '略奪から',       randomFrom: ['plunderexp'] },
+    { id: 'random-risingsun', kind: 'random', name: '旭日から',      randomFrom: ['risingsun'] },
     { id: 'random-intrigue', kind: 'random', name: '陰謀のみから',   randomFrom: ['intrigue'] },
     { id: 'random-basic',    kind: 'random', name: '基本のみから',   randomFrom: ['basic'] },
     { id: 'random-promo',    kind: 'random', name: 'プロモ込みから',  randomFrom: ['basic', 'intrigue', 'promo'] },
@@ -2031,7 +2043,7 @@
     basic: '基本', intrigue: '陰謀', seaside: '海辺', alchemy: '錬金術', prosperity: '繁栄',
     cornucopia: '収穫祭', guilds: 'ギルド', hinterlands: '異郷', darkages: '暗黒時代',
     adventures: '冒険', empires: '帝国', renaissance: 'ルネサンス', menagerie: '移動動物園',
-    nocturne: '夜想曲', allies: '同盟', plunderexp: '略奪', promo: 'プロモ',
+    nocturne: '夜想曲', allies: '同盟', plunderexp: '略奪', risingsun: '旭日', promo: 'プロモ',
   };
   // mix で選べる横型プール（kind ごとに分けて選べる）。
   DOM.MIX_LANDSCAPE_POOLS = {
@@ -2043,6 +2055,7 @@
     'ev-menagerie': { label: 'イベント（移動動物園）', get: () => DOM.EVENTS_MENAGERIE || [] },
     'ev-plunder': { label: 'イベント（略奪）', get: () => DOM.EVENTS_PLUNDER || [] },
     'trait-plunder': { label: '特性（略奪）', get: () => DOM.TRAITS_PLUNDER || [] },
+    'ev-risingsun': { label: 'イベント（旭日）', get: () => DOM.EVENTS_RISINGSUN || [] },
   };
   DOM.isMixSet = function (setId) { return typeof setId === 'string' && setId.indexOf('mix:') === 0; };
   // mix セットIDを分解する。不正なプール名は捨てる（サーバ側の検証と同じ挙動）。
@@ -2101,6 +2114,7 @@
     if (expansion === 'adventures') return DOM.EVENTS_ADVENTURES || [];
     if (expansion === 'menagerie') return DOM.EVENTS_MENAGERIE || [];
     if (expansion === 'plunderexp') return DOM.EVENTS_PLUNDER || [];
+    if (expansion === 'risingsun') return DOM.EVENTS_RISINGSUN || [];
     return [];
   };
   DOM.eventsForSet = function (setId) {

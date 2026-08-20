@@ -87,6 +87,11 @@
     'blacksmith', 'student', 'old_map', 'tent', 'herb_gatherer', 'battle_plan', 'town_crier',
     /* 略奪（実プレイ＝段階2＝P7 で昇格）＝強さ/コストの目安順。供給があるときだけ効く（bestEngineBuy/bestGain が参照）。 */
     'kings_cache', 'sack_of_loot', 'wealthy_village', 'pilgrim', 'crew', 'cutthroat', 'frigate', 'first_mate',
+    /* 旭日（R7で実強度順へ移動）＝村＋ドロー＋アタック。
+       米(rice)は場の種別数で伸びる財宝／侍(samurai)は永続 +$1＋1回アタック／大名(daimyo)は再演。 */
+    'rice', 'samurai', 'rice_broker', 'litter', 'tanuki', 'kitsune', 'tea_house', 'ronin', 'imperial_envoy',
+    'gold_mine', 'ninja', 'poet', 'rustic_village', 'river_shrine', 'change', 'alley', 'daimyo',
+    'craftsman', 'riverboat', 'aristocrat', 'root_cellar', 'artist', 'mountain_shrine', 'snake_witch', 'fishmonger',
     'quartermaster', 'mining_road', 'trickster', 'silver_mine', 'pickaxe', 'pendant', 'enlarge', 'figurine',
     'longship', 'buried_treasure', 'harbor_village', 'landing_party', 'flagship', 'abundance', 'cabin_boy',
     'crucible', 'fortune_hunter', 'gondola', 'mapmaker', 'swamp_shacks', 'tools', 'rope', 'maroon',
@@ -108,12 +113,6 @@
     // 戦利品(Loot)15種＝非サプライ（NON_SUPPLY_SET）＝汎用獲得の候補にならない（GAIN_ORDER=全カードの整合性のためだけ）。
     'amphora', 'doubloons', 'endless_chalice', 'figurehead', 'hammer', 'insignia', 'jewels', 'orb', 'prize_goat', 'puzzle_box',
     'sextant', 'shield', 'spell_scroll', 'staff', 'sword',
-    // 段階1追加（旭日。CARD_SETS 未参照＝実際には獲得されないが GAIN_ORDER=全カードの整合性を満たす）。
-    //   ⚠ 段階2の R7（CARD_SET 昇格）で**実強度順の位置へ移す**こと（略奪の P7 と同じ宿題）。
-    'fishmonger', 'snake_witch', 'aristocrat', 'craftsman', 'root_cellar', 'riverboat',
-    'change', 'alley', 'ninja', 'poet', 'river_shrine', 'rustic_village',
-    'gold_mine', 'imperial_envoy', 'tea_house', 'kitsune', 'litter', 'rice_broker', 'ronin', 'tanuki',
-    'mountain_shrine', 'daimyo', 'artist', 'rice', 'samurai',
     'copper', 'curse'];
   /* 旭日：影(Shadow)は**山札のどこにあっても手札と同じように使える**＝「手札から使わせる」窓（群A）の
      候補は engine の handPlayable（手札＋山札の影札）と同じ集合を見る。
@@ -1169,6 +1168,20 @@
     /* ---- 冒険イベント（負債なし・トークン中心）---- */
     // 1ターン1回／1ゲーム1回の制限は engine の canBuyEvent が正本（提案すると拒否され無限ループになるので必ず見る）。
     const buyable = (id) => has(id) && afford(id) && E().canBuyEvent(state, p.id, id);
+
+    /* ---- 旭日イベント ----
+       ⚠ CPU が買うのは**条件が機械的に判定できて必ず得な3種だけ**（残り7種は skip＝
+          ritual/banquet/windfall/tax と同じ扱い）。**engine が受理しない手を提案すると本番 livelock**
+          になるので、条件は engine 側の述語（`canBuyEvent` / `anyGainable`）と必ず揃える。 */
+    // 参集（$7）＝ちょうど$3・$4・$5 を1枚ずつ＝**1回の購入で3枚**＝属州級の買いに届かないなら常に得。
+    if (buyable('gather') && !(cardBuy && cost(state, cardBuy) >= 8)) return 'gather';
+    // 蓄積（$2）＝場にアクションが1枚も無いときだけ働く。余ったコインで$5以下のアクションを拾える。
+    if (buyable('amass') && cardBuy == null &&
+        !p.inPlay.concat(p.durationCards || []).some((c) => isType(c, 'action'))) return 'amass';
+    /* 信用（$2）＝コスト8以下のアクション/財宝を獲得して同額の負債。**負債はターン中いつでも返せる**が
+       返し切るまで購入が止まるので、**序盤（〜8ターン）で、そのターンに他に大きな買いが無いときだけ**。 */
+    if (buyable('credit') && (p.turns || 0) <= 8 && (p.debt || 0) === 0 &&
+        !(cardBuy && cost(state, cardBuy) >= 5)) return 'credit';
     const tok = p.pileTokens || {};
     const deckActions = allCards(p).filter((c) => isType(c, 'action')).length;
     // 相続（$7）＝屋敷がアクションになる（デッキの屋敷が多いほど強い）。序盤〜中盤に1回だけ。

@@ -198,46 +198,65 @@ console.log('=== R1: 予言と Sun トークンは「カード」ではない（
   ok(masked.sunTokens === 5, 'Sun トークンの残数も相手視点で見える');
 }
 
-console.log('=== R1: 旭日はまだ実プレイに出ない（段階1の封じ込め）===');
+console.log('=== R7: 旭日が実プレイに出る（CARD_SET 昇格）===');
 {
   const sets = (DOM.CARD_SETS || []).map((x) => x.id);
-  const leaked = [];
-  sets.forEach((id) => {
-    for (let i = 0; i < 20; i++) {
-      const k = DOM.kingdomForSet(id) || [];
-      k.forEach((c) => { if ((DOM.POOLS.risingsun || []).indexOf(c) >= 0) leaked.push(id + ':' + c); });
+  ok(sets.indexOf('risingsun') >= 0 && sets.indexOf('risingsun-events') >= 0 && sets.indexOf('random-risingsun') >= 0,
+    '出荷3セット（risingsun / risingsun-events / random-risingsun）が CARD_SETS にある');
+  // 固定10種＝カタログに実在し、10種ちょうど・重複なし。
+  {
+    const K10 = DOM.KINGDOM_RISINGSUN || [];
+    ok(K10.length === 10 && new Set(K10).size === 10, '固定10種は重複なしで10種');
+    ok(K10.every((id) => (DOM.POOLS.risingsun || []).indexOf(id) >= 0), '固定10種はすべて旭日のカード');
+    /* 🛑 **前兆(Omen)が1枚も無いと予言が配られず、旭日の看板機構（Sunトークン）が丸ごと出ない**。
+       固定セットは必ず前兆を含むこと（茶屋・歌人）。 */
+    ok(K10.some((id) => DOM.isType(id, 'omen')), '固定10種に前兆(Omen)が入っている＝予言が必ず1枚配られる');
+    ok(K10.some((id) => DOM.isType(id, 'shadow')), '固定10種に影(Shadow)が入っている');
+  }
+  // 実際に立てて、予言と Sun トークンが出ることを確認。
+  {
+    let withProphecy = 0;
+    for (let i = 0; i < 8; i++) {
+      const s = E.createInitialState([{ name: 'A' }, { name: 'B', isCpu: true }], DOM.kingdomForSet('risingsun'), {});
+      if (s.prophecy && s.sunTokens === 5) withProphecy++;
     }
-  });
-  ok(leaked.length === 0, 'どの CARD_SET を抽選しても旭日の王国カードは出ない（実: ' + leaked.slice(0, 5).join(',') + '）');
-  ok((DOM.STAGE1_POOLS || []).indexOf('risingsun') >= 0, 'STAGE1_POOLS に risingsun が入っている（闇市場から除外）');
-  // 横型（イベント10・予言15）も漏れない＝landscapesForSet を全 CARD_SET ×20回まわす
-  {
-    const rsLs = (DOM.EVENTS_RISINGSUN || []).concat(DOM.PROPHECIES_RISINGSUN || []);
-    const lsLeak = [];
-    sets.forEach((id) => {
-      for (let i = 0; i < 20; i++) {
-        const o = DOM.landscapesForSet(id) || {};
-        [].concat(o.landmarks || [], o.events || [], o.projects || [], o.ways || [], o.traits || [])
-          .forEach((x) => { if (rsLs.indexOf(x) >= 0) lsLeak.push(id + ':' + x); });
-      }
-    });
-    ok(lsLeak.length === 0, 'どの CARD_SET でも旭日の横型（イベント/予言）は出ない（実: ' + lsLeak.slice(0, 5).join(',') + '）');
+    ok(withProphecy === 8, '固定セットは毎回 予言1枚＋Sunトークン5個（2人）で始まる');
   }
-  // mix-all のプールにも未登録＝mix でも出ない（R7 でここに足す）
-  ok(!(DOM.MIX_KINGDOM_POOLS || {}).risingsun, 'MIX_KINGDOM_POOLS に risingsun が未登録（mix-all にも出ない）');
+  // risingsun-events は横型イベントを2枚配る（合計2枚制限は既存機構）。
   {
-    const lsPools = Object.keys(DOM.MIX_LANDSCAPE_POOLS || {});
-    const rsPool = lsPools.filter((k) => /risingsun|proph/.test(k));
-    ok(rsPool.length === 0, 'MIX_LANDSCAPE_POOLS に旭日の横型プールが未登録（実: ' + rsPool.join(',') + '）');
+    const o = DOM.landscapesForSet('risingsun-events') || {};
+    ok((o.events || []).length === 2, 'risingsun-events はイベントを2枚配る（実: ' + (o.events || []).length + '）');
+    ok((o.events || []).every((id) => (DOM.EVENTS_RISINGSUN || []).indexOf(id) >= 0), '配られるのは旭日のイベント');
   }
-  // 闇市場デッキにも入らない（STAGE1_POOLS の実効を state で確認）
+  // 段階1の封じ込めは解除されている（R7 でここを反転させた）。
+  ok((DOM.STAGE1_POOLS || []).indexOf('risingsun') < 0, 'STAGE1_POOLS から risingsun が外れた（闇市場にも出る）');
+  ok(!!(DOM.MIX_KINGDOM_POOLS || {}).risingsun, 'MIX_KINGDOM_POOLS に risingsun が登録された（mix-all に参加）');
+  ok(Object.keys(DOM.MIX_LANDSCAPE_POOLS || {}).indexOf('ev-risingsun') >= 0, 'MIX_LANDSCAPE_POOLS に ev-risingsun が登録された');
+  // 闇市場デッキに旭日の王国カードが入る（＝どれも効果が実装済み＝死に札にならない）。
   {
     const bmK = ['black_market', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'mine', 'remodel'];
     const s = mk(bmK, 2);
     const bm = s.blackMarket || [];
-    const leak = bm.filter((id) => (DOM.POOLS.risingsun || []).indexOf(id) >= 0);
     ok(bm.length > 0, '闇市場デッキが作られている（' + bm.length + '枚）');
-    ok(leak.length === 0, '闇市場デッキに旭日のカードが入らない（実: ' + leak.join(',') + '）');
+    ok(bm.some((id) => (DOM.POOLS.risingsun || []).indexOf(id) >= 0), '闇市場デッキに旭日のカードが入る');
+  }
+  /* 🛑 **`DOM.CARDS` に載っている旭日25種すべてに engine の実装がある**（＝闇市場で買っても死に札にならない）。
+     カタログにあるのに `applyEffect` / `applyTreasureEffect` に case が無いカードを構造的に捕まえる。 */
+  {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js/engine.js'), 'utf8');
+    /* ⚠ **財宝の効果は `applyTreasureEffect` に `if (card === 'id')` の形で書く**（`applyEffect` は財宝では
+       呼ばれない＝§0-25 で実際に空振りさせた）。両方の書き方を許す。 */
+    const missing = (DOM.POOLS.risingsun || []).filter((id) =>
+      src.indexOf("case '" + id + "'") < 0 && src.indexOf("card === '" + id + "'") < 0);
+    ok(missing.length === 0, '旭日25種すべてに engine の実装がある（実装漏れ: ' + missing.join(',') + '）');
+  }
+  // 予言15種・イベント10種も同様に「効果が空でない」ことを構造的に確認。
+  {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js/engine.js'), 'utf8');
+    const noPro = (DOM.PROPHECIES_RISINGSUN || []).filter((id) => src.indexOf("'" + id + "'") < 0);
+    ok(noPro.length === 0, '予言15種すべてが engine から参照されている（未実装: ' + noPro.join(',') + '）');
+    const noEv = (DOM.EVENTS_RISINGSUN || []).filter((id) => src.indexOf("case '" + id + "'") < 0);
+    ok(noEv.length === 0, 'イベント10種すべてに applyEventEffect の case がある（未実装: ' + noEv.join(',') + '）');
   }
 }
 
