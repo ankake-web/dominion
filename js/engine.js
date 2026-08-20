@@ -249,6 +249,54 @@
   function queueProphecy(state, item) {
     (state.prophecyQueue = state.prophecyQueue || []).push(item);
   }
+  /* ========== 旭日（Rising Sun）R2：影(Shadow)カードの共通基盤 ==========
+     正本＝docs/research/risingsun_rules.md 第1章 §2（ルールブック p.4「Shadows」節の全文）。
+     - **裏面が違うので山札から使える**（5種＝魚屋/小路/忍者/浪人/狸。**裏面は5種とも別の絵**）。
+     - **シャッフルするとき「シャッフルした束の一番下」に置く**（`reshuffleDeck` で実装。獲得時は置かない）。
+     - **山札のどこにあってもよい**（`It can be anywhere in your deck.`）＝底に固定されない。
+     - **手札から使えるときならいつでも、代わりに山札から使ってよい**
+       ＝アクションとして使うなら**アクション権を消費する**（Donald X. 逐語＝
+       `you have to be allowed to play an Action, it doesn't get around that`）。
+       玉座の間など「**手札から**カードを使う」と言う窓でも山札の影札を選べる（公式）。
+     - 🛑 **ただし手札にあるわけではない**（`this does not mean the Shadow card is in your hand`）＝
+       **「手札を数える／手札から捨てる・廃棄する・脇に置く」効果には一切数えない**
+       （小路の捨て札・地下貯蔵庫・民兵・忍者の捨て札・書庫の手札枚数・浪人の「手札が7枚になるまで」）。
+       **逆に「所有カードの総数」には普通に数える**（庭園/品評会/絹の道/城/博物館＝山札の底も所有カード）
+       ＝`allCards` は `p.deck` を含むので**自動的に正しい**（ここを「数えない」と実装すると保存則が壊れる）。 */
+  // 山札にある「今このプレイヤーが使える影札」の一覧（重複はそのまま＝2枚あれば2件）。
+  function deckShadows(state, pi) {
+    const p = state.players[pi];
+    if (!p) return [];
+    return (p.deck || []).filter((c) => DOM.isType(c, 'shadow'));
+  }
+  /* 「手札から使う」窓に並べる候補＝**手札 ＋ 山札の影札**（影札は手札の扱いではないが、使うことはできる）。
+     ⚠ **この関数を使ってよいのは「最終的に場(inPlay)に出る」窓だけ**（正本 §2-9 の群A）。
+        「手札から捨てる／廃棄する／脇に置く／山に戻す」窓（群B）には**絶対に使わない**
+        （判定の目安＝そのカードが最後に inPlay に入るなら群A、discard/trash/setAside/supply に入るなら群B）。 */
+  function handPlayable(state, pi) {
+    const p = state.players[pi];
+    if (!p) return [];
+    return (p.hand || []).concat(deckShadows(state, pi));
+  }
+  /* その1枚を「手札から使う」窓で選べるか（手札にある or 山札の影札）。engine拒否・CPU候補・UIフィルタの3面が見る。 */
+  function canPlayFromHandOrShadow(state, pi, card) {
+    const p = state.players[pi];
+    if (!p) return false;
+    if (p.hand.indexOf(card) >= 0) return true;
+    return DOM.isType(card, 'shadow') && (p.deck || []).indexOf(card) >= 0;
+  }
+  /* 「手札から使う」ために1枚を取り出す（手札を優先し、無ければ山札の影札を抜く）。
+     戻り値＝取り出せたか。**手札にある影札は普通に手札から出す**（公式＝どちらからでも使える）。 */
+  function takePlayable(state, pi, card) {
+    const p = state.players[pi];
+    if (!p) return false;
+    if (removeOne(p.hand, card)) return true;
+    if (DOM.isType(card, 'shadow') && removeOne(p.deck, card)) {
+      log(state, `${p.name} は山札から影カード「${C()[card].name}」を使った。`);
+      return true;
+    }
+    return false;
+  }
   /* 「+1 Sun」の唯一の入口。前兆カードの効果の**一番最初**で呼ぶこと。
      トークンが残っていなければ何もしない（空振り＝前兆の残りは普通に解決する）。戻り値＝実際に取り除いたか。
      ⚠ pi は**必ず前兆を使った本人の席**を渡す（神器はこの席だけが獲得する）。不正な席は何もしない。 */
@@ -1371,6 +1419,23 @@
       if (top.length) shuffled.unshift(...top);
       if (bottom.length) shuffled.push(...bottom);
       if (state && (top.length || bottom.length)) log(state, `${p.name} は運命のカードを公開した（上${top.length}枚・下${bottom.length}枚）。`);
+    }
+    /* 旭日 R2：影(Shadow)＝**シャッフルするとき、シャッフルした束の一番下に置く**（ルールブック逐語
+       `When shuffling Shadow cards, put them on the bottom.`）。**獲得したときは置かない**（シャッフルのときだけ）。
+       ⚠ 「運命の(Fated)」の直後に置く＝公式が `They can also be mixed with any other cards you specifically put
+          on the bottom, such as Fated cards from Plunder.` と名指ししており、**底の中の相対順はプレイヤーが選ぶ**が、
+          `reshuffleDeck` は同期・非対話なので**自動**にする（星図／占星術師団／運命の と同じ許容簡略化。
+          底の並び順が効くのは「そのシャッフルで山札を底まで掘り切る」極端な場合だけ＝戦略的影響はほぼゼロ）。
+       ⚠ 底に置かれた後も**普通に動く**（`will not necessarily stay on the bottom`）＝ここで固定しない。 */
+    if (shuffled.length > 1) {
+      const shadows = [];
+      for (let i = shuffled.length - 1; i >= 0; i--) {
+        if (DOM.isType(shuffled[i], 'shadow')) shadows.unshift(shuffled.splice(i, 1)[0]);
+      }
+      if (shadows.length) {
+        shuffled.push(...shadows);
+        if (state) log(state, `${p.name} は影カード${shadows.length}枚を山札の一番下に置いた。`);
+      }
     }
     p.deck = p.deck.concat(shuffled);
     placeStash(p);
@@ -12404,8 +12469,9 @@
         // 冒険：相続＝自分のターン中、屋敷はアクション（命令）としてもプレイできる（脇のカードを動かさずに使用）。
         const asInherited = inheritedEstate(me, card);
         if (!DOM.isType(card, 'action') && !asInherited) return state;
-        if (me.hand.indexOf(card) < 0) return state;
-        removeOne(me.hand, card);
+        /* 旭日 R2：影(Shadow)は**山札のどこにあっても手札と同じように使える**（アクション権は普通に消費する）。
+           手札にあればそちらを優先。無ければ山札から抜く（`takePlayable`）。 */
+        if (!takePlayable(state, pi, card)) return state;
         me.inPlay.push(card);
         notePlayFromHand(state, pi); // 同盟：航海の3枚制限
         t.actions -= 1;
@@ -21378,10 +21444,14 @@
       // 権威stateはサーバが完全な順序で保持し reduce もそこで行う（クライアントは reduce しない）ので実害なし。
       // 山札上を見る/並べ替える効果（薬剤師・衛兵・見張り・水晶玉等）は pending 側で本人にだけ明示公開する。
       // 例外＝へそくり(Stash)：裏面が異なる＝山札内の「位置」は公式でも公開情報。位置だけ保存してソートする。
+      /* 旭日 R2：影(Shadow)は**裏面が違う**＝山札の中の位置は公式でも公開情報（へそくり Stash と同じ）。
+         **自分の山札の「どの位置にどの影札があるか」は自分に見せる**（見えないと山札から使う操作ができない）。
+         ⚠ へそくりと違い**5種とも裏面の絵が違う**ので、位置だけでなく**どの影札か**まで分かるのが公式。 */
+      const keepFace = (c) => c === 'stash' || DOM.isType(c, 'shadow');
       if (i === seat) {
-        const rest = p.deck.filter((c) => c !== 'stash').sort();
+        const rest = p.deck.filter((c) => !keepFace(c)).sort();
         let ri = 0;
-        return Object.assign({}, p, { deck: p.deck.map((c) => (c === 'stash' ? 'stash' : rest[ri++])) });
+        return Object.assign({}, p, { deck: p.deck.map((c) => (keepFace(c) ? c : rest[ri++])) });
       }
       // 錬金術・支配：支配者は被支配者（手番のactive）の手札を見て操作する（山札は伏せたまま）。
       const revealHand = state.turn && state.turn.possessedBy === seat && i === state.turn.active;
@@ -21393,7 +21463,10 @@
         return c;
       });
       return Object.assign({}, p, {
-        // へそくり(Stash)は裏面が異なる＝相手の山札内の位置も公開情報（公式）。stash だけ晒して残りは伏せる。
+        /* へそくり(Stash)は裏面が異なる＝相手の山札内の位置も公開情報（公式）。stash だけ晒して残りは伏せる。
+           ⚠ 旭日の影(Shadow)は**ここでは晒さない**＝公式が明文で許すのは「**自分の**山札の裏面を見てよい」だけで
+             （`You can look through your deck at the card backs at any time, and see where your Shadow cards are.`）、
+             相手の山札を検める根拠は無い。**据え置き＝許容簡略化**（研究doc の決定D3）。 */
         deck: p.deck.map((c) => (c === 'stash' ? 'stash' : 'back')),
         hand: revealHand ? p.hand.slice() : p.hand.map((c) => (c === 'stash' ? 'stash' : 'back')),
         discard: new Array(p.discard.length).fill('back'),
@@ -21746,6 +21819,11 @@
     prophecyActive,    // その予言が**発動済み**か（最後の Sun を取り除いた後。それまでテキストは一切効かない）
     removeSun,         // 「+1 Sun」の唯一の入口（前兆の効果の**一番最初**で呼ぶ。空振りでもよい）
     queueProphecy,     // 予言の「窓が要る即時効果」を積む（**pending 直代入は禁止**＝前兆の窓に上書きされる）
+    // 旭日 R2：影(Shadow)＝山札から使える（engine/CPU/UI が同じ述語を見る）
+    deckShadows,       // 山札にある影札の一覧
+    handPlayable,      // 「手札から使う」窓に並べる候補＝手札＋山札の影札（**場に出る窓だけ**に使う）
+    canPlayFromHandOrShadow, // その1枚を「手札から使う」窓で選べるか（手札 or 山札の影札）
+    reshuffleDeck,     // シャッフルの唯一の入口（影＝底へ／運命の／占星術師団・メイソン団／回避 が全部ここ）
     barbarianCanGain,  // 同盟：蛮族＝廃棄札と種別を共有しより安いカードの候補（連携/分割山種別も種別に数える）
     canReturnToPile,   // そのカードを元の山へ戻せるか（交換／交易商人／取り替え子が共通で見る）
     swapCanGain,       // 同盟：交換＝$5以下・名前の異なるアクション（混合山は一番上の実カード名で比べる）

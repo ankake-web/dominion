@@ -320,6 +320,123 @@ console.log('=== R1: 前兆が無い王国では予言のために乱数を消�
   ok(countFixed() < countOmen(), 'opts.prophecy を指定すると抽選ぶんの乱数を引かない');
 }
 
+console.log('=== R2: 影(Shadow)＝シャッフルするとき「シャッフルした束の一番下」に置く ===');
+{
+  const s = mk(K_NONE, 2);
+  const p = s.players[0];
+  // 捨て札に影札2枚＋普通の札6枚を置いてシャッフル（山札は空＝束＝捨て札まるごと）
+  p.deck = []; p.hand = [];
+  p.discard = ['copper', 'ninja', 'estate', 'alley', 'silver', 'village', 'copper', 'smithy'];
+  E.reshuffleDeck(p, s);
+  ok(p.deck.length === 8, 'シャッフル後の山札は8枚');
+  const tail = p.deck.slice(-2);
+  ok(tail.every((c) => DOM.isType(c, 'shadow')), '影札2枚が**一番下**に来る（実: ' + tail.join(',') + '）');
+  ok(p.deck.slice(0, 6).every((c) => !DOM.isType(c, 'shadow')), '上6枚に影札は混ざらない');
+  ok(s.log.some((l) => /影カード2枚を山札の一番下/.test(l)), 'ログに出る');
+}
+{
+  /* 「獲得したときは底に置かない」＝シャッフル以外では動かさない。
+     公開APIだけで確かめる＝物見やぐら(watchtower)で山札の上に置く経路を使う。 */
+  const K = ['ninja', 'watchtower'].concat(K_NONE.slice(0, 8));
+  let s = mk(K, 2);
+  s.turn.phase = 'buy'; s.turn.coins = 4; s.turn.buys = 1;
+  s.players[0].hand = ['watchtower'];
+  s.players[0].deck = ['copper', 'copper'];
+  s = E.reduce(s, { type: 'BUY', card: 'ninja' });
+  // 物見やぐらの窓（公開して山札の上へ）が開く
+  if (s.pending && /watchtower/.test(s.pending.type)) {
+    s = E.reduce(s, { type: 'WATCHTOWER_CHOOSE', mode: 'deck' });
+  }
+  ok(s.players[0].deck[0] === 'ninja' || s.players[0].discard.indexOf('ninja') >= 0,
+    '獲得した影札は獲得先に置かれる（**獲得時は底に送らない**。実: deck[0]=' + s.players[0].deck[0] + '）');
+  ok(s.players[0].deck[s.players[0].deck.length - 1] !== 'ninja' || s.players[0].deck.length === 1,
+    '獲得した影札が勝手に山札の一番下へ移動しない');
+}
+{
+  // 底に置かれた後も普通に動く（`will not necessarily stay on the bottom`）＝引ける
+  const K = ['ninja'].concat(K_NONE.slice(0, 9));
+  let s = mk(K, 2);
+  s.players[0].deck = ['ninja']; s.players[0].hand = []; s.players[0].discard = [];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['smithy'];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'smithy' }); // +3カード（山札は ninja 1枚だけ）
+  ok(s.players[0].hand.indexOf('ninja') >= 0, '底の影札も普通に引ける（手札に来る）');
+}
+
+console.log('=== R2: 影は山札のどこにあっても手札と同じように使える（アクション権は消費する）===');
+{
+  const K = ['fishmonger'].concat(K_NONE.slice(0, 9));
+  let s = mk(K, 2);
+  const p = s.players[0];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  p.hand = ['estate']; p.deck = ['copper', 'fishmonger', 'copper']; p.inPlay = [];
+  const before = s.turn.buys;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'fishmonger' });
+  ok(s.players[0].inPlay.indexOf('fishmonger') >= 0, '山札の途中にある影札を使える（場に出る）');
+  ok(s.players[0].deck.indexOf('fishmonger') < 0, '使った影札は山札から消える');
+  ok(s.players[0].deck.length === 2, '山札の他の札は減らない');
+  ok(s.turn.actions === 0, '**アクション権を普通に消費する**（Donald X. 逐語）');
+  // ⚠ 魚屋の効果（+1購入 +$1）は R3 で実装する＝R2 では「場に出る／アクション権を使う」までが対象。
+  ok(s.turn.buys === before, 'R2 時点では効果は未実装（+1購入は R3 で入る）');
+  ok((s.turn.actionsPlayed || 0) === 1, '「アクションを使った」と数える（共謀者・チャンピオン等が正しく効く）');
+}
+{
+  // アクション権0では使えない（`you have to be allowed to play an Action, it doesn't get around that`）
+  const K = ['fishmonger'].concat(K_NONE.slice(0, 9));
+  let s = mk(K, 2);
+  s.turn.phase = 'action'; s.turn.actions = 0;
+  s.players[0].deck = ['fishmonger', 'copper'];
+  const out = E.reduce(s, { type: 'PLAY_ACTION', card: 'fishmonger' });
+  ok(out.players[0].deck.indexOf('fishmonger') >= 0, 'アクション権0では山札の影札を使えない（state 不変で拒否）');
+}
+{
+  // 手札にある影札は普通に手札から出す（山札を先に食わない）
+  const K = ['fishmonger'].concat(K_NONE.slice(0, 9));
+  let s = mk(K, 2);
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['fishmonger']; s.players[0].deck = ['fishmonger', 'copper']; s.players[0].inPlay = [];
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'fishmonger' });
+  ok(s.players[0].hand.indexOf('fishmonger') < 0, '手札の影札が使われる');
+  ok(s.players[0].deck.filter((c) => c === 'fishmonger').length === 1, '山札の影札は残ったまま（手札を優先）');
+}
+{
+  // 述語（engine/CPU/UI の3面が同じものを見る）
+  const K = ['fishmonger'].concat(K_NONE.slice(0, 9));
+  const s = mk(K, 2);
+  s.players[0].hand = ['village']; s.players[0].deck = ['fishmonger', 'copper'];
+  ok(E.canPlayFromHandOrShadow(s, 0, 'village') === true, '手札の札は真');
+  ok(E.canPlayFromHandOrShadow(s, 0, 'fishmonger') === true, '山札の影札は真');
+  ok(E.canPlayFromHandOrShadow(s, 0, 'copper') === false, '山札の**影でない**札は偽（普通は使えない）');
+  ok(E.deckShadows(s, 0).join(',') === 'fishmonger', 'deckShadows が山札の影札だけ返す');
+  ok(E.handPlayable(s, 0).indexOf('fishmonger') >= 0, 'handPlayable に山札の影札が入る');
+  ok(E.handPlayable(s, 0).indexOf('copper') < 0, 'handPlayable に山札の普通の札は入らない');
+}
+
+console.log('=== R2: 影は「手札」ではない（数えない）／「所有カード」には数える ===');
+{
+  const s = mk(K_NONE, 2);
+  const p = s.players[0];
+  p.hand = ['copper', 'estate']; p.deck = ['ninja', 'alley']; p.discard = []; p.inPlay = [];
+  ok(p.hand.length === 2, '山札の影札は手札の枚数に数えない（手札は2枚のまま）');
+  // 所有カードには数える（庭園/品評会/絹の道は allCards を見る）
+  const all = E.allCards(p);
+  ok(all.indexOf('ninja') >= 0 && all.indexOf('alley') >= 0, '**所有カードには数える**（山札の底も所有カード）');
+  ok(all.length === 4, '所有カード合計は4枚');
+}
+{
+  // 自分の山札の「どの位置にどの影札があるか」は自分に見える（見えないと操作できない）
+  const s = mk(K_NONE, 2);
+  s.players[0].deck = ['copper', 'ninja', 'estate', 'alley'];
+  s.players[1].deck = ['copper', 'ninja', 'estate'];
+  const me = E.maskStateFor(s, 0);
+  ok(me.players[0].deck[1] === 'ninja' && me.players[0].deck[3] === 'alley',
+    '**自分**の山札は影札の位置と種類が見える（実: ' + me.players[0].deck.join(',') + '）');
+  ok(me.players[0].deck.filter((c) => c === 'copper' || c === 'estate').length === 2,
+    '影でない札は中身だけ（順序はソートで消える）');
+  ok(me.players[1].deck.every((c) => c === 'back'),
+    '**相手**の山札は影札も伏せたまま（公式が許すのは自分の山札の裏面を見ることだけ＝許容簡略化）');
+}
+
 console.log('\n========================================');
 console.log('旭日テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

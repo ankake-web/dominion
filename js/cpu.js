@@ -266,7 +266,10 @@
     if (t.actions <= 0) return null;
     /* 同盟：将軍（Warlord）＝場に2枚以上ある同名のアクションは手札から使えない。
        engine が拒否する手を返し続けると本番 livelock になるので、`has` の時点で弾く（1箇所で全カードに効く）。 */
-    const has = (id) => p.hand.includes(id) &&
+    /* 旭日：影(Shadow)は**山札のどこにあっても手札と同じように使える**（アクション権は普通に消費する）＝
+       ここに足すだけで全カードに効く（engine の `canPlayFromHandOrShadow` と同じ集合を見る）。 */
+    const has = (id) => (p.hand.includes(id) ||
+        (DOM.isType(id, 'shadow') && (p.deck || []).includes(id))) &&
       !(DOM.engine.warlordBlocks && DOM.engine.warlordBlocks(state, t.active, id));
     const dead = p.hand.some((c) => isDead(c));
     // --- 非ターミナル（+アクションが付く＝連鎖できる）を最優先 ---

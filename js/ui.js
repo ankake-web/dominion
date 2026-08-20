@@ -1651,6 +1651,23 @@
       h('div', { class: 'hg-label' }, '財宝・勝利点'),
       h('div', { class: 'hand-cards small' }, compact.map((id) => cardEl(id, { size: 'sm', count: hg.counts[id], dim: !handCardPlayable(state, id, interactive), onClick: () => onHandTap(state, id, interactive) })))));
     if (!handP.hand.length) handBlocks.push(h('div', { class: 'empty-note' }, '手札がありません'));
+    /* 旭日：影(Shadow)＝**山札のどこにあっても手札と同じように使える**（裏面が違うので位置は自分に見えている）。
+       ⚠ **手札ではない**ので手札の群には混ぜず、専用の群に出す（小路の捨て札・民兵・書庫の手札枚数には数えない）。
+       アクション権を普通に消費するので、光る条件は手札のアクションと同じ（`handCardPlayable`）。 */
+    {
+      const shadows = (handP.deck || []).filter((c) => DOM.isType(c, 'shadow'));
+      if (shadows.length) {
+        const uniq = [...new Set(shadows)];
+        const cnt = {}; shadows.forEach((c) => { cnt[c] = (cnt[c] || 0) + 1; });
+        handBlocks.push(h('div', { class: 'hand-group shadow-group' },
+          h('div', { class: 'hg-label' }, '影（山札から使える・手札ではない）'),
+          h('div', { class: 'hand-cards big' }, uniq.map((id) => cardEl(id, {
+            size: 'lg', count: cnt[id] > 1 ? cnt[id] : 0,
+            dim: !handCardPlayable(state, id, interactive),
+            onClick: () => onHandTap(state, id, interactive),
+          })))));
+      }
+    }
 
     const logLines = state.log.slice(-6);
     const logBox = h('div', { class: 'log', onclick: () => { UI.logModal = true; sfx('tap'); render(); } },
