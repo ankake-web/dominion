@@ -748,7 +748,15 @@
   // PLAY_TREASURE / PLAY_ALL_TREASURES / 闇市場 で共通利用。
   function playTreasureCard(state, pIndex, card) {
     const p = state.players[pIndex];
-    removeOne(p.hand, card);
+    /* 旭日 R2/R3：影(Shadow)は「その札を**手札から使えるときならいつでも**、代わりに山札から使ってよい」＝
+       資本主義(Capitalism)で魚屋(Fishmonger)が財宝になったら**購入フェイズに山札から出せる**
+       （公式 Other rules clarifications 逐語＝`If you have bought Capitalism, you can also play Fishmonger
+       from your deck whenever you could normally play Treasures from your hand.`）。
+       ⚠ **1枚タップ（PLAY_TREASURE）だけ**が通る。**「財宝を全部出す」（PLAY_ALL_TREASURES）には入れない**
+         ＝ボタン1つで山札の影札まで出してしまう事故を避ける（§0-24 の `playAllResume` の轍）。 */
+    if (!removeOne(p.hand, card) && DOM.isType(card, 'shadow')) {
+      if (removeOne(p.deck, card)) log(state, `${p.name} は山札から影カード「${C()[card].name}」を出した。`);
+    }
     p.inPlay.push(card);
     notePlayFromHand(state, pIndex); // 同盟：航海の3枚制限（**財宝も数える**）
     /* 冒険：山トークン＝「**その山のカード**を使ったとき」のボーナス＝**財宝でも乗る**（公式）。
@@ -2125,12 +2133,54 @@
      ⚠ 以前はここを `gain()` の中で呼んでいたので、効果での獲得でも負債が付いていた（出荷済みの実バグ）。
        旭日のルールブックの公式例 `Tanuki trashing an Artist can gain a Daimyo` がまさにこの経路。
      **支配中は「獲得するのは支配者」＝負債も支配者が負う**（被支配者に負債を押し付けられない）。 */
+  /* 旭日 R3：**カードの効果で負債を得る**唯一の入口（名匠 +2負債／室 +3負債／勅使 +2負債／駕籠 +1負債／
+     金山 +4負債／交替＝コスト差ぶん）。
+     ⚠ 既存の `takeDebt(state, pi, cardId)` は **cardId から `C()[cardId].debt`（＝コスト欄）を読む**ので、
+       効果で得る負債には使えない（カタログに debt を持たない名匠などで**黙って0**になる）。
+     ⚠ **支配(Possession)の振り分けは takeDebt と同じ**＝被支配ターンに発生した負債は**支配者**が負う
+       （公式FAQ＝`You also get any D tokens that player would have gotten`）。 */
+  function debtHolder(state, pIndex) {
+    const t = state.turn;
+    return (t && t.possessedBy != null && pIndex === t.active) ? t.possessedBy : pIndex;
+  }
+  /* 旭日 R3：山の社＝「その後、**廃棄置き場にアクションカードがある場合** +2カード」。
+     ⚠ 廃棄したかどうかに関係なく**必ず判定する**（手札0枚でも廃棄置き場にアクションがあれば +2カード）。 */
+  /* 旭日 R3：濡女(Snake Witch)＝山に戻せたときだけ、他の全員が呪い1枚を獲得する（アタック）。
+     魔女(witch)と同型＝被害者ごとにリアクション窓を開く（堀/灯台/チャンピオンで防げる）。 */
+  function snakeWitchEnterVictim(state, source, queue) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'snake_witch_attack', stage: 'react', player: victim, source, victim, queue: rest };
+    } else {
+      snakeWitchApply(state, source, victim, rest);
+    }
+  }
+  function snakeWitchApply(state, source, victim, queue) {
+    if (gain(state, victim, 'curse', 'discard')) {
+      log(state, `${state.players[victim].name} は濡女で呪い1枚を獲得した。`);
+    }
+    snakeWitchEnterVictim(state, source, queue);
+  }
+  function mountainShrineDraw(state, pi) {
+    if ((state.trash || []).some((c) => DOM.isType(c, 'action'))) {
+      draw(state, pi, 2);
+      log(state, `${state.players[pi].name} は山の社で +2カード（廃棄置き場にアクションカードがある）。`);
+    }
+  }
+  function addDebt(state, pIndex, n, note) {
+    if (!(n > 0)) return 0;
+    const gp = state.players[debtHolder(state, pIndex)];
+    gp.debt = (gp.debt || 0) + n;
+    log(state, `${gp.name} は${note ? note : ''} 負債${n} を負った（計 ${gp.debt}）。`);
+    return n;
+  }
+  // 「負債コストのカードを購入した」ときの負債（コスト欄を読む）。効果で得る負債は addDebt を使うこと。
   function takeDebt(state, pIndex, cardId) {
     const dbt = (C()[cardId] && C()[cardId].debt) || 0;
     if (dbt <= 0) return;
-    const t = state.turn;
-    const who = (t && t.possessedBy != null && pIndex === t.active) ? t.possessedBy : pIndex;
-    const gp = state.players[who];
+    const gp = state.players[debtHolder(state, pIndex)];
     gp.debt = (gp.debt || 0) + dbt;
     log(state, `${gp.name} は「${C()[cardId].name}」で 負債${dbt} を負った。`);
   }
@@ -3032,6 +3082,8 @@
     militia:       { embedded: true, onMoat: (s, pd) => advanceMilitia(s, pd) },
     torturer:      { embedded: true, onMoat: (s, pd) => advanceAttack(s, pd) },
     witch:         { onMoat: (s, pd) => witchEnterVictim(s, pd.source, pd.queue) },
+    // 旭日：濡女＝山に戻せたときだけ呪いを配る（魔女と同型）。忍者は `discard_down`（embedded）を流用＝登録不要。
+    snake_witch_attack: { onMoat: (s, pd) => snakeWitchEnterVictim(s, pd.source, pd.queue) },
     bureaucrat:    { onMoat: (s, pd) => bureaucratEnterVictim(s, pd.source, pd.queue) },
     spy:           { onMoat: (s, pd) => spyEnterTarget(s, pd.source, pd.queue) },
     thief:         { onMoat: (s, pd) => thiefEnterVictim(s, pd.source, pd.queue) },
@@ -7961,6 +8013,157 @@
          「獲得したとき、サプライの空の山1つにつき金貨1枚」は triggerOnGain（**この獲得で空になった山も数える**）。 */
       // 沈没船の財宝（財宝・叙事詩）＝コインは増えない。効果は applyTreasureEffect 側。
 
+      /* ===== 旭日（Rising Sun）R3：影(Shadow)と前兆(Omen)と素直な王国カード =====
+         正本＝docs/research/risingsun_rules.md 第2〜5章。
+         ⚠ **前兆(Omen)は「+1 Sun」を必ず一番最初に呼ぶ**（`removeSun`）＝予言がその場で発動しうる（公式逐語）。
+         ⚠ **影(Shadow)は「手札」ではない**＝手札を数える／手札から捨てる効果には数えない
+            （小路の捨て札・忍者の捨て札・浪人の「手札が7枚になるまで」は `p.hand` をそのまま見るのが正しい）。 */
+      // 魚屋（$2・アクション-影）＝+1購入 +$1。山札から使えるのは R2 の基盤（PLAY_ACTION）が担当。
+      case 'fishmonger':
+        t.buys += 1; addCoins(state, 1);
+        break;
+      // 浪人（$5・アクション-影）＝手札が7枚になるようにカードを引く（既に7枚以上なら引かない）。
+      //   ⚠ 山札の影札は**手札ではない**ので数えない（p.hand.length をそのまま見る＝公式）。
+      case 'ronin':
+        if (p.hand.length < 7) draw(state, pi, 7 - p.hand.length);
+        break;
+      // 茶屋（$5・アクション-前兆）＝+1 Sun／+1カード／+1アクション／+2コイン（記載順どおり）。
+      case 'tea_house':
+        removeSun(state, pi);
+        draw(state, pi, 1); addActions(t, 1); addCoins(state, 2);
+        break;
+      // 勅使（$5）＝+5カード／+1購入／+2負債（強制＝"may" が無い。記載順を守る）。
+      case 'imperial_envoy':
+        draw(state, pi, 5); t.buys += 1;
+        addDebt(state, pi, 2, '勅使で');
+        break;
+      // 駕籠（$5）＝+2カード／+2アクション／+1負債（強制）。
+      case 'litter':
+        draw(state, pi, 2); addActions(t, 2);
+        addDebt(state, pi, 1, '駕籠で');
+        break;
+      // 室（$3）＝+3カード／+1アクション／+3負債（強制）。
+      case 'root_cellar':
+        draw(state, pi, 3); addActions(t, 1);
+        addDebt(state, pi, 3, '室で');
+        break;
+      /* 公家（$3）＝**場に出している公家の枚数**で分岐（プレイ回数ではない＝公式FAQ）。
+         1or5枚＝+3アクション／2or6＝+3カード／3or7＝+3コイン／4or8＝+3購入。
+         ⚠ 自分自身も場にあるので最低1枚。持続として場に残ることは無いが、`durationCards` も数える
+            （玉座で再演しても場の枚数は増えない＝公式）。 */
+      /* 小路（$4・アクション-影）＝+1カード／+1アクション／手札1枚を捨てる（**強制**）。
+         ⚠ 順序＝①引く→②+1アクション→③捨てる（引いたばかりの札も捨てられる＝公式）。
+         🛑 **捨てる候補は `p.hand` だけ**＝山札の影札を候補にしてはいけない（正本 §2-9 の群B。公式逐語＝
+            `you cannot discard it to an ability like Alley's (unless it is actually in your hand)`）。
+         ⚠ 手札0枚では窓を開かない（山札から小路を使って引けなかった局面が実在する）。 */
+      case 'alley':
+        draw(state, pi, 1); addActions(t, 1);
+        if (p.hand.length > 0) state.pending = { type: 'alley', player: pi };
+        break;
+      /* 忍者（$4・アクション-アタック-影）＝+1カード／他の全員が手札3枚になるまで捨てる。
+         ⚠ `down` は **3**（剣は4・民兵も3）。⚠ 被害者の手札枚数に**影札は数えない**（`p.hand` のまま＝公式）。 */
+      case 'ninja': {
+        draw(state, pi, 1);
+        const vic = [];
+        for (let k = 1; k < state.players.length; k++) {
+          const idx = (pi + k) % state.players.length;
+          if (state.players[idx].hand.length > 3 && !attackImmune(state, idx)) vic.push(idx);
+        }
+        if (vic.length) discardDownEnter(state, pi, 3, vic);
+        break;
+      }
+      /* 狸（$5・アクション-影）＝手札1枚を廃棄し、それより最大2コイン高いカード1枚を獲得（改築と同型）。
+         ⚠ **`costUpTo` の第4引数 `spec` を必ず渡す**（公式例＝`Tanuki trashing an Artist can gain a Daimyo`
+            ＝絵師($0+負債8)を廃棄すると上限が($2,負債8)になり大名($0+負債6)が成分ごとに通る）。
+         ⚠ **獲得では負債を負わない**（`takeDebt` は購入からしか呼ばれない＝2024エラッタ）。 */
+      case 'tanuki':
+        if (p.hand.length > 0) state.pending = { type: 'tanuki', stage: 'trash', player: pi };
+        break;
+      /* 歌人（$4・アクション-前兆）＝+1 Sun／+1カード／+1アクション／山札の一番上を公開し、
+         コスト3以下なら手札に加える（そうでなければ**山札の上に残す**＝捨て札を経由しない）。
+         🛑 **`costUpTo` を使ってはいけない**（`gainableBase` 込みでサプライ外・在庫切れを弾く。
+            見るのは山札の一番上＝サプライと無関係）＝`costLE(costOf(...), {coin:3,pot:0,debt:0})` を使う。 */
+      case 'poet': {
+        removeSun(state, pi);
+        draw(state, pi, 1); addActions(t, 1);
+        if (p.deck.length === 0 && p.discard.length > 0) reshuffleDeck(p, state);
+        if (p.deck.length > 0) {
+          const top = p.deck[0];
+          reveal(state, pi, [top], '歌人で山札の一番上を公開');
+          if (costLE(costOf(state, top), { coin: 3, pot: 0, debt: 0 })) {
+            p.deck.shift(); p.hand.push(top);
+            log(state, `${p.name} は歌人で「${C()[top].name}」を手札に加えた。`);
+          }
+        }
+        break;
+      }
+      /* 田舎の村（$4・アクション-前兆）＝+1 Sun／+1カード／+2アクション／
+         **手札2枚を捨てて +1カード**（任意・**ちょうど2枚**）。
+         🛑 `discardDownEnter`（N枚に**なるまで**捨てる＝民兵型）を流用してはいけない。
+         ⚠ 順序＝捨てる→**捨て札トリガーを解決**→その後に引く（逆だと坑道の金貨がリシャッフルに入らない）。 */
+      case 'rustic_village':
+        removeSun(state, pi);
+        draw(state, pi, 1); addActions(t, 2);
+        if (p.hand.length >= 2) state.pending = { type: 'rustic_village', player: pi };
+        break;
+      /* 山の社（5D・アクション-前兆）＝+1 Sun／+2コイン／手札1枚を廃棄してもよい／
+         **その後**、廃棄置き場にアクションカードがあれば +2カード。
+         ⚠ 判定は**廃棄しなくても必ず走る**（手札0枚でも廃棄置き場にアクションがあれば +2カード）。 */
+      case 'mountain_shrine':
+        removeSun(state, pi);
+        addCoins(state, 2);
+        if (p.hand.length > 0) state.pending = { type: 'mountain_shrine', player: pi };
+        else mountainShrineDraw(state, pi);
+        break;
+      /* 濡女（$2・アクション-アタック）＝+1カード／+1アクション／
+         手札のカードが**すべて異なる**なら、手札を公開してこれを**山に戻して**もよい。
+         そうしたら他の全員が呪い1枚を獲得する。
+         ⚠ 「山に戻す」は獲得でも廃棄でもない第3の移動（`returnToPile`）。**戻せたときだけ**呪いを配る。 */
+      case 'snake_witch': {
+        draw(state, pi, 1); addActions(t, 1);
+        const names = p.hand;
+        const uniq = names.length === new Set(names).size;
+        if (uniq && p.inPlay.indexOf('snake_witch') >= 0) state.pending = { type: 'snake_witch', player: pi };
+        break;
+      }
+      // 名匠（$3）＝+2負債／コスト5以下のカード1枚を獲得（強制）。
+      case 'craftsman':
+        addDebt(state, pi, 2, '名匠で');
+        if (anyGainable(state, (id) => costUpTo(state, id, 5))) state.pending = { type: 'craftsman', player: pi };
+        break;
+      /* 金山（$5）＝+1カード／+1アクション／+1購入／**金貨1枚と +4負債を獲得してもよい**。
+         ⚠ 「してもよい」は**セット**に掛かる（金貨だけ取って負債を避けることはできない）。
+         ⚠ **サプライに金貨が無くても「やる」を選べる**（負債4だけ負う＝日本語wiki の裁定）。 */
+      case 'gold_mine':
+        draw(state, pi, 1); addActions(t, 1); t.buys += 1;
+        state.pending = { type: 'gold_mine', player: pi };
+        break;
+      /* 札差（$5）＝+1アクション／手札1枚を廃棄／それが**財宝なら +2カード**／**アクションなら +5カード**。
+         🛑 「財宝かつアクション」なら**両方**（合計7枚）＝排他の if/else で書くと壊れる（公式FAQ 明記）。 */
+      case 'rice_broker':
+        addActions(t, 1);
+        if (p.hand.length > 0) state.pending = { type: 'rice_broker', player: pi };
+        break;
+      /* 交替（$4）＝負債を持っていれば +3コイン。そうでなければ手札1枚を廃棄し、
+         **それよりコインコストが高い**カード1枚を獲得して、**コインコストの差**だけ負債を得る。
+         🛑 「more コイン」は**コイン成分だけの厳密比較**（公式FAQ＝`This ignores other special aspects of cost`）
+            ＝既存の `costUnder`/`costUpTo` は3成分を見るので使えない。
+         ⚠ 負債の差は**獲得を完全に解決した後**に測り直す／**獲得できなければ負債を取らない**。 */
+      case 'change':
+        if ((p.debt || 0) > 0) { addCoins(state, 3); log(state, `${p.name} は交替（負債あり）で +3コイン。`); }
+        else if (p.hand.length > 0) state.pending = { type: 'change', stage: 'trash', player: pi };
+        break;
+      case 'aristocrat': {
+        const n = p.inPlay.filter((c) => c === 'aristocrat').length
+          + (p.durationCards || []).filter((c) => c === 'aristocrat').length;
+        const m = n % 4;
+        if (m === 1) { addActions(t, 3); log(state, `${p.name} は公家（場に${n}枚）で +3アクション。`); }
+        else if (m === 2) { draw(state, pi, 3); log(state, `${p.name} は公家（場に${n}枚）で +3カード。`); }
+        else if (m === 3) { addCoins(state, 3); log(state, `${p.name} は公家（場に${n}枚）で +3コイン。`); }
+        else { t.buys += 3; log(state, `${p.name} は公家（場に${n}枚）で +3購入。`); }
+        break;
+      }
+
       default:
         break;
     }
@@ -12616,7 +12819,8 @@
         if (t.treasuresLocked) return state;
         const card = action.card;
         if (!isTreasureFor(state, card)) return state;
-        if (me.hand.indexOf(card) < 0) return state;
+        // 旭日：資本主義で財宝になった影札は**山札からも出せる**（1枚タップのみ。一括ボタンには入れない）。
+        if (!canPlayFromHandOrShadow(state, pi, card)) return state;
         if (!canPlayFromHand(state, pi)) return state; // 同盟：航海の追加ターン＝手札から3枚まで（財宝も数える）
         playTreasureCard(state, pi, card);
         return state;
@@ -16752,6 +16956,175 @@
           if (gainableBase(state, card)) { gain(state, pd.player, card, 'discard'); log(state, `${p.name} は造幣所で「${C()[card].name}」を獲得した。`); }
         }
         state.pending = null;
+        return state;
+      }
+      /* ===== 旭日（Rising Sun）R3 の選択解決 ===== */
+      // 小路＝手札1枚を捨てる（強制）。⚠ 候補は **手札だけ**（山札の影札は捨てられない＝公式）。
+      case 'ALLEY_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'alley') return state;
+        const pl = state.players[pd.player];
+        if (!pl.hand.length) { state.pending = null; return state; } // 終端保証（旧スナップショット互換）
+        const card = action.card;
+        if (card == null || pl.hand.indexOf(card) < 0) return state;
+        removeOne(pl.hand, card); pl.discard.push(card);
+        log(state, `${pl.name} は手札1枚を捨てた（小路）。`);
+        state.pending = null;                    // 捨て札トリガーが窓を開くので先に閉じる
+        triggerOnDiscard(state, pd.player, [card]);
+        return state;
+      }
+      /* 田舎の村＝**ちょうど2枚**捨てて +1カード（任意）。
+         ⚠ 捨てる → 捨て札トリガーを解決 → **その後に**引く（逆だと坑道の金貨がリシャッフルに入らない）。 */
+      case 'RUSTIC_VILLAGE_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'rustic_village') return state;
+        const pl = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        if (!cards.length) { state.pending = null; return state; }   // やめる（任意）
+        if (cards.length !== 2) return state;                        // **ちょうど2枚**
+        const tmp = pl.hand.slice();
+        for (const c of cards) { const i = tmp.indexOf(c); if (i < 0) return state; tmp.splice(i, 1); }
+        cards.forEach((c) => { removeOne(pl.hand, c); pl.discard.push(c); });
+        state.pending = null;
+        log(state, `${pl.name} は田舎の村で手札2枚を捨てた。`);
+        triggerOnDiscard(state, pd.player, cards);
+        draw(state, pd.player, 1);
+        return state;
+      }
+      // 山の社＝手札1枚を廃棄してもよい。**その後の判定は廃棄しなくても必ず走る**。
+      case 'MOUNTAIN_SHRINE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'mountain_shrine') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        if (card != null) {
+          if (pl.hand.indexOf(card) < 0) return state;
+          removeOne(pl.hand, card);
+          state.pending = null;
+          trashCard(state, pd.player, card);
+          log(state, `${pl.name} は山の社で「${C()[card].name}」を廃棄した。`);
+        } else state.pending = null;
+        mountainShrineDraw(state, pd.player);
+        return state;
+      }
+      /* 濡女＝手札を公開してこれを山に戻してもよい。戻したら他の全員が呪いを獲得（アタック）。
+         ⚠ 「山に戻す」は獲得でも廃棄でもない第3の移動＝`returnToPile`。**戻せたときだけ**呪いを配る。 */
+      case 'SNAKE_WITCH_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'snake_witch') return state;
+        const pl = state.players[pd.player];
+        state.pending = null;
+        if (!action.doIt) return state;                       // 戻さない（任意）
+        if (pl.hand.length !== new Set(pl.hand).size) return state; // 同名があれば戻せない（再検査）
+        if (!removeOne(pl.inPlay, 'snake_witch')) return state;     // 場に無い（命令経由＝lose track）
+        reveal(state, pd.player, pl.hand.slice(), '濡女：手札を公開');
+        returnToPile(state, 'snake_witch');
+        log(state, `${pl.name} は濡女を山に戻した。`);
+        const q = [];
+        for (let k = 1; k < state.players.length; k++) q.push((pd.player + k) % state.players.length);
+        snakeWitchEnterVictim(state, pd.player, q);
+        return state;
+      }
+      case 'SNAKE_WITCH_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'snake_witch_attack' || pd.stage !== 'react') return state;
+        snakeWitchApply(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      // 名匠＝コスト5以下のカード1枚を獲得（強制）。⚠ 5D（山の社）は "up to $5" ではない＝costUpTo が正しく弾く。
+      case 'CRAFTSMAN_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'craftsman') return state;
+        // ⚠ finishGain は **boolean** を返す（state ではない）＝`return finishGain(...)` と書くと state が壊れる。
+        if (!finishGain(state, pd, action.card, (id) => costUpTo(state, id, 5), 'discard', '名匠で獲得した。')) return state;
+        return state;
+      }
+      /* 金山＝「金貨1枚と +4負債を獲得してもよい」。**セットに掛かる**（金貨だけは取れない）。
+         ⚠ サプライに金貨が無くても「やる」を選べる（負債4だけ負う）。 */
+      case 'GOLD_MINE_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'gold_mine') return state;
+        state.pending = null;
+        if (!action.doIt) return state;
+        const got = gain(state, pd.player, 'gold', 'discard');
+        addDebt(state, pd.player, 4, '金山で');
+        log(state, `${state.players[pd.player].name} は金山で${got ? '金貨1枚と ' : '（金貨の山が空）'}負債4を得た。`);
+        return state;
+      }
+      /* 札差＝手札1枚を廃棄。**財宝なら +2カード／アクションなら +5カード（両方なら両方）**。
+         ⚠ 種別は「廃棄したカード」で見る（資本主義は「自分のターン中の財宝化」なので isTreasureFor を通す）。 */
+      case 'RICE_BROKER_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'rice_broker') return state;
+        const pl = state.players[pd.player];
+        if (!pl.hand.length) { state.pending = null; return state; } // 終端保証
+        const card = action.card;
+        if (card == null || pl.hand.indexOf(card) < 0) return state;
+        const wasTreasure = isTreasureFor(state, card);
+        const wasAction = DOM.isType(card, 'action');
+        removeOne(pl.hand, card);
+        state.pending = null;
+        trashCard(state, pd.player, card);
+        log(state, `${pl.name} は札差で「${C()[card].name}」を廃棄した。`);
+        if (wasTreasure) draw(state, pd.player, 2);   // 財宝かつアクションなら**両方**（公式FAQ）
+        if (wasAction) draw(state, pd.player, 5);
+        return state;
+      }
+      /* 交替＝手札1枚を廃棄し、**コインコストが厳密に高い**カードを獲得して差ぶんの負債を得る。
+         🛑 比較は**コイン成分だけ**（公式FAQ＝`This ignores other special aspects of cost`）。
+         ⚠ 負債は**獲得を完全に解決した後**に測り直す／**獲得できなければ負債を取らない**。 */
+      case 'CHANGE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'change' || pd.stage !== 'trash') return state;
+        const pl = state.players[pd.player];
+        if (!pl.hand.length) { state.pending = null; return state; } // 終端保証
+        const card = action.card;
+        if (card == null || pl.hand.indexOf(card) < 0) return state;
+        removeOne(pl.hand, card);
+        const ref = costOf(state, card).coin;
+        trashCard(state, pd.player, card);
+        log(state, `${pl.name} は交替で「${C()[card].name}」を廃棄した。`);
+        const can = (id) => gainableBase(state, id) && costOf(state, id).coin > ref;
+        if (anyGainable(state, can)) state.pending = { type: 'change', stage: 'gain', player: pd.player, ref };
+        else state.pending = null;
+        return state;
+      }
+      case 'CHANGE_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'change' || pd.stage !== 'gain') return state;
+        const card = action.card;
+        if (card == null || !gainableBase(state, card) || costOf(state, card).coin <= pd.ref) return state;
+        state.pending = null;
+        if (!gain(state, pd.player, card, 'discard')) return state;
+        // ⚠ 差は**獲得を解決した後**に測り直す（行人/漁師/デストリエの動的コストで実際に変わる）。
+        const diff = costOf(state, card).coin - pd.ref;
+        log(state, `${state.players[pd.player].name} は交替で「${C()[card].name}」を獲得した。`);
+        addDebt(state, pd.player, diff, '交替で');
+        return state;
+      }
+      // 狸＝手札1枚を廃棄し、それより最大2コイン高いカードを獲得（改築/拡張と同型）。
+      case 'TANUKI_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'tanuki' || pd.stage !== 'trash') return state;
+        const pl = state.players[pd.player];
+        if (!pl.hand.length) { state.pending = null; return state; } // 終端保証
+        const card = action.card;
+        if (card == null || pl.hand.indexOf(card) < 0) return state;
+        removeOne(pl.hand, card); trashCard(state, pd.player, card);
+        const tr = costOf(state, card);
+        const maxCost = tr.coin + 2;
+        log(state, `${pl.name} は狸で「${C()[card].name}」を廃棄した。`);
+        // ⚠ spec（3成分）を必ず渡す＝公式例「絵師($0+負債8)を廃棄して大名($0+負債6)を獲得できる」
+        if (anyGainable(state, (id) => costUpTo(state, id, maxCost, tr))) {
+          state.pending = { type: 'tanuki', stage: 'gain', player: pd.player, maxCost, pot: tr.pot, debt: tr.debt };
+        } else state.pending = null;
+        return state;
+      }
+      case 'TANUKI_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'tanuki' || pd.stage !== 'gain') return state;
+        // ⚠ finishGain は boolean を返す（state ではない）。
+        if (!finishGain(state, pd, action.card, (id) => costUpTo(state, id, pd.maxCost, pd), 'discard', '狸で獲得した。')) return state;
         return state;
       }
       case 'EXPAND_TRASH': {
@@ -21728,6 +22101,10 @@
     'CHARLATAN_REACT', 'RABBLE_REACT', 'CLERK_REACT', 'CLERK_TOPDECK', 'CLERK_START',
     'BISHOP_TRASH', 'BISHOP_OTHER', 'VAULT_DISCARD', 'VAULT_OTHER', 'MINT_REVEAL',
     'EXPAND_TRASH', 'EXPAND_GAIN', 'FORGE_TRASH', 'FORGE_GAIN', 'KINGS_COURT_CHOOSE',
+    // 旭日（Rising Sun）R3：影5種＋前兆6種＋素直な王国カード
+    'ALLEY_DISCARD', 'RUSTIC_VILLAGE_DISCARD', 'MOUNTAIN_SHRINE_TRASH',
+    'SNAKE_WITCH_RESOLVE', 'SNAKE_WITCH_REACT', 'CRAFTSMAN_GAIN', 'GOLD_MINE_CHOOSE',
+    'RICE_BROKER_TRASH', 'CHANGE_TRASH', 'CHANGE_GAIN', 'TANUKI_TRASH', 'TANUKI_GAIN',
     'WAR_CHEST_NAME', 'WAR_CHEST_GAIN', 'WATCHTOWER', 'TIARA_TOPDECK', 'TIARA_PLAY',
     'ANVIL_DISCARD', 'ANVIL_GAIN', 'INVESTMENT', 'INVESTMENT_TRASH', 'CRYSTAL_BALL',
     // 収穫祭
@@ -21869,6 +22246,7 @@
     handPlayable,      // 「手札から使う」窓に並べる候補＝手札＋山札の影札（**場に出る窓だけ**に使う）
     canPlayFromHandOrShadow, // その1枚を「手札から使う」窓で選べるか（手札 or 山札の影札）
     reshuffleDeck,     // シャッフルの唯一の入口（影＝底へ／運命の／占星術師団・メイソン団／回避 が全部ここ）
+    addDebt,           // 旭日 R3：**カードの効果で**負債を得る唯一の入口（takeDebt はコスト欄用＝効果には使えない）
     barbarianCanGain,  // 同盟：蛮族＝廃棄札と種別を共有しより安いカードの候補（連携/分割山種別も種別に数える）
     canReturnToPile,   // そのカードを元の山へ戻せるか（交換／交易商人／取り替え子が共通で見る）
     swapCanGain,       // 同盟：交換＝$5以下・名前の異なるアクション（混合山は一番上の実カード名で比べる）

@@ -376,8 +376,8 @@ console.log('=== R2: 影は山札のどこにあっても手札と同じよう�
   ok(s.players[0].deck.indexOf('fishmonger') < 0, '使った影札は山札から消える');
   ok(s.players[0].deck.length === 2, '山札の他の札は減らない');
   ok(s.turn.actions === 0, '**アクション権を普通に消費する**（Donald X. 逐語）');
-  // ⚠ 魚屋の効果（+1購入 +$1）は R3 で実装する＝R2 では「場に出る／アクション権を使う」までが対象。
-  ok(s.turn.buys === before, 'R2 時点では効果は未実装（+1購入は R3 で入る）');
+  // R3 で魚屋の効果（+1購入 +$1）が入った＝山札から使っても効果は普通に解決する。
+  ok(s.turn.buys === before + 1, '山札から使っても効果（+1購入）が普通に解決する');
   ok((s.turn.actionsPlayed || 0) === 1, '「アクションを使った」と数える（共謀者・チャンピオン等が正しく効く）');
 }
 {
@@ -410,6 +410,42 @@ console.log('=== R2: 影は山札のどこにあっても手札と同じよう�
   ok(E.deckShadows(s, 0).join(',') === 'fishmonger', 'deckShadows が山札の影札だけ返す');
   ok(E.handPlayable(s, 0).indexOf('fishmonger') >= 0, 'handPlayable に山札の影札が入る');
   ok(E.handPlayable(s, 0).indexOf('copper') < 0, 'handPlayable に山札の普通の札は入らない');
+}
+
+console.log('=== R2/R3: 資本主義で財宝になった影札は購入フェイズに山札から出せる（1枚タップのみ）===');
+{
+  /* 公式 Other rules clarifications 逐語＝`If you have bought Capitalism, you can also play Fishmonger
+     from your deck whenever you could normally play Treasures from your hand.`
+     ⚠ **「財宝を全部出す」（PLAY_ALL_TREASURES）には入れない**＝ボタン1つで山札の影札まで出す事故を避ける
+       （§0-24 の playAllResume の轍）。 */
+  const KC = ['fishmonger'].concat(K_NONE.slice(0, 9));
+  const mkc = (bought) => {
+    const st = E.createInitialState([{ name: 'A' }, { name: 'B', isCpu: true }], KC,
+      { projects: ['capitalism', 'pageant'] });
+    if (bought !== false) st.players[0].projects = ['capitalism'];
+    st.turn.phase = 'buy'; st.turn.coins = 0; st.turn.buys = 1;
+    return st;
+  };
+  const base = mkc();
+  ok(E.isTreasureFor(base, 'fishmonger') === true, '資本主義を買っていれば魚屋は財宝（前提）');
+  // ① 1枚タップ＝山札から出せる
+  let a = mkc(); a.players[0].hand = []; a.players[0].deck = ['fishmonger', 'copper'];
+  a = E.reduce(a, { type: 'PLAY_TREASURE', card: 'fishmonger' });
+  ok(a.players[0].inPlay.indexOf('fishmonger') >= 0, '購入フェイズに山札の影札を1枚タップで出せる');
+  ok(a.turn.coins === 1 && a.turn.buys === 2, '効果（+1購入 +$1）も普通に解決する');
+  // ② 一括ボタンは巻き込まない
+  let b = mkc(); b.players[0].hand = ['copper', 'copper']; b.players[0].deck = ['fishmonger', 'estate'];
+  b = E.reduce(b, { type: 'PLAY_ALL_TREASURES' });
+  ok(b.players[0].deck.indexOf('fishmonger') >= 0, '「財宝を全部出す」は山札の影札を出さない（事故防止）');
+  // ③ 資本主義を買っていなければ出せない
+  let c = mkc(false); c.players[0].hand = []; c.players[0].deck = ['fishmonger', 'copper'];
+  const before = JSON.stringify(c);
+  ok(JSON.stringify(E.reduce(c, { type: 'PLAY_TREASURE', card: 'fishmonger' })) === before,
+    '資本主義を買っていなければ購入フェイズに山札から出せない（魚屋は財宝ではない）');
+  // ④ 手札を優先
+  let d = mkc(); d.players[0].hand = ['fishmonger']; d.players[0].deck = ['fishmonger', 'copper'];
+  d = E.reduce(d, { type: 'PLAY_TREASURE', card: 'fishmonger' });
+  ok(d.players[0].deck.filter((x) => x === 'fishmonger').length === 1, '手札にあれば手札を優先して出す');
 }
 
 console.log('=== R2: 影は「手札」ではない（数えない）／「所有カード」には数える ===');
@@ -785,6 +821,212 @@ console.log('=== R2: 群A窓の UI（jsdom）＝影札のチップが出る／�
     ok(modalChipNames().indexOf(WDOM.CARDS[A_SH].name) < 0,
       jp + '(' + type + ')：群Bのモーダルに**山札の影札を出さない**（実: ' + modalChipNames().join(',') + '）');
   });
+}
+
+console.log('=== R3: 王国カードの効果（影5種・前兆6種・素直な9種）===');
+{
+  const play = (kingdom, setup, card, act) => {
+    let s = mk(kingdom.concat(K_NONE).slice(0, 10), 2);
+    s.turn.phase = 'action'; s.turn.actions = 1; s.turn.coins = 0; s.turn.buys = 1;
+    s.players[0].hand = []; s.players[0].deck = []; s.players[0].discard = []; s.players[0].inPlay = [];
+    setup(s);
+    if (s.players[0].hand.indexOf(card) < 0 && s.players[0].deck.indexOf(card) < 0) s.players[0].hand.push(card);
+    s = E.reduce(s, { type: 'PLAY_ACTION', card });
+    if (act) s = E.reduce(s, act);
+    return s;
+  };
+  // 茶屋＝+1 Sun／+1カード／+1アクション／+2コイン（Sun が減ることも確認）
+  {
+    const s = play(['tea_house'], (st) => { st.players[0].deck = ['copper', 'copper']; }, 'tea_house');
+    ok(s.turn.coins === 2 && s.turn.actions === 1, '茶屋＝+1カード +1アクション +2コイン');
+    ok(s.sunTokens === 4, '茶屋で Sun が1個減る（前兆＝効果の一番最初）');
+  }
+  // 勅使＝+5カード +1購入 +2負債（強制）
+  {
+    const s = play(['imperial_envoy'], (st) => { st.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper']; }, 'imperial_envoy');
+    ok(s.players[0].hand.length === 5, '勅使＝+5カード');
+    ok(s.turn.buys === 2 && s.players[0].debt === 2, '勅使＝+1購入 と 負債2（強制）');
+  }
+  // 公家＝場の枚数で分岐（1枚目＝+3アクション／2枚目＝+3カード）
+  {
+    const s1 = play(['aristocrat', 'village'], (st) => { st.players[0].deck = ['copper', 'copper', 'copper']; }, 'aristocrat');
+    ok(s1.turn.actions === 3, '公家1枚目＝+3アクション（1 - 1 + 3）');
+    let s2 = mk(['aristocrat'].concat(K_NONE).slice(0, 10), 2);
+    s2.turn.phase = 'action'; s2.turn.actions = 1;
+    s2.players[0].hand = ['aristocrat']; s2.players[0].inPlay = ['aristocrat'];
+    s2.players[0].deck = ['copper', 'copper', 'copper']; s2.players[0].discard = [];
+    s2 = E.reduce(s2, { type: 'PLAY_ACTION', card: 'aristocrat' });
+    ok(s2.players[0].hand.length === 3, '公家2枚目＝+3カード（場に2枚）');
+  }
+  // 浪人＝手札が7枚になるまで引く（影札は手札に数えない）
+  {
+    let s = mk(['ronin'].concat(K_NONE).slice(0, 10), 2);
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    s.players[0].hand = ['copper', 'copper'];
+    s.players[0].deck = ['ronin', 'estate', 'estate', 'estate', 'estate', 'estate', 'estate', 'estate'];
+    s.players[0].discard = []; s.players[0].inPlay = [];
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'ronin' });   // 山札から使う
+    ok(s.players[0].hand.length === 7, '浪人＝手札が7枚になるまで引く（実: ' + s.players[0].hand.length + '）');
+  }
+  // 小路＝+1カード +1アクション → 手札1枚を捨てる。⚠ 山札の影札は候補に出ない（群B）
+  {
+    let s = mk(['alley'].concat(K_NONE).slice(0, 10), 2);
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    s.players[0].hand = ['alley', 'estate'];
+    s.players[0].deck = ['copper', 'ninja']; s.players[0].discard = []; s.players[0].inPlay = [];
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'alley' });
+    ok(s.pending && s.pending.type === 'alley', '小路＝捨てる窓が開く');
+    const before = JSON.stringify(s);
+    const bad = E.reduce(s, { type: 'ALLEY_DISCARD', card: 'ninja' }); // 山札の影札は捨てられない
+    ok(JSON.stringify(bad) === before, '**山札の影札は小路で捨てられない**（公式が名指しで禁止）');
+    s = E.reduce(s, { type: 'ALLEY_DISCARD', card: 'estate' });
+    ok(s.pending == null && s.players[0].discard.indexOf('estate') >= 0, '手札の札は普通に捨てられる');
+  }
+  // 忍者＝+1カード＋民兵型アタック（down は 3）。影札は被害者の手札に数えない
+  {
+    let s = mk(['ninja'].concat(K_NONE).slice(0, 10), 2);
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    s.players[0].hand = ['ninja']; s.players[0].deck = ['copper']; s.players[0].inPlay = [];
+    s.players[1].hand = ['copper', 'copper', 'copper', 'estate', 'estate'];
+    s.players[1].deck = ['alley']; // 相手の山札の影札は手札に数えない
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'ninja' });
+    ok(s.pending && /discard_down/.test(s.pending.type), '忍者＝手札を捨てさせる窓（民兵型）');
+    ok(s.pending.down === 3, '**down は 3**（剣の4ではない。実: ' + s.pending.down + '）');
+  }
+  // 狸＝廃棄して最大+$2高いカードを獲得。⚠ 獲得では負債を負わない
+  {
+    let s = mk(['tanuki'].concat(K_NONE).slice(0, 10), 2);
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    s.players[0].hand = ['tanuki', 'estate']; s.players[0].deck = []; s.players[0].inPlay = [];
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'tanuki' });
+    s = E.reduce(s, { type: 'TANUKI_TRASH', card: 'estate' });   // 屋敷($2)を廃棄 → $4まで
+    ok(s.pending && s.pending.type === 'tanuki' && s.pending.stage === 'gain', '狸＝獲得の窓');
+    ok(s.pending.maxCost === 4, '上限は廃棄したカードのコイン+2（実: ' + s.pending.maxCost + '）');
+    s = E.reduce(s, { type: 'TANUKI_GAIN', card: 'silver' });
+    ok(s.players[0].discard.indexOf('silver') >= 0, '銀貨を獲得できる');
+    ok((s.players[0].debt || 0) === 0, '**獲得では負債を負わない**（2024エラッタ＝購入だけ）');
+  }
+  // 名匠＝+2負債してコスト5以下を獲得（強制）。⚠ finishGain は boolean（state を壊さない）
+  {
+    let s = mk(['craftsman'].concat(K_NONE).slice(0, 10), 2);
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    s.players[0].hand = ['craftsman']; s.players[0].deck = []; s.players[0].inPlay = [];
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'craftsman' });
+    ok(s.players[0].debt === 2, '名匠＝+2負債');
+    ok(s.pending && s.pending.type === 'craftsman', '獲得の窓が開く');
+    s = E.reduce(s, { type: 'CRAFTSMAN_GAIN', card: 'silver' });
+    ok(s && s.supply, '**reduce が state を返す**（finishGain は boolean＝return してはいけない）');
+    ok(s.players[0].discard.indexOf('silver') >= 0 && s.pending == null, '銀貨を獲得して窓が閉じる');
+  }
+  // 札差＝財宝なら+2／アクションなら+5／**両方なら両方**
+  {
+    const mkRB = (trash) => {
+      let s = mk(['rice_broker'].concat(K_NONE).slice(0, 10), 2);
+      s.turn.phase = 'action'; s.turn.actions = 1;
+      s.players[0].hand = ['rice_broker', trash];
+      s.players[0].deck = new Array(9).fill('copper'); s.players[0].inPlay = []; s.players[0].discard = [];
+      s = E.reduce(s, { type: 'PLAY_ACTION', card: 'rice_broker' });
+      return E.reduce(s, { type: 'RICE_BROKER_TRASH', card: trash });
+    };
+    ok(mkRB('copper').players[0].hand.length === 2, '札差×財宝＝+2カード');
+    ok(mkRB('village').players[0].hand.length === 5, '札差×アクション＝+5カード');
+  }
+  // 金山＝金貨と負債4はセット（金貨だけは取れない）／山が空でも「やる」を選べる
+  {
+    let s = mk(['gold_mine'].concat(K_NONE).slice(0, 10), 2);
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    s.players[0].hand = ['gold_mine']; s.players[0].deck = ['copper']; s.players[0].inPlay = [];
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'gold_mine' });
+    ok(s.pending && s.pending.type === 'gold_mine', '金山＝二択の窓');
+    const yes = E.reduce(s, { type: 'GOLD_MINE_CHOOSE', doIt: true });
+    ok(yes.players[0].discard.indexOf('gold') >= 0 && yes.players[0].debt === 4, '「やる」＝金貨と負債4がセット');
+    const no = E.reduce(s, { type: 'GOLD_MINE_CHOOSE', doIt: false });
+    ok(no.players[0].discard.indexOf('gold') < 0 && (no.players[0].debt || 0) === 0, '「やらない」＝どちらも無し');
+  }
+  // 交替＝負債があれば+$3／なければ廃棄して「コインコストが厳密に高い」札を獲得＋差ぶんの負債
+  {
+    let s = mk(['change'].concat(K_NONE).slice(0, 10), 2);
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    s.players[0].hand = ['change']; s.players[0].debt = 3; s.players[0].deck = []; s.players[0].inPlay = [];
+    const withDebt = E.reduce(s, { type: 'PLAY_ACTION', card: 'change' });
+    ok(withDebt.turn.coins === 3 && withDebt.pending == null, '交替＝負債があれば +3コインだけ');
+    let s2 = mk(['change'].concat(K_NONE).slice(0, 10), 2);
+    s2.turn.phase = 'action'; s2.turn.actions = 1;
+    s2.players[0].hand = ['change', 'estate']; s2.players[0].debt = 0; s2.players[0].deck = []; s2.players[0].inPlay = []; s2.players[0].discard = [];
+    s2 = E.reduce(s2, { type: 'PLAY_ACTION', card: 'change' });
+    s2 = E.reduce(s2, { type: 'CHANGE_TRASH', card: 'estate' });      // 屋敷＝$2
+    ok(s2.pending && s2.pending.stage === 'gain' && s2.pending.ref === 2, '交替＝廃棄したコインコストを覚える');
+    const bad = E.reduce(s2, { type: 'CHANGE_GAIN', card: 'estate' }); // 同コストは不可（**厳密に高い**）
+    ok(JSON.stringify(bad) === JSON.stringify(s2), '同じコインコストのカードは獲得できない（厳密比較）');
+    s2 = E.reduce(s2, { type: 'CHANGE_GAIN', card: 'silver' });        // 銀貨＝$3（差1）
+    ok(s2.players[0].discard.indexOf('silver') >= 0, '銀貨を獲得できる');
+    ok(s2.players[0].debt === 1, '**コインコストの差ぶん**の負債（$3-$2=1。実: ' + s2.players[0].debt + '）');
+  }
+  // 山の社＝+1 Sun／+2コイン／廃棄は任意だが**判定は必ず走る**
+  {
+    let s = mk(['mountain_shrine'].concat(K_NONE).slice(0, 10), 2);
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    // 手札が山の社1枚だけ＝使うと手札0枚＝廃棄の窓は開かず、判定だけが走る
+    s.players[0].hand = ['mountain_shrine']; s.players[0].deck = ['copper', 'copper']; s.players[0].inPlay = [];
+    s.trash = ['village'];   // 廃棄置き場にアクションがある
+    const solo = E.reduce(s, { type: 'PLAY_ACTION', card: 'mountain_shrine' });
+    ok(solo.turn.coins === 2, '山の社＝+2コイン');
+    ok(solo.sunTokens === 4, '+1 Sun');
+    ok(solo.pending == null, '手札0枚なら廃棄の窓を開かない（人間が詰まない）');
+    ok(solo.players[0].hand.length === 2, '**廃棄しなくても判定は走る**（+2カード）');
+    // 手札が残っていれば廃棄の窓が開く（任意）
+    let s2 = mk(['mountain_shrine'].concat(K_NONE).slice(0, 10), 2);
+    s2.turn.phase = 'action'; s2.turn.actions = 1;
+    s2.players[0].hand = ['mountain_shrine', 'estate']; s2.players[0].deck = ['copper', 'copper'];
+    s2.players[0].inPlay = []; s2.trash = ['village'];
+    s2 = E.reduce(s2, { type: 'PLAY_ACTION', card: 'mountain_shrine' });
+    ok(s2.pending && s2.pending.type === 'mountain_shrine', '手札があれば廃棄の窓（任意）');
+    const noTrash = E.reduce(s2, { type: 'MOUNTAIN_SHRINE_TRASH', card: null });
+    ok(noTrash.pending == null && noTrash.players[0].hand.length === 3, '廃棄しなくても +2カード（1枚＋2枚）');
+    const didTrash = E.reduce(s2, { type: 'MOUNTAIN_SHRINE_TRASH', card: 'estate' });
+    ok(didTrash.trash.indexOf('estate') >= 0, '廃棄も選べる');
+  }
+  // 濡女＝手札が全部異なれば山に戻して相手に呪い
+  {
+    let s = mk(['snake_witch'].concat(K_NONE).slice(0, 10), 2);
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    s.players[0].hand = ['snake_witch']; s.players[0].deck = ['estate']; s.players[0].inPlay = [];
+    s.players[1].hand = []; // リアクション無し
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'snake_witch' });
+    ok(s.pending && s.pending.type === 'snake_witch', '濡女＝山に戻すかの窓（手札が全部異なる）');
+    const before = s.supply.snake_witch;
+    s = E.reduce(s, { type: 'SNAKE_WITCH_RESOLVE', doIt: true });
+    ok(s.supply.snake_witch === before + 1, '山に戻る（獲得でも廃棄でもない＝supply が増える）');
+    ok(s.players[1].discard.indexOf('curse') >= 0, '他のプレイヤーが呪いを獲得する');
+  }
+  // 歌人＝山札の一番上がコスト3以下なら手札へ（サプライと無関係＝costUpTo を使わない）
+  {
+    let s = mk(['poet'].concat(K_NONE).slice(0, 10), 2);
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    s.players[0].hand = ['poet']; s.players[0].deck = ['copper', 'silver', 'gold']; s.players[0].inPlay = [];
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'poet' });   // +1カード→銅貨／次の上＝銀貨($3)
+    ok(s.players[0].hand.indexOf('silver') >= 0, '山札の上が$3以下なら手札に加える');
+    let s2 = mk(['poet'].concat(K_NONE).slice(0, 10), 2);
+    s2.turn.phase = 'action'; s2.turn.actions = 1;
+    s2.players[0].hand = ['poet']; s2.players[0].deck = ['copper', 'gold', 'estate']; s2.players[0].inPlay = [];
+    s2 = E.reduce(s2, { type: 'PLAY_ACTION', card: 'poet' });  // 次の上＝金貨($6)
+    ok(s2.players[0].deck[0] === 'gold', '$3より高ければ**山札の上に残す**（捨て札を経由しない）');
+  }
+  // 田舎の村＝ちょうど2枚捨てて+1カード（任意）
+  {
+    let s = mk(['rustic_village'].concat(K_NONE).slice(0, 10), 2);
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    s.players[0].hand = ['rustic_village', 'estate', 'estate'];
+    s.players[0].deck = ['copper', 'copper']; s.players[0].inPlay = []; s.players[0].discard = [];
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'rustic_village' });
+    ok(s.turn.actions === 2 && s.sunTokens === 4, '田舎の村＝+2アクション（+1 Sun 済み）');
+    const one = E.reduce(s, { type: 'RUSTIC_VILLAGE_DISCARD', cards: ['estate'] });
+    ok(JSON.stringify(one) === JSON.stringify(s), '**1枚では受理しない**（ちょうど2枚）');
+    const two = E.reduce(s, { type: 'RUSTIC_VILLAGE_DISCARD', cards: ['estate', 'estate'] });
+    ok(two.players[0].discard.length === 2 && two.pending == null, '2枚捨てて窓が閉じる');
+    const none = E.reduce(s, { type: 'RUSTIC_VILLAGE_DISCARD', cards: [] });
+    ok(none.pending == null, '捨てない（任意）も選べる');
+  }
 }
 
 console.log('\n========================================');

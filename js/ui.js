@@ -3895,6 +3895,48 @@
 
     /* ===== 拡張: 異郷（Hinterlands）===== */
     if (pd.type === 'oasis') return modalSingleHand(p, 'オアシス — 捨てる', '手札1枚を捨てます。', () => true, (card) => dispatch({ type: 'OASIS_RESOLVE', card }), null, '捨てる');
+    /* ===== 旭日（Rising Sun）R3 =====
+       ⚠ **手札から「捨てる／廃棄する」窓（群B）には `pool` を渡さない**＝山札の影札は選べない（公式）。 */
+    if (pd.type === 'alley') return modalSingleHand(p, '小路 — 捨てる', '手札1枚を捨てます（強制）。山札の影カードは捨てられません。',
+      () => true, (card) => dispatch({ type: 'ALLEY_DISCARD', card }), null, '捨てる');
+    if (pd.type === 'rustic_village') return modalMultiHand(p, '田舎の村 — 2枚捨てて1枚引く（任意）',
+      '手札を**ちょうど2枚**捨てると +1 カード引けます（捨てなくてもかまいません）。',
+      (n) => (n === 2 ? '2枚捨てて1枚引く' : '捨てない'), false,
+      (cards) => dispatch({ type: 'RUSTIC_VILLAGE_DISCARD', cards: cards.length === 2 ? cards : [] }), 2);
+    if (pd.type === 'mountain_shrine') return modalSingleHand(p, '山の社 — 廃棄（任意）',
+      '手札1枚を廃棄してもよい。その後、廃棄置き場にアクションカードがあれば +2 カード。',
+      () => true, (card) => dispatch({ type: 'MOUNTAIN_SHRINE_TRASH', card }),
+      { label: '廃棄しない', on: () => dispatch({ type: 'MOUNTAIN_SHRINE_TRASH', card: null }) }, '廃棄する');
+    if (pd.type === 'snake_witch') return modalOptions('濡女 — 山に戻す（任意）',
+      '手札のカードがすべて異なるので、手札を公開してこれをこのカードの山に戻せます。そうすると他のプレイヤー全員が呪い1枚を獲得します。', [
+        { label: '公開して山に戻す（相手に呪い）', cls: 'btn-primary', on: () => dispatch({ type: 'SNAKE_WITCH_RESOLVE', doIt: true }) },
+        { label: '戻さない', on: () => dispatch({ type: 'SNAKE_WITCH_RESOLVE', doIt: false }) },
+      ]);
+    if (pd.type === 'snake_witch_attack' && pd.stage === 'react') return modalOptions('濡女を受ける', '呪い1枚を獲得します。',
+      reactOptions(p, pd, { type: 'SNAKE_WITCH_REACT' }));
+    if (pd.type === 'craftsman') return modalGainSupply(state, '名匠 — 獲得', 'コスト5以下のカード1枚を獲得します（強制）。',
+      (id) => canUpTo(state, id, 5), (id) => dispatch({ type: 'CRAFTSMAN_GAIN', card: id }));
+    if (pd.type === 'gold_mine') return modalOptions('金山 — 金貨と負債4（任意）',
+      '金貨1枚を獲得し、負債4を得ます（金貨だけを得ることはできません）。負債はこのターン中いつでも返済できます。', [
+        { label: '金貨1枚と 負債4 を得る', cls: 'btn-primary', on: () => dispatch({ type: 'GOLD_MINE_CHOOSE', doIt: true }) },
+        { label: '何もしない', on: () => dispatch({ type: 'GOLD_MINE_CHOOSE', doIt: false }) },
+      ]);
+    if (pd.type === 'rice_broker') return modalSingleHand(p, '札差 — 廃棄',
+      '手札1枚を廃棄します（財宝なら +2 カード／アクションなら +5 カード。両方なら両方）。',
+      () => true, (card) => dispatch({ type: 'RICE_BROKER_TRASH', card }), null, '廃棄する');
+    if (pd.type === 'change' && pd.stage === 'trash') return modalSingleHand(p, '交替 — 廃棄',
+      '手札1枚を廃棄します（その後、コインコストが高いカード1枚を獲得し、差の数だけ負債を得ます）。',
+      () => true, (card) => dispatch({ type: 'CHANGE_TRASH', card }), null, '廃棄する');
+    if (pd.type === 'change' && pd.stage === 'gain') return modalGainSupply(state, '交替 — 獲得',
+      '廃棄したカードよりコインコストが高いカード1枚を獲得します（差の数だけ負債を得ます）。',
+      (id) => DOM.engine.gainableBase(state, id) && DOM.engine.costOf(state, id).coin > pd.ref,
+      (id) => dispatch({ type: 'CHANGE_GAIN', card: id }));
+    if (pd.type === 'tanuki' && pd.stage === 'trash') return modalSingleHand(p, '狸 — 廃棄',
+      '廃棄するカードを1枚選びます（その後、最大2コイン高いカードを獲得）。',
+      () => true, (card) => dispatch({ type: 'TANUKI_TRASH', card }), null, '廃棄する');
+    if (pd.type === 'tanuki' && pd.stage === 'gain') return modalGainSupply(state, '狸 — 獲得',
+      'コスト ' + pd.maxCost + ' 以下のカードを1枚獲得します。',
+      (id) => canUpTo(state, id, pd.maxCost, pd), (id) => dispatch({ type: 'TANUKI_GAIN', card: id }));
     if (pd.type === 'duchess_look') {
       const top = p.deck[0];
       return modalOptions('公爵夫人 — 山札の上' + (top ? '「' + DOM.CARDS[top].name + '」' : ''), '自分の山札の一番上を捨てられます（捨てると次に引く札が変わります）。', [

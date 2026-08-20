@@ -279,6 +279,16 @@
       !(DOM.engine.warlordBlocks && DOM.engine.warlordBlocks(state, t.active, id));
     const dead = p.hand.some((c) => isDead(c));
     // --- 非ターミナル（+アクションが付く＝連鎖できる）を最優先 ---
+    /* 旭日（Rising Sun）R3。⚠ `has` は山札の影札も拾う（R2）＝影5種はここに足すだけで山札経路も通る。
+       足さないと **CPUソークで影札が1枚も使われず、山札からの使用経路の検証が0回になる**。 */
+    if (has('tea_house')) return 'tea_house';           // +1 Sun +1カード +1アクション +2コイン（最強のキャントリップ）
+    if (has('rustic_village')) return 'rustic_village'; // +1 Sun +1カード +2アクション
+    if (has('poet')) return 'poet';                     // +1 Sun +1カード +1アクション ＋山札の上を手札へ
+    if (has('litter')) return 'litter';                 // +2カード +2アクション（負債1）
+    if (has('root_cellar')) return 'root_cellar';       // +3カード +1アクション（負債3）
+    if (has('alley')) return 'alley';                   // +1カード +1アクション ＋1枚捨て
+    if (has('gold_mine')) return 'gold_mine';           // +1カード +1アクション +1購入
+    if (has('aristocrat')) return 'aristocrat';         // 場の枚数で分岐（1枚目は +3アクション）
     if (has('village')) return 'village';
     if (has('mining_village')) return 'mining_village';
     if (has('festival')) return 'festival';        // +2アクション+1購入+2コイン
@@ -657,6 +667,16 @@
     if (has('torturer')) return 'torturer';
     if (has('swindler')) return 'swindler';
     if (has('saboteur')) return 'saboteur';
+    // 旭日：ターミナル系（忍者＝民兵型アタック／浪人＝手札7枚まで／狸＝改築型／札差／濡女／名匠／勅使／交替）。
+    if (has('ninja')) return 'ninja';                   // +1カード＋民兵型アタック（山札からも撃てる）
+    if (has('ronin')) return 'ronin';                   // 手札が7枚になるまで引く
+    if (has('rice_broker')) return 'rice_broker';       // 廃棄→財宝+2/アクション+5カード
+    if (has('imperial_envoy')) return 'imperial_envoy'; // +5カード +1購入（負債2）
+    if (has('snake_witch')) return 'snake_witch';       // 手札が全部異なれば山へ戻して呪い配布
+    if (has('tanuki')) return 'tanuki';                 // 廃棄→最大+$2高いカードを獲得
+    if (has('craftsman')) return 'craftsman';           // コスト5以下を獲得（負債2）
+    if (has('change')) return 'change';                 // 負債があれば+$3／なければ廃棄→格上げ
+    if (has('fishmonger')) return 'fishmonger';         // +1購入 +$1（山札からも出せる）
     if (has('militia')) return 'militia';
     if (has('bureaucrat')) return 'bureaucrat';
     if (has('conspirator')) return 'conspirator';
@@ -3141,6 +3161,52 @@
       /* ===== 拡張: 異郷（Hinterlands）===== */
       case 'oasis':
         return { type: 'OASIS_RESOLVE', card: pickDiscards(p.hand, 1)[0] };
+      /* ===== 旭日（Rising Sun）R3 ===== */
+      // 小路＝手札1枚を捨てる（強制）。⚠ 候補は**手札だけ**（山札の影札は捨てられない＝公式）。
+      case 'alley':
+        return { type: 'ALLEY_DISCARD', card: pickDiscards(p.hand, 1)[0] || p.hand[0] };
+      // 田舎の村＝ちょうど2枚捨てて +1カード（任意）。手札が3枚以上あるときだけ得（1枚減る）。
+      case 'rustic_village': {
+        if (p.hand.length < 3) return { type: 'RUSTIC_VILLAGE_DISCARD', cards: [] };
+        const junk = pickDiscards(p.hand, 2);
+        return { type: 'RUSTIC_VILLAGE_DISCARD', cards: junk.length === 2 ? junk : [] };
+      }
+      // 山の社＝手札1枚を廃棄してもよい（ジャンクがあれば廃棄する）。判定は廃棄しなくても走る。
+      case 'mountain_shrine': {
+        const junk = p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0];
+        return { type: 'MOUNTAIN_SHRINE_TRASH', card: (junk && trashValue(junk) <= 1) ? junk : null };
+      }
+      // 濡女＝手札が全部異なれば山に戻して相手に呪いを配る（呪いの山があるときだけ得）。
+      case 'snake_witch':
+        return { type: 'SNAKE_WITCH_RESOLVE', doIt: sup(state, 'curse') > 0 };
+      case 'snake_witch_attack':
+        return immuneReveal(p) || { type: 'SNAKE_WITCH_REACT' };
+      // 名匠＝コスト5以下を獲得（強制）。候補ゼロで null を返さない（engine が窓を開かないので到達しない）。
+      case 'craftsman':
+        return { type: 'CRAFTSMAN_GAIN', card: bestGain(state, 5, { noVictory: true }) || bestGain(state, 5) };
+      // 金山＝金貨＋負債4。負債はターン中いつでも返せるので、コインに余裕がある序盤〜中盤は取る。
+      case 'gold_mine':
+        return { type: 'GOLD_MINE_CHOOSE', doIt: sup(state, 'gold') > 0 && (p.debt || 0) === 0 };
+      // 札差＝手札1枚を廃棄（財宝なら+2／アクションなら+5カード）＝アクションを廃棄できると一番得。
+      case 'rice_broker': {
+        const act = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => trashValue(a) - trashValue(b))[0];
+        const any = p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0];
+        return { type: 'RICE_BROKER_TRASH', card: act || any };
+      }
+      // 交替＝手札1枚を廃棄して「コインコストが厳密に高い」カードを獲得（負債は差ぶん）。
+      case 'change': {
+        if (pd.stage === 'trash') {
+          const c = p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0];
+          return { type: 'CHANGE_TRASH', card: c };
+        }
+        const cands = GAIN_ORDER.filter((id) => DOM.engine.gainableBase(state, id)
+          && DOM.engine.costOf(state, id).coin > pd.ref);
+        return { type: 'CHANGE_GAIN', card: cands[0] || null };
+      }
+      // 狸＝改築と同型（廃棄して最大+$2高いカードを獲得）。
+      case 'tanuki':
+        if (pd.stage === 'trash') { const c = p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0]; return { type: 'TANUKI_TRASH', card: c }; }
+        return { type: 'TANUKI_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true, pot: pd.pot, debt: pd.debt }) || bestGain(state, pd.maxCost, pd) };
       case 'duchess_look': {
         const look = p.deck[0] || p.discard[0];
         return { type: 'DUCHESS_LOOK', discard: !!look && (isType(look, 'victory') || isType(look, 'curse')) };
