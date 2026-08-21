@@ -385,6 +385,40 @@
         state.players.forEach((pl) => { pl.shuffleAlly = state.ally; if (pl.favorShuffle == null) pl.favorShuffle = pl.isCpu ? 1 : 0; });
       }
     }
+    /* ⑤ **`initSupply` の外**にある派生セットアップ4系統（`createInitialState` がそこでやっているもの）。
+       公式逐語＝`Deal out 10 new Kingdom cards. **Do any Setup for them that they require**, including things
+       like putting out the Potions if necessary.` ＝**新しい10山が要求する準備は全部走らせる**。
+       🛑 ここを落とすと「カードは配られるのに機能が丸ごと死ぬ」＝実測で400回中 廃墟96／馬191／災い34／川船28。
+          とくに**川船は旭日単独で68%**（旭日プールは25種しかないので新10山に入りやすい）＝mix-all を待たずに踏む。
+       ⚠ 川船の脇札と災いカードを**先に**決めてから、馬・戦利品などの走査対象に含める（`createInitialState` と同じ順）。 */
+    // (a) 若き魔女＝$2-3 の王国カードを1つ選んで11山目（撤去された旧 Bane は死んでいるので上書きしてよい）。
+    if (fresh.includes('young_witch')) {
+      const bane = pickBane(fresh);
+      if (bane) {
+        fresh.push(bane);
+        const bs = initSupply(n, [bane]);
+        if (state.supply[bane] == null && bs[bane] != null) state.supply[bane] = bs[bane];
+        state.baneCard = bane;
+      }
+    }
+    // (b) 川船＝「このゲームで使わない・持続でない・ちょうど$5のアクション」1枚を脇へ（既にあれば作り直さない）。
+    if (fresh.includes('riverboat') && !state.riverboatCard) state.riverboatCard = pickRiverboatCard(fresh);
+    // (c) 廃墟＝略奪者(looter)がいれば (人数-1)×10 枚。**カードが増える**＝保存則は `kingdomEpoch` で取り直す。
+    if (!Array.isArray(state.ruins) && fresh.some((k) => DOM.isType(k, 'looter'))) {
+      const pool = [];
+      (DOM.POOLS.ruins || []).forEach((id) => { for (let i = 0; i < 10; i++) pool.push(id); });
+      state.ruins = shuffle(pool).slice(0, 10 * (n - 1));
+      state.supply.ruins = state.ruins.length;
+    }
+    // (d) 馬＝配り手（王国／イベント／ハツカネズミ／川船の脇札）がいれば30枚。
+    if (state.supply.horse == null && (DOM.HORSE_GIVERS || []).some((id) =>
+      fresh.includes(id) || (state.events || []).includes(id) || id === state.mouseCard || id === state.riverboatCard)) {
+      state.supply.horse = 30;
+    }
+    // (e) 川船の脇札が「戦利品を配る札」なら戦利品の山も要る（`createInitialState` の走査と揃える）。
+    if (!state.loot && state.riverboatCard && (DOM.LOOT_GIVERS || []).indexOf(state.riverboatCard) >= 0) {
+      state.loot = shuffle([].concat(LOOT_IDS, LOOT_IDS));
+    }
     state.kingdom = fresh;
     state.kingdomEpoch = (state.kingdomEpoch || 0) + 1; // 保存則ハーネスに「基準を取り直せ」と伝える印
     log(state, `${state.players[pi].name} が最後のSunトークンを取り除き、神風が吹いた ── 王国の山がすべて入れ替わった（新しい10種: ${fresh.map((k) => (C()[k] || {}).name || k).join('／')}）。`);
@@ -1083,6 +1117,39 @@
       c === 'rice' ? 1 : c === 'pendant' ? 2 : c === 'fortune' ? 3 : 0);
     return rank(a) - rank(b);
   }
+  /* ===== 旭日 R4：「財宝を使用した」ときに走る予言のフック（豊作／狼狽）＝**唯一の入口** =====
+     🛑 **`playTreasureCard`（購入フェイズの通常の使用）だけに置いてはいけない**。
+        「アクション権を消費しないカードの使用」＝`playCardNoAction` を通る財宝が大量にある
+        （薬草集め／急使／契約書／宝珠／財産目当て／埋められた財宝／呪符の巻物／準備／突貫／侵略／鉱山道路／
+          博打／遅延・刈り入れ／進軍／苦労 …）＝そこを落とすと予言が静かに空振りする。
+        さらに **Action-Treasure をアクションフェイズに使う経路**（冠／資本主義下のアクション）も
+        `PLAY_ACTION` から呼ぶ（公式が狼狽の項で名指し＝`even to Action-Treasures that are played during
+        the Action phase, such as Crown or Actions under the influence of Capitalism`）。
+     ⚠ 呼ぶ位置は**効果適用の外（入口）**＝追いはぎ(Highwayman)で記載効果を丸ごと消された財宝でも出る
+        （公式逐語＝`does not change anything about the Treasure, just prevents on-play`）。
+     ⚠ 冠/ティアラ/偽造通貨の**2回目**（`applyTreasureEffect` 直呼び）では呼ばない＝「使用」は1回だから。 */
+  function noteTreasurePlayedForProphecy(state, pIndex, card) {
+    const p = state.players[pIndex];
+    /* 豊作（Good Harvest）＝各ターン、**名前の異なる財宝を初めて使うたび**、**先に** +1購入 +$1。
+       🛑 **名前の記録は予言の有効/無効に関係なく毎ターン行う**（＝恩恵だけを `prophecyActive` でゲートする）。
+          公式逐語＝`it doesn't retroactively give you +1 Buy and +$1.`／日本語wiki 逐語＝
+          「語り部の効果で銅貨を使用した後に前兆カードを使用し豊作が発動し、その後銅貨を使用した」場合、
+          **追加のコインは発生しない**。記録を `prophecyActive` の内側に置くと、発動前に使った名前が残らず
+          **遡って恩恵が出る**（純・旭日でも 継続→前兆 の経路で到達する）。 */
+    const gh = (state.turn.goodHarvest = state.turn.goodHarvest || []);
+    const first = gh.indexOf(card) < 0;
+    if (first) gh.push(card);
+    if (first && prophecyActive(state, 'good_harvest')) {
+      state.turn.buys += 1; addCoins(state, 1);
+      log(state, `${p.name} は豊作で +1購入 +$1（このターン最初の「${C()[card].name}」）。`);
+    }
+    /* 狼狽（Panic）＝**財宝カードを1枚使用したとき +2購入**（毎回・名前ごとではない）。使用フェイズは無関係。
+       ⚠ 「場から捨てたら山に戻す」は**完全に独立した効果**＝`discardFromPlayRouted` 側に別で書いてある。 */
+    if (prophecyActive(state, 'panic')) {
+      state.turn.buys += 2;
+      log(state, `${p.name} は狼狽で +2購入。`);
+    }
+  }
   // 財宝1枚を手札から場に出してコインを加算。「商人」の“このターン最初の銀貨で+1コイン（商人の数だけ）”もここで処理。
   // PLAY_TREASURE / PLAY_ALL_TREASURES / 闇市場 で共通利用。
   function playTreasureCard(state, pIndex, card) {
@@ -1103,27 +1170,7 @@
        make +[$1] when played.`（帝国の分割山も同型＝石／鹵獲品／大金が該当）。
        ※PLAY_ACTION 側と同じく「効果解決より前」に適用する。炉(kiln)で中断しても取りこぼさないよう先頭に置く。 */
     applyPileTokens(state, pIndex, card);
-    /* 旭日 R4：豊作（Good Harvest・予言）＝各ターン、**名前の異なる財宝を初めて使うたび**、**先に** +1購入 +$1。
-       ⚠ 「先に」＝そのカードの記載効果より前（山トークンと同じ位置）。⚠ **発動後だけ**効く。
-       ⚠ 「名前ごとに1ターン1回」＝`t.goodHarvest` に使った名前を貯める（プレイ回数ではない）。 */
-    if (prophecyActive(state, 'good_harvest')) {
-      const gh = (state.turn.goodHarvest = state.turn.goodHarvest || []);
-      if (gh.indexOf(card) < 0) {
-        gh.push(card);
-        state.turn.buys += 1; addCoins(state, 1);
-        log(state, `${p.name} は豊作で +1購入 +$1（このターン最初の「${C()[card].name}」）。`);
-      }
-    }
-    /* 旭日 R4：狼狽（Panic・予言）＝**財宝カードを1枚使用したとき +2購入**（毎回・名前ごとではない）。
-       ⚠ 使用フェイズは無関係（アクションフェイズの冠／資本主義下のアクションでも出る）＝`isTreasureFor` 判定は
-          この関数に入っている時点で済んでいる。
-       🛑 **効果適用の外（入口）に置く**＝追いはぎ(Highwayman)で記載効果を丸ごと消された財宝でも +2購入は出る
-          （公式逐語＝`does not change anything about the Treasure, just prevents on-play`）。
-       ⚠ 「場から捨てたら山に戻す」は**完全に独立した効果**＝`discardFromPlayRouted` 側に別で書いてある。 */
-    if (prophecyActive(state, 'panic')) {
-      state.turn.buys += 2;
-      log(state, `${p.name} は狼狽で +2購入。`);
-    }
+    noteTreasurePlayedForProphecy(state, pIndex, card);
     // 同盟：「カードを使用した後」に働く Ally（道化棒/契約書＝**財宝の連携**なので購入フェイズでも誘発する）。
     noteAllyPlay(state, pIndex, card);
     /* 同盟：追いはぎ＝「他のプレイヤーが**各ターンに最初に使用する財宝**は、何もしない」。
@@ -1199,6 +1246,9 @@
        ターン開始時の使用）も「カードの使用」なのでボーナスが乗る。PLAY_ACTION／playTreasureCard と同じく
        効果解決より前に適用する。相続の屋敷は「脇に置いたカードの山」のトークンを見る（公式）。 */
     applyPileTokens(state, pi, inheritedEstate(p, card) ? p.inherited[0] : card);
+    /* 旭日 R4：豊作／狼狭は「財宝を**使用**したとき」＝この経路（アクション権を消費しない使用）も対象。
+       ⚠ `isAct` ではなく `isTreasureFor` で見る＝Action-Treasure（冠／資本主義下のアクション）も財宝の使用。 */
+    if (isTreasureFor(state, card)) noteTreasurePlayedForProphecy(state, pi, card);
     noteAllyPlay(state, pi, card); // 同盟：「カードを使用した後」に働く Ally
     log(state, `${p.name} は${note}「${C()[card].name}」を使った。`);
     if (isAct) {
@@ -4357,10 +4407,14 @@
       case 'way_of_the_goat':
         if (p.hand.length > 0) state.pending = { type: 'way_goat_trash', player: pi };
         break;
-      // 馬＝+2カード +1アクション、これをその山に戻す（馬カードと同じ挙動）。
+      /* 馬＝+2カード +1アクション、これをその山に戻す（馬カードと同じ挙動）。
+         🛑 **戻す山があるかを `takeSelf` の前に確認する**＝無いのに場から抜くと**カードが消滅する**（保存則違反）。
+            闇市場で買った札（山が無い）／神風で撤去された山の札で実際に起きる。戻せなければ場に残す（片付けで捨て札へ）。 */
       case 'way_of_the_horse':
         draw(state, pi, 2); addActions(t, 1);
-        if (takeSelf(state, pi, card)) { returnToPile(state, card); log(state, `${p.name} は「${C()[card].name}」をその山に戻した（馬の習性）。`); }
+        if (canReturnToPile(state, card) && takeSelf(state, pi, card)) {
+          returnToPile(state, card); log(state, `${p.name} は「${C()[card].name}」をその山に戻した（馬の習性）。`);
+        }
         break;
       // モグラ＝+1アクション、手札をすべて捨てて +3カード。
       case 'way_of_the_mole': {
@@ -8906,15 +8960,36 @@
   }
   // 次手番開始時に1つ進める：startQueue があれば先頭を pending に、無ければ pending=null。
   function popStartQueue(state) {
-    const q = state.turn && state.turn.startQueue;
-    if (q && q.length) { state.pending = q.shift(); }
-    else { if (state.turn) state.turn.startQueue = null; state.pending = null; }
+    const t = state.turn;
+    const q = t && t.startQueue;
+    if (q && q.length) { state.pending = q.shift(); return; }
+    /* 🛑 旭日 R4：ターン開始時に働く予言（病／神器）は、**開始時効果を解決している最中に予言が発動する**
+       ことがある（川船／遅延／刈り入れ／王子／急速拡大 が脇に置いた**前兆**をターン開始時に使う経路）。
+       `resolveDurationStartEffects` はキューを**組み立てるその瞬間**に `prophecyActive` を見るので、
+       その後に発動しても当ターンぶんを取りこぼす。
+       - 病＝日本語wiki 逐語「**川船**の効果などでターンの開始時中に病が効果を発揮した場合は、
+         **そのターンの開始時にも病の効果を処理する。**」
+       - 神器＝公式逐語 `If you remove the last [Sun] at the start of your turn (e.g. you play a Poet with
+         Delay), you'll gain **2 Actions** to your hand.`（＝発動の瞬間ぶん＋開始時ぶんで2枚）
+       ⇒ **キューを畳む直前に一度だけ**再チェックする（`t.rsStartQueued` で二重に積まない）。
+       ⚠ **純・旭日だけで到達する**（`pickRiverboatCard` は $5 の非持続アクション＝茶屋／狐がそのまま候補）。 */
+    if (t && t.startQueue && !t.rsStartQueued) {
+      t.rsStartQueued = true;
+      const pi = t.active;
+      if (prophecyActive(state, 'sickness')) t.startQueue.push({ type: 'sickness', player: pi });
+      if (prophecyActive(state, 'kind_emperor') && anyGainable(state, woodworkersCanGain(state))) {
+        t.startQueue.push({ type: 'kind_emperor_gain', player: pi });
+      }
+      if (t.startQueue.length) { state.pending = t.startQueue.shift(); return; }
+    }
+    if (t) t.startQueue = null;
+    state.pending = null;
   }
   function resolveDurationStartEffects(state, pi) {
     const p = state.players[pi];
     // ルネサンス：ターン開始時効果の解決中フラグ（鍵をその場で取ったときの +$1 の判定用。
     //   PLAY_ACTION / END_ACTION_PHASE / BUY で降ろす＝「開始時効果が終わった」とみなす）。
-    if (state.turn) state.turn.inStartPhase = true;
+    if (state.turn) { state.turn.inStartPhase = true; state.turn.rsStartQueued = false; }
     // 帝国：寄付（Donate）＝この手番開始時に「まず」（他の開始時効果より前に）デッキと捨て札を全部手札に集める。
     //   → 任意枚数廃棄（donate_trash pending）→ 残りをシャッフルして5枚引く → その後で通常の開始時効果を続行（再入）。
     if (p.donateNext) {
@@ -8991,12 +9066,16 @@
     if ((state.kingdom || []).includes('shaman') && shamanTargets(state).length) {
       state.turn.startQueue.push({ type: 'shaman_gain', player: pi });
     }
-    /* ===== 旭日 R4：ターン開始時に働く予言（**発動後だけ**）===== */
+    /* ===== 旭日 R4：ターン開始時に働く予言（**発動後だけ**）=====
+       ⚠ ここで積めたときだけ `t.rsStartQueued` を立てる＝**まだ発動していなければ立てない**ので、
+          開始時効果の途中で発動したら `popStartQueue` の再チェックが拾う（そこの長いコメントが正本）。 */
     // 病(Sickness)＝二択（強制）：呪い1枚を**山札の上に**獲得する／手札**ちょうど3枚**を捨てる。
-    if (prophecyActive(state, 'sickness')) state.turn.startQueue.push({ type: 'sickness', player: pi });
+    if (prophecyActive(state, 'sickness')) {
+      state.turn.startQueue.push({ type: 'sickness', player: pi }); state.turn.rsStartQueued = true;
+    }
     // 神器(Kind Emperor)＝アクションカード1枚を**手札に**獲得する（コスト制限なし・強制）。
     if (prophecyActive(state, 'kind_emperor') && anyGainable(state, woodworkersCanGain(state))) {
-      state.turn.startQueue.push({ type: 'kind_emperor_gain', player: pi });
+      state.turn.startQueue.push({ type: 'kind_emperor_gain', player: pi }); state.turn.rsStartQueued = true;
     }
     /* 略奪P4：特性「内気な(Shy)」＝自分のターンの開始時、手札の内気なカード1枚を捨てて +2カード（任意・1回）。
        ①捨てる→捨て札トリガー→②引く の一連の処理（1項目として積む＝間に他の開始時効果は挟まらない）。 */
@@ -10565,7 +10644,10 @@
     /* 成長（Growth）＝**財宝カード**を1枚獲得したとき、**それより安い**カード1枚を獲得する。
        ⚠ 獲得した安い札がまた財宝なら連鎖しうるが、`triggerOnGain` の `_gainDepth > 6` ガードで止まる。
        ⚠ 「安い」は3成分の厳密比較＝既存の `costUnder`（`costUpTo` ではない）。 */
-    if (prophecyActive(state, 'growth') && isTypeSupply(state, cardId, 'treasure')) {
+    /* 🛑 「財宝か」は**動的判定**＝`isTreasureFor` を通す。資本主義(Capitalism)で財宝になったアクションを
+       獲得しても誘発する（公式が名指し）。静的な `isTypeSupply(..., 'treasure')` だと取りこぼす。
+       `isTreasureFor` も内部で混合山の一番上を解決するので、そのまま差し替えてよい。 */
+    if (prophecyActive(state, 'growth') && isTreasureFor(state, cardId)) {
       const ref = costOf(state, cardId);
       if (anyGainable(state, (id) => costUnder(state, id, ref.coin, ref))) {
         (state.onGainQueue = state.onGainQueue || []).push({ type: 'growth_gain', player: pIndex, coin: ref.coin, pot: ref.pot, debt: ref.debt });
@@ -12944,7 +13026,11 @@
     // （王子/船長がターン開始時にアタック等を使うと、そのアタック連鎖の終端は pending=null で
     //   閉じるだけで popStartQueue を呼ばない＝後続の開始時効果が取り残されるのを防ぐ。
     //   通常時は startQueue が null/空なので何もしない。）
-    if (!state.pending && !state.gameOver && state.turn && state.turn.startQueue && state.turn.startQueue.length) {
+    /* ⚠ 旭日 R4：**キューが空でも `rsStartQueued` が未実施なら1回は呼ぶ**＝開始時効果の途中で予言が発動した
+       ケース（川船が脇の前兆を使う）で、病／神器の当ターンぶんを `popStartQueue` の再チェックに拾わせるため。
+       `.length` だけを見ていると「最後の1件を pop した直後＝空配列」の状態で安全網が走らず取りこぼす。 */
+    if (!state.pending && !state.gameOver && state.turn && state.turn.startQueue &&
+        (state.turn.startQueue.length || !state.turn.rsStartQueued)) {
       popStartQueue(state);
       state = runReplays(state); // 念のため（開始時効果が replay を積むことは無いが無害）
     }
@@ -13128,7 +13214,10 @@
         if (!pl) return;
         /* 偉大な指導者＝`After each Action card you play, +1 Action.`
            ⚠ **必ず `addActions` を通す**（雪深い村＝公式が名指しした唯一の例外が効かなくなる）。 */
-        if (prophecyActive(state, 'great_leader') && DOM.isType(e.card, 'action') && e.player === state.turn.active) {
+        /* ⚠ **相続した屋敷(Inheritance)** もアクションとして数える＝積む側（`noteAllyPlay` 経由の
+           `notePlunderPlay`）は `inheritedEstate` を見て積んでいるので、ここを静的判定にすると
+           **積む側と消化側で食い違い、屋敷を村として使っても +1アクションが出ない**。 */
+        if (prophecyActive(state, 'great_leader') && (DOM.isType(e.card, 'action') || inheritedEstate(pl, e.card)) && e.player === state.turn.active) {
           addActions(state.turn, 1);
           log(state, `${pl.name} は偉大な指導者で +1アクション。`);
         }
@@ -13257,8 +13346,16 @@
            先に動かされていたら失敗＝stop-moving（移動遊園地と同じ扱い）。 */
         if (q.type === 'progress_topdeck') {
           const pp = state.players[q.player];
-          const zones = [zoneOf(pp, q.dest), pp.discard, pp.hand];
-          const zone = zones.find((z) => z && z.indexOf(q.card) >= 0);
+          /* 🛑 **獲得先(`q.dest`)しか探さない**＝これが stop-moving の実装そのもの。
+             公式 Other rules clarifications 逐語＝
+             `you may use a **Sleigh** to move a gained card into your hand; **if you do, Progress will no
+              longer be able to move it onto your deck.**` ／
+             `**Ghost Town** is gained **to** the hand (and must be moved to the deck by Progress), whereas
+              **Villa moves itself to the hand after being gained (which can overrule Progress).**`
+             ＝「獲得**先**が手札」（ゴーストタウン＝`dest:'hand'`）なら進歩が勝ち、
+               「獲得**後**に手札へ動かした」（そり／ヴィラ）なら進歩は負ける。
+             ⇒ **探す場所を増やすと公式の線引きがそのまま壊れる**（`pp.hand` を足すと2例とも逆になる）。 */
+          const zone = zoneOf(pp, q.dest);
           if (zone && removeOne(zone, q.card)) {
             pp.deck.unshift(q.card);
             log(state, `${pp.name} は進歩で「${C()[q.card].name}」を山札の上に置いた。`);
@@ -13654,6 +13751,10 @@
         //   ※玉座/王の宮廷/門下生の再演（applyEffect経由）は対象外＝champion と同じ許容簡略化。
         //   相続の屋敷でプレイする場合は「脇に置いたカードの山」のトークンを見る（公式）。
         applyPileTokens(state, pi, asInherited ? me.inherited[0] : card);
+        /* 旭日 R4：豊作／狼狭は「財宝を**使用**したとき」＝**アクションフェイズに使った Action-Treasure も対象**。
+           公式（狼狭）逐語＝`This applies even to **Action-Treasures that are played during the Action phase,
+           such as Crown or Actions under the influence of Capitalism**.` */
+        if (!asInherited && isTreasureFor(state, card)) noteTreasurePlayedForProphecy(state, pi, card);
         t.afterActionCard = card; // 冒険：法貨/御料車の「アクション解決直後」の呼び出し窓の対象
         // 同盟：「カードを使用した後」に働く Ally（魔女の輪／小売店主連盟／写本士の仲間たち）＝解決後に判定する。
         noteAllyPlay(state, pi, asInherited ? 'estate' : card);
@@ -13679,7 +13780,15 @@
         // 移動動物園：炉＝このターン、次に使うカードの**解決前**に同名を獲得してよい。
         //   窓を開いたら中断し、KILN_GAIN の解決で applyEffect（習性を使うなら applyWay）を呼ぶ。
         if (maybeKiln(state, card, pi, 'action', useWay)) return state;
-        if (useWay) { applyWay(state, useWay, card, pi); return state; }
+        /* 🛑 **カメレオンの習性(Way of the Chameleon) だけは悟りより後に判定する**。
+           公式逐語＝`If you play a Treasure as Way of the Chameleon, it makes you follow **its instructions**
+           (unlike the other Ways), which means **Enlightenment will stop that** and make you get +1 Card and
+           +1 Action instead. **This only applies for your Action phase.**`
+           ＝他の習性は「記載効果の代わり」なので悟りの出番が無いが、カメレオンだけは記載効果に従わせるので
+             悟りが勝つ。ここを一律に `if (useWay) return` で先に返すと**アクション権を1消費して何も起きない**
+             （素の財宝は `applyEffect` に case が無い＝丸損）。 */
+        const chameleonWay = useWay === 'way_of_the_chameleon';
+        if (useWay && !chameleonWay) { applyWay(state, useWay, card, pi); return state; }
         /* 旭日 R4：悟り（Enlightenment・予言）＝**アクションフェイズに財宝を使用するとき、
            その指示に従う代わりに +1カード +1アクション**。
            ⚠ 「代わりに」の対象は**使用時の指示だけ**＝カードは普通に場に出て「使用した」と数え、
@@ -13691,11 +13800,17 @@
            ⚠ **購入フェイズでは通常どおり**（`PLAY_TREASURE` はこの分岐を通らない）。
            ⚠ 【許容簡略化】商人の「このターン最初の銀貨」とサウナの `t.saunaPlays` は `playTreasureCard` の中に
               あるので、この経路では誘発しない（mix-all 限定の差）。 */
-        if (!DOM.isType(card, 'action') && !asInherited && prophecyActive(state, 'enlightenment') && isTreasureFor(state, card)) {
+        /* 🛑 **`!DOM.isType(card,'action')` でゲートしてはいけない**＝公式逐語
+           `Enlightenment even applies to Treasure cards that are already Actions; if you play **Crown**,
+            Coronet, or **an Action affected by Capitalism** in the Action phase, you still get +1 Card and
+            +1 Action instead of the card's usual effect.`
+           ＝**アクションでもある財宝（冠・資本主義下のアクション）こそが対象**。 */
+        if (!asInherited && prophecyActive(state, 'enlightenment') && isTreasureFor(state, card)) {
           draw(state, pi, 1); addActions(t, 1);
           log(state, `${me.name} は悟りで「${C()[card].name}」の指示の代わりに +1カード +1アクション。`);
           return state;
         }
+        if (useWay) { applyWay(state, useWay, card, pi); return state; } // カメレオン（悟りが効かないとき）
         applyEffect(state, card, pi);
         return state;
       }
@@ -18029,6 +18144,11 @@
         state.pending = null;
         if (!action.doIt) return state;                       // 戻さない（任意）
         if (pl.hand.length !== new Set(pl.hand).size) return state; // 同名があれば戻せない（再検査）
+        /* 🛑 **戻す山が無ければ「戻す」は成立しない**（＝呪いも配らない）。
+           公式（神風）逐語＝`The removed piles are gone; … cards can't be returned to those piles.`
+           ここを確認せずに `removeOne` すると、**濡女がゲームから消滅する（保存則違反）**
+           ＝神風で王国10山が撤去された後／闇市場で買った濡女（山が無い）で実際に起きる。 */
+        if (!canReturnToPile(state, 'snake_witch')) return state;
         if (!removeOne(pl.inPlay, 'snake_witch')) return state;     // 場に無い（命令経由＝lose track）
         reveal(state, pd.player, pl.hand.slice(), '濡女：手札を公開');
         returnToPile(state, 'snake_witch');
@@ -21001,6 +21121,9 @@
         if (!action.ret) return state;
         const pl = state.players[pd.player];
         const c = costOf(state, pd.card);
+        // 🛑 戻す山が無ければ何も起きない（"Return this to its pile. **If you did**, gain …"）＝
+        //    確認せずに場から抜くとカードが消滅する（保存則違反）。濡女・馬の習性と同型。
+        if (!canReturnToPile(state, pd.card)) return state;
         if (!removeOne(pl.inPlay, pd.card)) return state;
         returnToPile(state, pd.card);
         log(state, `${pl.name} は「${C()[pd.card].name}」をその山に戻した（チョウの習性）。`);
