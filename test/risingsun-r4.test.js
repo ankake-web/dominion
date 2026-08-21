@@ -874,6 +874,239 @@ console.log('=== R5: イベントの公式FAQ 検算（蓄積／苦行／信用�
   }
 }
 
+console.log('=== R4 敵対レビュー（予言15種・2体）の回帰 11件 ===');
+{
+  const KR = DOM.KINGDOM_RISINGSUN;
+  const mk3 = (K, opt) => E.createInitialState([{ name: 'A' }, { name: 'B', isCpu: true }], K.slice(),
+    Object.assign({ startActive: 0 }, opt || {}));
+  const on3 = (pr, K) => { const s = mk3(K, { prophecy: pr }); s.prophecyOn = true; s.sunTokens = 0; s.prophecyOnBy = 0; return s; };
+  const drain3 = (s) => { let g = 0; while (s.pending && g++ < 200) { const a = DOM.cpu.decide(s); if (!a) break; s = E.reduce(s, a); } return s; };
+  const count = (s, id) => { let m = 0;
+    s.players.forEach((p) => E.allCards(p).forEach((c) => { if (c === id) m++; }));
+    (s.trash || []).forEach((c) => { if (c === id) m++; });
+    Object.keys(s.supply).forEach((k) => { if (k === id && typeof s.supply[k] === 'number') m += s.supply[k]; });
+    return m; };
+  const F3 = ['village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory', 'festival', 'mine'];
+
+  /* 【1】[high] 山に戻せないカードを場から抜いてはいけない（保存則違反）＝3箇所。
+     公式（神風）逐語＝`The removed piles are gone; … cards can't be returned to those piles.`
+     🛑 `canReturnToPile` を確認せずに `removeOne` すると**カードが1枚ゲームから消滅する**
+        （オンラインは state をそのまま配信・永続化するので部屋のカード総数が恒久的に狂う）。 */
+  {
+    let s = on3('divine_wind', ['snake_witch', 'tea_house', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'mine']);
+    s.prophecyOn = false; s.sunTokens = 1;
+    s.players[0].hand = ['snake_witch', 'copper', 'estate', 'silver'];
+    s.players[0].deck = ['gold', 'province', 'duchy'];
+    s.supply.snake_witch -= 1; s.turn.phase = 'action'; s.turn.actions = 1;
+    E.removeSun(s, 0);                                   // 神風＝王国10山を撤去
+    const t0 = count(s, 'snake_witch');
+    let x = E.reduce(s, { type: 'PLAY_ACTION', card: 'snake_witch' });
+    x = E.reduce(x, { type: 'SNAKE_WITCH_RESOLVE', doIt: true });
+    ok(count(x, 'snake_witch') === t0, `濡女：神風で山が消えても総数が保たれる（${t0}→${count(x, 'snake_witch')}）`);
+    ok((x.players[1].discard || []).filter((c) => c === 'curse').length === 0,
+      '濡女：**戻せなかったら呪いを配らない**（"return this to its pile. If you do…"）');
+
+    // 馬の習性（出荷済みの穴）＝闇市場で買った札のように山が無いと消える。
+    let s3 = mk3(F3, { ways: ['way_of_the_horse'] });
+    s3.players[0].hand = ['candlestick_maker']; s3.turn.phase = 'action'; s3.turn.actions = 1;
+    const v0 = count(s3, 'candlestick_maker');
+    const z = E.reduce(s3, { type: 'PLAY_ACTION', card: 'candlestick_maker', way: 'way_of_the_horse' });
+    ok(count(z, 'candlestick_maker') === v0, `馬の習性：山が無い札でも総数が保たれる（${v0}→${count(z, 'candlestick_maker')}）`);
+
+    /* チョウの習性も同型＝**窓を開く側**（`applyWay`）と**受理側**（`WAY_BUTTERFLY`）の両方を
+       `canReturnToPile` に寄せてある。窓が開かないので受理側のガードは旧スナップショット互換の保険。
+       ⚠ 山が無い札は「戻す/戻さない」の窓自体を開かない＝押しても何も起きない死に選択肢を出さない。 */
+    let s4 = mk3(F3, { ways: ['way_of_the_butterfly'] });
+    s4.players[0].hand = ['candlestick_maker']; s4.turn.phase = 'action'; s4.turn.actions = 1;
+    const w0 = count(s4, 'candlestick_maker');
+    let z2 = E.reduce(s4, { type: 'PLAY_ACTION', card: 'candlestick_maker', way: 'way_of_the_butterfly' });
+    ok(z2.pending == null, 'チョウの習性：山が無い札では窓を開かない');
+    z2 = E.reduce(z2, { type: 'WAY_BUTTERFLY', ret: true });   // 旧スナップショット互換の受理側ガード
+    ok(count(z2, 'candlestick_maker') === w0, 'チョウの習性：山が無い札でも総数が保たれる');
+    // 山がある札なら従来どおり窓が開く（退行が無いことの対照）。
+    let s5 = mk3(F3, { ways: ['way_of_the_butterfly'] });
+    s5.players[0].hand = ['village']; s5.turn.phase = 'action'; s5.turn.actions = 1;
+    const z3 = E.reduce(s5, { type: 'PLAY_ACTION', card: 'village', way: 'way_of_the_butterfly' });
+    ok(z3.pending && z3.pending.type === 'way_butterfly', 'チョウの習性：山がある札では従来どおり窓が開く');
+  }
+
+  /* 【2】[medium] 神風の新10山は `initSupply` の**外**にある派生セットアップも走らせる。
+     公式逐語＝`Deal out 10 new Kingdom cards. **Do any Setup for them that they require**, including
+     things like putting out the Potions if necessary.` */
+  {
+    const K = ['tea_house', 'poet', 'fairgrounds', 'harvest', 'ironmonger', 'sage', 'barge', 'black_cat', 'village', 'smithy'];
+    let miss = 0, n = 0;
+    for (let sd = 1; sd <= 120; sd++) {
+      const s = on3('divine_wind', K); s.prophecyOn = false; s.sunTokens = 1; E.removeSun(s, 0);
+      const k = s.kingdom || []; n++;
+      if (k.some((c) => DOM.isType(c, 'looter')) && !Array.isArray(s.ruins)) miss++;
+      if (k.some((c) => (DOM.HORSE_GIVERS || []).indexOf(c) >= 0) && s.supply.horse == null) miss++;
+      if (k.indexOf('young_witch') >= 0 && !(s.baneCard && s.supply[s.baneCard] != null)) miss++;
+      if (k.indexOf('riverboat') >= 0 && !s.riverboatCard) miss++;
+    }
+    ok(miss === 0, `神風${n}回：廃墟／馬／災いカード／川船の脇札が毎回そろう（未設置 ${miss} 件）`);
+  }
+
+  /* 【3】[medium] 進歩(Progress) は **stop-moving** を尊重する。
+     公式 Other rules clarifications 逐語＝
+     `you may use a Sleigh to move a gained card into your hand; **if you do, Progress will no longer be
+      able to move it onto your deck.**` ／ `Ghost Town is gained **to** the hand (and must be moved to the
+      deck by Progress), whereas **Villa moves itself to the hand after being gained (which can overrule
+      Progress).**` ＝「獲得**先**が特殊」なら進歩が勝ち、「獲得**後**に動かした」なら進歩が負ける。 */
+  {
+    let v = on3('progress', ['tea_house', 'villa', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'mine']);
+    v.turn.phase = 'buy'; v.turn.coins = 6; v.turn.buys = 1;
+    v = E.reduce(v, { type: 'BUY', card: 'villa' }); v = drain3(v);
+    ok(v.players[0].hand.indexOf('villa') >= 0, 'ヴィラは獲得**後**に自分で手札へ動くので進歩に奪われない');
+    ok(v.players[0].deck[0] !== 'villa', 'ヴィラが山札の上に置かれない');
+
+    let g = on3('progress', ['tea_house', 'ghost_town', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'mine']);
+    g.turn.phase = 'buy'; g.turn.coins = 6; g.turn.buys = 1;
+    g = E.reduce(g, { type: 'BUY', card: 'ghost_town' }); g = drain3(g);
+    ok(g.players[0].deck[0] === 'ghost_town', 'ゴーストタウンは獲得**先**が手札なので進歩が勝つ（公式の対照例）');
+  }
+
+  /* 【4】[medium] 豊作／狼狽は `playCardNoAction` を通る財宝でも誘発する。
+     🛑 `playTreasureCard` にしかフックが無いと、薬草集め／急使／宝珠／呪符の巻物／博打／苦労／進軍／
+        突貫／侵略 などが全部空振りする（＝予言が静かに効かなくなる）。 */
+  {
+    const KA = ['tea_house', 'augurs', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'mine'];
+    let s = on3('good_harvest', KA);
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    s.players[0].hand = ['herb_gatherer']; s.players[0].discard = ['copper']; s.players[0].deck = [];
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'herb_gatherer' });
+    const b0 = s.turn.buys, c0 = s.turn.coins;
+    s = E.reduce(s, { type: 'HERB_GATHERER_PLAY', card: 'copper' });
+    ok(s.turn.buys - b0 === 1 && s.turn.coins - c0 - 1 === 1, '豊作：薬草集めで出した銅貨にも +1購入 +$1');
+
+    let p = on3('panic', KA);
+    p.turn.phase = 'action'; p.turn.actions = 1;
+    p.players[0].hand = ['herb_gatherer']; p.players[0].discard = ['copper']; p.players[0].deck = [];
+    p = E.reduce(p, { type: 'PLAY_ACTION', card: 'herb_gatherer' });
+    const pb = p.turn.buys;
+    p = E.reduce(p, { type: 'HERB_GATHERER_PLAY', card: 'copper' });
+    ok(p.turn.buys - pb === 2, '狼狽：薬草集めで出した銅貨にも +2購入');
+  }
+
+  /* 【5】[medium] 悟り／狼狭は **アクションフェイズに使った Action-Treasure** にも効く。
+     公式（悟り）逐語＝`Enlightenment **even applies to Treasure cards that are already Actions**; if you
+     play **Crown** … or **an Action affected by Capitalism** in the Action phase, you still get +1 Card and
+     +1 Action instead of the card's usual effect.`
+     公式（狼狭）逐語＝`This applies even to **Action-Treasures that are played during the Action phase**.` */
+  {
+    const KC = ['crown', 'tea_house', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'mine'];
+    let s = on3('enlightenment', KC);
+    s.players[0].hand = ['crown', 'village', 'copper', 'copper', 'estate'];
+    s.players[0].deck = ['gold', 'silver', 'province']; s.turn.phase = 'action'; s.turn.actions = 1;
+    const x = E.reduce(s, { type: 'PLAY_ACTION', card: 'crown' });
+    ok(x.pending == null, '悟り：アクションフェイズの冠は「2回使う」窓を開かない');
+    ok(x.players[0].hand.length === 5 && x.turn.actions === 1, '悟り：代わりに +1カード +1アクション');
+
+    let p = on3('panic', KC);
+    p.players[0].hand = ['crown', 'village', 'copper', 'copper', 'estate'];
+    p.players[0].deck = ['gold', 'silver', 'province']; p.turn.phase = 'action'; p.turn.actions = 1;
+    const pb = p.turn.buys;
+    const y = E.reduce(p, { type: 'PLAY_ACTION', card: 'crown' });
+    ok(y.turn.buys - pb === 2, '狼狭：アクションフェイズの冠でも +2購入');
+  }
+
+  /* 【6】[low] 豊作は「**このターン**初めて使う名前」＝発動前に使った名前も記録しておく。
+     日本語wiki 逐語＝「語り部の効果で銅貨を使用した後に前兆カードを使用し豊作が発動し、その後銅貨を
+     使用した」場合、**追加のコインは発生しない**。英語FAQ＝`it doesn't retroactively give you +1 Buy and +$1.` */
+  {
+    let s = on3('good_harvest', ['tea_house', 'poet', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'mine']);
+    s.prophecyOn = false; s.sunTokens = 1; s.events = ['continue'];
+    s.turn.phase = 'buy'; s.turn.coins = 0; s.turn.buys = 2;
+    s.players[0].hand = ['copper', 'copper'];
+    s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'copper' });      // ① 発動前に1枚目
+    s = E.reduce(s, { type: 'BUY_EVENT', event: 'continue' });
+    s = E.reduce(s, { type: 'CONTINUE_GAIN', card: 'poet' }); s = drain3(s);
+    ok(s.prophecyOn === true, '継続→詩人で豊作が発動する（純・旭日で到達する経路）');
+    s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+    const b0 = s.turn.buys, c0 = s.turn.coins;
+    s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'copper' });      // ② 発動後に2枚目
+    ok(s.turn.buys - b0 === 0 && s.turn.coins - c0 - 1 === 0,
+      '発動前に使った銅貨も記録されているので、2枚目には恩恵が出ない（遡らない）');
+  }
+
+  /* 【7】[low] 偉大な指導者は**相続した屋敷**もアクションとして数える
+     （積む側の `notePlunderPlay` は `inheritedEstate` を見ているので、消化側を静的判定にすると食い違う）。 */
+  {
+    let s = on3('great_leader', ['tea_house', 'poet', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'throne_room', 'laboratory']);
+    s.players[0].inherited = ['village'];
+    s.turn.phase = 'action'; s.turn.actions = 1; s.players[0].hand = ['estate'];
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'estate' }); s = drain3(s);
+    ok(s.turn.actions === 3, `相続の屋敷（村）＝1 -1(使用) +2(村) +1(偉大な指導者)＝3（実: ${s.turn.actions}）`);
+  }
+
+  /* 【8】[low] 成長は「財宝か」を**動的**に見る（資本主義で財宝になったアクションの獲得でも誘発）。 */
+  {
+    let s = on3('growth', ['tea_house', 'poet', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'mine']);
+    s.projects = ['capitalism']; s.players[0].projects = ['capitalism'];
+    s.turn.phase = 'buy'; s.turn.coins = 9; s.turn.buys = 2;
+    s = E.reduce(s, { type: 'BUY', card: 'market' });
+    ok(E.isTreasureFor(s, 'market'), '前提：資本主義で市場は財宝');
+    ok(s.pending && s.pending.type === 'growth_gain',
+      `成長：資本主義で財宝になったアクションの獲得でも窓が開く（実: ${s.pending && s.pending.type}）`);
+  }
+
+  /* 【9】[low] 悟り × カメレオンの習性＝**カメレオンだけは悟りが勝つ**。
+     公式逐語＝`If you play a Treasure as Way of the Chameleon, it makes you follow **its instructions**
+     (unlike the other Ways), which means **Enlightenment will stop that** … **This only applies for your
+     Action phase.**` 一律に習性を先に返すと**アクション権を1消費して何も起きない**（丸損）。 */
+  {
+    let s = on3('enlightenment', ['tea_house', 'poet', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'mine']);
+    s.ways = ['way_of_the_chameleon'];
+    s.players[0].hand = ['gold']; s.players[0].deck = ['silver', 'silver', 'silver'];
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    const x = E.reduce(s, { type: 'PLAY_ACTION', card: 'gold', way: 'way_of_the_chameleon' });
+    ok(x.players[0].hand.length === 1 && x.turn.actions === 1,
+      `カメレオン×悟り＝+1カード +1アクション（実: 手札${x.players[0].hand.length} アクション${x.turn.actions}）`);
+    // 悟りが無ければ従来どおり習性が勝つ（退行が無いことの対照）。
+    let n = mk3(['tea_house', 'poet', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'mine'],
+      { ways: ['way_of_the_chameleon'] });
+    n.players[0].hand = ['smithy']; n.players[0].deck = ['silver', 'silver', 'silver'];
+    n.turn.phase = 'action'; n.turn.actions = 1;
+    const y = E.reduce(n, { type: 'PLAY_ACTION', card: 'smithy', way: 'way_of_the_chameleon' });
+    ok(y.turn.coins === 3 && y.players[0].hand.length === 0,
+      `予言なしのカメレオンは従来どおり（鍛冶屋の+3カード→+$3・実: $${y.turn.coins}）`);
+  }
+
+  /* 【10】[low] 病／神器は「**開始時効果の途中で予言が発動した**」ターンにも当ターンぶんが働く。
+     公式（病）＝「**川船**の効果などでターンの開始時中に病が効果を発揮した場合は、**そのターンの開始時にも
+     病の効果を処理する。**」／公式（神器）＝`If you remove the last [Sun] at the start of your turn
+     (e.g. you play a Poet with Delay), you'll gain **2 Actions** to your hand.` */
+  {
+    const startFire = (pr, side) => {
+      let s = on3(pr, ['tea_house', 'riverboat', 'poet', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop']);
+      s.prophecyOn = false; s.sunTokens = 1; s.prophecyOnBy = null;
+      s.riverboatCard = side;                                     // 川船が脇に置いた $5 の非持続アクション＝前兆
+      s.players[0].delayedEffects = [{ card: 'riverboat', type: 'riverboat' }];
+      s.turn.phase = 'buy';
+      s = E.reduce(s, { type: 'END_TURN' });
+      let g = 0; while (!s.gameOver && g++ < 300) { if (s.turn.active === 0) break; const a = DOM.cpu.decide(s); if (!a) break; s = E.reduce(s, a); }
+      return s;
+    };
+    let s = startFire('sickness', 'tea_house');
+    let saw = false, h = 0;
+    while (h++ < 30 && s.pending) {
+      if (s.pending.type === 'sickness') { saw = true; break; }
+      const a = DOM.cpu.decide(s); if (!a) break; s = E.reduce(s, a);
+    }
+    ok(s.prophecyOn === true, '前提：川船が開始時に前兆（茶屋）を使って病が発動する');
+    ok(saw, '病：開始時に発動したターンにも当ターンぶんの窓が開く');
+
+    let k = startFire('kind_emperor', 'poet');
+    let gains = 0, h2 = 0;
+    while (h2++ < 40 && k.pending) {
+      if (k.pending.type === 'kind_emperor_gain') gains++;
+      const a = DOM.cpu.decide(k); if (!a) break; k = E.reduce(k, a);
+    }
+    ok(k.prophecyOn === true, '前提：川船が開始時に前兆（歌人）を使って神器が発動する');
+    ok(gains === 2, `神器：発動の瞬間ぶん＋開始時ぶんで2回獲得する（実: ${gains}）`);
+  }
+}
+
 console.log('\n========================================');
 console.log('旭日R4テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

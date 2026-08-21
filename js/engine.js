@@ -4383,8 +4383,9 @@
     if (t && t.hvWatchers && t.hvWatchers[pi] > 0) t.hvWatchers[pi] = 0;
     switch (wayId) {
       // チョウ＝これをその山に戻してもよい。そうしたら ちょうど1コイン高いカード1枚を獲得する。
+      // ⚠ 窓を開く条件も受理も **`canReturnToPile` に寄せる**（戦利品・混合山の扱いが `supply` の直読みと違う）。
       case 'way_of_the_butterfly':
-        if (p.inPlay.indexOf(card) >= 0 && Object.prototype.hasOwnProperty.call(state.supply, pileKeyOf(state, card))) {
+        if (p.inPlay.indexOf(card) >= 0 && canReturnToPile(state, card)) {
           state.pending = { type: 'way_butterfly', player: pi, card };
         }
         break;
