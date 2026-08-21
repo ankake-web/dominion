@@ -1107,6 +1107,145 @@ console.log('=== R4 敵対レビュー（予言15種・2体）の回帰 11件 ==
   }
 }
 
+console.log('=== R4/R5: maskStateFor（オンラインの情報漏洩）と旧スナップショット互換 ===');
+/* §0-21 偵察隊／§0-28 夜警／§0-29 A4 粉屋・歩哨 と**3回続けて同じクラスの漏れ**を出している箇所。
+   旭日で足した state を「公開すべきもの／伏せるべきもの」に分けて固定する。 */
+{
+  const KR = DOM.KINGDOM_RISINGSUN;
+  const mk4 = (opt) => E.createInitialState([{ name: 'A' }, { name: 'B' }], KR.slice(),
+    Object.assign({ startActive: 0 }, opt || {}));
+
+  // ① 公開＝予言id／Sun残数／発動済みか／川船の脇札／洞察の脇札（"Reveal … Set it aside"）
+  {
+    let s = mk4({ prophecy: 'good_harvest' });
+    s.sunTokens = 3; s.prophecyOn = false; s.riverboatCard = 'tea_house';
+    s.players[0].foresightAside = ['village', 'smithy'];
+    const m = E.maskStateFor(s, 1);
+    ok(m.prophecy === 'good_harvest' && m.sunTokens === 3 && m.prophecyOn === false,
+      '予言id・Sun残数・発動済みかは公開情報（相手にも見える）');
+    ok(m.riverboatCard === 'tea_house', '川船の脇札は公開（"set a **copy** of it aside"）');
+    ok((m.players[0].foresightAside || []).join() === 'village,smithy',
+      '洞察の脇札は公開（配達 Deliver と同じ扱い・パズルボックスとは逆）');
+  }
+  // ② 伏せる＝好機到来の脇札（クリンナップで**伏せて**置いた手札）＝枚数だけ見える
+  {
+    let s = mk4({});
+    s.players[0].bidingAside = ['gold', 'province', 'estate'];
+    const m1 = E.maskStateFor(s, 1), m0 = E.maskStateFor(s, 0);
+    const ba = m1.players[0].bidingAside || [];
+    ok(ba.length === 3 && ba.every((c) => c === 'back'), '好機到来の脇札は枚数だけ見えて中身は伏せる');
+    ok((m0.players[0].bidingAside || []).join() === 'gold,province,estate', '本人には中身が見える');
+  }
+  // ③ 影＝**自分の**山札はどの位置に何があるか見える／相手の山札は伏せたまま（決定D3の許容簡略化）
+  {
+    let s = mk4({});
+    s.players[0].deck = ['copper', 'fishmonger', 'estate', 'ninja', 'silver'];
+    const m0 = E.maskStateFor(s, 0), m1 = E.maskStateFor(s, 1);
+    ok(m0.players[0].deck.join() === 'copper,fishmonger,estate,ninja,silver',
+      '自分の山札は影札の位置まで見える（見えないと山札から使う操作ができない）');
+    ok((m1.players[0].deck || []).every((c) => c === 'back'),
+      '相手の山札は影札も含めて伏せたまま（公式は「自分の山札の裏面を見てよい」だけ＝許容簡略化）');
+  }
+  // ④ 窓が開いている最中でも脇札の中身は漏れない
+  {
+    let s = mk4({ prophecy: 'biding_time' });
+    s.prophecyOn = true; s.sunTokens = 0;
+    s.players[0].bidingAside = ['gold'];
+    s.pending = { type: 'sickness', player: 0 };
+    ok((E.maskStateFor(s, 1).players[0].bidingAside || []).every((c) => c === 'back'),
+      '窓が開いていても好機到来の脇札は漏れない');
+  }
+  // ⑤ 神風で王国が入れ替わった後もマスクできる（`state[混合山] = null` が Array.isArray ガードを通る）
+  {
+    let s = mk4({ prophecy: 'divine_wind' });
+    s.prophecyOn = false; s.sunTokens = 1;
+    E.removeSun(s, 0);
+    let threw = null, m = null;
+    try { m = E.maskStateFor(s, 1); } catch (e) { threw = e; }
+    ok(threw == null && m && (m.kingdom || []).length >= 10,
+      `神風後も maskStateFor が例外を出さない（${threw ? threw.message : '新王国' + (m.kingdom || []).length + '山'}）`);
+  }
+  /* ⑥ オンラインの永続化＝**サーバは state を無変換で保存・復元する**（§0-17 で `pending.self` の欠落で
+     livelock を踏んでいる）。JSON 往復した state がそのまま動くこと。 */
+  {
+    let s = mk4({ prophecy: 'kind_emperor', events: ['foresight', 'gather'] });
+    s.players[0].foresightAside = ['village'];
+    s.players[0].bidingAside = ['gold'];
+    s.riverboatCard = 'tea_house';
+    let s2 = null, threw = null;
+    try {
+      s2 = E.reduce(JSON.parse(JSON.stringify(s)), { type: 'END_ACTION_PHASE' });
+      s2 = E.reduce(s2, { type: 'END_TURN' });
+    } catch (e) { threw = e; }
+    ok(threw == null, `JSON を往復した state で reduce できる（${threw && threw.message}）`);
+    ok(s2 && (s2.players[0].foresightAside || []).length === 0 && s2.players[0].hand.indexOf('village') >= 0,
+      '洞察の脇札は**先引きの後**に手札へ入る（手札6枚になる）');
+  }
+  /* ⑦ 旧スナップショット互換＝v78 以前（旭日のフィールドを1つも持たない state）を復元しても壊れない。
+     🛑 サーバは state を無変換で復元するので、ここが抜けると**部屋が固まる**事故クラスになる。 */
+  {
+    let s = mk4({});
+    delete s.prophecy; delete s.sunTokens; delete s.prophecyOn; delete s.prophecyOnBy;
+    delete s.riverboatCard; delete s.kingdomEpoch;
+    s.players.forEach((p) => { delete p.foresightAside; delete p.bidingAside; delete p.gainedGoldThisGame; });
+    let s2 = null, threw = null, threw2 = null;
+    try { s2 = E.reduce(s, { type: 'END_ACTION_PHASE' }); s2 = E.reduce(s2, { type: 'END_TURN' }); } catch (e) { threw = e; }
+    ok(threw == null && s2 && s2.turn.active === 1, `旭日のフィールドが無い state でもターンが進む（${threw && threw.message}）`);
+    try { E.maskStateFor(s, 1); } catch (e) { threw2 = e; }
+    ok(threw2 == null, `旭日のフィールドが無い state でも maskStateFor できる（${threw2 && threw2.message}）`);
+  }
+}
+
+console.log('=== R5: CPU が買う旭日イベント3種は「買っても何も起きない」局面で買わない ===');
+/* 正本は各イベントに「CPU は条件を見てから買え。さもないと $N をドブに捨て続ける」と書いている。
+   ⚠ 残り7種は意図的に買わない（`ritual`/`banquet`/`windfall`/`tax` と同じ扱い＝正本が明示的に許容）。 */
+{
+  const KR = DOM.KINGDOM_RISINGSUN;
+  const mkc = (evs) => E.createInitialState([{ name: 'A', isCpu: true }, { name: 'B', isCpu: true }],
+    KR.slice(), { startActive: 0, events: evs });
+  // 参集＝ちょうど $3/$4/$5 が全部空
+  {
+    let s = mkc(['gather']); s.turn.phase = 'buy'; s.turn.coins = 7; s.turn.buys = 1;
+    Object.keys(s.supply).forEach((k) => {
+      if (E.costExact(s, k, 3) || E.costExact(s, k, 4) || E.costExact(s, k, 5)) s.supply[k] = 0;
+    });
+    const a = DOM.cpu.decide(s);
+    ok(!(a && a.type === 'BUY_EVENT' && a.event === 'gather'), '参集：$3/$4/$5 が全部空なら買わない');
+  }
+  // 蓄積＝$5以下のアクションが1つも無い
+  {
+    let s = mkc(['amass']); s.turn.phase = 'buy'; s.turn.coins = 2; s.turn.buys = 1;
+    s.players[0].inPlay = []; s.players[0].durationCards = [];
+    Object.keys(s.supply).forEach((k) => { if (E.costUpTo(s, k, 5) && DOM.isType(k, 'action')) s.supply[k] = 0; });
+    const a = DOM.cpu.decide(s);
+    ok(!(a && a.type === 'BUY_EVENT' && a.event === 'amass'), '蓄積：$5以下のアクションが無ければ買わない');
+  }
+  // 信用＝獲得候補ゼロ
+  {
+    let s = mkc(['credit']); s.turn.phase = 'buy'; s.turn.coins = 2; s.turn.buys = 1;
+    const okC = E.creditCanGain(s);
+    Object.keys(s.supply).forEach((k) => { if (okC(k)) s.supply[k] = 0; });
+    const a = DOM.cpu.decide(s);
+    ok(!(a && a.type === 'BUY_EVENT' && a.event === 'credit'), '信用：獲得候補ゼロなら買わない');
+  }
+  // CPU が買わない7種でも膠着・拒否・null が起きない（＝本番 livelock の芽が無い）
+  {
+    let bad = 0;
+    ['asceticism', 'foresight', 'kintsugi', 'practice', 'sea_trade', 'receive_tribute', 'continue'].forEach((ev) => {
+      let s = mkc([ev]), step = 0;
+      while (!s.gameOver && step++ < 3000) {
+        const a = DOM.cpu.decide(s);
+        if (!a) { bad++; break; }
+        const ns = E.reduce(s, a);
+        if (JSON.stringify(ns) === JSON.stringify(s)) { bad++; break; }
+        s = ns;
+      }
+      if (!s.gameOver && step >= 3000) bad++;
+    });
+    ok(bad === 0, 'CPU が買わない7種でも膠着・engine 拒否・CPU null が起きない');
+  }
+}
+
 console.log('\n========================================');
 console.log('旭日R4テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');
