@@ -10545,9 +10545,22 @@
     }
     /* ===== 旭日 R4：予言(Prophecy) の「カードを獲得したとき」型（**発動後だけ**効く）=====
        🛑 必ず `prophecyActive` で書く（`hasProphecy` はゲーム開始直後から真＝使うと公式違反）。 */
-    // 官僚制（Bureaucracy）＝**コスト0でない**カードを1枚獲得したとき、銅貨1枚を獲得する（誰の獲得でも本人へ）。
-    if (prophecyActive(state, 'bureaucracy') && costOf(state, cardId).coin !== 0 && cardId !== 'copper') {
-      if (gain(state, pIndex, 'copper', 'discard')) log(state, `${gp.name} は官僚制で銅貨1枚を獲得した。`);
+    /* 官僚制（Bureaucracy）＝**コスト0でない**カードを1枚獲得したとき、銅貨1枚を獲得する（誰の獲得でも本人へ）。
+       🛑 「ちょうど $0 か」は**3成分すべてが0か**で見る（日本語wiki 逐語＝
+          `コストがポーションだけのカード(ブドウ園など) や 負債だけのカード(絵師など) は、コスト0でないカード`／
+          `コイン以外のコスト表記がある時点で0コストのカードではない。`）。
+          **コイン成分だけを見ると負債コスト（大名 $0+6D／山の社 $0+5D／絵師 $0+8D／大君主／技術者）と
+          ポーション費用（ブドウ園 $0+P／変成）を丸ごと取りこぼす**（実際に取りこぼしていた）。
+       ⚠ `costExact` は `gainableBase`（非サプライ・在庫0・ロック中の分割山下段）を含むので**獲得したカードの
+          コスト判定には使えない**＝`costOf` を直接見る。`costIsPlainCoin` も別物（ポーション/負債を持たないか）。
+       ⚠ コストは**獲得した瞬間の現在値**＝街道／橋／安価な／発明家の家族／運河で $0 になっていれば付かない
+          （`costOf` を通しているので自動で正しい）。
+       ⚠ 銅貨は $0 なので再誘発しない＝無限ループにならない（`cardId !== 'copper'` は保険）。 */
+    if (prophecyActive(state, 'bureaucracy') && cardId !== 'copper') {
+      const bc = costOf(state, cardId);
+      if (!(bc.coin === 0 && !bc.pot && !bc.debt)) {
+        if (gain(state, pIndex, 'copper', 'discard')) log(state, `${gp.name} は官僚制で銅貨1枚を獲得した。`);
+      }
     }
     /* 成長（Growth）＝**財宝カード**を1枚獲得したとき、**それより安い**カード1枚を獲得する。
        ⚠ 獲得した安い札がまた財宝なら連鎖しうるが、`triggerOnGain` の `_gainDepth > 6` ガードで止まる。

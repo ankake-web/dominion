@@ -62,6 +62,31 @@ console.log('=== R4: 官僚制（Bureaucracy）===');
   s = E.reduce(s, { type: 'BUY', card: 'copper' });
   ok(s.players[0].discard.filter((c) => c === 'copper').length === c0 + 1,
     '銅貨($0)の獲得では配らない（コスト0＝対象外。獲得した1枚だけ増える）');
+  /* 🛑 「ちょうど $0 か」は**3成分すべてが0か**（日本語wiki 逐語＝
+     `コストがポーションだけのカード(ブドウ園など) や 負債だけのカード(絵師など) は、コスト0でないカード`）。
+     **コイン成分だけ見ると負債コストとポーション費用を丸ごと取りこぼす**（実際に取りこぼしていた）。 */
+  {
+    const KB = ['tea_house', 'daimyo', 'artist', 'mountain_shrine', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar'];
+    let sb = on('bureaucracy', KB, 2);
+    const cop = (st) => st.players[0].discard.filter((c) => c === 'copper').length;
+    sb.turn.phase = 'buy'; sb.turn.coins = 20; sb.turn.buys = 6;
+    let b = cop(sb); sb = E.reduce(sb, { type: 'BUY', card: 'daimyo' });
+    ok(cop(sb) - b === 1, '負債のみのカード（大名 $0+負債6）でも銅貨が付く（実: ' + (cop(sb) - b) + '）');
+    sb.players[0].debt = 0; b = cop(sb); sb = E.reduce(sb, { type: 'BUY', card: 'artist' });
+    ok(cop(sb) - b === 1, '絵師（$0+負債8）でも銅貨が付く');
+    // ポーション費用（$0+P）＝ブドウ園。
+    const KV = ['tea_house', 'vineyard', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'mine'];
+    let sv = on('bureaucracy', KV, 2);
+    sv.turn.phase = 'buy'; sv.turn.coins = 20; sv.turn.potions = 2; sv.turn.buys = 3;
+    const bv = cop(sv); sv = E.reduce(sv, { type: 'BUY', card: 'vineyard' });
+    ok(cop(sv) - bv === 1, 'ポーション費用のみのカード（ブドウ園 $0+P）でも銅貨が付く（実: ' + (cop(sv) - bv) + '）');
+    // コストは**獲得した瞬間の現在値**＝軽減で $0 になっていれば付かない。
+    let sr = on('bureaucracy', ['tea_house', 'bridge'].concat(K_NONE).slice(0, 10), 2);
+    sr.turn.phase = 'buy'; sr.turn.coins = 10; sr.turn.buys = 3;
+    sr.turn.costReduction = 3;              // 屋敷($2)が $0 になる
+    const br = cop(sr); sr = E.reduce(sr, { type: 'BUY', card: 'estate' });
+    ok(cop(sr) - br === 0, 'コスト軽減で $0 になったカードには付かない（獲得時の現在値で見る）');
+  }
 }
 
 console.log('=== R4: 成長（Growth）＝財宝を獲得したとき、それより安いカード1枚を獲得（強制）===');
