@@ -170,6 +170,33 @@ console.log('=== 資本主義：財宝になるアクションの集合が固定
   ok(set.length === 147, '資本主義で財宝になるアクションは147枚（カタログ文を変えたらこの数を見直す。実: ' + set.length + '）');
 }
 
+/* ===== 4点セットの機械検算＝「engine が立てる全 pending に CPU と UI の分岐があるか」 =====
+   本プロジェクトで**最も再発する事故**が「engine に窓を足したのに CPU / UI に分岐を書き忘れる」
+   （CPU に無い＝**本番 livelock**／UI に無い＝**人間が完全に詰む**）。
+   §0-30 P7（略奪）で pending 54種を手で数えたが**恒久検査にしていなかった**ので、ここで機械化する。
+   ⚠ ソースの文字列走査＝「1文字も出てこない」ことだけを見る保守的な検査。
+      分岐の中身が正しいかは各拡張のテストが担保する（この検査は**足し忘れ**だけを構造的に防ぐ）。
+   ⚠ `onGainQueue` に積む**非対話項目**（進歩／せっかちな／突貫／配達／鏡映／侵略の再開網／
+      アタックの継続 など＝消化側がその場で適用する）は `state.pending` にならないので対象外。 */
+console.log('=== 全 pending に CPU decidePending と UI viewPendingModal の分岐がある（4点セット）===');
+{
+  const fsx = require('fs'), pathx = require('path');
+  const R = (f) => fsx.readFileSync(pathx.join(__dirname, '..', 'js', f), 'utf8').replace(/\r\n/g, '\n');
+  const eng = R('engine.js'), cpuSrc = R('cpu.js'), uiSrc = R('ui.js');
+  const ids = new Set();
+  [/state\.pending\s*=\s*\{\s*type:\s*'([a-z0-9_]+)'/g,
+    /startQueue\.push\(\{\s*type:\s*'([a-z0-9_]+)'/g,
+    /queueProphecy\(state,\s*\{\s*type:\s*'([a-z0-9_]+)'/g].forEach((re) => {
+    let m; while ((m = re.exec(eng))) ids.add(m[1]);
+  });
+  const all = Array.from(ids).sort();
+  ok(all.length > 400, 'pending 型を十分に抽出できている（実: ' + all.length + '）');
+  const noCpu = all.filter((id) => cpuSrc.indexOf("'" + id + "'") < 0);
+  const noUi = all.filter((id) => uiSrc.indexOf("'" + id + "'") < 0);
+  ok(noCpu.length === 0, 'CPU decidePending に分岐が無い pending（本番 livelock）: ' + noCpu.join(','));
+  ok(noUi.length === 0, 'UI viewPendingModal に分岐が無い pending（人間が詰む）: ' + noUi.join(','));
+}
+
 console.log('\n========================================');
 console.log('整合性テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');
