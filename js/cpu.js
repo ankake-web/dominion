@@ -283,6 +283,17 @@
     if (has('tea_house')) return 'tea_house';           // +1 Sun +1カード +1アクション +2コイン（最強のキャントリップ）
     if (has('rustic_village')) return 'rustic_village'; // +1 Sun +1カード +2アクション
     if (has('poet')) return 'poet';                     // +1 Sun +1カード +1アクション ＋山札の上を手札へ
+    /* 🛑 R4a/R6 で足したカードを chooseAction に登録し忘れていた（R3 の20種だけ登録されていた）＝
+       **CPU がそのカードを一度も使わない＝CPUソークがその経路を1度も検証しない**（§0-36 が名指しした罠）。
+       CPU は旭日の王国カードを自発的には買わない（MONEY 方針）が、**神器／継続／参集／信用／蓄積／成長／
+       急速拡大／闇市場 が CPU にこれらを配る**ので、登録しないと手札に来ても死に札になる。 */
+    if (has('daimyo')) return 'daimyo';                 // +1カード +1アクション ＋次の非命令アクションを再演（負債6）
+    if (has('kitsune')) return 'kitsune';               // +1 Sun ＋異なる2つ（呪い配布を含む）
+    if (has('river_shrine')) return 'river_shrine';     // +1 Sun ＋最大2枚廃棄／クリンナップに $4以下を獲得
+    if (has('mountain_shrine')) return 'mountain_shrine'; // +1 Sun +2コイン ＋廃棄置き場にアクションがあれば +2カード
+    if (has('samurai')) return 'samurai';               // アタック1回＋**ゲーム終了まで**毎ターン +$1（早いほど得）
+    if (has('riverboat')) return 'riverboat';           // 持続＝次のターンに脇の $5 を使う
+    if (has('artist')) return 'artist';                 // +1アクション ＋場に1枚だけのカードの種類数ぶんドロー（負債8）
     if (has('litter')) return 'litter';                 // +2カード +2アクション（負債1）
     if (has('root_cellar')) return 'root_cellar';       // +3カード +1アクション（負債3）
     if (has('alley')) return 'alley';                   // +1カード +1アクション ＋1枚捨て

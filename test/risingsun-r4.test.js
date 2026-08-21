@@ -436,6 +436,136 @@ console.log('=== R4: 神風（Divine Wind）＝準備手順がゲーム中に再
   ok(done === 3, '神風発動後に CPU が 2〜4人とも最後まで走れる（膠着0）');
 }
 
+/* ===== 敵対レビュー（多エージェント・node/jsdom で再現確定）の回帰 =====
+   ここに載っているのは**全部いちど本当に壊れていた**もの。次に壊したら赤くなる。 */
+console.log('=== R5/R6 敵対レビューの回帰 ===');
+{
+  const F2 = ['village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory', 'festival'];
+  const mk2 = (K, opt) => E.createInitialState([{ name: 'A' }, { name: 'B', isCpu: true }], K.slice(),
+    Object.assign({ startActive: 0 }, opt || {}));
+
+  /* ① 継続＝カード文の順序（`… play it. **+1 Action and +1 Buy.**`）＝ボーナスは**使用の後**。
+     雪深い村（このターン以降の +アクションを全部無視）で観測できる唯一の窓。 */
+  if (DOM.CARDS.snowy_village) {
+    let s1 = mk2(['snowy_village', 'poet'].concat(F2).slice(0, 10), { events: ['continue'] });
+    s1.turn.phase = 'buy'; s1.turn.coins = 0; s1.turn.buys = 1; s1.turn.actions = 1;
+    s1.players[0].hand = []; s1.players[0].deck = new Array(8).fill('copper'); s1.players[0].discard = [];
+    s1 = E.reduce(s1, { type: 'BUY_EVENT', event: 'continue' });
+    s1 = E.reduce(s1, { type: 'CONTINUE_GAIN', card: 'snowy_village' });
+    ok(s1.turn.actions === 5, '継続×雪深い村＝1+4＝5アクション（継続の +1 は無視される。実: ' + s1.turn.actions + '）');
+  }
+  /* ①' 普通のカードなら +1アクション +1購入 はちゃんと入る（①だけだと「ボーナスを消しても緑」になる）。 */
+  {
+    let s1b = mk2(['poet'].concat(F2).slice(0, 10), { events: ['continue'] });
+    s1b.turn.phase = 'buy'; s1b.turn.coins = 0; s1b.turn.buys = 1; s1b.turn.actions = 1;
+    s1b.players[0].hand = []; s1b.players[0].deck = new Array(8).fill('copper'); s1b.players[0].discard = [];
+    s1b = E.reduce(s1b, { type: 'BUY_EVENT', event: 'continue' });
+    const b1 = s1b.turn.buys;
+    s1b = E.reduce(s1b, { type: 'CONTINUE_GAIN', card: 'village' });
+    ok(s1b.turn.actions === 1 - 0 + 2 + 1, '継続×村＝1+2（村）+1（継続）＝4アクション（実: ' + s1b.turn.actions + '）');
+    ok(s1b.turn.buys === b1 + 1, '継続で +1購入（実: ' + (s1b.turn.buys - b1) + '）');
+    ok(s1b.turn.phase === 'action', 'アクションフェイズに戻っている');
+  }
+  /* ② 継続＝「購入フェイズ終了時」窓（ワイン商）は**戻る瞬間**に判定する（使用で増えたコインを含めない）。 */
+  if (DOM.CARDS.wine_merchant && DOM.CARDS.poacher) {
+    let s2 = mk2(['wine_merchant', 'poacher'].concat(F2).slice(0, 10), { events: ['continue'] });
+    s2.turn.phase = 'buy'; s2.turn.coins = 1; s2.turn.buys = 1;
+    s2.players[0].tavern = ['wine_merchant']; s2.players[0].hand = [];
+    s2.players[0].deck = new Array(8).fill('copper'); s2.players[0].discard = [];
+    s2 = E.reduce(s2, { type: 'BUY_EVENT', event: 'continue' });
+    s2 = E.reduce(s2, { type: 'CONTINUE_GAIN', card: 'poacher' });
+    ok(!(s2.pending && s2.pending.type === 'wine_merchant'),
+      '継続×ワイン商＝$1 の時点で判定するので窓は開かない（密猟者の +$1 を含めない）');
+  }
+  /* ③④ 悟り＝場の財宝もアクション。海上交易と蓄積は**同じ述語**を共有する（公式FAQ が両者を結んでいる）。 */
+  {
+    let s3 = mk2(DOM.KINGDOM_RISINGSUN, { events: ['sea_trade'], prophecy: 'enlightenment' });
+    s3.prophecyOn = true; s3.sunTokens = 0;
+    s3.turn.phase = 'buy'; s3.turn.coins = 4; s3.turn.buys = 1;
+    s3.players[0].inPlay = ['copper', 'copper', 'copper'];
+    s3.players[0].hand = new Array(5).fill('estate');
+    s3.players[0].deck = new Array(6).fill('silver'); s3.players[0].discard = [];
+    s3 = E.reduce(s3, { type: 'BUY_EVENT', event: 'sea_trade' });
+    ok(s3.players[0].hand.length - 5 === 3, '海上交易×悟り＝場の銅貨3枚で +3カード（実: ' + (s3.players[0].hand.length - 5) + '）');
+    ok(s3.pending && s3.pending.max === 3, '廃棄の上限も3（最初に数えた場のアクション枚数）');
+    let s4 = mk2(DOM.KINGDOM_RISINGSUN, { events: ['amass'], prophecy: 'enlightenment' });
+    s4.prophecyOn = true; s4.sunTokens = 0;
+    s4.turn.phase = 'buy'; s4.turn.coins = 4; s4.turn.buys = 1;
+    s4.players[0].inPlay = ['copper', 'copper'];
+    s4 = E.reduce(s4, { type: 'BUY_EVENT', event: 'amass' });
+    ok(s4.pending == null, '蓄積×悟り＝場に財宝があれば「アクションがある」＝獲得しない（逆向きの同じ穴）');
+  }
+  /* ⑤ 稽古＝相続(Inheritance)した屋敷も対象（「手札から使わせる」窓は全部これを通す）。 */
+  {
+    let s5 = mk2(F2.concat(['mine']).slice(0, 10), { events: ['inheritance', 'practice'] });
+    s5.turn.phase = 'buy'; s5.turn.coins = 7; s5.turn.buys = 2;
+    s5 = E.reduce(s5, { type: 'BUY_EVENT', event: 'inheritance' });
+    s5 = E.reduce(s5, { type: 'INHERITANCE_SET', card: 'village' });
+    s5.players[0].hand = ['estate', 'estate', 'copper'];
+    ok(E.practiceTargets(s5, 0).indexOf('estate') >= 0, '稽古の候補に相続した屋敷が入る');
+  }
+  /* ⑥ 参集＝**pending を先に閉じてから獲得する**（植民 Populate 型）＝獲得時リアクション窓を潰さない。
+     finishGain を使うと望楼などの「pending が無いときだけ」ゲートに引っかかり、1回の購入で3窓潰れる。 */
+  if (DOM.CARDS.watchtower) {
+    let s6 = mk2(['watchtower'].concat(F2).slice(0, 10), { events: ['gather'] });
+    s6.turn.phase = 'buy'; s6.turn.coins = 7; s6.turn.buys = 1;
+    s6.players[0].hand = ['watchtower'];
+    s6 = E.reduce(s6, { type: 'BUY_EVENT', event: 'gather' });
+    s6 = E.reduce(s6, { type: 'GATHER_GAIN', card: 'village' });
+    ok(s6.pending && s6.pending.type === 'watchtower', '参集の獲得で望楼の窓が開く（実: ' + (s6.pending && s6.pending.type) + '）');
+  }
+  /* ⑦ 稽古×悟り＝財宝を選んだら**2回とも効果が出る**（素の replay は applyEffect＝財宝では case が無く空振り）。 */
+  {
+    let s7 = mk2(DOM.KINGDOM_RISINGSUN, { events: ['practice'], prophecy: 'enlightenment' });
+    s7.prophecyOn = true; s7.sunTokens = 0;
+    s7.turn.phase = 'buy'; s7.turn.coins = 10; s7.turn.buys = 3;
+    s7.players[0].hand = ['silver'];
+    s7 = E.reduce(s7, { type: 'BUY_EVENT', event: 'practice' });
+    const c0 = s7.turn.coins;
+    s7 = E.reduce(s7, { type: 'PRACTICE_PLAY', card: 'silver' });
+    ok(s7.turn.coins - c0 === 4, '稽古×悟り×銀貨＝$2×2＝+$4（実: ' + (s7.turn.coins - c0) + '）');
+  }
+  /* ⑧ 神風の一意カード除外＝川船の脇札は**トップレベル `state.riverboatCard`**（`pl.riverboatCard` は常に undefined）。 */
+  {
+    let hit = 0, n = 0;
+    for (let i = 0; i < 60; i++) {
+      const st = E.createInitialState(['P0', 'P1'], ['riverboat', 'tea_house'].concat(F2).slice(0, 10),
+        { startActive: 0, prophecy: 'divine_wind' });
+      if (!st.riverboatCard) continue;
+      n++;
+      const rc = st.riverboatCard;
+      let g = 0; while (!st.prophecyOn && g++ < 40) E.removeSun(st, 0);
+      if ((st.kingdom || []).includes(rc)) hit++;
+    }
+    ok(n > 0 && hit === 0, '神風は川船の脇札を新しい王国山に選ばない（' + hit + '/' + n + '）');
+  }
+  /* ⑨ 金継ぎの「このゲーム中に金貨を獲得したか」＝普通の獲得で記録され、**廃棄しても消えない**（獲得歴）。
+     ⚠ engine 側ではこのフラグを `_gainDepth > 6` の暴走防止ガードより**前**に置いてある
+        （深くネストした獲得の金貨を取りこぼすと金継ぎが過小判定になる）。 */
+  {
+    let s9 = mk2(DOM.KINGDOM_RISINGSUN, { events: ['kintsugi'] });
+    ok(!s9.players[0].gainedGoldThisGame, '開始時は金貨を獲得していない');
+    s9.turn.phase = 'buy'; s9.turn.coins = 20; s9.turn.buys = 3;
+    s9 = E.reduce(s9, { type: 'BUY', card: 'gold' });
+    ok(s9.players[0].gainedGoldThisGame === true, '金貨を獲得すると記録される');
+    // 廃棄しても消えない（所持ではなく獲得歴）。
+    s9.players[0].hand = ['gold', 'estate'];
+    s9.pending = { type: 'kintsugi_trash', player: 0 };
+    const s9b = E.reduce(s9, { type: 'KINTSUGI_TRASH', card: 'gold' });
+    ok(s9b.players[0].gainedGoldThisGame === true, '金貨を廃棄しても獲得歴は消えない');
+    // 再開網は同じ reduce の末尾で消化されるので、返ってきた時点では獲得段が開いている。
+    ok(s9b.pending && s9b.pending.type === 'kintsugi_gain',
+      '金貨を獲得済みなら獲得段が開く（実: ' + (s9b.pending && s9b.pending.type) + '）');
+    // 金貨を1枚も獲得していなければ獲得段は開かない。
+    let s9c = mk2(DOM.KINGDOM_RISINGSUN, { events: ['kintsugi'] });
+    s9c.turn.phase = 'buy'; s9c.turn.coins = 3; s9c.turn.buys = 1;
+    s9c.players[0].hand = ['estate'];
+    s9c = E.reduce(s9c, { type: 'BUY_EVENT', event: 'kintsugi' });
+    s9c = E.reduce(s9c, { type: 'KINTSUGI_TRASH', card: 'estate' });
+    ok(s9c.pending == null, '金貨を獲得していなければ廃棄だけで終わる（獲得段は開かない）');
+  }
+}
+
 console.log('\n========================================');
 console.log('旭日R4テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');
