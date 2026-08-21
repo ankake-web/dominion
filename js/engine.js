@@ -1129,6 +1129,7 @@
         （公式逐語＝`does not change anything about the Treasure, just prevents on-play`）。
      ⚠ 冠/ティアラ/偽造通貨の**2回目**（`applyTreasureEffect` 直呼び）では呼ばない＝「使用」は1回だから。 */
   function noteTreasurePlayedForProphecy(state, pIndex, card) {
+    if (state.prophecy !== 'good_harvest' && state.prophecy !== 'panic') return; // 大多数のゲームは即 return
     const p = state.players[pIndex];
     /* 豊作（Good Harvest）＝各ターン、**名前の異なる財宝を初めて使うたび**、**先に** +1購入 +$1。
        🛑 **名前の記録は予言の有効/無効に関係なく毎ターン行う**（＝恩恵だけを `prophecyActive` でゲートする）。
