@@ -309,8 +309,13 @@
       if (removed.some((id) => pool.indexOf(id) >= 0)) pool.forEach((id) => src.add(id));
     });
     if (!src.size) ((DOM.POOLS || {}).basic || []).forEach((id) => src.add(id)); // 保険（抽選元が特定できないとき）
-    const singular = new Set([].concat(state.blackMarket || [], state.mouseCard ? [state.mouseCard] : [],
-      state.players.reduce((a, pl) => a.concat(pl.riverboatCard ? [pl.riverboatCard] : []), [])));
+    /* 一意カード（このゲームで「1枚だけ脇にある」札）は新しい10山に選ばない。
+       🛑 川船の脇札は**トップレベルの `state.riverboatCard`**（プレイヤーごとではない）＝
+          `pl.riverboatCard` を読むと常に undefined で**除外が丸ごとデッドコードになる**
+          （実測で神風400回中34回＝8.5%、川船の脇札と同じカードが新しい王国山として配られていた）。 */
+    const singular = new Set([].concat(state.blackMarket || [],
+      state.mouseCard ? [state.mouseCard] : [],
+      state.riverboatCard ? [state.riverboatCard] : []));
     const cand = Array.from(src).filter((id) =>
       !killKeys.has(id) && !Object.prototype.hasOwnProperty.call(state.supply, id) &&
       !singular.has(id) && !NON_SUPPLY.has(id) && !MIXED_PILE_CONTENTS.has(id) && C()[id]);
@@ -600,9 +605,11 @@
      鼓舞する(Inspiring) と違い「場に出していない」条件は無い。 */
   function practiceTargets(state, pi) {
     const out = [];
+    const p = state.players[pi];
     handPlayable(state, pi).forEach((c) => {
       if (out.indexOf(c) >= 0) return;
-      if (!isActionFor(state, c)) return;
+      // ⚠ 相続(Inheritance)した屋敷は**アクションカード**＝「手札から使わせる」窓は全部これを通す（§0-9 の方針）。
+      if (!isActionFor(state, c) && !inheritedEstate(p, c)) return;
       if (!canPlayHandCard(state, pi, c)) return; // 航海の3枚制限・将軍
       out.push(c);
     });
@@ -610,16 +617,31 @@
   }
   /* 継続＝購入フェイズ→アクションフェイズへ戻る（ヴィラと同じクラス）。
      ⚠ 闘技場の再武装／`treasuresLocked` 解除／「購入フェイズ終了時」窓（ワイン商→野外劇）を通す。 */
-  function continueReturnToAction(state, pi) {
+  /* 🛑 **3つの処理を1つにまとめてはいけない**（カード文の順序＝
+     `Return to your Action phase and play it. **+1 Action and +1 Buy.**`）：
+     ① フェイズを戻す＋「購入フェイズ終了時」窓（ワイン商→野外劇）＝**戻る瞬間**
+        （公式逐語＝`When returning to your Action phase, At the end of your Buy phase effects are triggered`）
+     ② 獲得した札を使用する ／ ③ **+1アクション +1購入＝使用の後**。
+     ①と③を同時にやると (a) 雪深い村を使ったのに継続の +1アクションが入る
+     (b) ワイン商の呼び出し判定が「使用で増えたコイン込み」になる ＝ 両方とも公式違反（mix-all で観測できる）。 */
+  function continueReturnPhase(state, pi) {
     const t = state.turn;
-    if (t.phase === 'buy') {
-      (state.onGainQueue = state.onGainQueue || []).push({ type: 'buy_phase_end_mid', player: pi });
-      t.phase = 'action';
-      t.treasuresLocked = false;
-      t.arenaFired = false;
-    }
+    if (t.phase !== 'buy') return;
+    (state.onGainQueue = state.onGainQueue || []).push({ type: 'buy_phase_end_mid', player: pi });
+    t.phase = 'action';
+    t.treasuresLocked = false;
+    t.arenaFired = false;
+    log(state, `${state.players[pi].name} は継続：アクションフェイズに戻った。`);
+  }
+  function continueBonus(state, pi) {
+    const t = state.turn;
     addActions(t, 1); t.buys += 1;
-    log(state, `${state.players[pi].name} は継続：アクションフェイズに戻り +1アクション +1購入。`);
+    log(state, `${state.players[pi].name} は継続で +1アクション +1購入。`);
+  }
+  // 獲得できなかった／使用に進まない経路＝①と③をその場で続けて行う（間に②が無いだけ）。
+  function continueReturnToAction(state, pi) {
+    continueReturnPhase(state, pi);
+    continueBonus(state, pi);
   }
   function pickRiverboatCard(kingdom) {
     const inK = new Set(kingdom);
@@ -9940,14 +9962,15 @@
 
   // 「獲得時」フック（サル＝右隣の獲得で+1カード／封鎖＝同名獲得で呪い）。gain から常に呼ばれる。
   function triggerOnGain(state, pIndex, cardId, dest, costAtGain) {
-    state._gainDepth = (state._gainDepth || 0) + 1;
-    if (state._gainDepth > 6) { state._gainDepth--; return; } // 連鎖の暴走防止
     /* 旭日 R5：金継ぎ（Kintsugi）＝「**このゲーム中に金貨を1枚でも獲得していたか**」（非カード・公開・
        ターンをまたいで残る＝`freshTurn` で消さない）。**所持ではなく獲得歴**（廃棄・追放しても消えない）。
        ⚠ **相手のターンに獲得した金貨も数える**（海賊／盗賊／密輸人／獲得時リアクション経由も全部）。
        ⚠ `gain()` / `gainFromOutside()`（廃棄置き場からの盗賊・墓暴き・物色）の両方から呼ばれるこの関数に
-          置けば1箇所で足りる。**白金貨は数えない**（金貨だけ）。 */
+          置けば1箇所で足りる。**白金貨は数えない**（金貨だけ）。
+       ⚠ **ただの記録なので連鎖の暴走防止ガードより「前」**（7段以上ネストした獲得で得た金貨も数える）。 */
     if (cardId === 'gold' && state.players[pIndex]) state.players[pIndex].gainedGoldThisGame = true;
+    state._gainDepth = (state._gainDepth || 0) + 1;
+    if (state._gainDepth > 6) { state._gainDepth--; return; } // 連鎖の暴走防止
     const n = state.players.length;
     // 帝国：ランドマークの購入フェイズ判定は「獲得が起きた時点のフェイズ」で見る。
     //   ヴィラの獲得時効果はこの関数の途中で phase を 'buy'→'action' に変えるので、それより前の値を捕まえておく
@@ -12021,7 +12044,9 @@
          ⚠ 条件を満たさなくても**買える**（engine は拒否しない）。候補ゼロなら窓を開かない。 */
       case 'amass': {
         const inPlayAll = me.inPlay.concat(me.durationCards || []);
-        if (inPlayAll.some((c) => DOM.isType(c, 'action'))) {
+        // ⚠ 悟り(Enlightenment) が有効なら**場の財宝もアクション**＝海上交易と**同じ述語**を共有する
+        //    （公式FAQ が両者を名指しで結んでいる＝`Amass と同じ述語を共有すること`）。
+        if (inPlayAll.some((c) => isActionFor(state, c))) {
           log(state, `${me.name} は蓄積を買ったが、場にアクションカードがあるので何も獲得しない。`);
         } else if (anyGainable(state, (id) => costUpTo(state, id, 5) && isTypeSupply(state, id, 'action'))) {
           state.pending = { type: 'amass_gain', player: pi };
@@ -12093,7 +12118,8 @@
             引けなくても廃棄枠は減らない（-1カードトークンで実測できる）。
          ⚠ 「場」＝`inPlay` ＋ `durationCards`（蓄積とまったく同じ穴＝同じ数え方を共有する）。 */
       case 'sea_trade': {
-        const acts = me.inPlay.concat(me.durationCards || []).filter((c) => DOM.isType(c, 'action')).length;
+        // ⚠ 悟り(Enlightenment) が有効なら**場の財宝もアクション**＝蓄積と**同じ述語**（正本が両者を結んでいる）。
+        const acts = me.inPlay.concat(me.durationCards || []).filter((c) => isActionFor(state, c)).length;
         if (acts > 0) {
           draw(state, pi, acts);
           if (me.hand.length) state.pending = { type: 'sea_trade_trash', player: pi, max: acts };
@@ -12112,8 +12138,11 @@
         if ((t.gainedThisTurn || []).length >= 3 && receiveTributeTargets(state, pi, []).length) {
           t.receiveTributeResume = { player: pi, gained: [] };
           state.pending = { type: 'receive_tribute_gain', player: pi, gained: [] };
-        } else {
+        } else if ((t.gainedThisTurn || []).length < 3) {
           log(state, `${me.name} は賛辞を買ったが、このターンの獲得が3枚未満（${(t.gainedThisTurn || []).length}枚）。`);
+        } else {
+          // 3枚以上獲得していても候補が無いことがある（場に出していない名前が残っていない）＝ログを分ける。
+          log(state, `${me.name} は賛辞を買ったが、獲得できるアクションカードが無い。`);
         }
         break;
       }
@@ -13177,14 +13206,23 @@
            🛑 **フェイズを戻すのは獲得の解決後・使用の前**（公式＝獲得は購入フェイズ扱い／使用はアクションフェイズ扱い）。
            ⚠ 獲得札が動かされていたら使用は失敗するが、フェイズ復帰と +1アクション +1購入 は起きる（stop-moving）。 */
         if (q.type === 'continue_play') {
+          /* ① フェイズを戻す＋「購入フェイズ終了時」窓を積む（**使用より前**＝公式）。
+             ② 使用と ③ +1ア+1購入 は**さらに後ろへ積む**＝キューは FIFO なので、①の窓が pending を
+             立てても順序が保たれる（解決したら reduce 末尾の再開網が続きを消化する）。 */
+          continueReturnPhase(state, q.player);
+          state.onGainQueue.push({ type: 'continue_play2', player: q.player, card: q.card });
+          if (state.pending) break;
+          continue;
+        }
+        if (q.type === 'continue_play2') {
           const cp = state.players[q.player];
-          continueReturnToAction(state, q.player);   // 先にアクションフェイズへ戻す（冠がアクションモードになる）
-          if (removeOne(cp.discard, q.card)) {
-            cp.discard.push(q.card);                 // 位置を戻してから playCardNoAction に取らせる
+          // 侵略(invasion_play_loot) と同じ形＝**捨て札の並びを変えずに**在庫だけ見る（薬草集め/清掃が捨て札の順を見る）。
+          if (cp.discard.indexOf(q.card) >= 0) {
             playCardNoAction(state, q.player, q.card, cp.discard, '継続で');
           } else {
             log(state, `${cp.name} の継続は「${C()[q.card].name}」の使用に失敗した（獲得先から動かされていた）。`);
           }
+          continueBonus(state, q.player);   // ③ **使用の後**（雪深い村を使ったら +1アクションは無視される＝公式）
           if (state.pending) break;
           continue;
         }
@@ -13543,7 +13581,8 @@
         log(state, `${state.players[r.player].name} は幽霊で「${C()[r.card].name}」をもう一度使った。`);
       } else {
         state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
-        log(state, `${state.players[r.player].name} は玉座の間で「${C()[r.card].name}」をもう一度使った。`);
+        // 旭日：稽古(Practice) も同じ既定分岐に来るので、ログだけ出どころを分ける（`via` が無ければ従来どおり）。
+        log(state, `${state.players[r.player].name} は${r.via === 'practice' ? '稽古' : '玉座の間'}で「${C()[r.card].name}」をもう一度使った。`);
       }
       // 同盟：再演（玉座/王の宮廷/行進/御料車/冠/幽霊/山砦）も「カードの使用」＝Ally の窓が開く
       //   （公式逐語 "once per **time you play** an Action card"）。ゴーレムの2枚目も新しいプレイ。
@@ -18211,7 +18250,15 @@
         state.pending = null;
         if (playPlayable(state, pd.player, action.card, '稽古で', action.way)) {
           state.replay = state.replay || [];
-          state.replay.push({ player: pd.player, card: action.card, way: action.way || null });
+          /* 🛑 **悟り(Enlightenment) が有効だと稽古で財宝を選べる**（公式＝`Treasures are Actions for all purposes.`）。
+             素の replay（label 無し）は `applyEffect` を呼ぶので**財宝では case が無く2回目が空振りする**
+             ＝冠(Crown)とまったく同じ書き方で `treasure_replay` に振り分ける。
+             ⚠ 稽古はフェイズを変えないので、購入フェイズなら財宝は普通に +$ を出す（＝公式）。 */
+          const pl2 = state.players[pd.player];
+          state.replay.push({
+            player: pd.player, card: action.card, way: action.way || null, via: 'practice',
+            label: (DOM.isType(action.card, 'action') || inheritedEstate(pl2, action.card)) ? null : 'treasure_replay',
+          });
           log(state, `${state.players[pd.player].name} は稽古で「${C()[action.card].name}」をもう一度使う。`);
         }
         return state;
@@ -18253,7 +18300,17 @@
         if (!pd || pd.type !== 'gather_gain') return state;
         const okG = (id) => costExact(state, id, pd.need);
         if (!anyGainable(state, okG)) { state.pending = null; return state; } // 終端保証
-        if (!finishGain(state, pd, action.card, okG, 'discard', `参集でちょうど $${pd.need} を獲得した。`)) return state;
+        const gcard = action.card;
+        if (gcard == null || !okG(gcard)) return state;
+        /* 🛑 `finishGain` を使わず **pending を先に閉じてから獲得する**（＝移動動物園の植民 POPULATE_GAIN と同型）。
+           `finishGain` は pending を残したまま `gain()` を呼ぶので、`triggerOnGain` の else-if 連鎖組
+           （望楼／交易商人／国境の村／宿屋／スーク／公爵夫人／ティアラ）の `!state.pending` ゲートに引っかかり、
+           **参集は1回の購入で獲得時対話を3つ潰す**（正本が「植民と同型にせよ」と名指ししている）。 */
+        state.pending = null;
+        const greal = mixedTopCard(state, gcard) || gcard;
+        if (gain(state, pd.player, gcard, 'discard')) {
+          log(state, `${state.players[pd.player].name} は参集でちょうど ${pd.need} の「${C()[greal].name}」を獲得した。`);
+        }
         return state;
       }
       /* 継続＝アタックでないコスト4以下のアクション1枚を獲得（強制）→ 獲得を完全に解決した後に

@@ -1473,6 +1473,26 @@
     /* 旭日：予言（横型・1ゲームに1枚だけ・買わない）＝王国に前兆(Omen)があるときだけ登場する。
        **残りの Sun トークン数は公開情報**（誰が「+1 Sun」を出すと発動するかは全員の戦略に直結する）。
        最後の1個を取り除くとテキストが有効になり、以後ゲーム終了までずっと効く。 */
+    /* 旭日：川船(Riverboat)が準備で脇に置いた1枚（**公開・対局中不変**）。
+       脇が「村」か「魔女」かで川船の価値がまるで違う＝**買う前に見えていないと判断できない**。
+       ハツカネズミの習性が `state.mouseCard` を併記しているのと同じ扱い。 */
+    const riverboatBlock = (state.riverboatCard && DOM.CARDS[state.riverboatCard])
+      ? h('div', { class: 'supply-section' },
+          h('div', { class: 'sup-title' }, '川船の脇（このゲームでは使わないカード＝川船が毎回これを使う）'),
+          h('div', { class: 'mats' },
+            h('div', { class: 'mat-row', title: DOM.CARDS[state.riverboatCard].text || '' },
+              h('img', { class: 'landmark-thumb', src: 'asset/cards/' + state.riverboatCard + '.webp',
+                alt: DOM.CARDS[state.riverboatCard].name, loading: 'lazy',
+                style: 'height:40px;width:60px;object-fit:cover;border-radius:4px;flex:0 0 auto;cursor:pointer',
+                onclick: () => showSheet(state.riverboatCard, null),
+                onerror: function () { this.style.display = 'none'; } }),
+              h('span', { class: 'mat-label', role: 'button', tabindex: '0', style: 'cursor:pointer',
+                  onclick: () => showSheet(state.riverboatCard, null),
+                  onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showSheet(state.riverboatCard, null); } } },
+                '🚢 ' + DOM.CARDS[state.riverboatCard].name),
+              h('span', { class: 'muted', style: 'font-size:12px;margin-left:8px' },
+                (DOM.CARDS[state.riverboatCard].text || '').replace(/\n/g, ' ')))))
+      : null;
     const prophecyBlock = state.prophecy
       ? (() => {
         const pr = (DOM.LANDSCAPES || {})[state.prophecy] || { name: state.prophecy, text: '' };
@@ -1496,6 +1516,7 @@
     const supply = h('div', null,
       allyBlock,
       prophecyBlock,
+      riverboatBlock,
       landscapeBlock,
       eventBlock,
       projectBlock,
@@ -1588,6 +1609,16 @@
       // 略奪：檻の脇札（伏せ札＝自分には中身・相手には枚数だけ見せる）
       if ((pl.cage || []).length) {
         bits.push('🗜️ 檻の脇: ' + (idx === viewer ? pl.cage.map((c) => (DOM.CARDS[c] || {}).name || '？').join('・') : pl.cage.length + '枚'));
+      }
+      /* 旭日：洞察(Foresight)の脇札＝**公開**（`Reveal … Set it aside` なので相手にも見える）。
+         ターン終了時＝次の手札を先引きした後に手札へ加わる。 */
+      if ((pl.foresightAside || []).length) {
+        bits.push('🔭 洞察の脇: ' + pl.foresightAside.map((c) => (DOM.CARDS[c] || {}).name || '？').join('・'));
+      }
+      /* 旭日：好機到来(Biding Time)の脇札＝**伏せ札**（自分には中身・相手には枚数だけ）。
+         次の自分のターンの開始時に手札へ加わる（＝次の手札は5枚＋この枚数）。 */
+      if ((pl.bidingAside || []).length) {
+        bits.push('🎴 好機到来の脇: ' + (idx === viewer ? pl.bidingAside.map((c) => (DOM.CARDS[c] || {}).name || '？').join('・') : pl.bidingAside.length + '枚'));
       }
       if (bits.length) matRows.push(h('div', { class: 'mat-row' },
         h('span', { class: 'mat-label' }, pl.name + ': '),
@@ -1700,7 +1731,7 @@
       matsBlock,
       h('div', { class: 'zone-h' }, h('span', { class: 't' }, (possessing ? '🎭 ' + handP.name + ' の手札（支配中）' : handP.name + ' の手札')),
         h('span', { class: 'c', 'data-self-pile': '1' },
-          '山' + handP.deck.length + '・捨' + handP.discard.length + '・手' + handP.hand.length + '｜' + E().vpOf(handP) + '点'),
+          '山' + handP.deck.length + '・捨' + handP.discard.length + '・手' + handP.hand.length + '｜' + E().vpOf(handP, state) + '点'),   // ⚠ state を渡す＝悟り(Enlightenment)下のブドウ園が終局画面と食い違わない
         (state.reveals && state.reveals[viewer])
           ? h('span', { class: 'self-reveal-wrap', onclick: () => openReveal(viewer) }, revealBadge(state, viewer))
           : null),
@@ -3497,7 +3528,7 @@
     // 旭日：川船＝次のターンの開始時、脇に準備した札を動かさずに使用する（強制）。
     if (pd.type === 'riverboat_play') return modalOptions('川船 — 脇の札を使う',
       '準備で脇に置いたカードを、脇に置いたまま使用します（強制）。',
-      [{ label: '「' + ((DOM.CARDS[state.riverboatCard] || {}).name || state.riverboatCard) + '」を使う', cls: 'btn-primary', on: () => dispatch({ type: 'RIVERBOAT_PLAY' }) }]);
+      [{ label: '「' + ((DOM.CARDS[state.riverboatCard] || {}).name || '脇のカード') + '」を使う', cls: 'btn-primary', on: () => dispatch({ type: 'RIVERBOAT_PLAY' }) }]);
     if (pd.type === 'captain') {
       const cands = (E() && E().captainTargets) ? E().captainTargets(state) : [];
       return modalGainSupply(state, '船長 — サプライのカードを使う',
@@ -3909,7 +3940,8 @@
     if (pd.type === 'amass_gain') return modalGainSupply(state, '蓄積 — 獲得',
       '場にアクションカードが1枚も無いので、コスト5以下のアクションカード1枚を獲得します（強制）。',
       (id) => canUpTo(state, id, 5) && isTypeSup(state, id, 'action'),
-      (id) => dispatch({ type: 'AMASS_GAIN', card: id }));
+      (id) => dispatch({ type: 'AMASS_GAIN', card: id }),
+      () => dispatch({ type: 'AMASS_GAIN', card: null }));
     // 苦行①＝追加でいくら払うか（0＝払わない）。
     if (pd.type === 'asceticism_pay') return modalAmount('苦行 — 追加で支払う',
       'コインを好きなだけ支払い、それと同じ枚数の手札を廃棄します（0 なら何も起きません）。',
@@ -3924,15 +3956,20 @@
     // 信用＝コスト8以下のアクションか財宝を獲得し、そのコストぶんの負債を得る（強制）。
     if (pd.type === 'credit_gain') return modalGainSupply(state, '信用 — 獲得',
       'コスト8以下のアクションカードか財宝カード1枚を獲得します。そのコストに等しい負債を得ます（強制）。',
-      (id) => DOM.engine.creditCanGain(state)(id), (id) => dispatch({ type: 'CREDIT_GAIN', card: id }));
+      (id) => DOM.engine.creditCanGain(state)(id), (id) => dispatch({ type: 'CREDIT_GAIN', card: id }),
+      () => dispatch({ type: 'CREDIT_GAIN', card: null }));
     // 金継ぎ①＝手札1枚を廃棄（強制）。
     if (pd.type === 'kintsugi_trash') return modalSingleHand(p, '金継ぎ — 廃棄',
-      '手札1枚を廃棄します（強制）。このゲーム中に金貨を獲得していれば、そのカードより最大2コイン高いカードを獲得します。',
-      () => true, (card) => dispatch({ type: 'KINTSUGI_TRASH', card }), null, '廃棄する');
+      '手札1枚を廃棄します（強制）。' + (p.gainedGoldThisGame
+        ? 'このゲーム中に金貨を獲得済みなので、そのカードより最大2コイン高いカード1枚を獲得します。'
+        : '⚠ このゲーム中まだ金貨を獲得していないので、獲得はできません（廃棄だけ）。'),
+      () => true, (card) => dispatch({ type: 'KINTSUGI_TRASH', card }),
+      p.hand.length ? null : { label: '手札が無い（閉じる）', on: () => dispatch({ type: 'KINTSUGI_TRASH', card: null }) }, '廃棄する');
     // 金継ぎ②＝廃棄したカードより最大2コイン高いカードを獲得（強制）。
     if (pd.type === 'kintsugi_gain') return modalGainSupply(state, '金継ぎ — 獲得',
       '廃棄したカードよりコストが最大2コイン高いカード1枚を獲得します（強制）。',
-      (id) => canUpTo(state, id, pd.coin, pd), (id) => dispatch({ type: 'KINTSUGI_GAIN', card: id }));
+      (id) => canUpTo(state, id, pd.coin, pd), (id) => dispatch({ type: 'KINTSUGI_GAIN', card: id }),
+      () => dispatch({ type: 'KINTSUGI_GAIN', card: null }));
     /* 稽古＝手札のアクション1枚を2回使用してよい（任意）。**群A**＝山札の影カードも選べる。 */
     if (pd.type === 'practice_play') return modalSingleHand(p, '稽古 — 2回使用する（任意）',
       '手札のアクションカード1枚を2回使用できます。山札の影カードも選べます。',
@@ -3950,15 +3987,23 @@
       '場に出していないアクションカードを、名前が異なるように1枚ずつ最大3種類まで獲得できます（'
       + ((pd.gained || []).length) + '/3）。コストの上限はありません。',
       (id) => DOM.engine.receiveTributeTargets(state, pd.player, pd.gained || []).indexOf(id) >= 0,
-      (id) => dispatch({ type: 'RECEIVE_TRIBUTE_GAIN', card: id }), null, true);
+      /* 🛑 `modalGainSupply` の footer は `(skipOnEmpty && (!elig.length || alwaysSkip))` ＝
+         **第7引数 `alwaysSkip: true` だけでは辞退ボタンは絶対に出ない**（第6引数に関数が要る）。
+         賛辞は "gain **up to** 3"＝任意なので、これが無いと**人間だけが3枚を強制獲得させられる**
+         （engine も CPU も `card: null` を受理できる＝人間だけが詰む本プロジェクト定番の事故）。
+         空山が2つある局面では自分の意思に反してゲームを終わらせられる。正しい形＝略奪の繁栄(prosper_gain)。 */
+      (id) => dispatch({ type: 'RECEIVE_TRIBUTE_GAIN', card: id }),
+      () => dispatch({ type: 'RECEIVE_TRIBUTE_GAIN', card: null }), true);
     // 参集＝ちょうど3／4／5コインを1枚ずつ（強制・記載順）。
     if (pd.type === 'gather_gain') return modalGainSupply(state, '参集 — 獲得',
       'コストがちょうど ' + pd.need + 'コイン のカード1枚を獲得します（強制）。',
-      (id) => canExact(state, id, pd.need), (id) => dispatch({ type: 'GATHER_GAIN', card: id }));
+      (id) => canExact(state, id, pd.need), (id) => dispatch({ type: 'GATHER_GAIN', card: id }),
+      () => dispatch({ type: 'GATHER_GAIN', card: null }));
     // 継続＝アタックでないコスト4以下のアクションを獲得し、アクションフェイズに戻って使用する（強制）。
     if (pd.type === 'continue_gain') return modalGainSupply(state, '継続 — 獲得',
       'アタックでないコスト4以下のアクションカード1枚を獲得します。その後アクションフェイズに戻り、それを使用します（強制）。',
-      (id) => DOM.engine.continueCanGain(state)(id), (id) => dispatch({ type: 'CONTINUE_GAIN', card: id }));
+      (id) => DOM.engine.continueCanGain(state)(id), (id) => dispatch({ type: 'CONTINUE_GAIN', card: id }),
+      () => dispatch({ type: 'CONTINUE_GAIN', card: null }));
     // 旭日 R4：成長（予言）＝財宝を獲得したとき、それより安いカード1枚を獲得（強制）。
     if (pd.type === 'growth_gain') return modalGainSupply(state, '成長 — 獲得',
       '財宝カードを獲得したので、それより安いカード1枚を獲得します（強制）。',
