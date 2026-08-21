@@ -1,79 +1,78 @@
-<!-- /handoff が自動生成（2026-08-20）。新セッションはこのファイルの指示に従う。手編集不要 -->
+<!-- /handoff が自動生成（2026-08-22）。新セッションはこのファイルの指示に従う。手編集不要 -->
 
 **ウルトラコード（最大エフォート）で進めてください。**
 
 スマホ向けドミニオン対戦Webアプリの続き。作業ディレクトリ＝`c:\Users\b1242\claude\game\dominion`（branch `main`）。回答は日本語で、フランクに短く。
 
 ## まず最初にやること
-1. `npm test` を実行して **全47スイート緑（exit 0・整合性5558・不変条件12・旭日476＋旭日UI39）** を確認する。
-2. **`PROGRESS.md` の §0-36（R3・今ここ）／§0-35（R2）／§0-34（R1）／§0-33（段階1）／§0-31（段階0）／§5／§6 を読む。**
-3. 設計の正本＝**`docs/research/risingsun_rules.md`（847KB）**。
-   **着手前に冒頭の「実装前に必読18項目」と「決定事項 D1〜D5」を必ず読むこと**（記憶で書かない）。
-4. **未pushが8コミットある**（`git log origin/main..HEAD`）＝**旭日の段階1＋R1＋R2＋R3**。
-   **実プレイには何も出ない**が、既存カードの見た目が少し変わる（選択肢の「・・」二重中黒の解消＝19枚を焼き直し済み）。
-   **push はユーザーに確認してから。**
+1. `npm test` を実行して **全48スイート緑（exit 0・整合性5561・不変条件12・旭日498＋旭日R4 113＋旭日UI 96）** を確認する。
+2. **`PROGRESS.md` の §0-37（今ここ）／§5／§6 を読む。** 旭日の細部は §0-33〜§0-36 に、
+   広い過去文脈は `docs/handover.md` に。
+3. **未pushが23コミットある**（`git log origin/main..HEAD`）＝**旭日の段階1＋段階2 R1〜R7＋敵対レビュー修正**。
+   **push はユーザーに確認してから**（勝手に push しない）。
 
 ## いまの状態（1行）
-16拡張＋プロモ＝761枚が実プレイ可能。**旭日（Rising Sun・50種）は段階0＋段階1＋段階2 R1〜R3 まで完了**
-＝`DOM.CARDS` **585**／`DOM.LANDSCAPES` **226**＝**合計811枚**。旭日は `CARD_SETS` 未参照＝**まだ遊べない**。
-王国25種のうち**20種の効果が動く**（残り5種＝大名/川船/絵師/米/侍 は R6）。予言15種とイベント10種は**まだ空**。
+**旭日（Rising Sun）は完成した**＝17拡張＋プロモ＝**811枚（縦型585＋横型226）が実プレイ可能**。
+`DOM.CARD_SETS` に `risingsun`（固定10種）／`risingsun-events`／`random-risingsun` があり、**mix-all も17拡張**。
+**残っているのは「絵50枚の回収」と「push」だけ**（`sw.js` は **v81**）。
 
 ## 次にやる具体的タスク
-### 優先1＝**段階2 R4＝予言15種**（**神風 Divine Wind は最後**。正本 第7・8章）
-- **予言の効果は `prophecyActive(state, id)` で書く**（`hasProphecy` は準備処理専用＝ゲーム開始直後から真）。
-- **窓が要る予言は `queueProphecy` に積む**（`onProphecyActivated` で `state.pending` を直接立てると、
-  前兆6種のうち4種が直後に自分の窓を開いて**上書きする**）。対話が要らない予言はその場で適用してよい。
-- **神器(Kind Emperor)＝「最後の Sun を取り除いた瞬間」に `state.prophecyOnBy` の席だけが**アクションを手札に獲得。
-- **来寇(Approaching Army)＝準備で11山目（アタックの王国カード）を追加**する（**予言が発動しなくても起きる**＝
-  `hasProphecy` を使う数少ない場所。若き魔女の災いカード Bane と同型）。
-- **好機到来(Biding Time)** ＝クリンナップ開始時に手札を伏せて脇へ、次のターン開始時に手札へ。
-  ⚠ **置き換わるのは「捨てる」だけで、5枚のドローは普通に行う**（`you still draw 5 cards`）。
-- **病(Sickness)** ＝「**ちょうど3枚**捨てる」＝`discardDownEnter` を流用しない（`FORUM_DISCARD` の `Math.min` 型）。
-- **急速拡大(Rapid Expansion)** ＝略奪の特性「せっかちな(Hasty)」そのもの＝既存機構（`p.eventSetAside`＋`event_play`）を流用。
-- **悟り(Enlightenment)** ＝財宝をアクションとしても扱う＝`isTreasureFor`（資本主義）の**裏返し**。
+### 優先1＝**絵（webp）50枚の回収**（ユーザーの作業が要る）
+**旭日50枚だけが枠＋文字**（他の761枚は絵入り）。ChatGPT への**指示文5バッチは作成済み**：
+`C:\Users\b1242\AppData\Local\Temp\claude\c--Users-b1242-claude-game-dominion\10959e90-de34-4f02-bf8c-abac06d1364e\scratchpad\risingsun_art_prompts.md`
+（scratchpad はセッション固有なので**消えていたら作り直す**＝内容は「和風（戦国〜江戸期）・油彩・4:3・
+1カード1画像」＋50種の主題リスト。作り方はメモリ `chatgpt-card-art-workflow`）。
+- ⚠ **連番＝生成順を信用せず、全候補から全単射で判別する**（過去に取り違えが起きている）。
+- ⚠ 紛らわしいペア＝**侍／忍者／大名／浪人**（全部「武士」系）・**山の社／川の社**・**茶屋／魚屋**。
+- 回収＝`asset/art/<id>.png` → `CARDS_ONLY=<ids> node tools/build-cards.js`（王国25）／
+  `CARDS_ONLY=<ids> node tools/build-landscape.js`（イベント10＋予言15）→ `sw.js` を **v82** へ。
+- 絵が入ったかは**ファイルサイズで検算**（枠＋文字＝40〜70KB／絵入り＝80KB超）。
+- 最後に **Downloads の原本を掃除**（`asset/art/*.png` と sha1 一致する PNG だけ消す）。
 
-### 優先2＝R5 イベント10種（`practice`＝稽古は**新設の群A窓**＝`test/risingsun.test.js` の `A_WINDOWS` 表に1行足す）
-→ R6 残りの王国5種（大名＝命令／川船＝準備／絵師／米／侍＝永続持続）→ R7 CARD_SET 昇格。
-### 優先3＝**絵（webp）50枚の回収**（ユーザーが ChatGPT で生成する必要がある＝手が空いたときに依頼する）
-⚠ **判別は「連番＝生成順」を信用せず、全候補から全単射で判別する**（過去に取り違えが起きている）。
-⚠ **影札5種は裏面が5種とも違う絵**＝裏面画像を作るかを決める（表だけでも段階2は進む）。
-⚠ **R7 でやること**＝`DOM.STAGE1_POOLS` から `'risingsun'` を外す／`GAIN_ORDER` の25件を**実強度順の位置へ移す**／
-`eventPoolFor` と `MIX_LANDSCAPE_POOLS`（`ev-risingsun` / 予言用）を**そこで初めて**配線する
-（**段階1で配線すると mix-all に「買っても何も起きない死に札」が出る**）。
+### 優先2＝**push**（ユーザー確認の上で）
+push すると本番 Pages/Render に旭日が出る。**本番反映は機械照合で確かめる**
+（`sw.js` の VERSION／`js/*.js` の sha1 一致／webp のバイト一致／Render は `GET /status` と実 ws）。
+⚠ **Pages のデプロイがゾンビ化して以後を全部 400 で弾くこと**がある＝
+`gh api -X POST repos/ankake-web/dominion/pages/deployments/<旧SHA>/cancel` で解除（§6 に手順）。
+
+### その先
+**第17拡張 Arcana**（2026年予定・500枚・王国37山・Study/Cart/Project）は
+**カード名すら未公開なので着手不能**。データが出ていれば段階0（研究）から。
+それまでは既存の磨き込み（CPU 購入AIの拡張別チューニング等）が候補。
 
 ## 守るべき進め方
 - **多エージェント＋敵対的検証**でやる（研究・カタログ・レビューとも）。型は §6「研究・調査の型」。
 - **バグは必ず node で再現してから直す**／**回帰テストはバグ注入で感度を確かめる**。
 - **engine を締めたら CPU と UI も同じコミットで直す**（窓・受理・CPU候補・UIフィルタの4面）。
   新しい pending は**4点セット必須**（engine reducer＋`PLAYER_ACTIONS`＋CPU `decidePending`＋UI `viewPendingModal`）。
-- **client 資産（js/css/webp/sw）を変えたら `sw.js` の VERSION を上げる**（今 **v79**）。
-- 使い捨てスクリプトは**プロジェクト直下に `_*.tmp.js`** で作り**実行後必ず削除**。
+- **client 資産（js/css/webp/sw）を変えたら `sw.js` の VERSION を上げる**（今 **v81**）。
+- 使い捨てスクリプトは**プロジェクト直下に `_*.tmp.js`** で作り**実行後必ず削除**（`_*` は gitignore 済み）。
 - **push はユーザー確認**（コミットは自由）。
 - **日本語wiki（wikiwiki.jp）は並列で叩くと 429 で全滅する**＝エージェントに触らせず自分で逐次に取る。
 
 ## 知らないと事故ること
-- **カード画像のレンダラは行頭が `・` の行に中黒を付けない**（字下げにする）＝カタログ側は `・` で書いてよい。
-  **絵が無いカードの窓は暗い板を敷く**（縦横とも。透明の穴にすると UI のクリーム地が透けて壊れて見える）。
-- **横型の新しい kind を足したら `js/ui.js` の `LS_KIND_LABEL` にも足す**（新設した恒久検査が捕まえる）。
-- **`modalSingleHand` の skip は `{label,on}` オブジェクト必須**（boolean `true` は押せない死にボタン＝人間が詰む）。
-- **予言(Prophecy)は「カード」ではない**＝`DOM.CARDS`・保存則 tally・`allCards`・庭園/品評会・
-  「カード名を宣言」から除外／**横型の「合計2枚まで」にも数えない**（同盟の Ally と同型）。
-- **`Kabuki` というカードは旭日に存在しない**（正しくは **`tea_house`＝茶屋**）。過去に混入した誤り＝戻さないこと。
-- **rice は $7・samurai は $6**（研究の指示書が逆になっていた経緯あり）。**負債コストは `cost:0, debt:N`**。
-- **`permanentDurationCounts(p)` が永続持続の唯一の正本**（侍 samurai もここに足す）。
-- **予言の効果は `prophecyActive` で書く**（`hasProphecy` は準備処理専用＝ゲーム開始直後から真になる）。
-  **発動フックで `state.pending` を直接立てない**＝`queueProphecy` に積む（前兆6種のうち4種が直後に窓を開いて上書きする）。
-- **回帰テストは必ずバグ注入で感度を確かめる**（R1 では自分のテストが注入4種を素通りしていた＝レビューが実証）。
-- **影(Shadow)を「手札から使わせる」窓に足すときは4面を必ず同時に**（窓を開く条件・受理・CPU候補・UIフィルタ）。
-  R2 では受理側だけ6窓しか直っておらず、**市場の町で本番 livelock**（CPUソークで48戦中4戦の膠着）を出した。
-  `test/risingsun.test.js` の `A_WINDOWS` 表がこれを構造的に守る＝**新しい窓は表に1行足す**。
-- **`playCardNoAction` に `p.deck` を素で渡さない**（`fromHand` が偽になり航海の3枚制限・将軍・`handPlays` が
-  黙って無効化される）＝**必ず `playPlayable`** を使う。
+- 🛑 **レビューエージェントを走らせる前に必ずコミットする**。2026-08-21 に、走らせたエージェントの1体が
+  `git checkout` で**私の未コミット修正（engine.js / ui.js）を丸ごと巻き戻した**。
+  「コードを変更するな」と指示しても起こる＝**未コミットの作業を抱えたままレビューを投げない**。
+  また API エラーで数体が落ちるので、**重要な検証は自分でもやる**。
+- 🛑 **`node -e "..."` の中で日本語やテンプレートリテラルを含む複数行置換をしない**（シェル展開で壊れる）。
+  Edit ツールを使うか、Write でパッチスクリプトを作ってから実行する。
+  **作業ツリーは CRLF** なので、スクリプトで複数行検索するときは `.replace(/\r\n/g,'\n')` で正規化する。
+- **予言(Prophecy)の効果は必ず `prophecyActive(state, id)` で書く**（`hasProphecy` は準備処理専用）。
+  **発動フックで `state.pending` を直接立てない**＝`queueProphecy` に積む。
+- **§E の一般則**＝「後（After／たび）」型は起動した前兆自身も恩恵を受ける（偉大な指導者・来寇）／
+  「先に（first）」型は受けない（豊作）。**略奪の "next time" 型とは正反対**。
+- **`modalGainSupply` の辞退ボタンは第6引数 `skipOnEmpty` に関数が要る**
+  （第7引数 `alwaysSkip: true` だけでは絶対に出ない＝賛辞で [high] を踏んだ）。
+- **`modalSingleHand` の skip は `{label,on}` 必須**（boolean `true` は押せない死にボタン）。
+- **`finishGain` は pending を残したまま `gain()` を呼ぶ**＝獲得時対話（望楼など）が `!state.pending` ゲートで
+  潰れる。**複数枚を連続で獲得する効果は植民(Populate)型**（pending を先に閉じてから `gain`）にする。
+- **`finishGain` / `takePlayable` / `playPlayable` は boolean を返す**＝`return finishGain(...)` は禁止。
+- **効果で負債を得るときは `addDebt`**（`takeDebt` はコスト欄を読むので効果では黙って0）。
 - **群A（最終的に場に出る窓）と群B（捨てる/廃棄する/脇に置く/山に戻す窓）を混同しない**。
-  群Bに `handPlayable` / `takePlayable` / `playPlayable` を使うと**山札の影札を廃棄できてしまう**（公式違反）。
-- **`finishGain` / `takePlayable` / `playPlayable` は boolean を返す**（state ではない）＝
-  **`return finishGain(...)` と書くと `reduce` が state を返さなくなり、オンラインなら部屋が丸ごと壊れる**
-  （R3 で実際に踏み、保存則 fuzz が捕捉した）。正しくは `if (!finishGain(...)) return state;`。
-- **効果で負債を得るときは `addDebt(state, pi, n)`**（`takeDebt` はコスト欄を読むので効果では黙って0になる）。
+  群Aは `test/risingsun.test.js` の `A_WINDOWS` 表（19窓）が4面整合を自動検査する＝**新しい窓は表に1行足す**。
+- **新しいカードを engine に足したら CPU の `chooseAction` にも足す**（R4a/R6 の7種を入れ忘れて
+  「CPU が一度も使わない＝ソークが経路を検証しない」状態になった）。
 - **`c:\tmp` には本業の `LiS_AF_資料一式` があるので一括削除しない**。
   旭日の一次資料は `C:/tmp/risingsun_research/`（ルールブックPDF・wiki 出力・8群の doc・`g0_jp_pairs.md`）。
+  正本＝`docs/research/risingsun_rules.md`（847KB）。
