@@ -52,6 +52,96 @@ console.log('=== R4 共通：予言は「カード」ではない／発動前は
   ok((DOM.PROPHECIES_RISINGSUN || []).length === 15, '予言は15種');
 }
 
+/* 川の社(River Shrine) は R3 で漏れていて R4a で足した前兆＝公式FAQ 4件を固定する。
+   （予言ではないが、この4件は「クリンナップ開始時」バケツの順序＝好機到来と直接絡む） */
+console.log('=== R4a: 川の社（River Shrine）の公式FAQ 4件 ===');
+{
+  const KR = ['river_shrine', 'tea_house', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'mine'];
+  const mkR = () => E.createInitialState([{ name: 'A' }, { name: 'B', isCpu: true }], KR.slice(), { startActive: 0 });
+  /* ① `It's cumulative, two River Shrines will gain you two cards.` */
+  {
+    let s = mkR();
+    s.turn.phase = 'action'; s.turn.actions = 3;
+    s.players[0].hand = ['river_shrine', 'river_shrine']; s.players[0].inPlay = []; s.players[0].discard = [];
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'river_shrine' });
+    s = E.reduce(s, { type: 'RIVER_SHRINE_TRASH', cards: [] });
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'river_shrine' });
+    s = E.reduce(s, { type: 'RIVER_SHRINE_TRASH', cards: [] });
+    s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+    s = E.reduce(s, { type: 'END_TURN' });
+    let n = 0;
+    while (s.pending && s.pending.type === 'river_shrine_gain' && n < 5) {
+      n++; s = E.reduce(s, { type: 'RIVER_SHRINE_GAIN', card: 'silver' });
+    }
+    ok(n === 2, '川の社2枚＝**累積**して2回獲得する（実: ' + n + '）');
+  }
+  /* ② `Trashing cards with this is optional; you can gain a card even if you didn't trash any cards.` */
+  {
+    let s = mkR();
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    s.players[0].hand = ['river_shrine', 'estate']; s.players[0].inPlay = []; s.players[0].discard = [];
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'river_shrine' });
+    s = E.reduce(s, { type: 'RIVER_SHRINE_TRASH', cards: [] });
+    ok(s.trash.length === 0 && s.pending == null, '廃棄は任意＝0枚でも受理する');
+    s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+    s = E.reduce(s, { type: 'END_TURN' });
+    ok(s.pending && s.pending.type === 'river_shrine_gain', '1枚も廃棄しなくても獲得の窓は開く');
+  }
+  /* ③ `It doesn't matter if you gained cards in your Action phase, only if you did in your Buy phase.` */
+  {
+    let s = mkR();
+    s.turn.phase = 'action'; s.turn.actions = 2;
+    s.players[0].hand = ['river_shrine', 'workshop']; s.players[0].inPlay = []; s.players[0].discard = [];
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'river_shrine' });
+    s = E.reduce(s, { type: 'RIVER_SHRINE_TRASH', cards: [] });
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'workshop' });   // アクションフェイズに獲得
+    let g = 0; while (s.pending && g++ < 30) { const a = DOM.cpu.decide(s); if (!a) break; s = E.reduce(s, a); }
+    s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+    s = E.reduce(s, { type: 'END_TURN' });
+    ok(s.pending && s.pending.type === 'river_shrine_gain', 'アクションフェイズの獲得は関係ない（窓は開く）');
+  }
+  /* ④ 購入フェイズに1枚でも獲得していたら開かない。
+     ⚠ 判定は **`t.buyPhaseGained`**（ターン中一度も落ちない）＝継続(Continue)で購入フェイズが複数あっても
+        「そのどれかで獲得したか」になる（公式FAQ #4）。隣の `t.bpGained` を掴むと公式違反。 */
+  {
+    let s = mkR();
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    s.players[0].hand = ['river_shrine']; s.players[0].inPlay = []; s.players[0].discard = [];
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'river_shrine' });
+    s = E.reduce(s, { type: 'RIVER_SHRINE_TRASH', cards: [] });
+    s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+    s.turn.coins = 3; s.turn.buys = 1;
+    s = E.reduce(s, { type: 'BUY', card: 'silver' });             // 購入フェイズに獲得
+    s = E.reduce(s, { type: 'END_TURN' });
+    ok(s.pending == null, '購入フェイズに獲得していたら窓は開かない');
+  }
+  /* ④' 公式FAQ #4＝`If you have multiple Buy phases, such as via Continue, River Shrine only gains you a card
+     if you didn't gain a card in **any** of those Buy phases.`
+     🛑 これが **`t.bpGained` を掴んではいけない**理由＝`bpGained` は `END_ACTION_PHASE` で 0 に戻るので、
+        継続でアクションフェイズに戻ってからもう一度購入フェイズに入ると**リセットされて窓が開いてしまう**
+        （`t.buyPhaseGained` はターン中一度も落ちない）。 */
+  {
+    let s = E.createInitialState([{ name: 'A' }, { name: 'B', isCpu: true }],
+      ['river_shrine', 'tea_house', 'workshop', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'mine'],
+      { startActive: 0, events: ['continue'] });
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    s.players[0].hand = ['river_shrine']; s.players[0].inPlay = []; s.players[0].discard = [];
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'river_shrine' });
+    s = E.reduce(s, { type: 'RIVER_SHRINE_TRASH', cards: [] });
+    s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+    s.turn.coins = 3; s.turn.buys = 3;
+    s = E.reduce(s, { type: 'BUY', card: 'silver' });          // 1回目の購入フェイズで獲得した
+    ok(s.turn.buyPhaseGained === true, '1回目の購入フェイズで獲得した印が立つ');
+    s = E.reduce(s, { type: 'BUY_EVENT', event: 'continue' }); // → アクションフェイズへ戻る
+    let g = 0; while (s.pending && g++ < 30) { const a = DOM.cpu.decide(s); if (!a) break; s = E.reduce(s, a); }
+    ok(s.turn.phase === 'action', '継続でアクションフェイズに戻っている');
+    s = E.reduce(s, { type: 'END_ACTION_PHASE' });             // ← ここで t.bpGained が 0 に戻る
+    s = E.reduce(s, { type: 'END_TURN' });
+    ok(s.pending == null,
+      '継続で購入フェイズが2回になっても「どちらかで獲得した」なら窓は開かない（bpGained を掴むとここで開く）');
+  }
+}
+
 console.log('=== R4: 官僚制（Bureaucracy）===');
 {
   let s = on('bureaucracy');
