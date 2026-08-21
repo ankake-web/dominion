@@ -18,10 +18,9 @@
 
 ## 次にやる具体的タスク
 ### 優先1＝**絵（webp）50枚の回収**（ユーザーの作業が要る）
-**旭日50枚だけが枠＋文字**（他の761枚は絵入り）。ChatGPT への**指示文5バッチは作成済み**：
-`C:\Users\b1242\AppData\Local\Temp\claude\c--Users-b1242-claude-game-dominion\10959e90-de34-4f02-bf8c-abac06d1364e\scratchpad\risingsun_art_prompts.md`
-（scratchpad はセッション固有なので**消えていたら作り直す**＝内容は「和風（戦国〜江戸期）・油彩・4:3・
-1カード1画像」＋50種の主題リスト。作り方はメモリ `chatgpt-card-art-workflow`）。
+**旭日50枚だけが枠＋文字**（他の761枚は絵入り）。ChatGPT への**指示文5バッチは作成済み・リポジトリ内**：
+**`docs/research/risingsun_art_prompts.md`**（1バッチ10枚 × 5。そのままチャットに貼る）。
+作り方の流儀はメモリ `chatgpt-card-art-workflow`。
 - ⚠ **連番＝生成順を信用せず、全候補から全単射で判別する**（過去に取り違えが起きている）。
 - ⚠ 紛らわしいペア＝**侍／忍者／大名／浪人**（全部「武士」系）・**山の社／川の社**・**茶屋／魚屋**。
 - 回収＝`asset/art/<id>.png` → `CARDS_ONLY=<ids> node tools/build-cards.js`（王国25）／

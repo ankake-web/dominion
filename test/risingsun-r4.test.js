@@ -420,6 +420,38 @@ console.log('=== R4: 神風（Divine Wind）＝準備手順がゲーム中に再
   ok(s.supply.copper != null && s.supply.province != null && s.supply.curse != null, '基本カードの山は撤去しない');
   ok(s.prophecy === 'divine_wind' && s.prophecyOn === true, '**予言は配り直さない**（公式は Ally しか名指ししていない）');
   ok(!E.canReturnToPile(s, old[1]), '撤去した山にはカードを戻せない（濡女／狼狽が湧かない）');
+  /* 🛑 **保存則ハーネスの盲点を塞ぐ独立した不変条件**（敵対レビューの指摘）。
+     `test/invariants.test.js` は神風が起きたら `state.kingdomEpoch` を見て **基準を全面リセット**するので、
+     「神風による正当な撤去」と「同時に起きた別の複製/消失バグ」を**原理的に区別できない**。
+     そこで別軸で固定する＝**神風はサプライしか触らない**＝
+     「全プレイヤーの所有カード＋廃棄置き場は1枚も動かない」。 */
+  {
+    const KD2 = ['tea_house', 'village', 'smithy', 'market', 'laboratory', 'festival', 'militia', 'moat', 'cellar', 'mine'];
+    const tallyOwned = (st) => {
+      const t = {};
+      st.players.forEach((pl) => E.allCards(pl).forEach((c) => { t[c] = (t[c] || 0) + 1; }));
+      (st.trash || []).forEach((c) => { t[c] = (t[c] || 0) + 1; });
+      return JSON.stringify(Object.keys(t).sort().map((k) => k + ':' + t[k]));
+    };
+    let bad = 0, fired = 0;
+    for (let i = 0; i < 12; i++) {
+      let g = E.createInitialState([{ name: 'A', isCpu: true }, { name: 'B', isCpu: true }], KD2.slice(),
+        { prophecy: 'divine_wind', startActive: 0 });
+      // 数ターン進めてデッキ・捨て札・廃棄置き場に中身を作ってから発動させる。
+      let step = 0;
+      while (!g.gameOver && step++ < 40) { const a = DOM.cpu.decide(g); if (!a) break; g = E.reduce(g, a); }
+      if (g.gameOver) continue;
+      g.sunTokens = 1;
+      const before = tallyOwned(g);
+      const who = g.turn.active;
+      E.removeSun(g, who);            // ← ここで神風が発火する
+      if ((g.kingdomEpoch || 0) === 0) continue;
+      fired++;
+      if (tallyOwned(g) !== before) bad++;
+    }
+    ok(fired > 0, '神風の発動をソークで再現できた（' + fired + '回）');
+    ok(bad === 0, '神風は「全プレイヤーの所有カード＋廃棄置き場」を1枚も動かさない（違反 ' + bad + '件）');
+  }
   // CPU が神風の後も最後まで走れる（人間が詰まない／livelock しない）。
   let done = 0;
   for (let np = 2; np <= 4; np++) {
