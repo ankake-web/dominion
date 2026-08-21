@@ -713,6 +713,167 @@ console.log('=== R5/R6 敵対レビューの回帰 ===');
   }
 }
 
+console.log('=== R5: イベントの公式FAQ 検算（蓄積／苦行／信用／海上交易）===');
+{
+  const KR = DOM.KINGDOM_RISINGSUN;
+  const mk2 = (K, opt) => E.createInitialState([{ name: 'A' }, { name: 'B', isCpu: true }], K.slice(),
+    Object.assign({ startActive: 0 }, opt || {}));
+  const buyEv = (s, ev) => { s.turn.phase = 'buy'; s.turn.buys = 1; return E.reduce(s, { type: 'BUY_EVENT', event: ev }); };
+
+  /* 蓄積（Amass）＝公式FAQ 逐語
+     `Duration cards in play that were played on previous turns will stop Amass from gaining an Action card.`
+     `Cards you played this turn but which are no longer in play, such as Horse, will not.`
+     ＝**場の実物だけを見る**（`inPlay` ＋ `durationCards`）。プレイ履歴カウンタを見てはいけない。 */
+  {
+    let s = mk2(KR, { events: ['amass'] }); s.turn.coins = 2;
+    s.players[0].inPlay = []; s.players[0].durationCards = [];
+    s = buyEv(s, 'amass');
+    ok(s.pending && s.pending.type === 'amass_gain', '蓄積：場にアクション0枚 → 窓が開く');
+
+    let s2 = mk2(KR, { events: ['amass'] }); s2.turn.coins = 2;
+    s2.players[0].inPlay = []; s2.players[0].durationCards = ['fishmonger'];
+    s2 = buyEv(s2, 'amass');
+    ok(s2.pending == null, '蓄積：**前のターンに使った持続**が場にあると空振り（公式FAQ が名指し）');
+
+    /* 🛑 `p.durationCards` には永続持続（雇人／チャンピオン／尽きぬ杯／操舵手／王子）が**居座る**＝
+       1枚でも場に出したら蓄積はそれ以降ほぼ永久に空振りする（逆に海上交易は永久に強くなる）。 */
+    let s3 = mk2(KR, { events: ['amass'] }); s3.turn.coins = 2;
+    s3.players[0].inPlay = []; s3.players[0].durationCards = ['hireling'];
+    s3 = buyEv(s3, 'amass');
+    ok(s3.pending == null, '蓄積：永続持続（雇人）でも空振り');
+
+    let s4 = mk2(KR, { events: ['amass'] }); s4.turn.coins = 2;
+    s4.players[0].inPlay = ['gold', 'silver']; s4.players[0].durationCards = [];
+    s4 = buyEv(s4, 'amass');
+    ok(s4.pending && s4.pending.type === 'amass_gain', '蓄積：場が財宝だけなら獲得できる（悟り無し）');
+
+    // 悟り(Enlightenment) が発動していれば場の財宝も「アクション」＝空振り（海上交易と同じ述語 `isActionFor`）。
+    let s5 = mk2(KR, { events: ['amass'] });
+    s5.prophecy = 'enlightenment'; s5.sunTokens = 0; s5.prophecyOn = true;
+    s5.turn.coins = 2; s5.players[0].inPlay = ['gold']; s5.players[0].durationCards = [];
+    s5 = buyEv(s5, 'amass');
+    ok(s5.pending == null, '蓄積：悟り発動中は場の財宝もアクション＝空振り');
+  }
+
+  /* 苦行（Asceticism）＝`Pay any amount of $ to trash that many cards from your hand.`
+     公式FAQ＝`you could pay an additional $3 — so $5 total — and trash 3 cards`（$2 を払った**後**の追加）。
+     🛑 過払い(Overpay) 機構に乗せてはいけない（wiki が `its text doesn't use that term` と明示）。
+     ⚠ 【裁定未確認】手札枚数を超えて払えるかの公式文が無い＝`min(残コイン, 手札枚数)` に丸める安全側。 */
+  {
+    let s = mk2(KR, { events: ['asceticism'] }); s.turn.coins = 7;
+    s.players[0].hand = ['copper', 'estate'];
+    s = buyEv(s, 'asceticism');
+    ok(s.pending && s.pending.type === 'asceticism_pay' && s.pending.max === 2,
+      '苦行：上限は min(残コイン5, 手札2)=2（実: ' + (s.pending && s.pending.max) + '）');
+    const z = E.reduce(s, { type: 'ASCETICISM_PAY', amount: 0 });
+    ok(z.pending == null && z.turn.coins === 5, '苦行：0 を選べる（"any amount"＝払わないのも合法）');
+    ok(E.reduce(s, { type: 'ASCETICISM_PAY', amount: 3 }).pending.type === 'asceticism_pay', '苦行：上限超えは拒否');
+    const p2 = E.reduce(s, { type: 'ASCETICISM_PAY', amount: 2 });
+    ok(p2.turn.coins === 3 && p2.pending.type === 'asceticism_trash' && p2.pending.need === 2,
+      '苦行：追加$2 を支払って2段目が need=2 で開く');
+    ok(E.reduce(p2, { type: 'ASCETICISM_TRASH', cards: ['copper'] }).pending.type === 'asceticism_trash',
+      '苦行：ちょうど N 枚でなければ拒否（強制）');
+    const p3 = E.reduce(p2, { type: 'ASCETICISM_TRASH', cards: ['copper', 'estate'] });
+    ok(p3.pending == null && p3.players[0].hand.length === 0, '苦行：ちょうど2枚廃棄された');
+
+    let s6 = mk2(KR, { events: ['asceticism'] }); s6.turn.coins = 7; s6.players[0].hand = [];
+    s6 = buyEv(s6, 'asceticism');
+    ok(s6.pending == null, '苦行：手札0枚なら窓を開かない');
+
+    // 廃棄は1枚ずつ（礼拝堂/神殿と揃える）＝`trashCard` を通るので城塞が手札に戻る。
+    let s7 = mk2(['fortress', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'mine', 'laboratory', 'festival'],
+      { events: ['asceticism'] });
+    s7.turn.coins = 4; s7.players[0].hand = ['fortress', 'copper'];
+    s7 = buyEv(s7, 'asceticism');
+    s7 = E.reduce(s7, { type: 'ASCETICISM_PAY', amount: 2 });
+    s7 = E.reduce(s7, { type: 'ASCETICISM_TRASH', cards: ['fortress', 'copper'] });
+    ok(s7.players[0].hand.indexOf('fortress') >= 0, '苦行：城塞は廃棄されても手札に戻る（trashCard を通っている）');
+  }
+
+  /* 信用（Credit）＝`Gain an Action or Treasure costing up to $8. +D equal to its cost.`
+     公式FAQ＝`This can't gain cards with D in the cost.` / `It also can't gain cards with P in the cost.`
+     🛑 **夜行カードの除外リストを書いてはいけない**＝人狼（アクション+夜行+アタック+不運）は
+        `Gain an Action or Treasure` に合致する＝**取れるのが正しい**（mix-all で今日到達可能）。 */
+  {
+    let s = mk2(['werewolf', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'mine', 'laboratory', 'festival'],
+      { events: ['credit'] });
+    s.turn.coins = 2; s = buyEv(s, 'credit');
+    const okC = E.creditCanGain(s);
+    ok(okC('werewolf'), '信用：人狼（アクション+夜行）は取れる＝夜行の除外リストを書いていない');
+    ok(okC('gold') && !okC('province'), '信用：財宝は取れる／勝利点は取れない');
+    ok(E.reduce(s, { type: 'CREDIT_GAIN', card: 'werewolf' }).players[0].debt === 5, '信用：人狼($5)で負債5');
+
+    ok(!E.creditCanGain(mk2(['engineer', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'mine',
+      'laboratory', 'festival'], { events: ['credit'] }))('engineer'), '信用：負債コスト（技術者）は取れない（公式）');
+    ok(!E.creditCanGain(mk2(['transmute', 'vineyard', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar',
+      'mine', 'laboratory'], { events: ['credit'] }))('transmute'), '信用：ポーション費用（変成）は取れない（公式）');
+
+    /* 公式FAQ 逐語＝`If the gained card's cost changes when you gain it (e.g., the card is Destrier),
+       take D based on the **new** cost, not the old cost.`
+       ⚠ 本アプリの既存慣行（現場監督＝獲得**前**のコスト）と**逆**＝共通ヘルパに寄せてはいけない。 */
+    let s5 = mk2(['destrier', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'mine', 'laboratory',
+      'festival'], { events: ['credit'] });
+    s5.turn.coins = 2; s5.turn.gainedThisTurn = [];
+    const before = E.cardCost(s5, 'destrier');
+    s5 = buyEv(s5, 'credit');
+    s5 = E.reduce(s5, { type: 'CREDIT_GAIN', card: 'destrier' });
+    ok(before === 6 && E.cardCost(s5, 'destrier') === 5, 'デストリエは獲得でコストが 6→5 に下がる');
+    ok(s5.players[0].debt === 5, '信用：負債は**獲得後**の 5（獲得前の6ではない）＝公式');
+
+    /* 公式FAQ 逐語＝`If you play Possession and have them buy Credit, they don't gain the card (you do),
+       which means there's **no D given to any player**.` ＝§0-23 の「負債は支配者が負う」と正面から逆。 */
+    let s6 = mk2(['werewolf', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'mine', 'laboratory',
+      'festival'], { events: ['credit'] });
+    s6.turn.coins = 2; s6.turn.possessedBy = 1;
+    s6 = buyEv(s6, 'credit');
+    s6 = E.reduce(s6, { type: 'CREDIT_GAIN', card: 'werewolf' });
+    ok((s6.players[0].debt || 0) === 0 && (s6.players[1].debt || 0) === 0,
+      '信用：支配(Possession) 中は**どのプレイヤーも**負債を負わない（公式）');
+  }
+
+  /* 海上交易（Sea Trade）＝`+1 Card per Action card you have in play. Trash up to that many cards from your hand.`
+     🛑 公式FAQ 逐語＝`Draw that many cards, then trash up to **that many** cards`
+        ＝廃棄の上限は「**最初に数えた場のアクション枚数**」であって「実際に引けた枚数」ではない。
+        ここを「引いた枚数」で書くと**静かに弱くなり、テストでも気づきにくい**（正本が回帰テストを名指し）。 */
+  {
+    let s = mk2(KR, { events: ['sea_trade'] }); s.turn.coins = 4;
+    s.players[0].inPlay = ['village', 'smithy', 'market'];
+    s.players[0].hand = ['copper', 'copper', 'estate', 'estate'];
+    s.players[0].deck = []; s.players[0].discard = [];      // 山札も捨て札も空＝1枚も引けない
+    s = buyEv(s, 'sea_trade');
+    ok(s.pending && s.pending.max === 3,
+      '海上交易：1枚も引けなくても廃棄の上限は3（実: ' + (s.pending && s.pending.max) + '）');
+    ok(E.reduce(s, { type: 'SEA_TRADE_TRASH', cards: ['copper', 'copper', 'estate'] }).players[0].hand.length === 1,
+      '海上交易：上限どおり3枚廃棄できる');
+
+    // -1カードトークン（遺物／借入）は `draw()` 冒頭で1枚食う＝引けるのは2枚。それでも上限は3。
+    let s2 = mk2(KR, { events: ['sea_trade'] }); s2.turn.coins = 4;
+    s2.players[0].inPlay = ['village', 'smithy', 'market'];
+    s2.players[0].hand = ['copper', 'copper', 'estate'];
+    s2.players[0].deck = ['gold', 'gold', 'gold', 'gold']; s2.players[0].discard = [];
+    s2.players[0].minusCard = true;
+    const h0 = s2.players[0].hand.length;
+    s2 = buyEv(s2, 'sea_trade');
+    ok(s2.players[0].hand.length - h0 === 2, '海上交易：-1カードトークンで3枚指示のうち2枚しか引けない');
+    ok(s2.pending && s2.pending.max === 3, '海上交易：それでも廃棄の上限は3（正本が名指しした回帰）');
+    ok((s2.players[0].minusCard || false) === false, '海上交易：-1カードトークンは消費される');
+    ok(E.reduce(s2, { type: 'SEA_TRADE_TRASH', cards: [] }).pending == null, '海上交易：0枚で確定できる（任意）');
+    ok(E.reduce(s2, { type: 'SEA_TRADE_TRASH', cards: ['copper', 'copper', 'estate', 'gold'] }).pending != null,
+      '海上交易：上限超えは拒否');
+
+    let s5 = mk2(KR, { events: ['sea_trade'] }); s5.turn.coins = 4;
+    s5.players[0].inPlay = ['gold']; s5.players[0].durationCards = [];
+    s5 = buyEv(s5, 'sea_trade');
+    ok(s5.pending == null, '海上交易：場にアクション0枚なら窓を開かない（開くと閉じられず人間が詰む）');
+
+    let s6 = mk2(KR, { events: ['sea_trade'] }); s6.turn.coins = 4;
+    s6.players[0].inPlay = []; s6.players[0].durationCards = ['hireling', 'hireling'];
+    s6.players[0].hand = ['copper']; s6.players[0].deck = ['gold', 'gold', 'gold'];
+    s6 = buyEv(s6, 'sea_trade');
+    ok(s6.pending && s6.pending.max === 2, '海上交易：持続カードも「場のアクション」に数える（蓄積の裏返し）');
+  }
+}
+
 console.log('\n========================================');
 console.log('旭日R4テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');
