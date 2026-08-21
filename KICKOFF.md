@@ -5,16 +5,18 @@
 スマホ向けドミニオン対戦Webアプリの続き。作業ディレクトリ＝`c:\Users\b1242\claude\game\dominion`（branch `main`）。回答は日本語で、フランクに短く。
 
 ## まず最初にやること
-1. `npm test` を実行して **全48スイート緑（exit 0・整合性5561・不変条件12・旭日498＋旭日R4 113＋旭日UI 96）** を確認する。
-2. **`PROGRESS.md` の §0-37（今ここ）／§5／§6 を読む。** 旭日の細部は §0-33〜§0-36 に、
+1. `npm test` を実行して **全48スイート緑（exit 0・整合性5561・不変条件12・旭日498＋旭日R4 183＋旭日UI 96）** を確認する。
+2. **`PROGRESS.md` の §0-38（今ここ）／§0-37／§5／§6 を読む。** 旭日の細部は §0-33〜§0-36 に、
    広い過去文脈は `docs/handover.md` に。
-3. **未pushが23コミットある**（`git log origin/main..HEAD`）＝**旭日の段階1＋段階2 R1〜R7＋敵対レビュー修正**。
+3. **未pushが35コミットある**（`git log origin/main..HEAD`）＝**旭日の段階1＋段階2 R1〜R7＋敵対レビュー修正2巡**。
    **push はユーザーに確認してから**（勝手に push しない）。
 
 ## いまの状態（1行）
 **旭日（Rising Sun）は完成した**＝17拡張＋プロモ＝**811枚（縦型585＋横型226）が実プレイ可能**。
 `DOM.CARD_SETS` に `risingsun`（固定10種）／`risingsun-events`／`random-risingsun` があり、**mix-all も17拡張**。
-**残っているのは「絵50枚の回収」と「push」だけ**（`sw.js` は **v81**）。
+**残っているのは「絵50枚の回収」と「push」だけ**（`sw.js` は **v82**）。
+**§0-38 で予言15種の敵対レビュー2体＋イベント10種の自前検算をやり、確定12件を全修正した**
+（[high]＝**山に戻せないカードを場から抜いてゲームから消す**保存則違反が3箇所）。
 
 ## 次にやる具体的タスク
 ### 優先1＝**絵（webp）50枚の回収**（ユーザーの作業が要る）
@@ -44,7 +46,7 @@ push すると本番 Pages/Render に旭日が出る。**本番反映は機械�
 - **バグは必ず node で再現してから直す**／**回帰テストはバグ注入で感度を確かめる**。
 - **engine を締めたら CPU と UI も同じコミットで直す**（窓・受理・CPU候補・UIフィルタの4面）。
   新しい pending は**4点セット必須**（engine reducer＋`PLAYER_ACTIONS`＋CPU `decidePending`＋UI `viewPendingModal`）。
-- **client 資産（js/css/webp/sw）を変えたら `sw.js` の VERSION を上げる**（今 **v81**）。
+- **client 資産（js/css/webp/sw）を変えたら `sw.js` の VERSION を上げる**（今 **v82**）。
 - 使い捨てスクリプトは**プロジェクト直下に `_*.tmp.js`** で作り**実行後必ず削除**（`_*` は gitignore 済み）。
 - **push はユーザー確認**（コミットは自由）。
 - **日本語wiki（wikiwiki.jp）は並列で叩くと 429 で全滅する**＝エージェントに触らせず自分で逐次に取る。
@@ -68,6 +70,13 @@ push すると本番 Pages/Render に旭日が出る。**本番反映は機械�
   潰れる。**複数枚を連続で獲得する効果は植民(Populate)型**（pending を先に閉じてから `gain`）にする。
 - **`finishGain` / `takePlayable` / `playPlayable` は boolean を返す**＝`return finishGain(...)` は禁止。
 - **効果で負債を得るときは `addDebt`**（`takeDebt` はコスト欄を読むので効果では黙って0）。
+- 🛑 **「山に戻す」効果は必ず `canReturnToPile` を先に確認してから場から抜く**（窓を開く側も同じ述語）。
+  確認せずに `removeOne`→`returnToPile` すると**カードがゲームから消滅する**（闇市場で買った札・神風で撤去された山）。
+- 🛑 **神風に派生セットアップを足すときは `applyDivineWind` の ⑤ ブロックにも足す**
+  （`createInitialState` が `initSupply` の**外**でやっている 廃墟／馬／災いカード／川船の脇札 は手動）。
+- **「財宝を使用した」ときのフックは `noteTreasurePlayedForProphecy` の1箇所に書く**
+  （`playTreasureCard` だけに書くと `playCardNoAction` 経由が全部落ちる）。
+- **`t.bpGained` は `END_ACTION_PHASE` で 0 に戻る**＝「このターン購入フェイズに獲得したか」は `t.buyPhaseGained`。
 - **群A（最終的に場に出る窓）と群B（捨てる/廃棄する/脇に置く/山に戻す窓）を混同しない**。
   群Aは `test/risingsun.test.js` の `A_WINDOWS` 表（19窓）が4面整合を自動検査する＝**新しい窓は表に1行足す**。
 - **新しいカードを engine に足したら CPU の `chooseAction` にも足す**（R4a/R6 の7種を入れ忘れて
