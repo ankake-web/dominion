@@ -3035,7 +3035,12 @@ mix を解禁すると、PROGRESS §6 / §0-10 に**「どの出荷 CARD_SET で
 最終更新: 2026-08-22 / branch `main`（最新は `git log` で確認）。
 
 **【現在地】§0-40＝「世の中に出ている全カード」との差分を監査＝残りは 33種 ＋ Arcana。旭日の絵50枚も回収済み**
-（`sw.js` **v83**・未pushは `git log origin/main..HEAD` で確認）。
+（`sw.js` **v83**・**push 済み（2026-08-22・46コミット・`892af1d..b747e80`）＝本番反映を機械照合済み**）。
+✅ **push 後の本番照合**＝Pages の Deploy success／`sw.js` **v83**／`js/cards.js`・`engine.js`・`cpu.js`・`ui.js`・
+`carddata.js`・`css/style.css`・`sw.js` の **7本が sha1 完全一致**／旭日 webp 5枚＋仮面舞踏会が**バイト一致**／
+Render `GET /status`＝`{"persist":true,"rooms":0}`／**実 ws で `setConfig kingdomSet=risingsun` が受理され、
+固定10種 10/10・予言(progress)・Sun 5・川船の脇札(small_castle)・相手手札マスク が全部正常**
+＝**本番で17拡張＋プロモ＝811枚が絵入りで遊べる状態になった**。
 **2026-08-22＝旭日50枚の絵を回収して webp を焼き直した**（Codex 経由の zip＋manifest.csv・50/50 一致・
 縦型110〜198KB／横型67〜119KB＝全枚絵入り・モンタージュで全50枚目視）＝**実装済み811枚すべてに絵が入った**。
 push 前の検証＝`npm test` 全48スイート緑（整合性5564）／`verify:e2e` 既定9/9・旭日11/11／`verify:visual` はみ出し0／
