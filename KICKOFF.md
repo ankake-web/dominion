@@ -12,6 +12,9 @@
    **push はユーザーに確認してから**（勝手に push しない）。
 
 ## いまの状態（1行）
+**§0-40 で「世の中に出ている全カード」との差分を監査した＝残りは 33種 ＋ Arcana**
+（海辺 第1版8／繁栄 第1版9／収穫祭＆ギルド 第2版14／プロモ2）。詳細は PROGRESS §0-40。
+
 **旭日（Rising Sun）は完成した**＝17拡張＋プロモ＝**811枚（縦型585＋横型226）が実プレイ可能**。
 `DOM.CARD_SETS` に `risingsun`（固定10種）／`risingsun-events`／`random-risingsun` があり、**mix-all も17拡張**。
 **残っているのは「絵50枚の回収」と「push」だけ**（`sw.js` は **v82**）。
@@ -37,6 +40,12 @@ push すると本番 Pages/Render に旭日が出る。**本番反映は機械�
 （`sw.js` の VERSION／`js/*.js` の sha1 一致／webp のバイト一致／Render は `GET /status` と実 ws）。
 ⚠ **Pages のデプロイがゾンビ化して以後を全部 400 で弾くこと**がある＝
 `gh api -X POST repos/ankake-web/dominion/pages/deployments/<旧SHA>/cancel` で解除（§6 に手順）。
+
+### 優先3＝**未実装33種の実装**（PROGRESS §0-40 の表）
+海辺 第1版8・繁栄 第1版9・プロモ2 は既存機構でほぼ書ける。
+🛑 **最重量は収穫祭＆ギルド第2版の Ferryman**＝「$3〜$4 の王国カード1山をサプライ外に置く」
+＝本アプリに前例の無い非サプライ機構。褒賞(Reward)6種は賞品(Prizes)と同型。
+⚠ **日本語名の誤り14件と `harem`→`Farm` 改名は webp 再生成が要る**＝旭日の絵入れとまとめてやる。
 
 ### その先
 **第17拡張 Arcana**（2026年予定・500枚・王国37山・Study/Cart/Project）は
