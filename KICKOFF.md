@@ -42,6 +42,8 @@ push すると本番 Pages/Render に旭日が出る。**本番反映は機械�
 `gh api -X POST repos/ankake-web/dominion/pages/deployments/<旧SHA>/cancel` で解除（§6 に手順）。
 
 ### 優先3＝**未実装33種の実装**（PROGRESS §0-40 の表）
+✅ **19種（海辺 第1版8／繁栄 第1版9／プロモ2）の段階0は完了**＝正本 `docs/research/missing19_rules.md`（308KB）。
+   **着手前に冒頭の「実装前に必読」12項目＋重大な訂正2件を必ず読む**。
 海辺 第1版8・繁栄 第1版9・プロモ2 は既存機構でほぼ書ける。
 🛑 **最重量は収穫祭＆ギルド第2版の Ferryman**＝「$3〜$4 の王国カード1山をサプライ外に置く」
 ＝本アプリに前例の無い非サプライ機構。褒賞(Reward)6種は賞品(Prizes)と同型。
