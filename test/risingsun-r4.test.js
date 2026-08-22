@@ -1196,6 +1196,72 @@ console.log('=== R4/R5: maskStateFor（オンラインの情報漏洩）と旧�
   }
 }
 
+console.log('=== R4: サーバの「購入だけは同意なしで戻せる」が旭日でも安全側に倒れる ===');
+/* §0-24 の `isNoConsentUndoableBuy` は「選択待ちゼロ・自分の山札と手札が不変・**相手の state が完全一致**・
+   伏せ札の山が不変」を全部満たすときだけ同意不要にする。旭日の購入で動く state を分類して固定する。
+   ⚠ 予言15種×4シードの実測（購入2,076回）では、同意不要で通るのは
+     「旭日の state が動かない 1,833回」＋「**厳冬の `pileDebt`** が動く 110回」だけだった。
+     `pileDebt` は**盤面にバッジで出る公開情報**なので、戻しても情報は増えない＝安全。 */
+{
+  const KR = DOM.KINGDOM_RISINGSUN;
+  const onP = (pr) => {
+    const s = E.createInitialState([{ name: 'A' }, { name: 'B' }], KR.slice(), { startActive: 0, prophecy: pr });
+    s.prophecyOn = true; s.sunTokens = 0; s.prophecyOnBy = 0;
+    s.turn.phase = 'buy'; s.turn.coins = 8; s.turn.buys = 2;
+    return s;
+  };
+  // ① 成長＝財宝の購入で窓が開く → pending があるので承認制へ落ちる。
+  {
+    let s = onP('growth');
+    const x = E.reduce(s, { type: 'BUY', card: 'silver' });
+    ok(x.pending != null, '成長：財宝を買うと窓が開く＝pending があるので承認制へ落ちる');
+  }
+  // ② 進歩＝獲得したカードを山札の上へ → 自分の山札が変わるので承認制へ落ちる。
+  {
+    let s = onP('progress');
+    const before = JSON.stringify(s.players[0].deck);
+    let x = E.reduce(s, { type: 'BUY', card: 'silver' });
+    let g = 0; while (x.pending && g++ < 20) { const a = DOM.cpu.decide(x); if (!a) break; x = E.reduce(x, a); }
+    ok(JSON.stringify(x.players[0].deck) !== before, '進歩：自分の山札が変わる＝承認制へ落ちる');
+  }
+  /* ③ 厳冬＝山に負債を置く／取る。**同意不要で通る**が、動くのは
+     `state.pileDebt`（公開＝盤面にバッジ）と自分の `debt` だけで、
+     **相手の state・自分の山札と手札は1ビットも動かない**＝情報が増えないので安全。 */
+  {
+    let s = onP('harsh_winter');
+    const prevOther = JSON.stringify(s.players[1]);
+    const prevDeck = JSON.stringify(s.players[0].deck), prevHand = JSON.stringify(s.players[0].hand);
+    let x = E.reduce(s, { type: 'BUY', card: 'silver' });
+    let g = 0; while (x.pending && g++ < 20) { const a = DOM.cpu.decide(x); if (!a) break; x = E.reduce(x, a); }
+    ok(JSON.stringify(x.pileDebt || null) !== JSON.stringify(s.pileDebt || null),
+      '厳冬：購入で山の負債が動く');
+    ok(JSON.stringify(x.players[1]) === prevOther, '厳冬：相手の state は1ビットも動かない');
+    ok(JSON.stringify(x.players[0].deck) === prevDeck && JSON.stringify(x.players[0].hand) === prevHand,
+      '厳冬：自分の山札と手札も動かない（＝同意不要で戻せるが、動くのは公開情報だけ）');
+  }
+  // ④ 官僚制＝銅貨を捨て札に獲得。山札も手札も相手も動かない＝同意不要で通ってよい（情報は増えない）。
+  {
+    let s = onP('bureaucracy');
+    const prevOther = JSON.stringify(s.players[1]);
+    const prevDeck = JSON.stringify(s.players[0].deck), prevHand = JSON.stringify(s.players[0].hand);
+    let x = E.reduce(s, { type: 'BUY', card: 'silver' });
+    let g = 0; while (x.pending && g++ < 20) { const a = DOM.cpu.decide(x); if (!a) break; x = E.reduce(x, a); }
+    ok(x.players[0].discard.filter((c) => c === 'copper').length >= 1, '官僚制：銅貨を獲得する');
+    ok(JSON.stringify(x.players[1]) === prevOther, '官僚制：相手の state は動かない');
+    ok(JSON.stringify(x.players[0].deck) === prevDeck && JSON.stringify(x.players[0].hand) === prevHand,
+      '官僚制：自分の山札と手札も動かない（サプライが減るだけ＝公開情報）');
+  }
+  /* ⑤ 🛑 **購入で Sunトークンが減ったり予言が発動したりしない**（前兆は「使用」でしか +1 Sun を出さない）。
+     ここが破れると「神風で王国が入れ替わったのを見てから無料で戻す」ができてしまう。 */
+  {
+    let s = onP('divine_wind');
+    s.prophecyOn = false; s.sunTokens = 5;
+    const x = E.reduce(s, { type: 'BUY', card: 'silver' });
+    ok(x.sunTokens === 5 && x.prophecyOn === false && JSON.stringify(x.kingdom) === JSON.stringify(s.kingdom),
+      '購入では Sun が減らず予言も発動しない（＝神風を見てから無料で戻せない）');
+  }
+}
+
 console.log('=== R5: CPU が買う旭日イベント3種は「買っても何も起きない」局面で買わない ===');
 /* 正本は各イベントに「CPU は条件を見てから買え。さもないと $N をドブに捨て続ける」と書いている。
    ⚠ 残り7種は意図的に買わない（`ritual`/`banquet`/`windfall`/`tax` と同じ扱い＝正本が明示的に許容）。 */
