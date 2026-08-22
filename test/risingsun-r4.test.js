@@ -1312,6 +1312,171 @@ console.log('=== R5: CPU が買う旭日イベント3種は「買っても何も
   }
 }
 
+console.log('=== 王国25種の敵対レビュー（2体）の回帰 10件 ===');
+{
+  const mk5 = (K, opt) => E.createInitialState([{ name: 'A' }, { name: 'B', isCpu: true }], K.slice(),
+    Object.assign({ startActive: 0 }, opt || {}));
+  const drain5 = (s) => { let g = 0; while (s.pending && g++ < 60) { const a = DOM.cpu.decide(s); if (!a) break; s = E.reduce(s, a); } return s; };
+
+  /* 【1】公家(Aristocrat)＝**0枚・9枚・10枚は何も起きない**（公式FAQ が明記）。
+     🛑 素の `n % 4` だと 0枚が「4枚と同じ」に落ちて +3購入が出る。命令（船長／大君主／はみだし者／王子）は
+        カードを場に出さないので**必ず0枚**＝`random-promo` の闇市場で今日到達する（人間だけが通る道）。 */
+  {
+    const K = ['aristocrat', 'captain', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'mine'];
+    let s = mk5(K, {});
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    s.players[0].hand = ['captain']; s.players[0].inPlay = [];
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'captain' });
+    const b0 = s.turn.buys;
+    s = E.reduce(s, { type: 'CAPTAIN_PLAY', card: 'aristocrat' });
+    ok(s.turn.buys - b0 === 0, `公家：船長で使う（場に0枚）と何も起きない（実: +${s.turn.buys - b0}購入）`);
+
+    let s9 = mk5(K, {});
+    s9.turn.phase = 'action'; s9.turn.actions = 1;
+    s9.players[0].hand = ['aristocrat']; s9.players[0].inPlay = new Array(8).fill('aristocrat');
+    const a0 = s9.turn.actions;
+    s9 = E.reduce(s9, { type: 'PLAY_ACTION', card: 'aristocrat' });
+    ok(s9.turn.actions - a0 === -1, `公家：場に9枚でも何も起きない（使用で-1のみ・実: ${s9.turn.actions - a0}）`);
+
+    // 対照＝1枚（m=1）なら +3アクション、4枚（m=0）なら +3購入。
+    let s1 = mk5(K, {});
+    s1.turn.phase = 'action'; s1.turn.actions = 1; s1.players[0].hand = ['aristocrat']; s1.players[0].inPlay = [];
+    const a1 = s1.turn.actions;
+    s1 = E.reduce(s1, { type: 'PLAY_ACTION', card: 'aristocrat' });
+    ok(s1.turn.actions - a1 === 2, `公家：場に1枚なら +3アクション（使用の-1と合わせて+2・実: ${s1.turn.actions - a1}）`);
+    let s4 = mk5(K, {});
+    s4.turn.phase = 'action'; s4.turn.actions = 1;
+    s4.players[0].hand = ['aristocrat']; s4.players[0].inPlay = new Array(3).fill('aristocrat');
+    const b4 = s4.turn.buys;
+    s4 = E.reduce(s4, { type: 'PLAY_ACTION', card: 'aristocrat' });
+    ok(s4.turn.buys - b4 === 3, `公家：場に4枚なら +3購入（実: +${s4.turn.buys - b4}）`);
+  }
+
+  /* 【2】交替(Change)＝**廃棄カードと獲得カードの両方を獲得後に測り直し、差の絶対値**だけ負債を得る。
+     公式逐語＝行人→属州で**負債0**（両方が $8 になる）／漁師→銀貨で**負債2**（漁師が $5 になる）。
+     🛑 正本が「廃棄した時点で差を確定する素朴実装は**必ず壊れる**」と名指しで事前警告していた箇所。 */
+  {
+    const K = ['change', 'wayfarer', 'fisherman', 'destrier', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar'];
+    const run = (trash, gain) => {
+      let s = mk5(K, {});
+      s.turn.phase = 'action'; s.turn.actions = 1;
+      s.players[0].hand = [trash, 'change']; s.players[0].discard = []; s.turn.gainedThisTurn = [];
+      s = E.reduce(s, { type: 'PLAY_ACTION', card: 'change' });
+      s = E.reduce(s, { type: 'CHANGE_TRASH', card: trash });
+      if (!s.pending) return { debt: s.players[0].debt || 0, noGain: true };
+      s = E.reduce(s, { type: 'CHANGE_GAIN', card: gain });
+      return { debt: s.players[0].debt || 0 };
+    };
+    ok(run('wayfarer', 'province').debt === 0, '交替：行人を廃棄→属州（獲得後は両方$8）＝負債0');
+    ok(run('fisherman', 'silver').debt === 2, '交替：漁師を廃棄→銀貨（漁師は捨て札空で$5）＝負債2（差の絶対値）');
+    ok(run('destrier', 'province').debt === 3, '交替：デストリエを廃棄→属州（デストリエは獲得後$5）＝負債3');
+    ok(run('copper', 'province').debt === 8, '（対照）交替：銅貨→属州＝負債8');
+  }
+
+  /* 【3】札差(Rice Broker)＝**廃棄時効果を全部解決してから**ドローする。
+     日本語wiki 逐語＝`+5ドロー(=③の処理)を行った後に「手札に青空市場があるのでリアクションする」という
+     動きはできない。` ＝ここを守らないと**リシャッフルの母集団そのものが変わる**。 */
+  {
+    const K = ['rice_broker', 'market_square', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'mine'];
+    let s = mk5(K, {});
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    s.players[0].hand = ['rice_broker', 'village', 'market_square'];
+    s.players[0].deck = []; s.players[0].discard = [];
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'rice_broker' });
+    s = E.reduce(s, { type: 'RICE_BROKER_TRASH', card: 'village' });
+    ok(s.pending && s.pending.type === 'market_square_react',
+      `札差：廃棄の直後に青空市場の窓が開く（ドローより先・実: ${s.pending && s.pending.type}）`);
+    s = drain5(s);
+    ok(s.players[0].hand.indexOf('gold') >= 0,
+      `札差：反応で得た金貨をリシャッフルして引ける（実: 手札${JSON.stringify(s.players[0].hand)}）`);
+    // 財宝かつアクション（冠）なら +2 と +5 の両方＝7枚（公式FAQ が明記）。
+    let s2 = mk5(['rice_broker', 'crown', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'mine'], {});
+    s2.turn.phase = 'action'; s2.turn.actions = 1;
+    s2.players[0].hand = ['rice_broker', 'crown']; s2.players[0].deck = new Array(12).fill('copper');
+    s2 = E.reduce(s2, { type: 'PLAY_ACTION', card: 'rice_broker' });
+    s2 = E.reduce(s2, { type: 'RICE_BROKER_TRASH', card: 'crown' });
+    s2 = drain5(s2);
+    ok(s2.players[0].hand.length === 7, `札差：冠（財宝かつアクション）で +2 と +5 の両方＝7枚（実: ${s2.players[0].hand.length}）`);
+  }
+
+  /* 【4】狐(Kitsune)＝選択肢は**カード記載順**に解決し、途中で開いた獲得時対話を握りつぶさない。
+     公式FAQ＝`do them in the **order listed**`（+2アクション → +$2 → 呪い → 銀貨）。 */
+  {
+    const K = ['kitsune', 'watchtower', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'mine'];
+    let s = mk5(K, {});
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    s.players[0].hand = ['kitsune', 'watchtower'];
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'kitsune' });
+    s = E.reduce(s, { type: 'KITSUNE_CHOOSE', choices: ['curse', 'silver'] });
+    let g = 0; while (s.pending && s.pending.type !== 'watchtower' && g++ < 20) { const a = DOM.cpu.decide(s); if (!a) break; s = E.reduce(s, a); }
+    ok(s.pending && s.pending.type === 'watchtower',
+      `狐：呪い＋銀貨でも銀貨の獲得で望楼の窓が開く（実: ${s.pending && s.pending.type}）`);
+    ok(s.players[1].discard.indexOf('curse') >= 0, '狐：呪いは銀貨より先に配られる（記載順）');
+  }
+
+  /* 【5】浪人(Ronin)＝**1枚ずつ**引く／終端は「山札と捨て札が両方空」。
+     公式FAQ＝`draw cards **one at a time** until you have 7 cards in hand, or can't draw any more`
+     ／日本語wiki＝`即座に-1カードトークンは取り除かれ、**実質的に影響を受けない**`。
+     ⚠ カメレオンの習性は `+N Cards` の文字列だけを入れ替えるので**一切変換されない**。 */
+  {
+    const K = ['ronin', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory', 'mine'];
+    const run = (opt, extra) => {
+      let s = mk5(K, opt || {});
+      s.turn.phase = 'action'; s.turn.actions = 1;
+      s.players[0].hand = ['ronin']; s.players[0].deck = new Array(12).fill('copper'); s.players[0].discard = [];
+      if (extra) extra(s);
+      return E.reduce(s, Object.assign({ type: 'PLAY_ACTION', card: 'ronin' }, opt && opt.ways ? { way: 'way_of_the_chameleon' } : {}));
+    };
+    ok(run({}).players[0].hand.length === 7, '浪人：手札7枚まで引く');
+    const mc = run({}, (s) => { s.players[0].minusCard = true; });
+    ok(mc.players[0].hand.length === 7, `浪人：-1カードトークンがあっても7枚（実: ${mc.players[0].hand.length}）`);
+    const ch = run({ ways: ['way_of_the_chameleon'] });
+    ok(ch.players[0].hand.length === 7 && ch.turn.coins === 0,
+      `浪人×カメレオン：ドローは変換されない（実: 手札${ch.players[0].hand.length} +$${ch.turn.coins}）`);
+    // 山札も捨て札も空なら止まる（無限ループしない）。
+    let e = mk5(K, {});
+    e.turn.phase = 'action'; e.turn.actions = 1;
+    e.players[0].hand = ['ronin']; e.players[0].deck = []; e.players[0].discard = [];
+    e = E.reduce(e, { type: 'PLAY_ACTION', card: 'ronin' });
+    ok(e.players[0].hand.length === 0, '浪人：引けるカードが無ければ止まる');
+  }
+
+  /* 【6】川船(Riverboat) の脇札は「**このゲームで使わない**カード」＝サプライに山があってはいけない。
+     公式逐語＝`choose a non-Duration Action card costing exactly $5 **that isn't being used this game**`
+     ／`The chosen card **does not have a pile**`。
+     🛑 混合山の中身は `kingdom` に載らない（載るのは山キー）／来寇の11山目は川船の**後**に決まる。 */
+  {
+    let hitK = 0;
+    for (let i = 0; i < 60; i++) {
+      const s = mk5(['riverboat', 'knights', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'mine'], {});
+      if (s.riverboatCard && (DOM.POOLS.knights || []).indexOf(s.riverboatCard) >= 0) hitK++;
+    }
+    ok(hitK === 0, `川船：使用中の騎士の山の中身を脇札にしない（実: ${hitK}/60）`);
+    let hitA = 0;
+    for (let i = 0; i < 80; i++) {
+      const s = mk5(DOM.KINGDOM_RISINGSUN, { prophecy: 'approaching_army' });
+      if (s.riverboatCard && (s.kingdom || []).indexOf(s.riverboatCard) >= 0) hitA++;
+    }
+    ok(hitA === 0, `川船：来寇の11山目と脇札が衝突しない（実: ${hitA}/80）`);
+  }
+
+  /* 【7】支配(Possession) 中は**支配者に被支配者の山札の影札の位置**を見せる
+     （見えないと UI の影の群が出ず、engine は受理するのに人間だけが詰む＝オンライン限定）。 */
+  {
+    let s = mk5(DOM.KINGDOM_RISINGSUN, {});
+    s.turn.possessedBy = 1;
+    s.players[0].deck = ['copper', 'fishmonger', 'estate'];
+    const m = E.maskStateFor(s, 1);
+    ok((m.players[0].deck || []).join() === 'back,fishmonger,back',
+      `支配中：影札の位置だけ晒す（実: ${(m.players[0].deck || []).join()}）`);
+    // 支配していない相手の山札は従来どおり全部伏せる。
+    let n = mk5(DOM.KINGDOM_RISINGSUN, {});
+    n.players[0].deck = ['copper', 'fishmonger', 'estate'];
+    ok((E.maskStateFor(n, 1).players[0].deck || []).every((c) => c === 'back'),
+      '支配していなければ相手の山札は影札も伏せたまま（決定D3）');
+  }
+}
+
 console.log('\n========================================');
 console.log('旭日R4テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

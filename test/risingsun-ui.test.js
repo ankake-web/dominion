@@ -226,6 +226,30 @@ console.log('=== R4: 好機到来の脇札と洞察の脇札が盤面に出る =
   ok(!runtimeError, '描画で例外が出ない: ' + (runtimeError || ''));
 }
 
+/* 任意の窓は**0枚選択のまま辞退できる**こと。
+   🛑 `modalMultiHand` の `allowZero` を false にすると「捨てたくないのに札を1枚選ばないと閉じられない」
+      ＝確定ボタンが `disabled` のまま出る（ハードロックではないが導線が壊れている）。
+      旭日の中で **田舎の村が false・川の社が true** と食い違っていたので恒久検査にする。 */
+console.log('=== R3/R4: 任意の窓は最初から辞退ボタンを押せる ===');
+{
+  const K = ['rustic_village', 'river_shrine', 'mountain_shrine', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'tea_house'];
+  const openable = (pend) => {
+    const s = E.createInitialState(['あなた', '相手'], K.slice(), { startActive: 0 });
+    s.players[0].hand = ['copper', 'estate', 'silver', 'gold'];
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    s.pending = pend;
+    showAs(s, 0);
+    const m = doc.querySelector('.modal');
+    if (!m) return { err: 'モーダルが無い' };
+    const btns = Array.from(m.querySelectorAll('button'));
+    return { any: btns.some((b) => !b.disabled), labels: btns.map((b) => (b.textContent || '').trim() + (b.disabled ? '(無効)' : '')) };
+  };
+  [['rustic_village', '田舎の村'], ['river_shrine_trash', '川の社']].forEach(([ty, jp]) => {
+    const r = openable({ type: ty, player: 0 });
+    ok(r.any, `${jp}：1枚も選ばない状態で押せるボタンがある（実: ${(r.labels || []).join(' / ') || r.err}）`);
+  });
+}
+
 console.log('\n========================================');
 console.log('旭日UIテスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');
