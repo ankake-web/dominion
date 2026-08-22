@@ -583,8 +583,14 @@
         除外は `NON_SUPPLY` と「既に王国にある」と「分割山の下段」だけ。
      ⚠ 抽選元は `pickBane` と同じ方針（自拡張＝旭日を優先し、無ければ基本＋陰謀）。
      ⚠ 候補ゼロ（アタックが全部サプライに並んでいる）なら**山を足さない**（例外を投げず終端する）。 */
-  function pickApproachingArmy(kingdom) {
+  function pickApproachingArmy(kingdom, exclude) {
     const inK = new Set(kingdom);
+    /* 🛑 **川船(Riverboat) の脇札を11山目にしてはいけない**＝同じカードが「脇札（毎ターン無料で使える）」と
+       「サプライの山」の両方になり、公式が明示的に禁じた `The chosen card **does not have a pile**` を破る。
+       ⚠ 川船の脇札は `createInitialState` の**この関数より前**で決まる（予言の抽選が `hasOmen(kingdom,
+          [riverboatCard])` を見るため順序を入れ替えられない）＝**除外リストで渡す**。
+       実測＝`risingsun` 固定10種＋来寇で 10/400（2.5%）が衝突していた（出荷セットで到達）。 */
+    (exclude || []).forEach((id) => { if (id) inK.add(id); });
     const eligible = (id) => C()[id] && !inK.has(id) && !NON_SUPPLY.has(id) && !SPLIT_TOP[id] &&
       C()[id].types.includes('attack');
     const pools = [(DOM.POOLS && DOM.POOLS.risingsun) || [],
@@ -677,11 +683,26 @@
     continueReturnPhase(state, pi);
     continueBonus(state, pi);
   }
-  function pickRiverboatCard(kingdom) {
+  function pickRiverboatCard(kingdom, exclude) {
     const inK = new Set(kingdom);
+    (exclude || []).forEach((id) => inK.add(id));
+    /* 🛑 **混合山の中身は `kingdom` に載らない**（載るのは山キー `knights` / `castles` / 同盟の分割山だけ）＝
+       素の `inK.has(id)` では「使用中の騎士9種・小さい城」を弾けない。
+       公式逐語＝`choose a non-Duration Action card costing exactly $5 **that isn't being used this game**`
+       ／`The chosen card **does not have a pile**` ＝サプライに山があるカードを脇に置いてはいけない
+       （＝「無料の11枚目」が毎ターン使える状態になる）。実測で騎士の山と同居すると **66%** で踏んでいた。 */
+    const mixedOwner = (id) => {
+      if (((DOM.POOLS || {}).knights || []).indexOf(id) >= 0) return 'knights';
+      if (((DOM.POOLS || {}).castles || []).indexOf(id) >= 0) return 'castles';
+      const sp = DOM.ALLIES_SPLIT_PILES || {};
+      for (const k of Object.keys(sp)) if ((sp[k] || []).indexOf(id) >= 0) return k;
+      return null;
+    };
     const eligible = (id) => {
       const c = C()[id];
       if (!c || inK.has(id) || NON_SUPPLY.has(id)) return false;
+      const mo = mixedOwner(id);
+      if (mo && inK.has(mo)) return false;                     // その混合山がこのゲームで使われている
       if (c.potion || c.debt || c.cost !== 5) return false;   // 「ちょうど$5」＝成分一致
       if (!c.types.includes('action')) return false;
       if (c.types.includes('duration')) return false;         // カード文が明示
@@ -2188,7 +2209,7 @@
        ⚠ `initSupply` の**前**に kingdom へ push する（Bane と同じ位置）。 */
     let armyCard = null;
     if (prophecy === 'approaching_army') {
-      armyCard = pickApproachingArmy(kingdom);
+      armyCard = pickApproachingArmy(kingdom, [riverboatCard]);
       if (armyCard) kingdom.push(armyCard);
     }
     // プロモ/帝国：分割山＝1つの山枠（上段5＋下段5）。上段/下段どちらかが王国にあれば両方をサプライに
@@ -2545,7 +2566,11 @@
     //   ※クリンナップの先引きや「山札の上から見る」系は draw ではない/フラグが立っていないので影響しない。
     {
       const tt = state.turn;
-      if (tt && tt.chameleon && !tt._chamSwap && n > 0 && pIndex === tt.active) {
+      /* 🛑 `state._chamOff` ＝**「+N カード」という文字列を持たない引き**を変換から外す印。
+         公式（移動動物園の Other rules clarifications）逐語＝`(only **+Cards** is affected by Way of the
+         Chameleon)` ＝旭日の浪人 `Draw until you have 7 cards in hand` は**一切変換されない**。
+         これが無いと浪人×カメレオンで **手札0枚・+$7** になる（実測）。 */
+      if (tt && tt.chameleon && !tt._chamSwap && !state._chamOff && n > 0 && pIndex === tt.active) {
         tt._chamSwap = true; tt.coins += n; tt._chamSwap = false;
         log(state, `${p.name} はカメレオンの習性で +${n}カード の代わりに +$${n}。`);
         return [];
@@ -2612,6 +2637,26 @@
     snakeWitchEnterVictim(state, source, queue);
   }
   /* 旭日：狐＝4択のうち「他のプレイヤーは全員、呪い1枚を獲得する」を選んだときのアタック（濡女と同型）。 */
+  /* 旭日 R3：狐の選択肢を**カード記載順に1つずつ**解決する。pending が立ったら中断し、
+     reduce 末尾の再開網（`t.kitsuneRest`）が続きを処理する＝獲得時対話を握りつぶさない。 */
+  function kitsuneStep(state) {
+    const kr = state.turn && state.turn.kitsuneRest;
+    if (!kr) return;
+    const kp = state.players[kr.player];
+    while (kr.rest.length) {
+      const o = kr.rest.shift();
+      if (o === 'actions') { addActions(state.turn, 2); log(state, `${kp.name} は狐で +2アクション。`); }
+      else if (o === 'coins') { addCoins(state, 2); log(state, `${kp.name} は狐で +2コイン。`); }
+      else if (o === 'silver') { if (gain(state, kr.player, 'silver', 'discard')) log(state, `${kp.name} は狐で銀貨1枚を獲得した。`); }
+      else {
+        const q = [];
+        for (let k = 1; k < state.players.length; k++) q.push((kr.player + k) % state.players.length);
+        kitsuneEnterVictim(state, kr.player, q);
+      }
+      if (state.pending) return;                 // 中断（残りは再開網が続ける）
+    }
+    state.turn.kitsuneRest = null;
+  }
   function kitsuneEnterVictim(state, source, queue) {
     queue = (queue || []).filter((v) => !attackImmune(state, v));
     if (!queue.length) { state.pending = null; return; }
@@ -8540,9 +8585,27 @@
         break;
       // 浪人（$5・アクション-影）＝手札が7枚になるようにカードを引く（既に7枚以上なら引かない）。
       //   ⚠ 山札の影札は**手札ではない**ので数えない（p.hand.length をそのまま見る＝公式）。
-      case 'ronin':
-        if (p.hand.length < 7) draw(state, pi, 7 - p.hand.length);
+      case 'ronin': {
+        /* 🛑 公式FAQ 逐語＝`you draw cards **one at a time** until you have 7 cards in hand,
+           or **can't draw any more**` ／ 日本語wiki＝`浪人使用時は手札のカードが7枚になるまでドローし続けるので、
+           **即座に-1カードトークンは取り除かれ、実質的に影響を受けない。**`
+           ＝まとめて `draw(state, pi, 7 - hand.length)` にすると **-1カードトークン（遺物／借入）で6枚で止まる**。
+           ⚠ **カメレオンの習性は「+N Cards」「+N $」の文字列だけを入れ替える**ので
+              `Draw until you have 7 cards in hand` は**一切変換されない**（正本 ⚠3）＝
+              `draw()` の汎用フックを避けるため `_chamOff` で1回だけ無効化する。
+           ⚠ 終端は「山札と捨て札が両方空」（`draw` が1枚も引けなかったら止める）。 */
+        const prevCham = state._chamOff;
+        state._chamOff = true;
+        /* ⚠ 終端は「**山札と捨て札が両方空**」で判定する（正本 ⚠2）。
+           「引けた枚数が0なら止める」にすると、**-1カードトークンが1枚食った回で誤って止まる**
+           （実測＝手札0枚。公式は「即座にトークンが取り除かれ、実質的に影響を受けない」）。 */
+        for (let gi = 0; gi < 40 && p.hand.length < 7; gi++) {
+          if (!p.deck.length && !p.discard.length) break;     // これ以上引けない
+          draw(state, pi, 1);
+        }
+        state._chamOff = prevCham;
         break;
+      }
       /* 狐（$5・アクション-アタック-前兆）＝+1 Sun／次から**異なる2つ**を選ぶ：
          +2アクション／+2コイン／他の全員が呪い1枚を獲得／銀貨1枚を獲得。
          ⚠ **「+1 Sun」が先頭**＝ここで予言が有効になり得る（＝来寇なら**この狐自身が +$1 を受ける**）。
@@ -8721,6 +8784,14 @@
       case 'aristocrat': {
         const n = p.inPlay.filter((c) => c === 'aristocrat').length
           + (p.durationCards || []).filter((c) => c === 'aristocrat').length;
+        /* 🛑 公式FAQ 逐語＝`If you have **zero** or 9 or 10 Aristocrats in play, **it doesn't do anything**.`
+           ／`Command variants leave the card where it is, so an Aristocrat played that way will **not be
+           considered in play**. If that's the first time Aristocrat has been played, there will be **zero**
+           in play, so it won't do anything.`
+           ＝**1〜8枚のときだけ** `n % 4` で分岐する。素の `n % 4` だと **0枚が「4枚と同じ」に落ちて +3購入**が出る
+           （船長／大君主／はみだし者／王子＝命令経由で使うと場に出ないので必ず0枚になる＝`random-promo` の
+           闇市場で今日到達する）。9枚・10枚も同様に何も起きない。 */
+        if (n < 1 || n > 8) { log(state, `${p.name} は公家（場に${n}枚）＝何も起きない。`); break; }
         const m = n % 4;
         if (m === 1) { addActions(t, 3); log(state, `${p.name} は公家（場に${n}枚）で +3アクション。`); }
         else if (m === 2) { draw(state, pi, 3); log(state, `${p.name} は公家（場に${n}枚）で +3カード。`); }
@@ -13520,6 +13591,28 @@
       endBuyTailSchemeOrCleanup(state, cw);
       state = runReplays(state);
     }
+    /* 旭日 R3：札差（Rice Broker）＝**廃棄時効果を全部解決してから**ドローする。
+       日本語wiki の詳細なルール 逐語＝`①でのカード廃棄に対して廃棄時効果が誘発するタイミングは①の直後であり、
+       ②や③の処理以降ではないので注意。… +5ドロー(=③の処理)を行った後に「手札に青空市場があるので
+       リアクションする」という動きはできない。`
+       ⇒ ここで引かないと `onTrashQueue`（青空市場／呪いの鏡／リッチ／地下墓所／狩場／従者）の消化より先に
+          走り、**リシャッフルの母集団そのものが変わる**（実測で最終手札が 0枚 vs 2枚）。
+       ⚠ 財宝**かつ**アクションなら +2 と +5 の**両方**（公式FAQ）。 */
+    if (!state.pending && !state.gameOver && state.turn &&
+        (state.turn.riceBrokerResume || []).length &&
+        !(state.onGainQueue && state.onGainQueue.length) && !(state.onTrashQueue && state.onTrashQueue.length)) {
+      const rb = state.turn.riceBrokerResume.shift();
+      if (!state.turn.riceBrokerResume.length) state.turn.riceBrokerResume = null;
+      if (rb.treasure) draw(state, rb.player, 2);
+      if (rb.action) draw(state, rb.player, 5);
+      state = runReplays(state);
+    }
+    // 旭日 R3：狐＝選択肢を記載順に1つずつ解決する途中で pending が立ったら、ここで続きを処理する。
+    if (!state.pending && !state.gameOver && state.turn && state.turn.kitsuneRest &&
+        !(state.onGainQueue && state.onGainQueue.length) && !(state.onTrashQueue && state.onTrashQueue.length)) {
+      kitsuneStep(state);
+      state = runReplays(state);
+    }
     // 冒険：語り部の中断再開は runReplays より前（上）で処理済み。ここでは onTrashQueue 由来などで再度残っていれば拾う保険。
     if (!state.pending && !state.gameOver && state.turn && state.turn.storytellerResume) {
       storytellerStep(state, state.turn.storytellerResume.player);
@@ -18175,21 +18268,16 @@
         const raw = Array.isArray(action.choices) ? action.choices : [];
         const ch = order.filter((o) => raw.indexOf(o) >= 0);
         if (ch.length !== 2 || raw.filter((c, i) => raw.indexOf(c) === i && order.indexOf(c) >= 0).length !== 2) return state;
-        const kp = state.players[pd.player];
         state.pending = null;
-        let attack = false;
-        ch.forEach((o) => {
-          if (o === 'actions') { addActions(t, 2); log(state, `${kp.name} は狐で +2アクション。`); }
-          else if (o === 'coins') { addCoins(state, 2); log(state, `${kp.name} は狐で +2コイン。`); }
-          else if (o === 'silver') { if (gain(state, pd.player, 'silver', 'discard')) log(state, `${kp.name} は狐で銀貨1枚を獲得した。`); }
-          else attack = true;
-        });
-        // 呪い配布は最後にまとめて開く（選択肢の解決が pending を立てても攻撃を潰さない）。
-        if (attack) {
-          const q = [];
-          for (let k = 1; k < state.players.length; k++) q.push((pd.player + k) % state.players.length);
-          kitsuneEnterVictim(state, pd.player, q);
-        }
+        /* 🛑 公式FAQ 逐語＝`First the +1 Sun happens, …; then you choose two different options, and
+           **do them in the order listed**.` ＝カード記載順（+2アクション → +$2 → 呪い → 銀貨）。
+           旧実装は「呪いだけ最後にまとめて開く」形だったので、**呪い＋銀貨を選ぶと順序が逆**になり、
+           さらに `kitsuneEnterVictim` が `state.pending` を無条件に代入するため
+           **銀貨の獲得が開いた窓（望楼／交易商人／ティアラ／国境の村…）を握りつぶしていた**（実測）。
+           ⇒ **1つずつ解決し、pending が立ったら残りを `t.kitsuneRest` に積んで中断**する
+              （長老の `t.elderRest` と同じ形。再開網は reduce 末尾）。 */
+        state.turn.kitsuneRest = { player: pd.player, rest: ch };
+        kitsuneStep(state);
         return state;
       }
       case 'KITSUNE_REACT': {
@@ -18258,8 +18346,18 @@
         state.pending = null;
         trashCard(state, pd.player, card);
         log(state, `${pl.name} は札差で「${C()[card].name}」を廃棄した。`);
-        if (wasTreasure) draw(state, pd.player, 2);   // 財宝かつアクションなら**両方**（公式FAQ）
-        if (wasAction) draw(state, pd.player, 5);
+        /* 🛑 **ドローは「廃棄時効果を全部解決してから」**（日本語wiki の詳細なルール 逐語）＝
+           `①でのカード廃棄に対して廃棄時効果が誘発するタイミングは①の直後であり、②や③の処理以降ではない。
+            例えば、札差の効果で手札の村を廃棄した際、**手札の青空市場でリアクションできるのは①の直後**である。
+            +5ドロー(=③の処理)を行った後に「手札に青空市場があるのでリアクションする」という動きはできない。`
+           ⇒ ここで直接 `draw` すると `state.onTrashQueue`（青空市場／呪いの鏡／リッチ／地下墓所／狩場／従者）
+              の消化より**先に**走り、**リシャッフルの母集団そのものが変わる**（実測で最終手札が 0枚 vs 2枚）。
+           ⇒ `t.riceBrokerResume` に積み、**reduce 末尾の再開網**（`cleanupWaiting` と同じガード）で引く。
+           ⚠ 財宝**かつ**アクションなら +2 と +5 の**両方**（公式FAQ が明記＝排他の if/else にしない）。 */
+        if (wasTreasure || wasAction) {
+          (state.turn.riceBrokerResume = state.turn.riceBrokerResume || []).push(
+            { player: pd.player, treasure: wasTreasure, action: wasAction });
+        }
         return state;
       }
       /* 交替＝手札1枚を廃棄し、**コインコストが厳密に高い**カードを獲得して差ぶんの負債を得る。
@@ -18277,7 +18375,11 @@
         trashCard(state, pd.player, card);
         log(state, `${pl.name} は交替で「${C()[card].name}」を廃棄した。`);
         const can = (id) => gainableBase(state, id) && costOf(state, id).coin > ref;
-        if (anyGainable(state, can)) state.pending = { type: 'change', stage: 'gain', player: pd.player, ref };
+        // ⚠ 獲得できるか（`> ref`）は**廃棄した時点**のコストで判定する（＝カード文の順序どおり）。
+        //    負債の数は下の `CHANGE_GAIN` で**両方を測り直す**ので、ここの `ref` は判定専用。
+        //    🛑 `trashed`（廃棄したカードid）を pending に載せる＝**旧スナップショットには無い**ので
+        //       受理側は `pd.trashed || null` でフォールバックすること。
+        if (anyGainable(state, can)) state.pending = { type: 'change', stage: 'gain', player: pd.player, ref, trashed: card };
         else state.pending = null;
         return state;
       }
@@ -18288,8 +18390,18 @@
         if (card == null || !gainableBase(state, card) || costOf(state, card).coin <= pd.ref) return state;
         state.pending = null;
         if (!gain(state, pd.player, card, 'discard')) return state;
-        // ⚠ 差は**獲得を解決した後**に測り直す（行人/漁師/デストリエの動的コストで実際に変わる）。
-        const diff = costOf(state, card).coin - pd.ref;
+        /* 🛑 差は**獲得を完全に解決した後に「廃棄したカードと獲得したカードの両方」を測り直す**（公式逐語）。
+           `You re-check the costs of **the trashed card and the gained card** right before calculating how much
+            D to take. For example, if you haven't gained any cards and trash a **Wayfarer** and gain a Province,
+            you take **no D** because both cards now cost $8.`
+           `If the gained card **now costs less** than the trashed card, **you still take D for the difference**.
+            For example, if your discard pile is empty and you trash **Fisherman** (which costs $2) and gain a
+            Silver, you take **2D** because Fisherman now costs $5.`
+           ＝**差の絶対値**（獲得札のほうが安くなっても負債は取る）。
+           ⚠ 廃棄カード側を `pd.ref`（廃棄した時点の値）のまま使うと、行人／漁師／デストリエ（動的コスト）で
+              公式と食い違う＝正本が「素朴実装は必ず壊れる」と名指しで事前警告していた箇所。 */
+        const refNow = pd.trashed != null ? costOf(state, pd.trashed).coin : pd.ref;
+        const diff = Math.abs(costOf(state, card).coin - refNow);
         log(state, `${state.players[pd.player].name} は交替で「${C()[card].name}」を獲得した。`);
         addDebt(state, pd.player, diff, '交替で');
         return state;
@@ -23252,7 +23364,12 @@
            ⚠ 旭日の影(Shadow)は**ここでは晒さない**＝公式が明文で許すのは「**自分の**山札の裏面を見てよい」だけで
              （`You can look through your deck at the card backs at any time, and see where your Shadow cards are.`）、
              相手の山札を検める根拠は無い。**据え置き＝許容簡略化**（研究doc の決定D3）。 */
-        deck: p.deck.map((c) => (c === 'stash' ? 'stash' : 'back')),
+        /* ⚠ 支配(Possession) 中だけは例外＝**支配者は被支配者を「自分として」操作する**ので、
+           被支配者の山札にある影札の位置が見えないと `PLAY_ACTION` を押せない
+           （engine は受理するのに UI の影の群が出ない＝人間だけが詰む。オンライン限定）。
+           手札を丸ごと見せている `revealHand` と同じ条件で、**影札の位置だけ**を晒す。 */
+        deck: p.deck.map((c) => (c === 'stash' ? 'stash'
+          : (revealHand && DOM.isType(c, 'shadow')) ? c : 'back')),
         hand: revealHand ? p.hand.slice() : p.hand.map((c) => (c === 'stash' ? 'stash' : 'back')),
         discard: new Array(p.discard.length).fill('back'),
         setAside: (p.setAside || []).map((c) => (c === 'stash' ? 'stash' : 'back')),

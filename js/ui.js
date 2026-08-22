@@ -4028,7 +4028,9 @@
       () => true, (card) => dispatch({ type: 'ALLEY_DISCARD', card }), null, '捨てる');
     if (pd.type === 'rustic_village') return modalMultiHand(p, '田舎の村 — 2枚捨てて1枚引く（任意）',
       '手札を**ちょうど2枚**捨てると +1 カード引けます（捨てなくてもかまいません）。',
-      (n) => (n === 2 ? '2枚捨てて1枚引く' : '捨てない'), false,
+      // ⚠ `allowZero = true`＝**0枚選択のまま「捨てない」を押せる**ようにする（任意の窓＝辞退が必須）。
+      //    false だと「捨てたくないのに札を1枚選ばないと閉じられない」＝同じ旭日の川の社と挙動が食い違う。
+      (n) => (n === 2 ? '2枚捨てて1枚引く' : '捨てない'), true,
       (cards) => dispatch({ type: 'RUSTIC_VILLAGE_DISCARD', cards: cards.length === 2 ? cards : [] }), 2);
     if (pd.type === 'mountain_shrine') return modalSingleHand(p, '山の社 — 廃棄（任意）',
       '手札1枚を廃棄してもよい。その後、廃棄置き場にアクションカードがあれば +2 カード。',
