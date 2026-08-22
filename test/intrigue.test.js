@@ -614,6 +614,44 @@ console.log('=== 仮面舞踏会: +2カード→全員左隣へ1枚→任意で�
   s = reduce(s, { type: 'MASQUERADE_TRASH', card: null });
   ok(s.pending === null, '3人戦も解決完了');
 }
+/* 🛑 公式カード文（現行）＝`Each player with any cards in hand passes one to **the next such player**
+   to their left, at once.` ＝渡す先は「左隣の**手札を持つ**プレイヤー」であって物理的な隣席ではない。
+   公式FAQ＝`Players with no cards in hand (such as due to Torturer) are skipped over －
+     **they neither pass a card nor receive one**.`
+   ／`If only one player has cards in their hand, **they pass a card to themself**.`
+   ⚠ 手札を0枚にする経路は基本＋陰謀だけで成立する（民兵／拷問人）＝**出荷セットで到達する**。 */
+{
+  // 3人戦・席1が手札0枚 ⇒ 席0 → 席2（席1は飛ばす＝渡しも受け取りもしない）
+  let s = E.createInitialState(['A', 'B', 'C'], DOM.KINGDOM_INTRIGUE, { startActive: 0 });
+  s.players[0].hand = ['masquerade', 'gold'];
+  s.players[0].deck = ['copper', 'copper', 'silver'];
+  s.players[1].hand = [];                      // 手札0枚
+  s.players[2].hand = ['curse'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'masquerade' });
+  ok(s.pending && s.pending.player === 0, '手札0枚の席1は渡す側にも入らない（次は席0）');
+  s = reduce(s, { type: 'MASQUERADE_PASS', card: 'gold' });
+  ok(s.pending && s.pending.player === 2, '席1を飛ばして席2へ');
+  s = reduce(s, { type: 'MASQUERADE_PASS', card: 'curse' });
+  ok(count(s.players[1].hand, 'gold') === 0, '手札0枚の席1は受け取らない（公式FAQ）');
+  ok(count(s.players[2].hand, 'gold') === 1, '席0の金貨は「次に手札を持つ」席2へ渡る');
+  ok(count(s.players[0].hand, 'curse') === 1, '席2の呪いは席0へ戻る（循環）');
+  s = reduce(s, { type: 'MASQUERADE_TRASH', card: null });
+  ok(s.pending === null, '解決完了');
+}
+{
+  // 2人戦・相手が手札0枚 ⇒ 手札を持つのは自分だけ＝**自分自身に渡す**（手札が減らない）
+  let s = E.createInitialState(['A', 'B'], DOM.KINGDOM_INTRIGUE, { startActive: 0 });
+  s.players[0].hand = ['masquerade', 'gold'];
+  s.players[0].deck = ['copper', 'copper'];
+  s.players[1].hand = [];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'masquerade' });
+  const before = s.players[0].hand.slice().sort().join(',');
+  s = reduce(s, { type: 'MASQUERADE_PASS', card: 'gold' });
+  ok(count(s.players[1].hand, 'gold') === 0, '手札0枚の相手に献上しない');
+  ok(s.players[0].hand.slice().sort().join(',') === before,
+    '自分自身に渡すので手札は1枚も減らない（実: ' + s.players[0].hand.join(',') + '）');
+  ok(s.pending && s.pending.stage === 'trash', 'その後は通常どおり任意の廃棄へ');
+}
 
 console.log('=== 秘密の小部屋(アクション): 捨てた枚数だけ+1コイン ===');
 {

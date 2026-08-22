@@ -3576,12 +3576,23 @@
     for (let k = 0; k < n; k++) { const idx = (source + k) % n; if (state.players[idx].hand.length > 0) order.push(idx); }
     return order;
   }
-  // 集めた選択を一斉に適用（先に全員から取り除き→左隣へ配る＝同時）。左隣は (idx+1)%n。
+  /* 集めた選択を一斉に適用（先に全員から取り除き→配る＝同時）。
+     🛑 渡す先は **`order` の次の要素**＝「左隣の**手札を持つ**プレイヤー」であって、物理的な隣席ではない。
+     公式カード文（現行）＝`Each player with any cards in hand passes one to **the next such player**
+     to their left, at once.`
+     公式FAQ＝`Players with no cards in hand (such as due to Torturer) are skipped over －
+       **they neither pass a card nor receive one**.`
+     ／`If only one player has cards in their hand, **they pass a card to themself**.`
+     ⇒ `(idx + 1) % n`（物理的な隣）だと **手札0枚の相手にカードを献上してしまう**
+        （2人戦で相手の手札が0枚だと、公式は「自分自身に渡す＝手札が減らない」のに1枚失う）。
+     ⚠ `order` は**渡す前**の手札枚数で作ってある＝渡した結果0枚になった人も受け取る側に残る（公式）。 */
   function masqueradeApplyPasses(state, order, picks) {
-    const n = state.players.length;
     order.forEach((idx) => { removeOne(state.players[idx].hand, picks[idx]); });
-    order.forEach((idx) => { state.players[(idx + 1) % n].hand.push(picks[idx]); });
-    log(state, '仮面舞踏会：各プレイヤーが手札1枚を左隣へ渡した。');
+    order.forEach((idx, i) => {
+      const to = order[(i + 1) % order.length];   // 1人しか居なければ自分自身に戻る
+      state.players[to].hand.push(picks[idx]);
+    });
+    log(state, '仮面舞踏会：手札のある各プレイヤーが手札1枚を「左隣の手札のあるプレイヤー」へ渡した。');
   }
   function masqueradeAfterPass(state, source) {
     // 使用者は手札を1枚廃棄してよい（任意）

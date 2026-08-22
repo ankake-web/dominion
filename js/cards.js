@@ -139,7 +139,11 @@
     minion:        { id: 'minion',        name: '手先',       cost: 5, types: ['action', 'attack'],
                      text: '+1 アクション\n次のうち1つを選ぶ：\n・+2 コイン\n・手札を捨てて4枚引く。さらに手札5枚以上の\n　他のプレイヤーも手札を捨てて4枚引く。' },
     masquerade:    { id: 'masquerade',    name: '仮面舞踏会', cost: 3, types: ['action'],
-                     text: '+2 カード\n各プレイヤーは同時に手札を1枚、左隣に渡す。\nその後、あなたは手札を1枚廃棄してもよい。' },
+                     /* 現行（陰謀第二版）の英語カード文＝`Each player with any cards in hand passes one to
+                        the next such player to their left, at once.` ＝渡す側も受け取る側も
+                        **手札のあるプレイヤーだけ**（公式FAQ＝手札0枚の人は飛ばされ、渡しも受け取りもしない／
+                        手札があるのが1人だけならその人は自分自身に渡す）。旧文「左隣に渡す」だと挙動と食い違う。 */
+                     text: '+2 カード\n手札のある各プレイヤーは同時に、手札を1枚、\n左隣の手札のあるプレイヤーに渡す。\nその後、あなたは手札を1枚廃棄してもよい。' },
     secret_chamber:{ id: 'secret_chamber',name: '秘密の小部屋', cost: 2, types: ['action', 'reaction'],
                      text: '手札を好きな枚数捨て、捨てた1枚につき +1 コイン。\n（リアクション）他人がアタックを使ったとき公開してよい。\nその場合 +2 カードし、手札2枚を山札の上に戻す。' },
 
