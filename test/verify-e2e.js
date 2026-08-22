@@ -47,6 +47,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await page.goto(BASE, { waitUntil: 'networkidle2', timeout: 20000 }); await sleep(400);
     ok(await page.$eval('.home h1', (e) => e.textContent).catch(() => '') === 'Dominion', 'ホーム画面が表示される');
     ok(await clickText('CPUと対戦'), 'CPUと対戦をタップ'); await sleep(300);
+    /* 環境変数 `E2E_SET` で拡張セットを選べる（例＝`E2E_SET=旭日 npm run verify:e2e`）。
+       指定しなければ既定セット（従来どおり）。UI の「拡張」分類タイルをテキストでタップするだけ。 */
+    if (process.env.E2E_SET) {
+      ok(await clickText('拡張'), '「拡張」分類をタップ'); await sleep(250);
+      ok(await clickText(process.env.E2E_SET), `「${process.env.E2E_SET}」セットをタップ`); await sleep(250);
+    }
     ok(await clickText('この設定で開始'), '設定で開始をタップ'); await sleep(600);
     let si = await stateInfo();
     ok(!si.none && !si.over, 'CPU戦が開始（盤面stateがある）');
