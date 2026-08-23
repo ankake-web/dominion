@@ -127,7 +127,8 @@
     night: '夜行', fate: '幸運', doom: '不運', heirloom: '家宝', spirit: '精霊', zombie: 'ゾンビ', // 夜想曲
     liaison: '連携', townsfolk: '町民', augur: '卜占官', clash: '衝突', fort: '城砦', odyssey: '叙事詩', wizard: '魔法使い', // 同盟
     loot: '戦利品', // 略奪（Loot。⚠ 暗黒時代の looter＝「略奪者」・spoils＝「略奪品」と別物）
-    omen: '前兆', shadow: '影' }; // 旭日（Omen＝予言の Sun を減らす／Shadow＝裏面が違い山札から使える）
+    omen: '前兆', shadow: '影', // 旭日（Omen＝予言の Sun を減らす／Shadow＝裏面が違い山札から使える）
+    reward: '褒賞' }; // 収穫祭＆ギルド第2版（Reward＝一騎討ちでのみ獲得する非サプライ6種）
   function typeClass(id) {
     const c = DOM.CARDS[id];
     if (c.types.includes('treasure')) return 'type-treasure';
@@ -965,10 +966,17 @@
     addL('イベント（略奪・横型・購入フェイズに買う）', DOM.EVENTS_PLUNDER);
     addL('特性（略奪・横型・準備でサプライの王国の山1つに付ける／その山のカード全部に効く）', DOM.TRAITS_PLUNDER);
     addL('イベント（旭日・横型・購入フェイズに買う）', DOM.EVENTS_RISINGSUN);
+    addL('イベント（プロモ・横型・段階1＝未実装）', DOM.EVENTS_PROMO);
     addL('予言（旭日・横型・王国に前兆があれば1枚だけ／Sunトークンが尽きると発動する）', DOM.PROPHECIES_RISINGSUN);
     addL('プロジェクト（ルネサンス・横型・1人2つまで）', DOM.PROJECTS_RENAISSANCE);
     addL('アーティファクト（ルネサンス・横型・1人だけが持てる）', DOM.ARTIFACTS_RENAISSANCE);
     addC('プロモカード', P.promo ? byCost(P.promo) : null);
+    // 段階1（2026-08-23）＝未実装33種（効果はまだ空＝画像と一覧だけ。実プレイには出ない）。
+    addC('海辺 第1版（第2版で削除された8種・段階1＝未実装）', P.seaside1e ? byCost(P.seaside1e) : null);
+    addC('繁栄 第1版（第2版で削除された9種・段階1＝未実装）', P.prosperity1e ? byCost(P.prosperity1e) : null);
+    addC('収穫祭＆ギルド 第2版（2023年の合本で追加された8種・段階1＝未実装）', P.cornguilds2e ? byCost(P.cornguilds2e) : null);
+    addC('褒賞（収穫祭＆ギルド第2版・非サプライ・一騎討ちでのみ獲得・段階1＝未実装）', P.rewards ? byCost(P.rewards) : null);
+    addC('プロモ（追加・段階1＝未実装）', P.promo_new ? byCost(P.promo_new) : null);
     addC('初版のみ（第二版で廃止）', P.basic1e ? byCost(
       P.basic1e.filter((id) => P.basic.indexOf(id) < 0)
         .concat(P.intrigue1e.filter((id) => P.intrigue.indexOf(id) < 0))) : null);

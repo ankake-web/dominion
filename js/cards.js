@@ -1659,6 +1659,89 @@
     //   「1枚につき」／「1種類につき」の1語違いだけで機能差ゼロ。方針どおり DO訳を採用。
     artist: { id: 'artist', name: '絵師', cost: 0, debt: 8, types: ['action'],
                  text: '+1 アクション\n1枚だけ場に出しているカード1枚につき +1 カード。' },
+
+    /* ================= 段階1（2026-08-23）＝未実装33種のうち縦型32種 =================
+       PROGRESS §0-40 の網羅性監査で確定した「公式にあるのに本アプリに無い」カード。
+       正本＝`docs/research/missing19_rules.md`（海辺1版8／繁栄1版9／プロモ2）＋英語wiki（収穫祭＆ギルド第2版14）。
+       🛑 **まだ効果は空（段階1）**＝`DOM.STAGE1_POOLS` に `seaside1e` / `prosperity1e` / `cornguilds2e` /
+          `rewards` / `promo_new` を入れて闇市場に出さない。段階2で効果を実装して CARD_SET に昇格したら外す。
+       ⚠ 日本語名は日本語wiki（wikiwiki.jp/dominiondeck）で裏取り済み。**収穫祭＆ギルド第2版だけ日本語版未発売**
+          ＝日本語wiki の仮訳を採用（括弧書き）。Coronet は既存の賞品 `diadem`（宝冠）と衝突するので「小冠」にした。
+       ⚠ 英語カード文は現行の印刷済み最新（抑留＝2020年版 "Trash this **to** add"）。 */
+
+    // ---- 海辺 第1版（2009年・第2版で削除された8種）----
+    embargo: { id: 'embargo', name: '抑留', cost: 2, types: ['action'],
+                 text: '+2 コイン\nこれを廃棄して、サプライの山1つに抑留トークンを1個置く。（ゲーム終了まで、プレイヤーがその山からカードを購入したとき、呪い1枚を獲得する。）' },
+    pearl_diver: { id: 'pearl_diver', name: '真珠採り', cost: 2, types: ['action'],
+                 text: '+1 カード\n+1 アクション\n山札の一番下のカードを見る。それを山札の一番上に置いてもよい。' },
+    ambassador: { id: 'ambassador', name: '大使', cost: 3, types: ['action', 'attack'],
+                 text: '手札からカード1枚を公開する。手札からそのカードを2枚までサプライに戻す。その後、他のプレイヤーは全員、そのカード1枚を獲得する。' },
+    navigator: { id: 'navigator', name: '航海士', cost: 4, types: ['action'],
+                 text: '+2 コイン\n山札の上から5枚を見る。それらをすべて捨て札にするか、好きな順番で山札の上に戻す。' },
+    pirate_ship: { id: 'pirate_ship', name: '海賊船', cost: 4, types: ['action', 'attack'],
+                 text: '次のうち1つを選ぶ：\n・海賊船マットのコイントークン1個につき +1 コイン\n・他のプレイヤーは全員、山札の上から2枚を公開し、そのうちあなたが選んだ財宝1枚を廃棄し、残りを捨て札にする。誰かが財宝を廃棄した場合、海賊船マットにコイントークンを1個置く。' },
+    sea_hag: { id: 'sea_hag', name: '海の妖婆', cost: 4, types: ['action', 'attack'],
+                 text: '他のプレイヤーは全員、山札の一番上のカードを捨て札にし、その後、呪い1枚を山札の上に獲得する。' },
+    explorer: { id: 'explorer', name: '探検家', cost: 5, types: ['action'],
+                 text: '手札から属州1枚を公開してもよい。そうした場合、金貨1枚を手札に獲得する。そうしなかった場合、銀貨1枚を手札に獲得する。' },
+    ghost_ship: { id: 'ghost_ship', name: '幽霊船', cost: 5, types: ['action', 'attack'],
+                 text: '+2 カード\n手札が4枚以上の他のプレイヤーは全員、手札が3枚になるまで、手札のカードを山札の上に置く。' },
+
+    // ---- 繁栄 第1版（2010年・第2版で削除された9種）----
+    loan: { id: 'loan', name: '借金', cost: 3, types: ['treasure'], coin: 1,
+                 text: '1 コイン\n財宝カードが公開されるまで山札のカードを公開する。そのカードを捨て札にするか廃棄する。残りのカードを捨て札にする。' },
+    trade_route: { id: 'trade_route', name: '交易路', cost: 3, types: ['action'],
+                 text: '+1 購入\n手札からカード1枚を廃棄する。交易路マットのコイントークン1個につき +1 コイン。\n————\n準備：勝利点カードのサプライの山それぞれにコイントークンを1個置く。その山からカードが獲得されたとき、そのトークンを交易路マットに移す。' },
+    talisman: { id: 'talisman', name: '護符', cost: 4, types: ['treasure'], coin: 1,
+                 text: '1 コイン\nこれが場に出ている間、コスト4以下の勝利点でないカードを購入したとき、同じカード1枚を獲得する。' },
+    contraband: { id: 'contraband', name: '禁制品', cost: 5, types: ['treasure'], coin: 3,
+                 text: '3 コイン\n+1 購入\n左隣のプレイヤーがカード1種を指定する。このターン、あなたはそのカードを購入できない。' },
+    counting_house: { id: 'counting_house', name: '会計所', cost: 5, types: ['action'],
+                 text: '捨て札置き場を見て、その中の銅貨を好きな枚数公開し、手札に加える。' },
+    mountebank: { id: 'mountebank', name: '香具師', cost: 5, types: ['action', 'attack'],
+                 text: '+2 コイン\n他のプレイヤーは全員、呪い1枚を捨て札にしてもよい。そうしなかった場合、呪い1枚と銅貨1枚を獲得する。' },
+    royal_seal: { id: 'royal_seal', name: '玉璽', cost: 5, types: ['treasure'], coin: 2,
+                 text: '2 コイン\nこれが場に出ている間、カードを獲得したとき、そのカードを山札の上に置いてもよい。' },
+    venture: { id: 'venture', name: '投機', cost: 5, types: ['treasure'], coin: 1,
+                 text: '1 コイン\n財宝カードが公開されるまで山札のカードを公開する。残りのカードを捨て札にする。その財宝カードを使用する。' },
+    goons: { id: 'goons', name: 'ならず者', cost: 6, types: ['action', 'attack'],
+                 text: '+1 購入\n+2 コイン\n他のプレイヤーは全員、手札が3枚になるまで捨て札にする。\n————\nこれが場に出ている間、カードを購入したとき、+1 勝利点トークン。' },
+
+    // ---- 収穫祭＆ギルド 第2版（2023年・合本で追加された王国8種＝日本語版未発売）----
+    farrier: { id: 'farrier', name: '装蹄師', cost: 2, types: ['action'],
+                 text: '+1 カード\n+1 アクション\n+1 購入\n————\n過払い：追加で支払った1コインにつき、このターンの終了時に +1 カード。' },
+    shop: { id: 'shop', name: '店', cost: 3, types: ['action'],
+                 text: '+1 カード\n+1 コイン\n場に出していない名前のアクションカード1枚を手札から使用してもよい。' },
+    infirmary: { id: 'infirmary', name: '診療所', cost: 3, types: ['action'],
+                 text: '+1 カード\n手札からカード1枚を廃棄してもよい。\n————\n過払い：追加で支払った1コインにつき、これを1回使用する。' },
+    farmhands: { id: 'farmhands', name: '耕作者', cost: 4, types: ['action'],
+                 text: '+1 カード\n+2 アクション\n————\nこれを獲得したとき、手札からアクションカードか財宝カード1枚を脇に置いてもよい。そうした場合、次のあなたのターンの開始時にそれを使用する。' },
+    carnival: { id: 'carnival', name: '謝肉祭', cost: 5, types: ['action'],
+                 text: '山札の上から4枚を公開する。名前の異なるカードを1枚ずつ手札に加え、残りを捨て札にする。' },
+    ferryman: { id: 'ferryman', name: '渡し守', cost: 5, types: ['action'],
+                 text: '+2 カード\n+1 アクション\n手札からカード1枚を捨て札にする。\n————\n準備：使わない、コスト3か4の王国カードの山1つを選ぶ。渡し守を獲得したとき、その山からカード1枚を獲得する。' },
+    footpad: { id: 'footpad', name: '野盗', cost: 5, types: ['action', 'attack'],
+                 text: '+2 財源\n他のプレイヤーは全員、手札が3枚になるまで捨て札にする。\n————\nこれを使うゲームでは、アクションフェイズにカードを獲得したとき、+1 カード。' },
+    joust: { id: 'joust', name: '一騎討ち', cost: 5, types: ['action'],
+                 text: '+1 カード\n+1 アクション\n+1 コイン\n手札から属州1枚を脇に置いてもよい。そうした場合、褒賞1枚を手札に獲得する。クリーンアップ時にその属州を捨て札にする。' },
+
+    // ---- 褒賞(Reward)6種＝一騎討ちでのみ獲得できる非サプライ（収穫祭の賞品 Prizes と同型・各1枚）----
+    coronet: { id: 'coronet', name: '小冠', cost: 0, types: ['action', 'treasure', 'reward'],
+                 text: '手札から褒賞でないアクションカード1枚を2回使用してもよい。\n手札から褒賞でない財宝カード1枚を2回使用してもよい。\n（これはサプライにはない。）' },
+    courser: { id: 'courser', name: '駿馬', cost: 0, types: ['action', 'reward'],
+                 text: '以下から異なる2つを選ぶ：\n+2 カード / +2 アクション / +2 コイン / 銀貨4枚を獲得する。\n（これはサプライにはない。）' },
+    demesne: { id: 'demesne', name: '御料地', cost: 0, types: ['action', 'victory', 'reward'],
+                 text: '+2 アクション\n+2 購入\n金貨1枚を獲得する。\n————\n所持する金貨1枚につき 1 勝利点。\n（これはサプライにはない。）' },
+    housecarl: { id: 'housecarl', name: 'ハスカール', cost: 0, types: ['action', 'reward'],
+                 text: '場に出している名前の異なるアクションカード1枚につき +1 カード。\n（これはサプライにはない。）' },
+    huge_turnip: { id: 'huge_turnip', name: '大きなかぶ', cost: 0, types: ['treasure', 'reward'], coin: 0,
+                 text: '+2 財源\n持っている財源1つにつき +1 コイン。\n（これはサプライにはない。）' },
+    renown: { id: 'renown', name: '名声', cost: 0, types: ['action', 'reward'],
+                 text: '+1 購入\nこのターン、カードのコストは2コイン安くなる。\n（これはサプライにはない。）' },
+
+    // ---- プロモ（2024年3月・日本語版は2024年11月のホビージャパン キャンペーン）----
+    marchland: { id: 'marchland', name: '境界地', cost: 5, types: ['victory'],
+                 text: '所持する勝利点カード3枚につき 1 勝利点（端数切り捨て）。\n————\nこれを獲得したとき、+1 購入、および手札を好きな枚数捨て札にし、1枚につき +1 コイン。' },
   };
 
   /* ---------- 王国カードのセット ----------
@@ -1899,11 +1982,19 @@
     'change', 'alley', 'ninja', 'poet', 'river_shrine', 'rustic_village',
     'gold_mine', 'imperial_envoy', 'tea_house', 'kitsune', 'litter', 'rice_broker', 'ronin', 'tanuki',
     'mountain_shrine', 'daimyo', 'artist', 'rice', 'samurai'];
+  /* 段階1（2026-08-23）＝未実装33種。**効果はまだ空**＝下の `STAGE1_POOLS` で闇市場から塞ぐ。
+     海辺 第1版／繁栄 第1版は、段階2で実プレイ化したら `seaside1e = seaside(2E から新9を除く)+削除8` の形に
+     組み直して `random-1e` 相当のセットに乗せる（基本/陰謀の `basic1e` / `intrigue1e` と同じ作り）。 */
+  DOM.POOLS.seaside1e = ['embargo', 'pearl_diver', 'ambassador', 'navigator', 'pirate_ship', 'sea_hag', 'explorer', 'ghost_ship'];
+  DOM.POOLS.prosperity1e = ['loan', 'trade_route', 'talisman', 'contraband', 'counting_house', 'mountebank', 'royal_seal', 'venture', 'goons'];
+  DOM.POOLS.cornguilds2e = ['farrier', 'shop', 'infirmary', 'farmhands', 'carnival', 'ferryman', 'footpad', 'joust'];
+  DOM.POOLS.rewards = ['coronet', 'courser', 'demesne', 'housecarl', 'huge_turnip', 'renown']; // 非サプライ（一騎討ちでのみ）
+  DOM.POOLS.promo_new = ['marchland']; // プロモ（効果実装後に `promo` へ合流させる）
   // 段階1（効果が未実装）のプール＝闇市場デッキに入れない（買っても何も起きない死に札になるため）。
   //   実プレイ化（段階2＝CARD_SET 昇格）のときに、この配列から外す。
   //   略奪は P7 で昇格済み＝空に戻した（戦利品 Loot は NON_SUPPLY なので闇市場には元々入らない）。
   //   旭日は段階1（2026-08-20）＝ここに入れる。**段階2の R7 で外すこと**。
-  DOM.STAGE1_POOLS = [];
+  DOM.STAGE1_POOLS = ['seaside1e', 'prosperity1e', 'cornguilds2e', 'rewards', 'promo_new']; // 2026-08-23 段階1の33種（段階2で外す）
   // 移動動物園の固定10種（自作 showcase）。追放（ラクダの隊列）・馬（そり/騎兵隊/馬丁/貸し馬屋）・
   //   持続（艀/村有緑地）・アタック（魔女の集会）・獲得に反応するリアクション（牧羊犬/村有緑地）を一通り味わえる。
   //   コスト分布＝$2×1／$3×3／$4×3／$5×3。
@@ -2785,6 +2876,11 @@
     // If you have no Action cards in play, gain an Action card costing up to [$5].
     // ⚠ 「場にアクションが無い」の判定は p.inPlay ＋ p.durationCards の両方を見る（公式FAQ が
     //    「前のターンに使った持続カードが場にあると獲得できない」と名指し）。段階2の注意点。
+    /* プロモのイベント（2015年11月）＝**本アプリ初のプロモ・イベント**。段階1＝効果は空。
+       ⚠ 段階2で `eventPoolFor` / `MIX_LANDSCAPE_POOLS` に配線する（段階1では配線しない＝買っても何も起きない死に札が出る）。
+       英語カード文＝`Gain an Action card costing up to [$4]. Set it aside. If you did, then at the start of your next turn, play it.` */
+    summon: { name: '召喚', nameEn: 'Summon', kind: 'event', expansion: 'promo', cost: 5, debt: 0,
+      text: 'コスト4以下のアクションカード1枚を獲得する。それを脇に置く。そうした場合、次のあなたのターンの開始時にそれを使用する。' },
     amass: { name: '蓄積', nameEn: 'Amass', kind: 'event', expansion: 'risingsun', cost: 2, debt: 0,
       text: 'アクションカードを1枚も場に出していない場合、コスト5以下のアクションカード1枚を獲得する。' },
     // Pay any amount of [$] to trash that many cards from your hand.
@@ -3003,6 +3099,8 @@
   /* 旭日：イベント10種／予言(Prophecy)15種（段階1＝どの CARD_SET からも参照していない）。
      予言は**王国に前兆(Omen)が1枚でもあれば1枚だけ**配る（Ally と同じ扱い＝横型の「合計2枚まで」に数えない）。 */
   DOM.EVENTS_RISINGSUN = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'event' && DOM.LANDSCAPES[id].expansion === 'risingsun');
+  // プロモのイベント（召喚 Summon）＝段階1（2026-08-23）。⚠ まだ `eventPoolFor` / `MIX_LANDSCAPE_POOLS` には配線しない（効果が空）。
+  DOM.EVENTS_PROMO = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'event' && DOM.LANDSCAPES[id].expansion === 'promo');
   DOM.PROPHECIES_RISINGSUN = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'prophecy');
   // ルネサンス プロジェクト20種（抽選元）。買う横型＝BUY_PROJECT で発火（1人2つまで・同じものは1回だけ）。
   DOM.PROJECTS_RENAISSANCE = Object.keys(DOM.LANDSCAPES).filter((id) => DOM.LANDSCAPES[id].kind === 'project' && DOM.LANDSCAPES[id].expansion === 'renaissance');

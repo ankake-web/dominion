@@ -42,8 +42,12 @@ push すると本番 Pages/Render に反映される。**本番反映は機械�
 `gh api -X POST repos/ankake-web/dominion/pages/deployments/<旧SHA>/cancel` で解除（§6 に手順）。
 
 ### 優先3＝**未実装33種の実装**（PROGRESS §0-40 の表）
+✅ **33種すべての段階1（カタログ＋絵＋webp）は完了（2026-08-23）**＝`DOM.CARDS` 618／`LANDSCAPES` 227＝844枚・全部絵入り。
+   `STAGE1_POOLS = ['seaside1e','prosperity1e','cornguilds2e','rewards','promo_new']` で闇市場から塞いである
+   ＝**段階2で CARD_SET に昇格するときに外す**。新種別 `reward`（褒賞）＝賞品と同型の非サプライ。
 ✅ **19種（海辺 第1版8／繁栄 第1版9／プロモ2）の段階0は完了**＝正本 `docs/research/missing19_rules.md`（308KB）。
    **着手前に冒頭の「実装前に必読」12項目＋重大な訂正2件を必ず読む**。
+⚠ **残り14種（収穫祭＆ギルド第2版）は段階0（研究）が未着手**＝Ferryman の「サプライ外の山」が前例の無い機構。
 海辺 第1版8・繁栄 第1版9・プロモ2 は既存機構でほぼ書ける。
 🛑 **最重量は収穫祭＆ギルド第2版の Ferryman**＝「$3〜$4 の王国カード1山をサプライ外に置く」
 ＝本アプリに前例の無い非サプライ機構。褒賞(Reward)6種は賞品(Prizes)と同型。
@@ -59,7 +63,7 @@ push すると本番 Pages/Render に反映される。**本番反映は機械�
 - **バグは必ず node で再現してから直す**／**回帰テストはバグ注入で感度を確かめる**。
 - **engine を締めたら CPU と UI も同じコミットで直す**（窓・受理・CPU候補・UIフィルタの4面）。
   新しい pending は**4点セット必須**（engine reducer＋`PLAYER_ACTIONS`＋CPU `decidePending`＋UI `viewPendingModal`）。
-- **client 資産（js/css/webp/sw）を変えたら `sw.js` の VERSION を上げる**（今 **v83**）。
+- **client 資産（js/css/webp/sw）を変えたら `sw.js` の VERSION を上げる**（今 **v84**）。
 - 使い捨てスクリプトは**プロジェクト直下に `_*.tmp.js`** で作り**実行後必ず削除**（`_*` は gitignore 済み）。
 - **push はユーザー確認**（コミットは自由）。
 - 実ブラウザ検証は **`E2E_SET=旭日 npm run verify:e2e`** で拡張セットを選べる

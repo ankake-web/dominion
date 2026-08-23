@@ -113,6 +113,12 @@
     // 戦利品(Loot)15種＝非サプライ（NON_SUPPLY_SET）＝汎用獲得の候補にならない（GAIN_ORDER=全カードの整合性のためだけ）。
     'amphora', 'doubloons', 'endless_chalice', 'figurehead', 'hammer', 'insignia', 'jewels', 'orb', 'prize_goat', 'puzzle_box',
     'sextant', 'shield', 'spell_scroll', 'staff', 'sword',
+    /* 段階1（2026-08-23）＝未実装33種。効果が空なので闇市場にも出ない（STAGE1_POOLS）＝GAIN_ORDER=全カードの整合性のためだけ。
+       段階2で実プレイ化したら**実強度順の位置へ移す**（賞品型の褒賞6種は NON_SUPPLY_SET なのでここのままでよい）。 */
+    'embargo', 'pearl_diver', 'ambassador', 'navigator', 'pirate_ship', 'sea_hag', 'explorer', 'ghost_ship',
+    'loan', 'trade_route', 'talisman', 'contraband', 'counting_house', 'mountebank', 'royal_seal', 'venture', 'goons',
+    'farrier', 'shop', 'infirmary', 'farmhands', 'carnival', 'ferryman', 'footpad', 'joust',
+    'coronet', 'courser', 'demesne', 'housecarl', 'huge_turnip', 'renown', 'marchland',
     'copper', 'curse'];
   /* 旭日：影(Shadow)は**山札のどこにあっても手札と同じように使える**＝「手札から使わせる」窓（群A）の
      候補は engine の handPlayable（手札＋山札の影札）と同じ集合を見る。
@@ -139,6 +145,7 @@
   // 移動動物園：馬（horse）も非サプライ＝「馬を獲得する」効果でのみ得る（購入も汎用獲得もできない）。
   // 夜想曲：精霊3種/願い/コウモリ＝非サプライ山、家宝7種/ゾンビ3種＝山そのものが無い。いずれも汎用獲得の対象外。
   const NON_SUPPLY_SET = new Set([...PRIZE_SET, 'spoils', 'madman', 'mercenary',
+    'coronet', 'courser', 'demesne', 'housecarl', 'huge_turnip', 'renown', // 収穫祭＆ギルド第2版：褒賞(Reward)＝engine の REWARDS と同じ集合
     'treasure_hunter', 'warrior', 'hero', 'champion', 'soldier', 'fugitive', 'disciple', 'teacher', 'horse',
     'will_o_wisp', 'imp', 'ghost', 'wish', 'bat',
     'cursed_gold', 'goat', 'haunted_mirror', 'lucky_coin', 'magic_lamp', 'pasture', 'pouch',

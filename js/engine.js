@@ -15,6 +15,8 @@
   const PRIZES = ['bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed'];
   // 冒険：トラベラーの成長先8種は非サプライ（各5枚・page/peasant が場にあるときだけ登場・購入不可・交換でのみ得る）。
   const TRAVELLER_GROWTH = ['treasure_hunter', 'warrior', 'hero', 'champion', 'soldier', 'fugitive', 'disciple', 'teacher'];
+  // 収穫祭＆ギルド第2版：褒賞(Reward)6種＝一騎討ち(Joust)でのみ獲得する非サプライ（賞品 Prizes と同型・各1枚）。段階1＝効果はまだ空。
+  const REWARDS = ['coronet', 'courser', 'demesne', 'housecarl', 'huge_turnip', 'renown'];
   const PRIZE_SET = new Set(PRIZES); // 馬上槍試合でのみ獲得できる「賞品」5種（NON_SUPPLY の部分集合＝混同すると mix で pending が閉じない）
   // 夜想曲：精霊3種＋願い＋コウモリ＝非サプライ山（枚数は人数によらない。専用の効果でのみ得る）。
   const SPIRITS = ['will_o_wisp', 'imp', 'ghost'];
@@ -29,7 +31,7 @@
      → `NON_SUPPLY` に入れて4系統（3山終了／購入／闇市場デッキ母集団／汎用獲得）から一括除外する。 */
   const LOOT_IDS = (DOM.POOLS && DOM.POOLS.loot) ? DOM.POOLS.loot.slice() : [];
   const LOOT_SET = new Set(LOOT_IDS);
-  const NON_SUPPLY = new Set([].concat(PRIZES, ['spoils', 'madman', 'mercenary'], TRAVELLER_GROWTH, ['horse'], NOCTURNE_NP, HEIRLOOMS, ZOMBIES, LOOT_IDS)); // supply の数値キーだが「山」としては数えない/買えないもの（賞品＋暗黒時代の略奪品/狂人/傭兵＋冒険のトラベラー成長先＋移動動物園の馬＋夜想曲の精霊/願い/コウモリ/家宝/ゾンビ＋略奪の戦利品）
+  const NON_SUPPLY = new Set([].concat(PRIZES, REWARDS, ['spoils', 'madman', 'mercenary'], TRAVELLER_GROWTH, ['horse'], NOCTURNE_NP, HEIRLOOMS, ZOMBIES, LOOT_IDS)); // supply の数値キーだが「山」としては数えない/買えないもの（賞品＋暗黒時代の略奪品/狂人/傭兵＋冒険のトラベラー成長先＋移動動物園の馬＋夜想曲の精霊/願い/コウモリ/家宝/ゾンビ＋略奪の戦利品）
   // 分割山（Split pile）：下段は上段が尽きるまで購入/獲得できない。正本は DOM.SPLIT_PILES（下段id→上段id）。
   const SPLIT_TOP = DOM.SPLIT_PILES || {};              // 下段id → 上段id（例 avanto→sauna）
   const SPLIT_BOTTOM = {}; Object.keys(SPLIT_TOP).forEach((b) => { SPLIT_BOTTOM[SPLIT_TOP[b]] = b; }); // 上段id → 下段id
