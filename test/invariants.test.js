@@ -180,7 +180,8 @@ console.log('=== カード保存則: 出荷セット（固定/ランダム各種
     'nocturne', 'random-nocturne',
     'allies', 'random-allies',
     'plunder', 'plunder-events', 'plunder-traits', 'random-plunder', // 略奪（P7 で昇格）
-    'risingsun', 'risingsun-events', 'random-risingsun']; // 旭日（R7 で昇格）
+    'risingsun', 'risingsun-events', 'random-risingsun', // 旭日（R7 で昇格）
+    'seaside1e', 'prosperity1e', 'cornguilds2e', 'promo-events', 'random-seaside1e', 'random-prosperity1e', 'random-cornguilds2e']; // 未実装33種の昇格（2026-08-23）
   let allOk = true;
   for (const setId of sets) {
     for (let sd = 0; sd < 3; sd++) {

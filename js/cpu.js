@@ -43,10 +43,10 @@
   }
 
   /* 獲得したいカードの優先順（高いほど良い）。基本＋拡張(陰謀)の全王国カードを網羅。 */
-  const GAIN_ORDER = ['colony', 'platinum', 'province', 'gold', 'artisan', 'nobles', 'harem', 'duchy',
-    'adventurer', 'laboratory', 'festival', 'witch', 'bandit', 'governor', 'captain', 'council_room', 'patrol', 'avanto', 'library', 'market', 'minion', 'mine', 'sentry', 'prince', 'courtier', 'replace', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'spy', 'thief', 'upgrade', 'bureaucrat', 'feast', 'stash', 'silver',
-    'sauna', 'poacher', 'mining_village', 'smithy', 'mill', 'walled_village', 'dismantle', 'envoy', 'secret_passage', 'diplomat', 'courtyard', 'masquerade', 'throne_room', 'great_hall', 'tribute', 'militia', 'steward', 'church', 'trading_post', 'baron', 'scout',
-    'remodel', 'moneylender', 'merchant', 'harbinger', 'vassal', 'village', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith', 'chancellor', 'black_market', 'hoard',
+  const GAIN_ORDER = ['colony', 'platinum', 'province', 'gold', 'artisan', 'nobles', 'harem', 'duchy', 'marchland',
+    'adventurer', 'laboratory', 'ferryman', 'explorer', 'carnival', 'festival', 'witch', 'mountebank', 'sea_hag', 'bandit', 'governor', 'captain', 'council_room', 'patrol', 'avanto', 'library', 'market', 'joust', 'navigator', 'minion', 'mine', 'sentry', 'prince', 'courtier', 'replace', 'ironworks', 'bridge', 'conspirator', 'torturer', 'swindler', 'saboteur', 'spy', 'thief', 'upgrade', 'bureaucrat', 'feast', 'stash', 'silver',
+    'sauna', 'poacher', 'mining_village', 'smithy', 'ghost_ship', 'mill', 'walled_village', 'dismantle', 'envoy', 'secret_passage', 'diplomat', 'courtyard', 'masquerade', 'ambassador', 'throne_room', 'great_hall', 'tribute', 'militia', 'pirate_ship', 'footpad', 'steward', 'church', 'trading_post', 'baron', 'scout',
+    'remodel', 'royal_seal', 'talisman', 'moneylender', 'merchant', 'harbinger', 'vassal', 'village', 'farrier', 'farmhands', 'shop', 'pearl_diver', 'shanty_town', 'wishing_well', 'woodcutter', 'workshop', 'coppersmith', 'chancellor', 'black_market', 'hoard',
     // 海辺（第二版）＝強さ/コストの目安順。CPUの購入優先度（サプライにある時だけ効く）。
     'wharf', 'sea_witch', 'bazaar', 'corsair', 'blockade', 'treasury', 'island', 'merchant_ship', 'fishing_village',
     'tactician', 'caravan', 'monkey', 'warehouse', 'salvager', 'cutpurse', 'sailor', 'outpost', 'lighthouse',
@@ -56,7 +56,7 @@
     'potion', 'transmute', 'vineyard', 'herbalist', 'apothecary', 'scrying_pool', 'university',
     'alchemist', 'familiar', 'philosophers_stone', 'golem', 'apprentice', 'possession',
     // 繁栄（第二版）王国カード25種＝強さ/コストの目安順。供給があるときだけ効く。
-    'kings_court', 'grand_market', 'bank', 'expand', 'forge', 'peddler', 'city', 'vault', 'rabble',
+    'kings_court', 'grand_market', 'goons', 'bank', 'venture', 'contraband', 'expand', 'forge', 'peddler', 'city', 'vault', 'rabble',
     'magnate', 'mint', 'collection', 'crystal_ball', 'charlatan', 'war_chest', 'bishop',
     'monument', 'workers_village', 'watchtower', 'tiara', 'quarry', 'investment', 'anvil', 'clerk',
     // ギルド（実プレイ＝段階2）＝強さ/コストの目安順。供給があるときだけ効く（bestEngineBuy/bestGain が参照）。
@@ -96,7 +96,7 @@
     'longship', 'buried_treasure', 'harbor_village', 'landing_party', 'flagship', 'abundance', 'cabin_boy',
     'crucible', 'fortune_hunter', 'gondola', 'mapmaker', 'swamp_shacks', 'tools', 'rope', 'maroon',
     'taskmaster', 'secluded_shrine', 'siren', 'stowaway', 'shaman', 'search', 'jewelled_egg', 'grotto', 'cage',
-    'pawn', 'lurker', 'moat', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke',
+    'pawn', 'lurker', 'moat', 'embargo', 'loan', 'trade_route', 'counting_house', 'infirmary', 'secret_chamber', 'chapel', 'cellar', 'gardens', 'estate', 'duke',
     // 追加拡張（収穫祭/異郷/暗黒時代）＝孤立プールで実サプライに出ないため並び順はCPU挙動に無影響
     // （新プロモ6種は実プレイ化済み＝上の実強度順の位置に配置済み）
     'hamlet', 'fortune_teller', 'menagerie', 'farming_village', 'horse_traders', 'remake', 'tournament', 'young_witch', 'harvest', 'horn_of_plenty', 'hunting_party', 'jester', 'fairgrounds', 'bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed', 'crossroads', 'duchess', 'fools_gold', 'develop', 'oasis', 'oracle', 'scheme', 'tunnel', 'jack_of_all_trades', 'noble_brigand', 'nomad_camp', 'silk_road', 'spice_merchant', 'trader', 'cache', 'cartographer', 'embassy', 'haggler', 'highway', 'ill_gotten_gains', 'inn', 'mandarin', 'margrave', 'stables', 'border_village', 'farmland', 'nomads', 'trail', 'weaver', 'souk', 'cauldron', 'guard_dog', 'berserker', 'wheelwright', 'witchs_hut', 'poor_house', 'squire', 'vagrant', 'beggar', 'hermit', 'sage', 'forager', 'storeroom', 'urchin', 'market_square', 'ironmonger', 'wandering_minstrel', 'procession', 'scavenger', 'fortress', 'rats', 'armory', 'death_cart', 'marauder', 'feodum',
@@ -113,12 +113,8 @@
     // 戦利品(Loot)15種＝非サプライ（NON_SUPPLY_SET）＝汎用獲得の候補にならない（GAIN_ORDER=全カードの整合性のためだけ）。
     'amphora', 'doubloons', 'endless_chalice', 'figurehead', 'hammer', 'insignia', 'jewels', 'orb', 'prize_goat', 'puzzle_box',
     'sextant', 'shield', 'spell_scroll', 'staff', 'sword',
-    /* 段階1（2026-08-23）＝未実装33種。効果が空なので闇市場にも出ない（STAGE1_POOLS）＝GAIN_ORDER=全カードの整合性のためだけ。
-       段階2で実プレイ化したら**実強度順の位置へ移す**（賞品型の褒賞6種は NON_SUPPLY_SET なのでここのままでよい）。 */
-    'embargo', 'pearl_diver', 'ambassador', 'navigator', 'pirate_ship', 'sea_hag', 'explorer', 'ghost_ship',
-    'loan', 'trade_route', 'talisman', 'contraband', 'counting_house', 'mountebank', 'royal_seal', 'venture', 'goons',
-    'farrier', 'shop', 'infirmary', 'farmhands', 'carnival', 'ferryman', 'footpad', 'joust',
-    'coronet', 'courser', 'demesne', 'housecarl', 'huge_turnip', 'renown', 'marchland',
+    // 褒賞6種＝非サプライ（NON_SUPPLY_SET）＝末尾のままでよい
+    'coronet', 'courser', 'demesne', 'housecarl', 'huge_turnip', 'renown',
     'copper', 'curse'];
   /* 旭日：影(Shadow)は**山札のどこにあっても手札と同じように使える**＝「手札から使わせる」窓（群A）の
      候補は engine の handPlayable（手札＋山札の影札）と同じ集合を見る。

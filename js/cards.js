@@ -1827,7 +1827,7 @@
                'conspirator', 'ironworks', 'mining_village', 'torturer', 'duke', 'nobles', 'harem',
                'trading_post', 'upgrade', 'swindler', 'minion', 'masquerade'].concat(INTRIGUE_NEW_2E),
     // プロモ（6種）
-    promo: ['walled_village', 'envoy', 'governor', 'dismantle', 'black_market', 'hoard', 'stash', 'prince', 'captain', 'church', 'sauna', 'avanto'],
+    promo: ['walled_village', 'envoy', 'governor', 'dismantle', 'black_market', 'hoard', 'stash', 'prince', 'captain', 'church', 'sauna', 'avanto', 'marchland'], // 境界地（2024年3月）＝段階2で合流
     // 海辺 第二版（27種）= 抽選母集団。「海辺セット」(固定10種)と「海辺から」(ランダム)が参照する。
     seaside: ['native_village', 'haven', 'lighthouse', 'warehouse', 'smugglers', 'lookout',
               'fishing_village', 'sea_chart', 'monkey', 'astrolabe', 'treasure_map', 'salvager',
@@ -1982,19 +1982,28 @@
     'change', 'alley', 'ninja', 'poet', 'river_shrine', 'rustic_village',
     'gold_mine', 'imperial_envoy', 'tea_house', 'kitsune', 'litter', 'rice_broker', 'ronin', 'tanuki',
     'mountain_shrine', 'daimyo', 'artist', 'rice', 'samurai'];
-  /* 段階1（2026-08-23）＝未実装33種。**効果はまだ空**＝下の `STAGE1_POOLS` で闇市場から塞ぐ。
-     海辺 第1版／繁栄 第1版は、段階2で実プレイ化したら `seaside1e = seaside(2E から新9を除く)+削除8` の形に
-     組み直して `random-1e` 相当のセットに乗せる（基本/陰謀の `basic1e` / `intrigue1e` と同じ作り）。 */
+  /* 未実装33種（2026-08-23）＝段階2で全部実装し昇格済み。`seaside1e`/`prosperity1e`/`cornguilds2e` は**その版の固有カードだけ**のプール
+     （mix／カード一覧／整合性テストの所属）。抽選用の「版まるごと」プールは下の `*_full`（基本/陰謀の `basic1e` と同じ作り）。 */
   DOM.POOLS.seaside1e = ['embargo', 'pearl_diver', 'ambassador', 'navigator', 'pirate_ship', 'sea_hag', 'explorer', 'ghost_ship'];
   DOM.POOLS.prosperity1e = ['loan', 'trade_route', 'talisman', 'contraband', 'counting_house', 'mountebank', 'royal_seal', 'venture', 'goons'];
   DOM.POOLS.cornguilds2e = ['farrier', 'shop', 'infirmary', 'farmhands', 'carnival', 'ferryman', 'footpad', 'joust'];
   DOM.POOLS.rewards = ['coronet', 'courser', 'demesne', 'housecarl', 'huge_turnip', 'renown']; // 非サプライ（一騎討ちでのみ）
-  DOM.POOLS.promo_new = ['marchland']; // プロモ（効果実装後に `promo` へ合流させる）
+  // 版まるごとの抽選プール（重複所属＝basic1e と同じ流儀。闇市場 universe は Set で潰す）
+  const SEASIDE_NEW_2E = ['monkey', 'astrolabe', 'sea_chart', 'tide_pools', 'sailor', 'blockade', 'corsair', 'sea_witch', 'pirate'];
+  const PROSPERITY_NEW_2E = ['anvil', 'clerk', 'investment', 'tiara', 'charlatan', 'collection', 'crystal_ball', 'magnate', 'war_chest'];
+  const CORNGUILDS_REMOVED_2E = ['doctor', 'farming_village', 'fortune_teller', 'harvest', 'horse_traders', 'masterpiece', 'taxman', 'tournament'];
+  DOM.POOLS.seaside1e_full = DOM.POOLS.seaside.filter((id) => !SEASIDE_NEW_2E.includes(id)).concat(DOM.POOLS.seaside1e);          // 海辺 初版 26
+  DOM.POOLS.prosperity1e_full = DOM.POOLS.prosperity.filter((id) => !PROSPERITY_NEW_2E.includes(id)).concat(DOM.POOLS.prosperity1e); // 繁栄 初版 25
+  DOM.POOLS.cornguilds2e_full = DOM.POOLS.cornucopia.concat(DOM.POOLS.guilds).filter((id) => !CORNGUILDS_REMOVED_2E.includes(id)).concat(DOM.POOLS.cornguilds2e); // 収穫祭＆ギルド 第2版 26
+  // 固定10種（自作 showcase）
+  DOM.KINGDOM_SEASIDE_1E = ['embargo', 'pearl_diver', 'ambassador', 'navigator', 'pirate_ship', 'sea_hag', 'explorer', 'ghost_ship', 'lighthouse', 'wharf'];
+  DOM.KINGDOM_PROSPERITY_1E = ['loan', 'trade_route', 'talisman', 'contraband', 'counting_house', 'mountebank', 'royal_seal', 'venture', 'goons', 'kings_court'];
+  DOM.KINGDOM_CORNGUILDS_2E = ['farrier', 'shop', 'infirmary', 'farmhands', 'carnival', 'ferryman', 'footpad', 'joust', 'baker', 'plaza'];
   // 段階1（効果が未実装）のプール＝闇市場デッキに入れない（買っても何も起きない死に札になるため）。
   //   実プレイ化（段階2＝CARD_SET 昇格）のときに、この配列から外す。
   //   略奪は P7 で昇格済み＝空に戻した（戦利品 Loot は NON_SUPPLY なので闇市場には元々入らない）。
   //   旭日は段階1（2026-08-20）＝ここに入れる。**段階2の R7 で外すこと**。
-  DOM.STAGE1_POOLS = ['seaside1e', 'prosperity1e', 'cornguilds2e', 'rewards', 'promo_new']; // 2026-08-23 段階1の33種（段階2で外す）
+  DOM.STAGE1_POOLS = []; // 2026-08-23 未実装33種を段階2で昇格＝空（次に段階1の拡張を足したらまたここに入れる）
   // 移動動物園の固定10種（自作 showcase）。追放（ラクダの隊列）・馬（そり/騎兵隊/馬丁/貸し馬屋）・
   //   持続（艀/村有緑地）・アタック（魔女の集会）・獲得に反応するリアクション（牧羊犬/村有緑地）を一通り味わえる。
   //   コスト分布＝$2×1／$3×3／$4×3／$5×3。
@@ -2053,6 +2062,11 @@
     { id: 'plunder-traits',  kind: 'standard', name: '略奪＋特性', desc: '略奪10種＋特性2枚（サプライの山に付く横型＝山ごと性格が変わる）', kingdom: DOM.KINGDOM_PLUNDER, traitsFrom: 'plunderexp' },
     { id: 'risingsun',       kind: 'standard', name: '旭日セット', desc: '前兆と予言（Sunトークン）・裏面の違う影カード・命令の大名', kingdom: DOM.KINGDOM_RISINGSUN },
     { id: 'risingsun-events', kind: 'standard', name: '旭日＋イベント', desc: '旭日10種＋イベント2枚（稽古の2回使用・継続のアクションフェイズ復帰）', kingdom: DOM.KINGDOM_RISINGSUN, eventsFrom: 'risingsun' },
+    // 2026-08-23：未実装33種の昇格＝海辺 初版／繁栄 初版／収穫祭＆ギルド 第2版／プロモ＋召喚
+    { id: 'seaside1e',       kind: 'standard', name: '海辺セット（初版）', desc: '第2版で削除された8種（抑留・海賊船・海の妖婆・大使…）＋灯台・埠頭', kingdom: DOM.KINGDOM_SEASIDE_1E },
+    { id: 'prosperity1e',    kind: 'standard', name: '繁栄セット（初版）', desc: '第2版で削除された9種（交易路・香具師・ならず者・玉璽…）＋王の宮廷', kingdom: DOM.KINGDOM_PROSPERITY_1E },
+    { id: 'cornguilds2e',    kind: 'standard', name: '収穫祭＆ギルド（第2版）', desc: '2023年の合本で追加された8種（渡し守・一騎討ち＋褒賞・野盗…）＋パン屋・広場', kingdom: DOM.KINGDOM_CORNGUILDS_2E },
+    { id: 'promo-events',    kind: 'standard', name: 'プロモ＋召喚', desc: 'プロモ全部入りの王国10種＋イベント「召喚」', kingdom: ['cellar', 'walled_village', 'envoy', 'dismantle', 'militia', 'hoard', 'governor', 'market', 'black_market', 'witch'], eventsFrom: 'promo' },
     // ---- おすすめ（テーマ別・固定10種）----
     { id: 'big-money',       kind: 'recommend', name: 'ビッグマネー', desc: 'お金を伸ばして属州を狙う王道',
       kingdom: ['chapel', 'moneylender', 'harbinger', 'throne_room', 'bureaucrat', 'poacher', 'market', 'mine', 'laboratory', 'sentry'] },
@@ -2098,10 +2112,13 @@
     { id: 'random-allies',   kind: 'random', name: '同盟から',       randomFrom: ['allies'] },
     { id: 'random-plunder',  kind: 'random', name: '略奪から',       randomFrom: ['plunderexp'] },
     { id: 'random-risingsun', kind: 'random', name: '旭日から',      randomFrom: ['risingsun'] },
+    { id: 'random-seaside1e', kind: 'random', name: '海辺（初版）から', randomFrom: ['seaside1e_full'] },
+    { id: 'random-prosperity1e', kind: 'random', name: '繁栄（初版）から', randomFrom: ['prosperity1e_full'] },
+    { id: 'random-cornguilds2e', kind: 'random', name: '収穫祭＆ギルド（第2版）から', randomFrom: ['cornguilds2e_full'] },
     { id: 'random-intrigue', kind: 'random', name: '陰謀のみから',   randomFrom: ['intrigue'] },
     { id: 'random-basic',    kind: 'random', name: '基本のみから',   randomFrom: ['basic'] },
     { id: 'random-promo',    kind: 'random', name: 'プロモ込みから',  randomFrom: ['basic', 'intrigue', 'promo'] },
-    { id: 'random-1e',       kind: 'random', name: '初版から',        randomFrom: ['basic1e', 'intrigue1e'] },
+    { id: 'random-1e',       kind: 'random', name: '初版から',        randomFrom: ['basic1e', 'intrigue1e', 'seaside1e_full', 'prosperity1e_full'] }, // 2026-08-23：海辺/繁栄の初版も母集団に
   ];
   // 分割山（Split pile）＝1つの山枠に「上段カード5枚＋下段カード5枚」。下段は上段が尽きるまで購入/獲得できない。
   //   下段id → 上段id のマップ（唯一の正本）。engine.js（gain/canBuyCard/emptyPileCount 等）と cpu.js（splitBlocked）が参照。
@@ -2139,6 +2156,7 @@
     cornucopia: '収穫祭', guilds: 'ギルド', hinterlands: '異郷', darkages: '暗黒時代',
     adventures: '冒険', empires: '帝国', renaissance: 'ルネサンス', menagerie: '移動動物園',
     nocturne: '夜想曲', allies: '同盟', plunderexp: '略奪', risingsun: '旭日', promo: 'プロモ',
+    cornguilds2e: '収穫祭＆ギルド2版', // 2023年の合本で追加された8種（初版限定カードは mix に出さない既存方針＝basic1e と同じ）
   };
   // mix で選べる横型プール（kind ごとに分けて選べる）。
   DOM.MIX_LANDSCAPE_POOLS = {
