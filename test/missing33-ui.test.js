@@ -37,7 +37,7 @@ function showAs(s, viewer) {
 
 console.log('=== 第1バッチ：新 pending 10種にモーダルと押せる選択肢がある ===');
 {
-  const K = ['pearl_diver', 'navigator', 'explorer', 'ghost_ship', 'counting_house', 'mountebank', 'marchland', 'village', 'smithy', 'moat'];
+  const K = ['pearl_diver', 'navigator', 'explorer', 'ghost_ship', 'counting_house', 'mountebank', 'marchland', 'embargo', 'pirate_ship', 'ambassador'];
   const PENDINGS = [
     { p: { type: 'pearl_diver', player: 0, card: 'gold' }, jp: '真珠採り' },
     { p: { type: 'navigator', player: 0, cards: ['copper', 'estate', 'silver', 'gold', 'curse'] }, jp: '航海士' },
@@ -49,6 +49,18 @@ console.log('=== 第1バッチ：新 pending 10種にモーダルと押せる選
     { p: { type: 'mountebank', stage: 'react', player: 0, source: 1, victim: 0, queue: [] }, jp: '香具師（反応）' },
     { p: { type: 'mountebank', stage: 'choose', player: 0, source: 1, victim: 0, queue: [] }, jp: '香具師（二択）' },
     { p: { type: 'marchland_discard', player: 0 }, jp: '境界地' },
+    // 第2バッチ
+    { p: { type: 'embargo_pile', player: 0 }, jp: '抑留（山を選ぶ）' },
+    { p: { type: 'pirate_ship', stage: 'react', player: 0, source: 1, victim: 0, queue: [], immune: [] }, jp: '海賊船（反応）' },
+    { p: { type: 'pirate_ship', stage: 'choose', player: 0, source: 0, immune: [] }, jp: '海賊船（二択）' },
+    { p: { type: 'pirate_ship', stage: 'pick', player: 0, source: 0, victim: 1, revealed: ['silver', 'estate'], treasures: ['silver'], queue: [], anyTrashed: false }, jp: '海賊船（廃棄する財宝）' },
+    { p: { type: 'sea_hag', stage: 'react', player: 0, source: 1, victim: 0, queue: [] }, jp: '海の妖婆（反応）' },
+    { p: { type: 'ambassador', stage: 'reveal', player: 0 }, jp: '大使（公開）' },
+    { p: { type: 'ambassador', stage: 'return', player: 0, card: 'estate', max: 1 }, jp: '大使（戻す枚数）' },
+    { p: { type: 'ambassador', stage: 'react', player: 0, source: 1, victim: 0, queue: [], card: 'estate' }, jp: '大使（反応）' },
+    { p: { type: 'trade_route_trash', player: 0 }, jp: '交易路（廃棄）' },
+    { p: { type: 'contraband_name', player: 0, source: 1 }, jp: '禁制品（指定）' },
+    { p: { type: 'summon_gain', player: 0 }, jp: '召喚（獲得）' },
   ];
   PENDINGS.forEach((row) => {
     const s = E.createInitialState(['あなた', '相手'], K.slice(), { startActive: 0 });
@@ -85,6 +97,20 @@ console.log('=== 任意の窓（境界地・会計所）は最初から押せる
 
 /* 真珠採り・航海士・借金の「見ている札」は**相手には伏せる**（オンライン配信＝maskStateFor）＝
    UI 側も相手視点で描いたときにカード名を出さない。 */
+console.log('=== 第2バッチ：盤面に 海賊船トークン／交易路マット／抑留トークン／交易路トークン が出る（公開情報）===');
+{
+  const K = ['pirate_ship', 'trade_route', 'embargo', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop'];
+  const s = E.createInitialState(['あなた', '相手'], K.slice(), { startActive: 0 });
+  s.players[0].pirateShipTokens = 3; s.tradeRouteMat = 2; s.pileEmbargo = { silver: 2 };
+  showAs(s, 0);
+  ok(!runtimeError, '描画で例外が出ない: ' + (runtimeError || ''));
+  const txt = doc.body.textContent;
+  ok(/海賊船/.test(txt) && /3/.test(txt), '海賊船トークンのバッジ（3個）');
+  ok(/交易路/.test(txt), '交易路マットのバッジ');
+  ok(doc.body.innerHTML.indexOf('⚓2') >= 0, '銀貨の山に抑留トークン2のバッジ');
+  ok(doc.body.innerHTML.indexOf('🪙') >= 0, '勝利点の山に交易路トークンのバッジ');
+}
+
 console.log('=== 相手視点では見ている札の名前が出ない（真珠採り／航海士）===');
 {
   const K = ['pearl_diver', 'navigator', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];

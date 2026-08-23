@@ -286,6 +286,8 @@
       pileTokenBadge(state, id),
       pileVpBadge(state, id),
       pileDebtBadge(state, id),
+      pileEmbargoBadge(state, id),
+      pileTradeRouteBadge(state, id),
       pileFavorBadge(state, id),
       h('div', { class: 'pile-count' + (n <= 2 ? ' lo' : n <= 5 ? ' mid' : '') }, '残' + n)
     );
@@ -295,6 +297,17 @@
     const n = (state.pileDebt && state.pileDebt[id]) || 0;
     if (n <= 0) return null;
     return h('div', { class: 'pile-debt', title: '山上の負債トークン（購入フェイズに獲得すると受け取る）' }, '🟠' + n);
+  }
+  // 海辺1版：抑留トークン（その山から購入すると1個につき呪い1枚）＝公開・全員共有。
+  function pileEmbargoBadge(state, id) {
+    const n = (state.pileEmbargo && state.pileEmbargo[id]) || 0;
+    if (n <= 0) return null;
+    return h('div', { class: 'pile-debt', style: 'background:#6b2a2a', title: '抑留トークン（この山から購入すると1個につき呪い1枚）' }, '⚓' + n);
+  }
+  // 繁栄1版：交易路のコイントークン（まだ山の上にある＝この山からまだ1枚も獲得されていない）。
+  function pileTradeRouteBadge(state, id) {
+    if (!(state.tradeRoutePiles && state.tradeRoutePiles[id])) return null;
+    return h('div', { class: 'pile-debt', style: 'background:#8a6d1f', title: '交易路のコイントークン（この山から最初の1枚が獲得されるとマットへ移る）' }, '🪙');
   }
   // 帝国：集合（Gathering）＝サプライ山の上に置かれた勝利点トークン数を表示（公開・全員共有）。
   function pileVpBadge(state, id) {
@@ -1251,6 +1264,14 @@
         // ギルド：財源(Coffers)を使う王国のときだけ COFFERS を表示（金色）。手番プレイヤーの財源を出す。
         usesCoffers(state.kingdom, state.projects)
           ? h('div', { class: 'badge coffers', style: 'background:#b8860b' }, h('div', { class: 'v' }, active.coffers || 0), h('div', { class: 'k' }, '財源'))
+          : null,
+        // 海辺1版：海賊船マットのコイントークン（手番プレイヤーのぶん・公開・使えない）
+        (active.pirateShipTokens || 0) > 0 || (state.kingdom || []).indexOf('pirate_ship') >= 0
+          ? h('div', { class: 'badge', style: 'background:#5a4a2a', title: '海賊船マットのコイントークン（1個につき +1 コインに換金できる）' }, h('div', { class: 'v' }, active.pirateShipTokens || 0), h('div', { class: 'k' }, '海賊船'))
+          : null,
+        // 繁栄1版：交易路マット（全員共有）＝移ったトークン数
+        state.tradeRoutePiles && ((state.kingdom || []).indexOf('trade_route') >= 0 || (state.tradeRouteMat || 0) > 0)
+          ? h('div', { class: 'badge', style: 'background:#8a6d1f', title: '交易路マットのコイントークン（交易路1回の使用につき1個 +1 コイン）' }, h('div', { class: 'v' }, state.tradeRouteMat || 0), h('div', { class: 'k' }, '交易路'))
           : null,
         // ルネサンス：村人(Villagers)を使う王国のときだけ 村人 を表示（緑）。アクションフェイズに1個=+1アクション。
         usesVillagers(state.kingdom, state.projects)
@@ -2645,7 +2666,7 @@
       const ways = (state.ways || []).filter((w) => (DOM.LANDSCAPES || {})[w] && DOM.isType(card, 'action'));
       const btns = [{ label: '「' + nm + '」を使う', cls: 'btn-primary', on: () => dispatch({ type: 'EVENT_PLAY' }) }];
       ways.forEach((w) => btns.push({ label: '「' + DOM.LANDSCAPES[w].name + '」で使う', on: () => dispatch({ type: 'EVENT_PLAY', way: w }) }));
-      return modalOptions('脇に置いたカードを使う', '遅延／刈り入れで脇に置いた「' + nm + '」を使用します（アクション権は使いません）。', btns);
+      return modalOptions('脇に置いたカードを使う', '遅延／刈り入れ／召喚などで脇に置いた「' + nm + '」を使用します（アクション権は使いません）。', btns);
     }
     // 増大＝勝利点でない手札1枚を廃棄してもよい → それより最大$2高いカード1枚を獲得（強制）。
     if (pd.type === 'enhance' && pd.stage === 'trash') return modalSingleHand(p, '増大 — 廃棄',
@@ -3468,6 +3489,36 @@
       '手札を好きな枚数捨て札にし、1枚につき +1 コイン（0枚でもかまいません）。',
       (n) => (n === 0 ? '捨てない' : n + '枚捨てて +$' + n), true,
       (cards) => dispatch({ type: 'MARCHLAND_DISCARD', cards }));
+    /* ===== 段階2 第2バッチ ===== */
+    if (pd.type === 'embargo_pile') return modalGainSupply(state, '抑留 — 山を選ぶ',
+      'サプライの山を1つ選び、抑留トークンを1個置きます（ゲーム終了まで、その山からカードを購入したプレイヤーはトークン1個につき呪い1枚を獲得します）。空の山にも置けます。',
+      (id) => !(DOM.SPLIT_PILES && DOM.SPLIT_PILES[id]), (id) => dispatch({ type: 'EMBARGO_PILE', pile: id }), null, null, 'トークンを置く', true);
+    if (pd.type === 'pirate_ship' && pd.stage === 'react') return modalOptions('海賊船を受ける', '使用者が「攻撃」を選ぶと、山札の上2枚が公開され、財宝1枚が廃棄されます（反応はいま）。', reactOptions(p, pd, { type: 'PIRATE_SHIP_REACT' }));
+    if (pd.type === 'pirate_ship' && pd.stage === 'choose') {
+      const tok = p.pirateShipTokens || 0;
+      return modalOptions('海賊船 — どちらにしますか？', '海賊船マットのコイントークン：' + tok + '個', [
+        { label: '攻撃する（他のプレイヤーの山札の上2枚から財宝1枚を廃棄）', cls: 'btn-primary', on: () => dispatch({ type: 'PIRATE_SHIP_CHOOSE', attack: true }) },
+        { label: '+$' + tok + '（トークン1個につき +1 コイン）', on: () => dispatch({ type: 'PIRATE_SHIP_CHOOSE', attack: false }) }]);
+    }
+    if (pd.type === 'pirate_ship' && pd.stage === 'pick') return modalOptions('海賊船 — ' + state.players[pd.victim].name + 'の財宝を廃棄', '公開された財宝から1枚を選んで廃棄します。',
+      pd.treasures.map((c) => ({ label: DOM.CARDS[c].name, on: () => dispatch({ type: 'PIRATE_SHIP_PICK', card: c }) })));
+    if (pd.type === 'sea_hag' && pd.stage === 'react') return modalOptions('海の妖婆を受ける', '山札の一番上を捨て札にし、呪い1枚を山札の上に獲得します。', reactOptions(p, pd, { type: 'SEA_HAG_REACT' }));
+    if (pd.type === 'ambassador' && pd.stage === 'react') return modalOptions('大使を受ける', '公開されたカード「' + (DOM.CARDS[pd.card] ? DOM.CARDS[pd.card].name : pd.card) + '」1枚を獲得します。', reactOptions(p, pd, { type: 'AMBASSADOR_REACT' }));
+    if (pd.type === 'ambassador' && pd.stage === 'reveal') return modalSingleHand(p, '大使 — 公開するカード',
+      '手札から1枚を公開します。同名のカードを0〜2枚サプライに戻し、他のプレイヤーは全員それを1枚獲得します（サプライに山が無いカードを公開すると何も起きません）。',
+      () => true, (card) => dispatch({ type: 'AMBASSADOR_REVEAL', card }), null, '公開する');
+    if (pd.type === 'ambassador' && pd.stage === 'return') return modalAmount('大使 — 「' + DOM.CARDS[pd.card].name + '」を何枚サプライに戻す？',
+      '0〜' + pd.max + '枚。戻した後、他のプレイヤーは全員「' + DOM.CARDS[pd.card].name + '」を1枚ずつ獲得します（山が尽きたら獲得しません）。',
+      pd.max, 0, (n) => (n === 0 ? '戻さない' : n + '枚戻す'), (n) => dispatch({ type: 'AMBASSADOR_RETURN', amount: n }));
+    if (pd.type === 'trade_route_trash') return modalSingleHand(p, '交易路 — 廃棄',
+      '手札から1枚を廃棄します（その後、交易路マットのコイントークン1個につき +1 コイン）。', () => true,
+      (card) => dispatch({ type: 'TRADE_ROUTE_TRASH', card }), null, '廃棄する');
+    if (pd.type === 'contraband_name') return modalNameCard(state, '禁制品 — 指定',
+      state.players[pd.source].name + ' が禁制品を使いました。このターン購入できないカードを1種指定してください。',
+      (id) => dispatch({ type: 'CONTRABAND_NAME', card: id }));
+    if (pd.type === 'summon_gain') return modalGainSupply(state, '召喚 — 獲得',
+      'コスト4コイン以下のアクションカード1枚を獲得して脇に置きます。次のあなたのターンの開始時に、それを使用します。',
+      (id) => DOM.engine.summonCanGain(state, id), (id) => dispatch({ type: 'SUMMON_GAIN', card: id }));
     if (pd.type === 'torturer') return modalTorturer(p, p.hand.includes('secret_chamber') && !pd.reacted, canDiplomatReact(p, pd));
     if (pd.type === 'trading_post') return modalTrashHand(p, '交易場 — 廃棄', '手札から2枚を選んで廃棄します（2枚廃棄できたら銀貨を手札に獲得）。', Math.min(2, p.hand.length), (cards) => dispatch({ type: 'TRADING_POST_RESOLVE', cards }));
     if (pd.type === 'upgrade' && pd.stage === 'trash') return modalSingleHand(p, '改良 — 廃棄', '手札から1枚を廃棄します（その後、ちょうど1コイン高いカードを獲得）。', () => true, (card) => dispatch({ type: 'UPGRADE_TRASH', card }));
@@ -3696,7 +3747,7 @@
       (card) => dispatch({ type: 'PLAN_TRASH', card }),
       { label: '廃棄しない', on: () => dispatch({ type: 'PLAN_TRASH', card: null }) }, '廃棄する');
     // 同盟：道化棒の4つ目の選択肢も同じ窓を使う（`source` で表示だけ分ける）。
-    if (pd.type === 'travelling_fair') return modalOptions((pd.source === 'bauble' ? '道化棒' : pd.source === 'insignia' ? '勲章' : '移動遊園地') + ' — 山札の上に置く？',
+    if (pd.type === 'travelling_fair') return modalOptions((pd.source === 'bauble' ? '道化棒' : pd.source === 'insignia' ? '勲章' : pd.source === 'royal_seal' ? '玉璽' : pd.source === 'tracker' ? '追跡者' : '移動遊園地') + ' — 山札の上に置く？',
       '獲得した「' + (DOM.CARDS[pd.card] ? DOM.CARDS[pd.card].name : pd.card) + '」を山札の上に置けます。', [
       { label: '山札の上に置く', cls: 'btn-primary', on: () => dispatch({ type: 'TRAVELLING_FAIR_TOPDECK', topdeck: true }) },
       { label: 'そのまま（捨て札）', cls: 'btn-ghost', on: () => dispatch({ type: 'TRAVELLING_FAIR_TOPDECK', topdeck: false }) },

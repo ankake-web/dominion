@@ -291,6 +291,17 @@
     // 段階2 第1バッチ：キャントリップは先・ターミナルは後（既存の並びに合わせる）
     if (has('pearl_diver')) return 'pearl_diver';
     if (has('explorer') && p.hand.includes('province')) return 'explorer';
+    // 段階2 第1・第2バッチのターミナル（🛑 登録しないと CPU が一度も使わず、ソークでその経路が検証されない）
+    if (has('ghost_ship')) return 'ghost_ship';                 // +2カード＋アタック
+    if (has('sea_hag')) return 'sea_hag';                       // 呪い配り
+    if (has('mountebank')) return 'mountebank';                 // +$2＋呪い/銅貨配り
+    if (has('goons')) return 'goons';                           // +1購入+$2＋民兵型＋購入VP
+    if (has('pirate_ship')) return 'pirate_ship';               // 攻撃 or トークン換金
+    if (has('navigator')) return 'navigator';                   // +$2＋上5枚を整える
+    if (has('counting_house') && p.discard.some((c) => c === 'copper')) return 'counting_house';
+    if (has('ambassador') && p.hand.some((c) => c !== 'ambassador' && (c === 'curse' || c === 'estate' || c === 'copper'))) return 'ambassador';
+    if (has('trade_route') && p.hand.some((c) => c !== 'trade_route' && trashValue(c) < 10)) return 'trade_route';
+    if (has('embargo')) return 'embargo';                       // +$2（自己廃棄）
     if (has('rustic_village')) return 'rustic_village'; // +1 Sun +1カード +2アクション
     if (has('poet')) return 'poet';                     // +1 Sun +1カード +1アクション ＋山札の上を手札へ
     /* 🛑 R4a/R6 で足したカードを chooseAction に登録し忘れていた（R3 の20種だけ登録されていた）＝
@@ -1195,6 +1206,8 @@
           ritual/banquet/windfall/tax と同じ扱い）。**engine が受理しない手を提案すると本番 livelock**
           になるので、条件は engine 側の述語（`canBuyEvent` / `anyGainable`）と必ず揃える。 */
     // 参集（$7）＝ちょうど$3・$4・$5 を1枚ずつ＝**1回の購入で3枚**＝属州級の買いに届かないなら常に得。
+    // プロモ：召喚＝$4以下のアクションを脇に置いて次ターン使う（$5の買い物が無いときだけ）
+    if (buyable('summon') && !(cardBuy && cost(state, cardBuy) >= 5) && firstGainable(state, (id) => DOM.engine.summonCanGain(state, id))) return 'summon';
     if (buyable('gather') && !(cardBuy && cost(state, cardBuy) >= 8)) return 'gather';
     // 蓄積（$2）＝場にアクションが1枚も無いときだけ働く。余ったコインで$5以下のアクションを拾える。
     if (buyable('amass') && cardBuy == null &&
@@ -1949,6 +1962,47 @@
         return { type: 'NOBLES_RESOLVE', choice: otherAction ? 'actions' : 'cards' };
       }
       /* ===== 段階2 第1バッチ ===== */
+      // ===== 段階2 第2バッチ =====
+      case 'embargo_pile': {
+        // 相手が買いそうで自分は買わない山＝雑に「属州以外の最高コスト」（徴税と同型＝必ず非 null）
+        const cand = Object.keys(state.supply).filter((id) => C()[id] && !NON_SUPPLY_SET.has(id) && !(DOM.SPLIT_PILES && DOM.SPLIT_PILES[id]));
+        cand.sort((a, b) => (C()[b].cost || 0) - (C()[a].cost || 0));
+        const pick = cand.find((id) => id !== 'province' && id !== 'colony' && id !== 'curse') || cand[0] || null;
+        return { type: 'EMBARGO_PILE', pile: pick };
+      }
+      case 'pirate_ship': {
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'PIRATE_SHIP_REACT' }; }
+        if (pd.stage === 'choose') {
+          const tok = p.pirateShipTokens || 0;
+          // 免疫でない相手が居なければ換金。序盤（トークン<3）は攻撃、溜まったら換金。
+          const n = state.players.length, imm = pd.immune || [];
+          let targets = 0; for (let k = 1; k < n; k++) { const idx = (pd.source + k) % n; if (imm.indexOf(idx) < 0) targets++; }
+          return { type: 'PIRATE_SHIP_CHOOSE', attack: targets > 0 && tok < 3 };
+        }
+        // pick：最高額の財宝を廃棄（強制・必ず非 null）
+        const best = pd.treasures.slice().sort((a, b) => (C()[b].coin || 0) - (C()[a].coin || 0))[0];
+        return { type: 'PIRATE_SHIP_PICK', card: best };
+      }
+      case 'sea_hag':
+        if (immuneReveal(p)) return immuneReveal(p);
+        return { type: 'SEA_HAG_REACT' };
+      case 'ambassador': {
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'AMBASSADOR_REACT' }; }
+        if (pd.stage === 'reveal') {
+          const pick = ['curse', 'estate', 'copper'].find((c) => p.hand.includes(c)) || p.hand[0];
+          return { type: 'AMBASSADOR_REVEAL', card: pick };
+        }
+        return { type: 'AMBASSADOR_RETURN', amount: pd.max }; // 屑は最大枚数戻す
+      }
+      case 'trade_route_trash':
+        return { type: 'TRADE_ROUTE_TRASH', card: pickTrash(p.hand, 1)[0] || p.hand[0] };
+      case 'contraband_name': {
+        // 相手（pd.source）が買いそうな最強札＝属州（無ければ金貨）
+        const pick = (state.supply.province || 0) > 0 ? 'province' : 'gold';
+        return { type: 'CONTRABAND_NAME', card: pick };
+      }
+      case 'summon_gain':
+        return { type: 'SUMMON_GAIN', card: firstGainable(state, (id) => DOM.engine.summonCanGain(state, id)) }; // firstGainable＝GAIN_ORDER 順＝最良
       case 'pearl_diver': {
         // 一番下のカードが良い札（アクション/銀貨以上）なら上へ
         const c = pd.card; const good = isType(c, 'action') || (isType(c, 'treasure') && c !== 'copper');

@@ -409,7 +409,7 @@
     noble_brigand: { id: 'noble_brigand', name: '高貴な山賊', cost: 4, types: ['action', 'attack'],
                  text: '+1 コイン\nこのカードを購入またはプレイしたとき、他のプレイヤーは各自山札の上から2枚を公開し、あなたが選んだ公開された銀貨または金貨1枚を廃棄し、残りを捨てる。財宝を1枚も公開しなかったプレイヤーは銅貨1枚を獲得する。あなたは廃棄されたカードをすべて獲得する。' },
     nomad_camp: { id: 'nomad_camp', name: '遊牧民の野営地', cost: 4, types: ['action'],
-                 text: '+1 購入\n+2 コイン\nこのカードを獲得したとき、山札の一番上に置く。' },
+                 text: '+1 購入\n+2 コイン\nこれは（捨て札置き場ではなく）山札の上に獲得する。' }, // 2016エラッタ＝獲得先の置き換え（召喚/せっかちな が見つけられる）
     silk_road: { id: 'silk_road', name: '絹の道', cost: 4, types: ['victory'],
                  text: '自分のデッキの勝利点カード4枚につき 1 勝利点（端数切り捨て）。' },
     spice_merchant: { id: 'spice_merchant', name: '香辛料商人', cost: 4, types: ['action'],
@@ -2151,6 +2151,7 @@
     'ev-plunder': { label: 'イベント（略奪）', get: () => DOM.EVENTS_PLUNDER || [] },
     'trait-plunder': { label: '特性（略奪）', get: () => DOM.TRAITS_PLUNDER || [] },
     'ev-risingsun': { label: 'イベント（旭日）', get: () => DOM.EVENTS_RISINGSUN || [] },
+    'ev-promo': { label: 'イベント（プロモ＝召喚の1枚）', get: () => DOM.EVENTS_PROMO || [] },
   };
   DOM.isMixSet = function (setId) { return typeof setId === 'string' && setId.indexOf('mix:') === 0; };
   // mix セットIDを分解する。不正なプール名は捨てる（サーバ側の検証と同じ挙動）。
@@ -2210,6 +2211,7 @@
     if (expansion === 'menagerie') return DOM.EVENTS_MENAGERIE || [];
     if (expansion === 'plunderexp') return DOM.EVENTS_PLUNDER || [];
     if (expansion === 'risingsun') return DOM.EVENTS_RISINGSUN || [];
+    if (expansion === 'promo') return DOM.EVENTS_PROMO || [];       // プロモ：召喚（1枚だけ＝単独で選ぶと必ず出て2枚目は出ない）
     return [];
   };
   DOM.eventsForSet = function (setId) {

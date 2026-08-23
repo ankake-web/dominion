@@ -296,6 +296,8 @@
       if (state.pileVP) delete state.pileVP[k];
       if (state.pileDebt) delete state.pileDebt[k];
       if (state.pileFavor) delete state.pileFavor[k];
+      if (state.pileEmbargo) delete state.pileEmbargo[k];       // 海辺1版：抑留トークン
+      if (state.tradeRoutePiles) delete state.tradeRoutePiles[k]; // 繁栄1版：交易路のトークン（撤去された山には無い＝マットへは移らない）
     });
     // 冒険：撤去された山の上の山トークンは**持ち主に返る**（また置き直せる）。
     state.players.forEach((pl) => {
@@ -1136,8 +1138,10 @@
        🛑 **ペンダントと同じ rank にしてはいけない**（`sort` は同順位を入れ替えないので手札の並び順で
           前後が決まり、取りこぼす）。正しい順＝**米 → ペンダント → 大金**
           （米が先に場にあるとペンダントの数える種類が1つ増える／逆は得しない）。 */
-    const rank = (c) => (PLAY_TWICE_TREASURES[c] ? -2 : c === 'figurine' ? -2 : c === 'silver' ? -1 :
-      c === 'rice' ? 1 : c === 'pendant' ? 2 : c === 'fortune' ? 3 : 0);
+    /* 繁栄1版：禁制品は最初（公式の推奨＝先に出して総コインを隠す）／玉璽は早め（掘出物の獲得にも窓を開ける）／
+       借金・投機は銀貨の後・残りより前（掘って出た財宝を後から出せる）。🛑 既存と同じ rank にしない。 */
+    const rank = (c) => (c === 'contraband' ? -3 : PLAY_TWICE_TREASURES[c] ? -2 : c === 'figurine' ? -2 : c === 'royal_seal' ? -1.5 : c === 'silver' ? -1 :
+      c === 'loan' ? -0.7 : c === 'venture' ? -0.5 : c === 'rice' ? 1 : c === 'pendant' ? 2 : c === 'fortune' ? 3 : 0);
     return rank(a) - rank(b);
   }
   /* ===== 旭日 R4：「財宝を使用した」ときに走る予言のフック（豊作／狼狽）＝**唯一の入口** =====
@@ -1416,7 +1420,17 @@
       addCoins(state, cnt); log(state, `${p.name} は銀行を使った（場の財宝${cnt}枚 → +${cnt}コイン）。`);
     }
     // 収集：+1購入（コイン2は coin:2 で加算済み）。アクション獲得時の+VPは triggerOnGain が処理。
-    if (card === 'collection') t.buys += 1;
+    // 繁栄1版：禁制品＝+1購入・左隣がカード1種を指定し、このターンそれを購入できない（購入以外の獲得は可・イベントは止まらない）。
+    if (card === 'contraband') {
+      t.buys += 1;
+      const left = (pIndex + 1) % state.players.length;
+      if (left !== pIndex) {
+        if (state.pending) (t.contrabandAsk = t.contrabandAsk || []).push({ player: left, source: pIndex });
+        else state.pending = { type: 'contraband_name', player: left, source: pIndex };
+      }
+    }
+    // 繁栄：収集＝「**このターン**、アクションを獲得するたび +1VP」＝使用回数を数える（場の枚数ではない＝2022エラッタ。勲章 t.insignia と同型）。
+    if (card === 'collection') { t.buys += 1; t.collectionPlays = (t.collectionPlays || 0) + 1; }
     // ===== ルネサンス：財宝カードの「使ったとき」効果 =====
     // 香辛料：+1購入（コイン2は coin:2 で加算済み）。獲得時の +2財源 は triggerOnGain。
     if (card === 'spices') t.buys += 1;
@@ -1467,6 +1481,7 @@
     // ティアラ：+1購入。手札の財宝1枚を2回使ってよい（獲得時の山札上置きは triggerOnGain が処理）。
     if (card === 'tiara') {
       t.buys += 1;
+      t.tiaraPlays = (t.tiaraPlays || 0) + 1; // 「**このターン**、獲得したとき山札の上へ」＝場を離れても効く（2022＝勲章と同型）
       if (p.hand.some((c) => isTreasureFor(state, c))) state.pending = { type: 'tiara_play', player: pIndex };
     }
     // 暗黒時代：偽造通貨＝+1購入（+$1は coin:1）。手札の非持続財宝を1枚選んで2回使い、それを廃棄してよい。
@@ -2128,7 +2143,8 @@
         vpTokens: 0,       // 繁栄：勝利点トークンの累計（司教・記念碑・収集・投資。公開・終了時に加算）
         coffers: 0,        // ギルド：財源（Coffers）トークン。購入フェイズに1枚=+1コインで使える。公開・VPには数えない。
         villagers: 0,      // ルネサンス：村人（Villagers）トークン。アクションフェイズに1個=+1アクションで使える。公開・VPには数えない（財源と同型・別枠）。
-        favors: 0,         // 同盟：好意（Favor）トークン。**財源/村人とは完全に別枠**。公開・VPには数えない・上限なし。
+        favors: 0,
+        pirateShipTokens: 0, // 海辺1版：海賊船マットのコイントークン（非カード・公開・財源ではない＝使えない・減らない）。         // 同盟：好意（Favor）トークン。**財源/村人とは完全に別枠**。公開・VPには数えない・上限なし。
                            //   与えるのは連携(Liaison)カードだけ＋開始時1個（輸入者があるゲームは5個）。
                            //   使い道は「そのゲームの同盟(Ally)カードが定める1通りだけ」＝state.ally を見る。
         favorShuffle: 0,   // 同盟：占星術師団/メイソン団の常設方針＝「1回のシャッフルに使う好意の上限」（0=使わない）。
@@ -2355,6 +2371,13 @@
       // 分割山は1山＝上段キーにだけ負債1（下段は SPLIT_TOP[id] を持つ＝スキップ）。混合山 castles/knights は各1山＝numericキーに1。
       Object.keys(supply).forEach((id) => { if (!NON_SUPPLY.has(id) && !SPLIT_TOP[id]) pileDebt[id] = 1; });
     }
+    /* 繁栄1版：交易路(Trade Route)＝勝利点の山それぞれにコイントークン1個。「勝利点の山か」は **randomizer（山キー）の静的種別**
+       （公式逐語＝城は勝利点の山／騎士・同盟の分割山は違う＝`DOM.isType(山キー,'victory')` と1対1）。
+       🛑 **闇市場デッキに交易路が入っているだけでも準備する**（公式FAQ）。非カード・公開。マットは全員共有の1枚（`tradeRouteMat`）。 */
+    const tradeRoutePiles = {};
+    if (kingdom.indexOf('trade_route') >= 0 || (blackMarket && blackMarket.indexOf('trade_route') >= 0)) {
+      Object.keys(supply).forEach((id) => { if (!NON_SUPPLY.has(id) && !SPLIT_TOP[id] && DOM.isType(id, 'victory')) tradeRoutePiles[id] = 1; });
+    }
 
     // ルネサンス：プロジェクト（買う横型）。opts.projects で受け取る（DOM.LANDSCAPES の kind==='project' のみ）。対局中不変・公開。
     //   各プレイヤーはキューブ2個＝最大2つまで買える（p.projects）。同じプロジェクトを2回は買えない。複数人が同じものを買える。
@@ -2433,6 +2456,8 @@
       loot,           // 略奪：戦利品の山（実カードid配列30枚・**カード＝保存則に数える**・非サプライ・中身は完全に秘密。配る札が無ければ null）
       lostInTheWoods: null, // 夜想曲：森の迷子（状態）の持ち主の席番号（誰も持っていなければ null・非カード）
       pileVP, // 帝国：集合（Gathering）＝サプライ山の上に置かれた勝利点トークン数 {[pileId]:個数}（公開・非カード＝保存則に無関係）。水道橋/汚された神殿の準備分もここ。
+      tradeRoutePiles, // 繁栄1版：交易路＝まだトークンが乗っている勝利点の山 {[pileKey]:1}（公開・非カード）
+      tradeRouteMat: 0, // 繁栄1版：交易路マットへ移ったトークン数（全員共有・公開・非カード）
       pileDebt, // 帝国：徴税（Tax）＝サプライ山の上に置かれた負債トークン数 {[pileId]:個数}（公開・非カード＝保存則に無関係）。
       landmarks,      // 帝国：使用中のランドマークid列（横型・公開・対局中不変）
       events,         // 帝国：使用中のイベントid列（横型・買う・公開・対局中不変）
@@ -2791,6 +2816,9 @@
        「捨て札置き場に置く代わりに手札に加える」＝**捨て札に獲得する場合だけ**置き換える
        （武器庫などで山札の上に獲得したときはそのまま＝公式）。相手のターンの獲得でも自分の手札に入る。 */
     if (dest === 'discard' && GAIN_TO_HAND.has(realId)) dest = 'hand';
+    /* 異郷：遊牧民の野営地＝2016エラッタ「これは（捨て札ではなく）山札の上に獲得する」＝**獲得先の置き換え**（獲得後の移動ではない）。
+       ⇒ 召喚／せっかちな／急速拡大が「獲得先＝山札の上」から見つけて脇に置ける（公式）。手札に獲得する効果（彫刻家等）はそのまま手札。 */
+    if (dest === 'discard' && realId === 'nomad_camp') dest = 'deck';
     const t = state.turn;
     /* ⚠ **ここで負債を付けてはいけない**（公式＝負債を負うのは「購入」したときだけ。
        `gaining such a card in other ways does not.`）。付与は BUY / BUY_EVENT / BLACK_MARKET_BUY 側。 */
@@ -3387,6 +3415,8 @@
        イベント・プロジェクトは「カードではない」ので買える／夜行カードはアクションでなければ買える）。
        手番プレイヤーにだけ効く（この述語は engine拒否・CPU非提案・UIボタン無効化の3面が共有する）。 */
     if (state.turn && state.turn.cantBuyActions && state.turn.active === pi && isTypeSupply(state, id, 'action')) return false;
+    // 繁栄1版：禁制品＝左隣が指定したカードはこのターン購入できない（engine拒否・CPU非提案・UI無効化の3面が共有する唯一の述語）。
+    if (state.turn && state.turn.active === pi && contrabandBlocks(state, id)) return false;
     return true;
   }
 
@@ -3449,6 +3479,40 @@
       log(state, `${me.name} は商人ギルドで +${n} 財源。`);
     }
   }
+  /* ===== 段階2 第2バッチ：購入時フックのヘルパ ===== */
+  // 繁栄1版：ならず者＝場にある枚数ぶん +1VP（公式FAQ＝王の宮廷で3回使っても場には1枚＝+1）。VPトークンは被支配者に入る（支配の振り分けをここに書かない）。
+  function goonsOnBuy(state, pi) {
+    const me = state.players[pi];
+    const n = me.inPlay.filter((c) => c === 'goons').length;
+    if (n > 0) { me.vpTokens = (me.vpTokens || 0) + n; log(state, `${me.name} はならず者で +${n} 勝利点。`); }
+  }
+  // 繁栄1版：護符＝購入時点のコスト（3成分＝ポーション/負債コストは対象外）で判定。山が空／混合山で同名が残っていなければ獲得しない。
+  function maybeTalismanGains(state, pi, card, ref, isVictory, realBought) {
+    const me = state.players[pi];
+    const n = me.inPlay.filter((c) => c === 'talisman').length;
+    if (!n || isVictory || !ref || (ref.pot || 0) !== 0 || (ref.debt || 0) !== 0 || ref.coin > 4) return;
+    for (let i = 0; i < n; i++) {
+      if (isMixedPileKey(card) && mixedTopCard(state, card) !== realBought) break;
+      if (!gain(state, pi, card, 'discard')) break;
+      log(state, `${me.name} は護符で「${(C()[realBought] || C()[card]).name}」をもう1枚獲得した。`);
+    }
+  }
+  // 海辺1版：抑留＝購入した山の抑留トークン1個につき呪い1枚を**別々の獲得**として積む（BUY だけ。獲得・イベント・闇市場では発火しない）。
+  function queueEmbargoCurses(state, pi, card) {
+    if (!state.pileEmbargo) return;
+    const n = state.pileEmbargo[pileKeyOf(state, card)] || 0;
+    for (let i = 0; i < n; i++) (state.onGainQueue = state.onGainQueue || []).push({ type: 'embargo_curse', player: pi });
+  }
+  // 繁栄1版：禁制品＝指定されたカードは購入できない。混合山は「一番上がそれ」のときだけ止まる（名指しは中身の名前でも山キーでも可）。
+  function contrabandBlocks(state, id) {
+    const L = (state.turn && state.turn.contraband) || [];
+    if (!L.length) return false;
+    if (L.indexOf(id) >= 0) return true;
+    if (isMixedPileKey(id) && L.indexOf(mixedTopCard(state, id)) >= 0) return true;
+    return false;
+  }
+  // プロモ：召喚＝$4以下のアクション（一番上の種別・3成分・非サプライ/ロック中の下段は除外）
+  function summonCanGain(state, id) { return isTypeSupply(state, id, 'action') && costUpTo(state, id, 4); }
   // 過払い：overpay 対象カードを購入した直後、残コインがあれば「いくら過払いするか」の選択待ちを立てる。
   function maybeStartOverpay(state, pi, card) {
     if (!OVERPAY_CARDS.has(card)) return;
@@ -3680,6 +3744,10 @@
     // 段階2 第1バッチ：幽霊船（役人型）／香具師（拷問人型）
     ghost_ship:    { onMoat: (s, pd) => ghostShipEnterVictim(s, pd.source, pd.queue) },
     mountebank:    { onMoat: (s, pd) => mountebankEnterVictim(s, pd.source, pd.queue) },
+    // 段階2 第2バッチ（海辺1版）：海賊船＝反応窓を先に全員ぶん回す（堀を公開した席は immune に記録）／海の妖婆・大使＝魔女型
+    pirate_ship:   { onMoat: (s, pd) => pirateShipReactEnter(s, pd.source, pd.queue, (pd.immune || []).concat([pd.victim])) },
+    sea_hag:       { onMoat: (s, pd) => seaHagEnterVictim(s, pd.source, pd.queue) },
+    ambassador:    { onMoat: (s, pd) => ambassadorEnterVictim(s, pd.source, pd.queue, pd.card) },
     spy:           { onMoat: (s, pd) => spyEnterTarget(s, pd.source, pd.queue) },
     thief:         { onMoat: (s, pd) => thiefEnterVictim(s, pd.source, pd.queue) },
     swindler:      { onMoat: (s, pd) => swindlerEnterVictim(s, pd.source, pd.queue) },
@@ -4366,6 +4434,88 @@
     // 公式＝`they gain a Curse and a Copper`＝呪い→銅貨の順（どちらかの山が空でも残りは獲得する）。
     const gc = gain(state, victim, 'curse', 'discard'), gp = gain(state, victim, 'copper', 'discard');
     log(state, `${v.name} は香具師で${gc ? '呪い' : ''}${gc && gp ? 'と' : ''}${gp ? '銅貨' : ''}${gc || gp ? 'を獲得した' : '何も獲得しなかった（山が空）'}。`);
+  }
+  /* ===== 海辺1版：海賊船（Pirate Ship） =====
+     ① 使った瞬間に全員の反応窓を順に回す（`stage:'react'`＝堀/盾/馬商人/番犬/隊商の護衛/秘密の小部屋が撃てる）。
+        免疫（灯台/チャンピオン/堀を公開した席）は `immune[]` に記録する（`lingerAttackEnter` と同型）。
+     ② 窓が尽きたら使用者の二択（`stage:'choose'`）：マットのコイントークン1個につき +$1 ／ 攻撃。
+     ③ 攻撃＝免疫でない各相手の上2枚を公開→財宝があれば使用者が1枚選んで廃棄（`stage:'pick'`・強制）→残りを捨てる（捨て札トリガー）。
+     ④ 全員を処理した後、誰かが財宝を廃棄していれば**1回のプレイにつき1個だけ**トークンを足す（`anyTrashed` を pending で持ち回す）。
+     トークン（`p.pirateShipTokens`）は非カード・公開・使えない（財源ではない）・減らない・上限なし。 */
+  function pirateShipReactEnter(state, source, queue, immune) {
+    immune = (immune || []).slice();
+    queue = (queue || []).slice();
+    while (queue.length) {
+      const victim = queue.shift();
+      if (attackImmune(state, victim)) { immune.push(victim); continue; }
+      if (hasReaction(state.players[victim])) {
+        state.pending = { type: 'pirate_ship', stage: 'react', player: victim, source, victim, queue, immune };
+        return;
+      }
+    }
+    state.pending = { type: 'pirate_ship', stage: 'choose', player: source, source, immune };
+  }
+  function pirateShipAttackEnter(state, source, queue, anyTrashed) {
+    queue = (queue || []).slice();
+    while (queue.length) {
+      const victim = queue.shift();
+      const v = state.players[victim];
+      const revealed = [];
+      for (let i = 0; i < 2; i++) {
+        if (v.deck.length === 0) { if (v.discard.length === 0) break; reshuffleDeck(v); }
+        if (v.deck.length === 0) break;
+        revealed.push(v.deck.shift());
+      }
+      if (revealed.length) reveal(state, victim, revealed, '海賊船で山札の上を公開');
+      const treasures = revealed.filter((c) => isTreasureFor(state, c));
+      if (treasures.length) {
+        state.pending = { type: 'pirate_ship', stage: 'pick', player: source, source, victim, revealed, treasures, queue, anyTrashed: !!anyTrashed };
+        return;
+      }
+      if (revealed.length) {
+        revealed.forEach((c) => v.discard.push(c));
+        log(state, `${v.name} は公開した ${revealed.length}枚 を捨てた（海賊船）。`);
+        triggerOnDiscard(state, victim, revealed.slice(), true);
+      }
+    }
+    pirateShipFinish(state, source, anyTrashed);
+  }
+  function pirateShipFinish(state, source, anyTrashed) {
+    state.pending = null;
+    if (anyTrashed) {
+      const sp = state.players[source];
+      sp.pirateShipTokens = (sp.pirateShipTokens || 0) + 1;
+      log(state, `${sp.name} は海賊船マットにコイントークンを1個置いた（計${sp.pirateShipTokens}個）。`);
+    }
+  }
+  /* ===== 海辺1版：海の妖婆（Sea Hag）＝魔女型。捨てる→捨て札トリガー→呪いを山札の上へ（呪いが尽きていても捨ては行う） ===== */
+  function seaHagEnterVictim(state, source, queue) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) { state.pending = { type: 'sea_hag', stage: 'react', player: victim, source, victim, queue: rest }; return; }
+    seaHagApply(state, source, victim, rest);
+  }
+  function seaHagApply(state, source, victim, queue) {
+    const v = state.players[victim];
+    if (v.deck.length === 0 && v.discard.length) reshuffleDeck(v);
+    if (v.deck.length) {
+      const c = v.deck.shift(); v.discard.push(c);
+      log(state, `${v.name} は海の妖婆で山札の一番上「${C()[c].name}」を捨て札にした。`);
+      triggerOnDiscard(state, victim, [c], true);
+    }
+    if ((state.supply.curse || 0) > 0 && gain(state, victim, 'curse', 'deck')) log(state, `${v.name} は呪い1枚を山札の上に獲得した（海の妖婆）。`);
+    seaHagEnterVictim(state, source, queue);
+  }
+  /* ===== 海辺1版：大使（Ambassador）の配布＝**1人ずつ別々の獲得**（onGainQueue）＝海賊/愚者の黄金の窓が人数ぶん開く。
+     反応窓は被害者ごと（魔女型）。免疫の席は飛ばす。 */
+  function ambassadorEnterVictim(state, source, queue, card) {
+    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) { state.pending = { type: 'ambassador', stage: 'react', player: victim, source, victim, queue: rest, card }; return; }
+    (state.onGainQueue = state.onGainQueue || []).push({ type: 'ambassador_give', player: victim, card });
+    ambassadorEnterVictim(state, source, rest, card);
   }
   function bureaucratEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
@@ -8903,6 +9053,58 @@
          境界地の獲得時は triggerOnGain、可変VPは vpOf に書いてある。 */
       // 真珠採り（海辺1版・$2）＝+1カード+1アクション → 山札の一番下を見て、上に置いてもよい。
       //   ⚠ +1カードを引いた**後**の山札で見る（山札が空なら何もしない＝引いた直後に空ならリシャッフルもしない＝公式）。
+      /* ===== 段階2 第2バッチ（海辺1版4／繁栄1版5） ===== */
+      // 海辺1版：抑留＝+$2。**これを廃棄できたときだけ**（現行文 "Trash this to add"＝2020印刷）サプライの山1つに抑留トークンを置く。
+      //   `takeSelf` 経由＝命令（大君主/はみだし者/船長/王子）でプレイしたときは廃棄できずトークンも置かれない（2019エラッタの核心）。
+      //   玉座の2回目も場に無いので +$2 だけ（pending を立てない＝死に窓を出さない）。
+      case 'embargo': {
+        addCoins(state, 2);
+        if (takeSelf(state, pi, 'embargo')) {
+          trashCard(state, pi, 'embargo');
+          log(state, `${p.name} は抑留を廃棄した。`);
+          if (Object.keys(state.supply).length) state.pending = { type: 'embargo_pile', player: pi };
+        }
+        break;
+      }
+      // 海辺1版：海賊船＝**使った瞬間に**全員の反応窓を回してから二択（公式FAQ＝`Players revealing a card like Moat do so before you choose your option.`）。
+      case 'pirate_ship': {
+        const q = [];
+        for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        pirateShipReactEnter(state, pi, q, []);
+        break;
+      }
+      // 海辺1版：海の妖婆＝魔女型。各相手は山札の一番上を捨て（捨て札トリガー）→呪いを**山札の上に**獲得（捨て札を経由しない）。
+      case 'sea_hag': {
+        const q = [];
+        for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        seaHagEnterVictim(state, pi, q);
+        break;
+      }
+      // 海辺1版：大使＝手札1枚を公開→同名を0〜2枚サプライへ戻す→他の各プレイヤーがコピーを獲得。手札0枚なら何も起きない。
+      case 'ambassador': {
+        if (p.hand.length) state.pending = { type: 'ambassador', stage: 'reveal', player: pi };
+        break;
+      }
+      // 繁栄1版：交易路＝+1購入→手札1枚を廃棄（可能なら強制）→**廃棄時効果を全部解決してから**マットのトークン数ぶん +$（2017エラッタ＝廃棄が先）。
+      case 'trade_route': {
+        state.turn.buys += 1;
+        if (p.hand.length) state.pending = { type: 'trade_route_trash', player: pi };
+        else state.turn.tradeRouteResume = { player: pi }; // 手札0枚＝廃棄しないが +$ は得る（"if you can"）
+        break;
+      }
+      // 繁栄1版：ならず者＝+1購入 +$2・他の各プレイヤーは手札が3枚になるまで捨てる（共通の discard_down＝堀/盾/馬商人の導線込み）。
+      //   「場にある間、カードを購入するたび +1VP」は BUY / BLACK_MARKET_BUY 側（**場の枚数**で数える＝王の宮廷で3回使っても場には1枚＝+1）。
+      case 'goons': {
+        state.turn.buys += 1;
+        addCoins(state, 2);
+        const gv = [];
+        for (let k = 1; k < state.players.length; k++) {
+          const idx = (pi + k) % state.players.length;
+          if (state.players[idx].hand.length > 3 && !attackImmune(state, idx)) gv.push(idx);
+        }
+        if (gv.length) discardDownEnter(state, pi, 3, gv, null, 0);
+        break;
+      }
       case 'pearl_diver':
         draw(state, pi, 1); addActions(t, 1);
         if (p.deck.length > 0) state.pending = { type: 'pearl_diver', player: pi, card: p.deck[p.deck.length - 1] };
@@ -10272,6 +10474,16 @@
           置けば1箇所で足りる。**白金貨は数えない**（金貨だけ）。
        ⚠ **ただの記録なので連鎖の暴走防止ガードより「前」**（7段以上ネストした獲得で得た金貨も数える）。 */
     if (cardId === 'gold' && state.players[pIndex]) state.players[pIndex].gainedGoldThisGame = true;
+    // 繁栄1版：交易路＝勝利点の山から「最初の1枚」が獲得されたとき、その山のトークンをマットへ（誰の獲得でも・廃棄置き場からの獲得でも。
+    //   READ は pileKeyOf＝城8種→castles。塩まき/追放/山へ戻す では動かない＝gain() を通らないので自動）。
+    if (state.tradeRoutePiles) {
+      const trk = pileKeyOf(state, cardId);
+      if (state.tradeRoutePiles[trk]) {
+        delete state.tradeRoutePiles[trk];
+        state.tradeRouteMat = (state.tradeRouteMat || 0) + 1;
+        log(state, `交易路：${(C()[trk] && C()[trk].name) || trk}の山のコイントークンが交易路マットへ移った（計${state.tradeRouteMat}個）。`);
+      }
+    }
     state._gainDepth = (state._gainDepth || 0) + 1;
     if (state._gainDepth > 6) { state._gainDepth--; return; } // 連鎖の暴走防止
     const n = state.players.length;
@@ -10393,6 +10605,12 @@
     if (hasTrait(state, cardId, 'hasty')) {
       (state.onGainQueue = state.onGainQueue || []).push({ type: 'hasty_aside', player: pIndex, card: cardId, dest });
     }
+    /* プロモ：召喚＝SUMMON_GAIN が立てた旗を**獲得した瞬間の dest**で消費する（遊牧民の野営地＝山札の上／ゴーストタウン＝手札 でも見つかる）。
+       獲得後に移すので望楼で先に動かされたら失敗（stop-moving）＝公式。 */
+    if (state.turn && state.turn.summonAside > 0 && pIndex === state.turn.active) {
+      state.turn.summonAside -= 1;
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'hasty_aside', player: pIndex, card: cardId, dest, source: 'summon' });
+    }
     /* ===== 略奪P5：イベントの「このターンの獲得」フック ===== */
     // 突貫（Rush）＝このターン次にアクションカードを獲得したとき、それを使用する（**累積しない**＝旗1つ）。
     if (state.turn && state.turn.rushArmed && pIndex === state.turn.active && DOM.isType(cardId, 'action')) {
@@ -10441,7 +10659,7 @@
     // 遊牧民の野営地：獲得したとき、山札の一番上に置く。
     //   ※「手札に獲得する」効果（彫刻家/出納官/職人 等）で得た場合は手札に残す（獲得置換が2つ競合＝獲得者が選ぶ。
     //     RGG は彫刻家×遊牧民の野営地で「手札に入る」と明記）。
-    if (cardId === 'nomad_camp' && dest !== 'hand') { const z = zoneOf(gp, dest); if (removeOne(z, 'nomad_camp')) { gp.deck.unshift('nomad_camp'); log(state, `${gp.name} は遊牧民の野営地を山札の上に置いた。`); } }
+    // 遊牧民の野営地＝gain() 側で獲得先を山札の上に置き換える（2016エラッタ＝獲得後の移動ではない）。ここでは何もしない。
     /* ===== 夜想曲：獲得時の効果 ===== */
     /* 取り替え子＝取り替え子を使うゲームでは、**コスト$3以上のカードを獲得したとき**それを取り替え子と
        交換してよい（全プレイヤー・自分のターン以外でも・任意）。公式は「同時に起きる効果の順番は選べる」ので
@@ -10464,13 +10682,19 @@
     /* 追跡者：**このターン**、カードを獲得したとき山札の上に置いてよい（2022エラッタ＝「これが場にある間」ではない）。
        移動遊園地と同じ窓＝onGainQueue に積む（既に山札の上に置かれた獲得は対象外）。 */
     if (state.turn && state.turn.trackerTurn && pIndex === state.turn.active && dest !== 'deck') {
-      (state.onGainQueue = state.onGainQueue || []).push({ type: 'travelling_fair', player: pIndex, card: cardId, dest: dest || 'discard', src: 'tracker' });
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'travelling_fair', player: pIndex, card: cardId, dest: dest || 'discard', source: 'tracker' });
     }
     /* 略奪：勲章＝**このターン**カードを獲得したとき、それを山札の上に置いてよい（任意・**毎回**）。
        公式FAQ逐語＝`If you gain multiple cards, this applies to each of them - you can put any or all of them on top of your deck.`
        移動遊園地/追跡者と同じ窓なので `travelling_fair` の pending を共有する（`source` でラベルだけ切り替える）。 */
     if (state.turn && state.turn.insignia && pIndex === state.turn.active && dest !== 'deck') {
       (state.onGainQueue = state.onGainQueue || []).push({ type: 'travelling_fair', player: pIndex, card: cardId, dest: dest || 'discard', source: 'insignia' });
+    }
+    /* 繁栄1版：玉璽＝**場にある間**、カードを獲得したとき山札の上に置いてよい（毎回・任意）。🛑 「このターン」型のティアラ/勲章とは別ルール
+       （場を離れたら止まる）＝**見た目が似ても共通化しない**。判定は獲得の瞬間の在場（push 時）。支配中は獲得者が支配者なので
+       `pIndex === active` で自然に開かない（公式＝被支配者は獲得していない）。追いはぎで「何もしない」ことにされても区切り線の下なので働く。 */
+    if (state.turn && pIndex === state.turn.active && dest !== 'deck' && state.players[pIndex].inPlay.includes('royal_seal')) {
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'travelling_fair', player: pIndex, card: cardId, dest: dest || 'discard', source: 'royal_seal' });
     }
     /* セイレーン＝これを獲得したとき、手札からアクション1枚を廃棄してもよい。廃棄しないならセイレーンを廃棄する。
        ⚠ **獲得札を動かす効果（勲章／移動遊園地／追跡者／せっかちな／配達…）より後に積む**。
@@ -10719,7 +10943,7 @@
     }
     // 繁栄：自分の手番にアクションカードを獲得 → 場の収集1枚につき +1勝利点（collection）。
     if (state.turn && pIndex === state.turn.active && DOM.isType(cardId, 'action')) {
-      const cols = state.players[pIndex].inPlay.filter((c) => c === 'collection').length;
+      const cols = (state.turn && state.turn.collectionPlays) || 0; // 「このターン」型＝使用回数（場の枚数ではない）
       if (cols) { state.players[pIndex].vpTokens = (state.players[pIndex].vpTokens || 0) + cols; log(state, `${state.players[pIndex].name} は収集で +${cols} 勝利点。`); }
     }
     // 繁栄：物見やぐら（手札から公開→獲得物を廃棄か山札上へ）／ティアラ（獲得物を山札上へ）。
@@ -10727,7 +10951,7 @@
     if (state.turn && pIndex === state.turn.active && state._gainDepth === 1 && !state.pending) {
       const me = state.players[pIndex];
       if (me.hand.includes('watchtower')) state.pending = { type: 'watchtower', player: pIndex, card: cardId, dest: dest || 'discard' };
-      else if (me.inPlay.includes('tiara')) state.pending = { type: 'tiara_topdeck', player: pIndex, card: cardId, dest: dest || 'discard' };
+      else if (state.turn.tiaraPlays) state.pending = { type: 'tiara_topdeck', player: pIndex, card: cardId, dest: dest || 'discard' }; // 「このターン」型（場の枚数ではない）
       // 異郷：国境の村＝獲得したとき、それより安いカード1枚を獲得（必須・獲得先があるときのみ）。
       else if (cardId === 'border_village' && anyGainable(state, (id) => costUnder(state, id, cardCost(state, 'border_village')))) {
         state.pending = { type: 'border_village', player: pIndex, maxCost: cardCost(state, 'border_village') - 1 };
@@ -12779,6 +13003,12 @@
       }
       // 特価品（$4）＝コスト$5以下の勝利点でないカード1枚を獲得（強制）。その後、他の各プレイヤーが馬1枚を獲得する。
       //   アタックではない（堀・灯台で防げない）。馬は購入者の左隣から手番順（山が足りなければ先着）。
+      // プロモ：召喚（$5）＝$4以下のアクション1枚を獲得して脇に置き、次の自分のターン開始時に使用（強制・候補ゼロなら窓を開かない）。
+      //   🛑 `ONCE_PER_TURN_EVENTS` に入れない（何度でも買える＝脇に複数枚）。脇は `p.eventSetAside`（遅延/刈り入れ/せっかちな と共用）。
+      case 'summon': {
+        if (anyGainable(state, (cid) => summonCanGain(state, cid))) state.pending = { type: 'summon_gain', player: pi };
+        break;
+      }
       case 'bargain': {
         if (anyGainable(state, (cid) => bargainCanGain(state, cid))) state.pending = { type: 'bargain_gain', player: pi };
         else bargainHorses(state, pi);
@@ -13523,6 +13753,22 @@
       while (state.onGainQueue.length) {
         const q = state.onGainQueue.shift();
         if (q.type === 'gatekeeper_exile') { applyGatekeeperExile(state, q.player, q.card, q.dest); continue; }
+        // 海辺1版：抑留＝呪いを1枚ずつ別々に獲得（望楼/交易商人/海賊の窓が呪いごとに開く）。山が空なら何もしない。
+        if (q.type === 'embargo_curse') {
+          if ((state.supply.curse || 0) > 0 && gain(state, q.player, 'curse', 'discard')) log(state, `${state.players[q.player].name} は抑留で呪い1枚を獲得した。`);
+          if (state.pending) break;
+          continue;
+        }
+        // 海辺1版：大使＝各相手が同名を1枚ずつ獲得（山が尽きたら何も得ない・混合山は一番上がそれのときだけ・非サプライは配らない）。
+        if (q.type === 'ambassador_give') {
+          if (!NON_SUPPLY.has(q.card) && availableInSupply(state, q.card)) {
+            const pk = pileKeyOf(state, q.card);
+            const got = isMixedPileKey(pk) ? (mixedTopCard(state, pk) === q.card && gain(state, q.player, pk, 'discard')) : gain(state, q.player, q.card, 'discard');
+            if (got) log(state, `${state.players[q.player].name} は「${C()[q.card].name}」を獲得した（大使）。`);
+          }
+          if (state.pending) break;
+          continue;
+        }
         /* ギルド：過払い＝獲得時対話の後に「いくら過払いするか」を聞く（`maybeStartOverpay` が積む）。
            ⚠ 消化するときに残コインを測り直す（間に獲得時対話でコインが動くことは無いが、安全側）。 */
         if (q.type === 'marchland_discard') {
@@ -13658,7 +13904,7 @@
           if (hz && removeOne(hz, q.card)) {
             (hp.eventSetAside = hp.eventSetAside || []).push(q.card);
             // 旭日 R4：急速拡大(Rapid Expansion) も同じ器を使う（`source` で表示だけ分ける）。
-            log(state, `${hp.name} は${q.source === 'rapid_expansion' ? '急速拡大で' : 'せっかちな'}「${C()[q.card].name}」を脇に置いた（次のターンの開始時に使用する）。`);
+            log(state, `${hp.name} は${q.source === 'summon' ? '召喚で' : q.source === 'rapid_expansion' ? '急速拡大で' : 'せっかちな'}「${C()[q.card].name}」を脇に置いた（次のターンの開始時に使用する）。`);
           }
           continue;
         }
@@ -13804,6 +14050,21 @@
         playTreasureCard(state, vr.player, vr.card);
       }
       state = runReplays(state);
+    }
+    // 繁栄1版：交易路＝廃棄時効果（狩場→公領＝トークンが動く／青空市場/墓所…）を全部解決してから +$ を数える（2017エラッタ）。
+    if (!state.pending && !state.gameOver && state.turn && state.turn.tradeRouteResume &&
+        !(state.onGainQueue && state.onGainQueue.length) && !(state.onTrashQueue && state.onTrashQueue.length)) {
+      const tr = state.turn.tradeRouteResume; state.turn.tradeRouteResume = null;
+      const n = state.tradeRouteMat || 0;
+      addCoins(state, n);
+      log(state, `${state.players[tr.player].name} は交易路でマットのコイントークン${n}個ぶん +$${n}。`);
+      state = runReplays(state);
+    }
+    // 繁栄1版：禁制品の指定窓が pending で待たされていたら開く。
+    if (!state.pending && !state.gameOver && state.turn && state.turn.contrabandAsk && state.turn.contrabandAsk.length) {
+      const ca = state.turn.contrabandAsk.shift();
+      if (!state.turn.contrabandAsk.length) state.turn.contrabandAsk = null;
+      state.pending = { type: 'contraband_name', player: ca.player, source: ca.source };
     }
     // 冒険：語り部の中断再開は runReplays より前（上）で処理済み。ここでは onTrashQueue 由来などで再度残っていれば拾う保険。
     if (!state.pending && !state.gameOver && state.turn && state.turn.storytellerResume) {
@@ -14222,6 +14483,9 @@
         t.treasuresLocked = true;           // 公式：購入したら、そのターンはもう財宝を出せない
         // 帝国：負債コストのカードは**購入したとき**にその数だけ負債を負う（獲得では負わない＝公式）。
         //   支払いの一部なので gain() の前に行う（交易商人で銀貨に置換されても購入した事実は変わらない）。
+        // 繁栄1版：護符の判定材料（種別・一番上の実カード）は **gain() の前**に捕まえる（混合山は gain が一番上を shift する）。
+        const boughtIsVictory = isTypeSupply(state, card, 'victory');
+        const realBought = mixedTopCard(state, card) || card;
         takeDebt(state, pi, card);
         gain(state, pi, card, 'discard');
         log(state, `${me.name} は「${C()[card].name}」を購入した。`);
@@ -14235,6 +14499,12 @@
         if (card === 'port') { if (gain(state, pi, 'port', 'discard')) log(state, `${me.name} は港町の購入でもう1枚の港町を獲得した。`); }
         // ギルド：商人ギルドが場にある間、カードを購入するたびに財源(Coffers)を得る（場の枚数ぶん）。
         triggerMerchantGuild(state, pi);
+        // 繁栄1版：ならず者＝場にある枚数ぶん +1VP（イベント/プロジェクトの購入は対象外）。
+        goonsOnBuy(state, pi);
+        // 繁栄1版：護符＝場の護符1枚につき、購入した「$4以下の勝利点でない」カード（購入時点の3成分）と同じカードをもう1枚獲得。
+        maybeTalismanGains(state, pi, card, boughtRef, boughtIsVictory, realBought);
+        // 海辺1版：抑留トークン＝その山から**購入**したときトークン1個につき呪い1枚（**1枚ずつ別々の獲得**＝onGainQueue）。
+        queueEmbargoCurses(state, pi, card);
         // ギルド：過払い（overpay）＝購入時に追加でコインを払える。残コインがあれば選択待ちを立てる。
         maybeStartOverpay(state, pi, card);
         // 異郷：農地＝購入したとき、手札1枚を廃棄し、ちょうど$2高いカード1枚を獲得。
@@ -14522,7 +14792,8 @@
           //   **`zoneOf(p, dest)` を先に見る**＝封鎖の 'setAside'／刈り入れの 'eventSetAside' に獲得した札も拾える。
           const zones = [zoneOf(p, pd.dest), p.discard, p.hand];
           const zone = zones.find((z) => z && z.indexOf(pd.card) >= 0);
-          if (zone && removeOne(zone, pd.card)) { p.deck.unshift(pd.card); log(state, `${p.name} は移動遊園地で「${C()[pd.card].name}」を山札の上に置いた。`); }
+          const tfLbl = pd.source === 'royal_seal' ? '玉璽' : pd.source === 'insignia' ? '勲章' : pd.source === 'bauble' ? '道化棒' : pd.source === 'tracker' ? '追跡者' : '移動遊園地';
+          if (zone && removeOne(zone, pd.card)) { p.deck.unshift(pd.card); log(state, `${p.name} は${tfLbl}で「${C()[pd.card].name}」を山札の上に置いた。`); }
         }
         return state;
       }
@@ -15925,6 +16196,153 @@
       /* ---- 拷問人（アタック）：手札2枚を捨てる or 呪いを手札に ---- */
       /* ===== 段階2 第1バッチ：選択解決（すべて4点セット）===== */
       // 真珠採り＝山札の一番下のカードを上に置くか（任意）。
+      /* ===== 段階2 第2バッチの reducer ===== */
+      // 抑留＝サプライの山1つに抑留トークンを置く（空の山にも置ける＝徴税/教師の山トークンと同じ。非サプライは拒否）。
+      case 'EMBARGO_PILE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'embargo_pile') return state;
+        const raw = action.pile;
+        if (!raw || NON_SUPPLY.has(raw) || state.supply[raw] == null) return state;
+        const id = pileKeyOf(state, raw); // 分割山は上段キーに正規化（READ 側 queueEmbargoCurses も pileKeyOf）
+        state.pileEmbargo = state.pileEmbargo || {};
+        state.pileEmbargo[id] = (state.pileEmbargo[id] || 0) + 1;
+        log(state, `${state.players[pd.player].name} は抑留：${(C()[id] && C()[id].name) || id}の山に抑留トークンを置いた（計${state.pileEmbargo[id]}個）。`);
+        state.pending = null;
+        return state;
+      }
+      // 海賊船：反応窓で反応しない（免疫にならない）→次の席へ
+      case 'PIRATE_SHIP_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'pirate_ship' || pd.stage !== 'react') return state;
+        pirateShipReactEnter(state, pd.source, pd.queue, pd.immune);
+        return state;
+      }
+      // 海賊船：二択（どちらも常に合法）
+      case 'PIRATE_SHIP_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'pirate_ship' || pd.stage !== 'choose') return state;
+        const me = state.players[pd.source];
+        if (!action.attack) {
+          const n = me.pirateShipTokens || 0;
+          state.pending = null;
+          addCoins(state, n);
+          log(state, `${me.name} は海賊船でコイントークン${n}個ぶん +$${n}。`);
+          return state;
+        }
+        const imm = pd.immune || [];
+        const vics = [];
+        for (let k = 1; k < state.players.length; k++) {
+          const idx = (pd.source + k) % state.players.length;
+          if (imm.indexOf(idx) < 0 && !attackImmune(state, idx)) vics.push(idx);
+        }
+        pirateShipAttackEnter(state, pd.source, vics, false);
+        return state;
+      }
+      // 海賊船：公開された財宝から1枚を選んで廃棄（強制）→残りを捨てる→次の席へ
+      case 'PIRATE_SHIP_PICK': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'pirate_ship' || pd.stage !== 'pick') return state;
+        const card = action.card;
+        if (pd.treasures.indexOf(card) < 0) return state;
+        const v = state.players[pd.victim];
+        const rest = pd.revealed.slice();
+        rest.splice(rest.indexOf(card), 1);
+        trashCard(state, pd.victim, card);
+        rest.forEach((c) => v.discard.push(c));
+        log(state, `${v.name} の「${C()[card].name}」を廃棄した（海賊船）。`);
+        if (rest.length) triggerOnDiscard(state, pd.victim, rest.slice(), true);
+        pirateShipAttackEnter(state, pd.source, pd.queue, true);
+        return state;
+      }
+      case 'SEA_HAG_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'sea_hag' || pd.stage !== 'react') return state;
+        seaHagApply(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      // 大使：手札1枚を公開（本物の reveal＝パトロンが効く）。サプライに戻せない札（略奪品/賞品/避難所/闇市場の札…）なら何も起きない（公式）。
+      case 'AMBASSADOR_REVEAL': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ambassador' || pd.stage !== 'reveal') return state;
+        const pl = state.players[pd.player];
+        const card = action.card;
+        if (pl.hand.indexOf(card) < 0) return state;
+        reveal(state, pd.player, [card], '大使で公開');
+        if (NON_SUPPLY.has(card) || !canReturnToPile(state, card)) {
+          log(state, `「${C()[card].name}」はサプライの山が無いので、大使は何も起きない。`);
+          state.pending = null;
+          return state;
+        }
+        const max = Math.min(2, pl.hand.filter((c) => c === card).length);
+        state.pending = { type: 'ambassador', stage: 'return', player: pd.player, card, max };
+        return state;
+      }
+      // 大使：同名を 0〜2 枚サプライへ戻す（獲得でも廃棄でもない第3の移動＝supply が増える＝3山終了が巻き戻る）→配布
+      case 'AMBASSADOR_RETURN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ambassador' || pd.stage !== 'return') return state;
+        const pl = state.players[pd.player];
+        const n = Math.floor(Number(action.amount));
+        if (!(n >= 0 && n <= pd.max)) return state;
+        let done = 0;
+        for (let i = 0; i < n; i++) {
+          if (!canReturnToPile(state, pd.card)) break;
+          if (!removeOne(pl.hand, pd.card)) break;
+          returnToPile(state, pd.card); done++;
+        }
+        log(state, `${pl.name} は大使で「${C()[pd.card].name}」を${done}枚サプライに戻した。`);
+        const q = [];
+        for (let k = 1; k < state.players.length; k++) q.push((pd.player + k) % state.players.length);
+        ambassadorEnterVictim(state, pd.player, q, pd.card);
+        return state;
+      }
+      case 'AMBASSADOR_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ambassador' || pd.stage !== 'react') return state;
+        (state.onGainQueue = state.onGainQueue || []).push({ type: 'ambassador_give', player: pd.victim, card: pd.card });
+        ambassadorEnterVictim(state, pd.source, pd.queue, pd.card);
+        return state;
+      }
+      // 交易路：手札1枚を廃棄（強制）。+$ は廃棄時効果を全部解決してから（reduce 末尾の tradeRouteResume）。
+      case 'TRADE_ROUTE_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'trade_route_trash') return state;
+        const pl = state.players[pd.player];
+        if (!pl.hand.length) { state.pending = null; state.turn.tradeRouteResume = { player: pd.player }; return state; }
+        const card = action.card;
+        if (pl.hand.indexOf(card) < 0) return state;
+        removeOne(pl.hand, card);
+        state.pending = null;
+        trashCard(state, pd.player, card);
+        log(state, `${pl.name} は交易路で「${C()[card].name}」を廃棄した。`);
+        state.turn.tradeRouteResume = { player: pd.player };
+        return state;
+      }
+      // 禁制品：左隣がカード1種を指定（サプライ外でも可＝効果ゼロなだけ）。
+      case 'CONTRABAND_NAME': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'contraband_name') return state;
+        const card = action.card;
+        if (!card || !C()[card]) return state;
+        const t2 = state.turn;
+        t2.contraband = (t2.contraband || []).concat([card]);
+        log(state, `${state.players[pd.player].name} は禁制品で「${C()[card].name}」を指定した（${state.players[pd.source].name} はこのターン購入できない）。`);
+        state.pending = null;
+        return state;
+      }
+      // 召喚：$4以下のアクション1枚を獲得（強制）→脇へ（獲得後に移す＝せっかちな型）→次の自分のターン開始時に使用。
+      case 'SUMMON_GAIN': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'summon_gain') return state;
+        const id = action.card;
+        if (!id || !summonCanGain(state, id)) return state;
+        state.pending = null;
+        const t2 = state.turn;
+        // 支配中＝獲得するのは支配者＝脇に置かれず捨て札に残る（公式）。それ以外は triggerOnGain が dest を見て脇へ（hasty_aside）。
+        if (!(t2.possessedBy != null && pd.player === t2.active)) t2.summonAside = (t2.summonAside || 0) + 1;
+        if (!gain(state, pd.player, id, 'discard')) { t2.summonAside = 0; return state; }
+        return state;
+      }
       case 'PEARL_DIVER_RESOLVE': {
         const pd = state.pending;
         if (!pd || pd.type !== 'pearl_diver') return state;
@@ -16855,6 +17273,7 @@
         /* 夜想曲：錯乱を**返した後**なら闇市場でもアクションカードは買えない（公式）。
            まだ返していない＝アクションフェイズで闇市場を使うぶんには普通に買える（`t.cantBuyActions` が立っていない）。 */
         if (t.cantBuyActions && pd.player === t.active && DOM.isType(card, 'action')) return state;
+        if (t.contraband && t.contraband.length && pd.player === t.active && t.contraband.indexOf(card) >= 0) return state; // 繁栄1版：禁制品
         const cost = cardCost(state, card);
         if (cost > t.coins) return state; // 払えない
         t.coins -= cost; // 闇市場の購入は購入回数を消費しない
@@ -16865,6 +17284,7 @@
         takeDebt(state, pd.player, card);
         applyHoardOnBuy(state, pd.player, card);
         triggerMerchantGuild(state, pd.player); // ギルド：闇市場の購入でも商人ギルドの財源が付く
+        goonsOnBuy(state, pd.player);           // 繁栄1版：闇市場の購入も「購入」＝ならず者の +1VP
         const rest = pd.revealed.filter((c) => c !== card);
         state.blackMarket = (state.blackMarket || []).concat(rest); // 残りは底へ（過払い前に片付ける）
         state.pending = null;
@@ -23774,6 +24194,8 @@
     'PLAY_NIGHT', // 夜想曲：夜フェイズに夜行カードを使う（アクション権も購入権も消費しない）
     // 段階2 第1バッチ（海辺1版／繁栄1版／プロモ）
     'PEARL_DIVER_RESOLVE', 'NAVIGATOR_RESOLVE', 'EXPLORER_RESOLVE', 'GHOST_SHIP_REACT', 'GHOST_SHIP_PUT',
+    'EMBARGO_PILE', 'PIRATE_SHIP_REACT', 'PIRATE_SHIP_CHOOSE', 'PIRATE_SHIP_PICK', 'SEA_HAG_REACT',
+    'AMBASSADOR_REVEAL', 'AMBASSADOR_RETURN', 'AMBASSADOR_REACT', 'TRADE_ROUTE_TRASH', 'CONTRABAND_NAME', 'SUMMON_GAIN',
     'COUNTING_HOUSE_RESOLVE', 'LOAN_RESOLVE', 'MOUNTEBANK_REACT', 'MOUNTEBANK_CHOOSE', 'MARCHLAND_DISCARD',
     'CELLAR_RESOLVE', 'MILITIA_RESOLVE', 'MOAT_REVEAL',
     // 略奪（Plunder）：戦利品(Loot)
@@ -24003,6 +24425,8 @@
     exileCount,        // そのプレイヤーの追放マットにある同名カードの枚数
     investCount,       // 移動動物園：投資（Invest）で追放したコピーの枚数（表示用・+2カードの判定はengine内）
     bargainCanGain,    // 移動動物園：特価品の獲得候補（$5以下・勝利点でない）
+    summonCanGain,     // プロモ：召喚の獲得候補（$4以下のアクション）
+    contrabandBlocks,  // 繁栄1版：禁制品で購入できないか（canBuyCard が見る）
     populatePiles,     // 移動動物園：植民で獲得できる「アクションのサプライ山」の一覧（engine/CPU/UI が同じ候補を参照）
     isUsableWay,       // 移動動物園：その習性がこの対局で採用されているか（イベントの「使用」でも習性を選べる）
     // 夜想曲：祝福/呪詛/状態（CPU/UI が engine と同じ述語を見る）
