@@ -48,7 +48,22 @@
 - CPU `GAIN_ORDER` は26種を実強度順の位置へ（褒賞6種は非サプライ＝末尾のまま）。UI のカード一覧の「段階1＝未実装」ラベルを外した。
 - 検証＝整合性 5850→**5859**／`ui.test`（全 CARD_SETS が picker に出る）／**昇格7セット×3戦（2〜4人）の CPU ソーク 21/21 完走**（膠着・例外・保存則違反・engine拒否 0）／
   invariants の出荷セット検証に7セットを追加。
-- ⚠ **サーバは `DOM.CARD_SETS` から許可IDを導出するので新セットは自動受理**（サーバ側コード変更なし）。**push はユーザー確認**。
+- ⚠ **サーバは `DOM.CARD_SETS` から許可IDを導出するので新セットは自動受理**（サーバ側コード変更なし）。
+
+### ✅ push＝完了（2026-08-23・`2708911..f0b7445`／8コミット）＝本番反映を機械照合
+- **GitHub Pages**（Deploy success）：`sw.js` **v88**／`js/cards.js`・`engine.js`・`cpu.js`・`ui.js`・`carddata.js`・`css/style.css`・`sw.js`・`manifest.webmanifest` の
+  **8本が sha1 完全一致**（改行を正規化。⚠ `js/ui.js` は Codex の未コミット差分があるので **`git show HEAD:js/ui.js` と比較する**）／
+  焼き直した webp 3枚（遊牧民の野営地・商人ギルド・王女）が**バイト一致**／新33種の webp 抜き取り9枚が絵入りサイズで配信／
+  本番 `cards.js` に `STAGE1_POOLS = []`・新 CARD_SET 5種・`seaside1e_full`・mix の `cornguilds2e`、本番 `engine.js` に
+  `ferrymanPile`／`footpadRule`／`pileEmbargo`／`tradeRouteMat`／`pirateShipTokens`／`merchantGuildEndOfBuy`／`coronetStart`／`joustAside` を確認＝**38/38 ok**。
+- **Render（オンライン）**：`GET /status` = `{"persist":true,"rooms":0}`。実 ws（`/ws`＋Origin 必須・`t:` キー）で
+  **`cornguilds2e` が受理され、渡し守の山（名品×10枚・サプライに載っていない）・褒賞の山（2人＝各1）・`footpadRule`・パン屋の財源1個・相手手札のマスク・渡し守の山は公開**を確認／
+  `seaside1e`（海賊船トークン0で初期化）／`prosperity1e`（**交易路の準備＝屋敷/公領/属州/植民地にトークン・呪いには置かない**）／
+  `promo-events`（イベント「召喚」が配られる・闇市場デッキ489枚）／`random-seaside1e`／`random-prosperity1e`／`random-cornguilds2e`／
+  **mix（`mix:cornguilds2e,basic,seaside:2:ev-promo,ev-empires`）**＝**22/22 ok**。
+  ⚠ 検証中に1件 NG が出たが**テスト側の誤り**＝`random-cornguilds2e` は母集団に若き魔女がいるので**災いカードで11山になる**（200回中75回＝公式どおり）。
+- **本番の挙動が変わったもの**＝新セット7つ＋mix の `cornguilds2e`＋闇市場デッキ +26枚（`STAGE1_POOLS` が空に）＋
+  **出荷済みバグ7件の修正**（商人ギルド／財源／王女／ティアラ／収集／追跡者／遊牧民の野営地）＝すべて公式へ寄せる方向。
 
 ### ✅ 段階2 第3バッチ＝**収穫祭＆ギルド2版14種（王国8＋褒賞6）＋出荷済みバグ3件**（2026-08-23・`sw.js` v87）
 装蹄師／店／診療所／耕作者／謝肉祭／**渡し守（本アプリ初の「サプライ外の王国山」）**／野盗／一騎討ち＋褒賞6種（小冠／駿馬／御料地／ハスカール／大きなかぶ／名声）。
@@ -3191,7 +3206,8 @@ mix を解禁すると、PROGRESS §6 / §0-10 に**「どの出荷 CARD_SET で
 最終更新: 2026-08-23 / branch `main`（最新は `git log` で確認）。
 
 **【現在地】§0-40＝未実装33種（海辺1版8／繁栄1版9／収穫祭＆ギルド2版14／プロモ2）を段階2で全部実装し昇格した＝
-Arcana 以外の公式全カード（縦型618＋横型227＝845枚）が実プレイ可能**（`sw.js` **v88**・**未push**＝`git log origin/main..HEAD` で確認）。
+Arcana 以外の公式全カード（縦型618＋横型227＝845枚）が実プレイ可能**
+（`sw.js` **v88**・**push 済み（2026-08-23・8コミット・`2708911..f0b7445`）＝本番反映を機械照合済み**＝Pages 38/38・Render 22/22）。
 - 段階2 第1〜3バッチ（§0-40 の各節）＋昇格。新セット7つ（`seaside1e`／`prosperity1e`／`cornguilds2e`／`promo-events`／`random-*` 3種）・
   `random-1e` と mix-all と闇市場デッキの母集団が増えた。**新機構＝渡し守の山（サプライ外の王国山）／褒賞の山（2人各1・3人以上各2）／野盗の常設ルール**。
 - **出荷済みバグを7件修正**＝商人ギルド／財源の2018旧則（→2021）・王女の「場にある間」（→2022「このターン」）・ティアラ／収集の「場にある枚数」（→「このターン」）・
@@ -3200,7 +3216,7 @@ Arcana 以外の公式全カード（縦型618＋横型227＝845枚）が実プ�
   昇格7セット×3戦の CPU ソーク完走。
 - 🛑 **Codex が同じ作業ツリーで `css/style.css`・`js/ui.js`（絵文字→SVG）・`manifest.webmanifest`・`test/ui.test.js` を改修中**＝私のコミットは
   「HEAD ＋ 自分のブロック」を `git hash-object -w`＋`git update-index --cacheinfo` で index に入れて分離している（`git apply --cached --unidiff-zero` は使わない）。
-- **次＝① push（ユーザー確認）→ 本番照合／② 正本の敵対検証が残した宿題（§0-40「未対応」＝日本語名14件・`harem`→Farm・`hoard` 二重登録・
+- **次＝① 多エージェント敵対レビュー（6観点）＝**セッション上限で1度失敗したので再投入中**／② 正本の敵対検証が残した宿題（§0-40「未対応」＝日本語名14件・`harem`→Farm・`hoard` 二重登録・
   `revealFromDeck` の2度目シャッフル・Courser×長老・Princess/Collection/Tiara の webp は済）／③ Arcana（データ未公開）。**
 
 **【前回の現在地】§0-40＝「世の中に出ている全カード」との差分を監査＝残りは 33種 ＋ Arcana。旭日の絵50枚も回収済み**

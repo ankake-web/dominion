@@ -8,8 +8,9 @@
 1. `npm test` を実行して **全50スイート緑（exit 0・整合性5859・不変条件12・`missing33` 236＋`missing33-ui` 110）** を確認する。
 2. **`PROGRESS.md` の §0-40（今ここ＝未実装33種の段階0〜昇格まで全部）／§5／§6 を読む。** 正本＝`docs/research/missing19_rules.md`（海辺1版8・繁栄1版9・プロモ2）と
    `docs/research/cornguilds2e_rules.md`（収穫祭＆ギルド2版14＋末尾の敵対検証3本）。広い過去文脈は `docs/handover.md`。
-3. **未push が7コミット**（`git log origin/main..HEAD`）＝段階2 第1〜3バッチ＋昇格＋出荷済みバグ7件の修正。**本番は v83 のまま**（ローカルは `sw.js` v88）。
-   **push はユーザーに確認してから**（勝手に push しない）。push したら本番照合（Pages の `sw.js` v88・`js/*.js` の sha1 一致・Render `GET /status`・実 ws で `setConfig kingdomSet=cornguilds2e` が受理され渡し守の山が立つ）。
+3. **2026-08-23 に 8コミットを push 済み＝本番は v88**（Pages 38/38・Render 22/22 で機械照合済み＝PROGRESS §0-40 の「push＝完了」節）。
+   **以後の push もユーザーに確認してから**（勝手に push しない）。
+   ⚠ 本番と比べるとき **`js/ui.js` は `git show HEAD:js/ui.js`** を使う（作業ツリーには Codex の未コミット差分がある）。
 
 ## 現在地（2026-08-23）
 - **未実装33種（海辺1版8／繁栄1版9／収穫祭＆ギルド2版14／プロモ2）を段階2で全部実装し昇格した＝Arcana 以外の公式全カード（縦型618＋横型227＝845枚）が実プレイ可能。**
@@ -19,7 +20,10 @@
 - 検証＝`npm test` 全50緑／`verify:e2e` 9/9／`verify:visual` はみ出し0／恒久テストはバグ注入 7/7・13/13・15/15 で感度確認／昇格7セット×3戦 CPU ソーク完走。
 
 ## 次に取り組むこと（優先順）
-1. **push（ユーザー確認）→ 本番照合**。
+1. **多エージェント敵対レビュー（6観点＝海辺1版／繁栄1版＋プロモ／収穫祭＆ギルド2版 王国／褒賞＋過払い／出荷済みバグ7件と既存17拡張への退行／CPU非ループ・UI詰み・保存則マスク互換）**。
+   2026-08-23 に投入したがセッション上限で1度失敗した＝再投入する。スクリプトは
+   `…/workflows/scripts/missing33-adversarial-review-wf_b70b0bd3-baf.js`（`Workflow({scriptPath, resumeFromRunId:'wf_b70b0bd3-baf'})` で再開できる）。
+   確定した finding は全部直してから次へ。
 2. **§0-40「未対応」の宿題**（どれも webp 再生成を伴うものが多い＝このPCのみ）：日本語名の誤り14件（`mandarin`「役人」が `bureaucrat` と衝突＝公式「官吏」ほか）／`harem`→Farm 改名／`hoard` の `POOLS.promo`/`prosperity` 二重登録／
    `revealFromDeck`・`farming_village`・`fortune_teller` の「2度目のシャッフル禁止」（メイソン団・mix-all 限定）／Courser を長老(Elder)の対象にするか（公式は対象）／Princess の2022エラッタは**印刷済み**に揃えた（済）。
 3. **第18拡張 Arcana**（2026年予定）＝カード名すら未公開＝データが出たら段階0から。
