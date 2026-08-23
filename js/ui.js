@@ -1942,7 +1942,12 @@
        できるのは「夜行カードを使う」（手札のカードをタップ）と「ターンを終える」だけ。
        ⚠ ただし**負債の返済だけは 2024エラッタで「ターン中いつでも」**になったので夜でも出す。 */
     if (t.phase === 'night') {
+      // ギルド（2021）＝財源はターン中いつでも使える＝夜フェイズにも導線を出す（engine の COFFERS_SPEND は受理する）。
+      const cofferBtnN = (t.active === viewer && (state.players[viewer].coffers || 0) > 0)
+        ? h('button', { class: 'btn btn-block', style: 'background:#b8860b;color:#fff', onclick: () => { UI.coffersOpen = true; UI.amount = null; render(); } }, '💰 財源を使う（' + state.players[viewer].coffers + '）')
+        : null;
       return h('div', { class: 'actions-bar' },
+        cofferBtnN,
         repayBtn,
         stashBtn,
         favorShuffleBtn,
@@ -3527,7 +3532,7 @@
         (id) => cand.indexOf(id) >= 0, (card) => dispatch({ type: 'SHOP_PLAY', card }), { label: '使わない', on: () => dispatch({ type: 'SHOP_PLAY', card: null }) }, '使う', DOM.engine.handPlayable(state, pd.player));
     }
     if (pd.type === 'farmhands_aside') return modalSingleHand(p, '耕作者 — 脇に置く（任意）', '手札のアクションカードか財宝カード1枚を脇に置けます。置いたカードは次のあなたのターンの開始時に使用します（強制）。',
-      (id) => DOM.isType(id, 'action') || isTreasureNow(state, id), (card) => dispatch({ type: 'FARMHANDS_ASIDE', card }), { label: '置かない', on: () => dispatch({ type: 'FARMHANDS_ASIDE', card: null }) }, '脇に置く');
+      (id) => DOM.isType(id, 'action') || isTreasureNow(state, id) || DOM.engine.inheritedEstate(p, id), (card) => dispatch({ type: 'FARMHANDS_ASIDE', card }), { label: '置かない', on: () => dispatch({ type: 'FARMHANDS_ASIDE', card: null }) }, '脇に置く');
     if (pd.type === 'ferryman_discard') return modalSingleHand(p, '渡し守 — 捨て札', '手札からカード1枚を捨て札にします。', () => true,
       (card) => dispatch({ type: 'FERRYMAN_DISCARD', card }), null, '捨てる');
     /* ===== 段階2 第2バッチ ===== */

@@ -837,6 +837,8 @@
     if (fairgrounds) vp += fairgrounds * 2 * Math.floor(new Set(cards).size / 5);
     const silkRoads = cards.filter((c) => c === 'silk_road').length; // 異郷：絹の道（勝利点カード4枚毎に1点）
     if (silkRoads) vp += silkRoads * Math.floor(cards.filter((c) => isType(c, 'victory')).length / 4);
+    const marchlands = cards.filter((c) => c === 'marchland').length; // プロモ：境界地（勝利点カード3枚毎に1点）＝engine.vpOf と同じ式
+    if (marchlands) vp += marchlands * Math.floor(cards.filter((c) => isType(c, 'victory')).length / 3);
     const demesnes = cards.filter((c) => c === 'demesne').length;    // 収穫祭＆ギルド2版：御料地（金貨1枚につき1点）＝engine.vpOf と同じ
     if (demesnes) vp += demesnes * cards.filter((c) => c === 'gold').length;
     const feoda = cards.filter((c) => c === 'feodum').length;        // 暗黒時代：封土（銀貨3枚毎に1点）

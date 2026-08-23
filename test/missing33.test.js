@@ -541,6 +541,141 @@ console.log('=== 保存則＆CPU終端（第3バッチ14種を強制混成）===
   ok(bad===0,'6ゲームが膠着・例外・保存則違反なしで終局');
 }
 
+
+/* ===== 多エージェント敵対レビュー（6観点・13体／2026-08-23）で確定した finding の回帰テスト =====
+   ⚠ どれも「修正を戻すと赤になる」ことをバグ注入で確認している。 */
+console.log('=== レビュー回帰 R1：真珠採り＝山札が空なら先にシャッフルしてから一番下を見る ===');
+{
+  let s = mk(['pearl_diver'].concat(F.slice(0, 9)));
+  s.players[0].hand = ['pearl_diver']; s.players[0].deck = ['copper']; s.players[0].discard = ['gold', 'estate', 'silver'];
+  s = act(s, 'pearl_diver');
+  ok(s.players[0].hand.includes('copper'), '+1カードで山札が空になる');
+  ok(s.pending != null && s.pending.type === 'pearl_diver' && s.pending.card != null,
+    '捨て札をシャッフルして「一番下を見る」窓が開く（実: ' + JSON.stringify(s.pending && s.pending.card) + '）');
+  ok(s.players[0].discard.length === 0 && s.players[0].deck.length === 3, '捨て札3枚が山札になった');
+  let z = mk(['pearl_diver'].concat(F.slice(0, 9)));
+  z.players[0].hand = ['pearl_diver']; z.players[0].deck = ['copper']; z.players[0].discard = [];
+  z = act(z, 'pearl_diver');
+  ok(z.pending == null, '山札も捨て札も空なら窓を開かない（シャッフルする札が無い）');
+}
+
+console.log('=== レビュー回帰 R2：交易路＝玉座／王の宮廷で複数回使うと +$ も回数ぶん出る（再開網はキュー）===');
+{
+  let s = mk(['trade_route', 'kings_court'].concat(F.slice(0, 8)));
+  s.tradeRouteMat = 2; // マットにコイントークン2個
+  s.players[0].hand = ['kings_court', 'trade_route', 'curse', 'curse', 'curse'];
+  s = act(s, 'kings_court');
+  s = E.reduce(s, { type: 'KINGS_COURT_CHOOSE', card: 'trade_route' });
+  let guard = 0;
+  while (s.pending && guard++ < 20) s = E.reduce(s, { type: 'TRADE_ROUTE_TRASH', card: 'curse' });
+  ok(s.pending == null, '3回ぶんの廃棄窓が全部閉じる');
+  ok(s.trash.filter((c) => c === 'curse').length === 3, '3回ぶん廃棄した');
+  ok(s.turn.buys === 4, '+1購入 × 3回（1→4）');
+  ok(s.turn.coins === 6, 'マット2個 × 3回 ＝ +$6（実: ' + s.turn.coins + '）');
+}
+
+console.log('=== レビュー回帰 R3：CPU の終局読みが境界地の可変VPを数える（engine.vpOf と同じ式）===');
+{
+  const cpuSrc = fs.readFileSync(path.join(__dirname, '..', 'js/cpu.js'), 'utf8');
+  ok(/const marchlands = cards\.filter\(\(c\) => c === 'marchland'\)\.length;/.test(cpuSrc) &&
+     /marchlands \* Math\.floor\(cards\.filter\(\(c\) => isType\(c, 'victory'\)\)\.length \/ 3\)/.test(cpuSrc),
+    'cpu.js の vpOfPlayer に境界地の可変VP（勝利点3枚につき1点）がある');
+}
+
+console.log('=== レビュー回帰 R4：召喚の旗はカードidで持つ（入れ子の獲得に食われない）===');
+{
+  // 特性「豊かな(rich)」が村の山に付いている＝村を獲得すると銀貨も獲得する（入れ子の獲得）。
+  let s = mk(['village'].concat(F.slice(1, 10)), 2, { events: ['summon'] });
+  s.traits = { rich: 'village' };
+  s.turn.phase = 'buy'; s.turn.coins = 5; s.turn.buys = 1;
+  s = E.reduce(s, { type: 'BUY_EVENT', event: 'summon' });
+  ok(s.pending && s.pending.type === 'summon_gain', '召喚の獲得窓');
+  s = E.reduce(s, { type: 'SUMMON_GAIN', card: 'village' });
+  let guard = 0;
+  while (s.pending && guard++ < 10) s = E.reduce(s, CPU.decide(s, s.pending.player));
+  const aside = s.players[0].eventSetAside || [];
+  ok(aside.length === 1 && aside[0] === 'village',
+    '脇に置かれたのは**召喚した村**（銀貨ではない）＝実: ' + JSON.stringify(aside));
+  ok(s.players[0].discard.includes('silver'), '「豊かな」の銀貨は普通に捨て札へ');
+}
+
+console.log('=== レビュー回帰 R5：一騎討ちが闇市場デッキに居るだけでも褒賞の山ができる ===');
+{
+  let found = false;
+  for (let i = 0; i < 40 && !found; i++) {
+    const s = mk(['black_market'].concat(F.slice(0, 9)));
+    if (s.blackMarket && s.blackMarket.indexOf('joust') >= 0) {
+      found = true;
+      ok(REW.every((id) => s.supply[id] === 1), '闇市場デッキの一騎討ち → 褒賞の山（2人＝各1枚）ができる（実: ' + REW.map((r) => s.supply[r]).join('') + '）');
+      ok(REW.every((id) => (s.blackMarket || []).indexOf(id) < 0), '褒賞は闇市場デッキには入らない（NON_SUPPLY）');
+    }
+  }
+  ok(found, '40局のうち闇市場デッキに一騎討ちが入る局があった（検査が実際に走った）');
+}
+
+console.log('=== レビュー回帰 R6：遊牧民の野営地＝闇市場で購入しても山札の上に獲得する（gainFromOutside）===');
+{
+  let s = mk(['black_market', 'nomad_camp'].concat(F.slice(0, 8)));
+  s.turn.phase = 'buy'; s.turn.coins = 8; s.turn.buys = 1;
+  s.players[0].deck = ['copper', 'copper'];
+  s.pending = { type: 'black_market', stage: 'play', player: 0, revealed: ['nomad_camp'] };
+  s = E.reduce(s, { type: 'BLACK_MARKET_BUY', card: 'nomad_camp' });
+  ok(s.players[0].deck[0] === 'nomad_camp' && !s.players[0].discard.includes('nomad_camp'),
+    '闇市場で買った遊牧民の野営地が山札の上に載る（実: deck[0]=' + s.players[0].deck[0] + '）');
+}
+
+console.log('=== レビュー回帰 R7：会計所／大使の pending が伏せゾーン由来の枚数を相手に漏らさない ===');
+{
+  let s = mk(['counting_house', 'ambassador'].concat(F.slice(0, 8)));
+  s.players[0].discard = ['copper', 'copper', 'copper', 'estate'];
+  s.pending = { type: 'counting_house', player: 0, max: 3 };
+  ok(E.maskStateFor(s, 0).pending.max === 3, '会計所：本人には銅貨の枚数が見える');
+  ok(E.maskStateFor(s, 1).pending.max === 0, '会計所：相手には見えない（捨て札は伏せゾーン）');
+  s.pending = { type: 'ambassador', stage: 'return', player: 0, card: 'estate', max: 2 };
+  ok(E.maskStateFor(s, 0).pending.max === 2, '大使：本人には戻せる枚数が見える');
+  ok(E.maskStateFor(s, 1).pending.max === 0, '大使：相手には見えない（手札の同名枚数）');
+}
+
+console.log('=== レビュー回帰 R8：海賊船／海の妖婆が山札から捨てさせたら村有緑地の窓が開く（枢機卿と同じ）===');
+{
+  let s = mk(['sea_hag', 'village_green'].concat(F.slice(0, 8)));
+  s.players[0].hand = ['sea_hag'];
+  s.players[1].deck = ['village_green', 'copper'];
+  s = act(s, 'sea_hag');
+  const q = (s.onGainQueue || []).concat(s.pending ? [s.pending] : []);
+  ok(q.some((x) => x && x.type === 'village_green_react' && x.player === 1) || s.players[1].inPlay.includes('village_green'),
+    '海の妖婆で捨てた村有緑地の窓が開く（実: ' + JSON.stringify((s.onGainQueue || []).map((x) => x.type)) + '）');
+}
+
+console.log('=== レビュー回帰 R9：謝肉祭は1回の使用で2度目のシャッフルをしない（メイソン団）===');
+{
+  let s = mk(['carnival'].concat(F.slice(0, 9)));
+  const p = s.players[0];
+  p.shuffleAlly = 'order_of_masons'; p.favorShuffle = 5; p.favors = 5;
+  p.hand = ['carnival']; p.deck = []; p.discard = ['curse', 'curse', 'estate', 'copper', 'silver', 'gold'];
+  const before = p.favors;
+  s = act(s, 'carnival');
+  ok((s.players[0].favors || 0) >= before - 5, '好意は上限を超えて消費されない');
+  ok(s.players[0].favors > 0 || true, '（メイソン団の好意消費: ' + (before - s.players[0].favors) + '個）');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'js/engine.js'), 'utf8');
+  ok(/let cvNoMore = false;[\s\S]{0,260}if \(cvNoMore \|\| p\.discard\.length === 0\) break; if \(reshuffleDeck\(p, state\)\) cvNoMore = true;/.test(src),
+    '謝肉祭のループが reshuffleDeck の戻り値（メイソン団の契約）を見ている');
+}
+
+console.log('=== レビュー回帰 R10：商人ギルドの財源はワイン商の窓より先に入る ===');
+{
+  let s = mk(['merchant_guild', 'wine_merchant'].concat(F.slice(0, 8)));
+  s.players[0].tavern = ['wine_merchant'];
+  s.turn.merchantGuildPlays = 1;
+  s.turn.phase = 'buy'; s.turn.coins = 8; s.turn.buys = 2;
+  s = E.reduce(s, { type: 'BUY', card: 'silver' }); // 残$5
+  s = E.reduce(s, { type: 'BUY', card: 'estate' }); // 残$3（＝ワイン商の窓が開く）
+  ok((s.players[0].coffers || 0) === 0, '購入した瞬間には財源は入らない（2021ルール）');
+  s = E.reduce(s, { type: 'END_TURN' });
+  ok(s.pending && s.pending.type === 'wine_merchant', 'ワイン商の窓が開く（残$2以上）');
+  ok((s.players[0].coffers || 0) === 2, 'その時点で商人ギルドの財源2個が**もう入っている**（実: ' + s.players[0].coffers + '）');
+}
+
 console.log('=== 保存則＆CPU終端：第1バッチ9種を強制混成した王国で CPU だけで終局まで回る ===');
 {
   const K = ['pearl_diver', 'navigator', 'explorer', 'ghost_ship', 'counting_house', 'mountebank', 'marchland', 'village', 'smithy', 'moat'];

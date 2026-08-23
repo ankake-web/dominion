@@ -53,7 +53,7 @@ console.log('=== 新プロモ: CARD_SET 昇格・現行エラッタ種別 ===');
 {
   ok(DOM.CARD_SETS.some((x) => x.id === 'promo2-pack' && x.kingdom.length === 10), 'promo2-pack 固定セットが10種で存在');
   ok(DOM.CARD_SETS.some((x) => x.id === 'random-promo' && (x.randomFrom || []).indexOf('promo') >= 0), 'random-promo がプロモプールを参照');
-  ok(DOM.POOLS.promo.length === 12, 'プロモプールは12種');
+  ok(DOM.POOLS.promo.length === 13, 'プロモプールは13種（2026-08-23 に境界地 marchland が合流）');
   ok(DOM.CARDS.prince.types.join(',') === 'action,duration,command', '王子=アクション-持続-命令（現行エラッタ）');
   ok(DOM.CARDS.captain.types.join(',') === 'action,duration,command', '船長=アクション-持続-命令（2019エラッタ）');
   // 抽選の正規化: avanto はサウナに一本化される（分割山は1山ぶんの枠しか使わない）
