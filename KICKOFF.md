@@ -1,113 +1,41 @@
-<!-- /handoff が自動生成（2026-08-22）。新セッションはこのファイルの指示に従う。手編集不要 -->
+<!-- /handoff が自動生成（2026-08-23）。新セッションはこのファイルの指示に従う。手編集不要 -->
 
 **ウルトラコード（最大エフォート）で進めてください。**
 
 スマホ向けドミニオン対戦Webアプリの続き。作業ディレクトリ＝`c:\Users\b1242\claude\game\dominion`（branch `main`）。回答は日本語で、フランクに短く。
 
 ## まず最初にやること
-1. `npm test` を実行して **全48スイート緑（exit 0・整合性5561・不変条件12・旭日498＋旭日R4 230＋旭日UI 98）** を確認する。
-2. **`PROGRESS.md` の §0-39（今ここ）／§0-38／§0-37／§5／§6 を読む。** 旭日の細部は §0-33〜§0-36 に、
-   広い過去文脈は `docs/handover.md` に。
-3. **2026-08-22 に 46コミットを push 済み＝本番は v83（旭日50種・絵入り・仮面舞踏会の修正込み）**。未pushは `git log origin/main..HEAD` で確認。
-   **以後の push もユーザーに確認してから**（勝手に push しない）。
+1. `npm test` を実行して **全50スイート緑（exit 0・整合性5859・不変条件12・`missing33` 236＋`missing33-ui` 110）** を確認する。
+2. **`PROGRESS.md` の §0-40（今ここ＝未実装33種の段階0〜昇格まで全部）／§5／§6 を読む。** 正本＝`docs/research/missing19_rules.md`（海辺1版8・繁栄1版9・プロモ2）と
+   `docs/research/cornguilds2e_rules.md`（収穫祭＆ギルド2版14＋末尾の敵対検証3本）。広い過去文脈は `docs/handover.md`。
+3. **未push が7コミット**（`git log origin/main..HEAD`）＝段階2 第1〜3バッチ＋昇格＋出荷済みバグ7件の修正。**本番は v83 のまま**（ローカルは `sw.js` v88）。
+   **push はユーザーに確認してから**（勝手に push しない）。push したら本番照合（Pages の `sw.js` v88・`js/*.js` の sha1 一致・Render `GET /status`・実 ws で `setConfig kingdomSet=cornguilds2e` が受理され渡し守の山が立つ）。
 
-## いまの状態（1行）
-**§0-40 で「世の中に出ている全カード」との差分を監査した＝残りは 33種 ＋ Arcana**
-（海辺 第1版8／繁栄 第1版9／収穫祭＆ギルド 第2版14／プロモ2）。詳細は PROGRESS §0-40。
+## 現在地（2026-08-23）
+- **未実装33種（海辺1版8／繁栄1版9／収穫祭＆ギルド2版14／プロモ2）を段階2で全部実装し昇格した＝Arcana 以外の公式全カード（縦型618＋横型227＝845枚）が実プレイ可能。**
+  新セット7つ＝`seaside1e`／`prosperity1e`／`cornguilds2e`／`promo-events`（＋召喚）／`random-seaside1e`／`random-prosperity1e`／`random-cornguilds2e`。
+  `random-1e` と mix-all（`cornguilds2e`）と闇市場デッキの母集団が増えた。新機構＝**渡し守の山（`state.ferrymanPile`＝サプライ外の王国山）／褒賞の山（2人各1・3人以上各2）／野盗の常設ルール（`state.footpadRule`）／海賊船トークン／交易路マット／抑留トークン**。
+- **出荷済みバグ7件を同時に修正**＝商人ギルド／財源の2018旧則→2021／王女・ティアラ／収集の「場にある」→「このターン」／追跡者の `src`／遊牧民の野営地の2016エラッタ（獲得先の置き換え）／パン屋×闇市場／借金・投機の捨て札トリガー順。
+- 検証＝`npm test` 全50緑／`verify:e2e` 9/9／`verify:visual` はみ出し0／恒久テストはバグ注入 7/7・13/13・15/15 で感度確認／昇格7セット×3戦 CPU ソーク完走。
 
-**旭日（Rising Sun）は完成した**＝17拡張＋プロモ＝**811枚（縦型585＋横型226）が実プレイ可能**。
-`DOM.CARD_SETS` に `risingsun`（固定10種）／`risingsun-events`／`random-risingsun` があり、**mix-all も17拡張**。
-**旭日の絵50枚は回収済み（2026-08-22）＝実装済み811枚すべてが絵入り**（`sw.js` は **v83**）。
-**§0-38（予言15種＋イベント10種）と §0-39（王国25種）で敵対レビューを合計4体回し、確定22件を全修正した**
-＝**旭日50種すべてを正本の逐語と1枚ずつ突き合わせ済み**。
-（[high]＝**山に戻せないカードを場から抜いてゲームから消す**保存則違反が3箇所／
- **公家が場に0枚で +3購入**＝`random-promo` の闇市場で今日到達する出荷済みバグ）。
+## 次に取り組むこと（優先順）
+1. **push（ユーザー確認）→ 本番照合**。
+2. **§0-40「未対応」の宿題**（どれも webp 再生成を伴うものが多い＝このPCのみ）：日本語名の誤り14件（`mandarin`「役人」が `bureaucrat` と衝突＝公式「官吏」ほか）／`harem`→Farm 改名／`hoard` の `POOLS.promo`/`prosperity` 二重登録／
+   `revealFromDeck`・`farming_village`・`fortune_teller` の「2度目のシャッフル禁止」（メイソン団・mix-all 限定）／Courser を長老(Elder)の対象にするか（公式は対象）／Princess の2022エラッタは**印刷済み**に揃えた（済）。
+3. **第18拡張 Arcana**（2026年予定）＝カード名すら未公開＝データが出たら段階0から。
 
-## 次にやる具体的タスク
-### 優先1＝~~絵（webp）50枚の回収~~ ✅ **完了（2026-08-22）**＝以下は次回の絵の回収の手順メモとして残す
-**旭日50枚だけが枠＋文字**（他の761枚は絵入り）。ChatGPT への**指示文5バッチは作成済み・リポジトリ内**：
-**`docs/research/risingsun_art_prompts.md`**（1バッチ10枚 × 5。そのままチャットに貼る）。
-作り方の流儀はメモリ `chatgpt-card-art-workflow`。
-- ⚠ **連番＝生成順を信用せず、全候補から全単射で判別する**（過去に取り違えが起きている）。
-- ⚠ 紛らわしいペア＝**侍／忍者／大名／浪人**（全部「武士」系）・**山の社／川の社**・**茶屋／魚屋**。
-- 回収＝`asset/art/<id>.png` → `CARDS_ONLY=<ids> node tools/build-cards.js`（王国25）／
-  `CARDS_ONLY=<ids> node tools/build-landscape.js`（イベント10＋予言15）→ `sw.js` を **v82** へ。
-- 絵が入ったかは**ファイルサイズで検算**（枠＋文字＝40〜70KB／絵入り＝80KB超）。
-- 最後に **Downloads の原本を掃除**（`asset/art/*.png` と sha1 一致する PNG だけ消す）。
-
-### 優先2＝~~push~~ ✅ **完了（2026-08-22）**＝本番に旭日が出ている。次回 push 時の手順メモとして残す：
-push すると本番 Pages/Render に反映される。**本番反映は機械照合で確かめる**
-（`sw.js` の VERSION／`js/*.js` の sha1 一致／webp のバイト一致／Render は `GET /status` と実 ws）。
-⚠ **Pages のデプロイがゾンビ化して以後を全部 400 で弾くこと**がある＝
-`gh api -X POST repos/ankake-web/dominion/pages/deployments/<旧SHA>/cancel` で解除（§6 に手順）。
-
-### 優先3＝**未実装33種の実装**（PROGRESS §0-40 の表）
-✅ **33種すべての段階1（カタログ＋絵＋webp）は完了（2026-08-23）**＝`DOM.CARDS` 618／`LANDSCAPES` 227＝844枚・全部絵入り。
-   `STAGE1_POOLS = ['seaside1e','prosperity1e','cornguilds2e','rewards','promo_new']` で闇市場から塞いである
-   ＝**段階2で CARD_SET に昇格するときに外す**。新種別 `reward`（褒賞）＝賞品と同型の非サプライ。
-✅ **19種（海辺 第1版8／繁栄 第1版9／プロモ2）の段階0は完了**＝正本 `docs/research/missing19_rules.md`（308KB）。
-   **着手前に冒頭の「実装前に必読」12項目＋重大な訂正2件を必ず読む**。
-✅ **残り14種（収穫祭＆ギルド第2版）の段階0も完了**＝正本 `docs/research/cornguilds2e_rules.md`（90KB・必読15項目）。
-   ⚠ **敵対検証3体がセッション上限で落ちた＝未実施**。**実装に入る前に19種と同じ型で検証を回す**こと
-   （収集のみの正本は Versions 表の読み違え・述語の取り違えが混ざっている前提で読む）。
-   🛑 Ferryman＝サプライ外の山＝専用 `state.ferrymanPile`／褒賞＝2人各1・3人以上各2（賞品と違う）。
-海辺 第1版8・繁栄 第1版9・プロモ2 は既存機構でほぼ書ける。
-🛑 **最重量は収穫祭＆ギルド第2版の Ferryman**＝「$3〜$4 の王国カード1山をサプライ外に置く」
-＝本アプリに前例の無い非サプライ機構。褒賞(Reward)6種は賞品(Prizes)と同型。
-⚠ **日本語名の誤り14件と `harem`→`Farm` 改名は webp 再生成が要る**＝旭日の絵入れとまとめてやる。
-
-### その先
-**第17拡張 Arcana**（2026年予定・500枚・王国37山・Study/Cart/Project）は
-**カード名すら未公開なので着手不能**。データが出ていれば段階0（研究）から。
-それまでは既存の磨き込み（CPU 購入AIの拡張別チューニング等）が候補。
-
-## 守るべき進め方
-- **多エージェント＋敵対的検証**でやる（研究・カタログ・レビューとも）。型は §6「研究・調査の型」。
-- **バグは必ず node で再現してから直す**／**回帰テストはバグ注入で感度を確かめる**。
-- **engine を締めたら CPU と UI も同じコミットで直す**（窓・受理・CPU候補・UIフィルタの4面）。
-  新しい pending は**4点セット必須**（engine reducer＋`PLAYER_ACTIONS`＋CPU `decidePending`＋UI `viewPendingModal`）。
-- **client 資産（js/css/webp/sw）を変えたら `sw.js` の VERSION を上げる**（今 **v84**）。
-- 使い捨てスクリプトは**プロジェクト直下に `_*.tmp.js`** で作り**実行後必ず削除**（`_*` は gitignore 済み）。
-- **push はユーザー確認**（コミットは自由）。
-- 実ブラウザ検証は **`E2E_SET=旭日 npm run verify:e2e`** で拡張セットを選べる
-  （無指定なら既定セット。旭日は 11/11 緑を確認済み）。
-- **日本語wiki（wikiwiki.jp）は並列で叩くと 429 で全滅する**＝エージェントに触らせず自分で逐次に取る。
+## 守るべき流儀
+- 新しい pending は**4点セット**（engine reducer＋`PLAYER_ACTIONS`＋CPU `decidePending`＋UI `viewPendingModal`）＋終端保証。`test/integrity.test.js` が機械検査する。
+- **`ATTACKS` は字面の literal に書く**（`ATTACKS['x'] = …` の代入は integrity が未登録扱い）。
+- 獲得の可否・コスト比較は `DOM.engine` の述語（`gainableBase`/`costUpTo`/…）。非サプライ山も `supply` に数値キーを持つ＝`canReturnToPile`/`availableInSupply` は「サプライ由来か」を表さない（`!NON_SUPPLY.has` を併用）。
+- 回帰テストは必ず**バグ注入で感度を確かめる**（scratchpad に js/ と test/ をコピーして注入＝本体と干渉しない）。
+- 使い捨てスクリプトは `_*.tmp.*`（gitignore 済み）で作り**実行後に削除**。`c:\tmp` は本業の資料があるので一括削除しない。
+- client 資産（js/css/webp/sw）を変えたら `sw.js` の VERSION を上げる。
 
 ## 知らないと事故ること
-- 🛑 **レビューエージェントを走らせる前に必ずコミットする**。2026-08-21 に、走らせたエージェントの1体が
-  `git checkout` で**私の未コミット修正（engine.js / ui.js）を丸ごと巻き戻した**。
-  「コードを変更するな」と指示しても起こる＝**未コミットの作業を抱えたままレビューを投げない**。
-  また API エラーで数体が落ちるので、**重要な検証は自分でもやる**。
-- 🛑 **`node -e "..."` の中で日本語やテンプレートリテラルを含む複数行置換をしない**（シェル展開で壊れる）。
-  Edit ツールを使うか、Write でパッチスクリプトを作ってから実行する。
-  **作業ツリーは CRLF** なので、スクリプトで複数行検索するときは `.replace(/\r\n/g,'\n')` で正規化する。
-- **予言(Prophecy)の効果は必ず `prophecyActive(state, id)` で書く**（`hasProphecy` は準備処理専用）。
-  **発動フックで `state.pending` を直接立てない**＝`queueProphecy` に積む。
-- **§E の一般則**＝「後（After／たび）」型は起動した前兆自身も恩恵を受ける（偉大な指導者・来寇）／
-  「先に（first）」型は受けない（豊作）。**略奪の "next time" 型とは正反対**。
-- **`modalGainSupply` の辞退ボタンは第6引数 `skipOnEmpty` に関数が要る**
-  （第7引数 `alwaysSkip: true` だけでは絶対に出ない＝賛辞で [high] を踏んだ）。
-- **`modalSingleHand` の skip は `{label,on}` 必須**（boolean `true` は押せない死にボタン）。
-- **`finishGain` は pending を残したまま `gain()` を呼ぶ**＝獲得時対話（望楼など）が `!state.pending` ゲートで
-  潰れる。**複数枚を連続で獲得する効果は植民(Populate)型**（pending を先に閉じてから `gain`）にする。
-- **`finishGain` / `takePlayable` / `playPlayable` は boolean を返す**＝`return finishGain(...)` は禁止。
-- **効果で負債を得るときは `addDebt`**（`takeDebt` はコスト欄を読むので効果では黙って0）。
-- 🛑 **「山に戻す」効果は必ず `canReturnToPile` を先に確認してから場から抜く**（窓を開く側も同じ述語）。
-  確認せずに `removeOne`→`returnToPile` すると**カードがゲームから消滅する**（闇市場で買った札・神風で撤去された山）。
-- 🛑 **神風に派生セットアップを足すときは `applyDivineWind` の ⑤ ブロックにも足す**
-  （`createInitialState` が `initSupply` の**外**でやっている 廃墟／馬／災いカード／川船の脇札 は手動）。
-- **「財宝を使用した」ときのフックは `noteTreasurePlayedForProphecy` の1箇所に書く**
-  （`playTreasureCard` だけに書くと `playCardNoAction` 経由が全部落ちる）。
-- **`t.bpGained` は `END_ACTION_PHASE` で 0 に戻る**＝「このターン購入フェイズに獲得したか」は `t.buyPhaseGained`。
-- **「+N カード」の文字列を持たないドロー**（浪人＝`Draw until you have 7 cards in hand`）は
-  **カメレオンの習性で変換しない**（`state._chamOff`）。**「N枚になるまで引く」は1枚ずつ引き、
-  終端は「山札と捨て札が両方空」で判定する**（引けた枚数0で止めると -1カードトークンで壊れる）。
-- **選択肢を順に解決する効果は pending が立ったら残りを `t.*Rest` に積んで中断する**
-  （その場で全部回すと、途中の獲得/廃棄が開いた窓を後続が上書きして消す）。
-- **群A（最終的に場に出る窓）と群B（捨てる/廃棄する/脇に置く/山に戻す窓）を混同しない**。
-  群Aは `test/risingsun.test.js` の `A_WINDOWS` 表（19窓）が4面整合を自動検査する＝**新しい窓は表に1行足す**。
-- **新しいカードを engine に足したら CPU の `chooseAction` にも足す**（R4a/R6 の7種を入れ忘れて
-  「CPU が一度も使わない＝ソークが経路を検証しない」状態になった）。
-- **`c:\tmp` には本業の `LiS_AF_資料一式` があるので一括削除しない**。
-  旭日の一次資料は `C:/tmp/risingsun_research/`（ルールブックPDF・wiki 出力・8群の doc・`g0_jp_pairs.md`）。
-  正本＝`docs/research/risingsun_rules.md`（847KB）。
+- 🛑 **Codex が同じ作業ツリーで `css/style.css`・`js/ui.js`（絵文字→SVG）・`manifest.webmanifest`・`test/ui.test.js` を改修中**＝`git status` に出る未コミット差分は Codex のもの。
+  **自分のコミットに混ぜない**＝メモリ `codex-concurrent-commit-isolation` の手順（パッチスクリプトを HEAD にも当てて `git hash-object -w`＋`git update-index --cacheinfo` で index 直書き／`git apply --cached --unidiff-zero` は壊れる／
+  `open('w').write(fn(t))` ではなく先に `out=fn(t)`／`git checkout -- file` 後は CRLF→LF に戻す）。
+- 日本語wiki（wikiwiki.jp）は並列で叩くと 429 で全滅＝エージェントに触らせず自分で逐次。
+- `maybeStartOverpay` は pending があれば `onGainQueue` の `overpay_ask` に積む（望楼/交易商人の窓を潰さない）＝修正済みなので戻さない。
+- 渡し守の山の札が要求する準備は `createInitialState` の `kX`（kingdom＋渡し守の札）と `initSupply` の2回目で走らせている。神風の新10山に渡し守が入った場合の派生準備は走らせない（許容簡略化）。
