@@ -5516,11 +5516,12 @@
   function revealFromDeck(state, pi, pred) {
     const p = state.players[pi];
     const skipped = [];
-    let matched = null, guard = 0;
+    let matched = null, guard = 0, noMoreShuffle = false;
     while (guard++ < 300) {
       if (p.deck.length === 0) {
-        if (p.discard.length === 0) break;
-        reshuffleDeck(p);
+        // 同盟：メイソン団が捨て札に札を残したら **2度目のシャッフルをしない**（draw() と同じ契約）。
+        if (p.discard.length === 0 || noMoreShuffle) break;
+        noMoreShuffle = reshuffleDeck(p, state) === true;
       }
       if (p.deck.length === 0) break;
       const c = p.deck.shift();
@@ -9330,7 +9331,8 @@
       // 褒賞：宝冠（アクションとして使った場合＝財宝として出した場合も applyTreasureEffect から同じ入口）
       case 'coronet': { coronetStart(state, pi); break; }
       // 褒賞：駿馬＝異なる2つ（記載順に解決）
-      case 'courser': { state.pending = { type: 'courser', player: pi }; break; }
+      // 駿馬＝「異なる2つを選ぶ」。長老(Elder)で使わせたときは**1つ多く**選べる（公式：wiki Elder の対象一覧に Courser が載る）。
+      case 'courser': { state.pending = { type: 'courser', player: pi, elder: elderOn(state, 'courser') || undefined }; break; }
       // 褒賞：御料地＝+2アクション +2購入・金貨1枚（VP は vpOf）
       case 'demesne': {
         addActions(t, 2); t.buys += 2;
@@ -16735,7 +16737,7 @@
         const valid = ['cards', 'actions', 'coins', 'silver'];
         let ch = Array.isArray(action.choices) ? action.choices.filter((c) => valid.includes(c)) : [];
         ch = valid.filter((c) => ch.includes(c));
-        if (ch.length !== 2) return state;
+        if (ch.length !== (pd.elder ? 3 : 2)) return state;
         const pl = state.players[pd.player];
         state.pending = null;
         ch.forEach((c) => {

@@ -67,6 +67,7 @@ console.log('=== 第1バッチ：新 pending 10種にモーダルと押せる選
     { p: { type: 'coronet', stage: 'action', player: 0 }, jp: '宝冠（アクション）' },
     { p: { type: 'coronet', stage: 'treasure', player: 0 }, jp: '宝冠（財宝）' },
     { p: { type: 'courser', player: 0 }, jp: '駿馬' },
+    { p: { type: 'courser', player: 0, elder: true }, jp: '駿馬（長老つき＝3つ選ぶ）' },
     { p: { type: 'infirmary_trash', player: 0 }, jp: '診療所（廃棄）' },
     { p: { type: 'shop', player: 0 }, jp: '店' },
     { p: { type: 'farmhands_aside', player: 0 }, jp: '耕作者（脇に置く）' },
@@ -90,6 +91,20 @@ console.log('=== 第1バッチ：新 pending 10種にモーダルと押せる選
       ok(btns + chips > 0, row.jp + '：押せる選択肢が1つ以上ある（ボタン' + btns + '／チップ' + chips + '）');
     }
   });
+}
+
+/* 2026-08-24: 駿馬(Courser)は公式に長老(Elder)の対象＝長老つきなら「異なる3つ」を選ばせる。
+   見出しが「2つ」のままだと、人間は2つしか選べず engine が必ず拒否して詰む。 */
+{
+  const K = ['joust', 'ferryman', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];
+  const s = E.createInitialState(['あなた', '相手'], K.slice(), { startActive: 0 });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.pending = { type: 'courser', player: 0, elder: true };
+  showAs(s, 0);
+  const m = doc.querySelector('.modal');
+  ok(m && /異なる3つ/.test(m.textContent), '駿馬×長老：モーダルが「異なる3つを選ぶ」と出る');
+  const tiles = m ? m.querySelectorAll('.choose-tile') : [];
+  ok(tiles.length === 4, '選択肢は4つ（+2カード/+2アクション/+2コイン/銀貨4枚）実:' + tiles.length);
 }
 
 /* 任意の窓は**0枚選択のまま辞退できる**（§0-39 の田舎の村で踏んだ穴＝`allowZero:false` だと確定ボタンが無効のまま）。 */

@@ -1221,6 +1221,24 @@ console.log('=== A3: 敵対レビュー回帰（確定7件） ===');
   ok(q.favors === 0, '好意の消費は上限どおり1個（多重消費しない）: ' + q.favors);
 }
 {
+  // 2026-08-24: revealFromDeck（農村/占い師/熟練工/山師・ペテン師/家臣）もメイソン団の
+  //   「1回のアクセスでシャッフルは1度だけ」を守る（§0-40 の宿題・mix-all 限定）。
+  //   ⚠ 直す前は、メイソン団が捨て札に残した札のために**同じ効果の中で何度もシャッフル**し、
+  //      好意を余分に食っていた（公式FAQ＝you only shuffle one time）。
+  const s = mkAlly('order_of_masons');
+  const p = s.players[0];
+  p.favors = 2; p.favorShuffle = 1; p.shuffleAlly = 'order_of_masons';
+  p.deck = []; p.hand = ['farming_village']; p.inPlay = [];
+  p.discard = ['curse', 'curse', 'curse', 'estate', 'estate']; // アクション/財宝が1枚も無い＝山札を掘り切る
+  s.pending = null; s.turn.phase = 'action'; s.turn.actions = 1;
+  const out = reduce(s, { type: 'PLAY_ACTION', card: 'farming_village' });
+  const q = out.players[0];
+  const shuffles = out.log.filter((l) => String(l.text || l).indexOf('メイソン団で') >= 0).length;
+  ok(shuffles === 1, '農村×メイソン団：シャッフルは1度だけ（実:' + shuffles + '回）');
+  ok(q.favors === 1, '好意は1個しか使わない（2度シャッフルすると0になる）実:' + q.favors);
+  ok(q.deck.length === 0 && q.discard.length === 5, 'カードは保存される（山札0・捨て札5）');
+}
+{
   // [low] 星図 × 占星術師団＝星図が置いた1枚は選び直さない（好意で**追加の**1枚を上に置く）
   const s = mkAlly('order_of_astrologers');
   const p = s.players[0];
@@ -1572,6 +1590,30 @@ console.log('=== A4: 長老（追加で異なるもの1つ・カード記載順�
   w = reduce(w, { type: 'PLAY_ACTION', card: 'town' });   // 2枚目を自分のアクション権で使う
   ok(w.pending && w.pending.type === 'town_choose' && !w.pending.elder,
     '**2枚目を普通に使ったときは追加選択が付かない**（長老が使わせたその1枚だけ）');
+  /* 2026-08-24: 駿馬(Courser・収穫祭＆ギルド2版の褒賞)は**公式に長老の対象**（英語wiki `Elder` の一覧に載る）。
+     「異なる2つを選ぶ」カードなので、長老が付くと**3つ**選べる。 */
+  let c = mkA4(ELDER_K, 2);
+  digPile(c, 'townsfolk', 3);
+  c.players[0].deck = new Array(20).fill('copper');
+  c.players[0].hand = ['elder', 'courser']; c.turn.actions = 1;
+  c = reduce(c, { type: 'PLAY_ACTION', card: 'elder' });
+  c = reduce(c, { type: 'ELDER_PLAY', card: 'courser' });
+  ok(c.pending && c.pending.type === 'courser' && c.pending.elder === true, '長老つきで駿馬の窓が開く');
+  const c2 = reduce(c, { type: 'COURSER_RESOLVE', choices: ['cards', 'coins'] });
+  ok(c2.pending && c2.pending.type === 'courser', '長老つきのときは2つでは解決しない（ちょうど3つ必要）');
+  const ca0 = c.turn.actions, cc0 = c.turn.coins, ch0 = c.players[0].hand.length;
+  const c3 = reduce(c, { type: 'COURSER_RESOLVE', choices: ['cards', 'actions', 'coins'] });
+  ok(c3.pending == null && c3.players[0].hand.length === ch0 + 2 && c3.turn.actions === ca0 + 2 && c3.turn.coins === cc0 + 2,
+    '長老つきの駿馬＝3つ解決する（+2カード/+2アクション/+2コイン）');
+  // 長老を通さずに普通に使えば従来どおり2つ
+  let c4 = mkA4(ELDER_K, 2);
+  c4.players[0].deck = new Array(20).fill('copper');
+  c4.players[0].hand = ['courser']; c4.turn.actions = 1;
+  c4 = reduce(c4, { type: 'PLAY_ACTION', card: 'courser' });
+  ok(c4.pending && c4.pending.type === 'courser' && !c4.pending.elder, '普通に使った駿馬は追加選択なし');
+  ok(reduce(c4, { type: 'COURSER_RESOLVE', choices: ['cards', 'actions', 'coins'] }).pending,
+    '長老が無いのに3つ選ぶのは拒否される');
+  ok(reduce(c4, { type: 'COURSER_RESOLVE', choices: ['cards', 'actions'] }).pending == null, '2つなら解決する');
 }
 console.log('=== A4: 専門家（持続を2回使うと専門家も場に残る）／要塞・駐屯地は条件つき持続 ===');
 {

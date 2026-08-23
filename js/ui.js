@@ -3521,9 +3521,12 @@
     if (pd.type === 'coronet' && pd.stage === 'treasure') return modalSingleHand(p, '宝冠 — 2回使う財宝', '褒賞でない財宝カード1枚を2回使えます（使わなくてもよい）。',
       (id) => isTreasureNow(state, id) && !DOM.isType(id, 'reward') && DOM.engine.canPlayHandCard(state, pd.player, id), (card) => dispatch({ type: 'CORONET_CHOOSE', card }),
       { label: '使わない', on: () => dispatch({ type: 'CORONET_CHOOSE', card: null }) }, '2回使う');
-    if (pd.type === 'courser') return modalChooseN('駿馬 — 異なる2つを選ぶ', '次から異なる2つを選びます（記載順に解決）。', [
-      { v: 'cards', label: '+2 カード' }, { v: 'actions', label: '+2 アクション' }, { v: 'coins', label: '+2 コイン' }, { v: 'silver', label: '銀貨4枚を獲得' },
-    ], 2, (choices) => dispatch({ type: 'COURSER_RESOLVE', choices }));
+    if (pd.type === 'courser') {
+      const n = pd.elder ? 3 : 2;   // 長老(Elder)で使わせたときは1つ多く選べる
+      return modalChooseN('駿馬 — 異なる' + n + 'つを選ぶ', '次から異なる' + n + 'つを選びます（記載順に解決）。', [
+        { v: 'cards', label: '+2 カード' }, { v: 'actions', label: '+2 アクション' }, { v: 'coins', label: '+2 コイン' }, { v: 'silver', label: '銀貨4枚を獲得' },
+      ], n, (choices) => dispatch({ type: 'COURSER_RESOLVE', choices }));
+    }
     if (pd.type === 'infirmary_trash') return modalSingleHand(p, '診療所 — 廃棄（任意）', '手札からカード1枚を廃棄できます。', () => true,
       (card) => dispatch({ type: 'INFIRMARY_TRASH', card }), { label: '廃棄しない', on: () => dispatch({ type: 'INFIRMARY_TRASH', card: null }) }, '廃棄する');
     if (pd.type === 'shop') {

@@ -1995,8 +1995,11 @@
         const tre = p.hand.filter((c) => isTreasure(c) && !isType(c, 'reward') && okC(c)).sort((a, b) => (C()[b].coin || 0) - (C()[a].coin || 0))[0];
         return { type: 'CORONET_CHOOSE', card: tre || null };
       }
-      case 'courser':
-        return { type: 'COURSER_RESOLVE', choices: ['cards', p.hand.some((c) => isType(c, 'action')) ? 'actions' : 'coins'] };
+      case 'courser': {
+        // 長老(Elder)で使わせた駿馬は3つ選ぶ（engine が枚数ちょうどでないと拒否する＝engine受理⊇CPU提案）。
+        const two = ['cards', p.hand.some((c) => isType(c, 'action')) ? 'actions' : 'coins'];
+        return { type: 'COURSER_RESOLVE', choices: pd.elder ? ['cards', 'actions', 'coins'] : two };
+      }
       case 'infirmary_trash': {
         const junk = pickTrash(p.hand, 1)[0];
         return { type: 'INFIRMARY_TRASH', card: (junk && trashValue(junk) < 10) ? junk : null };

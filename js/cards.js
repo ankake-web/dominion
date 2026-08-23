@@ -1096,7 +1096,7 @@
                  text: '+2 コイン\nこのターン、あなたがカード1枚を獲得するとき、ここにトークン1枚を加える。\nあなたの次のターンの開始時、この上のトークンをすべて取り除き、取り除いたトークン1枚につき +1 カード。' },
     hill_fort: { id: 'hill_fort', name: '堡塁', cost: 5, types: ['action', 'fort'],
                  text: 'コスト4以下のカード1枚を獲得する。次から1つを選ぶ：\n・それをあなたの手札に加える\n・+1 カード と +1 アクション' },
-    stronghold: { id: 'stronghold', name: '要塞', cost: 6, types: ['action', 'victory', 'duration', 'fort'], vp: 2,
+    stronghold: { id: 'stronghold', name: '要塞', cost: 6, types: ['action', 'duration', 'victory', 'fort'], vp: 2, // 公式の種別順＝Action-Duration-Victory-Fort
                  text: '次から1つを選ぶ：\n・+3 コイン\n・あなたの次のターンの開始時、+3 カード\n————\n2 勝利点' },
     // --- 叙事詩（odysseys）の分割山＝古地図$3→航海$4→沈没船の財宝$5→遠い海岸$6 ---
     odysseys: { id: 'odysseys', name: '叙事詩', cost: 3, types: ['action', 'odyssey'],
@@ -1827,20 +1827,23 @@
                'conspirator', 'ironworks', 'mining_village', 'torturer', 'duke', 'nobles', 'harem',
                'trading_post', 'upgrade', 'swindler', 'minion', 'masquerade'].concat(INTRIGUE_NEW_2E),
     // プロモ（6種）
-    promo: ['walled_village', 'envoy', 'governor', 'dismantle', 'black_market', 'hoard', 'stash', 'prince', 'captain', 'church', 'sauna', 'avanto', 'marchland'], // 境界地（2024年3月）＝段階2で合流
+    promo: ['walled_village', 'envoy', 'governor', 'dismantle', 'black_market', 'stash', 'prince', 'captain', 'church', 'sauna', 'avanto', 'marchland'], // 境界地（2024年3月）＝段階2で合流
+    //   ⚠ `hoard`（隠し財産）は**繁栄のカード**でプロモではない＝ここには入れない（`POOLS.prosperity` にある）。
+    //      固定セット promo-pack / promo-events は kingdom に直接書いているので従来どおり出る。
     // 海辺 第二版（27種）= 抽選母集団。「海辺セット」(固定10種)と「海辺から」(ランダム)が参照する。
     seaside: ['native_village', 'haven', 'lighthouse', 'warehouse', 'smugglers', 'lookout',
               'fishing_village', 'sea_chart', 'monkey', 'astrolabe', 'treasure_map', 'salvager',
               'cutpurse', 'caravan', 'island', 'sailor', 'tide_pools', 'bazaar', 'treasury',
               'outpost', 'tactician', 'merchant_ship', 'wharf', 'blockade', 'corsair', 'sea_witch', 'pirate'],
-    // 錬金術 第二版（王国カード12種）= 抽選母集団。「錬金術セット」(固定10種)と「錬金術から」(ランダム)が参照する。
+    // 錬金術（王国カード12種）= 抽選母集団。「錬金術セット」(固定10種)と「錬金術から」(ランダム)が参照する。
+    //   ⚠ 錬金術に**第2版は無い**（2010年の第1版のみ）＝表示名にも「第二版」と書かない。
     //   ポーション(potion)は王国カードではなく共通サプライ＝ここには入れない（potion 費用カードが場にあると
     //   initSupply が自動でポーション山を足す）。整合性テストは potion を呪い同様の共通カードとして扱う。
     alchemy: ['transmute', 'vineyard', 'herbalist', 'apothecary', 'scrying_pool', 'university',
               'alchemist', 'familiar', 'philosophers_stone', 'golem', 'apprentice', 'possession'],
     // 繁栄 第二版（王国カード25種）= 抽選母集団。「繁栄セット」(固定10種)と「繁栄から」(ランダム)が参照する。
     //   白金貨/植民地は王国カードではなく共通サプライ＝ここには入れない（繁栄の王国カードが場にあると
-    //   initSupply が自動で platinum/colony 山を足す）。hoard は元々プロモにもあるが本来は繁栄のカード。
+    //   initSupply が自動で platinum/colony 山を足す）。hoard は**繁栄のカード**＝プロモのプールには入れない。
     prosperity: ['anvil', 'watchtower', 'bishop', 'clerk', 'investment', 'monument', 'quarry', 'tiara',
                  'workers_village', 'charlatan', 'city', 'collection', 'crystal_ball', 'magnate', 'mint',
                  'rabble', 'vault', 'war_chest', 'grand_market', 'hoard', 'bank', 'expand', 'forge',
@@ -2025,7 +2028,7 @@
     { id: 'basic',           kind: 'standard', name: '王国基本セット（第二版）', kingdom: DOM.KINGDOM },
     { id: 'intrigue',        kind: 'standard', name: '陰謀セット（第二版）', kingdom: DOM.KINGDOM_INTRIGUE },
     { id: 'seaside',         kind: 'standard', name: '海辺セット（第二版）', desc: '持続カード・マット・追加ターン', kingdom: DOM.KINGDOM_SEASIDE },
-    { id: 'alchemy',         kind: 'standard', name: '錬金術セット（第二版）', desc: 'ポーション経済・ブドウ園・支配', kingdom: DOM.KINGDOM_ALCHEMY },
+    { id: 'alchemy',         kind: 'standard', name: '錬金術セット', desc: 'ポーション経済・ブドウ園・支配', kingdom: DOM.KINGDOM_ALCHEMY }, // ⚠ 錬金術に第2版は無い（2010年の第1版のみ）＝「（第二版）」と書かない
     { id: 'prosperity',      kind: 'standard', name: '繁栄セット（第二版）', desc: '勝利点トークン・植民地/白金貨', kingdom: DOM.KINGDOM_PROSPERITY },
     { id: 'cornucopia',      kind: 'standard', name: '収穫祭セット', desc: '賞品・災いカード・カードの多様性', kingdom: DOM.KINGDOM_CORNUCOPIA },
     { id: 'guilds',          kind: 'standard', name: 'ギルドセット', desc: '財源（コイントークン）・過払い', kingdom: DOM.KINGDOM_GUILDS },
