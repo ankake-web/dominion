@@ -28,7 +28,7 @@
     curse:     { id: 'curse',     name: '呪い',       cost: 0, types: ['curse'],               vp: -1,
                  text: '勝利点 −1' },
     // 繁栄：基本サプライに加わる高額財宝・高額勝利点（繁栄が場にあるときだけ供給される）
-    platinum:  { id: 'platinum',  name: 'プラチナ貨', cost: 9, types: ['treasure'],            coin: 5,
+    platinum:  { id: 'platinum',  name: '白金貨', cost: 9, types: ['treasure'],            coin: 5,
                  text: 'コイン +5' },
     colony:    { id: 'colony',    name: '植民地',     cost: 11, types: ['victory'],            vp: 10,
                  text: '勝利点 10' },
@@ -72,7 +72,7 @@
                  text: '+2 カード\n他のプレイヤーは各自、呪い1枚を獲得する。' },
     bureaucrat:{ id: 'bureaucrat', name: '役人',       cost: 4, types: ['action', 'attack'],
                  text: '銀貨1枚を獲得し、山札の上に置く。\n他のプレイヤーは各自、手札の勝利点1枚を\n山札の上に置く（無ければ手札を公開）。' },
-    council_room:{ id: 'council_room', name: '議会', cost: 5, types: ['action'],
+    council_room:{ id: 'council_room', name: '議事堂', cost: 5, types: ['action'],
                  text: '+4 カード\n+1 購入\n他のプレイヤーは各自、1枚引く。' },
     feast:     { id: 'feast',      name: '祝宴',       cost: 4, types: ['action'],
                  text: 'このカードを廃棄する。\nコスト5以下のカードを1枚獲得する。' },
@@ -92,9 +92,9 @@
        未配置の間は文字カード(フォールバック)で表示される。 */
     courtyard:     { id: 'courtyard',     name: '中庭',       cost: 2, types: ['action'],
                      text: '+3 カード\n手札のカード1枚を山札の上に置く。' },
-    pawn:          { id: 'pawn',          name: '従者',       cost: 2, types: ['action'],
+    pawn:          { id: 'pawn',          name: '手先',       cost: 2, types: ['action'],
                      text: '次から異なる2つを選ぶ：\n+1 カード／+1 アクション／+1 購入／+1 コイン' },
-    shanty_town:   { id: 'shanty_town',   name: '寂れた村',   cost: 3, types: ['action'],
+    shanty_town:   { id: 'shanty_town',   name: '貧民街',   cost: 3, types: ['action'],
                      text: '+2 アクション\n手札を公開し、アクションが無ければ +2 カード。' },
     steward:       { id: 'steward',       name: '執事',       cost: 3, types: ['action'],
                      text: '次から1つを選ぶ：\n+2 カード／+2 コイン／手札を2枚廃棄。' },
@@ -116,7 +116,7 @@
                      text: '（勝利点）\n所持する公領1枚につき 1 勝利点。' },
     nobles:        { id: 'nobles',        name: '貴族',       cost: 6, types: ['victory', 'action'], vp: 2,
                      text: '（勝利点 2）\n次から1つを選ぶ：+3 カード／+2 アクション。' },
-    harem:         { id: 'harem',         name: '後宮',       cost: 6, types: ['treasure', 'victory'], coin: 2, vp: 2,
+    harem:         { id: 'harem',         name: 'ハーレム',       cost: 6, types: ['treasure', 'victory'], coin: 2, vp: 2,
                      text: 'コイン +2\n（勝利点 2）' },
 
     /* ===== 拡張: 陰謀（追加分） ===== */
@@ -128,7 +128,7 @@
                      text: '手札を2枚廃棄し、銀貨1枚を手札に獲得する。' },
     upgrade:       { id: 'upgrade',       name: '改良',       cost: 5, types: ['action'],
                      text: '+1 カード\n+1 アクション\n手札を1枚廃棄する。\nそれよりちょうど1コイン高いカードを1枚獲得する。' },
-    scout:         { id: 'scout',         name: '斥候',       cost: 4, types: ['action'],
+    scout:         { id: 'scout',         name: '偵察員',       cost: 4, types: ['action'],
                      text: '+1 アクション\n山札の上4枚を公開する。\n勝利点は手札に加え、\n残りを好きな順で山札の上に戻す。' },
     tribute:       { id: 'tribute',       name: '貢物',       cost: 5, types: ['action'],
                      text: '左隣のプレイヤーは山札の上2枚を公開して捨てる。\n公開された異なる名前ごとに：\nアクション＝+2アクション／財宝＝+2コイン／勝利点＝+2カード。' },
@@ -136,7 +136,7 @@
                      text: '+2 コイン\n他のプレイヤーは各自、山札の上1枚を廃棄する。\n廃棄したカードと同じコストのカードを、\nあなたが選んで与える。' },
     saboteur:      { id: 'saboteur',      name: '破壊工作員', cost: 5, types: ['action', 'attack'],
                      text: '他のプレイヤーは各自、コスト3以上のカードが出るまで\n山札の上を公開し、それを廃棄する。\nそれより2コイン以上安いカードを獲得してもよい。\n残りは捨てる。' },
-    minion:        { id: 'minion',        name: '手先',       cost: 5, types: ['action', 'attack'],
+    minion:        { id: 'minion',        name: '寵臣',       cost: 5, types: ['action', 'attack'],
                      text: '+1 アクション\n次のうち1つを選ぶ：\n・+2 コイン\n・手札を捨てて4枚引く。さらに手札5枚以上の\n　他のプレイヤーも手札を捨てて4枚引く。' },
     masquerade:    { id: 'masquerade',    name: '仮面舞踏会', cost: 3, types: ['action'],
                      /* 現行（陰謀第二版）の英語カード文＝`Each player with any cards in hand passes one to
@@ -144,7 +144,7 @@
                         **手札のあるプレイヤーだけ**（公式FAQ＝手札0枚の人は飛ばされ、渡しも受け取りもしない／
                         手札があるのが1人だけならその人は自分自身に渡す）。旧文「左隣に渡す」だと挙動と食い違う。 */
                      text: '+2 カード\n手札のある各プレイヤーは同時に、手札を1枚、\n左隣の手札のあるプレイヤーに渡す。\nその後、あなたは手札を1枚廃棄してもよい。' },
-    secret_chamber:{ id: 'secret_chamber',name: '秘密の小部屋', cost: 2, types: ['action', 'reaction'],
+    secret_chamber:{ id: 'secret_chamber',name: '秘密の部屋', cost: 2, types: ['action', 'reaction'],
                      text: '手札を好きな枚数捨て、捨てた1枚につき +1 コイン。\n（リアクション）他人がアタックを使ったとき公開してよい。\nその場合 +2 カードし、手札2枚を山札の上に戻す。' },
 
     /* ===== 基本セット 第二版で追加された7種 ===== */
@@ -180,9 +180,9 @@
                     text: '+2 カード\n+1 アクション\n手札のカード1枚を、山札の好きな位置に入れる。' },
 
     /* ===== プロモカード ===== */
-    walled_village:{ id: 'walled_village', name: '城壁のある村', cost: 4, types: ['action'],
+    walled_village:{ id: 'walled_village', name: '囲郭村', cost: 4, types: ['action'],
                     text: '+1 カード\n+2 アクション\nクリーンアップ開始時、場に出ているアクションが\nこれを含め2枚以下なら、これを山札の上に置いてよい。' },
-    envoy:        { id: 'envoy',        name: '使者',       cost: 4, types: ['action'],
+    envoy:        { id: 'envoy',        name: '公使',       cost: 4, types: ['action'],
                     text: '山札の上5枚を公開する。左隣のプレイヤーが1枚を選び、\nそれを捨てる。残りを手札に加える。' },
     governor:     { id: 'governor',     name: '総督',       cost: 5, types: ['action'],
                     text: '+1 アクション\n次から1つを選ぶ（自分はカッコ内の強い方）：\n・全員 +1（+3）カード\n・全員 銀貨（金貨）を獲得\n・全員 任意で手札1枚を廃棄し、ちょうど$1（$2）高いカードを獲得' },
@@ -233,7 +233,7 @@
                     text: 'これと手札1枚を島マットに置く\n（勝利点 2）' },
     sailor:       { id: 'sailor',       name: '船乗り',     cost: 4, types: ['action', 'duration'],
                     text: '+1 アクション\nこのターン1度、獲得した持続カードを使える\n次のターン +2 コイン、手札1枚を廃棄してよい' },
-    tide_pools:   { id: 'tide_pools',   name: '潮だまり',   cost: 4, types: ['action', 'duration'],
+    tide_pools:   { id: 'tide_pools',   name: '潮溜り',   cost: 4, types: ['action', 'duration'],
                     text: '+3 カード\n+1 アクション\n次のターン開始時、手札を2枚捨てる' },
     // --- コスト5 ---
     bazaar:       { id: 'bazaar',       name: 'バザー',     cost: 5, types: ['action'],
@@ -250,7 +250,7 @@
                     text: 'このターンと次のターン\n+2 カード +1 購入' },
     blockade:     { id: 'blockade',     name: '封鎖',       cost: 5, types: ['action', 'duration', 'attack'],
                     text: '4コスト以下を獲得して脇に置き、次のターン手札へ\n場にある間、他人が同名を獲得するたび呪いを獲得させる' },
-    corsair:      { id: 'corsair',      name: '私掠船',     cost: 5, types: ['action', 'duration', 'attack'],
+    corsair:      { id: 'corsair',      name: 'コルセア',     cost: 5, types: ['action', 'duration', 'attack'],
                     text: '+2 コイン\n次のターン +1 カード\n他は各ターン最初の銀貨か金貨を廃棄' },
     sea_witch:    { id: 'sea_witch',    name: '海の魔女',   cost: 5, types: ['action', 'duration', 'attack'],
                     text: '+2 カード\n他は呪いを獲得\n次のターン +2 カード後、手札を2枚捨てる' },
@@ -269,7 +269,7 @@
                     text: '（勝利点）\n所持するアクションカード3枚につき 1 勝利点（端数切捨て）。' },
     herbalist:    { id: 'herbalist',    name: '薬草商',       cost: 2, types: ['action'],
                     text: '+1 購入\n+1 コイン\nこのターンの片付けで、場の財宝1枚を山札の上に置いてよい。' },
-    apothecary:   { id: 'apothecary',   name: '薬剤師',       cost: 2, potion: 1, types: ['action'],
+    apothecary:   { id: 'apothecary',   name: '薬師',       cost: 2, potion: 1, types: ['action'],
                     text: '+1 カード\n+1 アクション\n山札の上4枚を公開し、銅貨とポーションを手札に。残りを好きな順で山札の上に戻す。' },
     scrying_pool: { id: 'scrying_pool', name: '念視の泉',     cost: 2, potion: 1, types: ['action', 'attack'],
                     text: '+1 アクション\n全員の山札の上を公開し、捨てるか戻すかをあなたが選ぶ。\n自分はアクション以外が出るまで公開し、全て手札に加える。' },
@@ -283,7 +283,7 @@
                     text: 'これを使うとき、山札と捨て札の合計を数える。\n5枚につき +1 コイン（端数切捨て）。' },
     golem:        { id: 'golem',        name: 'ゴーレム',     cost: 4, potion: 1, types: ['action'],
                     text: 'ゴーレム以外のアクションが2枚出るまで山札を公開する。\n残りを捨て、その2枚を好きな順で使う。' },
-    apprentice:   { id: 'apprentice',   name: '徒弟',         cost: 5, types: ['action'],
+    apprentice:   { id: 'apprentice',   name: '弟子',         cost: 5, types: ['action'],
                     text: '+1 アクション\n手札1枚を廃棄する。\nそのコスト$1につき +1 カード（ポーション費用ありなら +2 カード）。' },
     possession:   { id: 'possession',   name: '支配',         cost: 6, potion: 2, types: ['action'],
                     text: '左隣はこのターンの後に追加ターンを行い、その間あなたが全ての決定を行う。\n獲得・廃棄したカードはあなたが受け取る。' },
@@ -291,13 +291,13 @@
     // ===== 繁栄（Prosperity 第二版）王国カード 25種 =====
     anvil:        { id: 'anvil',        name: '金床',         cost: 3, types: ['treasure'], coin: 1,
                     text: 'コイン +1\n財宝1枚を捨ててよい。捨てたなら、コスト4以下のカード1枚を獲得する。' },
-    watchtower:   { id: 'watchtower',   name: '物見やぐら',   cost: 3, types: ['action', 'reaction'],
+    watchtower:   { id: 'watchtower',   name: '望楼',   cost: 3, types: ['action', 'reaction'],
                     text: '手札が6枚になるまで引く。\n（リアクション）カードを獲得したとき、これを手札から公開してよい。公開したら、そのカードを廃棄するか山札の上に置く。' },
     bishop:       { id: 'bishop',       name: '司教',         cost: 4, types: ['action'],
                     text: '+1 コイン、+1 勝利点\n手札1枚を廃棄する。そのコスト$2につき +1 勝利点（端数切捨て）。\n他のプレイヤーは各自、手札1枚を廃棄してよい。' },
-    clerk:        { id: 'clerk',        name: '会計士',       cost: 4, types: ['action', 'attack', 'reaction'],
+    clerk:        { id: 'clerk',        name: '書記',       cost: 4, types: ['action', 'attack', 'reaction'],
                     text: '+2 コイン\n手札が5枚以上の他のプレイヤーは各自、手札1枚を山札の上に置く。\n自分の手番開始時、これを手札から使ってよい。' },
-    investment:   { id: 'investment',   name: '投資',         cost: 4, types: ['treasure'],
+    investment:   { id: 'investment',   name: '出資',         cost: 4, types: ['treasure'],
                     text: 'これを廃棄する。次のうち1つ：\n「+1 コイン」／「手札の財宝1枚を廃棄し、場の財宝の種類1つにつき +1 勝利点」。' },
     monument:     { id: 'monument',     name: '記念碑',       cost: 4, types: ['action'],
                     text: '+2 コイン、+1 勝利点' },
@@ -307,33 +307,33 @@
                     text: '+1 購入\nこのターン、カードを獲得したとき山札の上に置いてよい。\n手札の財宝1枚を2回使ってよい。' },
     workers_village: { id: 'workers_village', name: '労働者の村', cost: 4, types: ['action'],
                     text: '+1 カード、+2 アクション、+1 購入' },
-    charlatan:    { id: 'charlatan',    name: 'ペテン師',     cost: 5, types: ['treasure', 'attack'], coin: 3,
+    charlatan:    { id: 'charlatan',    name: '山師',     cost: 5, types: ['treasure', 'attack'], coin: 3,
                     text: 'コイン +3\n他のプレイヤーは各自、銅貨1枚を獲得する。' },
     city:         { id: 'city',         name: '都市',         cost: 5, types: ['action'],
                     text: '+1 カード、+2 アクション\n空のサプライ山が1つあれば +1 カード。2つ以上なら さらに +1 購入・+1 コイン。' },
-    collection:   { id: 'collection',   name: '収集',         cost: 5, types: ['treasure'], coin: 2,
+    collection:   { id: 'collection',   name: '収集品',         cost: 5, types: ['treasure'], coin: 2,
                     text: 'コイン +2、+1 購入\nこのターン、アクションカードを獲得するたびに +1 勝利点。' },
-    crystal_ball: { id: 'crystal_ball', name: '水晶玉',       cost: 5, types: ['treasure'], coin: 1,
+    crystal_ball: { id: 'crystal_ball', name: '水晶球',       cost: 5, types: ['treasure'], coin: 1,
                     text: 'コイン +1\n山札の一番上を見る。廃棄／捨て札にする／（アクションか財宝なら）使う のいずれかをしてよい。' },
-    magnate:      { id: 'magnate',      name: '富豪',         cost: 5, types: ['action'],
+    magnate:      { id: 'magnate',      name: '有力者',         cost: 5, types: ['action'],
                     text: '手札を公開する。その中の財宝1枚につき +1 カード。' },
     mint:         { id: 'mint',         name: '造幣所',       cost: 5, types: ['action'],
                     text: '手札の財宝1枚を公開してよい。公開したなら、そのコピーを獲得する。\n（購入時）これを購入したとき、場の財宝をすべて廃棄する。' },
-    rabble:       { id: 'rabble',       name: '群衆',         cost: 5, types: ['action', 'attack'],
+    rabble:       { id: 'rabble',       name: '大衆',         cost: 5, types: ['action', 'attack'],
                     text: '+3 カード\n他のプレイヤーは各自、山札の上3枚を公開し、アクションと財宝を捨て、残りを好きな順で山札の上に戻す。' },
-    vault:        { id: 'vault',        name: '金庫室',       cost: 5, types: ['action'],
+    vault:        { id: 'vault',        name: '保管庫',       cost: 5, types: ['action'],
                     text: '+2 カード\n手札を好きな枚数捨て、1枚につき +1 コイン。\n他のプレイヤーは各自、手札2枚を捨ててよい。捨てたなら1枚引く。' },
     war_chest:    { id: 'war_chest',    name: '軍用金',       cost: 5, types: ['action'],
                     text: '左隣がカード名を1つ指定する。\nコスト$5以下で、このターンに軍用金で指定されていないカード1枚を獲得する。' },
-    grand_market: { id: 'grand_market', name: '高級市場',     cost: 6, types: ['action'],
+    grand_market: { id: 'grand_market', name: '大市場',     cost: 6, types: ['action'],
                     text: '+1 カード、+1 アクション、+1 購入、+2 コイン\n場に銅貨があるとき、これは購入できない。' },
     bank:         { id: 'bank',         name: '銀行',         cost: 7, types: ['treasure'],
                     text: 'これを使うとき、場の財宝1枚につき +1 コイン（これ自身も数える）。' },
     expand:       { id: 'expand',       name: '拡張',         cost: 7, types: ['action'],
                     text: '手札1枚を廃棄する。そのコストより $3 多いコストまでのカード1枚を獲得する。' },
-    forge:        { id: 'forge',        name: '溶鉱炉',       cost: 7, types: ['action'],
+    forge:        { id: 'forge',        name: '鍛造',       cost: 7, types: ['action'],
                     text: '手札を好きな枚数廃棄する。廃棄したコストの合計とちょうど等しいコストのカード1枚を獲得する。' },
-    kings_court:  { id: 'kings_court',  name: '王の宮廷',     cost: 7, types: ['action'],
+    kings_court:  { id: 'kings_court',  name: '宮廷',     cost: 7, types: ['action'],
                     text: '手札のアクションカード1枚を3回使ってよい。' },
     peddler:      { id: 'peddler',      name: '行商人',       cost: 8, types: ['action'],
                     text: '+1 カード、+1 アクション、+1 コイン\n（購入フェイズ中）場のアクションカード1枚につき、これのコストは $2 少なくなる（$0未満にはならない）。' },
@@ -352,7 +352,7 @@
                  text: '+1 カード\n+1 アクション\n手札のアヴァント1枚を使ってよい\nこのターン、銀貨を使うたび手札1枚を廃棄してよい' },
     avanto: { id: 'avanto', name: 'アヴァント', cost: 5, types: ['action'],
                  text: '+3 カード\n手札のサウナ1枚を使ってよい' },
-    hamlet: { id: 'hamlet', name: '小村', cost: 2, types: ['action'],
+    hamlet: { id: 'hamlet', name: '村落', cost: 2, types: ['action'],
                  text: '+1 カード\n+1 アクション\nカード1枚を捨て札にしてよい。そうしたら +1 アクション。\nカード1枚を捨て札にしてよい。そうしたら +1 購入。' },
     fortune_teller: { id: 'fortune_teller', name: '占い師', cost: 3, types: ['action', 'attack'],
                  text: '+2 コイン\n他のプレイヤーは全員、勝利点カードかのろいカードが出るまで自分の山札の上のカードを公開する。それを山札の上に戻し、残りを捨て札にする。' },
@@ -362,15 +362,15 @@
                  text: '+2 アクション\nアクションカードか財宝カードが出るまで、山札の上のカードを公開する。そのカードを手札に加え、残りを捨て札にする。' },
     horse_traders: { id: 'horse_traders', name: '馬商人', cost: 4, types: ['action', 'reaction'],
                  text: '+1 購入\n+3 コイン\nカード2枚を捨て札にする。\n————\n他のプレイヤーがアタックカードをプレイしたとき、これを手札から脇に置いてよい。そうしたら次の自分のターン開始時に、+1 カードしてこれを手札に戻す。' },
-    remake: { id: 'remake', name: 'リメイク', cost: 4, types: ['action'],
+    remake: { id: 'remake', name: '再建', cost: 4, types: ['action'],
                  text: '以下を2回行う：手札のカード1枚を廃棄し、それよりちょうどコスト1コイン高いカード1枚を獲得する。' },
     tournament: { id: 'tournament', name: '馬上槍試合', cost: 4, types: ['action'],
                  text: '+1 アクション\n各プレイヤーは手札から属州を公開してよい。あなたが公開したら、それを捨て札にして賞品1枚（賞品の山から）または公領1枚を山札の上に獲得する。あなた以外の誰も公開しなければ、+1 カード、+1 コイン。' },
-    young_witch: { id: 'young_witch', name: '若き魔女', cost: 4, types: ['action', 'attack'],
+    young_witch: { id: 'young_witch', name: '魔女娘', cost: 4, types: ['action', 'attack'],
                  text: '+2 カード\nカード2枚を捨て札にする。他のプレイヤーは全員、手札から災いカードを公開して影響を受けないようにしてよい。公開しなければ、のろい1枚を獲得する。' },
     harvest: { id: 'harvest', name: '収穫', cost: 5, types: ['action'],
                  text: '山札の上から4枚を公開し、それらを捨て札にする。公開されたカードの異なる名前1種類につき +1 コイン。' },
-    horn_of_plenty: { id: 'horn_of_plenty', name: '豊穣の角', cost: 5, types: ['treasure'], coin: 0,
+    horn_of_plenty: { id: 'horn_of_plenty', name: '豊穣の角笛', cost: 5, types: ['treasure'], coin: 0,
                  text: 'これをプレイしたとき、場に出ている異なる名前のカード（これを含む）1種類につき、コスト1コインまでのカード1枚を獲得する。それが勝利点カードなら、これを廃棄する。' },
     hunting_party: { id: 'hunting_party', name: '狩猟団', cost: 5, types: ['action'],
                  text: '+1 カード\n+1 アクション\n手札を公開する。手札にあるカードと同じ名前でないカードが出るまで、山札の上のカードを公開する。そのカードを手札に加え、残りを捨て札にする。' },
@@ -380,13 +380,13 @@
                  text: 'あなたの持つカードの異なる名前5種類につき、2勝利点（端数切り捨て）。' },
     bag_of_gold: { id: 'bag_of_gold', name: '金貨袋', cost: 0, types: ['action'],
                  text: '+1 アクション\n金貨1枚を獲得し、山札の一番上に置く。' },
-    diadem: { id: 'diadem', name: '宝冠', cost: 0, types: ['treasure'], coin: 2,
+    diadem: { id: 'diadem', name: '王冠', cost: 0, types: ['treasure'], coin: 2,
                  text: '+2 コイン\n未使用のアクション1つにつき+1 コイン。' },
-    followers: { id: 'followers', name: '家臣団', cost: 0, types: ['action', 'attack'],
+    followers: { id: 'followers', name: '郎党', cost: 0, types: ['action', 'attack'],
                  text: '+2 カード\n屋敷1枚を獲得する。\n他のプレイヤーは呪い1枚を獲得し、手札が3枚になるまで捨てる。' },
     princess: { id: 'princess', name: '王女', cost: 0, types: ['action'],
                  text: '+1 購入\nこのターン、カードのコストは2コイン安くなる（0コイン未満にはならない）。' }, // 2022エラッタ＝「このターン」型（褒賞の名声と同じ）
-    trusty_steed: { id: 'trusty_steed', name: '頼もしい乗騎', cost: 0, types: ['action'],
+    trusty_steed: { id: 'trusty_steed', name: '名馬', cost: 0, types: ['action'],
                  text: '以下から異なる2つを選ぶ：\n+2 カード / +2 アクション / +2 コイン / 銀貨4枚を獲得し山札を捨て札に置く。' },
     crossroads: { id: 'crossroads', name: '岐路', cost: 2, types: ['action'],
                  text: '手札を公開する。\n公開した勝利点カード1枚につき +1 カード\nこのターンに最初にプレイしたクロスロードであれば、+3 アクション' },
@@ -400,23 +400,23 @@
                  text: '+1 カード\n+1 アクション\n+1 コイン\n手札を1枚捨てる。' },
     oracle: { id: 'oracle', name: '神託', cost: 3, types: ['action', 'attack'],
                  text: '各プレイヤー（あなたを含む）は自分の山札の上から2枚を公開する。あなたはプレイヤーごとに、それらを捨て札にさせるか、好きな順で山札の一番上に戻させるかを選ぶ。\nその後、+2 カード' },
-    scheme: { id: 'scheme', name: '策謀', cost: 3, types: ['action'],
+    scheme: { id: 'scheme', name: '画策', cost: 3, types: ['action'],
                  text: '+1 カード\n+1 アクション\nこのターンのクリンナップ時、場に出ているアクションカード1枚を選び、山札の一番上に置いてもよい。' },
-    tunnel: { id: 'tunnel', name: 'トンネル', cost: 3, types: ['victory', 'reaction'], vp: 2,
+    tunnel: { id: 'tunnel', name: '坑道', cost: 3, types: ['victory', 'reaction'], vp: 2,
                  text: '2 勝利点\nクリンナップ以外でこのカードを捨てたとき、これを公開してもよい。そうした場合、金貨1枚を獲得する。' },
-    jack_of_all_trades: { id: 'jack_of_all_trades', name: '何でも屋', cost: 4, types: ['action'],
+    jack_of_all_trades: { id: 'jack_of_all_trades', name: 'よろずや', cost: 4, types: ['action'],
                  text: '銀貨1枚を獲得する。\n山札の一番上のカードを見て、捨ててもよい。\n手札が5枚になるまで引く。\n手札から財宝でないカード1枚を廃棄してもよい。' },
-    noble_brigand: { id: 'noble_brigand', name: '高貴な山賊', cost: 4, types: ['action', 'attack'],
+    noble_brigand: { id: 'noble_brigand', name: '義賊', cost: 4, types: ['action', 'attack'],
                  text: '+1 コイン\nこのカードを購入またはプレイしたとき、他のプレイヤーは各自山札の上から2枚を公開し、あなたが選んだ公開された銀貨または金貨1枚を廃棄し、残りを捨てる。財宝を1枚も公開しなかったプレイヤーは銅貨1枚を獲得する。あなたは廃棄されたカードをすべて獲得する。' },
     nomad_camp: { id: 'nomad_camp', name: '遊牧民の野営地', cost: 4, types: ['action'],
                  text: '+1 購入\n+2 コイン\nこれは（捨て札置き場ではなく）山札の上に獲得する。' }, // 2016エラッタ＝獲得先の置き換え（召喚/せっかちな が見つけられる）
-    silk_road: { id: 'silk_road', name: '絹の道', cost: 4, types: ['victory'],
+    silk_road: { id: 'silk_road', name: 'シルクロード', cost: 4, types: ['victory'],
                  text: '自分のデッキの勝利点カード4枚につき 1 勝利点（端数切り捨て）。' },
     spice_merchant: { id: 'spice_merchant', name: '香辛料商人', cost: 4, types: ['action'],
                  text: '手札から財宝1枚を廃棄してもよい。そうした場合、次のいずれかを選ぶ：\n＋2 カードと ＋1 アクション、または ＋2 コインと ＋1 購入。' },
-    trader: { id: 'trader', name: '交易商人', cost: 4, types: ['action', 'reaction'],
+    trader: { id: 'trader', name: '交易人', cost: 4, types: ['action', 'reaction'],
                  text: '手札のカード1枚を廃棄する。そのコスト（コイン）と同じ枚数の銀貨を獲得する。\nカードを獲得するとき、このカードを手札から公開してもよい。そうした場合、そのカードの代わりに銀貨1枚を獲得する。' },
-    cache: { id: 'cache', name: 'キャッシュ', cost: 5, types: ['treasure'], coin: 3,
+    cache: { id: 'cache', name: '埋蔵金', cost: 5, types: ['treasure'], coin: 3,
                  text: '3 コイン\nこのカードを獲得したとき、銅貨2枚を獲得する。' },
     cartographer: { id: 'cartographer', name: '地図職人', cost: 5, types: ['action'],
                  text: '+1 カード\n+1 アクション\n山札の上から4枚を見る。好きな枚数を捨て、残りを好きな順で山札の一番上に戻す。' },
@@ -430,7 +430,7 @@
                  text: '1 コイン\nこのカードをプレイしたとき、銅貨1枚を獲得して手札に加えてもよい。\nこのカードを獲得したとき、他のプレイヤーは各自呪い1枚を獲得する。' },
     inn: { id: 'inn', name: '宿屋', cost: 5, types: ['action'],
                  text: '+2 カード\n+2 アクション\n手札を2枚捨てる。\nこのカードを獲得したとき、自分の捨て札（このカードを含む）を見て、その中のアクションカードを好きな枚数公開し、山札に混ぜてシャッフルする。' },
-    mandarin: { id: 'mandarin', name: '役人', cost: 5, types: ['action'],
+    mandarin: { id: 'mandarin', name: '官吏', cost: 5, types: ['action'],
                  text: '+3 コイン\n手札のカード1枚を山札の一番上に置く。\nこのカードを獲得したとき、場に出ているすべての財宝を好きな順で山札の一番上に置く。' },
     margrave: { id: 'margrave', name: '辺境伯', cost: 5, types: ['action', 'attack'],
                  text: '+3 カード\n+1 購入\n他のプレイヤーは各自カードを1枚引き、その後手札が3枚になるまで捨てる。' },
@@ -442,7 +442,7 @@
                  text: '2 勝利点\nこのカードを購入したとき、手札のカード1枚を廃棄し、そのコストちょうど2コイン高いカード1枚を獲得する。' },
     nomads: { id: 'nomads', name: '遊牧民', cost: 4, types: ['action'],
                  text: '+1 購入、+2 コイン\nこれを獲得または廃棄したとき、+2 コイン。' },
-    trail: { id: 'trail', name: '小道', cost: 4, types: ['action', 'reaction'],
+    trail: { id: 'trail', name: '進路', cost: 4, types: ['action', 'reaction'],
                  text: '+1 カード、+1 アクション\n（リアクション）クリーンアップ以外でこれを獲得・廃棄・捨て札にしたとき、これを使ってよい。' },
     weaver: { id: 'weaver', name: '織工', cost: 4, types: ['action', 'reaction'],
                  text: '銀貨2枚、またはコスト4以下のカード1枚を獲得する。\n（リアクション）クリーンアップ以外でこれを捨て札にしたとき、これを使ってよい。' },
@@ -462,7 +462,7 @@
                  text: '+4 コイン\n手札を公開する。\n手札の財宝1枚につき −1 コイン（コインは0未満にはならない）。' },
     squire: { id: 'squire', name: '従者', cost: 2, types: ['action'],
                  text: '+1 コイン\n以下から1つ選ぶ：+2 アクション／+2 購入／銀貨1枚を獲得。\nこれを廃棄したとき、アタックカード1枚を獲得する。' },
-    vagrant: { id: 'vagrant', name: '放浪者', cost: 2, types: ['action'],
+    vagrant: { id: 'vagrant', name: '浮浪者', cost: 2, types: ['action'],
                  text: '+1 カード\n+1 アクション\n山札の一番上を公開する。それが呪い・廃墟・避難所・勝利点カードなら手札に加える。' },
     beggar: { id: 'beggar', name: '物乞い', cost: 2, types: ['action', 'reaction'],
                  text: '銅貨3枚を獲得し、手札に加える。\n（リアクション）他人がアタックカードをプレイしたとき、先にこれを捨て札にして銀貨2枚を獲得できる（うち1枚は山札の上に置く）。' },
@@ -470,7 +470,7 @@
                  text: '捨て札置き場を見る。そこか手札から財宝以外のカード1枚を廃棄してよい。\nコスト3以下のカードを1枚獲得する。\nこのターンの購入フェイズ終了時、そのフェイズ中にカードを1枚も獲得していなければ、これを狂人1枚と交換する。' },
     sage: { id: 'sage', name: '賢者', cost: 3, types: ['action'],
                  text: '+1 アクション\nコスト3以上のカードが出るまで山札の一番上を公開し続ける。そのカードを手札に加え、残りを捨て札にする。' },
-    forager: { id: 'forager', name: '探索者', cost: 3, types: ['action'],
+    forager: { id: 'forager', name: '採集者', cost: 3, types: ['action'],
                  text: '+1 アクション\n+1 購入\n手札1枚を廃棄する。\n廃棄置き場にある異なる名前の財宝1種につき +1 コイン。' },
     storeroom: { id: 'storeroom', name: '物置', cost: 3, types: ['action'],
                  text: '+1 購入\n手札を好きな枚数捨て、同じ枚数引く。\nその後、手札を好きな枚数捨て、1枚につき +1 コイン。' },
@@ -480,11 +480,11 @@
                  text: '+1 カード\n+1 アクション\n+1 購入\n（リアクション）自分のカードが廃棄されたとき、これを手札から捨て札にして金貨1枚を獲得できる。' },
     ironmonger: { id: 'ironmonger', name: '金物商', cost: 4, types: ['action'],
                  text: '+1 カード\n+1 アクション\n山札の一番上を公開する。捨ててもよい。\nそれがアクションなら +1 アクション、財宝なら +1 コイン、勝利点なら +1 カード。' },
-    wandering_minstrel: { id: 'wandering_minstrel', name: '旅の楽団', cost: 4, types: ['action'],
+    wandering_minstrel: { id: 'wandering_minstrel', name: '吟遊詩人', cost: 4, types: ['action'],
                  text: '+1 カード\n+2 アクション\n山札の上から3枚を公開する。アクションカードを好きな順で山札の上に戻し、残りを捨て札にする。' },
     procession: { id: 'procession', name: '行進', cost: 4, types: ['action'],
                  text: '手札の持続でないアクションカード1枚を2回プレイしてよい。\nその後それを廃棄し、それよりコストがちょうど $1 多いアクションカード1枚を獲得する。' },
-    scavenger: { id: 'scavenger', name: '拾い屋', cost: 4, types: ['action'],
+    scavenger: { id: 'scavenger', name: 'ゴミあさり', cost: 4, types: ['action'],
                  text: '+2 コイン\n自分の山札を捨て札にしてもよい。\n捨て札置き場を見て、その中の1枚を山札の上に置く。' },
     fortress: { id: 'fortress', name: '城塞', cost: 4, types: ['action'],
                  text: '+1 カード\n+2 アクション\nこれを廃棄したとき、これを手札に加える。' },
@@ -494,7 +494,7 @@
                  text: 'コスト4以下のカード1枚を獲得し、山札の上に置く。' },
     death_cart: { id: 'death_cart', name: '死の荷車', cost: 4, types: ['action', 'looter'],
                  text: 'これか手札のアクションカード1枚を廃棄してもよい。廃棄したなら +5 コイン。\n————\nこれを獲得したとき、廃墟2枚を獲得する。' },
-    marauder: { id: 'marauder', name: '略奪者', cost: 4, types: ['action', 'attack', 'looter'],
+    marauder: { id: 'marauder', name: '襲撃者', cost: 4, types: ['action', 'attack', 'looter'],
                  text: '略奪品置き場から略奪品1枚を獲得する。\n他のプレイヤーは各自、廃墟1枚を獲得する。' },
     feodum: { id: 'feodum', name: '封土', cost: 4, types: ['victory'],
                  text: '（勝利点）\n所持している銀貨3枚につき 1 勝利点（端数切り捨て）。\nこれを廃棄したとき、銀貨3枚を獲得する。' },
@@ -574,12 +574,12 @@
                  text: '+1 カード\n+1 アクション\n他のプレイヤーは全員、自分の山札の上からカードを2枚公開し、その中からコスト3～6のカード1枚を廃棄し、残りを捨て札にする。これにより騎士が廃棄された場合、このカードを廃棄する。' },
     sir_destry: { id: 'sir_destry', name: 'サー・デストリー', cost: 5, types: ['action', 'attack', 'knight'],
                  text: '+2 カード\n他のプレイヤーは全員、自分の山札の上からカードを2枚公開し、その中からコスト3～6のカード1枚を廃棄し、残りを捨て札にする。これにより騎士が廃棄された場合、このカードを廃棄する。' },
-    sir_martin: { id: 'sir_martin', name: 'サー・マーティン', cost: 4, types: ['action', 'attack', 'knight'],
+    sir_martin: { id: 'sir_martin', name: 'サー・マーチン', cost: 4, types: ['action', 'attack', 'knight'],
                  text: '+2 購入\n他のプレイヤーは全員、自分の山札の上からカードを2枚公開し、その中からコスト3～6のカード1枚を廃棄し、残りを捨て札にする。これにより騎士が廃棄された場合、このカードを廃棄する。' },
     sir_michael: { id: 'sir_michael', name: 'サー・マイケル', cost: 5, types: ['action', 'attack', 'knight'],
                  text: '他のプレイヤーは全員、手札が3枚になるように捨て札にする。\n他のプレイヤーは全員、自分の山札の上からカードを2枚公開し、その中からコスト3～6のカード1枚を廃棄し、残りを捨て札にする。これにより騎士が廃棄された場合、このカードを廃棄する。' },
-    sir_vander: { id: 'sir_vander', name: 'サー・ヴァンダー', cost: 5, types: ['action', 'attack', 'knight'],
-                 text: '他のプレイヤーは全員、自分の山札の上からカードを2枚公開し、その中からコスト3～6のカード1枚を廃棄し、残りを捨て札にする。これにより騎士が廃棄された場合、このカードを廃棄する。\n————\nサー・ヴァンダーが廃棄されたとき、金貨1枚を獲得する。' },
+    sir_vander: { id: 'sir_vander', name: 'サー・ヴァンデル', cost: 5, types: ['action', 'attack', 'knight'],
+                 text: '他のプレイヤーは全員、自分の山札の上からカードを2枚公開し、その中からコスト3～6のカード1枚を廃棄し、残りを捨て札にする。これにより騎士が廃棄された場合、このカードを廃棄する。\n————\nサー・ヴァンデルが廃棄されたとき、金貨1枚を獲得する。' },
 
     // ===== 廃墟5種（Ruins・段階1）=====
     abandoned_mine: { id: 'abandoned_mine', name: '廃坑', cost: 0, types: ['action', 'ruins'],
@@ -1434,7 +1434,7 @@
          既存の負債は「コスト」だけだったので `debt:` フィールドは**付けない**（`debt:` はコスト用＝技術者/大金と同じ意味）。
          段階2では `takeDebt`（カードの負債"コスト"を読む関数）を流用せず `addDebt` を新設すること（研究doc 第2章 Craftsman ⚠1）。
        ⚠ 川船は `Setup:` を持つ唯一の王国カード＝`state.riverboatCard`（サプライに載せない脇の1枚）が要る。
-         前例＝ハツカネズミの習性の `state.mouseCard`（若き魔女の災いカード Bane とは構造が違う＝あちらは11山目）。
+         前例＝ハツカネズミの習性の `state.mouseCard`（魔女娘の災いカード Bane とは構造が違う＝あちらは11山目）。
        ⚠ 公家は「場に出している公家の枚数」であって「このターン使用した回数」ではない（公式FAQ）。 */
     // --- コスト$2（2種） ---
     // +1 Buy / +[$1] / --- / You can play this from your deck as if in your hand.
@@ -1526,7 +1526,7 @@
          (3) 区切り線を既存カタログの形へ＝「--------------------」→「————」（U+2014×4・cards.js の73箇所と同一）。
          (4) 「選ぶ」の書式を既存カタログの形へ＝「次のうち異なる2つを選ぶ：」＋「「〜」：」
              → **「次から異なる2つを選ぶ：」＋「／」区切りの1行**（狐）。
-             ＝「異なる2つを選ぶ」を持つ既存3枚（従者 js/cards.js:96／執事:386／道化棒:1015）が**3枚とも「／」1行**で、
+             ＝「異なる2つを選ぶ」を持つ既存3枚（寵臣 js/cards.js:96／執事:386／道化棒:1015）が**3枚とも「／」1行**で、
                道化棒は長い節（「このターン、あなたがカード1枚を獲得するとき、…」）を含んでなお「／」＝その系統に揃えた。
              ⚠ 検証で訂正＝**pawn は「・」ではない**（旧コメントの「pawn/cabin_boy と同じ house style」は誤り）。
                ・見出し「次から異なる2つを選ぶ：」は **pawn（js/cards.js:96）と一字一句同じ**＝ここは正しい。
@@ -1569,7 +1569,7 @@
     // ⚠ 表記メモ（検証・未変更）＝DO訳は「+2 カードを引く、…、+5 カードを引く。」だが「を引く」を落とした。
     //   根拠＝同型の条件つきボーナスは既存カタログでも「を引く」を落とすのが優勢
     //   （馬丁 js/cards.js:856「勝利点カードの場合、+1 カード、+1 アクション。」＝種別で分岐する完全な同型／
-    //    寂れた村:98「アクションが無ければ +2 カード。」ほか計8件。付ける側は封土:598・内気な:2477 の3件）。
+    //    貧民街:98「アクションが無ければ +2 カード。」ほか計8件。付ける側は封土:598・内気な:2477 の3件）。
     //   ⚠ **旭日の他の群も同じ判断で揃っている**（山の社＝「…ある場合、+2 カード。」）＝ここだけ戻すと不揃いになる。
     rice_broker: { id: 'rice_broker', name: '札差', cost: 5, types: ['action'],
                  text: '+1 アクション\n手札1枚を廃棄する。\nそれが財宝カードの場合、+2 カード。\nそれがアクションカードの場合、+5 カード。' },
@@ -1666,7 +1666,7 @@
        🛑 **まだ効果は空（段階1）**＝`DOM.STAGE1_POOLS` に `seaside1e` / `prosperity1e` / `cornguilds2e` /
           `rewards` / `promo_new` を入れて闇市場に出さない。段階2で効果を実装して CARD_SET に昇格したら外す。
        ⚠ 日本語名は日本語wiki（wikiwiki.jp/dominiondeck）で裏取り済み。**収穫祭＆ギルド第2版だけ日本語版未発売**
-          ＝日本語wiki の仮訳を採用（括弧書き）。Coronet は既存の賞品 `diadem`（宝冠）と衝突するので「小冠」にした。
+          ＝日本語wiki の仮訳を採用（括弧書き）。Coronet の日本語名は「宝冠」＝賞品 `diadem`（王冠）とは別物。
        ⚠ 英語カード文は現行の印刷済み最新（抑留＝2020年版 "Trash this **to** add"）。 */
 
     // ---- 海辺 第1版（2009年・第2版で削除された8種）----
@@ -1726,7 +1726,7 @@
                  text: '+1 カード\n+1 アクション\n+1 コイン\n手札から属州1枚を脇に置いてもよい。そうした場合、褒賞1枚を手札に獲得する。クリーンアップ時にその属州を捨て札にする。' },
 
     // ---- 褒賞(Reward)6種＝一騎討ちでのみ獲得できる非サプライ（収穫祭の賞品 Prizes と同型。⚠ 2人＝各1枚／3人以上＝各2枚＝公式ルールブック）----
-    coronet: { id: 'coronet', name: '小冠', cost: 0, types: ['action', 'treasure', 'reward'],
+    coronet: { id: 'coronet', name: '宝冠', cost: 0, types: ['action', 'treasure', 'reward'],
                  text: '手札から褒賞でないアクションカード1枚を2回使用してもよい。\n手札から褒賞でない財宝カード1枚を2回使用してもよい。\n（これはサプライにはない。）' },
     courser: { id: 'courser', name: '駿馬', cost: 0, types: ['action', 'reward'],
                  text: '以下から異なる2つを選ぶ：\n+2 カード / +2 アクション / +2 コイン / 銀貨4枚を獲得する。\n（これはサプライにはない。）' },
@@ -1755,13 +1755,13 @@
   // 海辺（第二版）推奨10種。持続・マット・追加ターン・アタックをひと通り味わえる構成。
   DOM.KINGDOM_SEASIDE = ['haven', 'lighthouse', 'native_village', 'fishing_village', 'warehouse',
                          'merchant_ship', 'wharf', 'treasury', 'sea_witch', 'island'];
-  // 繁栄（第二版）推奨10種。VPトークン・植民地/プラチナ貨・王の宮廷・アタック・スケール札を味わえる構成。
+  // 繁栄（第二版）推奨10種。VPトークン・植民地/白金貨・宮廷・アタック・スケール札を味わえる構成。
   DOM.KINGDOM_PROSPERITY = ['watchtower', 'monument', 'workers_village', 'bishop', 'city',
                             'rabble', 'vault', 'grand_market', 'kings_court', 'peddler'];
   // 錬金術（第二版）推奨10種。ポーション経済・変動VP(ブドウ園)・アタック(使い魔)・支配を味わえる構成。
   DOM.KINGDOM_ALCHEMY = ['vineyard', 'herbalist', 'apothecary', 'university', 'alchemist',
                          'familiar', 'philosophers_stone', 'golem', 'apprentice', 'possession'];
-  // 収穫祭 推奨10種。賞品山(馬上槍試合)・災いカード(若き魔女)・可変VP(品評会)・reveal系・アタックを味わえる構成。
+  // 収穫祭 推奨10種。賞品山(馬上槍試合)・災いカード(魔女娘)・可変VP(品評会)・reveal系・アタックを味わえる構成。
   DOM.KINGDOM_CORNUCOPIA = ['hamlet', 'menagerie', 'farming_village', 'remake', 'young_witch',
                             'tournament', 'harvest', 'horn_of_plenty', 'jester', 'fairgrounds'];
   // ギルド 推奨10種。財源(Coffers)経済・過払い(overpay)・アタック2種・公開系・trash-to-gain を味わえる構成。
@@ -1769,8 +1769,8 @@
   //   セットアップ=パン屋(開始時 全員+1財源)、購入毎トリガー=商人ギルド。
   DOM.KINGDOM_GUILDS = ['candlestick_maker', 'stonemason', 'doctor', 'advisor', 'taxman',
                         'herald', 'baker', 'butcher', 'merchant_guild', 'soothsayer'];
-  // 異郷 推奨10種。on-gain トリガー(国境の村/大使館系)・可変VP(絹の道)・on-discard リアクション(トンネル)・
-  //   on-buy(値切り屋/農地)・獲得置換(交易商人は混成で登場)・アタック(辺境伯)・財宝リアクション(愚者の黄金) を味わえる構成。
+  // 異郷 推奨10種。on-gain トリガー(国境の村/大使館系)・可変VP(シルクロード)・on-discard リアクション(坑道)・
+  //   on-buy(値切り屋/農地)・獲得置換(交易人は混成で登場)・アタック(辺境伯)・財宝リアクション(愚者の黄金) を味わえる構成。
   DOM.KINGDOM_HINTERLANDS = ['crossroads', 'fools_gold', 'develop', 'oasis', 'tunnel',
                              'jack_of_all_trades', 'silk_road', 'haggler', 'margrave', 'border_village'];
   // 暗黒時代 推奨10種＝公式「Grim Parade」（Dark Ages alone）。廃墟(狂信者=Looter)・騎士の混合山・
@@ -1839,7 +1839,7 @@
     alchemy: ['transmute', 'vineyard', 'herbalist', 'apothecary', 'scrying_pool', 'university',
               'alchemist', 'familiar', 'philosophers_stone', 'golem', 'apprentice', 'possession'],
     // 繁栄 第二版（王国カード25種）= 抽選母集団。「繁栄セット」(固定10種)と「繁栄から」(ランダム)が参照する。
-    //   プラチナ貨/植民地は王国カードではなく共通サプライ＝ここには入れない（繁栄の王国カードが場にあると
+    //   白金貨/植民地は王国カードではなく共通サプライ＝ここには入れない（繁栄の王国カードが場にあると
     //   initSupply が自動で platinum/colony 山を足す）。hoard は元々プロモにもあるが本来は繁栄のカード。
     prosperity: ['anvil', 'watchtower', 'bishop', 'clerk', 'investment', 'monument', 'quarry', 'tiara',
                  'workers_village', 'charlatan', 'city', 'collection', 'crystal_ball', 'magnate', 'mint',
@@ -1854,8 +1854,8 @@
   DOM.KINGDOM_POOL = DOM.POOLS.basic.concat(DOM.POOLS.intrigue);
   // 収穫祭（実プレイ化＝段階2）。王国カード13種＝抽選母集団（「収穫祭セット」固定10種と「収穫祭から」ランダムが参照）。
   //   賞品（Prize）5種は王国カードではなく、馬上槍試合の専用山（各1枚・非サプライ）＝ POOLS.prizes に分離し、
-  //   ランダム抽選に混ざらないようにする（賞品は購入もランダム選出もされない）。若き魔女の災いカード（Bane）は
-  //   若き魔女が場にあるとき createInitialState が $2-3 の王国カードを1つ選んで11山目に足す（state.baneCard）。
+  //   ランダム抽選に混ざらないようにする（賞品は購入もランダム選出もされない）。魔女娘の災いカード（Bane）は
+  //   魔女娘が場にあるとき createInitialState が $2-3 の王国カードを1つ選んで11山目に足す（state.baneCard）。
   DOM.POOLS.cornucopia = ['hamlet', 'fortune_teller', 'menagerie', 'farming_village', 'horse_traders', 'remake', 'tournament', 'young_witch', 'harvest', 'horn_of_plenty', 'hunting_party', 'jester', 'fairgrounds'];
   DOM.POOLS.prizes = ['bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed'];
   DOM.POOLS.hinterlands = ['crossroads', 'duchess', 'fools_gold', 'develop', 'oasis', 'oracle', 'scheme', 'tunnel', 'jack_of_all_trades', 'noble_brigand', 'nomad_camp', 'silk_road', 'spice_merchant', 'trader', 'cache', 'cartographer', 'embassy', 'haggler', 'highway', 'ill_gotten_gains', 'inn', 'mandarin', 'margrave', 'stables', 'border_village', 'farmland', 'nomads', 'trail', 'weaver', 'souk', 'cauldron', 'guard_dog', 'berserker', 'wheelwright', 'witchs_hut'];
@@ -2026,7 +2026,7 @@
     { id: 'intrigue',        kind: 'standard', name: '陰謀セット（第二版）', kingdom: DOM.KINGDOM_INTRIGUE },
     { id: 'seaside',         kind: 'standard', name: '海辺セット（第二版）', desc: '持続カード・マット・追加ターン', kingdom: DOM.KINGDOM_SEASIDE },
     { id: 'alchemy',         kind: 'standard', name: '錬金術セット（第二版）', desc: 'ポーション経済・ブドウ園・支配', kingdom: DOM.KINGDOM_ALCHEMY },
-    { id: 'prosperity',      kind: 'standard', name: '繁栄セット（第二版）', desc: '勝利点トークン・植民地/プラチナ貨', kingdom: DOM.KINGDOM_PROSPERITY },
+    { id: 'prosperity',      kind: 'standard', name: '繁栄セット（第二版）', desc: '勝利点トークン・植民地/白金貨', kingdom: DOM.KINGDOM_PROSPERITY },
     { id: 'cornucopia',      kind: 'standard', name: '収穫祭セット', desc: '賞品・災いカード・カードの多様性', kingdom: DOM.KINGDOM_CORNUCOPIA },
     { id: 'guilds',          kind: 'standard', name: 'ギルドセット', desc: '財源（コイントークン）・過払い', kingdom: DOM.KINGDOM_GUILDS },
     { id: 'hinterlands',     kind: 'standard', name: '異郷セット', desc: '獲得した瞬間に働くカード・可変勝利点', kingdom: DOM.KINGDOM_HINTERLANDS },
@@ -2064,7 +2064,7 @@
     { id: 'risingsun-events', kind: 'standard', name: '旭日＋イベント', desc: '旭日10種＋イベント2枚（稽古の2回使用・継続のアクションフェイズ復帰）', kingdom: DOM.KINGDOM_RISINGSUN, eventsFrom: 'risingsun' },
     // 2026-08-23：未実装33種の昇格＝海辺 初版／繁栄 初版／収穫祭＆ギルド 第2版／プロモ＋召喚
     { id: 'seaside1e',       kind: 'standard', name: '海辺セット（初版）', desc: '第2版で削除された8種（抑留・海賊船・海の妖婆・大使…）＋灯台・埠頭', kingdom: DOM.KINGDOM_SEASIDE_1E },
-    { id: 'prosperity1e',    kind: 'standard', name: '繁栄セット（初版）', desc: '第2版で削除された9種（交易路・香具師・ならず者・玉璽…）＋王の宮廷', kingdom: DOM.KINGDOM_PROSPERITY_1E },
+    { id: 'prosperity1e',    kind: 'standard', name: '繁栄セット（初版）', desc: '第2版で削除された9種（交易路・香具師・ならず者・玉璽…）＋宮廷', kingdom: DOM.KINGDOM_PROSPERITY_1E },
     { id: 'cornguilds2e',    kind: 'standard', name: '収穫祭＆ギルド（第2版）', desc: '2023年の合本で追加された8種（渡し守・一騎討ち＋褒賞・野盗…）＋パン屋・広場', kingdom: DOM.KINGDOM_CORNGUILDS_2E },
     { id: 'promo-events',    kind: 'standard', name: 'プロモ＋召喚', desc: 'プロモ全部入りの王国10種＋イベント「召喚」', kingdom: ['cellar', 'walled_village', 'envoy', 'dismantle', 'militia', 'hoard', 'governor', 'market', 'black_market', 'witch'], eventsFrom: 'promo' },
     // ---- おすすめ（テーマ別・固定10種）----
@@ -2083,7 +2083,7 @@
     // ---- 初版（第二版で廃止された懐かしのカード入り）----
     { id: 'classic-basic',    kind: 'recommend', name: '初版・王国基本', desc: '宰相・木こり・祝宴・密偵・泥棒・冒険者＝廃止カード入り',
       kingdom: DOM.KINGDOM_1E },
-    { id: 'classic-intrigue', kind: 'recommend', name: '初版・陰謀', desc: '大広間・斥候・銅細工師・貢物＝廃止カード入り',
+    { id: 'classic-intrigue', kind: 'recommend', name: '初版・陰謀', desc: '大広間・偵察員・銅細工師・貢物＝廃止カード入り',
       kingdom: DOM.KINGDOM_INTRIGUE_1E },
     // ---- プロモ ----
     { id: 'promo-pack',       kind: 'recommend', name: 'プロモ全部入り', desc: 'プロモ6種＋基本4種',
@@ -2311,7 +2311,7 @@
   DOM.TREASURES = ['copper', 'silver', 'gold'];
   DOM.VICTORY   = ['estate', 'duchy', 'province'];
 
-  // サプライ（場の山札）の表示順。プラチナ貨/植民地は繁栄が場にあるときだけ supply に存在し、
+  // サプライ（場の山札）の表示順。白金貨/植民地は繁栄が場にあるときだけ supply に存在し、
   // 各表示・獲得処理は supply[id] の有無でフィルタするので、ここでは常に並べておいてよい。
   DOM.SUPPLY_ORDER = function (kingdom) {
     return ['copper', 'silver', 'gold', 'platinum', 'estate', 'duchy', 'province', 'colony', 'curse'].concat(kingdom);
@@ -3040,7 +3040,7 @@
     enlightenment: { name: '悟り', nameEn: 'Enlightenment', kind: 'prophecy', expansion: 'risingsun', cost: 0, debt: 0,
       text: '財宝カードはアクションカードでもある。\nアクションフェイズに財宝カードを使用するとき、その指示に従う代わりに、+1 カード、+1 アクション。' },
     // Cards cost [$1] less. You may use Action plays as Buys.
-    // ⚠ 既存の `trade`（交易・冒険イベント）／`trader`（交易商人・異郷）と id が紛らわしい。
+    // ⚠ 既存の `trade`（交易・冒険イベント）／`trader`（交易人・異郷）と id が紛らわしい。
     flourishing_trade: { name: '盛大な取引', nameEn: 'Flourishing Trade', kind: 'prophecy', expansion: 'risingsun', cost: 0, debt: 0,
       text: 'すべてのカードのコストは1コイン下がる。アクション権を購入権として使ってよい。' },
     // The first time you play each differently named Treasure each turn, first, +1 Buy and +[$1].

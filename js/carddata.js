@@ -146,7 +146,7 @@
     if (has('duration')) {
       if (has('treasure') && has('reaction')) return '財宝・持続・リアクション'; // 海賊
       if (has('command')) return 'アクション・持続・命令';                       // プロモ：王子/船長
-      if (has('attack')) return 'アクション・持続・アタック';                    // 封鎖/私掠船/海の魔女
+      if (has('attack')) return 'アクション・持続・アタック';                    // 封鎖/コルセア/海の魔女
       if (has('reaction')) return 'アクション・持続・リアクション';              // 冒険：隊商の護衛
       if (has('treasure')) return '財宝・持続';                                  // アストロラーベ
       return 'アクション・持続';
@@ -179,8 +179,8 @@
     if (has('treasure') && has('victory')) return '財宝・勝利点';
     if (has('victory') && has('action')) return '勝利点・アクション';
     if (has('treasure') && has('action')) return 'アクション・財宝';                   // 帝国：冠（action+treasure）
-    if (has('attack') && has('reaction')) return 'アクション・アタック・リアクション'; // 会計士（action+attack+reaction）
-    if (has('treasure') && has('attack')) return '財宝・アタック';                    // ペテン師（treasure+attack）
+    if (has('attack') && has('reaction')) return 'アクション・アタック・リアクション'; // 書記（action+attack+reaction）
+    if (has('treasure') && has('attack')) return '財宝・アタック';                    // 山師（treasure+attack）
     if (has('treasure') && has('reaction')) return '財宝・リアクション';              // 愚者の黄金（treasure+reaction）
     if (has('victory') && has('reaction')) return '勝利点・リアクション';             // 抜け道（victory+reaction）
     if (has('reaction')) return 'アクション・リアクション';
@@ -245,8 +245,8 @@
     if (has('treasure') && has('victory')) return 'Treasure - Victory';
     if (has('victory') && has('action')) return 'Victory - Action';
     if (has('treasure') && has('action')) return 'Action - Treasure'; // Crown
-    if (has('attack') && has('reaction')) return 'Action - Attack - Reaction'; // 会計士
-    if (has('treasure') && has('attack')) return 'Treasure - Attack';          // ペテン師
+    if (has('attack') && has('reaction')) return 'Action - Attack - Reaction'; // 書記
+    if (has('treasure') && has('attack')) return 'Treasure - Attack';          // 山師
     if (has('treasure') && has('reaction')) return 'Treasure - Reaction';      // Fool's Gold
     if (has('victory') && has('reaction')) return 'Victory - Reaction';        // Tunnel
     if (has('reaction')) return 'Action - Reaction';

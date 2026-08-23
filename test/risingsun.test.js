@@ -355,14 +355,14 @@ console.log('=== R2: 影(Shadow)＝シャッフルするとき「シャッフル
 }
 {
   /* 「獲得したときは底に置かない」＝シャッフル以外では動かさない。
-     公開APIだけで確かめる＝物見やぐら(watchtower)で山札の上に置く経路を使う。 */
+     公開APIだけで確かめる＝望楼(watchtower)で山札の上に置く経路を使う。 */
   const K = ['ninja', 'watchtower'].concat(K_NONE.slice(0, 8));
   let s = mk(K, 2);
   s.turn.phase = 'buy'; s.turn.coins = 4; s.turn.buys = 1;
   s.players[0].hand = ['watchtower'];
   s.players[0].deck = ['copper', 'copper'];
   s = E.reduce(s, { type: 'BUY', card: 'ninja' });
-  // 物見やぐらの窓（公開して山札の上へ）が開く
+  // 望楼の窓（公開して山札の上へ）が開く
   if (s.pending && /watchtower/.test(s.pending.type)) {
     s = E.reduce(s, { type: 'WATCHTOWER_CHOOSE', mode: 'deck' });
   }
@@ -473,7 +473,7 @@ console.log('=== R2: 影は「手札」ではない（数えない）／「所�
   const p = s.players[0];
   p.hand = ['copper', 'estate']; p.deck = ['ninja', 'alley']; p.discard = []; p.inPlay = [];
   ok(p.hand.length === 2, '山札の影札は手札の枚数に数えない（手札は2枚のまま）');
-  // 所有カードには数える（庭園/品評会/絹の道は allCards を見る）
+  // 所有カードには数える（庭園/品評会/シルクロードは allCards を見る）
   const all = E.allCards(p);
   ok(all.indexOf('ninja') >= 0 && all.indexOf('alley') >= 0, '**所有カードには数える**（山札の底も所有カード）');
   ok(all.length === 4, '所有カード合計は4枚');
@@ -541,7 +541,7 @@ const ENDTURN = (s) => E.reduce(E.reduce(s, { type: 'END_ACTION_PHASE' }), { typ
 const A_WINDOWS = [
   { key: 'throne', jp: '玉座の間', pending: 'throne', act: 'THRONE_CHOOSE',
     setup: (s) => PLAY(setHand(s, ['throne_room']), 'throne_room') },
-  { key: 'kings_court', jp: '王の宮廷', pending: 'kings_court', act: 'KINGS_COURT_CHOOSE',
+  { key: 'kings_court', jp: '宮廷', pending: 'kings_court', act: 'KINGS_COURT_CHOOSE',
     setup: (s) => PLAY(setHand(s, ['kings_court']), 'kings_court') },
   { key: 'procession', jp: '行進', pending: 'procession', act: 'PROCESSION_CHOOSE',
     setup: (s) => PLAY(setHand(s, ['procession']), 'procession') },
@@ -757,7 +757,7 @@ console.log('=== R2: playPlayable の対称性＝航海(Voyage)の3枚制限・�
   }
   /* (d) 群Aの各窓：**影札を使ったときの handPlays の増分**が、
          **同じ窓で手札の普通のアクションを使ったときの増分**と等しいこと（＝差分検査）。
-     絶対値で「必ず +1」とは書かない：王の宮廷/行進など、もともと handPlays を数えない窓が
+     絶対値で「必ず +1」とは書かない：宮廷/行進など、もともと handPlays を数えない窓が
      既存の許容簡略化として在り（§0-29 A4「主要経路にだけ通してある」）、それを赤にしても意味がないため。
      ここで守りたいのは**「影札のときだけ数えない抜け道ができていないか」**という対称性そのもの。 */
   A_WINDOWS.forEach((w) => {

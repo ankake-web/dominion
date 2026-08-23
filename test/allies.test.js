@@ -282,7 +282,7 @@ console.log('=== 同盟 A2: 既存機構との配線 ===');
   ok(tdiff(t0, tally(s)).length === 0, 'サプライ廃棄で保存則が壊れない');
 }
 {
-  // 交易商人：獲得しかけたカードを山へ戻す＝一番上に載る
+  // 交易人：獲得しかけたカードを山へ戻す＝一番上に載る
   const s = mk();
   s.augurs = s.augurs.slice(4); s.supply.augurs = s.augurs.length; // 侍祭が一番上の状態
   ok(E.returnToPile(s, 'herb_gatherer') === true, '中身のカードを山へ戻せる');
@@ -500,7 +500,7 @@ function dig(s, pile, n) { s[pile] = s[pile].slice(n); s.supply[pile] = s[pile].
   const t0 = tally(s);
   s = reduce(s, { type: 'SQUIRE_TRASH_GAIN', card: 'clashes' });
   ok(s.pending === null && count(s.players[0].discard, 'archer') === 1,
-    '従者の獲得が受理される（gate と受理が同じ述語＝CPU が同じ手を返し続けない）');
+    '寵臣の獲得が受理される（gate と受理が同じ述語＝CPU が同じ手を返し続けない）');
   ok(tdiff(t0, tally(s)).length === 0, '保存則が壊れない');
 }
 {
@@ -1097,12 +1097,12 @@ console.log('=== A3: 高原の羊飼い（好意 × コストちょうど$2 の�
   ok(r.scores[0].vp === 2 + 6, '得点に加算される（屋敷2点＋6点）: ' + r.scores[0].vp);
 }
 {
-  // 薬剤師（Apothecary＝$2＋ポーション）は「ちょうど$2」ではない＝数えない（公式FAQ・成分別の厳密一致）
+  // 薬師（Apothecary＝$2＋ポーション）は「ちょうど$2」ではない＝数えない（公式FAQ・成分別の厳密一致）
   let s = mkAlly('plateau_shepherds', ['bauble', 'apothecary', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival']);
   s.players[0].favors = 3;
   s.players[0].deck = []; s.players[0].discard = []; s.players[0].inPlay = [];
   s.players[0].hand = ['apothecary', 'apothecary'];
-  ok(E.scoreGame(s).scores[0].allyVp === 0, '薬剤師（$2+ポーション）はペアにできない');
+  ok(E.scoreGame(s).scores[0].allyVp === 0, '薬師（$2+ポーション）はペアにできない');
   s.players[0].hand = ['apothecary', 'moat'];
   ok(E.scoreGame(s).scores[0].allyVp === 2, '素の$2（堀）だけが1ペア＝2VP');
 }
@@ -1176,7 +1176,7 @@ console.log('=== A3: 敵対レビュー回帰（確定7件） ===');
   k.turn.phase = 'action'; k.turn.actions = 1;
   k = reduce(k, { type: 'PLAY_ACTION', card: 'kings_court' });
   k = reduce(k, { type: 'KINGS_COURT_CHOOSE', card: 'underling' });
-  ok(k.turn.coins === 3, '王の宮廷×連携＝3回誘発する（+$3）: ' + k.turn.coins);
+  ok(k.turn.coins === 3, '宮廷×連携＝3回誘発する（+$3）: ' + k.turn.coins);
   // 冠で財宝の連携（道化棒）を2回使う＝2回目のプレイでも窓が開く
   let c = mk(['bauble', 'crown', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival'], { ally: 'league_of_shopkeepers' });
   c.players[0].favors = 6; c.players[0].hand = ['crown', 'bauble'];

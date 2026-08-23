@@ -156,15 +156,15 @@ console.log('=== 停泊所: 脇置き→次手番に手札へ戻る ===');
   ok(s.players[0].hand.includes(stashed), '停泊所: 脇置きカードが手札に戻った');
 }
 
-console.log('=== 潮だまり: +3カード / 次手番開始時に強制2枚捨て ===');
+console.log('=== 潮溜り: +3カード / 次手番開始時に強制2枚捨て ===');
 {
   let s = fresh(['tide_pools', 'copper', 'estate']);
   s = playAuto(s, 'tide_pools'); // +3カード+1アクション
-  ok(s.players[0].hand.length === 5, `潮だまりday1: 2他札+3ドロー=5 (実 ${s.players[0].hand.length})`);
+  ok(s.players[0].hand.length === 5, `潮溜りday1: 2他札+3ドロー=5 (実 ${s.players[0].hand.length})`);
   s = endTurn(s); // →席1
   // 席0の手番開始時、強制2捨て pending が立つ→CPUが解決（endTurn内で消化）
   s = endTurn(s); // 席1→席0（開始時に2捨てを消化済み）
-  ok(s.turn.active === 0 && !s.pending, '潮だまり: 開始時の2枚捨てを解決して手番継続');
+  ok(s.turn.active === 0 && !s.pending, '潮溜り: 開始時の2枚捨てを解決して手番継続');
 }
 
 console.log('=== 策士: 手札全捨て→次手番 +5カード+1購入+1アクション ===');
@@ -288,17 +288,17 @@ console.log('=== 前哨地: 手札3枚の追加ターン（連鎖しない）===
   ok(s.turn.active === 1, '前哨地: 追加ターン後は相手へ（連鎖しない）');
 }
 
-console.log('=== 私掠船: 相手のターン最初の銀貨/金貨を廃棄（コインは入る）===');
+console.log('=== コルセア: 相手のターン最初の銀貨/金貨を廃棄（コインは入る）===');
 {
   let s = mkA(); s.players[0].hand = ['corsair'];
   s = playFull(s, 'corsair');
-  ok(s.turn.coins === 2, '私掠船 +2コイン');
+  ok(s.turn.coins === 2, 'コルセア +2コイン');
   s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' }); // →席1
   s = reduce(s, { type: 'END_ACTION_PHASE' }); // 席1を購入フェイズへ
   s.players[1].hand = ['silver', 'copper'];
   s = reduce(s, { type: 'PLAY_TREASURE', card: 'silver' });
-  ok(s.trash.includes('silver'), '私掠船: 相手の最初の銀貨を廃棄');
-  ok(s.turn.coins === 2, '私掠船: 廃棄してもコインは入る（銀貨+2）');
+  ok(s.trash.includes('silver'), 'コルセア: 相手の最初の銀貨を廃棄');
+  ok(s.turn.coins === 2, 'コルセア: 廃棄してもコインは入る（銀貨+2）');
 }
 
 console.log('=== 封鎖: 4コスト以下を脇に置き次手番手札へ / 相手が同名獲得で呪い ===');
@@ -333,10 +333,10 @@ console.log('=== 封鎖+堀: プレイ時に堀を公開した相手はこの封
   ok(count(s.players[1].discard, 'curse') === before, `封鎖+堀: 免疫者は同名(${gained})獲得でも呪いを受けない`);
 }
 
-console.log('=== 封鎖×2（同名）: 同じプレイヤーが同名に2つ封鎖を伏せると呪い2枚（玉座/王の宮廷相当）===');
+console.log('=== 封鎖×2（同名）: 同じプレイヤーが同名に2つ封鎖を伏せると呪い2枚（玉座/宮廷相当）===');
 {
   let s = mkA();
-  // 席0が銀貨に対して2つの封鎖を伏せている状態（玉座の間/王の宮廷での複製に相当）を直接構築。
+  // 席0が銀貨に対して2つの封鎖を伏せている状態（玉座の間/宮廷での複製に相当）を直接構築。
   s.players[0].delayedEffects = [
     { card: 'blockade', type: 'blockade', gained: 'silver', immune: [] },
     { card: 'blockade', type: 'blockade', gained: 'silver', immune: [] },

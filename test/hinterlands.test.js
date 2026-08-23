@@ -1,10 +1,10 @@
 /* 異郷（Hinterlands）ゲームロジックの検証（Node 単体実行）
    使い方: node test/hinterlands.test.js
-   対象: on-gain トリガー(キャッシュ/大使館/不正利得/遊牧民の野営地/役人/国境の村/宿屋/スーク) /
-         on-buy(値切り屋/農地/高貴な山賊) / on-discard(トンネル/小道/織工) / on-trash(遊牧民) /
-         可変VP(絹の道) / コスト軽減(街道) / 愚者の黄金(価値/属州リアクション) / 交易商人(獲得置換) /
-         アタック(辺境伯/神託/高貴な山賊/狂戦士/魔女の小屋/大釜) / 番犬リアクション / 策謀(片付け) /
-         岐路/開発/何でも屋/香辛料商人/地図職人/公爵夫人/車大工/CPU通し・保存則 */
+   対象: on-gain トリガー(埋蔵金/大使館/不正利得/遊牧民の野営地/官吏/国境の村/宿屋/スーク) /
+         on-buy(値切り屋/農地/義賊) / on-discard(坑道/進路/織工) / on-trash(遊牧民) /
+         可変VP(シルクロード) / コスト軽減(街道) / 愚者の黄金(価値/属州リアクション) / 交易人(獲得置換) /
+         アタック(辺境伯/神託/義賊/狂戦士/魔女の小屋/大釜) / 番犬リアクション / 画策(片付け) /
+         岐路/開発/よろずや/香辛料商人/地図職人/公爵夫人/車大工/CPU通し・保存則 */
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -51,16 +51,16 @@ console.log('=== 異郷: CARD_SET 昇格 ===');
   ok(HK.length === 35, '異郷プールは35種');
 }
 
-/* ============ 可変VP：絹の道 ============ */
-console.log('=== 絹の道: 勝利点カード4枚毎に1点 ===');
+/* ============ 可変VP：シルクロード ============ */
+console.log('=== シルクロード: 勝利点カード4枚毎に1点 ===');
 {
   const s = mkK(['silk_road', 'oasis']);
   const p = s.players[0];
   p.deck = []; p.hand = []; p.discard = []; p.inPlay = [];
   p.deck = ['silk_road', 'silk_road', 'estate', 'estate', 'duchy', 'province', 'copper', 'copper'];
-  // 勝利点カード = silk_road×2, estate×2, duchy, province = 6枚 → 6/4 = 1 → 絹の道1枚につき1点 ×2枚 = 2点
-  // 固定: estate2×1 + duchy3 + province6 = 11、絹の道の変動 = 2 → 合計 13
-  ok(E.vpOf(p) === 13, '絹の道の可変VP = 2（勝利点6枚/4=1、×2枚）→合計13');
+  // 勝利点カード = silk_road×2, estate×2, duchy, province = 6枚 → 6/4 = 1 → シルクロード1枚につき1点 ×2枚 = 2点
+  // 固定: estate2×1 + duchy3 + province6 = 11、シルクロードの変動 = 2 → 合計 13
+  ok(E.vpOf(p) === 13, 'シルクロードの可変VP = 2（勝利点6枚/4=1、×2枚）→合計13');
 }
 
 /* ============ コスト軽減：街道 ============ */
@@ -73,15 +73,15 @@ console.log('=== 街道: 場にある間 全カード -1コスト ===');
   ok(E.cardCost(s, 'oasis') === 2, 'オアシス($3)が街道で$2');
 }
 
-/* ============ トンネル: クリンナップ以外で捨てたとき金貨 ============ */
-console.log('=== トンネル: 捨てたとき公開して金貨獲得（オアシスで捨てる）===');
+/* ============ 坑道: クリンナップ以外で捨てたとき金貨 ============ */
+console.log('=== 坑道: 捨てたとき公開して金貨獲得（オアシスで捨てる）===');
 {
   let s = setup(['oasis', 'tunnel'], ['oasis', 'tunnel', 'copper', 'copper', 'copper']);
   s = playAct(s, 'oasis'); // +1カード+1アクション+1コイン、手札1枚捨てる pending
   ok(s.pending && s.pending.type === 'oasis', 'オアシスの捨て札 pending');
-  s = reduce(s, { type: 'OASIS_RESOLVE', card: 'tunnel' }); // トンネルを捨てる
-  ok(count(s.players[0].discard, 'gold') === 1, 'トンネルを捨てて金貨1枚を獲得');
-  ok(count(s.players[0].discard, 'tunnel') === 1, 'トンネル本体は捨て札に');
+  s = reduce(s, { type: 'OASIS_RESOLVE', card: 'tunnel' }); // 坑道を捨てる
+  ok(count(s.players[0].discard, 'gold') === 1, '坑道を捨てて金貨1枚を獲得');
+  ok(count(s.players[0].discard, 'tunnel') === 1, '坑道本体は捨て札に');
 }
 
 /* ============ 愚者の黄金: 1枚目$1・2枚目$4／属州リアクション ============ */
@@ -104,12 +104,12 @@ console.log('=== 愚者の黄金: プレイ価値と属州リアクション ===
 }
 
 /* ============ on-gain 自動効果 ============ */
-console.log('=== on-gain: キャッシュ/大使館/不正利得/遊牧民の野営地/役人 ===');
+console.log('=== on-gain: 埋蔵金/大使館/不正利得/遊牧民の野営地/官吏 ===');
 {
-  // キャッシュ：獲得で銅貨2枚
+  // 埋蔵金：獲得で銅貨2枚
   let s = mkK(['cache', 'oasis']); s.turn.phase = 'buy'; s.turn.coins = 5; s.turn.buys = 1;
   s = reduce(s, { type: 'BUY', card: 'cache' });
-  ok(count(s.players[0].discard, 'copper') === 2 && count(s.players[0].discard, 'cache') === 1, 'キャッシュ獲得で銅貨2枚');
+  ok(count(s.players[0].discard, 'copper') === 2 && count(s.players[0].discard, 'cache') === 1, '埋蔵金獲得で銅貨2枚');
   // 大使館：獲得で他プレイヤーが銀貨
   let s2 = mkK(['embassy', 'oasis']); s2.turn.phase = 'buy'; s2.turn.coins = 5; s2.turn.buys = 1;
   s2 = reduce(s2, { type: 'BUY', card: 'embassy' });
@@ -122,11 +122,11 @@ console.log('=== on-gain: キャッシュ/大使館/不正利得/遊牧民の野
   let s4 = mkK(['nomad_camp', 'oasis']); s4.turn.phase = 'buy'; s4.turn.coins = 4; s4.turn.buys = 1;
   s4 = reduce(s4, { type: 'BUY', card: 'nomad_camp' });
   ok(s4.players[0].deck[0] === 'nomad_camp', '遊牧民の野営地は獲得で山札の上');
-  // 役人：獲得で場の財宝を山札の上（購入時は場に出た財宝で払う→場の財宝が上へ）
+  // 官吏：獲得で場の財宝を山札の上（購入時は場に出た財宝で払う→場の財宝が上へ）
   let s5 = setup(['mandarin', 'oasis'], ['gold', 'gold', 'gold']); s5.turn.phase = 'buy';
   s5 = reduce(s5, { type: 'PLAY_ALL_TREASURES' }); // 金貨3枚を場に
   s5 = reduce(s5, { type: 'BUY', card: 'mandarin' });
-  ok(count(s5.players[0].deck.slice(0, 3), 'gold') === 3, '役人獲得で場の財宝(金貨3)が山札の上');
+  ok(count(s5.players[0].deck.slice(0, 3), 'gold') === 3, '官吏獲得で場の財宝(金貨3)が山札の上');
 }
 
 /* ============ 遊牧民: 獲得/廃棄で+2コイン ============ */
@@ -177,18 +177,18 @@ console.log('=== 香辛料商人: 財宝を廃棄→+2カード+1アクション
   ok(s.players[0].hand.length === before + 2 && s.turn.actions === 1, '+2カード +1アクション');
 }
 
-/* ============ 交易商人: 廃棄→銀貨／獲得置換リアクション ============ */
-console.log('=== 交易商人: コストぶん銀貨／獲得を銀貨に置換 ===');
+/* ============ 交易人: 廃棄→銀貨／獲得置換リアクション ============ */
+console.log('=== 交易人: コストぶん銀貨／獲得を銀貨に置換 ===');
 {
   let s = setup(['trader', 'oasis'], ['trader', 'estate', 'copper']);
   s = playAct(s, 'trader');
   s = reduce(s, { type: 'TRADER_TRASH', card: 'estate' }); // estate=$2 → 銀貨2枚
-  ok(count(s.players[0].discard, 'silver') === 2 && count(s.trash, 'estate') === 1, '交易商人：$2廃棄→銀貨2枚');
-  // 獲得置換：手札に交易商人を持ち、（他の獲得時対話を持たない）カードを獲得→銀貨に置換
+  ok(count(s.players[0].discard, 'silver') === 2 && count(s.trash, 'estate') === 1, '交易人：$2廃棄→銀貨2枚');
+  // 獲得置換：手札に交易人を持ち、（他の獲得時対話を持たない）カードを獲得→銀貨に置換
   //   ※国境の村/宿屋等は自身の獲得時効果が優先されるため、置換対象は対話を持たない札（辺境伯）で検証。
   let s2 = setup(['trader', 'margrave'], ['trader']); s2.turn.phase = 'buy'; s2.turn.coins = 5; s2.turn.buys = 1;
   s2 = reduce(s2, { type: 'BUY', card: 'margrave' }); // 獲得→trader反応窓
-  ok(s2.pending && s2.pending.type === 'trader_react', '交易商人の獲得置換リアクション窓');
+  ok(s2.pending && s2.pending.type === 'trader_react', '交易人の獲得置換リアクション窓');
   s2 = reduce(s2, { type: 'TRADER_REACT', reveal: true });
   ok(count(s2.players[0].discard, 'silver') === 1 && count(s2.players[0].discard, 'margrave') === 0, '辺境伯の代わりに銀貨を獲得（本体はサプライへ戻る）');
   ok(s2.supply.margrave === 10, 'サプライの辺境伯が戻る（10）');
@@ -218,14 +218,14 @@ console.log('=== 神託: 各自の上2枚を操作→使用者+2カード ===');
   ok(s.players[0].hand.length >= h0 - 1 + 2, '使用者は最後に+2カード（自分の上2枚の処理後）');
 }
 
-/* ============ アタック: 高貴な山賊（相手の銀/金を奪う）============ */
-console.log('=== 高貴な山賊: 相手の上2枚から銀/金を奪う・財宝なしは銅貨 ===');
+/* ============ アタック: 義賊（相手の銀/金を奪う）============ */
+console.log('=== 義賊: 相手の上2枚から銀/金を奪う・財宝なしは銅貨 ===');
 {
   let s = setup(['noble_brigand', 'oasis'], ['noble_brigand', 'copper']);
   s.players[1].deck = ['gold', 'estate', 'copper'];
   s = playAct(s, 'noble_brigand'); // +1コイン＋アタック（gold1枚→使用者が奪う）
   s = autoResolve(s);
-  ok(s.turn.coins === 1, '高貴な山賊 +1コイン');
+  ok(s.turn.coins === 1, '義賊 +1コイン');
   ok(count(s.players[0].discard, 'gold') === 1, '相手の金貨を廃棄して使用者が獲得');
   // 財宝を公開しなかった相手は銅貨
   let s2 = setup(['noble_brigand', 'oasis'], ['noble_brigand', 'copper']);
@@ -373,29 +373,29 @@ console.log('=== 車大工: +1カード+1アクション、捨てて そのコ�
   ok(!s.pending, '車大工が完走');
 }
 
-/* ============ 策謀: 片付けで場のアクションを山札の上へ ============ */
-console.log('=== 策謀: このターンのクリンナップ時 場のアクションを山札の上へ ===');
+/* ============ 画策: 片付けで場のアクションを山札の上へ ============ */
+console.log('=== 画策: このターンのクリンナップ時 場のアクションを山札の上へ ===');
 {
   let s = setup(['scheme', 'margrave', 'oasis'], ['scheme', 'margrave', 'copper', 'copper', 'copper']);
   s = playAct(s, 'scheme'); // +1c+1a、schemes=1
   s = playAct(s, 'margrave'); // 場に margrave（アタックは相手手札次第）
   s = autoResolve(s);
   s.turn.phase = 'buy';
-  s = reduce(s, { type: 'END_TURN' }); // 策謀で場のアクションを山札の上へ pending
-  ok(s.pending && s.pending.type === 'scheme_cleanup', '策謀の片付け pending');
+  s = reduce(s, { type: 'END_TURN' }); // 画策で場のアクションを山札の上へ pending
+  ok(s.pending && s.pending.type === 'scheme_cleanup', '画策の片付け pending');
   s = reduce(s, { type: 'SCHEME_CLEANUP', cards: ['margrave'] });
   // 山札の上に置いた辺境伯は、片付け後の次の手札ドローで引かれる（＝次ターンに使える）。
   ok(count(s.players[0].hand, 'margrave') === 1, '辺境伯を山札の上に置き、次の手札に引かれた');
 }
 
-/* ============ 何でも屋: 銀貨獲得＋上を捨て可＋5枚まで＋非財宝廃棄可 ============ */
-console.log('=== 何でも屋: 銀貨→上を捨て→5枚まで→非財宝1枚廃棄 ===');
+/* ============ よろずや: 銀貨獲得＋上を捨て可＋5枚まで＋非財宝廃棄可 ============ */
+console.log('=== よろずや: 銀貨→上を捨て→5枚まで→非財宝1枚廃棄 ===');
 {
   let s = setup(['jack_of_all_trades', 'oasis'], ['jack_of_all_trades'], ['curse', 'copper', 'copper', 'copper', 'copper', 'copper']);
   s = playAct(s, 'jack_of_all_trades');
   ok(count(s.players[0].discard, 'silver') === 1 || count(s.players[0].deck, 'silver') === 1 || count(s.players[0].hand, 'silver') === 1, '銀貨を獲得');
   s = autoResolve(s);
-  ok(!s.pending, '何でも屋が完走');
+  ok(!s.pending, 'よろずやが完走');
   ok(s.players[0].hand.length >= 4, '手札5枚まで引いた（初手のジャック除き）');
 }
 
@@ -422,8 +422,8 @@ console.log('=== 地図職人: +1c+1a、上4枚を捨て/山札の上へ ===');
   ok(count(s.players[0].discard, 'estate') === 1 && s.players[0].deck[0] === 'gold', '不要札を捨て、良い札を山札の上へ');
 }
 
-/* ============ 回帰: 神託の自分対象でトンネル捨て→交易商人で攻撃キューが潰れない ============ */
-console.log('=== 回帰: 神託 自分対象＋トンネル＋交易商人（攻撃キュー保護）===');
+/* ============ 回帰: 神託の自分対象で坑道捨て→交易人で攻撃キューが潰れない ============ */
+console.log('=== 回帰: 神託 自分対象＋坑道＋交易人（攻撃キュー保護）===');
 {
   // p0 の山札上2枚に tunnel。手札に trader。oracle をプレイ→自分対象で tunnel を捨てる→金貨獲得。
   // 修正前は tunnel の金貨獲得で trader_react が立ち、残りの被害者＋使用者の+2カードが消えていた。
@@ -432,9 +432,9 @@ console.log('=== 回帰: 神託 自分対象＋トンネル＋交易商人（攻
   s = playAct(s, 'oracle');
   ok(s.pending && s.pending.type === 'oracle' && s.pending.stage === 'decide' && s.pending.victim === 0, '神託：まず自分の上2枚を決定');
   s = reduce(s, { type: 'ORACLE_DECIDE', discard: true }); // tunnel+estate を捨てる
-  ok(count(s.players[0].discard, 'gold') === 1, 'トンネルで金貨を獲得');
+  ok(count(s.players[0].discard, 'gold') === 1, '坑道で金貨を獲得');
   ok(s.pending == null || s.pending.type === 'oracle', '獲得置換(trader_react)は立たず 神託が継続する');
-  ok(s.players[0].hand.includes('trader'), '交易商人は手札に残る（抑止された）');
+  ok(s.players[0].hand.includes('trader'), '交易人は手札に残る（抑止された）');
   s = autoResolve(s);
   ok(!s.pending, '神託が完走（攻撃キューが潰れない）');
 }

@@ -1,5 +1,5 @@
 /* 繁栄（Prosperity 第二版）UI スモーク（jsdom）
-   各 pending の選択モーダルが描画でき、盤面にプラチナ貨/植民地/VPトークンが出るかを確認。
+   各 pending の選択モーダルが描画でき、盤面に白金貨/植民地/VPトークンが出るかを確認。
    使い方: node test/prosperity-ui.test.js */
 const fs = require('fs');
 const path = require('path');
@@ -43,12 +43,12 @@ try {
   console.log('=== 繁栄セットは10種・実在 ===');
   ok(K.length === 10 && K.every((id) => DOM.CARDS[id]), '繁栄KINGDOMは10種・全て実在');
 
-  console.log('=== 盤面：プラチナ貨/植民地の山・VPトークンが表示される ===');
+  console.log('=== 盤面：白金貨/植民地の山・VPトークンが表示される ===');
   {
     let s = mk();
     s.players[0].vpTokens = 7;
     show(s);
-    ok($('[data-pile="platinum"]') && !runtimeError, '盤面にプラチナ貨の山');
+    ok($('[data-pile="platinum"]') && !runtimeError, '盤面に白金貨の山');
     ok($('[data-pile="colony"]'), '盤面に植民地の山');
     ok(byText('.mat-label', '勝利点トークン') && byText('.mat-label', '7'), 'VPトークン 7点 が表示される');
   }
@@ -56,31 +56,31 @@ try {
   console.log('=== 各 pending の選択モーダルが描画できる ===');
   { let s = pend({ type: 'bishop', stage: 'trash', player: 0 }); s.players[0].hand = ['gold', 'estate']; show(s); ok($('.modal') && byText('*', '司教') && !runtimeError, '司教 廃棄モーダル'); }
   { let s = pend({ type: 'bishop', stage: 'other', player: 0 }); s.players[0].hand = ['estate', 'copper']; show(s); ok($('.modal') && byText('button', '廃棄しない') && !runtimeError, '司教 他者廃棄モーダル'); }
-  { let s = pend({ type: 'vault', stage: 'discard', player: 0 }); s.players[0].hand = ['estate', 'copper', 'gold']; show(s); ok($('.modal') && byText('*', '金庫室') && !runtimeError, '金庫室 捨てモーダル'); }
-  { let s = pend({ type: 'vault', stage: 'other', player: 0 }); s.players[0].hand = ['estate', 'copper']; show(s); ok($('.modal') && byText('button', '捨てない') && !runtimeError, '金庫室 他者モーダル'); }
+  { let s = pend({ type: 'vault', stage: 'discard', player: 0 }); s.players[0].hand = ['estate', 'copper', 'gold']; show(s); ok($('.modal') && byText('*', '保管庫') && !runtimeError, '保管庫 捨てモーダル'); }
+  { let s = pend({ type: 'vault', stage: 'other', player: 0 }); s.players[0].hand = ['estate', 'copper']; show(s); ok($('.modal') && byText('button', '捨てない') && !runtimeError, '保管庫 他者モーダル'); }
   { let s = pend({ type: 'mint', player: 0 }); s.players[0].hand = ['gold', 'estate']; show(s); ok($('.modal') && byText('button', '公開しない') && !runtimeError, '造幣所モーダル'); }
   { let s = pend({ type: 'expand', stage: 'trash', player: 0 }); s.players[0].hand = ['estate']; show(s); ok($('.modal') && byText('*', '拡張') && !runtimeError, '拡張 廃棄モーダル'); }
   { let s = pend({ type: 'expand', stage: 'gain', player: 0, maxCost: 5 }); show(s); ok($('.modal') && !runtimeError, '拡張 獲得モーダル'); }
-  { let s = pend({ type: 'forge', stage: 'trash', player: 0 }); s.players[0].hand = ['estate', 'copper']; show(s); ok($('.modal') && byText('*', '溶鉱炉') && !runtimeError, '溶鉱炉 廃棄モーダル'); }
-  { let s = pend({ type: 'forge', stage: 'gain', player: 0, exact: 4 }); show(s); ok($('.modal') && !runtimeError, '溶鉱炉 獲得モーダル'); }
-  { let s = pend({ type: 'kings_court', player: 0 }); s.players[0].hand = ['monument', 'copper']; show(s); ok($('.modal') && byText('*', '王の宮廷') && !runtimeError, '王の宮廷モーダル'); }
+  { let s = pend({ type: 'forge', stage: 'trash', player: 0 }); s.players[0].hand = ['estate', 'copper']; show(s); ok($('.modal') && byText('*', '鍛造') && !runtimeError, '鍛造 廃棄モーダル'); }
+  { let s = pend({ type: 'forge', stage: 'gain', player: 0, exact: 4 }); show(s); ok($('.modal') && !runtimeError, '鍛造 獲得モーダル'); }
+  { let s = pend({ type: 'kings_court', player: 0 }); s.players[0].hand = ['monument', 'copper']; show(s); ok($('.modal') && byText('*', '宮廷') && !runtimeError, '宮廷モーダル'); }
   { let s = pend({ type: 'war_chest', stage: 'name', player: 1, source: 0 }); show(s); ok($('.modal') && byText('*', '軍用金') && !runtimeError, '軍用金 指定モーダル'); }
   { let s = pend({ type: 'war_chest', stage: 'gain', player: 0, source: 0 }); show(s); ok($('.modal') && !runtimeError, '軍用金 獲得モーダル'); }
-  { let s = pend({ type: 'watchtower', player: 0, card: 'duchy', dest: 'discard' }); show(s); ok($('.modal') && byText('button', '山札の上に置く') && byText('button', '廃棄する') && !runtimeError, '物見やぐらモーダル'); }
+  { let s = pend({ type: 'watchtower', player: 0, card: 'duchy', dest: 'discard' }); show(s); ok($('.modal') && byText('button', '山札の上に置く') && byText('button', '廃棄する') && !runtimeError, '望楼モーダル'); }
   { let s = pend({ type: 'tiara_topdeck', player: 0, card: 'gold', dest: 'discard' }); show(s); ok($('.modal') && byText('button', '山札の上に置く') && !runtimeError, 'ティアラ 山札上モーダル'); }
   { let s = pend({ type: 'tiara_play', player: 0 }); s.players[0].hand = ['gold', 'silver']; show(s); ok($('.modal') && byText('button', '使わない') && !runtimeError, 'ティアラ 2回使うモーダル'); }
   { let s = pend({ type: 'anvil', stage: 'discard', player: 0 }); s.players[0].hand = ['copper', 'estate']; show(s); ok($('.modal') && byText('button', '捨てない') && !runtimeError, '金床 捨てモーダル'); }
   { let s = pend({ type: 'anvil', stage: 'gain', player: 0 }); show(s); ok($('.modal') && !runtimeError, '金床 獲得モーダル'); }
-  { let s = pend({ type: 'investment', player: 0 }); s.players[0].hand = ['gold']; show(s); ok($('.modal') && byText('button', '+1 コイン') && !runtimeError, '投資 選択モーダル'); }
-  { let s = pend({ type: 'investment', stage: 'trash', player: 0 }); s.players[0].hand = ['gold', 'silver']; show(s); ok($('.modal') && byText('*', '投資') && !runtimeError, '投資 廃棄モーダル'); }
-  { let s = pend({ type: 'crystal_ball', player: 0, card: 'monument' }); show(s); ok($('.modal') && byText('button', '使う') && byText('button', '廃棄する') && !runtimeError, '水晶玉モーダル'); }
-  { let s = pend({ type: 'charlatan', stage: 'react', player: 1, source: 0, victim: 1, queue: [] }); s.players[1].hand = ['moat']; show(s); ok($('.modal') && byText('button', '受ける') && !runtimeError, 'ペテン師リアクション'); }
-  { let s = pend({ type: 'rabble', stage: 'react', player: 1, source: 0, victim: 1, queue: [] }); s.players[1].hand = ['moat']; show(s); ok($('.modal') && byText('button', '受ける') && !runtimeError, '群衆リアクション'); }
-  { let s = pend({ type: 'clerk', stage: 'react', player: 1, source: 0, victim: 1, queue: [] }); s.players[1].hand = ['moat']; show(s); ok($('.modal') && byText('button', '受ける') && !runtimeError, '会計士リアクション'); }
-  { let s = pend({ type: 'clerk', stage: 'topdeck', player: 1, source: 0, victim: 1, queue: [] }); s.players[1].hand = ['copper', 'estate', 'gold', 'silver', 'duchy']; show(s); ok($('.modal') && byText('*', '会計士') && !runtimeError, '会計士 山札上モーダル'); }
+  { let s = pend({ type: 'investment', player: 0 }); s.players[0].hand = ['gold']; show(s); ok($('.modal') && byText('button', '+1 コイン') && !runtimeError, '出資 選択モーダル'); }
+  { let s = pend({ type: 'investment', stage: 'trash', player: 0 }); s.players[0].hand = ['gold', 'silver']; show(s); ok($('.modal') && byText('*', '出資') && !runtimeError, '出資 廃棄モーダル'); }
+  { let s = pend({ type: 'crystal_ball', player: 0, card: 'monument' }); show(s); ok($('.modal') && byText('button', '使う') && byText('button', '廃棄する') && !runtimeError, '水晶球モーダル'); }
+  { let s = pend({ type: 'charlatan', stage: 'react', player: 1, source: 0, victim: 1, queue: [] }); s.players[1].hand = ['moat']; show(s); ok($('.modal') && byText('button', '受ける') && !runtimeError, '山師リアクション'); }
+  { let s = pend({ type: 'rabble', stage: 'react', player: 1, source: 0, victim: 1, queue: [] }); s.players[1].hand = ['moat']; show(s); ok($('.modal') && byText('button', '受ける') && !runtimeError, '大衆リアクション'); }
+  { let s = pend({ type: 'clerk', stage: 'react', player: 1, source: 0, victim: 1, queue: [] }); s.players[1].hand = ['moat']; show(s); ok($('.modal') && byText('button', '受ける') && !runtimeError, '書記リアクション'); }
+  { let s = pend({ type: 'clerk', stage: 'topdeck', player: 1, source: 0, victim: 1, queue: [] }); s.players[1].hand = ['copper', 'estate', 'gold', 'silver', 'duchy']; show(s); ok($('.modal') && byText('*', '書記') && !runtimeError, '書記 山札上モーダル'); }
 
   console.log('=== カード一覧に繁栄が出る ===');
-  { UI.view = 'cardList'; DOM.render(); ok(byText('.section-h', '繁栄') && byText('.cardlist-grid .cname', '王の宮廷'), 'カード一覧に繁栄グループ＋王の宮廷'); }
+  { UI.view = 'cardList'; DOM.render(); ok(byText('.section-h', '繁栄') && byText('.cardlist-grid .cname', '宮廷'), 'カード一覧に繁栄グループ＋宮廷'); }
 } catch (e) {
   fail++; console.log('  ✗ 例外: ' + (e && e.stack || e));
 }

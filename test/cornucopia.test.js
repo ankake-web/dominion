@@ -1,8 +1,8 @@
 /* 収穫祭（Cornucopia）ゲームロジックの検証（Node 単体実行）
    使い方: node test/cornucopia.test.js
-   対象: reveal系（占い師/移動動物園/農村/狩猟団/収穫）/ アタック（占い師/道化師/家臣団/若き魔女）/
-         賞品Prizes山＋馬上槍試合 / 災いカードBane（若き魔女）/ 可変VP（品評会）/
-         馬商人リアクション / 豊穣の角・宝冠 / リメイク・小村・王女・頼もしい乗騎 */
+   対象: reveal系（占い師/移動動物園/農村/狩猟団/収穫）/ アタック（占い師/道化師/郎党/魔女娘）/
+         賞品Prizes山＋馬上槍試合 / 災いカードBane（魔女娘）/ 可変VP（品評会）/
+         馬商人リアクション / 豊穣の角笛・王冠 / 再建・村落・王女・名馬 */
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -47,7 +47,7 @@ console.log('=== 収穫祭セットアップ: 賞品山(tournament)・災いカ�
   const s = mk(['A', 'B'], 0);
   ['bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed'].forEach((id) =>
     ok(s.supply[id] === 1, `賞品 ${id} は1枚山（実 ${s.supply[id]}）`));
-  ok(s.baneCard && s.kingdom.includes(s.baneCard), '若き魔女の災いカードが11山目として存在: ' + s.baneCard);
+  ok(s.baneCard && s.kingdom.includes(s.baneCard), '魔女娘の災いカードが11山目として存在: ' + s.baneCard);
   ok(s.supply[s.baneCard] === (DOM.isType(s.baneCard, 'victory') ? 8 : 10), '災いカードは通常の購入可能なサプライ山: ' + s.baneCard + '×' + s.supply[s.baneCard]);
   ok(E.canBuyCard(s, 0, s.baneCard), '災いカードは購入できる（通常の王国カード）');
   ok(!E.canBuyCard(s, 0, 'princess'), '賞品は購入できない');
@@ -60,12 +60,12 @@ console.log('=== 収穫祭セットアップ: 賞品山(tournament)・災いカ�
   ok(s3.supply.bag_of_gold === undefined && s3.baneCard == null, 'tournament/young_witch 不在なら賞品山も災いも無い');
 }
 
-/* ============ 小村 hamlet ============ */
-console.log('=== 小村: +1カード+1アクション、捨てて+アクション/+購入 ===');
+/* ============ 村落 hamlet ============ */
+console.log('=== 村落: +1カード+1アクション、捨てて+アクション/+購入 ===');
 {
   let s = setup(['hamlet', 'estate', 'curse'], ['copper', 'silver', 'gold']);
   s = playAct(s, 'hamlet');
-  ok(s.turn.actions === 1 && count(s.players[0].hand, 'copper') === 1, '小村: +1カード（copperを引く）+1アクション（使用で差引1）');
+  ok(s.turn.actions === 1 && count(s.players[0].hand, 'copper') === 1, '村落: +1カード（copperを引く）+1アクション（使用で差引1）');
   ok(s.pending && s.pending.type === 'hamlet' && s.pending.stage === 'action', '捨て札選択(action)が出る');
   s = reduce(s, { type: 'HAMLET_DISCARD', card: 'estate' }); // 捨てて+1アクション
   ok(s.turn.actions === 2, '屋敷を捨てて +1アクション（計2）');
@@ -128,8 +128,8 @@ console.log('=== 収穫: 上4枚公開→捨て、異なる名前数だけ+コ�
   ok(s.players[0].discard.length === 4, '公開4枚は捨て札へ');
 }
 
-/* ============ リメイク remake ============ */
-console.log('=== リメイク: 廃棄→ちょうど$1高いカード獲得、を2回 ===');
+/* ============ 再建 remake ============ */
+console.log('=== 再建: 廃棄→ちょうど$1高いカード獲得、を2回 ===');
 {
   let s = setup(['remake', 'estate', 'copper'], ['x']);
   s = playAct(s, 'remake');
@@ -171,8 +171,8 @@ console.log('=== 馬上槍試合: 相手が属州を公開するとボーナス�
   ok(!s.pending && s.turn.coins === coinsBefore, '相手が公開→ボーナス無し（コイン増えず）');
 }
 
-/* ============ 若き魔女 young_witch ＋ 災いカード Bane ============ */
-console.log('=== 若き魔女: +2カード→手札2枚捨て→相手は呪い（災いカード公開で免れる） ===');
+/* ============ 魔女娘 young_witch ＋ 災いカード Bane ============ */
+console.log('=== 魔女娘: +2カード→手札2枚捨て→相手は呪い（災いカード公開で免れる） ===');
 {
   let s = setup(['young_witch', 'estate', 'estate'], ['copper', 'copper', 'silver'], { p1hand: ['copper', 'copper', 'copper', 'copper'] });
   s = playAct(s, 'young_witch');
@@ -182,7 +182,7 @@ console.log('=== 若き魔女: +2カード→手札2枚捨て→相手は呪い�
   ok(count(s.players[1].discard, 'curse') === 1, '相手は呪いを獲得');
   ok(!s.pending, '解決完了');
 }
-console.log('=== 若き魔女: 相手が災いカードを公開すれば呪いを免れる ===');
+console.log('=== 魔女娘: 相手が災いカードを公開すれば呪いを免れる ===');
 {
   let s = mk(['A', 'B'], 0);
   const bane = s.baneCard;
@@ -216,8 +216,8 @@ console.log('=== 道化師: 相手の山札上が勝利点なら呪い（選択�
   ok(!s.pending, '選択は発生しない');
 }
 
-/* ============ 家臣団 followers（賞品・アタック） ============ */
-console.log('=== 家臣団: +2カード＋屋敷獲得、相手は呪い＋手札3枚まで捨て ===');
+/* ============ 郎党 followers（賞品・アタック） ============ */
+console.log('=== 郎党: +2カード＋屋敷獲得、相手は呪い＋手札3枚まで捨て ===');
 {
   let s = setup(['followers'], ['copper', 'copper', 'copper'], { p1hand: ['copper', 'silver', 'gold', 'estate', 'duchy'] });
   s = playAct(s, 'followers');
@@ -261,8 +261,8 @@ console.log('=== 馬商人リアクション: 攻撃時に脇へ→次の自分�
   ok(count(s.players[1].setAside, 'horse_traders') === 0, '脇置きは解消');
 }
 
-/* ============ 豊穣の角 horn_of_plenty / 宝冠 diadem ============ */
-console.log('=== 豊穣の角: 場の異名数までのカードを獲得、勝利点ならこれを廃棄 ===');
+/* ============ 豊穣の角笛 horn_of_plenty / 王冠 diadem ============ */
+console.log('=== 豊穣の角笛: 場の異名数までのカードを獲得、勝利点ならこれを廃棄 ===');
 {
   let s = mk(['A', 'B'], 0);
   s.turn.phase = 'buy';
@@ -282,17 +282,17 @@ console.log('=== 豊穣の角: 場の異名数までのカードを獲得、勝�
   s2 = reduce(s2, { type: 'HORN_OF_PLENTY_GAIN', card: 'estate' });
   ok(count(s2.players[0].discard, 'estate') === 1 && count(s2.trash, 'horn_of_plenty') === 1 && count(s2.players[0].inPlay, 'horn_of_plenty') === 0, '勝利点獲得→角を廃棄');
 }
-console.log('=== 宝冠: +2コイン＋未使用アクション1つにつき+1コイン ===');
+console.log('=== 王冠: +2コイン＋未使用アクション1つにつき+1コイン ===');
 {
   let s = mk(['A', 'B'], 0);
   s.turn.phase = 'buy';
   s.turn.actions = 3;
   s.players[0].hand = ['diadem'];
   s = reduce(s, { type: 'PLAY_TREASURE', card: 'diadem' });
-  ok(s.turn.coins === 2 + 3, '宝冠: +2コイン + 未使用アクション3 = 5コイン 実:' + s.turn.coins);
+  ok(s.turn.coins === 2 + 3, '王冠: +2コイン + 未使用アクション3 = 5コイン 実:' + s.turn.coins);
 }
 
-/* ============ 賞品: 金貨袋 bag_of_gold / 王女 princess / 頼もしい乗騎 trusty_steed ============ */
+/* ============ 賞品: 金貨袋 bag_of_gold / 王女 princess / 名馬 trusty_steed ============ */
 console.log('=== 金貨袋: +1アクション＋金貨を山札の上に獲得 ===');
 {
   let s = setup(['bag_of_gold'], ['copper']);
@@ -307,7 +307,7 @@ console.log('=== 王女: +1購入＋場にある間 全カードのコスト-2 =
   ok(s.turn.buys === 2, '+1購入');
   ok(E.cardCost(s, 'gold') === 4 && E.cardCost(s, 'estate') === 0, '金貨6→4、屋敷2→0（-2、0未満なし）');
 }
-console.log('=== 頼もしい乗騎: 異なる2つを選ぶ（+2カード/+2アクション/+2コイン/銀貨4枚） ===');
+console.log('=== 名馬: 異なる2つを選ぶ（+2カード/+2アクション/+2コイン/銀貨4枚） ===');
 {
   let s = setup(['trusty_steed'], ['copper', 'copper', 'copper']);
   s = playAct(s, 'trusty_steed');
@@ -323,7 +323,7 @@ console.log('=== 頼もしい乗騎: 異なる2つを選ぶ（+2カード/+2ア�
   ok(s2.players[0].deck.length === 0 && s2.turn.actions === 2, '山札を捨て札へ＋2アクション');
   ok(s2.supply.silver === 36, '銀貨山が4枚減る');
 }
-console.log('=== 頼もしい乗騎: 同じ選択2つ・不正は拒否 ===');
+console.log('=== 名馬: 同じ選択2つ・不正は拒否 ===');
 {
   let s = setup(['trusty_steed'], ['copper']);
   s = playAct(s, 'trusty_steed');
@@ -388,7 +388,7 @@ console.log('=== 収穫祭ゲームでカード保存則が保たれる ===');
 }
 
 /* ============ レビュー指摘の回帰テスト（賞品の不正獲得防止 ほか） ============ */
-console.log('=== 回帰: 豊穣の角は賞品(Prize)を獲得できない（reducerが拒否）===');
+console.log('=== 回帰: 豊穣の角笛は賞品(Prize)を獲得できない（reducerが拒否）===');
 {
   let s = mk(['A', 'B'], 0);
   s.turn.phase = 'buy';
@@ -402,7 +402,7 @@ console.log('=== 回帰: 豊穣の角は賞品(Prize)を獲得できない（red
   const s3 = reduce(s, { type: 'HORN_OF_PLENTY_GAIN', card: 'copper' }); // 正規のカード
   ok(!s3.pending && count(s3.players[0].discard, 'copper') === 1, '通常カード(copper)は獲得できる');
 }
-console.log('=== 回帰: CPU は豊穣の角で賞品を選ばず銅貨等を獲得（無限ループしない）===');
+console.log('=== 回帰: CPU は豊穣の角笛で賞品を選ばず銅貨等を獲得（無限ループしない）===');
 {
   let s = mk(['A', 'B'], 0);
   s.turn.phase = 'buy';
@@ -423,7 +423,7 @@ console.log('=== 回帰: 闇市場デッキに賞品が混入しない ===');
   ok(Array.isArray(s.blackMarket), '闇市場デッキが作られる');
   ok(PRIZES.every((pz) => s.blackMarket.indexOf(pz) < 0), '闇市場デッキに賞品5種が含まれない');
 }
-console.log('=== 回帰: 頼もしい乗騎は選択順でなくカード記載順で解決（銀貨→山札捨ての前に+2カード）===');
+console.log('=== 回帰: 名馬は選択順でなくカード記載順で解決（銀貨→山札捨ての前に+2カード）===');
 {
   let s = setup(['trusty_steed'], ['copper', 'gold']); // 山札の上=copper,gold
   s = playAct(s, 'trusty_steed');

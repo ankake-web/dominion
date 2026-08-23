@@ -362,22 +362,22 @@ ok(md.players[0].deck.join(',') !== 'gold,estate,copper,province,silver', '自�
 ok(md.players[0].deck.slice().sort().join(',') === ['gold', 'estate', 'copper', 'province', 'silver'].sort().join(','), '中身の多重集合は同一（ソートで順序だけ消す）');
 ok(md.players[0].deck.join(',') === md.players[0].deck.slice().sort().join(','), '自分の山札はソート順で配信される');
 
-console.log('=== マスキング: 水晶玉で見た山札トップは相手席に伏せる（本人には見える）===');
+console.log('=== マスキング: 水晶球で見た山札トップは相手席に伏せる（本人には見える）===');
 s = E.createInitialState(['A', 'B']);
 s.players[0].deck = ['gold', 'copper'];
 s.pending = { type: 'crystal_ball', player: 0, card: 'gold' }; // 席0が山札トップ(gold)を看破中
 const cbSelf = E.maskStateFor(s, 0);
 const cbFoe = E.maskStateFor(s, 1);
-ok(cbSelf.pending.card === 'gold', '水晶玉: 本人(席0)には看破カードが見える');
-ok(cbFoe.pending.card === 'back', '水晶玉: 相手(席1)には看破カードを伏せる（山札トップの漏洩防止）');
+ok(cbSelf.pending.card === 'gold', '水晶球: 本人(席0)には看破カードが見える');
+ok(cbFoe.pending.card === 'back', '水晶球: 相手(席1)には看破カードを伏せる（山札トップの漏洩防止）');
 
-console.log('=== マスキング: 支配中は看破(水晶玉/衛兵)を決定者=支配者に開示し、無関係な席には伏せる ===');
+console.log('=== マスキング: 支配中は看破(水晶球/衛兵)を決定者=支配者に開示し、無関係な席には伏せる ===');
 {
   // 席0(A)が席1(B)を支配中。被支配者Bのpendingの看破は、決定者Aに見えないと 'back' 描画で render 例外になる。
   let sp = E.createInitialState(['A', 'B', 'C']);
   sp.turn.possessedBy = 0; sp.turn.active = 1;
   sp.pending = { type: 'crystal_ball', player: 1, card: 'gold' };
-  ok(E.maskStateFor(sp, 0).pending.card === 'gold', '支配中: 決定者=支配者(席0)に水晶玉の看破が見える（backでない＝クラッシュ防止）');
+  ok(E.maskStateFor(sp, 0).pending.card === 'gold', '支配中: 決定者=支配者(席0)に水晶球の看破が見える（backでない＝クラッシュ防止）');
   ok(E.maskStateFor(sp, 1).pending.card === 'gold', '支配中: 被支配者本人(席1)にも見える');
   ok(E.maskStateFor(sp, 2).pending.card === 'back', '支配中: 無関係な第三者(席2)には伏せる');
   sp.pending = { type: 'sentry', player: 1, cards: ['gold', 'estate'] };
@@ -541,7 +541,7 @@ ok(s2.pending && s2.pending.type === 'witch' && s2.pending.stage === 'react', '�
 s2 = E.reduce(s2, { type: 'MOAT_REVEAL' });
 ok(count(s2.players[1].discard, 'curse') === 0 && s2.pending === null, '堀で呪いを無効化');
 
-console.log('=== 役人: 銀貨を山札の上に、他は勝利点を山札の上に ===');
+console.log('=== 官吏: 銀貨を山札の上に、他は勝利点を山札の上に ===');
 s = E.createInitialState(['A', 'B']);
 s.players[0].hand = ['bureaucrat'];
 s.players[0].deck = ['copper'];
@@ -680,7 +680,7 @@ ok(s2.turn.coins === 4, '2回目の民兵が発火して合計+4コイン: ' + s
 ok(s2.pending === null, '相手は既に3枚なので2回目は捨て直し無し→終了');
 ok(s2.players[1].hand.length === 3, '相手は3枚（1回目で捨て、2回目は対象外）: ' + s2.players[1].hand.length);
 
-console.log('=== 役人: 銀貨切れでも誤った獲得ログを出さない（監査修正）===');
+console.log('=== 官吏: 銀貨切れでも誤った獲得ログを出さない（監査修正）===');
 s = E.createInitialState(['A', 'B']);
 s.supply.silver = 0;
 s.players[0].hand = ['bureaucrat'];
@@ -691,17 +691,17 @@ ok(s2.players[0].deck[0] === 'copper', '銀貨切れなら山札の上は変わ�
 ok(!s2.log.some((l) => l.includes('銀貨を山札の上に獲得')), '銀貨切れ時に誤った獲得ログを出さない');
 
 console.log('=== 公開(reveal)チャネル: 席ごとに保持し全員に見せる ===');
-// 役人: 相手(席1)が勝利点を山札の上に置く → reveals[1] にそのカードが入り、相手視点でもマスクされず見える
+// 官吏: 相手(席1)が勝利点を山札の上に置く → reveals[1] にそのカードが入り、相手視点でもマスクされず見える
 s = E.createInitialState(['A', 'B']);
 s.players[0].hand = ['bureaucrat'];
 s.players[1].hand = ['estate', 'copper', 'copper'];
 s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'bureaucrat' });
 s2 = E.reduce(s2, { type: 'BUREAUCRAT_PUT', card: 'estate' });
-ok(s2.reveals && s2.reveals[1] && s2.reveals[1].cards[0] === 'estate', '役人: 公開した勝利点が reveals[席1] に入る');
+ok(s2.reveals && s2.reveals[1] && s2.reveals[1].cards[0] === 'estate', '官吏: 公開した勝利点が reveals[席1] に入る');
 ok(s2.revealLatest === 1, 'revealLatest が公開した席を指す');
 const maskedFoe = E.maskStateFor(s2, 0); // 公開した本人(席1)以外＝席0視点
-ok(maskedFoe.reveals && maskedFoe.reveals[1] && maskedFoe.reveals[1].cards[0] === 'estate', '役人: 公開は相手視点でもマスクされない（公開情報）');
-ok(maskedFoe.players[1].hand.every((c) => c === 'back'), '役人: 一方で相手の手札自体は伏せたまま');
+ok(maskedFoe.reveals && maskedFoe.reveals[1] && maskedFoe.reveals[1].cards[0] === 'estate', '官吏: 公開は相手視点でもマスクされない（公開情報）');
+ok(maskedFoe.players[1].hand.every((c) => c === 'back'), '官吏: 一方で相手の手札自体は伏せたまま');
 // 複数の相手が公開 → 各席に残る（最後の1人で上書きされない）: 3人で密偵
 let sp = E.createInitialState(['A', 'B', 'C'], ['spy', 'village', 'market', 'smithy', 'militia', 'moat', 'cellar', 'mine', 'remodel', 'workshop'], { startActive: 0 });
 sp.players[0].hand = ['spy']; sp.players[0].deck = ['gold', 'copper'];
@@ -711,12 +711,12 @@ sp = E.reduce(sp, { type: 'PLAY_ACTION', card: 'spy' });
 let guard = 0;
 while (sp.pending && sp.pending.type === 'spy' && guard++ < 10) sp = E.reduce(sp, { type: 'SPY_DECIDE', discard: false });
 ok(sp.reveals && sp.reveals[1] && sp.reveals[2], '密偵: 席1と席2の公開が両方残る（最後の人で上書きされない）');
-// 役人: 勝利点を持たない → 手札全体を公開
+// 官吏: 勝利点を持たない → 手札全体を公開
 s = E.createInitialState(['A', 'B']);
 s.players[0].hand = ['bureaucrat'];
 s.players[1].hand = ['copper', 'silver', 'smithy'];
 s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'bureaucrat' });
-ok(s2.reveals && s2.reveals[1] && s2.reveals[1].cards.length === 3, '役人: 勝利点なしなら手札全体を公開');
+ok(s2.reveals && s2.reveals[1] && s2.reveals[1].cards.length === 3, '官吏: 勝利点なしなら手札全体を公開');
 // 手番を跨ぐと reveals は消える
 s2.turn.phase = 'buy';
 s2 = E.reduce(s2, { type: 'END_TURN' });

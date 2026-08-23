@@ -125,10 +125,10 @@ try {
     show(UI.store.state);
     ok(!runtimeError, '隠し通路: place段階へ進んでも例外なし'); }
 
-  // --- 使者（左隣＝席1の視点）---
+  // --- 公使（左隣＝席1の視点）---
   { let s = mk(K); s.players[0].hand = ['envoy']; s.players[0].deck = ['copper', 'silver', 'gold', 'estate', 'duchy', 'copper'];
     s = play(s, 'envoy'); show(s); // show は pending.player(=1) 視点で描画
-    ok($('.modal') && !runtimeError, '使者: 左隣の捨てさせ選択モーダル'); }
+    ok($('.modal') && !runtimeError, '公使: 左隣の捨てさせ選択モーダル'); }
 
   // --- 総督（3モード）---
   { let s = mk(K); s.players[0].hand = ['governor']; s = play(s, 'governor'); show(s);

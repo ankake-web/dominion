@@ -3,7 +3,7 @@
    1) カード保存則：各カードidの総数（supply＋trash＋全プレイヤー全ゾーン＋blackMarket＋支配一時）が
       開始時から不変（＝複製も消失も起きない。あらゆる状態破壊バグを検知する最強の不変条件）
    2) supply が負にならない  3) 実stateに 'back'（マスク用の伏せ札id）が現れない  4) vpTokens が負にならない
-   敵対的キングダム（玉座/王の宮廷＋持続/アタック/獲得/リアクション、闇市場＋「使ったとき」pending財宝）と
+   敵対的キングダム（玉座/宮廷＋持続/アタック/獲得/リアクション、闇市場＋「使ったとき」pending財宝）と
    全プール混成ランダムで、玉座連鎖・闇市場・持続などの相互作用を重点的に突く。 */
 const fs = require('fs');
 const path = require('path');
@@ -127,26 +127,26 @@ const ALLIDS = [].concat.apply([], Object.values(DOM.POOLS)).filter((id, i, a) =
 function randK() { const pool = ALLIDS.slice(), k = []; while (k.length < 10 && pool.length) { const i = Math.floor(sandbox.Math.random() * pool.length); k.push(pool.splice(i, 1)[0]); } return k; }
 function mkPlayers(n, off) { return Array.from({ length: n }, (_, i) => ({ name: 'C' + i, isCpu: true, level: ['easy', 'normal', 'hard'][(off + i) % 3] })); }
 
-// A) 敵対的キングダム（玉座/王の宮廷の複製連鎖、闇市場＋pending財宝、持続・アタック混在）
-console.log('=== カード保存則: 敵対的キングダム（玉座/王の宮廷・闇市場・持続・アタック） ===');
+// A) 敵対的キングダム（玉座/宮廷の複製連鎖、闇市場＋pending財宝、持続・アタック混在）
+console.log('=== カード保存則: 敵対的キングダム（玉座/宮廷・闇市場・持続・アタック） ===');
 const ADVERSARIAL = [
   ['throne_room', 'kings_court', 'wharf', 'witch', 'blockade', 'sea_witch', 'bishop', 'expand', 'watchtower', 'market'],
   ['kings_court', 'throne_room', 'pirate', 'corsair', 'charlatan', 'rabble', 'mint', 'forge', 'monkey', 'sailor'],
   ['black_market', 'investment', 'anvil', 'charlatan', 'crystal_ball', 'tiara', 'throne_room', 'witch', 'village', 'market'], // 闇市場＋「使ったとき」pending財宝＝保存則の要注意ケース
   ['throne_room', 'university', 'apprentice', 'golem', 'familiar', 'scrying_pool', 'transmute', 'herbalist', 'apothecary', 'vineyard'],
-  ['throne_room', 'kings_court', 'treasure_map', 'feast', 'mining_village', 'wharf', 'market', 'remodel', 'mine', 'chapel'], // 玉座/王の宮廷×宝の地図/祝宴/鉱山の村（自己廃棄カードの複製＝保存則の要注意ケース）
-  ['throne_room', 'kings_court', 'procession', 'ratcatcher', 'guide', 'transmogrify', 'royal_carriage', 'distant_lands', 'wine_merchant', 'duplicate'], // 冒険：玉座/王の宮廷/行進×Reserve（酒場マットへ移す自己移動＝マット複製の要注意ケース）
-  ['page', 'peasant', 'throne_room', 'kings_court', 'witch', 'moat', 'militia', 'market', 'village', 'smithy'], // 冒険：トラベラー（成長先の非サプライ山・交換窓・champion永続/免疫・warrior/soldierアタック・玉座/王の宮廷×トラベラー）
-  ['page', 'peasant', 'upgrade', 'remake', 'forge', 'swindler', 'witch', 'village', 'market', 'moat'], // 冒険：成長先(非サプライ)×ちょうどコスト獲得(改良/リメイク/溶鉱炉)・詐欺師の贈与＝NON_SUPPLY除外漏れのデッドロック/不正獲得の回帰防止
-  ['caravan_guard', 'haunted_woods', 'swamp_hag', 'throne_room', 'kings_court', 'witch', 'moat', 'militia', 'market', 'village'], // 冒険：相手の購入フック持続(呪いの森/沼の妖婆)＋隊商の護衛リアクション＋玉座/王の宮廷×これらの持続アタック
-  ['raze', 'artificer', 'storyteller', 'messenger', 'relic', 'throne_room', 'kings_court', 'moat', 'witch', 'market'], // 冒険：複雑系（倒壊/工匠/語り部×遺物の財宝アタック中断→再開/使者の配布）＋玉座/王の宮廷×倒壊/語り部
+  ['throne_room', 'kings_court', 'treasure_map', 'feast', 'mining_village', 'wharf', 'market', 'remodel', 'mine', 'chapel'], // 玉座/宮廷×宝の地図/祝宴/鉱山の村（自己廃棄カードの複製＝保存則の要注意ケース）
+  ['throne_room', 'kings_court', 'procession', 'ratcatcher', 'guide', 'transmogrify', 'royal_carriage', 'distant_lands', 'wine_merchant', 'duplicate'], // 冒険：玉座/宮廷/行進×Reserve（酒場マットへ移す自己移動＝マット複製の要注意ケース）
+  ['page', 'peasant', 'throne_room', 'kings_court', 'witch', 'moat', 'militia', 'market', 'village', 'smithy'], // 冒険：トラベラー（成長先の非サプライ山・交換窓・champion永続/免疫・warrior/soldierアタック・玉座/宮廷×トラベラー）
+  ['page', 'peasant', 'upgrade', 'remake', 'forge', 'swindler', 'witch', 'village', 'market', 'moat'], // 冒険：成長先(非サプライ)×ちょうどコスト獲得(改良/再建/鍛造)・詐欺師の贈与＝NON_SUPPLY除外漏れのデッドロック/不正獲得の回帰防止
+  ['caravan_guard', 'haunted_woods', 'swamp_hag', 'throne_room', 'kings_court', 'witch', 'moat', 'militia', 'market', 'village'], // 冒険：相手の購入フック持続(呪いの森/沼の妖婆)＋隊商の護衛リアクション＋玉座/宮廷×これらの持続アタック
+  ['raze', 'artificer', 'storyteller', 'messenger', 'relic', 'throne_room', 'kings_court', 'moat', 'witch', 'market'], // 冒険：複雑系（倒壊/工匠/語り部×遺物の財宝アタック中断→再開/使者の配布）＋玉座/宮廷×倒壊/語り部
   ['crown', 'charm', 'capital', 'plunder', 'encampment', 'fortune', 'gladiator', 'castles', 'overlord', 'village'], // 帝国：冠の「財宝を2回使う」×選択待ちを立てる財宝(御守り)・+購入/VPを持つ財宝(元手/大金/鹵獲品)＋負債＋分割山＋城の混合山
-  ['crown', 'overlord', 'throne_room', 'kings_court', 'village', 'market', 'smithy', 'moat', 'militia', 'workshop'], // 帝国：命令(大君主)の再演は選び直さない×玉座/王の宮廷/冠のネスト
-  ['tiara', 'crystal_ball', 'anvil', 'investment', 'charlatan', 'bank', 'collection', 'monument', 'village', 'market'], // 繁栄：ティアラの2回目が pending 財宝(水晶玉/金床/投資/ペテン師)の選択・アタックを取りこぼさない
+  ['crown', 'overlord', 'throne_room', 'kings_court', 'village', 'market', 'smithy', 'moat', 'militia', 'workshop'], // 帝国：命令(大君主)の再演は選び直さない×玉座/宮廷/冠のネスト
+  ['tiara', 'crystal_ball', 'anvil', 'investment', 'charlatan', 'bank', 'collection', 'monument', 'village', 'market'], // 繁栄：ティアラの2回目が pending 財宝(水晶球/金床/出資/山師)の選択・アタックを取りこぼさない
   ['counterfeit', 'bandit_camp', 'marauder', 'band_of_misfits', 'procession', 'village', 'market', 'smithy', 'moat', 'militia'], // 暗黒時代：偽造通貨の2回プレイ→廃棄（略奪品の自己移動＝lose track）＋命令(はみだし者)×行進の再演
   // E8：命令（大君主/はみだし者）× 自己移動札（祝宴/鉱山の村/宝の地図/島/倒壊/陣地/農家の市場）＝自己移動は失敗し命令カードも動かない
   ['overlord', 'band_of_misfits', 'feast', 'mining_village', 'treasure_map', 'island', 'raze', 'encampment', 'farmers_market', 'throne_room'],
-  // E8：命令（船長/王子）× 自己移動札＋Reserve（酒場マットへの自己移動）＋玉座/王の宮廷のネスト
+  // E8：命令（船長/王子）× 自己移動札＋Reserve（酒場マットへの自己移動）＋玉座/宮廷のネスト
   ['captain', 'prince', 'mining_village', 'ratcatcher', 'guide', 'duplicate', 'death_cart', 'raze', 'throne_room', 'kings_court'],
 ];
 {
@@ -481,11 +481,11 @@ console.log('=== カード保存則: mix-all（拡張を自由に混ぜる・分
   const FORCED = [
     // 工房/鉄工所/職人/祝宴（≤$N獲得）× 賞品(馬上槍試合)・略奪品(山賊の宿営地)・ポーション費用(ブドウ園)・負債(技術者)
     ['workshop', 'ironworks', 'artisan', 'feast', 'tournament', 'bandit_camp', 'vineyard', 'potion', 'engineer', 'village'],
-    // 改良/リメイク/溶鉱炉/開発/農地（ちょうど$N）× ポーション費用・負債・分割山下段・混合山
+    // 改良/再建/鍛造/開発/農地（ちょうど$N）× ポーション費用・負債・分割山下段・混合山
     ['upgrade', 'remake', 'forge', 'develop', 'farmland', 'vineyard', 'potion', 'overlord', 'sauna', 'avanto'],
     // 詐欺師/密輸人/造幣所/封鎖/待ち伏せ（gain/trash を通らない経路）× 混合山・非サプライ・負債
     ['swindler', 'smugglers', 'mint', 'blockade', 'lurker', 'knights', 'castles', 'engineer', 'bandit_camp', 'market'],
-    // 交易商人/物見やぐら（獲得の置換）× 闇市場（サプライ外獲得）× 混合山
+    // 交易人/望楼（獲得の置換）× 闇市場（サプライ外獲得）× 混合山
     ['trader', 'watchtower', 'black_market', 'knights', 'castles', 'village', 'market', 'smithy', 'moat', 'militia'],
     // 支配 × 負債・混合山・自己廃棄札（支配の振り分けと退避）
     ['possession', 'potion', 'engineer', 'castles', 'feast', 'mining_village', 'treasure_map', 'horn_of_plenty', 'village', 'market'],

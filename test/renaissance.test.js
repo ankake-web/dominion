@@ -224,7 +224,7 @@ console.log('=== 山村（mountain_village）===');
 { let s = act(); me(s).hand = ['mountain_village']; me(s).discard = ['tunnel']; s.supply.tunnel = 10;
   s = play(s, 'mountain_village');
   s = reduce(s, { type: 'MOUNTAIN_VILLAGE_TAKE', card: 'tunnel' });
-  ok(cnt(me(s).discard, 'gold') === 0, '捨て札から取るのは「捨てる」ではない＝トンネルは誘発しない'); }
+  ok(cnt(me(s).discard, 'gold') === 0, '捨て札から取るのは「捨てる」ではない＝坑道は誘発しない'); }
 
 console.log('=== 司祭（priest）===');
 { let s = act(); me(s).hand = ['priest', 'copper', 'estate'];
@@ -574,12 +574,12 @@ console.log('=== パトロン（patron）＝公開フック ===');
 { let s = actA(); withSupply(s, ['vassal']); me(s).hand = ['vassal']; me(s).deck = ['patron'];
   s = play(s, 'vassal');
   ok((me(s).coffers || 0) === 0, '家臣は「捨てる」であって「公開する」ではない＝誘発しない'); }
-{ // 相手のアクションフェイズ中に公開させられても +1財源（民兵の手札公開ではなく、役人型の手札公開で検証）
+{ // 相手のアクションフェイズ中に公開させられても +1財源（民兵の手札公開ではなく、官吏型の手札公開で検証）
   let s = actA(); withSupply(s, ['bureaucrat']); me(s).hand = ['bureaucrat'];
   s.players[1].hand = ['patron', 'copper', 'copper'];
   s = play(s, 'bureaucrat');
   s = cpuResolve(s, 10);
-  ok((s.players[1].coffers || 0) === 1, '相手のアクションフェイズ中の公開でも +1財源（役人：勝利点なしの手札公開）'); }
+  ok((s.players[1].coffers || 0) === 1, '相手のアクションフェイズ中の公開でも +1財源（官吏：勝利点なしの手札公開）'); }
 { let s = actA(); withSupply(s, ['mint']); s.turn.phase = 'buy'; me(s).hand = ['mint'];
   // 造幣所は購入フェイズに「財宝を公開」＝パトロンは財宝でないので無関係。購入フェイズの公開で誘発しないことを直接確認する
   const before = me(s).coffers || 0;

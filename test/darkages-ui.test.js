@@ -81,7 +81,7 @@ try {
   showPend({ type: 'ironmonger', player: 0, card: 'gold' });
   ok(modalOk() && byText('*', '鉄物商'), 'ironmonger モーダル');
   showPend({ type: 'minstrel', player: 0, cards: ['village', 'smithy'] });
-  ok(modalOk() && byText('*', '旅の楽団'), 'minstrel モーダル');
+  ok(modalOk() && byText('*', '吟遊詩人'), 'minstrel モーダル');
 
   console.log('=== Group A pending モーダル ===');
   showPend({ type: 'junk_dealer', player: 0 }, (s) => { s.players[0].hand = ['copper', 'curse']; });
@@ -139,7 +139,7 @@ try {
 
   console.log('=== Group D（アタック）pending モーダル ===');
   showPend({ type: 'marauder', stage: 'react', player: 0, source: 1, victim: 0, queue: [] }, (s) => { s.players[0].hand = ['moat']; });
-  ok(modalOk() && byText('*', '略奪者'), 'marauder(react) モーダル');
+  ok(modalOk() && byText('*', '襲撃者'), 'marauder(react) モーダル');
   showPend({ type: 'cultist', stage: 'react', player: 0, source: 1, victim: 0, queue: [] }, (s) => { s.players[0].hand = ['moat']; });
   ok(modalOk() && byText('*', '狂信者'), 'cultist(react) モーダル');
   showPend({ type: 'cultist_chain', player: 0 });

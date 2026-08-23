@@ -68,13 +68,13 @@ try {
 
   console.log('=== 各 pending モーダルが描画される ===');
   { let s = mk(); s.players[0].hand = ['transmute', 'estate']; s = play(s, 'transmute'); show(s); ok($('.modal') && byText('*', '変成') && !runtimeError, '変成モーダル'); }
-  { let s = pend({ type: 'apothecary', player: 0, cards: ['estate', 'village'] }); show(s); ok($('.modal') && byText('*', '薬剤師') && !runtimeError, '薬剤師 並べ替えモーダル'); }
+  { let s = pend({ type: 'apothecary', player: 0, cards: ['estate', 'village'] }); show(s); ok($('.modal') && byText('*', '薬師') && !runtimeError, '薬師 並べ替えモーダル'); }
   { let s = pend({ type: 'scrying_pool', stage: 'react', player: 1, source: 0, victim: 1, queue: [] }); s.players[1].hand = ['moat']; show(s); ok($('.modal') && byText('button', '受ける') && !runtimeError, '念視の泉 リアクション'); }
   { let s = pend({ type: 'scrying_pool', stage: 'decide', player: 0, source: 0, victim: 1, card: 'gold', queue: [] }); s.players[1].deck = ['gold']; show(s); ok($('.modal') && byText('button', '捨てさせる') && !runtimeError, '念視の泉 判断モーダル'); }
   { let s = mk(); s.players[0].hand = ['university']; s = play(s, 'university'); show(s); ok($('.modal') && byText('*', '大学') && !runtimeError, '大学 獲得モーダル'); }
   { let s = pend({ type: 'familiar', stage: 'react', player: 1, source: 0, victim: 1, queue: [] }); s.players[1].hand = ['moat']; show(s); ok($('.modal') && byText('button', '受ける') && !runtimeError, '使い魔 リアクション'); }
   { let s = pend({ type: 'golem', player: 0, cards: ['village', 'smithy'] }); show(s); ok($('.modal') && byText('button', '先に使う') && !runtimeError, 'ゴーレム 順番モーダル'); }
-  { let s = mk(); s.players[0].hand = ['apprentice', 'estate']; s = play(s, 'apprentice'); show(s); ok($('.modal') && byText('*', '徒弟') && !runtimeError, '徒弟 廃棄モーダル'); }
+  { let s = mk(); s.players[0].hand = ['apprentice', 'estate']; s = play(s, 'apprentice'); show(s); ok($('.modal') && byText('*', '弟子') && !runtimeError, '弟子 廃棄モーダル'); }
 
   console.log('=== 変成モーダル：手札チップが選択肢として描画される ===');
   { let s = mk(); s.players[0].hand = ['transmute', 'village', 'copper']; s = play(s, 'transmute'); show(s);

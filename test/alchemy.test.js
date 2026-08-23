@@ -151,8 +151,8 @@ console.log('=== 薬草商: +1購入+1コイン / 片付けで場の財宝(銀�
   ok(!s.players[0].discard.includes('silver'), '銀貨は捨て札ではなく山札へ戻された');
 }
 
-/* ============ 薬剤師 ============ */
-console.log('=== 薬剤師: 上4枚の銅貨・ポーションを手札へ、残りを並べ替えて山札の上へ ===');
+/* ============ 薬師 ============ */
+console.log('=== 薬師: 上4枚の銅貨・ポーションを手札へ、残りを並べ替えて山札の上へ ===');
 {
   let s = mk();
   s.players[0].hand = ['apothecary'];
@@ -216,13 +216,13 @@ console.log('=== 大学: +2アクション / コスト5以下のアクション�
   ok(!s.pending, '獲得しない選択で終了');
 }
 {
-  // ポーション費用のアクション（薬剤師=コイン2+ポーション）は大学で獲得できない（公式ルール）
+  // ポーション費用のアクション（薬師=コイン2+ポーション）は大学で獲得できない（公式ルール）
   let s = mk();
   s.players[0].hand = ['university'];
   s = reduce(s, { type: 'PLAY_ACTION', card: 'university' });
   const before = s.supply.apothecary;
   s = reduce(s, { type: 'UNIVERSITY_GAIN', card: 'apothecary' });
-  ok(s.supply.apothecary === before && s.pending, 'ポーション費用のアクション(薬剤師)は大学で獲得不可（据え置き）');
+  ok(s.supply.apothecary === before && s.pending, 'ポーション費用のアクション(薬師)は大学で獲得不可（据え置き）');
   s = reduce(s, { type: 'UNIVERSITY_GAIN', card: 'laboratory' });
   ok(s.players[0].discard.includes('laboratory'), 'ポーション費用なしのアクション(研究所)は獲得できる');
 }
@@ -301,14 +301,14 @@ console.log('=== ゴーレム: アクション2枚が出るまで公開→その
   ok(s.turn.actions === 2, `村の+2アクションが乗る (実 ${s.turn.actions})`);
 }
 
-/* ============ 徒弟 ============ */
-console.log('=== 徒弟: +1アクション / 廃棄1枚のコイン費用ぶん引く（ポーション費用ありは+2）===');
+/* ============ 弟子 ============ */
+console.log('=== 弟子: +1アクション / 廃棄1枚のコイン費用ぶん引く（ポーション費用ありは+2）===');
 {
   let s = mk();
   s.players[0].hand = ['apprentice', 'gold', 'estate'];
   s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper'];
   s = reduce(s, { type: 'PLAY_ACTION', card: 'apprentice' });
-  ok(s.turn.actions === 1, '徒弟 +1アクション');
+  ok(s.turn.actions === 1, '弟子 +1アクション');
   s = reduce(s, { type: 'APPRENTICE_TRASH', card: 'gold' }); // コスト6 → +6カード
   ok(s.trash.includes('gold'), '金貨を廃棄');
   ok(s.players[0].hand.filter((c) => c === 'copper').length === 5, `コスト6の金貨で6枚引く（山5枚=全部引く）(実 ${s.players[0].hand.filter((c) => c === 'copper').length})`);
@@ -451,7 +451,7 @@ console.log('=== CPU同士: 錬金術セットで最後まで進行し、決着�
 }
 console.log('=== CPU購入: ポーション未所持なら、勝ち筋でもポーション費用カードは選ばない（無限ループ防止）===');
 {
-  // 空きパイル2・勝勢の hard CPU に、勝って終わるが「ポーション費用」の薬剤師しか無い局面を作る。
+  // 空きパイル2・勝勢の hard CPU に、勝って終わるが「ポーション費用」の薬師しか無い局面を作る。
   let s = mk(['A', 'B'], ['apothecary', 'village', 'smithy', 'market', 'laboratory', 'festival', 'moat', 'cellar', 'workshop', 'militia'], 0);
   s.players[0].cpuLevel = 'hard'; s.players[0].isCpu = true;
   s.players[0].deck = ['province', 'province', 'province']; // Aが大量リード（勝勢）
@@ -459,7 +459,7 @@ console.log('=== CPU購入: ポーション未所持なら、勝ち筋でもポ�
   s.supply.apothecary = 1; // 買うと3つ目→終了だが、ポーション費用
   s.turn.phase = 'buy'; s.turn.coins = 10; s.turn.potions = 0; s.turn.buys = 1;
   const a = CPU.decide(s);
-  ok(a.type !== 'BUY' || a.card !== 'apothecary', 'ポーション0なら薬剤師（勝ち筋でも）を買おうとしない（実 ' + JSON.stringify(a) + '）');
+  ok(a.type !== 'BUY' || a.card !== 'apothecary', 'ポーション0なら薬師（勝ち筋でも）を買おうとしない（実 ' + JSON.stringify(a) + '）');
   // 実際に適用しても局面が前進する（no-opの無限ループにならない）
   const s2 = reduce(s, a);
   ok(s2 !== s && (s2.turn.phase !== 'buy' || s2.supply.apothecary === 1), 'CPUの手で局面が前進する（no-op連発でない）');

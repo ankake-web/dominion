@@ -6,7 +6,7 @@
    すべての穴が到達可能になる。本スイートは穴ごとに最小1件の回帰を置く。
    対象:
      1. 汎用「$N以下 / ちょうど$N / より安い」が 非サプライ・分割山下段・ポーション費用・負債コスト を除外するか
-     2. gain()/trashCard を通らない経路（封鎖/待ち伏せ/造幣所/密輸人/交易商人）＝保存則とサプライキー
+     2. gain()/trashCard を通らない経路（封鎖/待ち伏せ/造幣所/密輸人/交易人）＝保存則とサプライキー
      3. 支配（Possession）×他拡張（負債の受取人／サプライ外獲得／塩まき／自己廃棄の返却／獲得トリガー）
      4. CPU の終端保証（engine が拒否する札を提案し続けない＝mix での livelock 防止） */
 const fs = require('fs');
@@ -103,15 +103,15 @@ console.log('=== mix: 汎用「$N以下を獲得」が 非サプライ／ポー�
   ok(E.costUpTo(s2, 'overlord', 5) === false, 'costUpTo: 負債コストは「$5以下」に含まれない');
 }
 {
-  // 溶鉱炉：0枚廃棄（ちょうど$0）でブドウ園（$0+P）を獲得できない
+  // 鍛造：0枚廃棄（ちょうど$0）でブドウ園（$0+P）を獲得できない
   const s = game(['forge', 'vineyard', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival']);
   let s2 = playAction(s, 'forge', ['copper']);
   s2 = reduce(s2, { type: 'FORGE_TRASH', cards: [] });
   if (s2.pending && s2.pending.type === 'forge') {
     s2 = reduce(s2, { type: 'FORGE_GAIN', card: 'vineyard' });
-    ok(!s2.players[0].discard.includes('vineyard'), '溶鉱炉（合計$0）はブドウ園を獲得できない');
+    ok(!s2.players[0].discard.includes('vineyard'), '鍛造（合計$0）はブドウ園を獲得できない');
   } else {
-    ok(true, '溶鉱炉：ちょうど$0の候補が無く pending を立てない（呪いは$0だが…）＝どちらでも可');
+    ok(true, '鍛造：ちょうど$0の候補が無く pending を立てない（呪いは$0だが…）＝どちらでも可');
   }
   ok(E.costExact(s2, 'vineyard', 0, 0, 0) === false, 'costExact: $0+P は「ちょうど$0」ではない');
 }
@@ -159,7 +159,7 @@ console.log('=== mix: 汎用「$N以下を獲得」が 非サプライ／ポー�
 /* ============================================================
    2. gain()/trashCard を通らない経路
    ============================================================ */
-console.log('=== mix: gain()/trashCard を通らない経路（封鎖/待ち伏せ/造幣所/密輸人/交易商人）===');
+console.log('=== mix: gain()/trashCard を通らない経路（封鎖/待ち伏せ/造幣所/密輸人/交易人）===');
 {
   // 封鎖：混合山（城）を獲得しても保存則が壊れない（プレースホルダが増えない）
   const s = game(['blockade', 'castles', 'engineer', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'festival']);
@@ -257,7 +257,7 @@ console.log('=== mix: gain()/trashCard を通らない経路（封鎖/待ち伏�
   } else { ok(false, '密輸人：pending が立たなかった'); }
 }
 {
-  // 交易商人：闇市場デッキ由来（サプライに山が無い）カードの獲得では窓を開かない＝supply に新キーが生えない
+  // 交易人：闇市場デッキ由来（サプライに山が無い）カードの獲得では窓を開かない＝supply に新キーが生えない
   const s = game(['trader', 'black_market', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival']);
   const keys0 = Object.keys(s.supply).sort().join(',');
   let s2 = s;
@@ -270,8 +270,8 @@ console.log('=== mix: gain()/trashCard を通らない経路（封鎖/待ち伏�
     s2.turn.coins = 20;
     s2 = reduce(s2, { type: 'BLACK_MARKET_BUY', card: bmCard });
     const keys1 = Object.keys(s2.supply).sort().join(',');
-    ok(keys0 === keys1, '闇市場の獲得で state.supply に新しいキーが生えない（交易商人の窓を開かない）');
-    ok(!s2.pending || s2.pending.type !== 'trader_react', '交易商人：サプライ外の獲得では窓を開かない');
+    ok(keys0 === keys1, '闇市場の獲得で state.supply に新しいキーが生えない（交易人の窓を開かない）');
+    ok(!s2.pending || s2.pending.type !== 'trader_react', '交易人：サプライ外の獲得では窓を開かない');
   } else { ok(true, '（闇市場デッキが空＝スキップ）'); }
 }
 
@@ -312,7 +312,7 @@ function possessedGame(kingdom) {
   ok(sameTally(t0, tally(s2)), '支配×on-gain：カード保存則を満たす');
 }
 {
-  // 支配 × 交易商人：被支配者が手札に交易商人を持っていても窓は開かない（獲得者は支配者＝手番プレイヤーではない）。
+  // 支配 × 交易人：被支配者が手札に交易人を持っていても窓は開かない（獲得者は支配者＝手番プレイヤーではない）。
   //   開くと「獲得札は支配者が保持＋銀貨も得る／被支配者の同名コピーがサプライへ吸い上げられる」二重取りになる。
   const s = possessedGame(['trader', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival', 'chapel']);
   setHand(s, ['trader'], 1);
@@ -320,12 +320,12 @@ function possessedGame(kingdom) {
   const t0 = tally(s);
   const sup0 = s.supply.gold;
   const s2 = reduce(s, { type: 'BUY', card: 'gold' });
-  ok(!s2.pending || s2.pending.type !== 'trader_react', '支配×交易商人：窓が開かない');
-  ok(s2.supply.gold === sup0 - 1, '支配×交易商人：被支配者の金貨がサプライへ吸い上げられない');
-  ok(sameTally(t0, tally(s2)), '支配×交易商人：カード保存則を満たす');
+  ok(!s2.pending || s2.pending.type !== 'trader_react', '支配×交易人：窓が開かない');
+  ok(s2.supply.gold === sup0 - 1, '支配×交易人：被支配者の金貨がサプライへ吸い上げられない');
+  ok(sameTally(t0, tally(s2)), '支配×交易人：カード保存則を満たす');
 }
 {
-  // 交易商人 × 廃棄置き場からの獲得（待ち伏せ）：サプライ由来でない獲得では窓を開かない
+  // 交易人 × 廃棄置き場からの獲得（待ち伏せ）：サプライ由来でない獲得では窓を開かない
   //   （開くと廃棄した札がサプライの山に復活し、空の山が非空に戻る＝3山終了が巻き戻る）。
   const s = game(['lurker', 'trader', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival']);
   s.trash = ['festival'];
@@ -335,10 +335,10 @@ function possessedGame(kingdom) {
   let s2 = reduce(s, { type: 'PLAY_ACTION', card: 'lurker' });
   s2 = reduce(s2, { type: 'LURKER_CHOOSE', choice: 'gain' });
   s2 = reduce(s2, { type: 'LURKER_GAIN', card: 'festival' });
-  ok(!s2.pending || s2.pending.type !== 'trader_react', '交易商人：廃棄置き場からの獲得では窓を開かない');
-  ok(s2.supply.festival === fest0, '交易商人：廃棄した札がサプライの山に復活しない');
+  ok(!s2.pending || s2.pending.type !== 'trader_react', '交易人：廃棄置き場からの獲得では窓を開かない');
+  ok(s2.supply.festival === fest0, '交易人：廃棄した札がサプライの山に復活しない');
   ok(s2.players[0].discard.includes('festival'), '待ち伏せ：廃棄置き場から獲得できている');
-  ok(sameTally(t0, tally(s2)), '交易商人×廃棄置き場：カード保存則を満たす');
+  ok(sameTally(t0, tally(s2)), '交易人×廃棄置き場：カード保存則を満たす');
 }
 {
   // 複製（duplicate）：ポーション費用／負債コスト／非サプライ のカードは「$6以下」ではない＝呼び出せない
@@ -383,7 +383,7 @@ function possessedGame(kingdom) {
   ok(!q.some((x) => x && x.type === 'market_square_react'), '青空市場：サプライからの廃棄では反応しない');
 }
 {
-  // 支配中の自己廃棄（祝宴/鉱山の村/宝の地図/豊穣の角/投資）は possessionTrash に退避＝被支配者に返る
+  // 支配中の自己廃棄（祝宴/鉱山の村/宝の地図/豊穣の角笛/出資）は possessionTrash に退避＝被支配者に返る
   const s = possessedGame(['feast', 'mining_village', 'village', 'smithy', 'market', 'moat', 'militia', 'cellar', 'laboratory', 'festival']);
   s.turn.phase = 'action'; s.turn.actions = 3;
   setHand(s, ['feast'], 1);

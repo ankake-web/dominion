@@ -133,7 +133,7 @@
     return best || 'copper';
   }
   // 収穫祭：賞品(Prize)は馬上槍試合でのみ獲得する非サプライ札＝汎用の獲得効果(bestGain/bestGainExact)は
-  // 絶対に賞品を選ばない（豊穣の角等で$0賞品を不正獲得しない／賞品を拒否する reducer と噛み合って無限ループしない）。
+  // 絶対に賞品を選ばない（豊穣の角笛等で$0賞品を不正獲得しない／賞品を拒否する reducer と噛み合って無限ループしない）。
   const PRIZE_SET = new Set(['bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed']);
   // 暗黒時代：略奪品/狂人/傭兵も非サプライ＝汎用獲得(bestGain等)や獲得系pendingから除外する
   //（engine の NON_SUPPLY 拒否と噛み合い、提案し続けて無限ループするのを防ぐ）。
@@ -764,7 +764,7 @@
     if (has('mint') && p.hand.some((c) => isTreasure(c))) return 'mint';
     if (has('war_chest')) return 'war_chest';
     if (has('watchtower') && p.hand.length < 6) return 'watchtower';
-    // 秘密の小部屋: 手札に死に札(勝利点/呪い)があればコインに変える
+    // 秘密の部屋: 手札に死に札(勝利点/呪い)があればコインに変える
     if (has('secret_chamber') && p.hand.some((c) => isDead(c))) return 'secret_chamber';
     // 帝国：ターミナル
     if (has('royal_blacksmith')) return 'royal_blacksmith'; // +5カード（手札の銅貨を捨てる）
@@ -835,7 +835,7 @@
     if (vineyards) vp += vineyards * Math.floor(cards.filter(isActVP).length / 3);
     const fairgrounds = cards.filter((c) => c === 'fairgrounds').length; // 収穫祭：品評会（engine.vpOf と同等に）
     if (fairgrounds) vp += fairgrounds * 2 * Math.floor(new Set(cards).size / 5);
-    const silkRoads = cards.filter((c) => c === 'silk_road').length; // 異郷：絹の道（勝利点カード4枚毎に1点）
+    const silkRoads = cards.filter((c) => c === 'silk_road').length; // 異郷：シルクロード（勝利点カード4枚毎に1点）
     if (silkRoads) vp += silkRoads * Math.floor(cards.filter((c) => isType(c, 'victory')).length / 4);
     const marchlands = cards.filter((c) => c === 'marchland').length; // プロモ：境界地（勝利点カード3枚毎に1点）＝engine.vpOf と同じ式
     if (marchlands) vp += marchlands * Math.floor(cards.filter((c) => isType(c, 'victory')).length / 3);
@@ -902,7 +902,7 @@
     const hypo = { deck: allCards(me).concat(id), hand: [], discard: [], inPlay: [], vpTokens: me.vpTokens || 0 };
     // 遠隔地（冒険）は「酒場マット上にあるときだけ4点」＝ゾーン依存の得点。hypo は全ゾーンを deck にまとめるので
     // vpOfPlayer では 0 点になる。相手は実オブジェクト（tavern あり）で評価されるため、足さないと自分だけ過小評価になる。
-    // （hypo.tavern に入れ直すと allCards で二重に数えてしまう＝庭園/品評会/絹の道/城が狂う。ここで加算するのが正しい。）
+    // （hypo.tavern に入れ直すと allCards で二重に数えてしまう＝庭園/品評会/シルクロード/城が狂う。ここで加算するのが正しい。）
     const myVp = vpOfPlayer(hypo, state) + 4 * (me.tavern || []).filter((c) => c === 'distant_lands').length
       + landmarkVp(state, allCards(me).concat(id), seat) // 帝国：ランドマーク得点（engineと同一算出）
       + allyVp(state, allCards(me).concat(id), me);      // 同盟：高原の羊飼い（engineと同一算出）
@@ -936,7 +936,7 @@
     return m ? parseInt(m[1], 10) : 0;
   }
   function isNonTerminalAction(id) { return isType(id, 'action') && plusActions(id) >= 1; }
-  // 玉座の間/王の宮廷で「2回(3回)打つ価値」の目安。コスト順より賢く対象を選ぶために使う。
+  // 玉座の間/宮廷で「2回(3回)打つ価値」の目安。コスト順より賢く対象を選ぶために使う。
   // ドロー(+カード)＞アタック(複製で妨害倍増)＞獲得系＞+アクション/コイン、を反映。
   function throneValue(id) {
     let v = plusCards(id) * 3;
@@ -1001,7 +1001,7 @@
   function chooseBuyStrong(state, p, coins) {
     const seat = state.turn.active;
     // 1) 勝って終われる購入があれば最優先（得点→コストの高い順）
-    // コストは実コスト（軽減・混合山の一番上）で判定し、購入不可（分割山の下段/高級市場/非サプライ）は除く。
+    // コストは実コスト（軽減・混合山の一番上）で判定し、購入不可（分割山の下段/大市場/非サプライ）は除く。
     // 混合山（騎士/城）は実際に手に入るのは「一番上のカード」なので、得点計算もそのカードで行う。
     let winningEnd = null, bestKey = -Infinity;
     Object.keys(state.supply).forEach((id) => {
@@ -1018,7 +1018,7 @@
     const province = sup(state, 'province');
     let pick = null;
     if (coins >= 11 && sup(state, 'colony') > 0) pick = 'colony';          // 繁栄：植民地（10VP）
-    else if (coins >= 9 && sup(state, 'platinum') > 0) pick = 'platinum';  // 繁栄：プラチナ貨（money engine）
+    else if (coins >= 9 && sup(state, 'platinum') > 0) pick = 'platinum';  // 繁栄：白金貨（money engine）
     else if (coins >= 8 && province > 0) pick = 'province';
     else if (province <= 4 && coins >= 5 && sup(state, 'duchy') > 0) pick = 'duchy';
     else if (province <= 2 && coins >= 2 && sup(state, 'estate') > 0) pick = 'estate';
@@ -1043,7 +1043,7 @@
   function chooseBuyNormal(state, p, coins) {
     const province = sup(state, 'province');
     if (coins >= 11 && sup(state, 'colony') > 0) return 'colony';         // 繁栄：植民地（10VP）
-    if (coins >= 9 && sup(state, 'platinum') > 0) return 'platinum';      // 繁栄：プラチナ貨
+    if (coins >= 9 && sup(state, 'platinum') > 0) return 'platinum';      // 繁栄：白金貨
     if (coins >= 8 && province > 0) return 'province';
     if (coins >= 6 && sup(state, 'gold') > 0) return 'gold';
     // 中盤：緑化前は強い王国カード（エンジン部品）を買う。エンジンが成立する王国のときだけ。
@@ -1121,7 +1121,7 @@
         else if (sup(state, 'copper') > 0) pick = 'copper';
       }
     }
-    // 念のため：買えない手は返さない（実コストで判定。繁栄：高級市場は場に銅貨があると不可）。
+    // 念のため：買えない手は返さない（実コストで判定。繁栄：大市場は場に銅貨があると不可）。
     // 錬金術：ポーション費用も満たしていること（満たさない手を返すと reduce が no-op→CPU無限ループ）。
     const canBuy = !DOM.engine.canBuyCard || DOM.engine.canBuyCard(state, state.turn.active, pick);
     const potOk = !pick || (C()[pick].potion || 0) <= (state.turn.potions || 0);
@@ -1342,7 +1342,7 @@
     if (id === 'estate') return 1;
     if (id === 'copper') return 2;
     if (id === 'duke') return 3;
-    if (isType(id, 'victory')) return 100; // 属州/公領/貴族/後宮などは廃棄しない
+    if (isType(id, 'victory')) return 100; // 属州/公領/貴族/ハーレムなどは廃棄しない
     if (id === 'gold') return 95;
     if (id === 'silver') return 80;
     return 50;                              // アクション類
@@ -2168,7 +2168,7 @@
         // gain: 銀貨・金貨は獲得（銅貨はデッキを汚すので獲得しない）
         return { type: 'THIEF_GAIN', take: (C()[pd.trashed].coin || 0) >= 2 };
       case 'witch':
-        // 呪いを受ける側。堀があれば無効化、無ければそのまま（CPUは秘密の小部屋を公開しない）
+        // 呪いを受ける側。堀があれば無効化、無ければそのまま（CPUは秘密の部屋を公開しない）
         if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'WITCH_REACT' };
       case 'bureaucrat':
@@ -2537,7 +2537,7 @@
       /* ===== 拡張: 帝国（Empires）Batch E2 ===== */
       case 'sacrifice': {
         // 廃棄する不要札を価値順に選ぶ（屋敷=+2VP／銅貨=+$2／呪い=圧縮／その他 dead）。
-        // 生贄は必須廃棄（手札があれば必ず1枚）＝最後は生贄自身でも廃棄する（玉座/王の宮廷/行進で手札が生贄だけになった時に
+        // 生贄は必須廃棄（手札があれば必ず1枚）＝最後は生贄自身でも廃棄する（玉座/宮廷/行進で手札が生贄だけになった時に
         //   card:null を返すと engine が拒否し pending が閉じず CPU 無限ループになる＝敵対レビュー確定バグの回避）。
         const h = p.hand.filter((c) => c !== 'sacrifice');
         const pick = h.find((c) => c === 'estate') || h.find((c) => c === 'copper') || h.find((c) => c === 'curse')
@@ -2761,7 +2761,7 @@
         const pick = junk.slice().sort((a, b) => keepValue(a) - keepValue(b))[0];
         return { type: 'BANISH_EXILE', card: pick, n: p.hand.filter((c) => c === pick).length };
       }
-      // 投資＝相手が使いそうな（＝相手のデッキに入りやすい）強いアクションに投資する。
+      // 出資＝相手が使いそうな（＝相手のデッキに入りやすい）強いアクションに出資する。
       case 'invest': {
         const ids = DOM.engine.exilableSupplyIds(state).filter((id) => DOM.isType(id, 'action'));
         if (!ids.length) return { type: 'INVEST_EXILE', card: null }; // 候補ゼロでも null を返さない（engine が窓を閉じる）
@@ -3161,7 +3161,7 @@
         }
         { const c = p.hand.slice().sort((a, b) => keepValue(a) - keepValue(b))[0]; return { type: 'CLERK_TOPDECK', card: c }; }
       case 'clerk_start':
-        // 手番開始時の会計士は無料の +2コイン＋アタック＝常に使う。
+        // 手番開始時の書記は無料の +2コイン＋アタック＝常に使う。
         return { type: 'CLERK_START', play: true };
       case 'bishop':
         if (pd.stage === 'trash') {
@@ -3267,7 +3267,7 @@
         // 常に +2カードを軸に、他にアクションがあれば +2アクション、無ければ +2コイン
         return { type: 'TRUSTY_STEED_RESOLVE', choices: ['cards', p.hand.some((c) => isType(c, 'action')) ? 'actions' : 'coins'] };
       case 'horn_of_plenty':
-        // 勝利点を獲得すると豊穣の角自身を廃棄する＝終盤（属州が残り少ない）以外は非勝利点を選ぶ。
+        // 勝利点を獲得すると豊穣の角笛自身を廃棄する＝終盤（属州が残り少ない）以外は非勝利点を選ぶ。
         return { type: 'HORN_OF_PLENTY_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
 
       /* ===== 拡張: ギルド（Guilds）===== */

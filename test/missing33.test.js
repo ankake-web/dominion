@@ -340,9 +340,9 @@ console.log('=== ならず者 ===');
   let t=E.reduce(s,{type:'DISCARD_DOWN_RESOLVE',cards:['copper','copper']}); ok(t.pending==null&&t.players[1].hand.length===3,'2枚捨てて終わり');
   t.turn.phase='buy'; t.turn.coins=5; t.turn.buys=2; const v0=t.players[0].vpTokens||0; t=E.reduce(t,{type:'BUY',card:'copper'}); ok((t.players[0].vpTokens||0)===v0+1,'購入1枚ごとに +1VP');
   t.turn.coins=5; t.turn.buys=1; t=E.reduce(t,{type:'BUY',card:'copper'}); ok((t.players[0].vpTokens||0)===v0+2,'2枚目も');
-  // 王の宮廷×ならず者＝場に1枚＝+1
+  // 宮廷×ならず者＝場に1枚＝+1
   let kc=mk(['goons','kings_court'].concat(F.slice(0,8))); kc.players[0].hand=['kings_court','goons']; kc=act(kc,'kings_court'); kc=E.reduce(kc,{type:'KINGS_COURT_CHOOSE',card:'goons'}); while(kc.pending) kc=E.reduce(kc,CPU.decide(kc,kc.pending.player)); kc.turn.phase='buy'; kc.turn.coins=9; kc.turn.buys=1; const kv=kc.players[0].vpTokens||0; kc=E.reduce(kc,{type:'BUY',card:'copper'});
-  ok((kc.players[0].vpTokens||0)===kv+1,'王の宮廷で3回使っても場には1枚＝+1VP');
+  ok((kc.players[0].vpTokens||0)===kv+1,'宮廷で3回使っても場には1枚＝+1VP');
   // イベントの購入では付かない
   let ev=mk(['goons'].concat(F.slice(0,9)),2,{events:['delve']}); ev.players[0].inPlay=['goons']; ev.turn.phase='buy'; ev.turn.coins=4; ev.turn.buys=1; const e0=ev.players[0].vpTokens||0; ev=E.reduce(ev,{type:'BUY_EVENT',event:'delve'}); ok((ev.players[0].vpTokens||0)===e0,'イベント購入では +VP なし');
 }
@@ -366,12 +366,12 @@ console.log('=== 召喚 ===');
   const src=fs.readFileSync('js/engine.js','utf8'); const m=src.match(/const ONCE_PER_TURN_EVENTS = [^;]*;/); ok(m&&!/summon/.test(m[0]),'ONCE_PER_TURN_EVENTS に summon は無い');
 }
 
-console.log('=== 出荷済みバグ修正：ティアラ/収集は「このターン」型・追跡者のラベル・遊牧民の野営地 ===');
+console.log('=== 出荷済みバグ修正：ティアラ/収集品は「このターン」型・追跡者のラベル・遊牧民の野営地 ===');
 { let s=mk(['tiara','mint'].concat(F.slice(0,8))); s.turn.phase='buy'; s.players[0].hand=['tiara']; s=E.reduce(s,{type:'PLAY_TREASURE',card:'tiara'}); if(s.pending) s=E.reduce(s,{type:'TIARA_PLAY',card:null});
   s.players[0].inPlay=s.players[0].inPlay.filter(x=>x!=='tiara'); // 場を離れても（造幣所で廃棄された想定）
   s.turn.coins=3; s.turn.buys=1; s=E.reduce(s,{type:'BUY',card:'silver'}); ok(s.pending&&s.pending.type==='tiara_topdeck','ティアラ＝場を離れても「このターン」は窓が開く');
   let c2=mk(['collection','mint'].concat(F.slice(0,8))); c2.turn.phase='buy'; c2.players[0].hand=['collection']; c2=E.reduce(c2,{type:'PLAY_TREASURE',card:'collection'}); c2.players[0].inPlay=c2.players[0].inPlay.filter(x=>x!=='collection'); c2.turn.coins=3; c2.turn.buys=1; const v0=c2.players[0].vpTokens||0; c2=E.reduce(c2,{type:'BUY',card:'village'});
-  ok((c2.players[0].vpTokens||0)===v0+1,'収集＝場を離れても「このターン」のアクション獲得で +1VP');
+  ok((c2.players[0].vpTokens||0)===v0+1,'収集品＝場を離れても「このターン」のアクション獲得で +1VP');
   let nc=mk(['nomad_camp'].concat(F.slice(0,9))); nc.turn.phase='buy'; nc.turn.coins=4; nc.turn.buys=1; nc=E.reduce(nc,{type:'BUY',card:'nomad_camp'}); ok(nc.players[0].deck[0]==='nomad_camp'&&!nc.players[0].discard.includes('nomad_camp'),'遊牧民の野営地＝山札の上に獲得（捨て札を経由しない）');
   let tr=mk(['tracker'].concat(F.slice(0,9))); tr.players[0].hand=['tracker']; tr=act(tr,'tracker'); while(tr.pending&&tr.pending.type!=='travelling_fair') tr=E.reduce(tr,CPU.decide(tr,tr.pending.player)); tr.turn.phase='buy'; tr.turn.coins=3; tr.turn.buys=1; tr=E.reduce(tr,{type:'BUY',card:'silver'});
   ok(tr.pending&&tr.pending.type==='travelling_fair'&&tr.pending.source==='tracker','追跡者の窓は source=tracker');
@@ -487,12 +487,12 @@ console.log('=== 一騎討ち＋褒賞の山 ===');
   const cd=CPU.decide(s,0); ok(cd&&cd.type==='JOUST_ASIDE','CPU'); }
 
 console.log('=== 褒賞6種 ===');
-{ // 小冠＝アクション→財宝の2段
+{ // 宝冠＝アクション→財宝の2段
   let s=mk(['joust'].concat(F.slice(0,9))); s.players[0].hand=['coronet','smithy','silver']; s.players[0].deck=['copper','copper','copper','copper','copper','copper']; s=act(s,'coronet');
   ok(s.pending&&s.pending.type==='coronet'&&s.pending.stage==='action','アクション段の窓');
   let t=E.reduce(s,{type:'CORONET_CHOOSE',card:'smithy'}); ok(t.players[0].hand.filter(x=>x==='copper').length===6&&t.pending&&t.pending.type==='coronet'&&t.pending.stage==='treasure','鍛冶屋を2回（+6枚）→財宝段の窓');
   t=E.reduce(t,{type:'CORONET_CHOOSE',card:'silver'}); ok(t.turn.coins===4&&t.pending==null,'銀貨を2回＝$4');
-  // 褒賞でない制限＝小冠で小冠/名声は選べない
+  // 褒賞でない制限＝宝冠で宝冠/名声は選べない
   let r=mk(['joust'].concat(F.slice(0,9))); r.players[0].hand=['coronet','renown','silver']; r=act(r,'coronet'); ok(r.pending&&r.pending.stage==='treasure','アクションが褒賞（名声）だけなら財宝段へ直行');
   // 購入フェイズに財宝として＝アクション段も出る（フェイズに依らない）
   let b=mk(['joust'].concat(F.slice(0,9))); b.turn.phase='buy'; b.players[0].hand=['coronet','village']; b=E.reduce(b,{type:'PLAY_TREASURE',card:'coronet'}); ok(b.pending&&b.pending.stage==='action','購入フェイズでもアクション段');
@@ -559,7 +559,7 @@ console.log('=== レビュー回帰 R1：真珠採り＝山札が空なら先に
   ok(z.pending == null, '山札も捨て札も空なら窓を開かない（シャッフルする札が無い）');
 }
 
-console.log('=== レビュー回帰 R2：交易路＝玉座／王の宮廷で複数回使うと +$ も回数ぶん出る（再開網はキュー）===');
+console.log('=== レビュー回帰 R2：交易路＝玉座／宮廷で複数回使うと +$ も回数ぶん出る（再開網はキュー）===');
 {
   let s = mk(['trade_route', 'kings_court'].concat(F.slice(0, 8)));
   s.tradeRouteMat = 2; // マットにコイントークン2個

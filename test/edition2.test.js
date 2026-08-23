@@ -310,16 +310,16 @@ console.log('=== 隠し通路: +2カ+1ア, 手札1枚を山札の好きな位置
 /* ============ プロモ 6種 ============ */
 const PROMO = ['walled_village', 'envoy', 'governor', 'dismantle', 'black_market', 'hoard', 'village', 'smithy', 'market', 'witch'];
 
-console.log('=== 城壁のある村: +1カ+2ア, クリーンアップで山札の上に戻る ===');
+console.log('=== 囲郭村: +1カ+2ア, クリーンアップで山札の上に戻る ===');
 {
   let s = mk(PROMO); s.players[0].hand = ['walled_village', 'copper', 'copper', 'copper', 'copper'];
   s.players[0].deck = ['estate'];
   s = reduce(s, { type: 'PLAY_ACTION', card: 'walled_village' });
-  ok(s.turn.actions === 2, '城壁のある村 +2アクション');
+  ok(s.turn.actions === 2, '囲郭村 +2アクション');
   s = reduce(s, { type: 'END_ACTION_PHASE' });
   s = reduce(s, { type: 'PLAY_ALL_TREASURES' });
   s = reduce(s, { type: 'END_TURN' });
-  ok(s.players[0].hand.includes('walled_village'), '城壁のある村: 山札の上に戻り次の手札に来る');
+  ok(s.players[0].hand.includes('walled_village'), '囲郭村: 山札の上に戻り次の手札に来る');
 }
 { // アクションが多いと戻らない（場に村2枚=3アクション）
   let s = mk(PROMO); s.players[0].hand = ['walled_village', 'village', 'village', 'copper'];
@@ -334,16 +334,16 @@ console.log('=== 城壁のある村: +1カ+2ア, クリーンアップで山札�
   ok(!s.players[deckBefore.turn.active].deck.slice(0, 1).includes('walled_village') || true, '（場のアクション3枚なら戻さない: ログで確認）');
 }
 
-console.log('=== 使者: 上5枚公開, 左隣が1枚捨てさせ残りを手札に ===');
+console.log('=== 公使: 上5枚公開, 左隣が1枚捨てさせ残りを手札に ===');
 {
   let s = mk(PROMO); s.players[0].hand = ['envoy'];
   s.players[0].deck = ['copper', 'silver', 'gold', 'estate', 'copper', 'duchy'];
   s = reduce(s, { type: 'PLAY_ACTION', card: 'envoy' });
-  ok(s.pending && s.pending.type === 'envoy' && s.pending.player === 1, '使者: 左隣(席1)が選ぶ');
-  ok(s.pending.revealed.length === 5, '使者: 5枚公開');
+  ok(s.pending && s.pending.type === 'envoy' && s.pending.player === 1, '公使: 左隣(席1)が選ぶ');
+  ok(s.pending.revealed.length === 5, '公使: 5枚公開');
   s = reduce(s, { type: 'ENVOY_PICK', card: 'gold' });
-  ok(s.players[0].discard.includes('gold'), '使者: 選ばれた金貨を捨てた');
-  ok(s.players[0].hand.length === 4, '使者: 残り4枚を手札に');
+  ok(s.players[0].discard.includes('gold'), '公使: 選ばれた金貨を捨てた');
+  ok(s.players[0].hand.length === 4, '公使: 残り4枚を手札に');
 }
 
 console.log('=== 総督: +1アクション, 3モード（自分は強い方）===');
@@ -470,7 +470,7 @@ console.log('=== 堀は全アタックを完全無効化（被害者の札が不
     const s0 = mk(kingdom, ['A', 'B']);
     let s = s0;
     s.players[0].hand = [card];
-    // 被害者: 堀を持ち、手札5枚以上(手先用)、勝利点も所持(役人用)、山札に色々(密偵/泥棒/山賊用)
+    // 被害者: 堀を持ち、手札5枚以上(寵臣用)、勝利点も所持(役人用)、山札に色々(密偵/泥棒/山賊用)
     s.players[1].hand = ['moat', 'copper', 'copper', 'copper', 'estate'];
     s.players[1].deck = ['gold', 'silver', 'copper', 'estate'];
     s = reduce(s, { type: 'PLAY_ACTION', card });

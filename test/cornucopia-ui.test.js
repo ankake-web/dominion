@@ -56,28 +56,28 @@ try {
   { runtimeError = null; UI.view = 'cards'; DOM.render(); ok(!runtimeError, 'カード一覧が描画できる'); }
 
   console.log('=== 各 pending モーダルが描画される ===');
-  { let s = mk(); s.players[0].hand = ['hamlet', 'estate', 'copper']; s.players[0].deck = ['copper', 'silver']; s = play(s, 'hamlet'); showAs(s, 0); ok($('.modal') && byText('*', '小村') && !runtimeError, '小村 捨て札モーダル'); }
+  { let s = mk(); s.players[0].hand = ['hamlet', 'estate', 'copper']; s.players[0].deck = ['copper', 'silver']; s = play(s, 'hamlet'); showAs(s, 0); ok($('.modal') && byText('*', '村落') && !runtimeError, '村落 捨て札モーダル'); }
   showPend({ type: 'fortune_teller', stage: 'react', player: 1, source: 0, victim: 1, queue: [] }, (s) => { s.players[1].hand = ['moat']; }); ok($('.modal') && byText('button', '受ける') && !runtimeError, '占い師 リアクション');
   { let s = mk(); s.players[0].hand = ['horse_traders', 'copper', 'estate', 'silver']; s = play(s, 'horse_traders'); showAs(s, 0); ok($('.modal') && byText('*', '馬商人') && !runtimeError, '馬商人 捨て札モーダル'); }
-  { let s = mk(); s.players[0].hand = ['remake', 'estate', 'copper']; s = play(s, 'remake'); showAs(s, 0); ok($('.modal') && byText('*', 'リメイク') && !runtimeError, 'リメイク 廃棄モーダル'); }
-  showPend({ type: 'remake', stage: 'gain', player: 0, iter: 0, exactCost: 3 }); ok($('.modal') && byText('*', 'リメイク') && !runtimeError, 'リメイク 獲得モーダル');
+  { let s = mk(); s.players[0].hand = ['remake', 'estate', 'copper']; s = play(s, 'remake'); showAs(s, 0); ok($('.modal') && byText('*', '再建') && !runtimeError, '再建 廃棄モーダル'); }
+  showPend({ type: 'remake', stage: 'gain', player: 0, iter: 0, exactCost: 3 }); ok($('.modal') && byText('*', '再建') && !runtimeError, '再建 獲得モーダル');
   { let s = mk(); s.players[0].hand = ['tournament', 'province']; s = play(s, 'tournament'); showAs(s, 0); ok($('.modal') && byText('button', '属州を公開する') && !runtimeError, '馬上槍試合 属州公開モーダル'); }
   showPend({ type: 'tournament', stage: 'prize', player: 0, source: 0 }); ok($('.modal') && (byText('button', '金貨袋') || byText('button', '賞品')) && !runtimeError, '馬上槍試合 賞品モーダル');
   showPend({ type: 'tournament', stage: 'reveal_opp', player: 1, source: 0, queue: [], revealedAny: false }, (s) => { s.players[1].hand = ['province']; }); ok($('.modal') && byText('button', '公開') && !runtimeError, '馬上槍試合 相手の公開モーダル');
-  { let s = mk(); s.players[0].hand = ['young_witch', 'copper', 'copper']; s.players[0].deck = ['copper', 'silver', 'gold']; s = play(s, 'young_witch'); showAs(s, 0); ok($('.modal') && byText('*', '若き魔女') && !runtimeError, '若き魔女 手札捨てモーダル'); }
-  { // 若き魔女の反応（災いカード公開ボタン）
+  { let s = mk(); s.players[0].hand = ['young_witch', 'copper', 'copper']; s.players[0].deck = ['copper', 'silver', 'gold']; s = play(s, 'young_witch'); showAs(s, 0); ok($('.modal') && byText('*', '魔女娘') && !runtimeError, '魔女娘 手札捨てモーダル'); }
+  { // 魔女娘の反応（災いカード公開ボタン）
     const s = mk(); const bane = s.baneCard;
     s.pending = { type: 'young_witch', stage: 'react', player: 1, source: 0, victim: 1, queue: [], bane };
     s.players[1].hand = [bane, 'copper'];
     showAs(s, 1);
-    ok($('.modal') && byText('button', '災いカード') && !runtimeError, '若き魔女 災いカード公開ボタン');
+    ok($('.modal') && byText('button', '災いカード') && !runtimeError, '魔女娘 災いカード公開ボタン');
   }
   showPend({ type: 'jester', stage: 'react', player: 1, source: 0, victim: 1, queue: [] }, (s) => { s.players[1].hand = ['moat']; }); ok($('.modal') && byText('button', '受ける') && !runtimeError, '道化師 リアクション');
   showPend({ type: 'jester', stage: 'choose', player: 0, source: 0, victim: 1, card: 'gold', queue: [] }); ok($('.modal') && byText('button', '獲得') && !runtimeError, '道化師 コピー獲得先モーダル');
-  showPend({ type: 'followers', stage: 'react', player: 1, source: 0, victim: 1, queue: [] }, (s) => { s.players[1].hand = ['moat']; }); ok($('.modal') && byText('button', '受ける') && !runtimeError, '家臣団 リアクション');
-  showPend({ type: 'followers', stage: 'discard', player: 1, source: 0, victim: 1, queue: [] }, (s) => { s.players[1].hand = ['copper', 'silver', 'gold', 'estate', 'duchy']; }); ok($('.modal') && byText('*', '家臣団') && !runtimeError, '家臣団 手札捨てモーダル');
-  { let s = mk(); s.players[0].hand = ['trusty_steed']; s = play(s, 'trusty_steed'); showAs(s, 0); ok($('.modal') && byText('*', '頼もしい乗騎') && byText('*', 'カード') && !runtimeError, '頼もしい乗騎 選択モーダル'); }
-  showPend({ type: 'horn_of_plenty', player: 0, maxCost: 4 }); ok($('.modal') && byText('*', '豊穣の角') && !runtimeError, '豊穣の角 獲得モーダル');
+  showPend({ type: 'followers', stage: 'react', player: 1, source: 0, victim: 1, queue: [] }, (s) => { s.players[1].hand = ['moat']; }); ok($('.modal') && byText('button', '受ける') && !runtimeError, '郎党 リアクション');
+  showPend({ type: 'followers', stage: 'discard', player: 1, source: 0, victim: 1, queue: [] }, (s) => { s.players[1].hand = ['copper', 'silver', 'gold', 'estate', 'duchy']; }); ok($('.modal') && byText('*', '郎党') && !runtimeError, '郎党 手札捨てモーダル');
+  { let s = mk(); s.players[0].hand = ['trusty_steed']; s = play(s, 'trusty_steed'); showAs(s, 0); ok($('.modal') && byText('*', '名馬') && byText('*', 'カード') && !runtimeError, '名馬 選択モーダル'); }
+  showPend({ type: 'horn_of_plenty', player: 0, maxCost: 4 }); ok($('.modal') && byText('*', '豊穣の角笛') && !runtimeError, '豊穣の角笛 獲得モーダル');
 
   console.log('=== 馬商人リアクション: アタックの反応窓に「馬商人を脇に置く」ボタンが出る ===');
   {

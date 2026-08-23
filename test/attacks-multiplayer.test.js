@@ -1,6 +1,6 @@
 /* 多人数(2-4人)のアタック/リアクションのルール正当性を的に絞って検証（決定論）。
    使い方: node test/attacks-multiplayer.test.js
-   対象: 呪い配布(人数ぶん/枯渇で手番順先着)・堀は公開者だけ免疫・灯台免疫・民兵/巾着切り/役人の全相手適用・玉座/王の宮廷での複製 */
+   対象: 呪い配布(人数ぶん/枯渇で手番順先着)・堀は公開者だけ免疫・灯台免疫・民兵/巾着切り/官吏の全相手適用・玉座/宮廷での複製 */
 const fs = require('fs'); const path = require('path'); const vm = require('vm');
 const sandbox = { window: {}, Math: Math, JSON: JSON, console: console };
 vm.createContext(sandbox);
@@ -93,7 +93,7 @@ console.log('=== 巾着切り: 3人で相手全員が銅貨1枚を捨てる ==='
   ok(s.turn.coins === 2, '巾着切り +2コイン');
 }
 
-console.log('=== 役人: 3人で相手全員が勝利点1枚を山札の上に置く ===');
+console.log('=== 官吏: 3人で相手全員が勝利点1枚を山札の上に置く ===');
 {
   let s = mk(3);
   s.players[0].hand = ['bureaucrat'];
@@ -103,7 +103,7 @@ console.log('=== 役人: 3人で相手全員が勝利点1枚を山札の上に�
   s = playAttack(s, 'bureaucrat');
   ok(s.players[1].deck[0] === 'estate', 'P1は勝利点(屋敷)を山札の上へ');
   ok(s.players[2].deck[0] === 'duchy', 'P2は勝利点(公領)を山札の上へ');
-  ok(cnt(s.players[0], 'silver') >= 1, '役人: 攻撃者は銀貨を山札の上に獲得');
+  ok(cnt(s.players[0], 'silver') >= 1, '官吏: 攻撃者は銀貨を山札の上に獲得');
 }
 
 console.log('=== 玉座の間 × 魔女: 相手が呪い2枚（複製で2回攻撃）===');
@@ -115,13 +115,13 @@ console.log('=== 玉座の間 × 魔女: 相手が呪い2枚（複製で2回攻�
   ok(cnt(s.players[1], 'curse') === 2, '玉座×魔女で相手が呪い2枚（実 ' + cnt(s.players[1], 'curse') + '）');
 }
 
-console.log('=== 王の宮廷 × 魔女: 相手が呪い3枚（複製で3回攻撃）===');
+console.log('=== 宮廷 × 魔女: 相手が呪い3枚（複製で3回攻撃）===');
 {
   let s = mk(2);
   s.players[0].hand = ['kings_court', 'witch'];
   s.players[1].hand = ['estate', 'copper', 'copper', 'copper', 'copper'];
   s = playAttack(s, 'kings_court');
-  ok(cnt(s.players[1], 'curse') === 3, '王の宮廷×魔女で相手が呪い3枚（実 ' + cnt(s.players[1], 'curse') + '）');
+  ok(cnt(s.players[1], 'curse') === 3, '宮廷×魔女で相手が呪い3枚（実 ' + cnt(s.players[1], 'curse') + '）');
 }
 
 console.log('=== 玉座の間 × 魔女: 呪い山が3枚しか無いなら3枚で打ち止め（枯渇）===');
@@ -130,7 +130,7 @@ console.log('=== 玉座の間 × 魔女: 呪い山が3枚しか無いなら3枚�
   s.players[0].hand = ['kings_court', 'witch']; s.supply.curse = 2;
   s.players[1].hand = ['estate', 'copper', 'copper', 'copper', 'copper'];
   s = playAttack(s, 'kings_court');
-  ok(cnt(s.players[1], 'curse') === 2 && s.supply.curse === 0, '王の宮廷×魔女でも呪い山ぶんだけ（2枚）で枯渇');
+  ok(cnt(s.players[1], 'curse') === 2 && s.supply.curse === 0, '宮廷×魔女でも呪い山ぶんだけ（2枚）で枯渇');
 }
 
 console.log('\n========================================');

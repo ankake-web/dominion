@@ -1,7 +1,7 @@
 /* 暗黒時代（Dark Ages）ゲームロジックの検証（Node 単体実行）
    使い方: node test/darkages.test.js
    対象: 基盤機構（混合山=廃墟/騎士・非サプライ=略奪品/狂人/傭兵・避難所・封土VP）／
-         経路別 on-trash（城塞×礼拝堂・狂信者×死の荷車・封土×騎士・地下墓所/狩場/従者/ネズミ/サー・ヴァンダー）／
+         経路別 on-trash（城塞×礼拝堂・狂信者×死の荷車・封土×騎士・地下墓所/狩場/寵臣/ネズミ/サー・ヴァンデル）／
          カード効果56枚の主要経路（アタック/命令/交換/財宝2回/騎士アタック）／CPU通し・カード保存則 */
 const fs = require('fs');
 const path = require('path');
@@ -66,7 +66,7 @@ console.log('=== 暗黒時代: 基盤機構（混合山/非サプライ/避難�
   const s2 = mk(['marauder', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel', 'workshop']);
   ok(Array.isArray(s2.ruins) && s2.ruins.length === 10 && s2.supply.ruins == null, '廃墟(2人): state.ruins=10枚・supply.ruins なし');
   ok(!E.canBuyCard(s2, 0, 'ruins'), '廃墟は購入できない');
-  ok(s2.supply.spoils === 15, '略奪者: 略奪品15枚（非サプライ）');
+  ok(s2.supply.spoils === 15, '襲撃者: 略奪品15枚（非サプライ）');
   // 非サプライは3山終了/購入/汎用獲得に数えない
   ok(DOM.CARDS.spoils && DOM.CARDS.madman && DOM.CARDS.mercenary, '略奪品/狂人/傭兵 カタログ在');
   // Looter 無しなら廃墟山なし
@@ -130,14 +130,14 @@ console.log('=== 暗黒時代: 経路別 on-trash ===');
   s = drive(s);
   ok(count(s.trash, 'hunting_grounds') === 1 && (count(s.players[0].discard, 'duchy') === 1 || count(s.players[0].discard, 'estate') === 3), '狩場 on-trash: 公領1 or 屋敷3 を獲得');
 
-  // 従者 on-trash（礼拝堂で廃棄→アタックを獲得）
+  // 寵臣 on-trash（礼拝堂で廃棄→アタックを獲得）
   s = setup(['squire', 'chapel', 'marauder', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine'], ['chapel', 'squire'], ['copper', 'copper']);
   s = play(s, 'chapel');
   s = reduce(s, { type: 'CHAPEL_RESOLVE', cards: ['squire'] });
   s = drive(s);
   ok(count(s.trash, 'squire') === 1 && s.players[0].discard.some((c) => DOM.isType(c, 'attack')), '従者 on-trash: アタックカードを獲得');
 
-  // ネズミ on-trash（+1カード）／サー・ヴァンダー相討ちで金貨
+  // ネズミ on-trash（+1カード）／サー・ヴァンデル相討ちで金貨
   s = setup(['rats', 'chapel', 'village', 'smithy', 'market', 'moat', 'cellar', 'militia', 'mine', 'remodel'], ['chapel', 'rats'], ['copper', 'copper', 'copper']);
   s = play(s, 'chapel');
   const hb = s.players[0].hand.length;

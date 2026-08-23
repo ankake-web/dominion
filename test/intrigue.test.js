@@ -34,7 +34,7 @@ console.log('=== 中庭: +3カード→手札1枚を山札の上へ ===');
   ok(s.pending === null, '解決後は選択待ち解除');
 }
 
-console.log('=== 従者: 異なる2つを選ぶ ===');
+console.log('=== 寵臣: 異なる2つを選ぶ ===');
 {
   let s = setup(['pawn']);
   s = reduce(s, { type: 'PLAY_ACTION', card: 'pawn' });
@@ -51,7 +51,7 @@ console.log('=== 従者: 異なる2つを選ぶ ===');
   ok(s2.pending, '1つだけは拒否');
 }
 
-console.log('=== 寂れた村: +2アクション、アクション無しなら+2カード ===');
+console.log('=== 貧民街: +2アクション、アクション無しなら+2カード ===');
 {
   // 手札に他のアクションがある→ドローなし
   let s = setup(['shanty_town', 'village', 'copper']);
@@ -203,14 +203,14 @@ console.log('=== 公爵: 公領1枚につき1点 ===');
   ok(E.vpOf(p2) === 0, '公領0なら公爵は0点');
 }
 
-console.log('=== 後宮: 財宝+2コイン、得点2 ===');
+console.log('=== ハーレム: 財宝+2コイン、得点2 ===');
 {
   let s = setup(['harem']);
   s.turn.phase = 'buy';
   s = reduce(s, { type: 'PLAY_TREASURE', card: 'harem' });
   ok(s.turn.coins === 2 && count(s.players[0].inPlay, 'harem') === 1, '財宝として+2コイン');
   const p = { deck: ['harem', 'harem'], hand: [], discard: [], inPlay: [] };
-  ok(E.vpOf(p) === 4, '後宮2枚で4点');
+  ok(E.vpOf(p) === 4, 'ハーレム2枚で4点');
 }
 
 console.log('=== 拷問人: 各相手が2枚捨てる or 呪い、堀で無効化 ===');
@@ -344,12 +344,12 @@ console.log('=== 改良: 廃棄→ちょうど+1コストを獲得 ===');
   ok(JSON.stringify(s2) === snap, '候補ありで card:null は無効(state不変)');
 }
 
-console.log('=== 斥候: 上4枚公開→勝利点を手札・残りを並べ替えて山札上 ===');
+console.log('=== 偵察員: 上4枚公開→勝利点を手札・残りを並べ替えて山札上 ===');
 {
   let s = setup(['scout']);
   s.players[0].deck = ['estate', 'copper', 'duchy', 'silver', 'gold']; // 上4: estate,copper,duchy,silver
   s = reduce(s, { type: 'PLAY_ACTION', card: 'scout' });
-  ok(s.turn.actions === 1, '斥候: +1アクション(据え置き): ' + s.turn.actions);
+  ok(s.turn.actions === 1, '偵察員: +1アクション(据え置き): ' + s.turn.actions);
   ok(count(s.players[0].hand, 'estate') === 1 && count(s.players[0].hand, 'duchy') === 1, '勝利点2枚(屋敷/公領)が手札へ');
   ok(s.pending && s.pending.type === 'scout' && s.pending.cards.length === 2, '非勝利点2枚(copper,silver)の並べ替え待ち');
   s = reduce(s, { type: 'SCOUT_RESOLVE', order: ['silver', 'copper'] });
@@ -514,12 +514,12 @@ console.log('=== 破壊工作員: $3以上を廃棄→任意で格下げ獲得 =
   ok(s.pending === null && count(s.trash, 'gold') === 1 && count(s.trash, 'silver') === 1, '両者$3以上を廃棄して終了');
 }
 
-console.log('=== 手先: +1アクション、+2コイン か 全員引き直し ===');
+console.log('=== 寵臣: +1アクション、+2コイン か 全員引き直し ===');
 {
   // +2コインを選ぶ
   let s = setup(['minion', 'copper']);
   s = reduce(s, { type: 'PLAY_ACTION', card: 'minion' });
-  ok(s.turn.actions === 1, '手先: +1アクション(据え置き): ' + s.turn.actions);
+  ok(s.turn.actions === 1, '寵臣: +1アクション(据え置き): ' + s.turn.actions);
   ok(s.pending && s.pending.type === 'minion' && s.pending.stage === 'choose', '攻撃側の選択待ち');
   const c0 = s.turn.coins;
   s = reduce(s, { type: 'MINION_RESOLVE', choice: 'coins' });
@@ -653,7 +653,7 @@ console.log('=== 仮面舞踏会: +2カード→全員左隣へ1枚→任意で�
   ok(s.pending && s.pending.stage === 'trash', 'その後は通常どおり任意の廃棄へ');
 }
 
-console.log('=== 秘密の小部屋(アクション): 捨てた枚数だけ+1コイン ===');
+console.log('=== 秘密の部屋(アクション): 捨てた枚数だけ+1コイン ===');
 {
   let s = setup(['secret_chamber', 'estate', 'estate', 'copper']);
   s = reduce(s, { type: 'PLAY_ACTION', card: 'secret_chamber' });
@@ -673,7 +673,7 @@ console.log('=== 秘密の小部屋(アクション): 捨てた枚数だけ+1コ
   ok(s.turn.coins === c0 && s.pending === null, '0枚捨てはコイン増減なしで終了');
 }
 
-console.log('=== 秘密の小部屋(リアクション): アタックに+2引き2枚戻す ===');
+console.log('=== 秘密の部屋(リアクション): アタックに+2引き2枚戻す ===');
 {
   // 拷問人に対してリアクション。アタックは無効化しない（その後も拷問人を解決）。
   let s = E.createInitialState(['A', 'B'], DOM.KINGDOM_INTRIGUE, { startActive: 0 });
@@ -698,13 +698,13 @@ console.log('=== 秘密の小部屋(リアクション): アタックに+2引き
   ok(s.pending === null, 'リアクション後もアタックは解決される');
 }
 {
-  // 堀を持たず秘密の小部屋だけ持つ相手にも、詐欺師でリアクション機会が作られる
+  // 堀を持たず秘密の部屋だけ持つ相手にも、詐欺師でリアクション機会が作られる
   let s = E.createInitialState(['A', 'B'], DOM.KINGDOM_INTRIGUE, { startActive: 0 });
   s.players[0].hand = ['swindler'];
   s.players[1].hand = ['secret_chamber', 'copper'];
   s.players[1].deck = ['silver', 'estate'];
   s = reduce(s, { type: 'PLAY_ACTION', card: 'swindler' });
-  ok(s.pending && s.pending.type === 'swindler' && s.pending.stage === 'react', '秘密の小部屋持ちにも反応ステップ');
+  ok(s.pending && s.pending.type === 'swindler' && s.pending.stage === 'react', '秘密の部屋持ちにも反応ステップ');
   s = reduce(s, { type: 'SWINDLER_REACT' }); // 公開せずそのまま受ける
   ok(s.pending && s.pending.stage === 'gain', 'そのまま受ける→廃棄・攻撃側の付与へ');
 }

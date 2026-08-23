@@ -66,7 +66,7 @@ try {
   { let s = mk(); s.players[0].hand = ['lookout']; s.players[0].deck = ['curse', 'estate', 'gold']; s = play(s, 'lookout'); show(s); ok($('.modal') && !runtimeError, '見張りモーダル'); }
   { let s = mk(); s.players[0].hand = ['island', 'province']; s = play(s, 'island'); show(s); ok($('.modal') && byText('*', '島マット') && !runtimeError, '島モーダル'); }
   { let s = mk(); s.players[0].hand = ['native_village']; s.players[0].deck = ['gold']; s = play(s, 'native_village'); show(s); ok($('.modal') && byText('button', 'マットに置く') && !runtimeError, '原住民の村モーダル'); }
-  { let s = pend({ type: 'tide_pools_discard', player: 0 }); s.players[0].hand = ['copper', 'estate', 'gold']; show(s); ok($('.modal') && !runtimeError, '潮だまり捨てモーダル'); }
+  { let s = pend({ type: 'tide_pools_discard', player: 0 }); s.players[0].hand = ['copper', 'estate', 'gold']; show(s); ok($('.modal') && !runtimeError, '潮溜り捨てモーダル'); }
   { let s = pend({ type: 'cutpurse', stage: 'react', player: 1, source: 0, victim: 1, queue: [] }); s.players[1].hand = ['moat', 'copper']; show(s); ok($('.modal') && byText('button', '受ける') && !runtimeError, '巾着切りリアクション'); }
   { let s = pend({ type: 'sea_witch', stage: 'react', player: 1, source: 0, victim: 1, queue: [] }); s.players[1].hand = ['moat']; show(s); ok($('.modal') && byText('button', '受ける') && !runtimeError, '海の魔女リアクション'); }
   { let s = pend({ type: 'sea_witch_discard', player: 0 }); s.players[0].hand = ['copper', 'estate', 'gold']; show(s); ok($('.modal') && !runtimeError, '海の魔女2捨てモーダル'); }

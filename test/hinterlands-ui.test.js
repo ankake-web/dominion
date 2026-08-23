@@ -1,5 +1,5 @@
 /* 異郷（Hinterlands）UI スモーク（jsdom）
-   各 pending の選択モーダル・番犬リアクション・専用モーダル（地図職人/策謀）が描画できるかを確認。
+   各 pending の選択モーダル・番犬リアクション・専用モーダル（地図職人/画策）が描画できるかを確認。
    使い方: node test/hinterlands-ui.test.js */
 const fs = require('fs');
 const path = require('path');
@@ -65,21 +65,21 @@ try {
   showPend({ type: 'oracle', stage: 'decide', player: 0, source: 0, victim: 1, cards: ['gold', 'estate'], queue: [] });
   ok(m('神託'), '神託 捨て/戻す 決定モーダル');
   showPend({ type: 'jack', stage: 'look', player: 0 }, (s) => { s.players[0].deck = ['curse', 'copper']; });
-  ok(m('何でも屋'), '何でも屋 山札の上モーダル');
+  ok(m('よろずや'), 'よろずや 山札の上モーダル');
   showPend({ type: 'jack', stage: 'trash', player: 0 }, (s) => { s.players[0].hand = ['estate', 'copper']; });
-  ok(m('何でも屋'), '何でも屋 廃棄モーダル');
+  ok(m('よろずや'), 'よろずや 廃棄モーダル');
   showPend({ type: 'noble_brigand', stage: 'react', player: 1, source: 0, victim: 1, queue: [] }, (s) => { s.players[1].hand = ['moat']; });
-  ok($('.modal') && byText('button', '受ける') && !runtimeError, '高貴な山賊 リアクション');
+  ok($('.modal') && byText('button', '受ける') && !runtimeError, '義賊 リアクション');
   showPend({ type: 'noble_brigand', stage: 'pick', player: 0, source: 0, victim: 1, revealed: ['silver', 'gold'], queue: [] });
-  ok(m('高貴な山賊'), '高貴な山賊 廃棄財宝選択');
+  ok(m('義賊'), '義賊 廃棄財宝選択');
   showPend({ type: 'spice_merchant', stage: 'trash', player: 0 }, (s) => { s.players[0].hand = ['copper', 'silver']; });
   ok(m('香辛料商人'), '香辛料商人 財宝廃棄モーダル');
   showPend({ type: 'spice_merchant', stage: 'choose', player: 0 });
   ok(m('香辛料商人'), '香辛料商人 モード選択');
   showPend({ type: 'trader', stage: 'trash', player: 0 }, (s) => { s.players[0].hand = ['estate', 'copper']; });
-  ok(m('交易商人'), '交易商人 廃棄モーダル');
+  ok(m('交易人'), '交易人 廃棄モーダル');
   showPend({ type: 'trader_react', player: 0, card: 'estate', dest: 'discard' });
-  ok(m('交易商人'), '交易商人 獲得置換リアクション');
+  ok(m('交易人'), '交易人 獲得置換リアクション');
   showPend({ type: 'cartographer', player: 0, cards: ['gold', 'estate', 'silver', 'copper'] });
   ok(m('地図職人'), '地図職人 捨て/並べモーダル');
   showPend({ type: 'embassy', player: 0 }, (s) => { s.players[0].hand = ['copper', 'copper', 'copper', 'estate', 'gold']; });
@@ -89,7 +89,7 @@ try {
   showPend({ type: 'inn_gain', player: 0 }, (s) => { s.players[0].discard = ['oasis', 'margrave', 'copper']; });
   ok(m('宿屋'), '宿屋 捨て札アクション混ぜモーダル');
   showPend({ type: 'mandarin', player: 0 }, (s) => { s.players[0].hand = ['gold', 'estate']; });
-  ok(m('役人'), '役人 山札の上に置くモーダル');
+  ok(m('官吏'), '官吏 山札の上に置くモーダル');
   showPend({ type: 'margrave', stage: 'react', player: 1, source: 0, victim: 1, queue: [] }, (s) => { s.players[1].hand = ['moat']; });
   ok($('.modal') && byText('button', '受ける') && !runtimeError, '辺境伯 リアクション');
   showPend({ type: 'margrave', stage: 'discard', player: 1, source: 0, victim: 1, queue: [] }, (s) => { s.players[1].hand = ['copper', 'copper', 'copper', 'estate', 'gold']; });
@@ -133,7 +133,7 @@ try {
   showPend({ type: 'igg_play', player: 0 });
   ok(m('不正利得'), '不正利得 銅貨獲得モーダル');
   showPend({ type: 'scheme_cleanup', player: 0, max: 1 }, (s) => { s.players[0].inPlay = ['scheme', 'margrave']; });
-  ok(m('策謀'), '策謀 片付けモーダル');
+  ok(m('画策'), '画策 片付けモーダル');
 
   console.log('=== 番犬リアクションが反応窓に出る ===');
   showPend({ type: 'margrave', stage: 'react', player: 1, source: 0, victim: 1, queue: [] }, (s) => { s.players[1].hand = ['guard_dog', 'copper']; });

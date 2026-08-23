@@ -448,7 +448,7 @@ console.log('=== ギルドゲームでカード保存則が保たれる（財源
 }
 
 /* 🛑 出荷済みの実バグ（2026-08-23 修正）＝`maybeStartOverpay` が `state.pending` を無条件に上書きし、
-   **獲得時対話（望楼／交易商人／そり…）の窓を潰していた**。望楼を手札に持って名品を買い残コインがあると、
+   **獲得時対話（望楼／交易人／そり…）の窓を潰していた**。望楼を手札に持って名品を買い残コインがあると、
    過払いを0で閉じても望楼の窓は二度と開かなかった（残コイン0なら開く＝非対称）。
    公式（2022エラッタ）＝`"overpay" abilities happen when the card is gained, and **are timed with other such
    abilities**`＝獲得時対話と並ぶ。→ 窓が既にあれば `onGainQueue` に積み、消化側で `overpay` を開く。 */

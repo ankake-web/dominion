@@ -177,14 +177,14 @@ console.log('=== 冒険: 回帰テスト（敵対レビュー由来）===');
     let s = setup(K, [thrower, reserve], Array(10).fill('copper'));
     const init = tally(s);
     s = play(s, thrower); s = drive(s);
-    // 玉座/王の宮廷/行進の対象選択（reserve を選ぶ）
+    // 玉座/宮廷/行進の対象選択（reserve を選ぶ）
     if (s.pending && (s.pending.type === 'throne' || s.pending.type === 'kings_court')) s = reduce(s, { type: s.pending.type === 'throne' ? 'THRONE_CHOOSE' : 'KINGS_COURT_CHOOSE', card: reserve });
     else if (s.pending && s.pending.type === 'procession') s = reduce(s, { type: 'PROCESSION_CHOOSE', card: reserve });
     s = drive(s, 120);
     return tdiff(init, tally(s)).length === 0;
   }
   ok(reservePlay('throne_room', 'guide'), 'R1: 玉座×案内人 保存則OK（マット複製なし）');
-  ok(reservePlay('kings_court', 'ratcatcher'), 'R1: 王の宮廷×鼠取り 保存則OK');
+  ok(reservePlay('kings_court', 'ratcatcher'), 'R1: 宮廷×鼠取り 保存則OK');
   ok(reservePlay('throne_room', 'duplicate'), 'R1: 玉座×複製 保存則OK');
   ok(reservePlay('procession', 'transmogrify'), 'R1: 行進×変容 保存則OK');
 }
@@ -240,7 +240,7 @@ console.log('=== 冒険: 回帰テスト（敵対レビュー由来）===');
   }
   ok(throneSwamp(['accept', 'moat']) === 1 && throneSwamp(['moat', 'accept']) === 1, 'R4: 玉座×沼の妖婆 免疫が反応順に依らず呪い1枚');
 }
-// R5. 玉座×語り部×水晶玉で基本+1×2（引き枚数）
+// R5. 玉座×語り部×水晶球で基本+1×2（引き枚数）
 {
   const K = ['throne_room', 'storyteller', 'crystal_ball', 'village', 'market', 'smithy', 'witch', 'moat', 'laboratory', 'gold'];
   let s = setup(K, ['throne_room', 'storyteller', 'crystal_ball', 'silver'], Array(20).fill('estate'));
@@ -249,10 +249,10 @@ console.log('=== 冒険: 回帰テスト（敵対レビュー由来）===');
   s = reduce(s, { type: 'STORYTELLER_PLAY', cards: ['crystal_ball', 'silver'] });
   if (s.pending && s.pending.type === 'crystal_ball') s = reduce(s, { type: 'CRYSTAL_BALL', mode: 'discard' });
   s = drive(s, 20); // 2回目の storyteller（財宝なし→基本+1）を処理
-  ok(s.players[0].hand.length === 5 && s.turn.coins === 0, 'R5: 玉座×語り部×水晶玉 で両プレイの基本+1が入り 手札5・coins0');
+  ok(s.players[0].hand.length === 5 && s.turn.coins === 0, 'R5: 玉座×語り部×水晶球 で両プレイの基本+1が入り 手札5・coins0');
   ok(tdiff(init, tally(s)).length === 0, 'R5: 保存則OK');
 }
-// R6. 使者の初回配布（他Pもコピー獲得）
+// R6. 公使の初回配布（他Pもコピー獲得）
 {
   const K = ['messenger', 'village', 'market', 'smithy', 'militia', 'moat', 'witch', 'laboratory', 'gold', 'silver'];
   let s = mk(K); const init = tally(s);

@@ -1457,7 +1457,7 @@ console.log('\n=== N0/N3: オンラインの看破（私的情報が相手に漏
   ok(myView.pending.cards[0] === 'gold', '本人には見える');
 }
 {
-  // ゾンビの密偵の「山札の一番上を見る」も私的情報（水晶玉と同型）。
+  // ゾンビの密偵の「山札の一番上を見る」も私的情報（水晶球と同型）。
   const s = mk(king(['necromancer']));
   s.pending = { type: 'zombie_spy', player: 0, card: 'gold' };
   ok(E.maskStateFor(s, 1).pending.card === 'back', 'ゾンビの密偵で見たカードは相手に見えない');

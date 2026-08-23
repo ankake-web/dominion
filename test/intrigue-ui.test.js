@@ -86,7 +86,7 @@ try {
   clickText('.modal .btn', '+2 コイン');
   ok(UI.store.state.turn.coins === 2 && UI.store.state.pending === null, '+2コインで解決');
 
-  console.log('=== 従者モーダル: 異なる2つを選んで決定 ===');
+  console.log('=== 寵臣モーダル: 異なる2つを選んで決定 ===');
   let s2 = E.createInitialState(['P1', 'P2'], DOM.KINGDOM_INTRIGUE, { startActive: 0 });
   s2.players[0].hand = ['pawn'];
   s2 = E.reduce(s2, { type: 'PLAY_ACTION', card: 'pawn' });
@@ -97,7 +97,7 @@ try {
   const confirm = byText('.modal .btn', '決定');
   ok(confirm && !confirm.disabled, '2つ選ぶと決定が押せる');
   confirm.click();
-  ok(UI.store.state.pending === null, '従者が解決');
+  ok(UI.store.state.pending === null, '寵臣が解決');
 
   console.log('=== 拷問人モーダル: 対象が選択肢を持つ ===');
   let s3 = E.createInitialState(['P1', 'P2'], DOM.KINGDOM_INTRIGUE, { startActive: 0 });

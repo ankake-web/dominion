@@ -64,8 +64,8 @@ console.log('=== 第1バッチ：新 pending 10種にモーダルと押せる選
     // 第3バッチ（収穫祭＆ギルド2版）
     { p: { type: 'joust_aside', player: 0 }, jp: '一騎討ち（属州を脇に）' },
     { p: { type: 'joust_reward', player: 0 }, jp: '一騎討ち（褒賞を選ぶ）' },
-    { p: { type: 'coronet', stage: 'action', player: 0 }, jp: '小冠（アクション）' },
-    { p: { type: 'coronet', stage: 'treasure', player: 0 }, jp: '小冠（財宝）' },
+    { p: { type: 'coronet', stage: 'action', player: 0 }, jp: '宝冠（アクション）' },
+    { p: { type: 'coronet', stage: 'treasure', player: 0 }, jp: '宝冠（財宝）' },
     { p: { type: 'courser', player: 0 }, jp: '駿馬' },
     { p: { type: 'infirmary_trash', player: 0 }, jp: '診療所（廃棄）' },
     { p: { type: 'shop', player: 0 }, jp: '店' },
@@ -133,7 +133,7 @@ console.log('=== 第3バッチ：渡し守の山／一騎討ちの脇／褒賞�
   const txt = doc.body.textContent;
   ok(/渡し守の山/.test(txt) && s.ferrymanPile && txt.indexOf(DOM.CARDS[s.ferrymanPile.cards[0]].name) >= 0, '渡し守の山（一番上のカード名）が盤面に出る');
   ok(/一騎討ちの脇/.test(txt), '一騎討ちの脇の属州が出る');
-  ok(/名声|駿馬|小冠/.test(txt), '褒賞の山（非サプライ）が盤面に出る');
+  ok(/名声|駿馬|宝冠/.test(txt), '褒賞の山（非サプライ）が盤面に出る');
   ok(/財源を使う/.test(txt), 'アクションフェイズでも「財源を使う」ボタンが出る（2021ルール）');
 }
 

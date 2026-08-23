@@ -666,7 +666,7 @@ function handPlay(s, pi, cards) {
   const coinsB = 7; s.turn.phase = 'buy'; s.turn.buys = 1; s.turn.coins = coinsB;
   // B が値引きなしで村を買う → **A の豊穣が誘発**（A がアクションを獲得したわけではない）…ではなく
   // A がアクションを獲得する必要がある＝B の大学等は持っていないので、直接 A に村を獲得させる経路として
-  // 「B が使者で最初に購入」は複雑なので、E.gainLoot と同様に内部ヘルパは使わず盤面で再現できる最短の
+  // 「B が公使で最初に購入」は複雑なので、E.gainLoot と同様に内部ヘルパは使わず盤面で再現できる最短の
   // 経路＝**B の購入で山が空く場合とは違い、ここでは reduce を介さず豊穣の持ち主 A に村を配る手段が無い**。
   // → 大使館の銀貨は財宝なので使えない。この分岐は fireNextTime を直接検証する（gainer=A・カード=village）。
   const before = { coins: s.turn.coins, buys: s.turn.buys };
