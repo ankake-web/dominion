@@ -385,7 +385,7 @@
     followers: { id: 'followers', name: '家臣団', cost: 0, types: ['action', 'attack'],
                  text: '+2 カード\n屋敷1枚を獲得する。\n他のプレイヤーは呪い1枚を獲得し、手札が3枚になるまで捨てる。' },
     princess: { id: 'princess', name: '王女', cost: 0, types: ['action'],
-                 text: '+1 購入\nこれが場に出ている間、カードのコストは2コイン安くなる（0コイン未満にはならない）。' },
+                 text: '+1 購入\nこのターン、カードのコストは2コイン安くなる（0コイン未満にはならない）。' }, // 2022エラッタ＝「このターン」型（褒賞の名声と同じ）
     trusty_steed: { id: 'trusty_steed', name: '頼もしい乗騎', cost: 0, types: ['action'],
                  text: '以下から異なる2つを選ぶ：\n+2 カード / +2 アクション / +2 コイン / 銀貨4枚を獲得し山札を捨て札に置く。' },
     crossroads: { id: 'crossroads', name: '岐路', cost: 2, types: ['action'],
@@ -523,7 +523,7 @@
     journeyman: { id: 'journeyman', name: '熟練工', cost: 5, types: ['action'],
                  text: 'カード1枚を指定する。指定したカード以外のカードを3枚公開するまで、デッキの上からカードを公開する。公開したその3枚を手札に加え、残りを捨て札にする。' },
     merchant_guild: { id: 'merchant_guild', name: '商人ギルド', cost: 5, types: ['action'],
-                 text: '+1 購入\n+1 コイン\nこれが場に出ている間、あなたがカードを購入するたびに、+1 財源。' },
+                 text: '+1 購入\n+1 コイン\nこのターンの購入フェイズの終了時、その購入フェイズに獲得したカード1枚につき +1 財源。' }, // 2021 ルール（2018印刷の「購入するたび」から変更）
     soothsayer: { id: 'soothsayer', name: '予言者', cost: 5, types: ['action', 'attack'],
                  text: '金貨1枚を獲得する。\n他のプレイヤーは各自、呪い1枚を獲得する。獲得したなら、カードを1枚引く。' },
 

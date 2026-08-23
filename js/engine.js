@@ -103,7 +103,7 @@
      戻り値＝実際に山の順序が変わったか（ログ用。false でも「回した」こと自体は合法）。 */
   function rotatePile(state, pileId) {
     if (!pileId) return false;
-    const arr = state[pileId];
+    const arr = (state.ferrymanPile && state.ferrymanPile.card === pileId) ? state.ferrymanPile.cards : state[pileId]; // 渡し守の山（同盟の分割山等）も回せる
     if (Array.isArray(arr)) {                       // 混合山（廃墟/騎士/城/同盟の6山）
       if (arr.length === 0) return false;           // 空の山＝動かすカードが無い
       const top = arr[0];
@@ -319,7 +319,8 @@
           （実測で神風400回中34回＝8.5%、川船の脇札と同じカードが新しい王国山として配られていた）。 */
     const singular = new Set([].concat(state.blackMarket || [],
       state.mouseCard ? [state.mouseCard] : [],
-      state.riverboatCard ? [state.riverboatCard] : []));
+      state.riverboatCard ? [state.riverboatCard] : [],
+      state.ferrymanPile ? [state.ferrymanPile.card].concat(ferrymanContentsOf(state.ferrymanPile.card)) : [])); // 渡し守の山も「使われている」
     const cand = Array.from(src).filter((id) =>
       !killKeys.has(id) && !Object.prototype.hasOwnProperty.call(state.supply, id) &&
       !singular.has(id) && !NON_SUPPLY.has(id) && !MIXED_PILE_CONTENTS.has(id) && C()[id]);
@@ -407,6 +408,12 @@
     }
     // (b) 川船＝「このゲームで使わない・持続でない・ちょうど$5のアクション」1枚を脇へ（既にあれば作り直さない）。
     if (fresh.includes('riverboat') && !state.riverboatCard) state.riverboatCard = pickRiverboatCard(fresh);
+    // (b2) 収穫祭＆ギルド2版：渡し守＝新10山に入ったら山を作る（その札の派生準備は走らせない＝許容簡略化）／野盗＝常設ルールを立てる（下ろさない）。
+    if (fresh.includes('ferryman') && !state.ferrymanPile) {
+      const fc = pickFerrymanCard(fresh.concat(state.baneCard ? [state.baneCard] : []));
+      if (fc) state.ferrymanPile = { card: fc, cards: ferrymanPileCards(fc, n) };
+    }
+    if (fresh.includes('footpad')) state.footpadRule = true;
     // (c) 廃墟＝略奪者(looter)がいれば (人数-1)×10 枚。**カードが増える**＝保存則は `kingdomEpoch` で取り直す。
     if (!Array.isArray(state.ruins) && fresh.some((k) => DOM.isType(k, 'looter'))) {
       const pool = [];
@@ -557,7 +564,7 @@
   const TRAVELLER_NEXT = { page: 'treasure_hunter', treasure_hunter: 'warrior', warrior: 'hero', hero: 'champion',
                            peasant: 'soldier', soldier: 'fugitive', fugitive: 'disciple', disciple: 'teacher' };
   // ギルド：過払い（overpay）できるカード＝購入時に追加でコインを払うと追加効果。BUY 後に overpay pending を立てる。
-  const OVERPAY_CARDS = new Set(['stonemason', 'doctor', 'masterpiece', 'herald']);
+  const OVERPAY_CARDS = new Set(['stonemason', 'doctor', 'masterpiece', 'herald', 'farrier', 'infirmary']); // 収穫祭＆ギルド2版：装蹄師／診療所
   // 収穫祭：若き魔女の災いカード（Bane）を選ぶ。$2-3 の王国カードで、まだ場に無いものを1つ。
   //   まず収穫祭プールから、無ければ基本＋陰謀プールから抽選（公式は $2-3 の王国カードから任意の1山）。
   function pickBane(kingdom) {
@@ -882,10 +889,7 @@
       if (actionsInPlay) base -= 2 * actionsInPlay;
     }
     // 収穫祭：王女が場にある間、全カードは1枚につき$2安くなる（$0未満にはならない・王女の枚数ぶん重なる）。
-    if (active) {
-      const princesses = (active.inPlay || []).filter((x) => x === 'princess').length;
-      if (princesses) base -= 2 * princesses;
-    }
+    // 収穫祭：王女＝2022エラッタで「このターン」型（`t.costReduction`＝橋と同じ）。場の枚数を見る旧形はここから撤去した。
     // 異郷：街道が場にある間、全カードは1枚につき$1安くなる（$0未満にはならない・街道の枚数ぶん重なる）。
     if (active) {
       const highways = (active.inPlay || []).filter((x) => x === 'highway').length;
@@ -1125,7 +1129,7 @@
         後回しにすると手札に財宝が残っておらず「2回使う」が空振りするため（＝出す順で強さが変わる札）。
      ② 商人の「このターン最初の銀貨」を確実に拾うため銀貨を早めに。
      ③ 帝国：大金（fortune）は最後（このターン最初の大金でコインが2倍＝合計を最大化）。 */
-  const PLAY_TWICE_TREASURES = { tiara: 1, crown: 1, counterfeit: 1, kings_cache: 1 }; // 略奪：王の隠し財産＝手札の財宝を3回使う（先に出す）
+  const PLAY_TWICE_TREASURES = { tiara: 1, crown: 1, counterfeit: 1, kings_cache: 1, coronet: 1 }; // 収穫祭＆ギルド2版：小冠も「手札の財宝を2回」 // 略奪：王の隠し財産＝手札の財宝を3回使う（先に出す）
   /* 夜想曲：「財宝を全部出す」で機械的に出してはいけない財宝（出すとデメリットが確定する）。
      呪われた金貨＝+3コインだが**必ず呪い1枚を獲得する**。1枚ずつタップして出す。 */
   /* 略奪：坩堝/つるはし＝**出すと手札1枚の廃棄が強制**＝「財宝を全部出す」ボタン1つで事故るので除外
@@ -1430,6 +1434,14 @@
       }
     }
     // 繁栄：収集＝「**このターン**、アクションを獲得するたび +1VP」＝使用回数を数える（場の枚数ではない＝2022エラッタ。勲章 t.insignia と同型）。
+    // 収穫祭＆ギルド2版：大きなかぶ＝**先に +2財源**、その後「持っている財源」1つにつき +$1（記載順＝最低 +$2。2回目の再演でさらに +2して数え直す）。
+    if (card === 'huge_turnip') {
+      p.coffers = (p.coffers || 0) + 2;
+      addCoins(state, p.coffers); applyCoinPenalty(state);
+      log(state, `${p.name} は大きなかぶで +2 財源・財源${p.coffers}つぶん +$${p.coffers}。`);
+    }
+    // 小冠＝購入フェイズに財宝として出しても「アクション→財宝」の2段窓（フェイズに依らない＝冠と違う）。
+    if (card === 'coronet') coronetStart(state, pIndex);
     if (card === 'collection') { t.buys += 1; t.collectionPlays = (t.collectionPlays || 0) + 1; }
     // ===== ルネサンス：財宝カードの「使ったとき」効果 =====
     // 香辛料：+1購入（コイン2は coin:2 で加算済み）。獲得時の +2財源 は triggerOnGain。
@@ -1995,6 +2007,8 @@
     // 収穫祭：馬上槍試合が場にあれば、賞品（Prize）5種を各1枚ずつ専用山として加える。
     //   賞品は非サプライ扱い＝購入できず（canBuyCard）・3山終了に数えない（emptyPileCount）。獲得は馬上槍試合のみ。
     if (kingdom.includes('tournament')) PRIZES.forEach((id) => (supply[id] = 1));
+    // 収穫祭＆ギルド2版：一騎討ちがあれば褒賞6種＝**2人＝各1枚／3人以上＝各2枚**（賞品の「各1」とは違う）。非サプライ（REWARDS は NON_SUPPLY 登録済み）。
+    if (kingdom.includes('joust')) REWARDS.forEach((id) => (supply[id] = numPlayers >= 3 ? 2 : 1));
     // プロモ/帝国：分割山＝10枚（上段5枚＋下段5枚）＝各5枚に上書き。下段は上段が尽きるまで購入/獲得できない（gain/canBuyCard がガード）。
     //   上段idが王国にあれば上下とも各5枚に（下段は createInitialState の相互補完で既に王国に居る）。
     Object.keys(SPLIT_BOTTOM).forEach((top) => { if (kingdom.includes(top)) { supply[top] = 5; supply[SPLIT_BOTTOM[top]] = 5; } });
@@ -2112,8 +2126,14 @@
     // 夜想曲：家宝（Heirloom）＝王国に対応するカードがあれば、開始デッキの**銅貨1枚**をその家宝に置き換える。
     //   複数該当すれば複数枚（例：愚者＋ピクシー＝銅貨5枚＋幸運のコイン＋ヤギ）。避難所（屋敷3枚の置換）と同時に成立する。
     //   家宝は山を持たない＝サプライには一切現れない（NON_SUPPLY で購入/汎用獲得/闇市場から除外済み）。
+    /* 収穫祭＆ギルド2版：渡し守＝準備で「使わない・ちょうど$3か$4の王国カードの山」を**サプライ外**に1つ選ぶ（渡し守を獲得したときだけそこから獲得）。
+       選んだ札が要求する準備（家宝／Bane／廃墟／賞品／馬／祝福・呪詛／Ally／前兆／…）も走らせる＝以下で `kX`（kingdom＋渡し守の札）を見る。
+       Bane／川船／ハツカネズミ／来寇／闇市場の抽選からは渡し守の札（混合山なら中身も）を除外する。 */
+    const ferrymanCard = kingdom.includes('ferryman') ? pickFerrymanCard(kingdom) : null;
+    const ferryAll = ferrymanCard ? [ferrymanCard].concat(ferrymanContentsOf(ferrymanCard)) : [];
+    const kX = ferrymanCard ? kingdom.concat([ferrymanCard]) : kingdom;
     const heirlooms = Object.keys(DOM.HEIRLOOM_OF || {})
-      .filter((k) => kingdom.indexOf(k) >= 0).map((k) => DOM.HEIRLOOM_OF[k]).sort();
+      .filter((k) => kX.indexOf(k) >= 0).map((k) => DOM.HEIRLOOM_OF[k]).sort();
     const players = cfgs.map((cfg, i) => {
       const start = [];
       for (let n = 0; n < 7 - heirlooms.length; n++) start.push('copper');
@@ -2144,7 +2164,8 @@
         coffers: 0,        // ギルド：財源（Coffers）トークン。購入フェイズに1枚=+1コインで使える。公開・VPには数えない。
         villagers: 0,      // ルネサンス：村人（Villagers）トークン。アクションフェイズに1個=+1アクションで使える。公開・VPには数えない（財源と同型・別枠）。
         favors: 0,
-        pirateShipTokens: 0, // 海辺1版：海賊船マットのコイントークン（非カード・公開・財源ではない＝使えない・減らない）。         // 同盟：好意（Favor）トークン。**財源/村人とは完全に別枠**。公開・VPには数えない・上限なし。
+        pirateShipTokens: 0,
+        joustAside: [],      // 収穫祭＆ギルド2版：一騎討ちで脇に置いた属州（公開・物理カード） // 海辺1版：海賊船マットのコイントークン（非カード・公開・財源ではない＝使えない・減らない）。         // 同盟：好意（Favor）トークン。**財源/村人とは完全に別枠**。公開・VPには数えない・上限なし。
                            //   与えるのは連携(Liaison)カードだけ＋開始時1個（輸入者があるゲームは5個）。
                            //   使い道は「そのゲームの同盟(Ally)カードが定める1通りだけ」＝state.ally を見る。
         favorShuffle: 0,   // 同盟：占星術師団/メイソン団の常設方針＝「1回のシャッフルに使う好意の上限」（0=使わない）。
@@ -2209,8 +2230,8 @@
     // 収穫祭：若き魔女が場にあれば、$2-3 の王国カードを1つ選んで11山目（災いカード＝Bane）を足す。
     //   Bane は購入可能な通常のサプライ山（3山終了にも数える）。攻撃を受けた相手は手札から公開して影響を免れる。
     let baneCard = null;
-    if (kingdom.includes('young_witch')) {
-      baneCard = pickBane(kingdom);
+    if (kingdom.includes('young_witch') || ferrymanCard === 'young_witch') { // 渡し守の山が若き魔女でも Bane をサプライに足す（公式）
+      baneCard = pickBane(kingdom.concat(ferryAll));
       if (baneCard) kingdom.push(baneCard);
     }
     /* 旭日：川船＝準備で「このゲームで使わない・持続でない・ちょうど$5のアクション」1枚を脇に置く。
@@ -2219,7 +2240,7 @@
        ⚠ **公開情報**＝トップレベルのスカラー1個で持つ（`maskStateFor` の Object.assign でそのまま残る）。
        ⚠ **その札が要求する準備も走らせる**＝下の派生セットアップの走査対象に含める（馬／戦利品／祝福／呪詛／
           アーティファクト／Ally の6系統。`HORSE_GIVERS` が `id === mouseCard` を見ているのが前例）。 */
-    const riverboatCard = kingdom.includes('riverboat') ? pickRiverboatCard(kingdom) : null;
+    const riverboatCard = kingdom.includes('riverboat') ? pickRiverboatCard(kingdom, ferryAll) : null;
     /* 同盟：王国に連携(Liaison)カードが1枚でもあれば、同盟(Ally)カード23枚から**1枚だけ**無作為に決め、
        全員に好意マット（＝p.favors）を配る。開始時の好意は1個、**輸入者があるゲームは5個**
        （輸入者の `準備：各プレイヤーは +4 好意 を得る。`）。連携が1枚も無ければ Ally も好意も一切登場しない。
@@ -2228,7 +2249,7 @@
        ※Ally は横型の合計2枚制限（イベント/ランドマーク/プロジェクト/習性）には数えない＝別デッキ。
        ※若き魔女の災いカード(Bane)と同じく createInitialState で1回だけ決める＝サーバ権威・再戦も自動で安全。 */
     let ally = null;
-    if (alliesHasLiaison(riverboatCard ? kingdom.concat([riverboatCard]) : kingdom)) {
+    if (alliesHasLiaison(kX.concat(riverboatCard ? [riverboatCard] : []))) {
       const pool = DOM.ALLIES_ALLY || [];
       ally = (opts.ally && DOM.LANDSCAPES[opts.ally] && DOM.LANDSCAPES[opts.ally].kind === 'ally')
         ? opts.ally
@@ -2252,7 +2273,7 @@
        ⚠ `Approaching Army`（来寇）の準備＝アタックの王国カードの山を1つ追加する（**予言が発動しなくても
           準備の追加は起きる**）は R4 で実装する（若き魔女の災いカード Bane と同型の11山目）。 */
     let prophecy = null, sunTokens = 0;
-    if (hasOmen(kingdom, riverboatCard ? [riverboatCard] : null)) {
+    if (hasOmen(kingdom, [riverboatCard].concat(ferryAll).filter(Boolean))) {
       const ppool = DOM.PROPHECIES_RISINGSUN || [];
       prophecy = (opts.prophecy && DOM.LANDSCAPES[opts.prophecy] && DOM.LANDSCAPES[opts.prophecy].kind === 'prophecy')
         ? opts.prophecy
@@ -2264,7 +2285,7 @@
        ⚠ `initSupply` の**前**に kingdom へ push する（Bane と同じ位置）。 */
     let armyCard = null;
     if (prophecy === 'approaching_army') {
-      armyCard = pickApproachingArmy(kingdom, [riverboatCard]);
+      armyCard = pickApproachingArmy(kingdom, [riverboatCard].concat(ferryAll));
       if (armyCard) kingdom.push(armyCard);
     }
     // プロモ/帝国：分割山＝1つの山枠（上段5＋下段5）。上段/下段どちらかが王国にあれば両方をサプライに
@@ -2276,10 +2297,17 @@
       if (kingdom.includes(top) && !kingdom.includes(bottom)) kingdom.push(bottom);
     });
     const supply = initSupply(players.length, kingdom);
+    /* 渡し守の山の札が要求する**非サプライ山**（略奪品/狂人/傭兵/精霊/願い/賞品/成長先…）も用意する＝もう1度 initSupply を引いて
+       「元の supply に無い非サプライのキー」だけを足す（王国の山そのものは足さない＝渡し守の札はサプライに置かない）。 */
+    if (ferrymanCard) {
+      const sup2 = initSupply(players.length, kingdom.concat([ferrymanCard]));
+      Object.keys(sup2).forEach((k) => { if (!Object.prototype.hasOwnProperty.call(supply, k) && NON_SUPPLY.has(k)) supply[k] = sup2[k]; });
+    }
+    const ferrymanPile = ferrymanCard ? { card: ferrymanCard, cards: ferrymanPileCards(ferrymanCard, players.length) } : null;
     // 暗黒時代：混合山の中身（実カードid配列）。supply.ruins/knights（残枚数）と長さを同期させる。
     //   廃墟＝looterがあれば全50枚(5種×10)をシャッフルして (人数-1)×10 枚。騎士＝10種をシャッフルして1山。
     let ruins = null, knights = null;
-    if (kingdom.some((k) => DOM.isType(k, 'looter'))) {
+    if (kX.some((k) => DOM.isType(k, 'looter'))) {
       const pool = [];
       (DOM.POOLS.ruins || []).forEach((id) => { for (let n = 0; n < 10; n++) pool.push(id); });
       ruins = shuffle(pool).slice(0, 10 * (players.length - 1));
@@ -2314,6 +2342,7 @@
     if (kingdom.indexOf('black_market') >= 0) {
       const universe = Array.from(new Set([].concat.apply([], Object.values(DOM.POOLS || {}))));
       const inSupply = (id) => Object.prototype.hasOwnProperty.call(supply, id);
+      const ferrySet = new Set(ferryAll); // 渡し守の山（中身含む）は「使われている」＝闇市場デッキに入れない
       // 混合山の「中身」（騎士/廃墟/城の実カード）は単体の王国カードではない＝闇市場デッキに入れない（山の一番上でのみ得る）。
       //   同盟の分割山6組の中身24種も同じ（4種×4枚の山の一番上でのみ購入/獲得できる）。
       const mixedContents = MIXED_PILE_CONTENTS;
@@ -2326,7 +2355,7 @@
          終局後の deckCards にも出る）。中身(mixedContents)だけ塞いでいたので山キーが漏れていた。
          MIXED_PILE_KEYS が正本なので、新しい混合山を足しても自動で塞がる。 */
       blackMarket = shuffle(universe.filter((id) => DOM.CARDS[id] && id !== 'black_market' && !NON_SUPPLY.has(id) &&
-        !inSupply(id) && !mixedContents.has(id) && !isMixedPileKey(id) && !stage1.has(id)));
+        !inSupply(id) && !mixedContents.has(id) && !isMixedPileKey(id) && !stage1.has(id) && !ferrySet.has(id)));
     }
 
     // 帝国：横型ランドスケープ（ランドマーク）の準備。opts.landmarks で受け取る（DOM.LANDSCAPES にある id のみ）。
@@ -2336,10 +2365,10 @@
     // 移動動物園：習性（Way）＝買わない横型。アクションを使うとき、その記載効果の代わりに使える（対局中不変・公開）。
     const ways = (opts.ways || []).filter((id) => DOM.LANDSCAPES && DOM.LANDSCAPES[id] && DOM.LANDSCAPES[id].kind === 'way');
     // 移動動物園：ハツカネズミの習性＝準備で「使わない $2/$3 の持続でないアクション」1枚を脇に置く（山ではない）。
-    const mouseCard = ways.indexOf('way_of_the_mouse') >= 0 ? pickMouseCard(kingdom) : null;
+    const mouseCard = ways.indexOf('way_of_the_mouse') >= 0 ? pickMouseCard(kingdom.concat(ferryAll)) : null;
     // 移動動物園：馬（Horse）＝非サプライ30枚。「馬を獲得する」カード／イベント（＋ハツカネズミの脇札）が
     //   あるときだけ用意する（公式）。
-    if ((DOM.HORSE_GIVERS || []).some((id) => kingdom.includes(id) || events.includes(id) || id === mouseCard || id === riverboatCard)) supply.horse = 30;
+    if ((DOM.HORSE_GIVERS || []).some((id) => kingdom.includes(id) || events.includes(id) || id === mouseCard || id === riverboatCard || id === ferrymanCard)) supply.horse = 30;
     const landmarkVP = {};    // ランドマーク上の有限リザーブ（6×人数 等）
     const landmarkStash = {}; // 水道橋/汚された神殿が山→ランドマークへ移した一時VP
     const pileVP = {};        // 集合＋水道橋(銀貨/金貨の山)/汚された神殿(各アクション山)の「山上VP」
@@ -2366,6 +2395,8 @@
     // 帝国：徴税（Tax）＝新 state.pileDebt（サプライ山の上に置かれた負債トークン {[pileId]:個数}・公開・非カード＝保存則対象外）。
     //   採用時は準備で各サプライ山（非サプライ札は除く。混合山は castles/knights の numeric キーに置く）に負債1を置く。
     //   購入フェイズの獲得でその山の負債を全部その獲得者が受け取る（triggerOnGain）。Tax購入で山1つに+2（tax_pile pending）。
+    // ギルド：パン屋＝闇市場デッキに入っているだけでも開始時 +1財源（2024RB 明記）。王国にあれば上で配り済み。
+    if (blackMarket && blackMarket.indexOf('baker') >= 0 && !kingdom.includes('baker')) players.forEach((pl) => { pl.coffers = (pl.coffers || 0) + 1; });
     const pileDebt = {};
     if (events.indexOf('tax') >= 0) {
       // 分割山は1山＝上段キーにだけ負債1（下段は SPLIT_TOP[id] を持つ＝スキップ）。混合山 castles/knights は各1山＝numericキーに1。
@@ -2385,20 +2416,20 @@
     // ルネサンス：アーティファクト（非カード・1人しか持てない・奪い合う）。付与カード（旗手/国境警備隊/剣客/出納官）が
     //   王国にあるときだけ盤面に出す。{[id]: 席番号|null}＝トップレベルの公開スカラーマップ（state.pileVP と同型＝保存則tally対象外）。
     const artifacts = {};
-    (DOM.artifactsForKingdom ? DOM.artifactsForKingdom(riverboatCard ? kingdom.concat([riverboatCard]) : kingdom) : []).forEach((id) => { artifacts[id] = null; });
+    (DOM.artifactsForKingdom ? DOM.artifactsForKingdom(kX.concat(riverboatCard ? [riverboatCard] : [])) : []).forEach((id) => { artifacts[id] = null; });
 
     /* 夜想曲：祝福(Boon)／呪詛(Hex) のデッキ。**カードではない**（保存則 tally に数えない）。
        - 祝福＝王国に幸運(Fate)が1枚でもあれば12枚をシャッフル。ドルイドがあれば上から3枚を表向きで脇に置く（山は9枚）。
        - 呪詛＝王国に不運(Doom)が1枚でもあれば12枚をシャッフル。
        - 山の中身は**全員に対して完全に秘密**、捨て札は**一番上の1枚だけ**が公開情報（maskStateFor が担保）。 */
     let boons = null, hexes = null;
-    if (kingdom.some((k) => DOM.isType(k, 'fate')) || (riverboatCard && DOM.isType(riverboatCard, 'fate'))) {
+    if (kX.some((k) => DOM.isType(k, 'fate')) || (riverboatCard && DOM.isType(riverboatCard, 'fate'))) {
       const deck = shuffle((DOM.BOONS_NOCTURNE || []).slice());
       // ドルイド＝準備で祝福3枚を表向きに脇へ（そのゲーム中ずっと使う3つ。山には戻らない）。
       const druid = kingdom.includes('druid') ? deck.splice(0, 3) : [];
       boons = { deck, discard: [], druid };
     }
-    if (kingdom.some((k) => DOM.isType(k, 'doom')) || (riverboatCard && DOM.isType(riverboatCard, 'doom'))) hexes = { deck: shuffle((DOM.HEXES_NOCTURNE || []).slice()), discard: [] };
+    if (kX.some((k) => DOM.isType(k, 'doom')) || (riverboatCard && DOM.isType(riverboatCard, 'doom'))) hexes = { deck: shuffle((DOM.HEXES_NOCTURNE || []).slice()), discard: [] };
     /* 略奪：戦利品(Loot)の山＝**15種×2枚＝30枚を裏向きにシャッフルした1山**。**カードなので保存則 tally に数える**
        （祝福/呪詛と違う）。RGG ルールブック逐語＝
        `There are 15 Loot cards, with 2 copies of each. Shuffle them into a face-down pile before the game if
@@ -2410,13 +2441,13 @@
        - **戦利品を配るカード（`DOM.LOOT_GIVERS`）が1枚でもあるときだけ作る**。イベント/特性も配るので
          kingdom だけでなく **events / traits も走査する**。 */
     const lootGivers = new Set(DOM.LOOT_GIVERS || []);
-    const usesLoot = kingdom.some((k) => lootGivers.has(k)) || (riverboatCard && lootGivers.has(riverboatCard)) ||
+    const usesLoot = kX.some((k) => lootGivers.has(k)) || (riverboatCard && lootGivers.has(riverboatCard)) ||
       events.some((e) => lootGivers.has(e)) || (opts.traits || []).some((t) => lootGivers.has(t));
     const loot = usesLoot ? shuffle([].concat(LOOT_IDS, LOOT_IDS)) : null;
     // 夜想曲：森の迷子（Lost in the Woods）＝ゲーム中1枚だけの状態。持ち主の席番号（誰も持っていなければ null）。
     // 夜想曲：ネクロマンサー＝準備でゾンビ3枚を**廃棄置き場に置く**（「廃棄」ではない＝墓所/下水道/青空市場は誘発しない）。
     //   廃棄置き場は既に保存則 tally の対象なので、総カード枚数が3枚増える。
-    const trash = kingdom.includes('necromancer') ? ZOMBIES.slice() : [];
+    const trash = kX.includes('necromancer') ? ZOMBIES.slice() : [];
 
     const initial = Object.assign({
       version: 0,
@@ -2456,6 +2487,8 @@
       loot,           // 略奪：戦利品の山（実カードid配列30枚・**カード＝保存則に数える**・非サプライ・中身は完全に秘密。配る札が無ければ null）
       lostInTheWoods: null, // 夜想曲：森の迷子（状態）の持ち主の席番号（誰も持っていなければ null・非カード）
       pileVP, // 帝国：集合（Gathering）＝サプライ山の上に置かれた勝利点トークン数 {[pileId]:個数}（公開・非カード＝保存則に無関係）。水道橋/汚された神殿の準備分もここ。
+      ferrymanPile,    // 収穫祭＆ギルド2版：渡し守の山 { card: 山キー, cards: 実カードid配列 }（サプライ外・公開・**カード＝保存則に数える**・allCards には入れない）
+      footpadRule: kingdom.includes('footpad'), // 収穫祭＆ギルド2版：野盗＝「このゲームでは、アクションフェイズにカードを獲得したとき +1カード」の常設ルール
       tradeRoutePiles, // 繁栄1版：交易路＝まだトークンが乗っている勝利点の山 {[pileKey]:1}（公開・非カード）
       tradeRouteMat: 0, // 繁栄1版：交易路マットへ移ったトークン数（全員共有・公開・非カード）
       pileDebt, // 帝国：徴税（Tax）＝サプライ山の上に置かれた負債トークン数 {[pileId]:個数}（公開・非カード＝保存則に無関係）。
@@ -2964,6 +2997,7 @@
       state.loot.unshift(cardId);
       return true;
     }
+    if (isFerrymanPileCard(state, cardId)) { state.ferrymanPile.cards.unshift(cardId); return true; } // 渡し守の山の一番上へ
     const pile = pileKeyOf(state, cardId);
     if (isMixedPileKey(pile)) {
       if (!Array.isArray(state[pile])) return false;
@@ -2978,6 +3012,7 @@
   // そのカードを「元の山へ戻せる」か（returnToPile と同じ述語＝交易商人/取り替え子のゲートが使う）。
   //   混合山の中身は山キーが在ればよい（家宝/ゾンビ/闇市場デッキ由来の札は山が無いので戻せない）。
   function canReturnToPile(state, cardId) {
+    if (isFerrymanPileCard(state, cardId)) return true; // 収穫祭＆ギルド2版：渡し守の山へ戻せる（**サプライに戻す**大使とは別＝大使は isFerrymanPileCard で除外）
     if (LOOT_SET.has(cardId)) return Array.isArray(state.loot); // 略奪：戦利品は戦利品の山へ戻す
     const pile = pileKeyOf(state, cardId);
     if (isMixedPileKey(pile)) return Array.isArray(state[pile]);
@@ -3472,12 +3507,8 @@
   //   公式（2E）＝「使うたびに累積」＝玉座の間で2回使えば購入毎に+2財源（＝場の枚数ではなくプレイ回数）。
   //   ※現行出荷セットでは玉座系と商人ギルドは同居しないため、場の枚数と結果は一致する（忠実性のためプレイ回数で数える）。
   function triggerMerchantGuild(state, pi) {
-    const me = state.players[pi];
-    const n = (state.turn && state.turn.merchantGuildPlays) || 0;
-    if (n > 0) {
-      me.coffers = (me.coffers || 0) + n;
-      log(state, `${me.name} は商人ギルドで +${n} 財源。`);
-    }
+    /* 🛑 2021 ルール＝商人ギルドは「購入するたび」ではなく**購入フェイズの終了時に、そのフェイズで獲得した枚数ぶん**（`merchantGuildEndOfBuy`）。
+       この関数は旧則（2018印刷）の名残＝何もしない（呼び出し側の互換のため残す）。 */
   }
   /* ===== 段階2 第2バッチ：購入時フックのヘルパ ===== */
   // 繁栄1版：ならず者＝場にある枚数ぶん +1VP（公式FAQ＝王の宮廷で3回使っても場には1枚＝+1）。VPトークンは被支配者に入る（支配の振り分けをここに書かない）。
@@ -3549,6 +3580,16 @@
     } else if (card === 'doctor') {
       // 医者：過払い1コインにつき、山札の一番上を見て 廃棄／捨て札／山札の上に戻す を選ぶ。
       startDoctorOverpay(state, pi, amount);
+    } else if (card === 'farrier') {
+      // 装蹄師：過払い1コインにつき、このターンの終了時（次の手札を先引きした後）に +1カード。
+      state.turn.farrierDraw = (state.turn.farrierDraw || 0) + amount;
+      log(state, `${p.name} は装蹄師の過払い（+${amount}コイン）＝ターン終了時に +${amount}カード。`);
+      state.pending = null;
+    } else if (card === 'infirmary') {
+      // 診療所：過払い1コインにつき、これを1回使用する（捨て札から場に出して使う→2回目以降は場のまま再適用）。reduce 末尾の再開網。
+      state.turn.infirmaryPlays = { player: pi, n: amount, started: false };
+      log(state, `${p.name} は診療所の過払い（+${amount}コイン）＝診療所を${amount}回使用する。`);
+      state.pending = null;
     } else if (card === 'herald') {
       // 伝令官：過払い1コインにつき、捨て札置き場からカード1枚を選んで山札の上に置く。
       if (p.discard.length > 0) state.pending = { type: 'herald_overpay', player: pi, remaining: amount };
@@ -4516,6 +4557,120 @@
     if (hasReaction(state.players[victim])) { state.pending = { type: 'ambassador', stage: 'react', player: victim, source, victim, queue: rest, card }; return; }
     (state.onGainQueue = state.onGainQueue || []).push({ type: 'ambassador_give', player: victim, card });
     ambassadorEnterVictim(state, source, rest, card);
+  }
+  /* ===== 収穫祭＆ギルド2版：小冠（Coronet）＝「アクション1枚を2回」→「財宝1枚を2回」の2段（どちらも任意・フェイズに依らない）。
+     1段目が選択待ちを立てても2段目が潰れないよう、財宝段は `state.replay` の制御項目 `coronet_treasure` で開く（行進と同型）。 */
+  function coronetStart(state, pi) {
+    const p = state.players[pi];
+    const acts = handPlayable(state, pi).filter((c) => DOM.isType(c, 'action') && !DOM.isType(c, 'reward') && canPlayHandCard(state, pi, c));
+    if (acts.length) { state.pending = { type: 'coronet', stage: 'action', player: pi }; return; }
+    coronetTreasureStage(state, pi);
+  }
+  function coronetTreasureStage(state, pi) {
+    const p = state.players[pi];
+    const tre = p.hand.filter((c) => isTreasureFor(state, c) && !DOM.isType(c, 'reward') && canPlayHandCard(state, pi, c));
+    if (tre.length) state.pending = { type: 'coronet', stage: 'treasure', player: pi };
+  }
+  /* ===== 収穫祭＆ギルド2版：渡し守（Ferryman）の山＝**サプライ外の山**（`state.ferrymanPile = { card, cards }`）。
+     `supply` にも `state[山キー]` にも置かない（4系統がサプライと誤認／`mixedPileWithTop` が拾う）。公開・保存則に数える・`allCards` には入れない。 */
+  function ferrymanContentsOf(card) {
+    if (!card) return [];
+    if (card === 'castles') return (DOM.POOLS.castles || []).slice();
+    if (ALLIES_SPLIT[card]) return (ALLIES_SPLIT[card] || []).slice();
+    if (SPLIT_BOTTOM[card]) return [SPLIT_BOTTOM[card]];
+    return [];
+  }
+  function ferrymanPileCards(card, numPlayers) {
+    const v = numPlayers <= 2 ? 8 : 12;
+    if (card === 'castles') {
+      const DBL = new Set(['humble_castle', 'small_castle', 'opulent_castle', 'kings_castle']);
+      const arr = []; const dbl = numPlayers >= 3;
+      (DOM.POOLS.castles || []).forEach((id) => { arr.push(id); if (dbl && DBL.has(id)) arr.push(id); });
+      return arr;
+    }
+    if (ALLIES_SPLIT[card]) { const arr = []; (ALLIES_SPLIT[card] || []).forEach((cid) => { for (let n = 0; n < 4; n++) arr.push(cid); }); return arr; }
+    if (SPLIT_BOTTOM[card]) { const arr = []; for (let n = 0; n < 5; n++) arr.push(card); for (let n = 0; n < 5; n++) arr.push(SPLIT_BOTTOM[card]); return arr; }
+    if (card === 'rats') return Array.from({ length: 20 }, () => 'rats');
+    const n = DOM.isType(card, 'victory') ? v : 10;
+    return Array.from({ length: n }, () => card);
+  }
+  function isFerrymanPileCard(state, id) {
+    const fp = state && state.ferrymanPile;
+    if (!fp || !fp.card) return false;
+    return fp.card === id || ferrymanContentsOf(fp.card).indexOf(id) >= 0;
+  }
+  /* 渡し守の山の候補＝**使われていない**王国カードの山で静的コストが**ちょうど $3 か $4**（3成分）。分割山は上段キー・混合山は山キー
+     （城 $3 は候補／騎士 $5 は落ちる）。`costExact` は `gainableBase`（在庫）を含むので使えない＝静的判定。段階1のプール（死に札）は除外。
+     抽選元＝収穫祭＆ギルド2版→基本＋陰謀→全プール の順（pickBane と同じ方針）。 */
+  function pickFerrymanCard(kingdom, exclude) {
+    const inK = new Set(kingdom); (exclude || []).forEach((id) => inK.add(id));
+    const stage1 = new Set([].concat.apply([], (DOM.STAGE1_POOLS || []).map((k) => DOM.POOLS[k] || [])));
+    const BASIC = new Set(['copper', 'silver', 'gold', 'estate', 'duchy', 'province', 'curse', 'potion', 'platinum', 'colony']);
+    const eligible = (id) => {
+      const c = C()[id];
+      if (!c || inK.has(id) || NON_SUPPLY.has(id) || MIXED_PILE_CONTENTS.has(id) || BASIC.has(id) || stage1.has(id)) return false;
+      if (SPLIT_TOP[id]) return false;             // 2段分割山の下段＝上段キーで表す
+      if (id === 'knights' || id === 'ruins') return false;
+      if (c.potion || c.debt) return false;
+      if (!(c.cost === 3 || c.cost === 4)) return false;
+      if (ferrymanContentsOf(id).some((x) => inK.has(x))) return false; // 中身がこのゲームで使われている混合山
+      return true;
+    };
+    const P = DOM.POOLS || {};
+    const all = Array.from(new Set([].concat.apply([], Object.values(P))));
+    const pools = [((P.cornguilds2e || []).concat(P.cornucopia || [], P.guilds || [])), ((P.basic || []).concat(P.intrigue || [])), all];
+    for (const pool of pools) {
+      const cands = pool.filter(eligible);
+      if (cands.length) return cands[Math.floor(Math.random() * cands.length)];
+    }
+    return null;
+  }
+  /* 渡し守の山から1枚を獲得する（どの経路の渡し守の獲得でも）。**`gain()` の置き方をそのまま使う**（`GAIN_TO_HAND`＝ゴーストタウン/夜警は手札へ・
+     遊牧民の野営地は山札の上・支配中は支配者が獲得・帳簿＝gainedThisTurn/lastGainedAny/buyPhaseGained/bpGained）。`pileEmptied` だけ呼ばない（非サプライ）。 */
+  function gainFromFerryman(state, pIndex) {
+    const fp = state.ferrymanPile;
+    if (!fp || !fp.cards || !fp.cards.length) return false;
+    const realId = fp.cards.shift();
+    let dest = 'discard';
+    if (GAIN_TO_HAND.has(realId)) dest = 'hand';
+    if (realId === 'nomad_camp') dest = 'deck';
+    const costAtGain = costOf(state, realId);
+    const t = state.turn;
+    log(state, `${state.players[pIndex].name} は渡し守の山から「${C()[realId].name}」を獲得した。`);
+    if (t && t.possessedBy != null && pIndex === t.active) {
+      (t.possessionGains = t.possessionGains || []).push(realId);
+      if (realId !== 'wayfarer') t.lastGainedAny = realId;
+      triggerOnGain(state, t.possessedBy, realId, dest, costAtGain);
+      return true;
+    }
+    const p = state.players[pIndex];
+    if (dest === 'hand') p.hand.push(realId); else if (dest === 'deck') p.deck.unshift(realId); else p.discard.push(realId);
+    if (t && realId !== 'wayfarer') t.lastGainedAny = realId;
+    if (t && pIndex === t.active) {
+      (t.gainedThisTurn || (t.gainedThisTurn = [])).push(realId);
+      if (t.phase === 'buy') { t.buyPhaseGained = true; t.bpGained = (t.bpGained || 0) + 1; }
+    }
+    triggerOnGain(state, pIndex, realId, dest, costAtGain);
+    return true;
+  }
+  // 「名指しで自分の山から取る」効果（ネズミ／カササギ／実験）＝サプライに山が無ければ渡し守の山にフォールバック（公式＝`gain a Rats` は名指し）。
+  function gainNamed(state, pIndex, id, dest) {
+    if (gain(state, pIndex, id, dest)) return true;
+    if (state.ferrymanPile && state.ferrymanPile.card === id) return gainFromFerryman(state, pIndex);
+    return false;
+  }
+  /* ===== ギルド：商人ギルド（2021ルール）＝**購入フェイズの終了時**に、そのフェイズで獲得したカード1枚につき +1財源（使用回数ぶん累積）。
+     ヴィラ/騎兵隊で購入フェイズが複数回終わればそのたび（`t.mgDone` は END_ACTION_PHASE でリセット）。購入フェイズ後のプレイは無効。 */
+  function merchantGuildEndOfBuy(state, pi) {
+    const t = state.turn;
+    if (!t || t.mgDone) return;
+    t.mgDone = true;
+    const n = t.merchantGuildPlays || 0, g = t.bpGained || 0;
+    if (n > 0 && g > 0) {
+      const me = state.players[pi];
+      me.coffers = (me.coffers || 0) + n * g;
+      log(state, `${me.name} は商人ギルドで +${n * g} 財源（この購入フェイズに${g}枚獲得×${n}回使用）。`);
+    }
   }
   function bureaucratEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
@@ -6197,6 +6352,9 @@
         if (state.supply.experiment != null && takeSelf(state, pi, 'experiment')) {
           state.supply.experiment += 1;
           log(state, `${p.name} は実験を山に戻した。`);
+        } else if (state.ferrymanPile && state.ferrymanPile.card === 'experiment' && takeSelf(state, pi, 'experiment')) {
+          state.ferrymanPile.cards.unshift('experiment'); // 渡し守の山が実験＝名指しで自分の山へ戻す
+          log(state, `${p.name} は実験を渡し守の山に戻した。`);
         }
         break;
       // 根城：+1カード+2アクション。手札1枚を廃棄（強制）。それが勝利点カードなら呪い1枚を獲得。
@@ -6936,7 +7094,7 @@
       case 'rats': {
         // +1カード +1アクション。ネズミを1枚獲得。手札のネズミ以外を1枚廃棄（全部ネズミなら公開して廃棄しない）。
         draw(state, pi, 1); addActions(t, 1);
-        gain(state, pi, 'rats', 'discard');
+        gainNamed(state, pi, 'rats', 'discard'); // 渡し守の山がネズミでも名指しで取れる
         if (p.hand.some((c) => c !== 'rats')) state.pending = { type: 'rats_trash', player: pi };
         else { reveal(state, pi, p.hand.slice(), 'ネズミ'); log(state, `${p.name} は手札が全てネズミで廃棄しなかった。`); }
         break;
@@ -7526,8 +7684,9 @@
         break;
       case 'princess':
         t.buys += 1;
-        // 「場にある間、全カードのコスト -2」は cardCost が princess の場残数で処理（このカードは既に inPlay）。
-        log(state, `${p.name} は王女を使った（このターン、場にある間 全カードのコスト -2）。`);
+        // 2022エラッタ＝「**このターン**、全カードのコスト -2」（橋型＝玉座で -4・場を離れても効く）。褒賞の名声と同じ。
+        t.costReduction = (t.costReduction || 0) + 2;
+        log(state, `${p.name} は王女を使った（このターン、全カードのコスト -2）。`);
         break;
       case 'trusty_steed':
         state.pending = { type: 'trusty_steed', player: pi };
@@ -7763,7 +7922,7 @@
           const top = p.deck[0];
           reveal(state, pi, [top], 'カササギで山札の上を公開');
           if (isTreasureFor(state, top)) { p.deck.shift(); p.hand.push(top); log(state, `${p.name} は「${C()[top].name}」を手札に加えた（カササギ）。`); }
-          if (DOM.isType(top, 'action') || DOM.isType(top, 'victory')) { if (gain(state, pi, 'magpie', 'discard')) log(state, `${p.name} はカササギを1枚獲得した。`); }
+          if (DOM.isType(top, 'action') || DOM.isType(top, 'victory')) { if (gainNamed(state, pi, 'magpie', 'discard')) log(state, `${p.name} はカササギを1枚獲得した。`); }
         }
         break;
       }
@@ -9105,6 +9264,89 @@
         if (gv.length) discardDownEnter(state, pi, 3, gv, null, 0);
         break;
       }
+      /* ===== 段階2 第3バッチ（収穫祭＆ギルド2版＝王国8＋褒賞6） ===== */
+      // 装蹄師＝+1カード +1アクション +1購入（過払い＝ターン終了時 +N カードは applyOverpayEffect／cleanup）
+      case 'farrier': { draw(state, pi, 1); addActions(t, 1); t.buys += 1; break; }
+      // 店＝+1カード +$1・場に同名が無いアクション1枚を手札から使ってよい（コンクラーベと同じ述語・+1アクションは無い）
+      case 'shop': {
+        draw(state, pi, 1); addCoins(state, 1);
+        if (conclaveTargets(state, pi).length) state.pending = { type: 'shop', player: pi };
+        break;
+      }
+      // 診療所＝+1カード・手札1枚を廃棄してもよい（過払い＝これを N 回使用する＝applyOverpayEffect→reduce 末尾の再開網）
+      case 'infirmary': {
+        draw(state, pi, 1);
+        if (p.hand.length) state.pending = { type: 'infirmary_trash', player: pi };
+        break;
+      }
+      // 耕作者＝+1カード +2アクション（獲得時の脇置きは triggerOnGain → onGainQueue）
+      case 'farmhands': { draw(state, pi, 1); addActions(t, 2); break; }
+      // 謝肉祭＝上4枚を公開→名前の異なるカードを1枚ずつ手札へ、残りを捨て札（捨て札トリガーあり）。pending 不要。
+      case 'carnival': {
+        const revealed = [];
+        for (let i = 0; i < 4; i++) {
+          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
+          if (p.deck.length === 0) break;
+          revealed.push(p.deck.shift());
+        }
+        if (revealed.length) reveal(state, pi, revealed.slice(), '謝肉祭で公開');
+        const seen = new Set(); const toHand = [], dups = [];
+        revealed.forEach((c) => { if (seen.has(c)) dups.push(c); else { seen.add(c); toHand.push(c); } });
+        toHand.forEach((c) => p.hand.push(c));
+        dups.forEach((c) => p.discard.push(c));
+        log(state, `${p.name} は謝肉祭で${toHand.length}枚を手札に加え、${dups.length}枚を捨て札にした。`);
+        if (dups.length) triggerOnDiscard(state, pi, dups.slice());
+        break;
+      }
+      // 渡し守＝+2カード +1アクション・手札1枚を捨てる（強制）。山からの獲得は triggerOnGain（獲得時）。
+      case 'ferryman': {
+        draw(state, pi, 2); addActions(t, 1);
+        if (p.hand.length) state.pending = { type: 'ferryman_discard', player: pi };
+        break;
+      }
+      // 野盗＝+2財源・他の各プレイヤーは手札が3枚になるまで捨てる（discard_down 流用）。常設ルールは triggerOnGain。
+      case 'footpad': {
+        p.coffers = (p.coffers || 0) + 2;
+        log(state, `${p.name} は野盗で +2 財源。`);
+        const fv = [];
+        for (let k = 1; k < state.players.length; k++) {
+          const idx = (pi + k) % state.players.length;
+          if (state.players[idx].hand.length > 3 && !attackImmune(state, idx)) fv.push(idx);
+        }
+        if (fv.length) discardDownEnter(state, pi, 3, fv, null, 0);
+        break;
+      }
+      // 一騎討ち＝+1カード +1アクション +$1・手札の属州を脇に置いてよい→褒賞1枚を手札に獲得（褒賞が尽きていても脇には置ける）
+      case 'joust': {
+        draw(state, pi, 1); addActions(t, 1); addCoins(state, 1);
+        if (p.hand.includes('province')) state.pending = { type: 'joust_aside', player: pi };
+        break;
+      }
+      // 褒賞：小冠（アクションとして使った場合＝財宝として出した場合も applyTreasureEffect から同じ入口）
+      case 'coronet': { coronetStart(state, pi); break; }
+      // 褒賞：駿馬＝異なる2つ（記載順に解決）
+      case 'courser': { state.pending = { type: 'courser', player: pi }; break; }
+      // 褒賞：御料地＝+2アクション +2購入・金貨1枚（VP は vpOf）
+      case 'demesne': {
+        addActions(t, 2); t.buys += 2;
+        if (gain(state, pi, 'gold', 'discard')) log(state, `${p.name} は御料地で金貨1枚を獲得した。`);
+        break;
+      }
+      // 褒賞：ハスカール＝場の「名前の異なるアクションカード」1枚につき +1カード（自分を含む・持続も・悟りの動的判定）
+      case 'housecarl': {
+        const inP = p.inPlay.concat(p.durationCards || []);
+        const names = new Set(inP.filter((c) => isActionFor(state, c) || inheritedEstate(p, c)));
+        const got = draw(state, pi, names.size);
+        log(state, `${p.name} はハスカールで +${got.length}カード（場の異なるアクション ${names.size}種）。`);
+        break;
+      }
+      // 褒賞：名声＝+1購入・このターン全カードのコスト -2（橋型＝玉座で -4）
+      case 'renown': {
+        t.buys += 1;
+        t.costReduction = (t.costReduction || 0) + 2;
+        log(state, `${p.name} は名声を使った（このターン、全カードのコスト -2）。`);
+        break;
+      }
       case 'pearl_diver':
         draw(state, pi, 1); addActions(t, 1);
         if (p.deck.length > 0) state.pending = { type: 'pearl_diver', player: pi, card: p.deck[p.deck.length - 1] };
@@ -9190,6 +9432,7 @@
       p.princes || [], p.tavern || [], // 冒険：酒場マット（Reserve/守銭奴の銅貨。公開・所有カードに数える）
       p.inherited || [],  // 冒険：相続の脇置き（獲得ではないが「得点計算時は自分のデッキに含める」＝公式）
       p.eventSetAside || [], // 移動動物園：遅延/刈り入れの脇置き（次の手番開始時に使用する。所有カード）
+      p.joustAside || [],    // 収穫祭＆ギルド2版：一騎討ちで脇に置いた属州（公開・クリンナップで捨て札へ。所有カード）
       p.exile || [],      // 移動動物園：追放マット（公開・所有カード＝VPに数える。ゲーム終了時もデッキに含める＝公式）
       p.cargo || [],      // ルネサンス：貨物船の脇置き（表向き＝公開。所有カード＝VPに数える）
       p.ghostSetAside || [], // 夜想曲：幽霊の脇札（公開。幽霊が場を離れても孤児化するだけで所有カードのまま）
@@ -9229,6 +9472,9 @@
     const marchlands = cards.filter((c) => c === 'marchland').length;
     if (marchlands) vp += marchlands * Math.floor(cards.filter((c) => DOM.isType(c, 'victory')).length / 3);
     // 暗黒時代：封土＝所持する銀貨3枚につき1勝利点（端数切り捨て・封土1枚ごと）
+    // 収穫祭＆ギルド2版：御料地＝所持する金貨1枚につき1VP（御料地1枚ごと・`allCards` 全体の金貨）
+    const demesnes = cards.filter((c) => c === 'demesne').length;
+    if (demesnes) vp += demesnes * cards.filter((c) => c === 'gold').length;
     const feoda = cards.filter((c) => c === 'feodum').length;
     if (feoda) vp += feoda * Math.floor(cards.filter((c) => c === 'silver').length / 3);
     // 帝国：粗末な城(humble)=所有する城1枚につき1点／王城(kings)=所有する城1枚につき2点（自身を含む全ての「城」種別カードを数える）。
@@ -9261,6 +9507,7 @@
   }
   // 帝国：あるカードが「空になったサプライ山」に由来するか（塔の得点用）。
   function isFromEmptySupplyPile(state, cardId) {
+    if (isFerrymanPileCard(state, cardId)) return false; // 収穫祭＆ギルド2版：渡し守の山はサプライではない（塔に数えない）
     if (NON_SUPPLY.has(cardId)) return false; // 賞品/成長先/略奪品/狂人/傭兵 は非サプライ
     // 混合山（廃墟/騎士/城）の中身は個別の supply キーを持たない＝集約キーで空判定
     if ((DOM.POOLS.ruins || []).indexOf(cardId) >= 0) return Array.isArray(state.ruins) && state.ruins.length === 0;
@@ -10473,6 +10720,7 @@
        ⚠ `gain()` / `gainFromOutside()`（廃棄置き場からの盗賊・墓暴き・物色）の両方から呼ばれるこの関数に
           置けば1箇所で足りる。**白金貨は数えない**（金貨だけ）。
        ⚠ **ただの記録なので連鎖の暴走防止ガードより「前」**（7段以上ネストした獲得で得た金貨も数える）。 */
+    const gainWasActionPhase = !!(state.turn && state.turn.phase === 'action'); // 野盗＝「獲得した瞬間」のフェイズ（ヴィラで後から変わっても見直さない）
     if (cardId === 'gold' && state.players[pIndex]) state.players[pIndex].gainedGoldThisGame = true;
     // 繁栄1版：交易路＝勝利点の山から「最初の1枚」が獲得されたとき、その山のトークンをマットへ（誰の獲得でも・廃棄置き場からの獲得でも。
     //   READ は pileKeyOf＝城8種→castles。塩まき/追放/山へ戻す では動かない＝gain() を通らないので自動）。
@@ -10486,6 +10734,18 @@
     }
     state._gainDepth = (state._gainDepth || 0) + 1;
     if (state._gainDepth > 6) { state._gainDepth--; return; } // 連鎖の暴走防止
+    /* 収穫祭＆ギルド2版：野盗＝「このゲームでは、アクションフェイズにカードを獲得したとき +1カード」＝王国にあるだけで全員に効く常設ルール。
+       誰の獲得でも・誰のアクションフェイズでも・強制。ターン開始時も「アクションフェイズ」。`_chamOff`＝カメレオンの変換対象外。 */
+    if (state.footpadRule && gainWasActionPhase && state.players[pIndex]) {
+      const prevCham = state._chamOff; state._chamOff = true;
+      const got = draw(state, pIndex, 1);
+      state._chamOff = prevCham;
+      if (got.length) log(state, `${state.players[pIndex].name} は野盗のルールで +1カード（アクションフェイズの獲得）。`);
+    }
+    // 収穫祭＆ギルド2版：渡し守＝これを獲得したとき（購入/工房/廃棄置き場/闇市場のどの経路でも）渡し守の山から1枚獲得。
+    if (cardId === 'ferryman') gainFromFerryman(state, pIndex);
+    // 収穫祭＆ギルド2版：耕作者＝これを獲得したとき（誰のターンでも）手札のアクション/財宝1枚を脇に置いてよい→次の自分のターン開始時に使用。
+    if (cardId === 'farmhands') (state.onGainQueue = state.onGainQueue || []).push({ type: 'farmhands_aside', player: pIndex });
     const n = state.players.length;
     // 帝国：ランドマークの購入フェイズ判定は「獲得が起きた時点のフェイズ」で見る。
     //   ヴィラの獲得時効果はこの関数の途中で phase を 'buy'→'action' に変えるので、それより前の値を捕まえておく
@@ -10717,7 +10977,7 @@
     // 実験：獲得したとき、実験をもう1枚獲得する（この2枚目では誘発しない＝フラグで抑止）。2枚目は必ず捨て札へ。
     if (cardId === 'experiment' && !state._experimentGain) {
       state._experimentGain = true;
-      const g = gain(state, pIndex, 'experiment', 'discard');
+      const g = gainNamed(state, pIndex, 'experiment', 'discard'); // 渡し守の山が実験でも名指しで取れる
       delete state._experimentGain;
       if (g) log(state, `${gp.name} は実験の獲得で もう1枚の実験を獲得した。`);
     }
@@ -12130,6 +12390,7 @@
        非持続カードは inPlay に残り続け、次の（普通の）片付けで捨てられる。場に残っても効果は無い（公式）。
        他プレイヤーのカード（地図作り等）は普通に捨てられる＝nextTimeSweep は上で通常どおり処理済み。 */
     if (state.turn.journeyKeep) {
+      if ((p.joustAside || []).length) { p.discard.push(...p.joustAside); p.joustAside = []; } // 一騎討ちの属州＝手札と一緒に捨てる
       p.discard.push(...p.hand);
       p.durationCards = newDur;
       p.inPlay = restInPlay;
@@ -12137,6 +12398,7 @@
     } else {
       // 場からの捨て札は無謀な/疲れ知らずの の振り分けを通す（手札からの捨て札は「場から」ではない＝普通に捨てる）。
       restInPlay.forEach((c) => discardFromPlayRouted(state, pi, c, tirelessHold));
+      if ((p.joustAside || []).length) { p.discard.push(...p.joustAside); p.joustAside = []; } // 一騎討ちの属州＝手札と一緒に捨てる
       p.discard.push(...p.hand);
       p.durationCards = newDur;
       p.inPlay = [];
@@ -12226,6 +12488,11 @@
     if (state.turn.squirrelDraw) {
       const got = draw(state, pi, state.turn.squirrelDraw);
       if (got.length) log(state, `${p.name} はリスの習性で +${got.length}カード（ターンの終了時）。`);
+    }
+    // 収穫祭＆ギルド2版：装蹄師の過払い＝「このターンの終了時 +Nカード」（リスの習性と同じ位置＝先引きの後）
+    if (state.turn.farrierDraw) {
+      const got = draw(state, pi, state.turn.farrierDraw);
+      if (got.length) log(state, `${p.name} は装蹄師の過払いで +${got.length}カード（ターンの終了時）。`);
     }
     /* 夜想曲：川の恵み＝「このターンの終了時、+1カード」＝**次の手札を先引きした後**に引く
        （§0-25 のリス／§0-21 の保存 と同じ位置。角笛は逆に先引きの前）。
@@ -13219,6 +13486,7 @@
   function endBuyTail(state) {
     const pi = state.turn.active;
     const me = state.players[pi];
+    merchantGuildEndOfBuy(state, pi); // ギルド：商人ギルド（2021）＝購入フェイズの終了時に財源
     /* ルネサンス：購入フェイズ終了時のプロジェクト。
        - 野外劇（Pageant）＝$1を支払ってもよい（+1財源）。1回の誘発で払えるのは$1だけ。購入権は消費しない。
        - 探査（Exploration）＝その購入フェイズで**カードを1枚も獲得していない**なら +1財源+1村人
@@ -13243,6 +13511,7 @@
   function midBuyPhaseEnd(state, pi, skipWine) {
     const me = state.players[pi];
     const t = state.turn;
+    merchantGuildEndOfBuy(state, pi); // ギルド：ヴィラ/騎兵隊でも「購入フェイズの終了時」（1フェイズ1回＝t.mgDone）
     if (!skipWine && (t.coins || 0) >= 2 && (me.tavern || []).includes('wine_merchant')) {
       state.pending = { type: 'wine_merchant', player: pi, mid: true };
       return true;
@@ -13753,6 +14022,12 @@
       while (state.onGainQueue.length) {
         const q = state.onGainQueue.shift();
         if (q.type === 'gatekeeper_exile') { applyGatekeeperExile(state, q.player, q.card, q.dest); continue; }
+        // 収穫祭＆ギルド2版：耕作者の獲得時＝手札にアクション/財宝があるときだけ窓（誰のターンでも・任意）。
+        if (q.type === 'farmhands_aside') {
+          const fp = state.players[q.player];
+          if (fp.hand.some((c) => DOM.isType(c, 'action') || isTreasureFor(state, c) || inheritedEstate(fp, c))) { state.pending = { type: 'farmhands_aside', player: q.player }; break; }
+          continue;
+        }
         // 海辺1版：抑留＝呪いを1枚ずつ別々に獲得（望楼/交易商人/海賊の窓が呪いごとに開く）。山が空なら何もしない。
         if (q.type === 'embargo_curse') {
           if ((state.supply.curse || 0) > 0 && gain(state, q.player, 'curse', 'discard')) log(state, `${state.players[q.player].name} は抑留で呪い1枚を獲得した。`);
@@ -14060,6 +14335,26 @@
       log(state, `${state.players[tr.player].name} は交易路でマットのコイントークン${n}個ぶん +$${n}。`);
       state = runReplays(state);
     }
+    // 収穫祭＆ギルド2版：診療所の過払い＝「これを N 回使用する」＝1回目は捨て札から場へ出して使用、2回目以降は場のまま再適用。
+    //   1回ごとの廃棄窓が解決してから次へ（習性を毎回選べる公式ルールは簡略化＝自動で記載効果）。
+    if (!state.pending && !state.gameOver && state.turn && state.turn.infirmaryPlays && state.turn.infirmaryPlays.n > 0 &&
+        !(state.onGainQueue && state.onGainQueue.length) && !(state.onTrashQueue && state.onTrashQueue.length)) {
+      const ip = state.turn.infirmaryPlays;
+      const cp = state.players[ip.player];
+      if (!ip.started) {
+        ip.started = true;
+        if (cp.discard.indexOf('infirmary') >= 0) { playCardNoAction(state, ip.player, 'infirmary', cp.discard, '過払いで'); ip.n -= 1; }
+        else { log(state, `${cp.name} の診療所は獲得先から動かされていて使用できなかった。`); ip.n = 0; }
+      } else if (cp.inPlay.indexOf('infirmary') >= 0) {
+        state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
+        log(state, `${cp.name} は過払いで「診療所」をもう一度使った。`);
+        noteAllyPlay(state, ip.player, 'infirmary');
+        applyEffect(state, 'infirmary', ip.player);
+        ip.n -= 1;
+      } else { ip.n = 0; } // 場から消えた（増築等）＝残りは失敗
+      if (ip.n <= 0) state.turn.infirmaryPlays = null;
+      state = runReplays(state);
+    }
     // 繁栄1版：禁制品の指定窓が pending で待たされていたら開く。
     if (!state.pending && !state.gameOver && state.turn && state.turn.contrabandAsk && state.turn.contrabandAsk.length) {
       const ca = state.turn.contrabandAsk.shift();
@@ -14148,6 +14443,8 @@
       }
       /* 夜想曲：コンクラーベ＝手札のアクションを使ったら**その解決が全部終わった後で** +1アクション（公式）。
          `addActions` を通すので、コンクラーベで雪深い村を使った場合は +1アクションが無視される（＝公式どおり）。 */
+      // 収穫祭＆ギルド2版：小冠＝アクション側の2回目が終わった後に「財宝1枚を2回」の窓を開く（制御項目）。
+      if (r.label === 'coronet_treasure') { coronetTreasureStage(state, r.player); continue; }
       if (r.label === 'conclave_bonus') {
         addActions(state.turn, 1);
         log(state, `${state.players[r.player].name} はコンクラーベで +1アクション。`);
@@ -14930,6 +15227,7 @@
         // ルネサンス：探査／野外劇は「その購入フェイズ」単位＝購入フェイズに入り直すたびにリセット（ヴィラ対応）。
         t.bpGained = 0;
         t.pageantDone = false;
+        t.mgDone = false; // ギルド：商人ギルドの「購入フェイズの終了時」は購入フェイズごと
         /* 夜想曲：錯乱(Deluded)／嫉妬(Envious)＝**購入フェイズの開始時に「返す」ことで初めて発動**し、
            そのターンの残り全部に効く（持っているだけでは何も起きない＝最頻の事故）。
            `END_ACTION_PHASE` は1ターンに複数回走り得る（ヴィラ/騎兵）ので**毎回 返す判定をする**が、
@@ -16268,7 +16566,7 @@
         const card = action.card;
         if (pl.hand.indexOf(card) < 0) return state;
         reveal(state, pd.player, [card], '大使で公開');
-        if (NON_SUPPLY.has(card) || !canReturnToPile(state, card)) {
+        if (NON_SUPPLY.has(card) || isFerrymanPileCard(state, card) || !canReturnToPile(state, card)) {
           log(state, `「${C()[card].name}」はサプライの山が無いので、大使は何も起きない。`);
           state.pending = null;
           return state;
@@ -16341,6 +16639,135 @@
         // 支配中＝獲得するのは支配者＝脇に置かれず捨て札に残る（公式）。それ以外は triggerOnGain が dest を見て脇へ（hasty_aside）。
         if (!(t2.possessedBy != null && pd.player === t2.active)) t2.summonAside = (t2.summonAside || 0) + 1;
         if (!gain(state, pd.player, id, 'discard')) { t2.summonAside = 0; return state; }
+        return state;
+      }
+      /* ===== 段階2 第3バッチの reducer ===== */
+      // 一騎討ち：属州を脇に置くか（任意）→置いたら褒賞を1枚選ぶ（残っていれば）
+      case 'JOUST_ASIDE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'joust_aside') return state;
+        const pl = state.players[pd.player];
+        if (!action.aside) { state.pending = null; return state; }
+        if (!removeOne(pl.hand, 'province')) { state.pending = null; return state; }
+        (pl.joustAside = pl.joustAside || []).push('province');
+        log(state, `${pl.name} は一騎討ちで属州1枚を脇に置いた（クリンナップで捨て札へ）。`);
+        if (REWARDS.some((id) => (state.supply[id] || 0) > 0)) state.pending = { type: 'joust_reward', player: pd.player };
+        else { state.pending = null; log(state, `褒賞は残っていない。`); }
+        return state;
+      }
+      case 'JOUST_REWARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'joust_reward') return state;
+        const id = action.card;
+        if (REWARDS.indexOf(id) < 0 || (state.supply[id] || 0) <= 0) {
+          if (!REWARDS.some((r) => (state.supply[r] || 0) > 0)) { state.pending = null; return state; } // 終端保証
+          return state;
+        }
+        state.pending = null; // 🛑 先に閉じる（手札への獲得＝納屋/望楼/野盗の窓が開く）
+        if (gain(state, pd.player, id, 'hand')) log(state, `${state.players[pd.player].name} は褒賞「${C()[id].name}」を手札に獲得した（一騎討ち）。`);
+        return state;
+      }
+      // 小冠：アクション段（任意）→財宝段（任意）
+      case 'CORONET_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'coronet') return state;
+        const p2 = state.players[pd.player];
+        const card = action.card;
+        if (pd.stage === 'action') {
+          state.pending = null;
+          if (card != null && !DOM.isType(card, 'reward') && DOM.isType(card, 'action') && canPlayFromHandOrShadow(state, pd.player, card) &&
+              canPlayHandCard(state, pd.player, card) && takePlayable(state, pd.player, card)) {
+            p2.inPlay.push(card);
+            notePlayFromHand(state, pd.player);
+            t.actionsPlayed = (t.actionsPlayed || 0) + 1;
+            log(state, `${p2.name} は小冠で「${C()[card].name}」を使った（1回目）。`);
+            noteAllyPlay(state, pd.player, card);
+            applyEffect(state, card, pd.player);
+            state.replay = state.replay || [];
+            state.replay.push({ player: pd.player, card, label: 'coronet' });
+            state.replay.push({ player: pd.player, label: 'coronet_treasure' }); // 2回目の後に財宝段を開く（制御項目）
+            return state;
+          }
+          coronetTreasureStage(state, pd.player); // アクションを使わない→財宝段へ
+          return state;
+        }
+        // stage 'treasure'
+        state.pending = null;
+        if (card != null && p2.hand.indexOf(card) >= 0 && isTreasureFor(state, card) && !DOM.isType(card, 'reward') && canPlayHandCard(state, pd.player, card)) {
+          log(state, `${p2.name} は小冠で「${C()[card].name}」を2回使う。`);
+          playTreasureCard(state, pd.player, card);
+          (state.replay = state.replay || []).push({ player: pd.player, card, label: 'treasure_replay' });
+        }
+        return state;
+      }
+      // 駿馬：異なる2つ（記載順に解決・山札は捨てない）
+      case 'COURSER_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'courser') return state;
+        const valid = ['cards', 'actions', 'coins', 'silver'];
+        let ch = Array.isArray(action.choices) ? action.choices.filter((c) => valid.includes(c)) : [];
+        ch = valid.filter((c) => ch.includes(c));
+        if (ch.length !== 2) return state;
+        const pl = state.players[pd.player];
+        state.pending = null;
+        ch.forEach((c) => {
+          if (c === 'cards') draw(state, pd.player, 2);
+          else if (c === 'actions') addActions(t, 2);
+          else if (c === 'coins') addCoins(state, 2);
+          else if (c === 'silver') { for (let i = 0; i < 4; i++) gain(state, pd.player, 'silver', 'discard'); }
+        });
+        log(state, `${pl.name} は駿馬の効果（${ch.join('/')}）を選んだ。`);
+        return state;
+      }
+      // 診療所：手札1枚を廃棄してもよい
+      case 'INFIRMARY_TRASH': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'infirmary_trash') return state;
+        const pl = state.players[pd.player];
+        const c = action.card;
+        if (c == null) { state.pending = null; return state; }
+        if (pl.hand.indexOf(c) < 0) return state;
+        if (!trashFromHand(state, pd.player, [c], 1, 'を診療所で廃棄した。')) return state;
+        state.pending = null;
+        return state;
+      }
+      // 店：場に同名が無いアクション1枚を使う（+1アクションは無い）
+      case 'SHOP_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'shop') return state;
+        const card = action.card;
+        if (card != null && conclaveTargets(state, pd.player).indexOf(card) < 0) return state; // 場に同名がある札は拒否（窓は閉じない）
+        state.pending = null;
+        if (card == null) return state;
+        playPlayable(state, pd.player, card, '店で', action.way);
+        return state;
+      }
+      // 耕作者：獲得時＝手札のアクション/財宝1枚を脇へ（任意）→次の自分のターン開始時に使用（event_play）
+      case 'FARMHANDS_ASIDE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'farmhands_aside') return state;
+        const pl = state.players[pd.player];
+        const c = action.card;
+        if (c == null) { state.pending = null; return state; }
+        if (pl.hand.indexOf(c) < 0 || !(DOM.isType(c, 'action') || isTreasureFor(state, c) || inheritedEstate(pl, c))) return state;
+        removeOne(pl.hand, c);
+        (pl.eventSetAside = pl.eventSetAside || []).push(c);
+        log(state, `${pl.name} は耕作者で「${C()[c].name}」を脇に置いた（次のターンの開始時に使用する）。`);
+        state.pending = null;
+        return state;
+      }
+      // 渡し守：手札1枚を捨てる（強制・捨て札トリガーあり）
+      case 'FERRYMAN_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ferryman_discard') return state;
+        const pl = state.players[pd.player];
+        if (!pl.hand.length) { state.pending = null; return state; }
+        const c = action.card;
+        if (pl.hand.indexOf(c) < 0) return state;
+        removeOne(pl.hand, c); pl.discard.push(c);
+        state.pending = null;
+        log(state, `${pl.name} は渡し守で「${C()[c].name}」を捨て札にした。`);
+        triggerOnDiscard(state, pd.player, [c]);
         return state;
       }
       case 'PEARL_DIVER_RESOLVE': {
@@ -19756,7 +20183,7 @@
       // 財源(Coffers)を使う：購入フェイズに任意枚数の財源を +1コインずつ に変える。
       case 'COFFERS_SPEND': {
         if (state.pending) return state;
-        if (t.phase !== 'buy') return state;
+        // 2021 ルール＝財源は**ターン中いつでも**使える（購入フェイズ限定は旧則）。夜フェイズも可。
         const amount = action.amount | 0;
         if (amount <= 0) return state;
         if (amount > (me.coffers || 0)) return state;
@@ -24195,6 +24622,7 @@
     // 段階2 第1バッチ（海辺1版／繁栄1版／プロモ）
     'PEARL_DIVER_RESOLVE', 'NAVIGATOR_RESOLVE', 'EXPLORER_RESOLVE', 'GHOST_SHIP_REACT', 'GHOST_SHIP_PUT',
     'EMBARGO_PILE', 'PIRATE_SHIP_REACT', 'PIRATE_SHIP_CHOOSE', 'PIRATE_SHIP_PICK', 'SEA_HAG_REACT',
+    'JOUST_ASIDE', 'JOUST_REWARD', 'CORONET_CHOOSE', 'COURSER_RESOLVE', 'INFIRMARY_TRASH', 'SHOP_PLAY', 'FARMHANDS_ASIDE', 'FERRYMAN_DISCARD',
     'AMBASSADOR_REVEAL', 'AMBASSADOR_RETURN', 'AMBASSADOR_REACT', 'TRADE_ROUTE_TRASH', 'CONTRABAND_NAME', 'SUMMON_GAIN',
     'COUNTING_HOUSE_RESOLVE', 'LOAN_RESOLVE', 'MOUNTEBANK_REACT', 'MOUNTEBANK_CHOOSE', 'MARCHLAND_DISCARD',
     'CELLAR_RESOLVE', 'MILITIA_RESOLVE', 'MOAT_REVEAL',
@@ -24426,6 +24854,8 @@
     investCount,       // 移動動物園：投資（Invest）で追放したコピーの枚数（表示用・+2カードの判定はengine内）
     bargainCanGain,    // 移動動物園：特価品の獲得候補（$5以下・勝利点でない）
     summonCanGain,     // プロモ：召喚の獲得候補（$4以下のアクション）
+    isFerrymanPileCard, // 収穫祭＆ギルド2版：渡し守の山の札か（サプライではない）
+    ferrymanContentsOf,
     contrabandBlocks,  // 繁栄1版：禁制品で購入できないか（canBuyCard が見る）
     populatePiles,     // 移動動物園：植民で獲得できる「アクションのサプライ山」の一覧（engine/CPU/UI が同じ候補を参照）
     isUsableWay,       // 移動動物園：その習性がこの対局で採用されているか（イベントの「使用」でも習性を選べる）

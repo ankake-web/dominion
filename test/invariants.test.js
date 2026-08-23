@@ -23,6 +23,7 @@ const ZONES = ['deck', 'hand', 'discard', 'inPlay', 'durationCards', 'setAside',
   'princes', // 新プロモ：王子の脇に置いたカード（公開ゾーン。王子本体は inPlay/durationCards に残る）
   'tavern', // 冒険：酒場マット（Reserve カード・守銭奴の銅貨。公開ゾーン）
   'inherited', // 冒険：相続で脇に置いたカード（サプライから抜いて脇に置く＝物理カードなので保存則に数える）
+  'joustAside', // 収穫祭＆ギルド2版：一騎討ちで脇に置いた属州（公開・クリンナップで捨て札へ）
   'cargo', // ルネサンス：貨物船の脇置き（表向き＝公開ゾーン。次の手番開始時に手札へ）
   'exile', // 移動動物園：追放マット（公開ゾーン。所有者のカード＝得点にも数える）
   'eventSetAside', // 移動動物園：遅延/刈り入れの脇置き（次の自分のターン開始時に使用する。公開ゾーン）
@@ -47,6 +48,7 @@ function tally(s) {
   MIXED_PILE_KEYS.forEach((k) => (s[k] || []).forEach(add)); // 混合山の中身（廃墟/騎士/城＋同盟の分割山6組）
   (s.trash || []).forEach(add); (s.blackMarket || []).forEach(add);
   (s.loot || []).forEach(add); // 略奪：戦利品の山（30枚）＝**カード**なので数える（祝福/呪詛は非カードなので数えない）
+  ((s.ferrymanPile && s.ferrymanPile.cards) || []).forEach(add); // 収穫祭＆ギルド2版：渡し守の山（サプライ外）＝**カード**なので数える
   s.players.forEach((p) => ZONES.forEach((z) => (p[z] || []).forEach(add)));
   s.players.forEach((p) => (p.archives || []).forEach((a) => (a.cards || []).forEach(add))); // 帝国：資料庫の脇置き（{id,cards}）
   s.players.forEach((p) => (p.quartermasters || []).forEach((q) => (q.cards || []).forEach(add))); // 略奪：操舵手の脇置き（{id,cards}）

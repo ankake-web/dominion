@@ -37,7 +37,7 @@ function showAs(s, viewer) {
 
 console.log('=== 第1バッチ：新 pending 10種にモーダルと押せる選択肢がある ===');
 {
-  const K = ['pearl_diver', 'navigator', 'explorer', 'ghost_ship', 'counting_house', 'mountebank', 'marchland', 'embargo', 'pirate_ship', 'ambassador'];
+  const K = ['pearl_diver', 'navigator', 'explorer', 'ghost_ship', 'counting_house', 'mountebank', 'marchland', 'embargo', 'joust', 'ambassador'];
   const PENDINGS = [
     { p: { type: 'pearl_diver', player: 0, card: 'gold' }, jp: '真珠採り' },
     { p: { type: 'navigator', player: 0, cards: ['copper', 'estate', 'silver', 'gold', 'curse'] }, jp: '航海士' },
@@ -61,6 +61,18 @@ console.log('=== 第1バッチ：新 pending 10種にモーダルと押せる選
     { p: { type: 'trade_route_trash', player: 0 }, jp: '交易路（廃棄）' },
     { p: { type: 'contraband_name', player: 0, source: 1 }, jp: '禁制品（指定）' },
     { p: { type: 'summon_gain', player: 0 }, jp: '召喚（獲得）' },
+    // 第3バッチ（収穫祭＆ギルド2版）
+    { p: { type: 'joust_aside', player: 0 }, jp: '一騎討ち（属州を脇に）' },
+    { p: { type: 'joust_reward', player: 0 }, jp: '一騎討ち（褒賞を選ぶ）' },
+    { p: { type: 'coronet', stage: 'action', player: 0 }, jp: '小冠（アクション）' },
+    { p: { type: 'coronet', stage: 'treasure', player: 0 }, jp: '小冠（財宝）' },
+    { p: { type: 'courser', player: 0 }, jp: '駿馬' },
+    { p: { type: 'infirmary_trash', player: 0 }, jp: '診療所（廃棄）' },
+    { p: { type: 'shop', player: 0 }, jp: '店' },
+    { p: { type: 'farmhands_aside', player: 0 }, jp: '耕作者（脇に置く）' },
+    { p: { type: 'ferryman_discard', player: 0 }, jp: '渡し守（捨てる）' },
+    { p: { type: 'overpay', player: 0, card: 'farrier', max: 3 }, jp: '装蹄師（過払い）' },
+    { p: { type: 'overpay', player: 0, card: 'infirmary', max: 2 }, jp: '診療所（過払い）' },
   ];
   PENDINGS.forEach((row) => {
     const s = E.createInitialState(['あなた', '相手'], K.slice(), { startActive: 0 });
@@ -109,6 +121,20 @@ console.log('=== 第2バッチ：盤面に 海賊船トークン／交易路マ�
   ok(/交易路/.test(txt), '交易路マットのバッジ');
   ok(doc.body.innerHTML.indexOf('⚓2') >= 0, '銀貨の山に抑留トークン2のバッジ');
   ok(doc.body.innerHTML.indexOf('🪙') >= 0, '勝利点の山に交易路トークンのバッジ');
+}
+
+console.log('=== 第3バッチ：渡し守の山／一騎討ちの脇／褒賞の山／アクションフェイズの財源ボタン が出る ===');
+{
+  const K = ['ferryman', 'joust', 'merchant_guild', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop'];
+  const s = E.createInitialState(['あなた', '相手'], K.slice(), { startActive: 0 });
+  s.players[0].joustAside = ['province']; s.players[0].coffers = 2; s.turn.phase = 'action';
+  showAs(s, 0);
+  ok(!runtimeError, '描画で例外が出ない: ' + (runtimeError || ''));
+  const txt = doc.body.textContent;
+  ok(/渡し守の山/.test(txt) && s.ferrymanPile && txt.indexOf(DOM.CARDS[s.ferrymanPile.cards[0]].name) >= 0, '渡し守の山（一番上のカード名）が盤面に出る');
+  ok(/一騎討ちの脇/.test(txt), '一騎討ちの脇の属州が出る');
+  ok(/名声|駿馬|小冠/.test(txt), '褒賞の山（非サプライ）が盤面に出る');
+  ok(/財源を使う/.test(txt), 'アクションフェイズでも「財源を使う」ボタンが出る（2021ルール）');
 }
 
 console.log('=== 相手視点では見ている札の名前が出ない（真珠採り／航海士）===');

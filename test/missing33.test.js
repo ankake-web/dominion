@@ -13,7 +13,7 @@ const ok = (b, m) => { if (b) pass++; else { fail++; console.log('  x FAIL: ' + 
 const F = ['village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory', 'festival', 'mine'];
 const mk = (K, n, opts) => E.createInitialState(Array.from({ length: n || 2 }, (_, i) => ({ name: 'P' + i, isCpu: i > 0 })), K.slice(), Object.assign({ startActive: 0 }, opts || {}));
 const act = (s, card) => { s.turn.phase = 'action'; s.turn.actions = 1; if (!s.players[0].hand.includes(card)) s.players[0].hand.push(card); return E.reduce(s, { type: 'PLAY_ACTION', card }); };
-const total = (st) => { let n = 0; st.players.forEach((p) => { n += E.allCards(p).length; }); n += st.trash.length; return n; };
+const total = (st) => { let n = 0; st.players.forEach((p) => { n += E.allCards(p).length; }); n += st.trash.length; n += ((st.ferrymanPile && st.ferrymanPile.cards) || []).length; return n; };
 
 console.log('=== 真珠採り(pearl_diver)：+1カード+1アクション→山札の一番下を見て上に置いてよい ===');
 {
@@ -389,6 +389,154 @@ console.log('=== 保存則＆CPU終端（第2バッチ10種＋修正を強制混
       if(!s.pending){ const now=total(s)+Object.values(s.supply).reduce((a,b)=>a+b,0); if(now!==base){bad++;console.log('  conservation',base,'->',now,'step',steps);break;} } }
     if(!s.gameOver){bad++;console.log('  not finished n='+n+' steps='+steps);}
     else console.log('  game',g,'done steps',steps,'tokens',s.players.map(p=>p.pirateShipTokens).join('/'),'mat',s.tradeRouteMat,'embargo',JSON.stringify(s.pileEmbargo||{}));
+  }
+  ok(bad===0,'6ゲームが膠着・例外・保存則違反なしで終局');
+}
+
+/* ===== 第3バッチ＝収穫祭＆ギルド2版14種（王国8＋褒賞6）＋商人ギルド(2021)／王女(2022)／パン屋×闇市場 ===== */
+const REW = ['coronet', 'courser', 'demesne', 'housecarl', 'huge_turnip', 'renown'];
+console.log('=== 装蹄師（過払い＝ターン終了時 +N カード）===');
+{ let s=mk(['farrier'].concat(F.slice(0,9))); s.players[0].hand=['farrier']; s.players[0].deck=['copper','copper','copper','copper','copper','copper','copper','copper','copper','copper']; s=act(s,'farrier');
+  ok(s.turn.actions===1&&s.turn.buys===2&&s.players[0].hand.length===1,'+1カード+1アクション+1購入');
+  s.turn.phase='buy'; s.turn.coins=5; s=E.reduce(s,{type:'BUY',card:'farrier'}); ok(s.pending&&s.pending.type==='overpay'&&s.pending.max===3,'装蹄師を$2で買って残$3→過払いの窓（max3）');
+  s=E.reduce(s,{type:'OVERPAY_RESOLVE',amount:3}); ok(s.turn.farrierDraw===3&&s.pending==null,'過払い3＝ターン終了時 +3');
+  s=E.reduce(s,{type:'END_TURN'}); ok(s.players[0].hand.length===8,'次の手札＝5枚＋3枚（先引きの後）'); }
+
+console.log('=== 店（場に同名が無いアクションを使う・+1アクション無し）===');
+{ let s=mk(['shop'].concat(F.slice(0,9))); s.players[0].hand=['shop','village','smithy']; s.players[0].inPlay=['village']; s=act(s,'shop');
+  ok(s.turn.coins===1&&s.pending&&s.pending.type==='shop','+1カード+$1→使う窓');
+  const r=E.reduce(s,{type:'SHOP_PLAY',card:'village'}); ok(r.pending!=null||r===s,'場に同名（村）がある札は選べない（拒否）');
+  const t=E.reduce(s,{type:'SHOP_PLAY',card:'smithy'}); ok(t.pending==null&&t.players[0].inPlay.includes('smithy')&&t.turn.actions===0,'鍛冶屋を使う（アクション権は消費しない・+1アクションも無い）'); }
+
+console.log('=== 診療所（任意廃棄・過払い＝N回使用）===');
+{ let s=mk(['infirmary'].concat(F.slice(0,9))); s.players[0].hand=['infirmary','curse','estate']; s.players[0].deck=['copper','copper','copper','copper']; s=act(s,'infirmary');
+  ok(s.pending&&s.pending.type==='infirmary_trash','廃棄の窓'); let t=E.reduce(s,{type:'INFIRMARY_TRASH',card:'curse'}); ok(t.trash.includes('curse')&&t.pending==null,'呪いを廃棄');
+  const z=E.reduce(s,{type:'INFIRMARY_TRASH',card:null}); ok(z.pending==null,'廃棄しないも可');
+  let b=mk(['infirmary'].concat(F.slice(0,9))); b.turn.phase='buy'; b.turn.coins=5; b.turn.buys=1; b.players[0].hand=['curse','estate']; b.players[0].deck=['copper','copper','copper','copper'];
+  b=E.reduce(b,{type:'BUY',card:'infirmary'}); ok(b.pending&&b.pending.type==='overpay','過払いの窓'); b=E.reduce(b,{type:'OVERPAY_RESOLVE',amount:2});
+  ok(b.players[0].inPlay.includes('infirmary')&&b.pending&&b.pending.type==='infirmary_trash','1回目＝捨て札から場に出て使用→廃棄の窓');
+  b=E.reduce(b,{type:'INFIRMARY_TRASH',card:'curse'}); ok(b.pending&&b.pending.type==='infirmary_trash','2回目＝場のまま再適用→また廃棄の窓'); b=E.reduce(b,{type:'INFIRMARY_TRASH',card:'estate'});
+  ok(b.pending==null&&b.trash.includes('curse')&&b.trash.includes('estate')&&b.players[0].hand.length===2,'2回使って2枚引き・2枚廃棄（手札2枚→+2−2＝2）'); }
+
+console.log('=== 耕作者（獲得時に脇→次ターン開始時に使用）===');
+{ let s=mk(['farmhands'].concat(F.slice(0,9))); s.turn.phase='buy'; s.turn.coins=4; s.turn.buys=1; s.players[0].hand=['smithy','copper'];
+  s=E.reduce(s,{type:'BUY',card:'farmhands'}); ok(s.pending&&s.pending.type==='farmhands_aside','獲得時の窓');
+  let t=E.reduce(s,{type:'FARMHANDS_ASIDE',card:'smithy'}); ok(t.players[0].eventSetAside.includes('smithy')&&!t.players[0].hand.includes('smithy'),'鍛冶屋を脇へ');
+  let u=E.reduce(t,{type:'END_TURN'}); while(u.turn.active!==0){ const seat=u.pending?u.pending.player:u.turn.active; u=E.reduce(u,CPU.decide(u,seat)); }
+  ok(u.pending&&u.pending.type==='event_play','次ターン開始時に使用の窓'); u=E.reduce(u,{type:'EVENT_PLAY'}); ok(u.players[0].inPlay.includes('smithy'),'鍛冶屋を使用');
+  // 財宝も可
+  let w=mk(['farmhands'].concat(F.slice(0,9))); w.turn.phase='buy'; w.turn.coins=4; w.turn.buys=1; w.players[0].hand=['gold']; w=E.reduce(w,{type:'BUY',card:'farmhands'}); w=E.reduce(w,{type:'FARMHANDS_ASIDE',card:'gold'}); ok(w.players[0].eventSetAside.includes('gold'),'財宝も脇に置ける');
+  // 相手ターンの獲得（詐欺師等の代わりに gain 直呼び経路は無いので）＝ここでは購入だけ。手札に候補が無ければ窓なし
+  let z=mk(['farmhands'].concat(F.slice(0,9))); z.turn.phase='buy'; z.turn.coins=4; z.turn.buys=1; z.players[0].hand=['estate']; z=E.reduce(z,{type:'BUY',card:'farmhands'}); ok(z.pending==null,'候補が無ければ窓を開かない'); }
+
+console.log('=== 謝肉祭 ===');
+{ let s=mk(['carnival'].concat(F.slice(0,9))); s.players[0].hand=['carnival']; s.players[0].deck=['copper','copper','estate','copper','gold']; s=act(s,'carnival');
+  ok(s.players[0].hand.filter(x=>x==='copper').length===1&&s.players[0].hand.includes('estate')&&s.players[0].discard.filter(x=>x==='copper').length===2&&s.players[0].deck.join()==='gold','銅貨1・屋敷1を手札、銅貨2を捨て札');
+  let tn=mk(['carnival','tunnel'].concat(F.slice(0,8))); tn.players[0].hand=['carnival']; tn.players[0].deck=['tunnel','tunnel','copper','copper']; tn=act(tn,'carnival'); ok(tn.players[0].discard.includes('gold'),'重複の坑道を捨てたら金貨（捨て札トリガー）'); }
+
+console.log('=== 渡し守（サプライ外の山）===');
+{ let s=mk(['ferryman'].concat(F.slice(0,9)));
+  ok(s.ferrymanPile&&s.ferrymanPile.card&&s.ferrymanPile.cards.length>=8,'準備＝山が作られる（'+(s.ferrymanPile&&s.ferrymanPile.card)+'・'+(s.ferrymanPile&&s.ferrymanPile.cards.length)+'枚）');
+  const fc=s.ferrymanPile.card; const cc=D.CARDS[fc]; ok(cc&&(cc.cost===3||cc.cost===4)&&!cc.potion&&!cc.debt&&!s.supply.hasOwnProperty(fc),'ちょうど$3/$4・サプライに無い');
+  ok(!E.canBuyCard(s,0,fc)||s.supply[fc]==null,'購入できない');
+  const b0=total(s)+Object.values(s.supply).reduce((a,b)=>a+b,0);
+  s.turn.phase='buy'; s.turn.coins=5; s.turn.buys=1; const n0=s.ferrymanPile.cards.length; s=E.reduce(s,{type:'BUY',card:'ferryman'});
+  while(s.pending) s=E.reduce(s,CPU.decide(s,s.pending.player));
+  ok(s.ferrymanPile.cards.length===n0-1&&E.allCards(s.players[0]).includes(fc),'渡し守を獲得→山から1枚獲得（'+fc+'）');
+  ok(total(s)+Object.values(s.supply).reduce((a,b)=>a+b,0)===b0,'保存則');
+  // 工房での獲得でも
+  let w=mk(['ferryman','feast'].concat(F.slice(0,8))); w.players[0].hand=['feast']; w=act(w,'feast'); const n1=w.ferrymanPile.cards.length; while(w.pending&&w.pending.type==='feast') w=E.reduce(w,{type:'FEAST_GAIN',card:'ferryman'}); while(w.pending) w=E.reduce(w,CPU.decide(w,w.pending.player));
+  ok(w.ferrymanPile.cards.length===n1-1||!E.allCards(w.players[0]).includes('ferryman'),'祝宴（効果獲得）でも山から1枚（渡し守を獲得できた場合）');
+  // プレイ効果
+  let p=mk(['ferryman'].concat(F.slice(0,9))); p.players[0].hand=['ferryman','estate']; p.players[0].deck=['copper','copper','copper']; p=act(p,'ferryman'); ok(p.turn.actions===1&&p.players[0].hand.length===3&&p.pending&&p.pending.type==='ferryman_discard','+2カード+1アクション→捨てる窓'); p=E.reduce(p,{type:'FERRYMAN_DISCARD',card:'estate'}); ok(p.players[0].discard.includes('estate')&&p.pending==null,'1枚捨てる');
+  // 山が尽きたら何も起きない
+  let e=mk(['ferryman'].concat(F.slice(0,9))); e.ferrymanPile.cards=[]; e.turn.phase='buy'; e.turn.coins=5; e.turn.buys=1; e=E.reduce(e,{type:'BUY',card:'ferryman'}); ok(e.players[0].discard.filter(x=>x==='ferryman').length===1&&e.players[0].discard.length===1,'山が空なら渡し守だけ');
+  // 塔：渡し守の山由来は「空のサプライ山」ではない／大使で戻せない／canReturnToPile は真
+  ok(E.isFerrymanPileCard(s,fc)===true,'isFerrymanPileCard');
+  // 闇市場デッキに入らない
+  let bm=mk(['ferryman','black_market'].concat(F.slice(0,8))); ok(bm.blackMarket.indexOf(bm.ferrymanPile.card)<0,'闇市場デッキに渡し守の山の札は入らない');
+  // 神風の新10山にも入らない（singular）は applyDivineWind 経由＝省略。100回抽選で候補がゲーム中の山と被らない
+  let dup=0; for(let i=0;i<40;i++){ const z=mk(['ferryman'].concat(F.slice(0,9))); if(z.kingdom.includes(z.ferrymanPile.card)||z.supply[z.ferrymanPile.card]!=null) dup++; } ok(dup===0,'40回抽選で王国／サプライと重複なし');
+}
+
+console.log('=== 野盗（+2財源・民兵型・常設ルール）===');
+{ let s=mk(['footpad','workshop'].concat(F.slice(0,8)),3); s.players[0].hand=['footpad']; s.players[1].hand=['copper','copper','copper','copper','copper']; s.players[2].hand=['copper','copper','copper']; s=act(s,'footpad');
+  ok(s.players[0].coffers===2&&s.pending&&s.pending.type==='discard_down','+2財源→手札4枚以上の相手が3枚まで');
+  s=E.reduce(s,{type:'DISCARD_DOWN_RESOLVE',cards:['copper','copper']}); ok(s.pending==null,'捨てて終わり');
+  // 常設ルール＝アクションフェイズの獲得で +1カード（誰でも）
+  ok(s.footpadRule===true,'footpadRule');
+  s.players[0].hand.push('workshop'); s.turn.actions=1; s.turn.phase='action'; const h0=s.players[0].hand.length; s=E.reduce(s,{type:'PLAY_ACTION',card:'workshop'}); s=E.reduce(s,{type:'WORKSHOP_GAIN',card:'village'});
+  ok(s.players[0].hand.length===h0-1+1,'工房（アクションフェイズ）の獲得で +1カード');
+  s.turn.phase='buy'; s.turn.coins=3; s.turn.buys=1; const h1=s.players[0].hand.length; s=E.reduce(s,{type:'BUY',card:'silver'}); ok(s.players[0].hand.length===h1,'購入フェイズの獲得では引かない');
+  // 野盗が無い王国では働かない
+  let z=mk(['workshop'].concat(F.slice(0,9))); ok(!z.footpadRule,'野盗が無ければ常設ルール無し'); }
+
+console.log('=== 一騎討ち＋褒賞の山 ===');
+{ let s=mk(['joust'].concat(F.slice(0,9))); ok(REW.every(id=>s.supply[id]===1),'2人戦＝褒賞各1');
+  let s3=mk(['joust'].concat(F.slice(0,9)),3); ok(REW.every(id=>s3.supply[id]===2),'3人戦＝褒賞各2');
+  ok(!E.canBuyCard(s,0,'renown')&&E.emptyPileCount(s)===0,'褒賞は購入できない・3山終了に数えない');
+  s.players[0].hand=['joust','province','copper']; s.players[0].deck=['copper','copper']; s=act(s,'joust');
+  ok(s.turn.coins===1&&s.turn.actions===1&&s.pending&&s.pending.type==='joust_aside','+1カード+1アクション+$1→属州を脇に置くか');
+  let t=E.reduce(s,{type:'JOUST_ASIDE',aside:true}); ok(t.players[0].joustAside.includes('province')&&t.pending&&t.pending.type==='joust_reward','属州を脇→褒賞を選ぶ');
+  t=E.reduce(t,{type:'JOUST_REWARD',card:'renown'}); ok(t.players[0].hand.includes('renown')&&t.supply.renown===0&&t.pending==null,'名声を手札に獲得');
+  const total0=total(t); t.turn.phase='buy'; t=E.reduce(t,{type:'END_TURN'}); ok(!(t.players[0].joustAside||[]).length&&E.allCards(t.players[0]).filter(x=>x==='province').length===1,'クリンナップで属州は捨て札へ（消えない）');
+  // 褒賞が尽きても脇に置ける
+  let e=mk(['joust'].concat(F.slice(0,9))); REW.forEach(id=>e.supply[id]=0); e.players[0].hand=['joust','province']; e=act(e,'joust'); e=E.reduce(e,{type:'JOUST_ASIDE',aside:true}); ok(e.players[0].joustAside.includes('province')&&e.pending==null,'褒賞が無くても属州は脇に置ける（何も起きない）');
+  // 手札への獲得＝野盗の常設ルール（アクションフェイズ）で +1カード／納屋等
+  let n=mk(['joust','footpad'].concat(F.slice(0,8))); n.players[0].hand=['joust','province']; n.players[0].deck=['copper','copper','copper']; n=act(n,'joust'); n=E.reduce(n,{type:'JOUST_ASIDE',aside:true}); const hb=n.players[0].hand.length; n=E.reduce(n,{type:'JOUST_REWARD',card:'courser'}); ok(n.players[0].hand.length===hb+2,'褒賞を手札に獲得→野盗ルールで +1カード（獲得時対話が閉じられていない）');
+  const cd=CPU.decide(s,0); ok(cd&&cd.type==='JOUST_ASIDE','CPU'); }
+
+console.log('=== 褒賞6種 ===');
+{ // 小冠＝アクション→財宝の2段
+  let s=mk(['joust'].concat(F.slice(0,9))); s.players[0].hand=['coronet','smithy','silver']; s.players[0].deck=['copper','copper','copper','copper','copper','copper']; s=act(s,'coronet');
+  ok(s.pending&&s.pending.type==='coronet'&&s.pending.stage==='action','アクション段の窓');
+  let t=E.reduce(s,{type:'CORONET_CHOOSE',card:'smithy'}); ok(t.players[0].hand.filter(x=>x==='copper').length===6&&t.pending&&t.pending.type==='coronet'&&t.pending.stage==='treasure','鍛冶屋を2回（+6枚）→財宝段の窓');
+  t=E.reduce(t,{type:'CORONET_CHOOSE',card:'silver'}); ok(t.turn.coins===4&&t.pending==null,'銀貨を2回＝$4');
+  // 褒賞でない制限＝小冠で小冠/名声は選べない
+  let r=mk(['joust'].concat(F.slice(0,9))); r.players[0].hand=['coronet','renown','silver']; r=act(r,'coronet'); ok(r.pending&&r.pending.stage==='treasure','アクションが褒賞（名声）だけなら財宝段へ直行');
+  // 購入フェイズに財宝として＝アクション段も出る（フェイズに依らない）
+  let b=mk(['joust'].concat(F.slice(0,9))); b.turn.phase='buy'; b.players[0].hand=['coronet','village']; b=E.reduce(b,{type:'PLAY_TREASURE',card:'coronet'}); ok(b.pending&&b.pending.stage==='action','購入フェイズでもアクション段');
+  // 駿馬
+  let c2=mk(['joust'].concat(F.slice(0,9))); c2.players[0].hand=['courser']; c2.players[0].deck=['copper','copper','copper']; c2=act(c2,'courser'); c2=E.reduce(c2,{type:'COURSER_RESOLVE',choices:['silver','cards']});
+  ok(c2.players[0].hand.length===2&&c2.players[0].discard.filter(x=>x==='silver').length===4&&c2.players[0].deck.length===1,'+2カード→銀貨4枚（記載順・山札は捨てない）');
+  // 御料地
+  let d=mk(['joust'].concat(F.slice(0,9))); d.players[0].hand=['demesne']; d=act(d,'demesne'); ok(d.turn.actions===2&&d.turn.buys===3&&d.players[0].discard.includes('gold'),'+2アクション+2購入+金貨');
+  d.players[0].discard.push('gold','gold'); const vpA=E.vpOf(d.players[0],d); const est=E.allCards(d.players[0]).filter(x=>x==='estate').length; ok(vpA===est+3,'御料地＝金貨3枚で3VP（屋敷'+est+' + 3）実:'+vpA);
+  // ハスカール
+  let h=mk(['joust'].concat(F.slice(0,9))); h.players[0].hand=['housecarl']; h.players[0].inPlay=['village','village','smithy','silver']; h.players[0].deck=['copper','copper','copper','copper']; h=act(h,'housecarl'); ok(h.players[0].hand.length===3,'場の異なるアクション（村・鍛冶屋・ハスカール自身）＝+3');
+  // 大きなかぶ
+  let hu=mk(['joust'].concat(F.slice(0,9))); hu.turn.phase='buy'; hu.players[0].hand=['huge_turnip']; hu.players[0].coffers=1; hu=E.reduce(hu,{type:'PLAY_TREASURE',card:'huge_turnip'}); ok(hu.players[0].coffers===3&&hu.turn.coins===3,'+2財源→財源3つぶん +$3');
+  // 名声＝このターン -2（玉座で -4）
+  let rn=mk(['joust','throne_room'].concat(F.slice(0,8))); rn.players[0].hand=['throne_room','renown']; rn=act(rn,'throne_room'); rn=E.reduce(rn,{type:'THRONE_CHOOSE',card:'renown'}); ok(E.cardCost(rn,'gold')===2&&rn.turn.buys===3,'玉座×名声＝金貨$6→$2・+2購入');
+  rn.players[0].inPlay=rn.players[0].inPlay.filter(x=>x!=='renown'); ok(E.cardCost(rn,'gold')===2,'場を離れてもこのターンは効く（t.costReduction）');
+  // 王女も同じ（2022エラッタ）
+  let pr=mk(['tournament','throne_room'].concat(F.slice(0,8))); pr.players[0].hand=['throne_room','princess']; pr=act(pr,'throne_room'); pr=E.reduce(pr,{type:'THRONE_CHOOSE',card:'princess'}); ok(E.cardCost(pr,'gold')===2,'玉座×王女＝-4（2022エラッタ＝このターン型）');
+}
+
+console.log('=== 商人ギルド（2021）／財源はいつでも／パン屋×闇市場 ===');
+{ let s=mk(['merchant_guild'].concat(F.slice(0,9))); s.players[0].hand=['merchant_guild']; s=act(s,'merchant_guild'); s.turn.phase='buy'; s.turn.coins=6; s.turn.buys=2;
+  s=E.reduce(s,{type:'BUY',card:'silver'}); ok(s.players[0].coffers===0,'購入時には財源は増えない'); s=E.reduce(s,{type:'BUY',card:'silver'}); s=E.reduce(s,{type:'END_TURN'}); ok(s.players[0].coffers===2,'購入フェイズ終了時に獲得2枚→+2財源');
+  // ヴィラで購入フェイズが2回
+  let v=mk(['merchant_guild','villa'].concat(F.slice(0,8))); v.players[0].hand=['merchant_guild']; v=act(v,'merchant_guild'); v.turn.phase='buy'; v.turn.coins=9; v.turn.buys=2; v=E.reduce(v,{type:'BUY',card:'villa'});
+  ok(v.turn.phase==='action'&&v.players[0].coffers===1,'ヴィラで購入フェイズが終わった瞬間に獲得1枚→+1財源'); v=E.reduce(v,{type:'END_ACTION_PHASE'}); v.turn.coins=3; v=E.reduce(v,{type:'BUY',card:'silver'}); v=E.reduce(v,{type:'END_TURN'}); ok(v.players[0].coffers===2,'2回目の購入フェイズでも獲得1枚→+1（合計2）');
+  // 財源はアクションフェイズでも
+  let a=mk(['merchant_guild'].concat(F.slice(0,9))); a.players[0].coffers=3; a.turn.phase='action'; a=E.reduce(a,{type:'COFFERS_SPEND',amount:2}); ok(a.turn.coins===2&&a.players[0].coffers===1,'アクションフェイズでも財源を使える');
+  // パン屋が闇市場デッキに
+  let found=false; for(let i=0;i<30&&!found;i++){ const b=mk(['black_market'].concat(F.slice(0,9))); if(b.blackMarket&&b.blackMarket.includes('baker')){ found=true; ok(b.players.every(p=>p.coffers===1),'闇市場デッキにパン屋→全員 +1財源'); } } if(!found) ok(true,'（30回で闇市場にパン屋が入らず＝判定不可）');
+}
+
+console.log('=== 保存則＆CPU終端（第3バッチ14種を強制混成）===');
+{ const K=['farrier','shop','infirmary','farmhands','carnival','ferryman','footpad','joust','village','smithy'];
+  let bad=0;
+  for (let g=0; g<6; g++) { const n=2+(g%3);
+    let s=E.createInitialState(Array.from({length:n},(_,i)=>({name:'C'+i,isCpu:true})),K.slice(),{startActive:0});
+    s.players.forEach(p=>{ p.deck.push('province','joust'); });
+    const base=total(s)+Object.values(s.supply).reduce((a,b)=>a+b,0);
+    let steps=0;
+    while(!s.gameOver&&steps<6000){ const seat=s.pending?s.pending.player:s.turn.active; const a=CPU.decide(s,seat); if(!a){bad++;console.log('  CPU null',JSON.stringify(s.pending));break;} const nx=E.reduce(s,a); if(JSON.stringify(nx)===JSON.stringify(s)){bad++;console.log('  rejected',JSON.stringify(a),JSON.stringify(s.pending));break;} s=nx; steps++;
+      if(!s.pending){ const now=total(s)+Object.values(s.supply).reduce((a,b)=>a+b,0); if(now!==base){bad++;console.log('  conservation',base,'->',now,'step',steps,'log',s.log.slice(-3));break;} } }
+    if(!s.gameOver){bad++;console.log('  not finished n='+n+' steps='+steps);}
+    else console.log('  game',g,'done steps',steps,'ferry',s.ferrymanPile&&s.ferrymanPile.card,s.ferrymanPile&&s.ferrymanPile.cards.length,'rewards',REW.map(r=>s.supply[r]).join(''));
   }
   ok(bad===0,'6ゲームが膠着・例外・保存則違反なしで終局');
 }

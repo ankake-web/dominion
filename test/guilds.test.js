@@ -63,10 +63,10 @@ console.log('=== 財源: 購入フェイズに 1枚=+1コイン で使う ===');
   ok(s.turn.coins === 4 && s.players[0].coffers === 1, '財源2枚使用 → +2コイン・財源残1');
   const s2 = reduce(s, { type: 'COFFERS_SPEND', amount: 5 }); // 残1しかない
   ok(s2.turn.coins === 4 && s2.players[0].coffers === 1, '所持を超える使用は拒否（状態不変）');
-  // アクションフェイズでは使えない
+  // 2021 ルール＝財源は**ターン中いつでも**使える（旧則の「購入フェイズ限定」は 2026-08-23 に修正）
   let s3 = mkK(GKNB); s3.players[0].coffers = 2; s3.turn.phase = 'action';
   const s4 = reduce(s3, { type: 'COFFERS_SPEND', amount: 1 });
-  ok(s4.turn.coins === 0 && s4.players[0].coffers === 2, 'アクションフェイズでは財源を使えない');
+  ok(s4.turn.coins === 1 && s4.players[0].coffers === 1, 'アクションフェイズでも財源を使える（2021ルール）');
 }
 
 /* ============ 蝋燭職人 candlestick_maker ============ */
@@ -77,26 +77,35 @@ console.log('=== 蝋燭職人: +1アクション +1購入 +1財源 ===');
   ok(s.turn.actions === 1 && s.turn.buys === 2 && s.players[0].coffers === 1, '+1アクション(計1)/+1購入(計2)/+1財源');
 }
 
-/* ============ 商人ギルド merchant_guild（購入毎トリガー） ============ */
-console.log('=== 商人ギルド: +1購入 +1コイン、場にある間 購入毎に +1財源 ===');
+/* ============ 商人ギルド merchant_guild（2021 ルール＝購入フェイズ終了時・獲得枚数×使用回数） ============ */
+console.log('=== 商人ギルド: +1購入 +1コイン、購入フェイズの終了時に その購入フェイズで獲得した1枚につき +1財源 ===');
 {
   let s = setupK(GKNB, ['merchant_guild'], ['copper']);
   s = playAct(s, 'merchant_guild');
   ok(s.turn.buys === 2 && s.turn.coins === 1 && s.players[0].coffers === 0, 'プレイ時は +1購入 +1コイン（財源はまだ0）');
   s.turn.phase = 'buy'; s.turn.coins = 6;
   s = reduce(s, { type: 'BUY', card: 'silver' });
-  ok(s.players[0].coffers === 1, '1回目の購入で +1財源');
+  ok(s.players[0].coffers === 0, '購入した瞬間には財源は増えない（2021ルール）');
   s = reduce(s, { type: 'BUY', card: 'copper' });
-  ok(s.players[0].coffers === 2, '2回目の購入で さらに +1財源');
+  const before = s.players[0].coffers;
+  s = reduce(s, { type: 'END_TURN' });
+  ok(s.players[0].coffers === before + 2, '購入フェイズの終了時に 獲得2枚 → +2財源（実: ' + s.players[0].coffers + '）');
 }
-console.log('=== 商人ギルド: 玉座で2回使うと購入毎+2財源（プレイ回数で累積）===');
+console.log('=== 商人ギルド: 2回使うと 獲得1枚につき+2財源（使用回数で累積）／購入以外の獲得も数える ===');
 {
-  // 玉座は出荷セットに無いが、命令(replay)で2回プレイ＝購入毎+2財源になることを確認（忠実性）。
   let s = setupK(GKNB, ['merchant_guild'], ['copper']);
   s.turn.merchantGuildPlays = 2; // 2回使った状態を直接作る
-  s.turn.phase = 'buy'; s.turn.coins = 3;
+  s.turn.phase = 'buy'; s.turn.coins = 3; s.turn.buys = 1;
   s = reduce(s, { type: 'BUY', card: 'silver' });
-  ok(s.players[0].coffers === 2, '2回使用 → 購入毎 +2財源');
+  s = reduce(s, { type: 'END_TURN' });
+  ok(s.players[0].coffers === 2, '2回使用 × 獲得1枚 → +2財源（実: ' + s.players[0].coffers + '）');
+}
+console.log('=== 財源はターン中いつでも使える（2021）＝アクションフェイズでも COFFERS_SPEND が通る ===');
+{
+  let s = setupK(GKNB, ['merchant_guild'], ['copper']);
+  s.players[0].coffers = 2; s.turn.phase = 'action';
+  s = reduce(s, { type: 'COFFERS_SPEND', amount: 1 });
+  ok(s.players[0].coffers === 1 && s.turn.coins === 1, 'アクションフェイズでも財源を使える');
 }
 
 /* ============ 過払い overpay ============ */

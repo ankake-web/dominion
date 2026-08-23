@@ -302,6 +302,20 @@
     if (has('ambassador') && p.hand.some((c) => c !== 'ambassador' && (c === 'curse' || c === 'estate' || c === 'copper'))) return 'ambassador';
     if (has('trade_route') && p.hand.some((c) => c !== 'trade_route' && trashValue(c) < 10)) return 'trade_route';
     if (has('embargo')) return 'embargo';                       // +$2（自己廃棄）
+    // 収穫祭＆ギルド2版（第3バッチ）：キャントリップ→村型→ターミナル／褒賞
+    if (has('farrier')) return 'farrier';                       // +1カード+1アクション+1購入
+    if (has('joust')) return 'joust';                           // +1カード+1アクション+$1（属州があれば褒賞）
+    if (has('ferryman')) return 'ferryman';                     // +2カード+1アクション−1枚捨て
+    if (has('farmhands')) return 'farmhands';                   // +1カード+2アクション
+    if (has('demesne')) return 'demesne';                       // +2アクション+2購入+金貨
+    if (has('renown')) return 'renown';                         // +1購入・このターン -2コスト
+    if (has('shop') && (DOM.engine.conclaveTargets ? DOM.engine.conclaveTargets(state, t.active).some((c) => c !== 'shop') : false)) return 'shop';
+    if (has('courser')) return 'courser';
+    if (has('housecarl') && p.inPlay.some((c) => isType(c, 'action'))) return 'housecarl';
+    if (has('coronet') && p.hand.some((c) => c !== 'coronet' && isType(c, 'action') && !isType(c, 'reward'))) return 'coronet';
+    if (has('footpad')) return 'footpad';                       // +2財源＋民兵型
+    if (has('carnival')) return 'carnival';                     // 4枚公開→異名を手札へ
+    if (has('infirmary') && p.hand.some((c) => c !== 'infirmary' && trashValue(c) < 10)) return 'infirmary';
     if (has('rustic_village')) return 'rustic_village'; // +1 Sun +1カード +2アクション
     if (has('poet')) return 'poet';                     // +1 Sun +1カード +1アクション ＋山札の上を手札へ
     /* 🛑 R4a/R6 で足したカードを chooseAction に登録し忘れていた（R3 の20種だけ登録されていた）＝
@@ -827,6 +841,8 @@
     if (fairgrounds) vp += fairgrounds * 2 * Math.floor(new Set(cards).size / 5);
     const silkRoads = cards.filter((c) => c === 'silk_road').length; // 異郷：絹の道（勝利点カード4枚毎に1点）
     if (silkRoads) vp += silkRoads * Math.floor(cards.filter((c) => isType(c, 'victory')).length / 4);
+    const demesnes = cards.filter((c) => c === 'demesne').length;    // 収穫祭＆ギルド2版：御料地（金貨1枚につき1点）＝engine.vpOf と同じ
+    if (demesnes) vp += demesnes * cards.filter((c) => c === 'gold').length;
     const feoda = cards.filter((c) => c === 'feodum').length;        // 暗黒時代：封土（銀貨3枚毎に1点）
     if (feoda) vp += feoda * Math.floor(cards.filter((c) => c === 'silver').length / 3);
     // 帝国：粗末な城=所有する城1枚につき1点／王城=所有する城1枚につき2点（engine.vpOf と同等）。
@@ -1962,6 +1978,47 @@
         return { type: 'NOBLES_RESOLVE', choice: otherAction ? 'actions' : 'cards' };
       }
       /* ===== 段階2 第1バッチ ===== */
+      // ===== 段階2 第3バッチ（収穫祭＆ギルド2版） =====
+      case 'joust_aside': {
+        // 褒賞が残っていれば属州を脇に置く（次ターンに褒賞を使える＝ほぼ常に得。終盤は属州を温存しない＝脇置きは捨て札に戻るだけ）
+        const any = ['renown', 'courser', 'demesne', 'coronet', 'housecarl', 'huge_turnip'].some((id) => (state.supply[id] || 0) > 0);
+        return { type: 'JOUST_ASIDE', aside: any };
+      }
+      case 'joust_reward': {
+        const pref = ['renown', 'courser', 'demesne', 'coronet', 'housecarl', 'huge_turnip'];
+        return { type: 'JOUST_REWARD', card: pref.find((id) => (state.supply[id] || 0) > 0) || null };
+      }
+      case 'coronet': {
+        const okC = (c) => DOM.engine.canPlayHandCard(state, pd.player, c);
+        if (pd.stage === 'action') {
+          const acts = playPool(state, pd.player).filter((c) => isType(c, 'action') && !isType(c, 'reward') && c !== 'coronet' && okC(c)).sort((a, b) => throneValue(b) - throneValue(a));
+          return { type: 'CORONET_CHOOSE', card: acts[0] || null };
+        }
+        const tre = p.hand.filter((c) => isTreasure(c) && !isType(c, 'reward') && okC(c)).sort((a, b) => (C()[b].coin || 0) - (C()[a].coin || 0))[0];
+        return { type: 'CORONET_CHOOSE', card: tre || null };
+      }
+      case 'courser':
+        return { type: 'COURSER_RESOLVE', choices: ['cards', p.hand.some((c) => isType(c, 'action')) ? 'actions' : 'coins'] };
+      case 'infirmary_trash': {
+        const junk = pickTrash(p.hand, 1)[0];
+        return { type: 'INFIRMARY_TRASH', card: (junk && trashValue(junk) < 10) ? junk : null };
+      }
+      case 'shop': {
+        const cand = DOM.engine.conclaveTargets(state, pd.player).filter((c) => c !== 'shop');
+        if (!cand.length) return { type: 'SHOP_PLAY', card: null };
+        const fake = Object.assign({}, p, { hand: cand });
+        const pick = chooseAction(Object.assign({}, state, { turn: Object.assign({}, state.turn, { actions: 1 }) }), fake);
+        return { type: 'SHOP_PLAY', card: (pick && cand.indexOf(pick) >= 0) ? pick : cand[0] };
+      }
+      case 'farmhands_aside': {
+        // 一番良いアクション（throneValue）→無ければ一番高い財宝（次ターン開始時に使える）→無ければ置かない
+        const acts = p.hand.filter((c) => isType(c, 'action')).sort((a, b) => throneValue(b) - throneValue(a));
+        if (acts.length) return { type: 'FARMHANDS_ASIDE', card: acts[0] };
+        const tre = p.hand.filter((c) => isTreasure(c) && (C()[c].coin || 0) >= 2).sort((a, b) => (C()[b].coin || 0) - (C()[a].coin || 0));
+        return { type: 'FARMHANDS_ASIDE', card: tre[0] || null };
+      }
+      case 'ferryman_discard':
+        return { type: 'FERRYMAN_DISCARD', card: pickTrash(p.hand, 1)[0] || p.hand[0] };
       // ===== 段階2 第2バッチ =====
       case 'embargo_pile': {
         // 相手が買いそうで自分は買わない山＝雑に「属州以外の最高コスト」（徴税と同型＝必ず非 null）
@@ -3225,7 +3282,9 @@
           for (let x = max; x >= 1; x--) {
             if (firstGainable(state, (id) => costExact(state, id, x, 0, 0) && isTypeSup(state, id, 'action') && !isTypeSup(state, id, 'victory'))) { amt = x; break; }
           }
-        } else if (card === 'herald') {
+        } else if (card === 'farrier') amt = max; // 装蹄師：ターン終了時 +1カード/コイン＝全額（余ったコインは捨てるだけ）
+        else if (card === 'infirmary') amt = Math.min(max, p.hand.filter((c) => trashValue(c) < 10).length + 1); // 診療所：廃棄したい屑の枚数ぶん
+        else if (card === 'herald') {
           const good = p.discard.filter((c) => keepValue(c) >= 60).length; // 良い札を山札の上へ
           amt = Math.min(max, good, 2);
         } // doctor は過払いしない（安全側＝amt=0）

@@ -1092,7 +1092,7 @@
       }
     }
     // ギルド：財源を使うオーバーレイ（pending ではない。購入フェイズ・自分の操作中のみ）。
-    if (interactive && UI.coffersOpen && !state.pending && state.turn.phase === 'buy' && state.turn.active === viewer) {
+    if (interactive && UI.coffersOpen && !state.pending && (state.turn.phase === 'buy' || state.turn.phase === 'action' || state.turn.phase === 'night') && state.turn.active === viewer) {
       frag.appendChild(modalCoffersSpend(state, viewer));
     } else if (UI.coffersOpen) {
       UI.coffersOpen = false; // 条件を満たさなくなったら閉じる（フェイズ移行など）
@@ -1354,8 +1354,14 @@
     //   王国枠に無く供給されている（state.supply に在る）ものを表示して、残枚数を可視化する。
     //   夜想曲の精霊3種／願い／コウモリ、移動動物園の馬も同じ扱い（残枚数が見えないと戦略が立たない）。
     const nonSupplyIds = [].concat((DOM.POOLS && DOM.POOLS.travellers) || [], (DOM.POOLS && DOM.POOLS.prizes) || [],
-      (DOM.POOLS && DOM.POOLS.darkages_np) || [], (DOM.POOLS && DOM.POOLS.nocturne_np) || [], (DOM.POOLS && DOM.POOLS.horse) || [])
+      (DOM.POOLS && DOM.POOLS.darkages_np) || [], (DOM.POOLS && DOM.POOLS.nocturne_np) || [], (DOM.POOLS && DOM.POOLS.horse) || [], (DOM.POOLS && DOM.POOLS.rewards) || [])
       .filter((id) => state.supply[id] != null);
+    // 収穫祭＆ギルド2版：渡し守の山（サプライ外・公開）＝一番上のカードと残枚数（渡し守を獲得したときだけここから1枚獲得）。
+    const ferrymanBlock = (state.ferrymanPile && state.ferrymanPile.card)
+      ? h('div', { class: 'supply-section' }, h('div', { class: 'sup-title' }, '渡し守の山（サプライ外：渡し守を獲得したときだけ1枚獲得・残' + state.ferrymanPile.cards.length + '枚）'),
+          h('div', { class: 'supply-grid small' },
+            state.ferrymanPile.cards.length ? cardEl(state.ferrymanPile.cards[0], { size: 'sm' }) : h('div', { class: 'muted' }, '（空）')))
+      : null;
     const nonSupplyPile = nonSupplyIds.length
       ? h('div', { class: 'supply-section' }, h('div', { class: 'sup-title' }, '非サプライ（交換・専用で獲得／購入不可）'),
           h('div', { class: 'supply-grid small' }, nonSupplyIds.map((id) => pileEl(id, state, { size: 'sm', onClick: () => onPileTap(state, id, interactive) }))))
@@ -1557,7 +1563,8 @@
         supSection('勝利点', victoryRow, 'small')),
       supSection('王国カード（アクション）', kingdomByCost, 'big'),
       ruinsPile,
-      nonSupplyPile);
+      nonSupplyPile,
+      ferrymanBlock);
 
     // 場（プレイ済み）＋持続カード（⏳付き・場に残る）＋王子の脇（👑・毎ターン開始時に使用）
     /* 同盟：駐屯地（garrison）の上に載ったトークン数を場のチップに出す（**好意ではない**＝自前のカウンタ）。
@@ -1641,6 +1648,7 @@
       }
       /* 旭日：洞察(Foresight)の脇札＝**公開**（`Reveal … Set it aside` なので相手にも見える）。
          ターン終了時＝次の手札を先引きした後に手札へ加わる。 */
+      if ((pl.joustAside || []).length) bits.push('🏇 一騎討ちの脇: ' + pl.joustAside.map((c) => (DOM.CARDS[c] || {}).name || '？').join('・'));
       if ((pl.foresightAside || []).length) {
         bits.push('🔭 洞察の脇: ' + pl.foresightAside.map((c) => (DOM.CARDS[c] || {}).name || '？').join('・'));
       }
@@ -1919,8 +1927,13 @@
         ? h('button', { class: 'btn btn-block', style: 'background:#3f8f5a;color:#fff', onclick: () => { UI.villagersOpen = true; UI.amount = null; render(); } },
             '🧑 村人を使う（' + state.players[viewer].villagers + '）')
         : null;
+      // ギルド（2021 ルール）：財源は**ターン中いつでも**使える＝アクションフェイズにも「財源を使う」ボタン。
+      const cofferBtnA = (t.active === viewer && (state.players[viewer].coffers || 0) > 0)
+        ? h('button', { class: 'btn btn-block', style: 'background:#b8860b;color:#fff', onclick: () => { UI.coffersOpen = true; UI.amount = null; render(); } }, '💰 財源を使う（' + state.players[viewer].coffers + '）')
+        : null;
       return h('div', { class: 'actions-bar' },
         villagerBtn,
+        cofferBtnA,
         repayBtn,
         stashBtn,
         favorShuffleBtn,
@@ -3489,6 +3502,35 @@
       '手札を好きな枚数捨て札にし、1枚につき +1 コイン（0枚でもかまいません）。',
       (n) => (n === 0 ? '捨てない' : n + '枚捨てて +$' + n), true,
       (cards) => dispatch({ type: 'MARCHLAND_DISCARD', cards }));
+    /* ===== 段階2 第3バッチ（収穫祭＆ギルド2版） ===== */
+    if (pd.type === 'joust_aside') return modalOptions('一騎討ち — 属州を脇に置く？', '手札の属州1枚を脇に置くと、褒賞1枚を手札に獲得します（属州はクリンナップで捨て札に戻ります。褒賞が残っていなくても置けます）。', [
+      { label: '属州を脇に置く', cls: 'btn-primary', on: () => dispatch({ type: 'JOUST_ASIDE', aside: true }) },
+      { label: '置かない', on: () => dispatch({ type: 'JOUST_ASIDE', aside: false }) }]);
+    if (pd.type === 'joust_reward') {
+      const opts = ['coronet', 'courser', 'demesne', 'housecarl', 'huge_turnip', 'renown'].filter((id) => (state.supply[id] || 0) > 0)
+        .map((id) => ({ label: DOM.CARDS[id].name + '（残' + state.supply[id] + '）', cls: 'btn-primary', on: () => dispatch({ type: 'JOUST_REWARD', card: id }) }));
+      return modalOptions('一騎討ち — 褒賞を手札に獲得', '褒賞1枚を選んで手札に獲得します。', opts);
+    }
+    if (pd.type === 'coronet' && pd.stage === 'action') return modalSingleHand(p, '小冠 — 2回使うアクション', '褒賞でないアクションカード1枚を2回使えます（使わなくてもよい。その後、財宝1枚を2回使えます）。',
+      (id) => DOM.isType(id, 'action') && !DOM.isType(id, 'reward') && DOM.engine.canPlayHandCard(state, pd.player, id), (card) => dispatch({ type: 'CORONET_CHOOSE', card }),
+      { label: '使わない（財宝へ）', on: () => dispatch({ type: 'CORONET_CHOOSE', card: null }) }, '2回使う', DOM.engine.handPlayable(state, pd.player));
+    if (pd.type === 'coronet' && pd.stage === 'treasure') return modalSingleHand(p, '小冠 — 2回使う財宝', '褒賞でない財宝カード1枚を2回使えます（使わなくてもよい）。',
+      (id) => isTreasureNow(state, id) && !DOM.isType(id, 'reward') && DOM.engine.canPlayHandCard(state, pd.player, id), (card) => dispatch({ type: 'CORONET_CHOOSE', card }),
+      { label: '使わない', on: () => dispatch({ type: 'CORONET_CHOOSE', card: null }) }, '2回使う');
+    if (pd.type === 'courser') return modalChooseN('駿馬 — 異なる2つを選ぶ', '次から異なる2つを選びます（記載順に解決）。', [
+      { v: 'cards', label: '+2 カード' }, { v: 'actions', label: '+2 アクション' }, { v: 'coins', label: '+2 コイン' }, { v: 'silver', label: '銀貨4枚を獲得' },
+    ], 2, (choices) => dispatch({ type: 'COURSER_RESOLVE', choices }));
+    if (pd.type === 'infirmary_trash') return modalSingleHand(p, '診療所 — 廃棄（任意）', '手札からカード1枚を廃棄できます。', () => true,
+      (card) => dispatch({ type: 'INFIRMARY_TRASH', card }), { label: '廃棄しない', on: () => dispatch({ type: 'INFIRMARY_TRASH', card: null }) }, '廃棄する');
+    if (pd.type === 'shop') {
+      const cand = DOM.engine.conclaveTargets(state, pd.player);
+      return modalSingleHand(p, '店 — 手札のアクションを使う', '場に出していない名前のアクションカード1枚を使えます（使わなくてもよい）。',
+        (id) => cand.indexOf(id) >= 0, (card) => dispatch({ type: 'SHOP_PLAY', card }), { label: '使わない', on: () => dispatch({ type: 'SHOP_PLAY', card: null }) }, '使う', DOM.engine.handPlayable(state, pd.player));
+    }
+    if (pd.type === 'farmhands_aside') return modalSingleHand(p, '耕作者 — 脇に置く（任意）', '手札のアクションカードか財宝カード1枚を脇に置けます。置いたカードは次のあなたのターンの開始時に使用します（強制）。',
+      (id) => DOM.isType(id, 'action') || isTreasureNow(state, id), (card) => dispatch({ type: 'FARMHANDS_ASIDE', card }), { label: '置かない', on: () => dispatch({ type: 'FARMHANDS_ASIDE', card: null }) }, '脇に置く');
+    if (pd.type === 'ferryman_discard') return modalSingleHand(p, '渡し守 — 捨て札', '手札からカード1枚を捨て札にします。', () => true,
+      (card) => dispatch({ type: 'FERRYMAN_DISCARD', card }), null, '捨てる');
     /* ===== 段階2 第2バッチ ===== */
     if (pd.type === 'embargo_pile') return modalGainSupply(state, '抑留 — 山を選ぶ',
       'サプライの山を1つ選び、抑留トークンを1個置きます（ゲーム終了まで、その山からカードを購入したプレイヤーはトークン1個につき呪い1枚を獲得します）。空の山にも置けます。',
@@ -4001,6 +4043,8 @@
         stonemason: '過払い額とちょうど同じコストのアクションカードを2枚獲得します。',
         doctor: '過払い1コインにつき、山札の上を1枚見て 廃棄/捨て/戻す を選べます。',
         herald: '過払い1コインにつき、捨て札から1枚を山札の上に置けます。',
+        farrier: '過払い1コインにつき、このターンの終了時に +1 カード。',
+        infirmary: '過払い1コインにつき、診療所を1回使用します（+1カード・手札1枚を廃棄してよい）。',
       }[pd.card] || '';
       return modalAmount('過払い — 「' + DOM.CARDS[pd.card].name + '」', '追加で支払うコインを選びます（0＝過払いしない）。' + info, pd.max, 0,
         (n) => (n > 0 ? '+' + n + 'コイン 過払いする' : '過払いしない'), (n) => dispatch({ type: 'OVERPAY_RESOLVE', amount: n }));
