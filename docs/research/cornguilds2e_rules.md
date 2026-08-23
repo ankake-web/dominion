@@ -771,3 +771,257 @@ Second edition（March 2024）のみ。**エラッタなし**。wiki 導入文�
 - 英語wiki 本文＝`…/scratchpad/cg2raw/rewards.txt`（6種）／`exp.txt`（総論・Reward・Joust）／`coffers.txt`、生HTML＝`raw_*.html`
 - RGG 2E ルールブック＝`…/scratchpad/cg2raw/cg2023.pdf`（wiki `/images/5/5f/Cornucopia_%26_GuildsRulebook2023.pdf`）＋ `cg2023.txt`（pdftotext -layout）
 - 参照した本アプリ側の箇所＝`js/engine.js` 15-34（REWARDS/NON_SUPPLY）・883-885（王女のコスト）・1126（PLAY_TWICE_TREASURES）・1326（applyTreasureEffect）・1735/19872（冠）・1945（賞品の initSupply）・2893-2920（returnToPile/canReturnToPile）・8872（vpOf）・19000（TRUSTY_STEED_RESOLVE）・19043（COFFERS_SPEND）／`js/cpu.js` 147・802・2188・3117／`js/ui.js` 1369・3591／`js/cards.js` 1729-1740・1991-1997
+
+
+---
+
+# 【敵対検証】別エージェント3体が一次資料に当たり直した結果（2026-08-23・workflow wf_0b52d5f1）
+
+> 起草（上の全章）を3群に分け、各群を別エージェントが英語wiki ライブページ＋RGG 2E ルールブック PDF（md5 一致）＋本アプリの HEAD コードで逐語照合した。
+> **カード文・区切り線・Versions・FAQ は14種とも一字一句一致＝エラッタ0件**。訂正はすべて「実装の罠」と「出典の細部」。
+> 🛑 **実装前に必ず読む要点**（詳細は各レポート）：
+> 1. **商人ギルド(Merchant Guild) と財源(Coffers) は出荷済みの `guilds` セットで旧則のまま**＝公式（2021）は「購入フェイズ終了時に、そのフェイズで獲得したカード1枚につき +1財源（使用回数ぶん累積・ヴィラで複数回・**Ferryman の追加獲得も数える**）」／「財源はターン中いつでも使える」。本アプリは「購入するたび即 +1財源・購入フェイズ中だけ使える・**購入後の同フェイズに使えてしまう**」。→ 第3バッチ（収穫祭＆ギルド2版）と同時に直す（`endBuyTail` 系＋`midBuyPhaseEnd` の両方）。
+> 2. **`maybeStartOverpay` の pending 上書きは 4ad6751 で修正済み**（本文の「先に直す」は陳腐化）。そり/せっかちな（キュー型）との順序だけ非対称＝許容。
+> 3. **Courser は公式には長老(Elder)の対象**（wiki `Elder` の一覧に明記）＝登録しないなら「同盟9種のみ」という既存の許容簡略化に載せると書く（「公式の対象外」ではない）。
+> 4. **Princess の 2022 エラッタ（"this turn"）は未印刷・デジタル限定**＝Journey と同じ採否クラス。Renown は印刷済みの "This turn" 文で正しい。
+> 5. **渡し守の山からの獲得は `gain()` の置き方をそのまま使う**（`GAIN_TO_HAND`＝ゴーストタウン/夜警は手札へ／帳簿＝`gainedThisTurn`・`lastGainedAny`・`buyPhaseGained`・`bpGained`）。`pileEmptied` だけ呼ばない。**実験(Experiment)** も名指し自己獲得・自己返却の対象。**塔(`isFromEmptySupplyPile`)は渡し守の山由来なら false**。**大使の「サプライに戻す」と「その山へ戻す」を述語で分ける**（渡し守の山はサプライではない）。候補述語は `DOM.STAGE1_POOLS` を除外しプールを明示。神風の新10山に渡し守が入ったら `applyDivineWind` ⑤ で山を作る。
+> 6. **一騎討ち(Joust)の褒賞獲得は pending を先に閉じてから `gain(...,"hand")`**（`TOURNAMENT_PRIZE` のコピー禁止＝獲得時対話が全部閉じる）。褒賞の選択 UI/CPU は `modalGainSupply`/`bestGain` が `NON_SUPPLY` を弾くので**明示列挙**（賞品の `pd.stage === "prize"` と同型）。
+> 7. **野盗(Footpad)の +1カード＝獲得した瞬間のフェイズ（`gainWasActionPhase`）で判定・誰の獲得でも・強制・`_chamOff` 付き `draw()`**。`discard_down` 窓に秘密の小部屋/外交官の UI が無いのは既存の穴。
+> 8. Farmhands の候補述語に `inheritedEstate` を足す／Infirmary の2回目以降は `via` を付けないとログが「玉座の間で」になる／Baker は闇市場デッキに居ても開始時 +1財源（公式）＝既存の取りこぼし。
+
+
+
+
+## 検証レポート①（王国A＝Farrier／Shop／Infirmary／Farmhands＋総論）
+
+
+# 敵対検証レポート — 【章】王国A（Farrier／Shop／Infirmary／Farmhands ＋ 総論ページ）
+
+一次資料は**自分で取り直した**：英語wiki ライブページ（`Farrier` / `Shop` / `Infirmary` / `Farmhands` / `Cornucopia_&_Guilds` / `Overpay` / `Reward` / `Way_of_the_Squirrel` / `Trader` / `Merchant_Guild`＝`tools/wikidirect.js`・生HTMLで `<hr>` 本数と Versions 表の colspan を確認）＋ RGG 第2版ルールブック PDF（scratchpad の `cg2_rulebook2024.pdf` を `pdftotext -layout`）。コードは **HEAD（4ad6751）** を `git show` で取り出して照合した（作業ツリーの `js/engine.js`／`js/cpu.js` は私の検証中に別プロセスが書き換え始めたため、行番号は HEAD 基準）。
+
+## A. 一次資料との逐語照合＝**4枚とも訂正なし**
+
+| 項目 | 結果 |
+|---|---|
+| カード文（Farrier／Shop／Infirmary／Farmhands） | **一字一句一致**。区切り線＝Farrier 1／Shop 0／Infirmary 1／Farmhands 1（生HTMLの `<hr>` 数と一致） |
+| Versions 表 | 4枚とも 1行・`Second edition / March 2024`・**colspan="2"＝印刷済み**・`Never printed` 行なし＝エラッタ0件（起草どおり。19種で覆った「colspan の読み違え」は無い） |
+| Official FAQ／Other rules clarifications | Farrier 3文／Shop 2文／Infirmary 3文＋Way の clarification 1文／Farmhands 4文＝**全文一致・取りこぼしなし**（他の節は Trivia のみ） |
+| 総論 Preparation／Overpay（8項目）／Reward の一般則／Contents（300・262・12・26・35・6）／2E の削除・追加 | wiki・2024RB とも一致。Ferryman の 2024RB 逐語も一致 |
+| Squirrel FAQ（`after drawing your hand in Clean-up`） | 一致 |
+
+## B. 確定した訂正（一次資料・コードで覆ったもの）
+
+### ① §5-4「2E の機能変更＝…Merchant Guild（購入フェイズ終了時に財源・2021）・財源はターン中いつでも（2021）＝**いずれも本アプリは既に現行**」→ **誤り（2件とも本アプリは旧則のまま）。うち商人ギルドは出荷済み `guilds` セットで今日踏める実バグ**
+- ② 一次資料：
+  - wiki `Merchant_Guild` Card text／Versions（Second edition・March 2024・印刷済み）＝`+1 Buy +[$1] / At the end of your Buy phase this turn, +1 Coffers per card you gained in it.`。Official FAQ＝`This counts all cards gained in your Buy phase, whether bought, or gained other ways, such as via Ferryman. / It does not count cards gained in your Action phase, such as with Butcher. / This is cumulative ... / In rare cases (such as with Villa), your Buy phase can end multiple times in a turn; Merchant Guild will happen each time it ends.`／Other rules clarifications＝`When multiple things are supposed to happen at the end of your Buy Phase, you can choose the order and spend Coffers between them.`／`If you play Merchant Guild after your Buy phase (... Innovation), you won't get any Coffers from it.` 旧則は **Deprecated official FAQ (2018)**＝`While this is in play, any time you buy a card you also add a token ... you may only remove tokens from your Coffers prior to buying anything, so you will not be able to immediately use the added tokens.`
+  - wiki `Cornucopia_&_Guilds` Coffers 節＝`A token there can be removed at any time during your turn, for +[$].`／Versions＝`Coffers can be spent at any time during your turn, not just at the start of the Buy phase (2021).`
+- 本アプリ（HEAD）：`js/cards.js` の商人ギルド文＝「これが場に出ている間、あなたがカードを購入するたびに、+1 財源」（＝2018年印刷の旧文）／`triggerMerchantGuild` を `BUY`・`BLACK_MARKET_BUY` の中で呼び**購入した瞬間に**付与（獲得ではなく購入・購入フェイズ終了時ではない）／`COFFERS_SPEND` は `t.phase !== 'buy'` を拒否し、**購入後でも使える**。node 再現（HEAD engine・`guilds` 固定セット）＝商人ギルドを場に出して銅貨を購入→財源 1→2、**同じ購入フェイズで `COFFERS_SPEND` → コイン +1**（公式はどの版でも不可＝旧則は「購入前にしか使えない」・現行は「フェイズ終了時に付与」）。商人ギルド自身が +1購入を持つので**`guilds` セットで毎局到達**。アクションフェイズの `COFFERS_SPEND` は拒否（公式＝ターン中いつでも＝闇市場の購入・語り部で使えない）。
+- ③ 正しい記述：「Herald/Stonemason の過払い＝獲得時解決」だけが現行。**商人ギルドは『購入フェイズ終了時に、そのフェイズで獲得したカード1枚につき +1財源（使用回数ぶん累積）』へ直す**（`endBuyTail` 系＋ヴィラ/騎兵隊の `midBuyPhaseEnd` の両方＝§0-32 の「購入フェイズ終了時の効果は両方に足す」鉄則どおり／購入フェイズ後のプレイは無効／**Ferryman の追加獲得も数える**＝FAQ が名指し）、**財源はアクションフェイズでも使える**ように `COFFERS_SPEND`＋CPU＋UI を直す。収穫祭＆ギルド2E を名乗る前提条件（Ferryman FAQ が商人ギルドを名指し）。
+
+### ② 冒頭「🛑 実装前に必読」1番・§1-4・§3-4・章末「実装前に必読」の「`maybeStartOverpay` の pending 上書き＝**既存バグ（先に直す）**」→ **修正済み（4ad6751）と書き換えるべき**（正本の記述が古いまま）
+- 修正後コード（HEAD `js/engine.js:3416`〜）＝`if (state.pending) onGainQueue.push({type:'overpay_ask', player, card, max:t.coins}) else state.pending = {type:'overpay',...}`；消化側（reduce 末尾の `onGainQueue` 消化）＝`mx = min(q.max, turn.coins)`・`mx>0 && turn.active === q.player` のとき `overpay` を開く。
+- **公式「overpay 能力は獲得時に他の獲得時能力と同時」を満たしているか**＝**満たす（許容順）**。自分で確認した経路：望楼→過払い（`test/guilds.test.js` 448〜）／**交易商人→過払い**（node 再現＝`trader_react` が先・`overpay_ask` がキュー）＝現行 Trader FAQ `You still "gained" the card you gained (and not the Silver), for effects that care about gaining a card` と整合（Infirmary は山へ戻るので「使用」は lose track で失敗＝正しい）。
+- ⚠ 1つだけ非対称がある（バグではないが明記を）＝獲得時対話が **pending ではなくキューに積まれる型**（そり `sleigh_react`／せっかちな `hasty_aside` は `!state.pending` でも `onGainQueue` に push）のときは `maybeStartOverpay` が `state.pending` 直代入＝**過払いが先・そりが後**。望楼型は望楼が先。公式はどちらの順も選べるので許容だが、Infirmary では「過払いで場に出た後＝そりで動かせない」が固定になる。統一するなら `if (state.pending || (state.onGainQueue||[]).length)` でキューへ。
+
+### ③ 行番号の多くが HEAD とずれている（起草は修正コミット前の番号）
+`conclaveTargets` 11397→**11405**／`t.squirrelDraw` 11855→**11863**／`resolveDurationStartEffects` の `event_play` 9130→**9138**／`continue_play2` 13403→**13423**／`DELAY_SETASIDE` 21451→**21469**（`OVERPAY_CARDS` 558・`maybeStartOverpay` 3416・`goat_trash` 1692・cpu 3125/637/2746 は一致）。`ui.js:3946`／`2806` は HEAD では **3911／2771**（作業ツリーの Codex 未コミット版では 3982／2806）。実装時は識別子で grep すること。
+
+## C. 足りていない項目（起草に無い罠・一般則）
+1. **総論 Coffers 節が丸ごと未収録**（`removed at any time during your turn`／`Any number of tokens can be removed at once`／`Tokens being used other ways cannot be removed for +$1; just tokens on the Coffers mat`／component-limited でない）。上の訂正①の根拠でもある。
+2. **2024RB の Baker 項**＝`In games using this card, each player starts the game with a token on their Coffers. This includes games using the promotional card Black Market in which Baker is in the Black Market deck.` 本アプリの準備は `kingdom.includes('baker')`（HEAD 2176）のみ＝闇市場デッキのパン屋では +1財源が配られない（promo-pack×ギルド）。
+3. **Infirmary の2回目以降を `state.replay` で回すなら `runReplays` の既定分岐はログが「玉座の間で…」になる**（`r.via === 'practice'` だけ分岐）＝`via` か専用 label を付ける。既定分岐は `applyEffect` 直呼び＝`way` を渡せない（起草の「習性があるゲームは1回ごとに窓」の根拠＝正しい）。
+4. **Farmhands の候補述語に `inheritedEstate(p, c)` を足す**（`conclaveTargets` は入れている／`EVENT_PLAY`→`playCardNoAction` は相続の屋敷を使える）＝engine/CPU/UI を同じ述語に。
+5. **`t.farrierDraw` を `freshTurn` に足す必要は無い**（`squirrelDraw` も入っておらず、`freshTurn` が毎ターン新オブジェクトを返す）。共用するならログ文「リスの習性で」を分けること。
+6. Overpay 一般則「Potions may be used in overpaid amounts（Stonemason のみ意味がある）」＝本アプリの石工はコインだけ（`costExact(..., amount, 0, 0)`）＝既存の許容簡略化として明記しておくとよい（mix-all 錬金術×ギルド限定）。
+7. Farrier×支配（§1-4 末尾）＝公式では「獲得するのは支配者」なので `you` が誰かは曖昧＝許容簡略化の記述は妥当（訂正不要・再議論しない）。
+
+## D. 起草の「実装で危ないところ」の実在確認（すべて実在・記述どおり）
+`OVERPAY_CARDS`（HEAD 558）／`maybeStartOverpay` の呼び出しは **BUY と BLACK_MARKET_BUY の2箇所だけ**（14078・16599）／`conclaveTargets`＝`handPlayable` 込み・`durationCards` も場・`CONCLAVE_PLAY` は成功時だけ `conclave_bonus`／`PLAY_ACTION` は `inPlay.push` の後に `applyEffect`（＝Shop で Shop は使えない）／`squirrelDraw` は先引き（`draw(5+extraDraw+flag)`）の後／`p.eventSetAside`＋`event_play`＝強制・`playCardNoAction`・`maskStateFor` で伏せない／`DELAY_SETASIDE` は `pl.hand.indexOf`（群B）／`playCardNoAction(state,pi,card,zone,note,way,asHand)`／`runReplays` は `!state.pending` ゲート＋既定分岐で `actionsPlayed`・`noteAllyPlay`／`test/integrity.test.js` の4点セット機械検算（173〜197）／CPU `case 'overpay'` は未知カードで amt=0＝livelock しない／UI `overpay` は `modalAmount`（`info` 表に追記の場所あり）。`canReturnToPile`／`availableInSupply` 系の取り違え（19種で覆った形）は本章では使われていない。
+
+## git status（私はリポジトリを変更していない）
+```
+ M css/style.css
+ M js/cpu.js          ← 別プロセスが私の検証中に変更（開始時点では未変更・mtime 15:56）
+ M js/engine.js       ← 同上
+ M js/ui.js
+ M manifest.webmanifest
+ M test/ui.test.js
+?? test/missing33-ui.test.js   ← 別プロセス
+?? test/missing33.test.js      ← 別プロセス
+```
+私の一時ファイル（`_cg2v_raw.tmp/`・`_cg2v_repro.tmp.js`・`_cg2v_*_head.tmp`）は削除済み。`_cg2v_rew.tmp/` は褒賞担当の別エージェントのものなので触っていない。
+
+
+## 検証レポート②（王国B＝Carnival／Ferryman／Footpad／Joust）
+
+
+# 【章】王国B（Carnival／Ferryman／Footpad／Joust）敵対検証レポート
+
+検証手段＝英語wiki ライブページを自分で再取得（`tools/wikidirect.js`＝Ferryman／Carnival／Footpad／Joust／Reward／Split_pile／Cornucopia_&_Guilds／Action_phase／Heirloom／Young_Witch／Riverboat、生HTMLで `<hr>` と Versions 表を確認）＋ RGG 2E ルールブック PDF を自分で再DLして md5 一致（`1f96110c…`）を確認し pdftotext で照合＋フォーラム生HTML（起草が保存したもの）で引用を照合＋ `js/engine.js`／`js/cpu.js`／`js/ui.js`／`test/*` を grep。**日本語wiki は叩いていない。リポジトリは1バイトも変更していない**（一時ファイルは scratchpad `cg2v/` のみ）。
+
+## 結論（サマリ）
+- **4枚の英語カード文は一字一句一致・区切り線の本数も一致**（Ferryman 1本＝Setup の前／Footpad 1本／Joust 0本／Carnival 0本＝生HTMLの `<hr>` 数で確認）。**Versions 表は4枚とも `Second edition / March 2024` の1行で colspan=2（印刷済み）＝エラッタ0件**＝起草どおり。Official FAQ／Other rules clarifications／Preparation／Reward 一般則／Split_pile のコスト表／Action_phase の裁定／Donald X.（2026-04-01）／Tiago84（2024-04-11）／Jeebus（2023-11-19）の引用はすべて一次資料と一致。
+- **逐語の誤りは無い**。訂正はすべて「出典の細部」と「Ferryman 設計メモの実装上の穴」。**設計メモの骨格（`state.ferrymanPile` 専用フィールド・supply にも `state[山キー]` にも置かない・保存則に数え `allCards` に入れない・`triggerOnGain` 1箇所・`pileEmptied` を呼ばない・`_gainOutside` を立てない・静的コスト＋randomizer 判定）は一次資料と本アプリの前例に照らして妥当**。
+
+---
+
+## 確定した訂正
+
+### 訂正1【Ferryman §2-7】渡し守の山からの獲得ヘルパが「手札に獲得するカード」を取りこぼす
+① 起草＝「**獲得の入口**＝新ヘルパ `gainFromFerryman(state, pi)`：`cards.shift()` → **実カードを `p.discard` へ** → 帳簿 → `triggerOnGain(...)`」／表「獲得先｜渡し守本体の dest とは独立＝通常の捨て札」。
+② 一次資料＝Ferryman Official FAQ 逐語 `When you gain a Ferryman, you also **gain a copy** of whichever card was set aside in setup.`＝普通の「獲得」。本アプリの `gain()` には `const GAIN_TO_HAND = new Set(['den_of_sin','ghost_town','guardian','night_watchman']); if (dest === 'discard' && GAIN_TO_HAND.has(realId)) dest = 'hand';` がある（`js/engine.js` `function gain`）。**ゴーストタウン($3)と夜警($3)は渡し守の山の候補**（$3・王国カード）。
+③ 正しい記述＝「`p.discard` へ直置き」ではなく、**`gain()` の置き方をそのまま使う**（`GAIN_TO_HAND` の手札化／`dest` 分岐／`t.gainedThisTurn`・`lastGainedAny`・`buyPhaseGained` **かつ `bpGained`**／`pileEmptied` だけ呼ばない）。起草の帳簿列挙は `bpGained`（`gain()` が `buyPhaseGained` とセットで足している）も落としている。推奨＝`gain()` の「山から抜いた後」を共通ヘルパに切り出して `gainFromFerryman` と共用する（`gainLoot` が同じ帳簿を手書きで複製して `bpGained` まで書いているのが前例）。
+
+### 訂正2【Ferryman §2-7】「名指しで自分の山から取る」一覧に **実験(Experiment・$3)** が無い
+① 起草＝「名指し＝Rats(`gain a Rats`)・Changeling・Magpie … `takeNamedFromPile`」。
+② 一次資料＝Ferryman Other rules clarifications 逐語 `Contrary to the FAQ, cards like Rats can gain copies of themselves from their own pile, because it explicitly says "gain a Rats."`。実験のカタログ文（`js/cards.js`）＝「これをその山に戻す。／これを獲得したとき、実験をもう1枚獲得する」＝**名指しで自分の山へ戻す＋名指しで自分の山から取る**の両方。engine 実装は `if (state.supply.experiment != null && takeSelf(...)) state.supply.experiment += 1;`（`case 'experiment'`）と `gain(state, pIndex, 'experiment', 'discard')`（triggerOnGain）＝**両方とも `supply` 直参照**＝渡し守の山では黙って不発（戻せない＝実験が場に残る／2枚目が来ない）。
+③ 正しい記述＝名指し一覧に **実験（戻す＋獲得の2経路）** を足す。「自分の山へ戻す」系は `returnToPile`/`canReturnToPile` 経由に寄せる（`state.supply.experiment += 1` 直書きを分岐させる）。※他の $3/$4 の名指し自己獲得は Rats/Magpie/実験だけ（港町 Port の「購入時にもう1枚」は渡し守の山からは**購入できない**ので到達しない）。
+
+### 訂正3【Ferryman §2-7／§共通】「`pileEmptied` を呼ばない＝**塔にも数えない**」は castles／同盟分割山では自動に成り立たない
+① 起草＝「`pileEmptied` は呼ばない（非サプライ＝調査 Search は誘発しない／塔にも数えない）」。
+② 一次資料＝Reward/非サプライの一般則 `These are cards which are never part of the Supply`・Ferryman Preparation `This pile is not part of the Supply`。一方 engine の `isFromEmptySupplyPile`（塔の判定）は
+`if ((DOM.POOLS.castles).indexOf(cardId) >= 0) return (state.supply.castles || 0) <= 0;`／`if (ALLIES_PILE_OF[cardId] && state.supply[cardId] == null) return (state.supply[ALLIES_PILE_OF[cardId]] || 0) <= 0;`
+＝**山キーが supply に無い＝undefined → `<= 0` が真**＝城・卜占官…が渡し守の山だと、そこから獲得した札を「空のサプライ山由来」と誤判定する（城は全部勝利点なので実害は同盟の分割山×塔＝mix-all 限定）。
+③ 正しい記述＝`isFromEmptySupplyPile` の先頭で **渡し守の山由来（`ferrymanPile.card === pileKeyOf(state, cardId)`）なら false** を返す（`NON_SUPPLY` の行の隣）。
+
+### 訂正4【Ferryman §2-7】「`canReturnToPile` に分岐を1つ足す」だけだと **大使(Ambassador)** が渡し守の山へ「サプライに戻す」ができてしまう
+① 起草＝「交易商人で銀貨に置換されたら山へ戻すのが公式＝`returnToPile`/`canReturnToPile` に `state.ferrymanPile.card === pileKeyOf(id)` の分岐を1つ足す」。
+② 一次資料＝Ambassador Official FAQ（missing19 正本 §3 に逐語）`If you reveal a card which is **not from the Supply**, such as Spoils, a Shelter, a Reward, or a card bought through Black Market, Ambassador does nothing.`／Ferryman Preparation `This pile is not part of the Supply`。missing19 の大使設計は **`canReturnToPile` ＋ `!NON_SUPPLY.has`** で「サプライに戻せるか」を判定する（missing19 §3 (a)）。渡し守の山は `NON_SUPPLY`（静的 Set）に入らないので、`canReturnToPile` に渡し守の分岐を足した瞬間、**大使が渡し守の山の札を「サプライに戻し」、他の各プレイヤーが「サプライから」コピーを獲得できてしまう**（どちらも公式違反＝その山はサプライではない）。
+③ 正しい記述＝「**その山へ戻す**」（交易商人／取り替え子／交換／馬・チョウの習性／無謀な／実験）と「**サプライへ戻す**」（大使・戦闘計画と同じ区別）を述語で分ける＝`canReturnToPile` に足すなら **`isFerrymanPileCard(state,id)` を公開し大使の述語で除外**するか、大使側は `Object.prototype.hasOwnProperty.call(state.supply, id) || mixedPileWithTop` の「サプライ限定」版を見る。王国A/missing19（大使）の担当に申し送り。
+
+### 訂正5【Ferryman §2-5】「[1] の脚注リンクは wiki の HTML に参照先が無く本文だけ」は誤り
+① 起草＝「（[1] の脚注リンクは wiki の HTML に参照先が無く本文だけ。）」
+② 一次資料＝生HTML `…they try to gain a card with a specific type (from the Supply). <a rel="nofollow" class="external autonumber" href="https://discord.com/channels/212660788786102272/212660788786102272/1213616596875087903">[1]</a>`
+③ 正しい記述＝[1] は **Discord（Dominion 公式サーバ）のメッセージへの外部リンク**（脚注ではなく autonumber の外部リンク）。本文は変わらない。
+
+### 訂正6【出典のページ番号】ルールブック（md5 一致の 2023年11月組版 PDF・印刷ページ番号＝pdftotext ページと一致）
+- §1-3「ルールブック **p.5** の Carnival 項も同文」→ **p.4**（`Carnival: For example if you revealed 3 Coppers…` はページ4・フッタ「4」）。
+- §4-4「Official FAQ（全文逐語・ルールブック **p.7** も同文）」→ **p.6**（`Joust: Use one copy of each Reward…` はページ6・フッタ「6」）。
+- §4-5「Reward の公式ルール（wiki `Reward`＋ルールブック **p.12**）」→ **p.8**（`There are two each of six rewards…` はページ8。p.12 は Thanks／奥付）。
+- Footpad p.5・Merchant Guild p.7・Preparation p.2 は正しい。
+
+### 訂正7【Ferryman §2-7】「『Discard a card.』…雛形＝`FORUM_DISCARD`（`discardFromHand`）」
+① 起草＝雛形 `FORUM_DISCARD`（`discardFromHand`）。
+② 実コード＝`case 'FORUM_DISCARD'` は `discardFromHand` を呼ばず手書き（枚数検証→`removeOne`→`p.discard.push`→`triggerOnDiscard`）。`discardFromHand(state, pIndex, cards, want, note)` は別の共通ヘルパ（`js/engine.js` 約3365行）。
+③ 正しい記述＝どちらかを選ぶ（推奨＝共通ヘルパ `discardFromHand` ＋ 戻り値で `triggerOnDiscard`）。機能差は無いが「雛形名」として不正確。
+
+---
+
+## 足りていない項目（FAQ・エラッタの欠落は無し。以下は「書かれていない罠」）
+
+1. **渡し守の候補述語は「王国カード」に限り、`DOM.STAGE1_POOLS` を除外し、抽選元プールを明示すること**。静的コスト $3/$4・potion/debt 無しの `DOM.CARDS` は 248 種あり、**銀貨($3)とポーション($4)**（どのプールにも無い基本カード）が混ざる。`pickRiverboatCard`/`pickBane` は「プールを列挙」するので銀貨は入らないが、起草は述語だけ書いてプールを書いていない。さらに段階1のプール（`seaside1e`＝航海士$4/海賊船$4/海の妖婆$4/大使$3、`prosperity1e`＝借入金$3/交易路$3/護符$4、`cornguilds2e`＝店$3/診療所$3/耕作者$4）が**まだ効果の無い死に札のまま候補に入る**（闇市場 universe が `stage1.has(id)` で除外している前例）。推奨＝`pickBane` と同じ「自拡張（cornguilds2e＋cornucopia＋guilds）→ 基本＋陰謀」の2段か、神風と同じ「今の王国の拡張プールの和集合」＋`!stage1`。
+2. **神風（Divine Wind）の新10山に渡し守が入ったら、`applyDivineWind` の ⑤ ブロックで渡し守の山を作る**（川船の (b) `if (fresh.includes('riverboat') && !state.riverboatCard) …` と同型）。起草は「新10山から渡し守の山を除外」しか書いていない。褒賞（`initSupply`）と野盗（起草どおり `applyDivineWind` で旗を立てる）は覆われる。
+3. **川船(Riverboat)の脇札が野盗(Footpad・$5 非持続アクション)のとき「この札を使うゲーム」か**＝Jeebus（Simple Rules Questions 2023-11-19・検証済）「`Way of the Mouse means that the card is being used in the game. Same with Duchess, and cards with setup instructions like Black Market.`」の論理では効く。本アプリのシャーマンは `kingdom.includes('shaman')` だけ（ハツカネズミの脇札を見ない）＝既存の許容簡略化。野盗も `state.footpadRule` を `kingdom || riverboatCard === 'footpad'` で立てるか、据え置くなら起草の「闇市場デッキの野盗」の注記に **川船の脇札も**並べて明記すること。同様に **川船の脇札が渡し守($5)** のとき渡し守の準備（山＋その山の準備）を走らせるか＝誰も渡し守を獲得できないので山は無意味だが、**選ばれた山の準備だけは観測できる**（若き魔女→Bane がサプライに足される）。据え置くなら許容簡略化として書く。
+4. **野盗の `discard_down` 窓＝秘密の小部屋／外交官は engine が受理するのに UI に導線が無い**（既存の穴）。`isAttackReactPending(pd)` は `ATTACKS.discard_down.embedded` で真＝`SECRET_CHAMBER_REVEAL`/`DIPLOMAT_REVEAL` が通るが、`modalDiscardDown` は 堀・盾・馬商人・物乞い・隊商の護衛・番犬 しか出さない（`modalMilitia`/拷問人型には `hasSecret`/`hasDiplomat` のボタンがある）。忍者/剣/傭兵/浮浪児/サー・マイケル/軍団兵が既に踏んでいる穴だが、野盗（出荷セットの民兵型アタック）で到達頻度が上がる。CPU も同様（`immuneReveal` のみ）。
+5. **野盗の被害者抽出 `hand.length > 3` は「手札3枚以下の相手は反応窓を開かない」**（民兵・忍者と同じ既存の簡略化＝手札3枚の馬商人/隊商の護衛/物乞いはリアクションできない）。起草は「忍者と同じ」とだけ書いているので、**許容簡略化として継承する**旨を明記。
+6. **渡し守×3人以上の城**＝`createInitialState` の城は 3-4人で Humble/Small/Opulent/Kings が各2（計12・昇順・重複隣接）。起草の「城 8 or 12」は正しいが、**渡し守の `cards` 配列も同じ積み方（昇順・重複隣接）で作る**こと（`DBL` セットの流用）。
+7. **§2-3 の「選び方は Bane の文に `You may choose the card any way you like…` とあり Ferryman も同じ扱い」は推定**（Ferryman の Preparation／FAQ にその逐語は無い。カード文 `Choose an unused Kingdom card pile` から自動抽選で矛盾は無い）。「逐語」と「推定」を区別して書く。
+8. **渡し守の山 × 特性(Trait)**＝起草の「付け先に含めない」は正しい。根拠の逐語は plunder 正本 §9（日本語wiki `特性`）「一方で、Ferryman をゲームに用いる場合の【Ferrymanカード】は選出対象にならない。」＝本章にも出典を引いておくとよい（Bane・来寇の11山目は対象、渡し守は対象外）。
+9. **渡し守の山の札の家宝**＝起草の「家宝＝開始デッキ（fool/shepherd/secret_cave/cemetery）」は wiki `Heirloom` Preparation `If any Kingdom cards **being used** have a yellow banner indicating an Heirloom, players start the game with that Heirloom replacing what would normally be a Copper.` と Young Witch の `Any setup instructions or rule changes triggered by the presence of the Bane have their normal effect … if the Bane is Tracker, everyone starts with a Pouch` から妥当（Ferryman 専用の逐語は無い＝Bane からの類推であることを明記）。実装では `initSupply` の銅貨枚数（`Object.keys(DOM.HEIRLOOM_OF).filter(k => kingdom.indexOf(k) >= 0)`）と開始デッキの両方に渡し守の山を足す。
+10. **引用の出典表記**＝「Tiago」は **Tiago84**（Simple Rules Questions Reply #213・2024-04-11）。Donald X. の「Villa and Footpad」（2026-04-01 Reply #2）は生HTMLで一致を確認。Dominion Online の実例（Semi-Interesting Moments）は本文一致・日付未確認。
+11. （章外だが隣接）共通の罠 1「`maybeStartOverpay` が pending を上書きする既存バグ＝先に直す」は **既に修正済み**（`4ad6751`・現行コードは `if (state.pending) onGainQueue.push({type:'overpay_ask'…}) else state.pending = item`）＝正本の文言を「修正済み」に更新すべき。
+
+---
+
+## 起草が正しかったことを確認した主な点（再検証不要）
+- Ferryman の `mixedPileWithTop`＝`MIXED_PILE_KEYS.find((k) => Array.isArray(state[k]) && state[k][0] === id)`（`availableInSupply`/`exileFromSupply`/追放候補が使う）＝**`state[山キー]` に置くと待ち伏せ/塩まき/追放に漏れる**は実在の罠。`state.loot`（supply に載せない非サプライ山）・`test/invariants.test.js` の `(s.loot || []).forEach(add)`・`pickBane`/`pickRiverboatCard`/`pickMouseCard`/`pickApproachingArmy`・`gainWasBuyPhase`（`triggerOnGain` 冒頭で捕捉）・`_chamOff`・`t.squirrelDraw`・`ruinsPileEl`・`nonSupplyIds`・`REWARDS`（`NON_SUPPLY` 登録済）・CPU `NON_SUPPLY_SET`（褒賞6種あり）・`discard_down`（`ATTACKS` に embedded 登録済＝忍者は未登録で可）・`canReturnToPile` が「supply に数値キーのある非サプライ山でも true」（19種正本の指摘どおり）・Split_pile のコスト表（$2: Encampment/Plunder, Patrician/Emporium, Settlers/Bustling Village, Townsfolk／$3: Castles, Catapult/Rocks, Gladiator/Fortune, Augurs, Clashes, Forts, Odysseys, Wizards／$4: Sauna/Avanto）・城$3/騎士$5/サウナ$4 の randomizer コスト・`rotatableSupplyPiles` が既に「Ferryman の山は回せない」と注記していること・Reward の Glicko 順・`整合性テストの「全 pending に CPU/UI の分岐」検査`＝すべて実在・一致。
+
+---
+
+## git status --short（リポジトリは変更していない＝作業ツリーの差分はすべて別プロセス Codex のもの。私のセッション中に js/engine.js・js/cpu.js・package.json・sw.js・test/missing33*.test.js が Codex によって追加で変更/ステージされた）
+```
+ M css/style.css
+M  js/cpu.js
+M  js/engine.js
+MM js/ui.js
+ M manifest.webmanifest
+M  package.json
+M  sw.js
+A  test/missing33-ui.test.js
+A  test/missing33.test.js
+ M test/ui.test.js
+```
+（プロジェクト直下に `_cg2v_*` は作成していない＝0件。一時ファイルは scratchpad `…\scratchpad\cg2v\` のみ。）
+
+
+## 検証レポート③（褒賞6種）
+
+
+# 敵対検証レポート＝【章】褒賞(Reward)6種（Coronet／Courser／Demesne／Housecarl／Huge Turnip／Renown）
+
+一次資料は自分で取り直した：英語wiki 6カードページ＋`Reward`／`Joust`／`Cornucopia_&_Guilds`／`Coffers`／`Princess`／`Trusty_Steed`／`Crown`／`Prize`／`Elder`（`tools/wikidirect.js`・生HTMLで `<hr>` と Versions 表の colspan を機械検算）、RGG 2E ルールブック PDF（`/images/5/5f/Cornucopia_%26_GuildsRulebook2023.pdf`・12p・`pdftotext -layout`）。日本語wiki は叩いていない。
+
+## 逐語照合の結果（✅＝起草どおり）
+- **カード文6種**＝wiki `Card text`／Versions 表の Text／2024RB p.8-9 の三者と**一字一句一致**。区切り線＝**Demesne だけ1本**（`Gain a Gold.` の直後）・他5種0本（生HTMLの `<hr>` 数で確認）✅
+- **Versions 表**＝6種とも1行 `Second edition | [colspan=2] March 2024`（印刷済み）＝**エラッタ0件** ✅（colspan の読み違えなし）
+- **Official FAQ／Other rules clarifications**＝6種とも全文一致（Coronet の Other rules 1文・他5種は節なし）✅。RGG 2E p.8 の各カード FAQ も wiki と同文 ✅
+- **0-2 Preparation／0-3 褒賞の一般則／0-4 Joust FAQ**＝2024RB p.2／p.8／p.7・wiki 総論ページ・`Reward`・`Joust` と逐語一致 ✅（「2人＝各1／3-6人＝各2」「廃棄しても山に戻らない」「闇市場に入れない」「Lurker で廃棄置き場から取れる」）
+- **Huge Turnip の副産物（財源は2021年から「ターン中いつでも」）**＝`Coffers` Other rules clarifications＋2024RB p.3「removed at any time during your turn」＋総論ページ Changes「(2021)」で裏取り済み ✅。engine `COFFERS_SPEND` は `t.phase !== 'buy'` で拒否・UI ボタンも購入フェイズのみ（ui.js 1114/1960 のコメント）＝起草の指摘どおり
+- **Renown×過払い**＝2024RB p.3 の逐語どおり ✅。**engine の王女が `active.inPlay` の枚数で -2**（`cardCost`・HEAD 883-885）も事実 ✅
+- **コード側の前例**＝`PLAY_TWICE_TREASURES`(1126)／`applyTreasureEffect`(1326)／`crownOpenPending`(1735・`turn.phase` で片モード)／`canReturnToPile` が `supply` のキー有無で true／`vpOf`・CPU `vpOfPlayer`／`TRUSTY_STEED_RESOLVE` の `silver` 分岐に「山札を捨て札へ」／`nonSupplyIds` に `rewards` 無し／cpu `NON_SUPPLY_SET` に6種あり／`PRIZE_SET` ベースの賞品獲得 reducer＝すべて実在を確認 ✅
+
+---
+
+## 確定した訂正
+
+### ① §2-4 Courser「長老(Elder)の対象外のはず」＝**誤り**（公式は対象）
+- ① 起草：「長老の『追加で異なるもの1つ』＝これは『2つ選ぶ』カードなので長老の対象外のはず（公式の長老FAQ＝choose-one のカードが対象）。`ELDER_CHOICE_ORDER` に登録しない。」
+- ② 一次資料（英語wiki `Elder`）：カード文 `When it gives you a choice of abilities (with "choose") this turn, you may choose an extra (different) option.`／節「Cards that gain extra effects from Elder」＝`Intrigue: Courtier, Lurker, Minion, Nobles, **Pawn**, Steward … **Cornucopia & Guilds: Courser, Trusty Steed** … Dark Ages: … Count …`（Pawn も Courser も「choose two」型）。
+- ③ 正しい記述：**Courser は公式には長老の対象（3つ選べる）**。本アプリが `ELDER_CHOICE_ORDER` に登録しないのは「長老で追加選択できるのは同盟の9種のみ」という**既存の許容簡略化（PROGRESS §0-29 A4）に Courser も載せる**という判断であって、「公式の対象外」ではない。そう記録すること（理由を間違えて書くと次の実装者が公式違反を「公式どおり」と信じる）。
+
+### ② §0-5／必読1「現 engine コメント（engine.js:18『各1枚』）と cards.js のコメントは誤り＝訂正する」＝**HEAD では既に訂正済み**
+- ① 起草：「現状の engine コメント（`js/engine.js:18`「各1枚」）と cards.js のコメント…は誤り」「現 engine/cards のコメント『各1枚』は訂正する」。
+- ② 一次資料（リポジトリ）：HEAD `js/engine.js:18` は `⚠ 枚数は**2人＝各1／3人以上＝各2**＝賞品の「各1」と違う`／`js/cards.js:1728` も `⚠ 2人＝各1枚／3人以上＝各2枚＝公式ルールブック`。`git log -L18,19:js/engine.js` ＝この正本と同じコミット `4ad6751` で書き換え済み。engine に `'joust'` の出現は0件＝`initSupply` の配線だけが未着手。
+- ③ 正しい記述：「コメントは `4ad6751` で修正済み。**残るのは `initSupply` に `kingdom.includes('joust')` の行を足すことだけ**」。（同じコミットで `maybeStartOverpay` の pending 上書きも直っている＝必読1の「既存バグ（先に直す）」も HEAD では解消済み＝総論側だが同型の陳腐化。）
+
+### ③ §6-2／6-5／必読9「Princess は 2022 年に機能エラッタ済み＝出荷済みの princess は公式と違う」＝**未印刷エラッタの採否問題として書き直す**
+- ① 起草：「Princess 自身は 2022 年に "while this is in play" → "this turn" へ機能エラッタ済み」「出荷済みの `princess` も同じ理由で公式（2022エラッタ）と違う＝Renown と同時に直す」。
+- ② 一次資料（英語wiki `Princess` Versions 表・生HTML）：行1 `First edition | [colspan=2] June 2011`／行2 `Increased font size. | October 2016 | April 2018`／**行3 `Print 列="Never printed" … This turn, cards cost $2 less. … June 2022 | Printed 列="Never printed"`**。総論ページの Changes は `Changes for removed cards, **only available in digital versions**: Princess — Changed "while this is in play" to "this turn" (2022)`。さらに印刷版の `Deprecated official FAQ (2011 2018)`＝`Using Throne Room on Princess will **not** make cards cost $4 less, as there is still only one copy of Princess in play.`
+- ③ 正しい記述：**Renown は印刷済みの "This turn" 文**（`t.costReduction += 2`＝玉座で -$4）で正しい。一方 **現 engine の王女（`inPlay` 枚数×-2・玉座でも -2）は「印刷されている唯一のテキスト」どおりの挙動**であり「バグ」ではない。princess を `t.costReduction` 方式へ寄せるかは **§4 D1 の旅行(Journey) と同じ「正式な Versions 行はあるが未印刷（デジタル限定）」クラスの採否判断**＝PROGRESS の宿題に載せるなら「未印刷・デジタル限定の2022エラッタ」と明記する（royal_galley は不採用・journey/mission は採用という前例の間に落ちる）。
+
+### ④ §0-5「山に戻す系＝（交易商人/取り替え子/大使/無謀な/濡女/馬・チョウの習性）」＝**列挙が実コードと一致しない**
+- ① 起草：上記6系統。
+- ② 一次資料（`js/engine.js` の `canReturnToPile(` 全呼び出し）＝way_of_the_butterfly／way_of_the_horse／**交換(Swap・`swap`／`swap_return`)**／`exchangeCard`（取り替え子・交易商人）／**狼狽(Panic・`prophecyActive(state,'panic')`)**／無謀な／濡女。**大使(Ambassador) は未実装で呼び出し0件**。
+- ③ 正しい記述：**Joust は褒賞を手札に獲得する**ので、同盟の**交換(Swap)**（手札のアクションを山へ戻す）が最も起きやすい到達経路＝褒賞アクションを戻すと `supply[id] += 1` で褒賞の山が復活する（公式の一般則どおり「その山へ」）。**狼狽**は Coronet／Huge Turnip（財宝）を場から捨てるとき褒賞の山へ戻す。大使は「今後 海辺1版で実装するときに `!NON_SUPPLY.has`」の注記へ（根拠は下記⑤）。
+
+### ⑤ §0-5「大使…褒賞固有の裁定は見つからない」＝**賞品(Prize)の公式裁定が直接の前例としてある**
+- ② 一次資料（英語wiki `Prize` Official rules）：`**Ambassador (from Dominion: Seaside) cannot return Prizes to their pile.**`（`Reward` ページには同じ行が無いだけ。Rewards は Prizes の置換・Renown は Princess と「機能的に同一」）。
+- ③ 正しい記述：「大使で褒賞をサプライへ戻せない」は**推定ではなく Prize 裁定の準用**として書く。
+
+### ⑥ 行番号の引用＝**作業ツリーに他プロセスの未コミット差分が乗っており既にズレている**
+- 起草の `ui.js:1369` は Codex の未コミット差分込みの番号（HEAD は **1335**）。さらに本検証中に別プロセスが `js/engine.js`（+256行・海辺1版の段階2）と `js/cpu.js`（+40行）を編集し始め、`canReturnToPile` は 2915→2943 に移動した。**行番号ではなく関数名（`crownOpenPending`／`TRUSTY_STEED_RESOLVE`／`COFFERS_SPEND`／`nonSupplyIds` …）で参照**するよう書き換えを推奨（実在は全部確認済み）。
+
+---
+
+## 足りていない項目（FAQ・実装の罠）
+
+1. 🛑 **Demesne「Joust で手札に獲得するので納屋の on-gain も発火する」は reducer の書き方次第**。`triggerOnGain` の納屋・複製・海賊・交易商人の窓は **`state._gainDepth === 1 && !state.pending`** でゲートされている。前例の `TOURNAMENT_PRIZE` は **pending を立てたまま `gain()` を呼ぶ**ので、それをコピーすると Joust の獲得時対話（納屋／望楼／交易商人／複製）が全部開かない。→ 参集(Gather)・植民と同じ「**pending を先に閉じてから gain**」の形にするか、許容簡略化として明記する。
+2. 🛑 **Joust の褒賞選択 UI／CPU は汎用の獲得機構を使えない**。`modalGainSupply` は非 allowEmpty で `canBase`(=`gainableBase`＝`!NON_SUPPLY`)、allowEmpty でも `isNonSupplyPile` で**両方の分岐が褒賞を弾く**＝チップ0の閉じられないモーダルになる。前例＝ui.js `pd.stage === 'prize'` の **`modalOptions` で明示列挙**（`supply[id] > 0` で絞る）。CPU も `bestGain` が `NON_SUPPLY_SET` を除外するので、cpu の賞品 `pref = ['trusty_steed', …]` と同じ**明示の優先順**が要る。判定に使ってよいのは `anyGainable(state, pred)`（supply キーを素で走査＝NON_SUPPLY を除外しない）。
+3. **Coronet×持続**＝本アプリの既存許容簡略化「玉座×持続では玉座が残らない」（PROGRESS §0-25/§0-28/§0-30）を Coronet も継承する（公式＝持続を追加で使わせた札は場に残る）。起草は未記載＝許容簡略化として明記する。
+4. **Coronet×習性(Way)／種別**＝`Crown` Other rules clarifications 逐語 `Crown can be played as a Way even if it's played in the Buy phase.`／`Crown counts as both an Action and a Treasure for all purposes … will be trashed from play if you buy Mint … will reduce the cost of Peddler`。本エンジンの `PLAY_TREASURE` は習性を選べない（`action.way` は `PLAY_ACTION` のみ）＝冠の既存簡略化を Coronet も継承（明記）。造幣所／行商人／Housecarl の「場のアクション」は種別で自動に正しい。
+5. **Coronet の「場に出さずに使う」経路**（船長／大君主／王子／川船）＝Coronet は $0 の非サプライなので船長/大君主の対象外（`gainableBase`/供給が無い）だが、**王子(prince)は手札の $4 以下アクション**＝Coronet を脇に置ける。そのとき2段窓が毎ターン開くことと、`takeSelf` 不要（自己移動しない）を確認事項に足す。
+6. **交易商人×廃棄置き場から獲得した褒賞**＝`gainFromOutside` は `_gainOutside` を立てて交易商人の窓を閉じる（山が無い札のための旗）が、褒賞には戻せる山がある＝公式なら銀貨に置換して褒賞の山へ戻せる。mix-all 限定の極小差＝許容簡略化として一言あればよい。
+7. **Huge Turnip＝`coin:0` の財宝**＝`PLAY_ALL_TREASURES` は `isTreasureFor` で拾うので出る（✅）が、CPU の冠/Coronet の財宝選択は `C()[b].coin` で並べるため Huge Turnip を選ばない（許容）。また `treasure_replay` の分岐は `!isType(card,'treasure') && isType(card,'action')` で Action-Treasure を財宝として再適用する＝Coronet で Crown/Coronet を2回使う経路は `applyTreasureEffect` → `crownOpenPending`/Coronet の窓が**再び開く**（冠×冠の公式どおり）ことをテストに入れる。
+8. （総論側だが同型）必読1「`maybeStartOverpay` が pending を上書きする既存バグ」は **HEAD で修正済み**（`onGainQueue` に `overpay_ask` を積む形・2026-08-23 コメントあり）＝「先に直す」の指示は陳腐化。
+
+---
+
+## 検証で覆らなかった重点項目（念のため明記）
+- **枚数＝2人各1／3人以上各2** ✅（2024RB p.1 Contents・p.2 Preparation・p.8・wiki `Reward`/`Joust` の4箇所一致）
+- **Coronet はフェイズに依らずアクション→財宝の両方**（FAQ `do both … you play the Action first` ✅）／**Huge Turnip は +2財源の後に数える**（FAQ `includes the 2 you just got` ✅）／**Demesne の VP＝`allCards` の金貨**（FAQ `per Gold you have then`・得点時の所持＝追放マット等も含む `allCards` ✅）／**Housecarl は自身を含む**（FAQ `This includes Housecarl itself.` ✅）／**`nonSupplyIds` に `rewards` が無い** ✅
+
+---
+
+```
+$ git status --short
+ M css/style.css
+ M js/cpu.js
+ M js/engine.js
+ M js/ui.js
+ M manifest.webmanifest
+ M package.json
+ M test/ui.test.js
+?? test/missing33-ui.test.js
+?? test/missing33.test.js
+```
+（`css/style.css`・`js/ui.js`・`manifest.webmanifest`・`test/ui.test.js` は開始時から在った Codex の差分。`js/engine.js`・`js/cpu.js`・`package.json`・`test/missing33*.test.js` は**本検証の途中で別プロセスが加えた海辺1版の段階2実装**（`git diff` で pearl_diver/navigator/explorer/ghost_ship を確認）。私はリポジトリを1バイトも変更していない。一時ファイル `_cg2v_rew.tmp/` と `_cg2v_raw.tmp/` 内の自分の8ファイルは削除済み＝`ls -d _cg2v_*` は空。）

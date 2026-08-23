@@ -143,6 +143,37 @@ console.log('=== 境界地(marchland)：勝利点3枚につき1VP・獲得時 +1
   const cd = CPU.decide(s, 0, 'hard'); ok(cd && cd.type === 'MARCHLAND_DISCARD' && Array.isArray(cd.cards), 'CPU が捨てる札の配列を返す');
 }
 
+console.log('=== 境界地 × -$1トークン（橋の下のトロル）：捨て札の +$ に食い込む（COFFERS_SPEND と同型）===');
+{
+  let s = mk(['marchland', 'bridge_troll'].concat(F.slice(0, 8))); s.turn.phase = 'buy'; s.turn.coins = 5; s.turn.buys = 1;
+  s.players[0].hand = ['copper', 'estate']; s.turn.coinPenalty = 1; // END_ACTION_PHASE で変換済み・未消化
+  s = E.reduce(s, { type: 'BUY', card: 'marchland' });
+  const t = E.reduce(s, { type: 'MARCHLAND_DISCARD', cards: ['estate'] });
+  ok(t.turn.coins === 0 && !t.turn.coinPenalty, '+$1 が -$1トークンに食われて $0・トークンは消化される（実: coins=' + t.turn.coins + ' penalty=' + t.turn.coinPenalty + '）');
+}
+
+console.log('=== 借金／投機：捨て札トリガー（坑道→金貨→望楼）が開いた窓を先に解決してから続ける（公式の順序）===');
+{
+  // 投機＝捨てた坑道の金貨で望楼の窓が開く → 銀貨の使用はその後
+  let s = mk(['navigator', 'tunnel', 'watchtower'].concat(F.slice(0, 7))); s.turn.phase = 'buy';
+  s.players[0].hand = ['venture', 'watchtower']; s.players[0].deck = ['tunnel', 'silver', 'gold']; s.players[0].discard = [];
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'venture' });
+  ok(s.pending && s.pending.type === 'watchtower', '坑道→金貨の獲得で望楼の窓が先に開く（実: ' + (s.pending && s.pending.type) + '）');
+  ok(s.turn.coins === 1 && !s.players[0].inPlay.includes('silver'), 'その時点では銀貨はまだ使われていない');
+  const a = E.reduce(s, { type: 'WATCHTOWER', choice: 'keep' });
+  ok(a.pending == null && a.players[0].inPlay.includes('silver') && a.turn.coins === 3, '窓を閉じたら銀貨を使用して $3');
+  // 借金＝同じく望楼の窓を先に、二択は後
+  let l = mk(['navigator', 'tunnel', 'watchtower'].concat(F.slice(0, 7))); l.turn.phase = 'buy';
+  l.players[0].hand = ['loan', 'watchtower']; l.players[0].deck = ['tunnel', 'silver', 'gold']; l.players[0].discard = [];
+  const before = total(l) + 1; // 坑道で金貨1枚が山から来る
+  l = E.reduce(l, { type: 'PLAY_TREASURE', card: 'loan' });
+  ok(l.pending && l.pending.type === 'watchtower', '借金でも望楼の窓が先');
+  const b = E.reduce(l, { type: 'WATCHTOWER', choice: 'keep' });
+  ok(b.pending && b.pending.type === 'loan' && b.pending.card === 'silver', '窓を閉じたら借金の二択が開く');
+  const c2 = E.reduce(b, { type: 'LOAN_RESOLVE', trash: true }); ok(c2.trash.includes('silver') && c2.pending == null, '二択が解決できる');
+  ok(total(c2) === before, '総数が保たれる（保存則＝廃棄後は脇の1枚も戻っている）');
+}
+
 console.log('=== 保存則＆CPU終端：第1バッチ9種を強制混成した王国で CPU だけで終局まで回る ===');
 {
   const K = ['pearl_diver', 'navigator', 'explorer', 'ghost_ship', 'counting_house', 'mountebank', 'marchland', 'village', 'smithy', 'moat'];

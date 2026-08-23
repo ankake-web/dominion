@@ -1337,10 +1337,13 @@
       const shown = fr.skipped.concat(fr.matched ? [fr.matched] : []);
       if (shown.length) reveal(state, pIndex, shown, '借金で山札を公開');
       fr.skipped.forEach((c) => p.discard.push(c));
-      if (fr.skipped.length) triggerOnDiscard(state, pIndex, fr.skipped.slice(), true);
+      // 自分の使用で捨てる＝本物の「捨てる」（坑道→金貨／村有緑地・忠犬の窓も開く＝noPrompt 無し）。
+      if (fr.skipped.length) triggerOnDiscard(state, pIndex, fr.skipped.slice());
       if (fr.matched) {
         // 捨てるか廃棄するか（強制の二択）。`matched` は山札から抜いた状態で pending に保持する（保存則＝脇の1枚）。
-        state.pending = { type: 'loan', player: pIndex, card: fr.matched };
+        // 🛑 捨て札トリガー（坑道の金貨→望楼／村有緑地）が先に窓を開いていたら二択は**後回し**（reduce 末尾の再開網）。
+        if (state.pending) (t.loanResume = t.loanResume || []).push({ player: pIndex, card: fr.matched });
+        else state.pending = { type: 'loan', player: pIndex, card: fr.matched };
       }
     }
     if (card === 'venture') {
@@ -1348,13 +1351,19 @@
       const shown = fr.skipped.concat(fr.matched ? [fr.matched] : []);
       if (shown.length) reveal(state, pIndex, shown, '投機で山札を公開');
       fr.skipped.forEach((c) => p.discard.push(c));
-      if (fr.skipped.length) triggerOnDiscard(state, pIndex, fr.skipped.slice(), true);
+      // 自分の使用で捨てる＝本物の「捨てる」（坑道→金貨／村有緑地・忠犬の窓も開く＝noPrompt 無し）。
+      if (fr.skipped.length) triggerOnDiscard(state, pIndex, fr.skipped.slice());
       if (fr.matched) {
         /* その財宝を**使用する**＝場に出して `playTreasureCard` 経由（財宝の使用＝豊作/狼狽/商人/サウナ/追いはぎ
-           が全部効く）。`playTreasureCard` は手札から抜くので、いったん手札に入れてから呼ぶ。 */
+           が全部効く）。`playTreasureCard` は手札から抜くので、いったん手札に入れてから呼ぶ。
+           🛑 公式の順序＝「捨てる → 捨て札トリガーを解決 → 財宝を使用」。捨て札トリガー（坑道の金貨→望楼／村有緑地）が
+           窓を開いていたら使用は**後回し**＝`t.ventureResume`（スタック＝投機→投機の入れ子も跨ぐ）に積み、reduce 末尾で再開する。 */
         p.hand.push(fr.matched);
-        log(state, `${p.name} は投機で「${C()[fr.matched].name}」を使用する。`);
-        playTreasureCard(state, pIndex, fr.matched);
+        if (state.pending) (t.ventureResume = t.ventureResume || []).push({ player: pIndex, card: fr.matched });
+        else {
+          log(state, `${p.name} は投機で「${C()[fr.matched].name}」を使用する。`);
+          playTreasureCard(state, pIndex, fr.matched);
+        }
       }
     }
     // 錬金術：賢者の石＝出したとき山札+捨て札の合計5枚につき +1コイン（端数切捨て）。
@@ -13778,6 +13787,24 @@
       kitsuneStep(state);
       state = runReplays(state);
     }
+    // 繁栄1版：借金／投機＝捨て札トリガーが開いた窓を解決してから「二択」「財宝の使用」を再開する（公式の順序）。
+    if (!state.pending && !state.gameOver && state.turn && state.turn.loanResume && state.turn.loanResume.length &&
+        !(state.onGainQueue && state.onGainQueue.length) && !(state.onTrashQueue && state.onTrashQueue.length)) {
+      const lr = state.turn.loanResume.shift();
+      if (!state.turn.loanResume.length) state.turn.loanResume = null;
+      state.pending = { type: 'loan', player: lr.player, card: lr.card };
+    }
+    if (!state.pending && !state.gameOver && state.turn && state.turn.ventureResume && state.turn.ventureResume.length &&
+        !(state.onGainQueue && state.onGainQueue.length) && !(state.onTrashQueue && state.onTrashQueue.length)) {
+      const vr = state.turn.ventureResume.pop(); // 後入れ先出し＝入れ子の投機は内側から
+      if (!state.turn.ventureResume.length) state.turn.ventureResume = null;
+      const vp = state.players[vr.player];
+      if (vp.hand.includes(vr.card)) {
+        log(state, `${vp.name} は投機で「${C()[vr.card].name}」を使用する。`);
+        playTreasureCard(state, vr.player, vr.card);
+      }
+      state = runReplays(state);
+    }
     // 冒険：語り部の中断再開は runReplays より前（上）で処理済み。ここでは onTrashQueue 由来などで再度残っていれば拾う保険。
     if (!state.pending && !state.gameOver && state.turn && state.turn.storytellerResume) {
       storytellerStep(state, state.turn.storytellerResume.player);
@@ -16007,7 +16034,8 @@
         for (const c of cards) if (!removeOne(copy, c)) return state;
         state.pending = null;
         cards.forEach((c) => { removeOne(pl.hand, c); pl.discard.push(c); });
-        if (cards.length) { addCoins(state, cards.length); log(state, `${pl.name} は境界地で手札${cards.length}枚を捨てて +$${cards.length}。`); triggerOnDiscard(state, pd.player, cards.slice()); }
+        // -$1トークン（橋の下のトロル）は「次にコインを得るとき」に食い込む＝コインが増えた直後に applyCoinPenalty（COFFERS_SPEND と同型）。
+        if (cards.length) { addCoins(state, cards.length); applyCoinPenalty(state); log(state, `${pl.name} は境界地で手札${cards.length}枚を捨てて +$${cards.length}。`); triggerOnDiscard(state, pd.player, cards.slice()); }
         return state;
       }
       case 'TORTURER_RESOLVE': {
