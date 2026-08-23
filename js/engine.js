@@ -15,7 +15,7 @@
   const PRIZES = ['bag_of_gold', 'diadem', 'followers', 'princess', 'trusty_steed'];
   // 冒険：トラベラーの成長先8種は非サプライ（各5枚・page/peasant が場にあるときだけ登場・購入不可・交換でのみ得る）。
   const TRAVELLER_GROWTH = ['treasure_hunter', 'warrior', 'hero', 'champion', 'soldier', 'fugitive', 'disciple', 'teacher'];
-  // 収穫祭＆ギルド第2版：褒賞(Reward)6種＝一騎討ち(Joust)でのみ獲得する非サプライ（賞品 Prizes と同型・各1枚）。段階1＝効果はまだ空。
+  // 収穫祭＆ギルド第2版：褒賞(Reward)6種＝一騎討ち(Joust)でのみ獲得する非サプライ（賞品 Prizes と同型。⚠ 枚数は**2人＝各1／3人以上＝各2**＝賞品の「各1」と違う）。段階1＝効果はまだ空。
   const REWARDS = ['coronet', 'courser', 'demesne', 'housecarl', 'huge_turnip', 'renown'];
   const PRIZE_SET = new Set(PRIZES); // 馬上槍試合でのみ獲得できる「賞品」5種（NON_SUPPLY の部分集合＝混同すると mix で pending が閉じない）
   // 夜想曲：精霊3種＋願い＋コウモリ＝非サプライ山（枚数は人数によらない。専用の効果でのみ得る）。
@@ -3416,8 +3416,16 @@
   function maybeStartOverpay(state, pi, card) {
     if (!OVERPAY_CARDS.has(card)) return;
     const t = state.turn;
-    // 支配中の被支配者の購入では過払いも被支配者が選ぶ（gain は既に脇置き処理済み）。ここは通常どおり本人が選ぶ。
-    if ((t.coins || 0) > 0) state.pending = { type: 'overpay', player: pi, card, max: t.coins };
+    if (!((t.coins || 0) > 0)) return;
+    /* 🛑 **`state.pending` を無条件に上書きしてはいけない**（出荷済みの実バグ＝2026-08-23 に修正）。
+       `BUY` は `gain()` の後に呼ぶので、獲得時対話（望楼／交易商人／そり…）が既に pending を立てていることがある。
+       上書きすると **その窓が消えて復活しない**（望楼を持って名品を買い残コインがあると、過払いを0で閉じても
+       望楼の窓は二度と開かない＝node で再現済み）。
+       公式（2022エラッタ）＝`"overpay" abilities happen when the card is gained, and **are timed with other
+       such abilities**` ＝獲得時対話と並ぶ。⇒ 既に窓があれば `onGainQueue` に積み、消化側で開く。 */
+    const item = { type: 'overpay', player: pi, card, max: t.coins };
+    if (state.pending) (state.onGainQueue = state.onGainQueue || []).push({ type: 'overpay_ask', player: pi, card, max: t.coins });
+    else state.pending = item;
   }
   // 過払い額を確定して、カードごとの過払い効果へ分岐する（OVERPAY_RESOLVE から呼ぶ）。
   function applyOverpayEffect(state, pi, card, amount) {
@@ -13376,6 +13384,16 @@
       while (state.onGainQueue.length) {
         const q = state.onGainQueue.shift();
         if (q.type === 'gatekeeper_exile') { applyGatekeeperExile(state, q.player, q.card, q.dest); continue; }
+        /* ギルド：過払い＝獲得時対話の後に「いくら過払いするか」を聞く（`maybeStartOverpay` が積む）。
+           ⚠ 消化するときに残コインを測り直す（間に獲得時対話でコインが動くことは無いが、安全側）。 */
+        if (q.type === 'overpay_ask') {
+          const mx = Math.min(q.max, (state.turn && state.turn.coins) || 0);
+          if (mx > 0 && state.turn && state.turn.active === q.player) {
+            state.pending = { type: 'overpay', player: q.player, card: q.card, max: mx };
+            break;
+          }
+          continue;
+        }
         /* 略奪：秘境の社の廃棄窓＝消化する時点で手札が空なら無言でスキップ（任意効果＝空振りでも消費済み）。 */
         if (q.type === 'shrine_trash' && !state.players[q.player].hand.length) continue;
         /* 略奪P3：埋められた財宝＝**非対話**＝獲得先にまだあれば使用する（先に動かされていたら失敗＝stop-moving）。 */

@@ -438,6 +438,38 @@ console.log('=== ギルドゲームでカード保存則が保たれる（財源
   ok(!bad, 'ゲーム開始時と終了時でカード総数が一致');
 }
 
+/* 🛑 出荷済みの実バグ（2026-08-23 修正）＝`maybeStartOverpay` が `state.pending` を無条件に上書きし、
+   **獲得時対話（望楼／交易商人／そり…）の窓を潰していた**。望楼を手札に持って名品を買い残コインがあると、
+   過払いを0で閉じても望楼の窓は二度と開かなかった（残コイン0なら開く＝非対称）。
+   公式（2022エラッタ）＝`"overpay" abilities happen when the card is gained, and **are timed with other such
+   abilities**`＝獲得時対話と並ぶ。→ 窓が既にあれば `onGainQueue` に積み、消化側で `overpay` を開く。 */
+console.log('=== 過払いは獲得時対話（望楼）を握りつぶさない ===');
+{
+  const K = ['masterpiece', 'watchtower', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];
+  const mk = () => E.createInitialState([{ name: 'A' }, { name: 'B' }], K.slice(), { startActive: 0 });
+  // ① 残コインあり＝望楼の窓が先に開き、閉じると過払いの窓が開く
+  let s = mk(); s.turn.phase = 'buy'; s.turn.coins = 5; s.turn.buys = 1; s.players[0].hand = ['watchtower'];
+  s = E.reduce(s, { type: 'BUY', card: 'masterpiece' });
+  ok(s.pending && s.pending.type === 'watchtower', '名品を買うと**先に**望楼の窓が開く（実: ' + (s.pending && s.pending.type) + '）');
+  s = E.reduce(s, { type: 'WATCHTOWER', choice: 'keep' });
+  ok(s.pending && s.pending.type === 'overpay', '望楼を閉じると過払いの窓が開く（実: ' + (s.pending && s.pending.type) + '）');
+  ok(s.pending.max === 2, '過払いの上限は残コイン（5-3=2。実: ' + (s.pending && s.pending.max) + '）');
+  // 過払い2＝銀貨2枚（既存挙動の退行なし）
+  const sv0 = s.players[0].discard.filter((c) => c === 'silver').length;
+  s = E.reduce(s, { type: 'OVERPAY_RESOLVE', amount: 2 });
+  ok(s.pending == null && s.players[0].discard.filter((c) => c === 'silver').length === sv0 + 2, '過払い2で銀貨2枚（既存どおり）');
+  // ② 残コインなし＝過払いの窓は開かず、望楼の窓だけ（従来どおり）
+  let t2 = mk(); t2.turn.phase = 'buy'; t2.turn.coins = 3; t2.turn.buys = 1; t2.players[0].hand = ['watchtower'];
+  t2 = E.reduce(t2, { type: 'BUY', card: 'masterpiece' });
+  ok(t2.pending && t2.pending.type === 'watchtower', '残コイン0なら望楼の窓だけ');
+  t2 = E.reduce(t2, { type: 'WATCHTOWER', choice: 'keep' });
+  ok(t2.pending == null, '残コイン0なら過払いの窓は開かない');
+  // ③ 望楼なし＝従来どおり過払いの窓が直接開く
+  let t3 = mk(); t3.turn.phase = 'buy'; t3.turn.coins = 5; t3.turn.buys = 1; t3.players[0].hand = ['copper'];
+  t3 = E.reduce(t3, { type: 'BUY', card: 'masterpiece' });
+  ok(t3.pending && t3.pending.type === 'overpay', '獲得時対話が無ければ過払いの窓が直接開く（従来どおり）');
+}
+
 console.log('');
 console.log('========================================');
 console.log('ギルドテスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
