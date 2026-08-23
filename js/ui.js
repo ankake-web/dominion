@@ -3432,6 +3432,42 @@
       { label: '+3 カード', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'cards' }) },
       { label: '+2 アクション', on: () => dispatch({ type: 'NOBLES_RESOLVE', choice: 'actions' }) },
     ]);
+    /* ===== 段階2 第1バッチ（海辺1版／繁栄1版／プロモ）＝すべて既存ヘルパで描く ===== */
+    if (pd.type === 'pearl_diver') return modalOptions('真珠採り — 山札の一番下は「' + DOM.CARDS[pd.card].name + '」',
+      '山札の一番下のカードを見ました。山札の一番上に置きますか？', [
+      { label: '一番上に置く', cls: 'btn-primary', on: () => dispatch({ type: 'PEARL_DIVER_RESOLVE', top: true }) },
+      { label: 'そのままにする', on: () => dispatch({ type: 'PEARL_DIVER_RESOLVE', top: false }) }]);
+    /* 航海士＝公式は「全部捨てる or 好きな順で戻す」。UI は「全部捨てる／この順で戻す（並べ替えなし）」の2択
+       ＝【許容簡略化】並べ替えの UI は持たない（engine は `order` を受理するので CPU は並べ替える）。 */
+    if (pd.type === 'navigator') return modalShell('航海士 — 山札の上5枚',
+      '全部捨て札にするか、この順（左が一番上）で山札に戻します。',
+      (pd.cards || []).map((id) => cardEl(id, { size: 'sm' })),
+      h('div', null,
+        h('button', { class: 'btn btn-primary btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'NAVIGATOR_RESOLVE', order: (pd.cards || []).slice() }) }, 'この順で山札に戻す'),
+        h('button', { class: 'btn btn-block', onclick: () => dispatch({ type: 'NAVIGATOR_RESOLVE', discard: true }) }, '全部捨て札にする')));
+    if (pd.type === 'explorer') return modalOptions('探検家 — 属州を公開しますか？', '公開すると金貨を手札に、しなければ銀貨を手札に獲得します。', [
+      { label: '属州を公開して金貨を手札に', cls: 'btn-primary', on: () => dispatch({ type: 'EXPLORER_RESOLVE', reveal: true }) },
+      { label: '公開せず銀貨を手札に', on: () => dispatch({ type: 'EXPLORER_RESOLVE', reveal: false }) }]);
+    if (pd.type === 'ghost_ship' && pd.stage === 'react') return modalOptions('幽霊船を受ける', '手札が3枚になるまで、手札のカードを山札の上に置きます。', reactOptions(p, pd, { type: 'GHOST_SHIP_REACT' }));
+    if (pd.type === 'ghost_ship' && pd.stage === 'put') return modalSingleHand(p, '幽霊船 — 山札の上に置く',
+      '手札が3枚になるまで1枚ずつ山札の上に置きます（残り ' + Math.max(0, p.hand.length - 3) + '枚）。',
+      () => true, (card) => dispatch({ type: 'GHOST_SHIP_PUT', card }), null, '山札の上に置く');
+    if (pd.type === 'counting_house') return modalAmount('会計所 — 捨て札の銅貨を手札へ',
+      '捨て札置き場の銅貨（' + pd.max + '枚）を好きな枚数手札に加えます。', pd.max, 0, (n) => (n === 0 ? '加えない' : n + '枚を手札に加える'),
+      (n) => dispatch({ type: 'COUNTING_HOUSE_RESOLVE', amount: n }));
+    if (pd.type === 'loan') return modalOptions('借金 — 公開した財宝「' + DOM.CARDS[pd.card].name + '」',
+      '捨て札にするか廃棄するかを選びます。', [
+      { label: '廃棄する', cls: 'btn-primary', on: () => dispatch({ type: 'LOAN_RESOLVE', trash: true }) },
+      { label: '捨て札にする', on: () => dispatch({ type: 'LOAN_RESOLVE', trash: false }) }]);
+    if (pd.type === 'mountebank' && pd.stage === 'react') return modalOptions('香具師を受ける', '呪いを捨てなければ、呪いと銅貨を獲得します。', reactOptions(p, pd, { type: 'MOUNTEBANK_REACT' }));
+    if (pd.type === 'mountebank' && pd.stage === 'choose') return modalOptions('香具師 — 呪いを捨てますか？',
+      '手札の呪い1枚を捨て札にすれば何も起きません。捨てなければ呪いと銅貨を獲得します。', [
+      { label: '呪いを捨て札にする', cls: 'btn-primary', on: () => dispatch({ type: 'MOUNTEBANK_CHOOSE', discardCurse: true }) },
+      { label: '捨てない（呪いと銅貨を獲得）', on: () => dispatch({ type: 'MOUNTEBANK_CHOOSE', discardCurse: false }) }]);
+    if (pd.type === 'marchland_discard') return modalMultiHand(p, '境界地 — 手札を捨てて +$1ずつ',
+      '手札を好きな枚数捨て札にし、1枚につき +1 コイン（0枚でもかまいません）。',
+      (n) => (n === 0 ? '捨てない' : n + '枚捨てて +$' + n), true,
+      (cards) => dispatch({ type: 'MARCHLAND_DISCARD', cards }));
     if (pd.type === 'torturer') return modalTorturer(p, p.hand.includes('secret_chamber') && !pd.reacted, canDiplomatReact(p, pd));
     if (pd.type === 'trading_post') return modalTrashHand(p, '交易場 — 廃棄', '手札から2枚を選んで廃棄します（2枚廃棄できたら銀貨を手札に獲得）。', Math.min(2, p.hand.length), (cards) => dispatch({ type: 'TRADING_POST_RESOLVE', cards }));
     if (pd.type === 'upgrade' && pd.stage === 'trash') return modalSingleHand(p, '改良 — 廃棄', '手札から1枚を廃棄します（その後、ちょうど1コイン高いカードを獲得）。', () => true, (card) => dispatch({ type: 'UPGRADE_TRASH', card }));

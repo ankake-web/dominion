@@ -288,6 +288,9 @@
     /* 旭日（Rising Sun）R3。⚠ `has` は山札の影札も拾う（R2）＝影5種はここに足すだけで山札経路も通る。
        足さないと **CPUソークで影札が1枚も使われず、山札からの使用経路の検証が0回になる**。 */
     if (has('tea_house')) return 'tea_house';           // +1 Sun +1カード +1アクション +2コイン（最強のキャントリップ）
+    // 段階2 第1バッチ：キャントリップは先・ターミナルは後（既存の並びに合わせる）
+    if (has('pearl_diver')) return 'pearl_diver';
+    if (has('explorer') && p.hand.includes('province')) return 'explorer';
     if (has('rustic_village')) return 'rustic_village'; // +1 Sun +1カード +2アクション
     if (has('poet')) return 'poet';                     // +1 Sun +1カード +1アクション ＋山札の上を手札へ
     /* 🛑 R4a/R6 で足したカードを chooseAction に登録し忘れていた（R3 の20種だけ登録されていた）＝
@@ -1944,6 +1947,43 @@
         // 他にアクションが手札にあれば +2アクション、無ければ +3カード
         const otherAction = p.hand.some((c) => isType(c, 'action'));
         return { type: 'NOBLES_RESOLVE', choice: otherAction ? 'actions' : 'cards' };
+      }
+      /* ===== 段階2 第1バッチ ===== */
+      case 'pearl_diver': {
+        // 一番下のカードが良い札（アクション/銀貨以上）なら上へ
+        const c = pd.card; const good = isType(c, 'action') || (isType(c, 'treasure') && c !== 'copper');
+        return { type: 'PEARL_DIVER_RESOLVE', top: !!good };
+      }
+      case 'navigator': {
+        // 5枚の中に良い札が2枚以上なければ全部捨てる。戻すなら良い札を上に。
+        const cards = pd.cards.slice();
+        const score = (c) => isType(c, 'curse') ? -2 : (c === 'copper' || isType(c, 'victory')) ? -1 : isType(c, 'action') ? 2 : 1;
+        const goods = cards.filter((c) => score(c) > 0).length;
+        if (goods < 2) return { type: 'NAVIGATOR_RESOLVE', discard: true };
+        return { type: 'NAVIGATOR_RESOLVE', order: cards.sort((a, b) => score(b) - score(a)) };
+      }
+      case 'explorer': return { type: 'EXPLORER_RESOLVE', reveal: p.hand.includes('province') };
+      case 'ghost_ship': {
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'GHOST_SHIP_REACT' }; }
+        // 山札の上に置く＝次に引く札になる＝**良い札を置く**（民兵と逆）。無ければ一番弱い札。
+        const h = p.hand.slice();
+        const score = (c) => isType(c, 'curse') ? -2 : (c === 'copper' || isType(c, 'victory')) ? -1 : isType(c, 'action') ? 2 : 1;
+        h.sort((a, b) => score(b) - score(a));
+        return { type: 'GHOST_SHIP_PUT', card: h[0] };
+      }
+      case 'counting_house': return { type: 'COUNTING_HOUSE_RESOLVE', amount: pd.max }; // 全部手札へ（$ が増える）
+      case 'loan': {
+        // 銅貨なら廃棄（圧縮）、銀貨以上は捨てる
+        return { type: 'LOAN_RESOLVE', trash: pd.card === 'copper' };
+      }
+      case 'mountebank': {
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'MOUNTEBANK_REACT' }; }
+        return { type: 'MOUNTEBANK_CHOOSE', discardCurse: p.hand.includes('curse') };
+      }
+      case 'marchland_discard': {
+        // 屑（呪い/銅貨/勝利点）だけ捨てて $ にする
+        const junk = p.hand.filter((c) => isType(c, 'curse') || c === 'copper' || isType(c, 'victory'));
+        return { type: 'MARCHLAND_DISCARD', cards: junk };
       }
       case 'torturer': {
         // 拷問人の対象側。堀があれば無効化、無ければ呪いより手札2枚捨てを選ぶ

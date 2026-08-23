@@ -1329,6 +1329,34 @@
     addCoins(state, treasureCoins(state, card));
     // 錬金術：ポーション（特殊財宝）＝コインではなく「ポーション」を1つ得る（ポーション費用の支払いに使う）。
     if (card === 'potion') { t.potions = (t.potions || 0) + 1; }
+    /* 段階2 第1バッチ：借金／投機（繁栄1版）＝「財宝が出るまで山札を公開」＝既存 `revealFromDeck` を使う
+       （自前ループは禁止＝捨てた札を即座に捨て札へ入れると直後のリシャッフルで引き直す穴）。
+       ⚠ 公開は `reveal()` を通す（パトロン）。**公開を全部終えてから**残りを捨てる（捨て札トリガーが母集団を変えない）。 */
+    if (card === 'loan') {
+      const fr = revealFromDeck(state, pIndex, (c) => isTreasureFor(state, c));
+      const shown = fr.skipped.concat(fr.matched ? [fr.matched] : []);
+      if (shown.length) reveal(state, pIndex, shown, '借金で山札を公開');
+      fr.skipped.forEach((c) => p.discard.push(c));
+      if (fr.skipped.length) triggerOnDiscard(state, pIndex, fr.skipped.slice(), true);
+      if (fr.matched) {
+        // 捨てるか廃棄するか（強制の二択）。`matched` は山札から抜いた状態で pending に保持する（保存則＝脇の1枚）。
+        state.pending = { type: 'loan', player: pIndex, card: fr.matched };
+      }
+    }
+    if (card === 'venture') {
+      const fr = revealFromDeck(state, pIndex, (c) => isTreasureFor(state, c));
+      const shown = fr.skipped.concat(fr.matched ? [fr.matched] : []);
+      if (shown.length) reveal(state, pIndex, shown, '投機で山札を公開');
+      fr.skipped.forEach((c) => p.discard.push(c));
+      if (fr.skipped.length) triggerOnDiscard(state, pIndex, fr.skipped.slice(), true);
+      if (fr.matched) {
+        /* その財宝を**使用する**＝場に出して `playTreasureCard` 経由（財宝の使用＝豊作/狼狽/商人/サウナ/追いはぎ
+           が全部効く）。`playTreasureCard` は手札から抜くので、いったん手札に入れてから呼ぶ。 */
+        p.hand.push(fr.matched);
+        log(state, `${p.name} は投機で「${C()[fr.matched].name}」を使用する。`);
+        playTreasureCard(state, pIndex, fr.matched);
+      }
+    }
     // 錬金術：賢者の石＝出したとき山札+捨て札の合計5枚につき +1コイン（端数切捨て）。
     if (card === 'philosophers_stone') {
       const n = p.deck.length + p.discard.length;
@@ -3640,6 +3668,9 @@
           公開は起こり得る（パトロンの +1財源が動く差）。本実装は呪いを選んだときだけ窓を開く。 */
     kitsune_attack: { onMoat: (s, pd) => kitsuneEnterVictim(s, pd.source, pd.queue) },
     bureaucrat:    { onMoat: (s, pd) => bureaucratEnterVictim(s, pd.source, pd.queue) },
+    // 段階2 第1バッチ：幽霊船（役人型）／香具師（拷問人型）
+    ghost_ship:    { onMoat: (s, pd) => ghostShipEnterVictim(s, pd.source, pd.queue) },
+    mountebank:    { onMoat: (s, pd) => mountebankEnterVictim(s, pd.source, pd.queue) },
     spy:           { onMoat: (s, pd) => spyEnterTarget(s, pd.source, pd.queue) },
     thief:         { onMoat: (s, pd) => thiefEnterVictim(s, pd.source, pd.queue) },
     swindler:      { onMoat: (s, pd) => swindlerEnterVictim(s, pd.source, pd.queue) },
@@ -4290,6 +4321,43 @@
   }
 
   /* ---------- 役人（複数対象。各相手が勝利点1枚を山札の上へ）---------- */
+  /* ===== 段階2 第1バッチ：幽霊船／香具師の被害者ループ ===== */
+  // 幽霊船＝手札4枚以上の相手だけが対象。堀持ちは react 窓→公開しなければ put 窓（役人と同型）。
+  function ghostShipEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'ghost_ship', stage: 'react', player: victim, source, victim, queue: rest };
+    } else ghostShipApply(state, source, victim, rest);
+  }
+  function ghostShipApply(state, source, victim, queue) {
+    const v = state.players[victim];
+    if (v.hand.length >= 4) state.pending = { type: 'ghost_ship', stage: 'put', player: victim, source, victim, queue };
+    else ghostShipEnterVictim(state, source, queue);
+  }
+  // 香具師＝各相手が「呪いを捨てる」か「呪いと銅貨を獲得」かを選ぶ（手札に呪いが無ければ自動で獲得）。
+  function mountebankEnterVictim(state, source, queue) {
+    if (!queue || !queue.length) { state.pending = null; return; }
+    queue = queue.filter((v) => !attackImmune(state, v));
+    if (!queue.length) { state.pending = null; return; }
+    const victim = queue[0], rest = queue.slice(1);
+    if (hasReaction(state.players[victim])) {
+      state.pending = { type: 'mountebank', stage: 'react', player: victim, source, victim, queue: rest };
+    } else mountebankApply(state, source, victim, rest);
+  }
+  function mountebankApply(state, source, victim, queue) {
+    const v = state.players[victim];
+    if (v.hand.includes('curse')) state.pending = { type: 'mountebank', stage: 'choose', player: victim, source, victim, queue };
+    else { mountebankPunish(state, victim); mountebankEnterVictim(state, source, queue); }
+  }
+  function mountebankPunish(state, victim) {
+    const v = state.players[victim];
+    // 公式＝`they gain a Curse and a Copper`＝呪い→銅貨の順（どちらかの山が空でも残りは獲得する）。
+    const gc = gain(state, victim, 'curse', 'discard'), gp = gain(state, victim, 'copper', 'discard');
+    log(state, `${v.name} は香具師で${gc ? '呪い' : ''}${gc && gp ? 'と' : ''}${gp ? '銅貨' : ''}${gc || gp ? 'を獲得した' : '何も獲得しなかった（山が空）'}。`);
+  }
   function bureaucratEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
     queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
@@ -8821,6 +8889,56 @@
         break;
       }
 
+      /* ===== 段階2 第1バッチ（2026-08-23）＝未実装33種のうち既存機構だけで書ける9種 =====
+         正本＝docs/research/missing19_rules.md（敵対検証済み）。財宝2種（借金/投機）は applyTreasureEffect、
+         境界地の獲得時は triggerOnGain、可変VPは vpOf に書いてある。 */
+      // 真珠採り（海辺1版・$2）＝+1カード+1アクション → 山札の一番下を見て、上に置いてもよい。
+      //   ⚠ +1カードを引いた**後**の山札で見る（山札が空なら何もしない＝引いた直後に空ならリシャッフルもしない＝公式）。
+      case 'pearl_diver':
+        draw(state, pi, 1); addActions(t, 1);
+        if (p.deck.length > 0) state.pending = { type: 'pearl_diver', player: pi, card: p.deck[p.deck.length - 1] };
+        break;
+      // 航海士（海辺1版・$4）＝+$2 → 山札の上から5枚を見て、全部捨てるか好きな順で戻す。
+      //   既存の汎用 `look_arrange`（夜警／森の居住者／太陽の恵み）＝「見る＝マスク必須」「全捨て or 並べ替え」が同型。
+      case 'navigator': {
+        addCoins(state, 2);
+        const seen = [];
+        for (let k = 0; k < 5; k++) { if (!p.deck.length && p.discard.length) reshuffleDeck(p); if (!p.deck.length) break; seen.push(p.deck.shift()); }
+        if (seen.length) state.pending = { type: 'navigator', player: pi, cards: seen };
+        break;
+      }
+      // 探検家（海辺1版・$5）＝手札の属州を公開してもよい→金貨を手札に／しなければ銀貨を手札に。
+      //   公開は任意＝属州があれば窓を開く（無ければ銀貨で即決）。獲得先は**手札**。
+      case 'explorer':
+        if (p.hand.includes('province')) state.pending = { type: 'explorer', player: pi };
+        else { if (gain(state, pi, 'silver', 'hand')) log(state, `${p.name} は探検家で銀貨1枚を手札に獲得した。`); }
+        break;
+      // 幽霊船（海辺1版・$5・アタック）＝+2カード → 手札4枚以上の相手は手札が3枚になるまで山札の上に置く。
+      //   役人(bureaucrat)型＝被害者が1枚ずつ選ぶ（順序が山札の順になる）。堀/灯台の免疫は EnterVictim が見る。
+      case 'ghost_ship': {
+        draw(state, pi, 2);
+        const vics = [];
+        for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
+        ghostShipEnterVictim(state, pi, vics);
+        break;
+      }
+      // 会計所（繁栄1版・$5）＝捨て札置き場を見て、その中の銅貨を好きな枚数手札に。
+      //   ⚠ 「見る」＝捨て札は公開情報なのでマスク不要。窓は銅貨が1枚でもあるときだけ。
+      case 'counting_house': {
+        const n = p.discard.filter((c) => c === 'copper').length;
+        if (n > 0) state.pending = { type: 'counting_house', player: pi, max: n };
+        break;
+      }
+      // 香具師（繁栄1版・$5・アタック）＝+$2 → 相手は呪いを捨ててもよい／捨てなければ呪いと銅貨を獲得。
+      //   拷問人(torturer)型＝被害者ごとに選択。堀/灯台は EnterVictim。
+      case 'mountebank': {
+        addCoins(state, 2);
+        const vics = [];
+        for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
+        mountebankEnterVictim(state, pi, vics);
+        break;
+      }
+
       default:
         break;
     }
@@ -8896,6 +9014,9 @@
     // 異郷：絹の道＝所持する勝利点カード4枚につき1勝利点（端数切り捨て・絹の道自身も数える・絹の道1枚ごと）
     const silkRoads = cards.filter((c) => c === 'silk_road').length;
     if (silkRoads) vp += silkRoads * Math.floor(cards.filter((c) => DOM.isType(c, 'victory')).length / 4);
+    // プロモ：境界地＝所持する勝利点カード3枚につき1勝利点（端数切り捨て・境界地自身も数える・境界地1枚ごと）
+    const marchlands = cards.filter((c) => c === 'marchland').length;
+    if (marchlands) vp += marchlands * Math.floor(cards.filter((c) => DOM.isType(c, 'victory')).length / 3);
     // 暗黒時代：封土＝所持する銀貨3枚につき1勝利点（端数切り捨て・封土1枚ごと）
     const feoda = cards.filter((c) => c === 'feodum').length;
     if (feoda) vp += feoda * Math.floor(cards.filter((c) => c === 'silver').length / 3);
@@ -10415,6 +10536,15 @@
     // 冒険：失われし都市＝獲得したとき、他の各プレイヤーはカードを1枚引く（誰の獲得でも発動）。
     if (cardId === 'lost_city') { for (let o = 0; o < n; o++) if (o !== pIndex) { const d = draw(state, o, 1); if (d.length) log(state, `${state.players[o].name} は失われし都市の獲得で +1カード。`); } }
     // 帝国：ヴィラ＝獲得したとき手札に加え、自分の手番なら +1アクション。自分の購入フェイズ中の獲得ならアクションフェイズに戻る（何度でも）。
+    /* 段階2 第1バッチ：境界地(Marchland・プロモ)＝獲得したとき +1購入、手札を好きな枚数捨てて1枚につき +$1。
+       誰の獲得でも（相手のターンに獲得しても）発火するが、+購入/+$ は手番中のみ意味がある＝公式どおり **獲得者が手番の
+       プレイヤーのときだけ** 窓を開く（相手ターンの獲得では捨てても意味が無いので窓を開かない＝許容簡略化）。
+       ⚠ `state.pending` を直接代入しない＝`onGainQueue` に積む（獲得時対話の握りつぶし防止）。 */
+    if (cardId === 'marchland' && state.turn && pIndex === state.turn.active) {
+      state.turn.buys += 1;
+      log(state, `${gp.name} は境界地を獲得して +1購入。`);
+      if (gp.hand.length) (state.onGainQueue = state.onGainQueue || []).push({ type: 'marchland_discard', player: pIndex });
+    }
     if (cardId === 'villa') {
       if (dest !== 'hand') { const z = zoneOf(gp, dest); if (removeOne(z, 'villa')) gp.hand.push('villa'); }
       if (state.turn && pIndex === state.turn.active) {
@@ -13386,6 +13516,10 @@
         if (q.type === 'gatekeeper_exile') { applyGatekeeperExile(state, q.player, q.card, q.dest); continue; }
         /* ギルド：過払い＝獲得時対話の後に「いくら過払いするか」を聞く（`maybeStartOverpay` が積む）。
            ⚠ 消化するときに残コインを測り直す（間に獲得時対話でコインが動くことは無いが、安全側）。 */
+        if (q.type === 'marchland_discard') {
+          if (state.players[q.player].hand.length && state.turn && state.turn.active === q.player) { state.pending = { type: 'marchland_discard', player: q.player }; break; }
+          continue;
+        }
         if (q.type === 'overpay_ask') {
           const mx = Math.min(q.max, (state.turn && state.turn.coins) || 0);
           if (mx > 0 && state.turn && state.turn.active === q.player) {
@@ -15762,6 +15896,120 @@
       }
 
       /* ---- 拷問人（アタック）：手札2枚を捨てる or 呪いを手札に ---- */
+      /* ===== 段階2 第1バッチ：選択解決（すべて4点セット）===== */
+      // 真珠採り＝山札の一番下のカードを上に置くか（任意）。
+      case 'PEARL_DIVER_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'pearl_diver') return state;
+        const pl = state.players[pd.player];
+        state.pending = null;
+        if (action.top && pl.deck.length) { const c = pl.deck.pop(); pl.deck.unshift(c); log(state, `${pl.name} は真珠採りで山札の一番下のカードを上に置いた。`); }
+        return state;
+      }
+      // 航海士＝5枚を全部捨てるか、好きな順で戻す（`order`＝上から順の配列）。
+      case 'NAVIGATOR_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'navigator') return state;
+        const pl = state.players[pd.player];
+        if (action.discard) {
+          state.pending = null;
+          pd.cards.forEach((c) => pl.discard.push(c));
+          log(state, `${pl.name} は航海士で${pd.cards.length}枚をすべて捨て札にした。`);
+          triggerOnDiscard(state, pd.player, pd.cards.slice());
+          return state;
+        }
+        const order = Array.isArray(action.order) ? action.order : pd.cards.slice();
+        const a = pd.cards.slice().sort().join(','), b = order.slice().sort().join(',');
+        if (a !== b) return state; // 同じ多重集合でなければ拒否
+        state.pending = null;
+        for (let k = order.length - 1; k >= 0; k--) pl.deck.unshift(order[k]);
+        log(state, `${pl.name} は航海士で${order.length}枚を好きな順で山札に戻した。`);
+        return state;
+      }
+      // 探検家＝属州を公開するか（任意）。公開→金貨を手札に／しない→銀貨を手札に。
+      case 'EXPLORER_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'explorer') return state;
+        const pl = state.players[pd.player];
+        state.pending = null;
+        if (action.reveal && pl.hand.includes('province')) {
+          reveal(state, pd.player, ['province'], '探検家：属州を公開');
+          if (gain(state, pd.player, 'gold', 'hand')) log(state, `${pl.name} は探検家で金貨1枚を手札に獲得した。`);
+        } else if (gain(state, pd.player, 'silver', 'hand')) log(state, `${pl.name} は探検家で銀貨1枚を手札に獲得した。`);
+        return state;
+      }
+      // 幽霊船＝被害者の反応／手札を1枚ずつ山札の上へ（3枚になるまで）。
+      case 'GHOST_SHIP_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ghost_ship' || pd.stage !== 'react') return state;
+        ghostShipApply(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'GHOST_SHIP_PUT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'ghost_ship' || pd.stage !== 'put') return state;
+        const v = state.players[pd.victim];
+        const card = action.card;
+        if (card == null || v.hand.indexOf(card) < 0) return state;
+        removeOne(v.hand, card); v.deck.unshift(card);
+        log(state, `${v.name} は幽霊船で手札1枚を山札の上に置いた。`);
+        if (v.hand.length > 3) state.pending = { type: 'ghost_ship', stage: 'put', player: pd.victim, source: pd.source, victim: pd.victim, queue: pd.queue };
+        else ghostShipEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+      // 会計所＝捨て札の銅貨を N 枚手札へ（0〜max・任意）。
+      case 'COUNTING_HOUSE_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'counting_house') return state;
+        const pl = state.players[pd.player];
+        const n = Math.max(0, Math.min(action.amount | 0, pl.discard.filter((c) => c === 'copper').length));
+        state.pending = null;
+        let moved = 0;
+        for (let k = 0; k < n; k++) { if (removeOne(pl.discard, 'copper')) { pl.hand.push('copper'); moved++; } }
+        if (moved) { reveal(state, pd.player, new Array(moved).fill('copper'), '会計所：捨て札の銅貨を公開'); log(state, `${pl.name} は会計所で銅貨${moved}枚を手札に加えた。`); }
+        return state;
+      }
+      // 借金＝公開した財宝を捨てるか廃棄するか（強制の二択）。
+      case 'LOAN_RESOLVE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'loan') return state;
+        const pl = state.players[pd.player];
+        state.pending = null;
+        if (action.trash) { trashCard(state, pd.player, pd.card); log(state, `${pl.name} は借金で「${C()[pd.card].name}」を廃棄した。`); }
+        else { pl.discard.push(pd.card); log(state, `${pl.name} は借金で「${C()[pd.card].name}」を捨て札にした。`); triggerOnDiscard(state, pd.player, [pd.card]); }
+        return state;
+      }
+      // 香具師＝被害者の反応／呪いを捨てる or 呪いと銅貨を獲得。
+      case 'MOUNTEBANK_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'mountebank' || pd.stage !== 'react') return state;
+        mountebankApply(state, pd.source, pd.victim, pd.queue);
+        return state;
+      }
+      case 'MOUNTEBANK_CHOOSE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'mountebank' || pd.stage !== 'choose') return state;
+        const v = state.players[pd.victim];
+        if (action.discardCurse && removeOne(v.hand, 'curse')) {
+          v.discard.push('curse'); log(state, `${v.name} は香具師に対して呪いを捨て札にした。`);
+          triggerOnDiscard(state, pd.victim, ['curse'], true);
+        } else mountebankPunish(state, pd.victim);
+        mountebankEnterVictim(state, pd.source, pd.queue);
+        return state;
+      }
+      // 境界地（獲得時）＝手札を好きな枚数捨てて1枚につき +$1（0枚可）。
+      case 'MARCHLAND_DISCARD': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'marchland_discard') return state;
+        const pl = state.players[pd.player];
+        const cards = Array.isArray(action.cards) ? action.cards : [];
+        const copy = pl.hand.slice();
+        for (const c of cards) if (!removeOne(copy, c)) return state;
+        state.pending = null;
+        cards.forEach((c) => { removeOne(pl.hand, c); pl.discard.push(c); });
+        if (cards.length) { addCoins(state, cards.length); log(state, `${pl.name} は境界地で手札${cards.length}枚を捨てて +$${cards.length}。`); triggerOnDiscard(state, pd.player, cards.slice()); }
+        return state;
+      }
       case 'TORTURER_RESOLVE': {
         const pd = state.pending;
         if (!pd || pd.type !== 'torturer') return state;
@@ -23463,12 +23711,13 @@
     /* 略奪：財産目当て（上3枚）／地図作り（上4枚）／**六分儀（上5枚）** も「**見る**」＝私的看破。
        ⚠ 六分儀は P1b、財産目当て/地図作りは P6 の実装で、このリストを更新したのが P6 のときだけだったため
           六分儀が漏れていた（§0-21 偵察隊／§0-28 夜警／§0-29 A4 粉屋・歩哨 と**4回目の同一クラス**）。 */
-    if (s.pending && (s.pending.type === 'sentry' || s.pending.type === 'lookout' || s.pending.type === 'catacombs' || s.pending.type === 'survivors' || s.pending.type === 'scouting_party' || s.pending.type === 'look_arrange' || s.pending.type === 'miller_pick' || s.pending.type === 'sentinel' || s.pending.type === 'fortune_hunter' || s.pending.type === 'mapmaker' || s.pending.type === 'sextant') && Array.isArray(s.pending.cards) && seat !== s.pending.player && seat !== secretSeer) {
+    if (s.pending && (s.pending.type === 'sentry' || s.pending.type === 'lookout' || s.pending.type === 'catacombs' || s.pending.type === 'survivors' || s.pending.type === 'scouting_party' || s.pending.type === 'look_arrange' || s.pending.type === 'miller_pick' || s.pending.type === 'sentinel' || s.pending.type === 'fortune_hunter' || s.pending.type === 'mapmaker' || s.pending.type === 'sextant' || s.pending.type === 'navigator') && Array.isArray(s.pending.cards) && seat !== s.pending.player && seat !== secretSeer) {
       // 暗黒時代：地下墓所/生存者の「山札の上N枚を見る」は私的（公開ではない）＝本人と支配者以外には伏せる。
       s.pending = Object.assign({}, s.pending, { cards: new Array(s.pending.cards.length).fill('back') });
     }
     // 夜想曲：ゾンビの密偵の「山札の一番上を見る」も私的情報（水晶玉と同型）。
-    if (s.pending && (s.pending.type === 'crystal_ball' || s.pending.type === 'zombie_spy') && s.pending.card != null && seat !== s.pending.player && seat !== secretSeer) {
+    // 段階2 第1バッチ：真珠採り＝山札の一番下（私的）＝本人と支配者だけに見せる（水晶玉/ゾンビの密偵と同型）。
+    if (s.pending && (s.pending.type === 'crystal_ball' || s.pending.type === 'zombie_spy' || s.pending.type === 'pearl_diver') && s.pending.card != null && seat !== s.pending.player && seat !== secretSeer) {
       s.pending = Object.assign({}, s.pending, { card: 'back' });
     }
     // ギルド：医者の過払いで「見た」山札の上1枚は私的（本人と支配者のみ）。他席には伏せる。
@@ -23495,6 +23744,9 @@
   const PLAYER_ACTIONS = new Set([
     'PLAY_ACTION', 'PLAY_TREASURE', 'PLAY_ALL_TREASURES', 'BUY', 'END_ACTION_PHASE', 'END_TURN',
     'PLAY_NIGHT', // 夜想曲：夜フェイズに夜行カードを使う（アクション権も購入権も消費しない）
+    // 段階2 第1バッチ（海辺1版／繁栄1版／プロモ）
+    'PEARL_DIVER_RESOLVE', 'NAVIGATOR_RESOLVE', 'EXPLORER_RESOLVE', 'GHOST_SHIP_REACT', 'GHOST_SHIP_PUT',
+    'COUNTING_HOUSE_RESOLVE', 'LOAN_RESOLVE', 'MOUNTEBANK_REACT', 'MOUNTEBANK_CHOOSE', 'MARCHLAND_DISCARD',
     'CELLAR_RESOLVE', 'MILITIA_RESOLVE', 'MOAT_REVEAL',
     // 略奪（Plunder）：戦利品(Loot)
     'SHIELD_REVEAL', 'PRIZE_GOAT_TRASH', 'HAMMER_GAIN', 'SEXTANT_RESOLVE', 'PUZZLE_BOX_SET', 'STAFF_PLAY',
