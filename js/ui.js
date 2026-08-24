@@ -4337,9 +4337,18 @@
 
     /* ===== 暗黒時代（Dark Ages）===== */
     // --- 単純系（既存24枚のUIもここで実装）---
-    if (pd.type === 'survivors') return modalOptions('生存者 — 山札の上' + pd.cards.length + '枚', '「' + pd.cards.map((c) => DOM.CARDS[c].name).join('・') + '」をどうしますか？', [
-      { label: '両方 山札の上に戻す', cls: 'btn-primary', on: () => dispatch({ type: 'SURVIVORS_RESOLVE', choice: 'topdeck', order: pd.cards.slice() }) },
-      { label: '両方 捨てる', on: () => dispatch({ type: 'SURVIVORS_RESOLVE', choice: 'discard' }) }]);
+    /* 生存者＝公式は `Discard them or put them back in **any order**.`＝戻す順を選べる。
+       engine は任意の順列を受理しているのに、UI が公開順で固定送信していた（2026-08-25 修正）。 */
+    if (pd.type === 'survivors') {
+      const names = pd.cards.map((c) => DOM.CARDS[c].name);
+      const rev = pd.cards.slice().reverse();
+      const opts = [
+        { label: 'この順で山札の上に戻す（' + names.join('→') + '）', cls: 'btn-primary', on: () => dispatch({ type: 'SURVIVORS_RESOLVE', choice: 'topdeck', order: pd.cards.slice() }) },
+      ];
+      if (pd.cards.length > 1) opts.push({ label: '入れ替えて戻す（' + rev.map((c) => DOM.CARDS[c].name).join('→') + '）', on: () => dispatch({ type: 'SURVIVORS_RESOLVE', choice: 'topdeck', order: rev }) });
+      opts.push({ label: '両方 捨てる', on: () => dispatch({ type: 'SURVIVORS_RESOLVE', choice: 'discard' }) });
+      return modalOptions('生存者 — 山札の上' + pd.cards.length + '枚', '「' + names.join('・') + '」をどうしますか？（先頭が一番上）', opts);
+    }
     if (pd.type === 'rats_trash') return modalSingleHand(p, 'ネズミ — 廃棄', 'ネズミ以外の手札を1枚廃棄します。', (id) => id !== 'rats', (card) => dispatch({ type: 'RATS_TRASH', card }));
     if (pd.type === 'armory') return modalGainSupply(state, '武器庫 — 獲得', 'コスト4以下のカードを1枚、山札の上に獲得します。', (id) => canUpTo(state, id, 4), (id) => dispatch({ type: 'ARMORY_GAIN', card: id }), () => dispatch({ type: 'ARMORY_GAIN', card: null }));
     if (pd.type === 'forager') return modalSingleHand(p, '採集者 — 廃棄', '手札1枚を廃棄します（廃棄置き場の異なる財宝の種類ぶん +$1）。', () => true, (card) => dispatch({ type: 'FORAGER_TRASH', card }));

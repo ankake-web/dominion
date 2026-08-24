@@ -427,14 +427,21 @@ console.log('\n=== M2: がらくた／狩猟小屋／ヤギ飼い／炉 ===');
   ok(me(s3).hand.length === 5, '手札を全部捨てて +5カード');
 }
 {
-  // ヤギ飼い＝右隣が直前のターンに廃棄した枚数だけ引く
+  /* ヤギ飼い＝公式の解決順は **①手札1枚を廃棄してもよい → ②右隣が直前の手番に廃棄した枚数ぶん引く**。
+     2026-08-25 まで先に引いていたので、**引いたばかりのカードを廃棄できてしまう**状態だった。 */
   const s = act();
   foe(s).trashedLastTurn = 2;
   me(s).deck = ['copper', 'copper', 'copper'];
   me(s).hand = ['estate'];
-  const s2 = playFrom(s, 'goatherd');
-  ok(me(s2).hand.filter((c) => c === 'copper').length === 2, 'ヤギ飼い＝右隣が直前の手番に廃棄した枚数ぶん引く');
-  ok(s2.pending && s2.pending.type === 'goatherd_trash', 'ヤギ飼い＝手札を1枚廃棄してもよい');
+  const s1 = playFrom(s, 'goatherd');
+  ok(s1.pending && s1.pending.type === 'goatherd_trash', 'ヤギ飼い：**引く前に**廃棄の窓が開く');
+  ok(me(s1).hand.filter((c) => c === 'copper').length === 0, 'まだ引いていない（引いたカードは廃棄候補にならない）');
+  ok(JSON.stringify(me(s1).hand) === JSON.stringify(['estate']), '廃棄候補は引く前の手札だけ');
+  const s2 = reduce(s1, { type: 'GOATHERD_TRASH', card: null });   // 廃棄しない
+  ok(me(s2).hand.filter((c) => c === 'copper').length === 2, 'ヤギ飼い＝廃棄の解決後に、右隣が直前の手番に廃棄した枚数ぶん引く');
+  const s3 = reduce(s1, { type: 'GOATHERD_TRASH', card: 'estate' }); // 廃棄する
+  ok(s3.trash.includes('estate') && me(s3).hand.filter((c) => c === 'copper').length === 2, '廃棄しても同じ枚数を引く');
+  ok(!s2.pending, 'ヤギ飼い＝廃棄を辞退したら窓が閉じる（引いた後に窓は再度開かない）');
 }
 {
   // 炉＝次に使うカードの解決前にコピーを獲得

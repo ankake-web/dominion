@@ -123,7 +123,7 @@
     great_hall:    { id: 'great_hall',    name: '大広間',     cost: 3, types: ['action', 'victory'], vp: 1,
                      text: '+1 カード\n+1 アクション\n（勝利点 1）' },
     coppersmith:   { id: 'coppersmith',   name: '銅細工師',   cost: 4, types: ['action'],
-                     text: 'このターン中、銅貨の価値は +1 コイン。\n（銅貨が $1 → $2 になる）' },
+                     text: 'このターン中、銅貨の価値は +1 コイン。' },
     trading_post:  { id: 'trading_post',  name: '交易場',     cost: 5, types: ['action'],
                      text: '手札を2枚廃棄し、銀貨1枚を手札に獲得する。' },
     upgrade:       { id: 'upgrade',       name: '改良',       cost: 5, types: ['action'],
@@ -226,7 +226,7 @@
     salvager:     { id: 'salvager',     name: '引揚水夫',   cost: 4, types: ['action'],
                     text: '+1 購入\n手札1枚を廃棄\n+（廃棄したカードのコスト）コイン' },
     cutpurse:     { id: 'cutpurse',     name: '巾着切り',   cost: 4, types: ['action', 'attack'],
-                    text: '+2 コイン\n他は銅貨1枚を捨てる' },
+                    text: '+2 コイン\n他のプレイヤーは各自、銅貨1枚を捨てる（銅貨が無ければ手札を公開する）。' },
     caravan:      { id: 'caravan',      name: '隊商',       cost: 4, types: ['action', 'duration'],
                     text: '+1 カード\n+1 アクション\n次のターン +1 カード' },
     island:       { id: 'island',       name: '島',         cost: 4, types: ['action', 'victory'], vp: 2,
@@ -296,7 +296,7 @@
     bishop:       { id: 'bishop',       name: '司教',         cost: 4, types: ['action'],
                     text: '+1 コイン、+1 勝利点\n手札1枚を廃棄する。そのコスト$2につき +1 勝利点（端数切捨て）。\n他のプレイヤーは各自、手札1枚を廃棄してよい。' },
     clerk:        { id: 'clerk',        name: '書記',       cost: 4, types: ['action', 'attack', 'reaction'],
-                    text: '+2 コイン\n手札が5枚以上の他のプレイヤーは各自、手札1枚を山札の上に置く。\n自分の手番開始時、これを手札から使ってよい。' },
+                    text: '+2 コイン\n手札が5枚以上の他のプレイヤーは各自、手札1枚を山札の上に置く。\n————\n自分の手番開始時、これを手札から使ってよい。' },
     investment:   { id: 'investment',   name: '出資',         cost: 4, types: ['treasure'],
                     text: '手札からカード1枚を廃棄する。次のうち1つを選ぶ：\n・+1 コイン\n・これを廃棄し、手札を公開する。その中の異なる名前の財宝1種類につき +1 勝利点' },
     monument:     { id: 'monument',     name: '記念碑',       cost: 4, types: ['action'],
@@ -326,7 +326,7 @@
     war_chest:    { id: 'war_chest',    name: '軍用金',       cost: 5, types: ['treasure'],   // 公式は**財宝**（アクション権を使わず購入フェイズに出す）
                     text: '左隣がカード名を1つ指定する。\nコスト$5以下で、このターンに軍用金で指定されていないカード1枚を獲得する。' },
     grand_market: { id: 'grand_market', name: '大市場',     cost: 6, types: ['action'],
-                    text: '+1 カード、+1 アクション、+1 購入、+2 コイン\n場に銅貨があるとき、これは購入できない。' },
+                    text: '+1 カード、+1 アクション、+1 購入、+2 コイン\n————\n場に銅貨があるとき、これは購入できない。' },
     bank:         { id: 'bank',         name: '銀行',         cost: 7, types: ['treasure'],
                     text: 'これを使うとき、場の財宝1枚につき +1 コイン（これ自身も数える）。' },
     expand:       { id: 'expand',       name: '拡張',         cost: 7, types: ['action'],
@@ -336,7 +336,7 @@
     kings_court:  { id: 'kings_court',  name: '宮廷',     cost: 7, types: ['action'],
                     text: '手札のアクションカード1枚を3回使ってよい。' },
     peddler:      { id: 'peddler',      name: '行商人',       cost: 8, types: ['action'],
-                    text: '+1 カード、+1 アクション、+1 コイン\n（購入フェイズ中）場のアクションカード1枚につき、これのコストは $2 少なくなる（$0未満にはならない）。' },
+                    text: '+1 カード、+1 アクション、+1 コイン\n————\n購入フェイズ中、場のアクションカード1枚につき、これのコストは $2 少なくなる。' },
     /* ===== 追加拡張カタログ（収穫祭/異郷/暗黒時代/新プロモ）＝段階1: 画像は出るがゲーム未参加 ===== */
     stash: { id: 'stash', name: 'へそくり', cost: 5, types: ['treasure'], coin: 2,
                  text: 'コイン +2\nこれを含めてシャッフルするとき、シャッフル後の山札の好きな位置にこれを置いてよい' },
@@ -355,7 +355,7 @@
     hamlet: { id: 'hamlet', name: '村落', cost: 2, types: ['action'],
                  text: '+1 カード\n+1 アクション\nカード1枚を捨て札にしてよい。そうしたら +1 アクション。\nカード1枚を捨て札にしてよい。そうしたら +1 購入。' },
     fortune_teller: { id: 'fortune_teller', name: '占い師', cost: 3, types: ['action', 'attack'],
-                 text: '+2 コイン\n他のプレイヤーは全員、勝利点カードかのろいカードが出るまで自分の山札の上のカードを公開する。それを山札の上に戻し、残りを捨て札にする。' },
+                 text: '+2 コイン\n他のプレイヤーは全員、勝利点カードか呪いカードが出るまで自分の山札の上のカードを公開する。それを山札の上に戻し、残りを捨て札にする。' },
     menagerie: { id: 'menagerie', name: '移動動物園', cost: 3, types: ['action'],
                  text: '+1 アクション\n手札を公開する。その中に同じ名前のカードが無ければ +3 カード。あれば +1 カード。' },
     farming_village: { id: 'farming_village', name: '農村', cost: 4, types: ['action'],
@@ -367,7 +367,7 @@
     tournament: { id: 'tournament', name: '馬上槍試合', cost: 4, types: ['action'],
                  text: '+1 アクション\n各プレイヤーは手札から属州を公開してよい。あなたが公開したら、それを捨て札にして賞品1枚（賞品の山から）または公領1枚を山札の上に獲得する。あなた以外の誰も公開しなければ、+1 カード、+1 コイン。' },
     young_witch: { id: 'young_witch', name: '魔女娘', cost: 4, types: ['action', 'attack'],
-                 text: '+2 カード\nカード2枚を捨て札にする。他のプレイヤーは全員、手札から災いカードを公開して影響を受けないようにしてよい。公開しなければ、のろい1枚を獲得する。' },
+                 text: '+2 カード\nカード2枚を捨て札にする。他のプレイヤーは全員、手札から災いカードを公開して影響を受けないようにしてよい。公開しなければ、呪い1枚を獲得する。\n————\n準備：コスト2コインか3コインの王国カードの山1つを追加でサプライに加える。その山のカードは災いカードである。' },
     harvest: { id: 'harvest', name: '収穫', cost: 5, types: ['action'],
                  text: '山札の上から4枚を公開し、それらを捨て札にする。公開されたカードの異なる名前1種類につき +1 コイン。' },
     horn_of_plenty: { id: 'horn_of_plenty', name: '豊穣の角笛', cost: 5, types: ['treasure'], coin: 0,
@@ -375,7 +375,7 @@
     hunting_party: { id: 'hunting_party', name: '狩猟団', cost: 5, types: ['action'],
                  text: '+1 カード\n+1 アクション\n手札を公開する。手札にあるカードと同じ名前でないカードが出るまで、山札の上のカードを公開する。そのカードを手札に加え、残りを捨て札にする。' },
     jester: { id: 'jester', name: '道化師', cost: 5, types: ['action', 'attack'],
-                 text: '+2 コイン\n他のプレイヤーは全員、自分の山札の上のカードを捨て札にする。それが勝利点カードなら、そのプレイヤーはのろい1枚を獲得する。そうでなければ、あなたが選んで、そのプレイヤーかあなたのどちらかがそのカードのコピー1枚を獲得する。' },
+                 text: '+2 コイン\n他のプレイヤーは全員、自分の山札の上のカードを捨て札にする。それが勝利点カードなら、そのプレイヤーは呪い1枚を獲得する。そうでなければ、あなたが選んで、そのプレイヤーかあなたのどちらかがそのカードのコピー1枚を獲得する。' },
     fairgrounds: { id: 'fairgrounds', name: '品評会', cost: 6, types: ['victory'],
                  text: 'あなたの持つカードの異なる名前5種類につき、2勝利点（端数切り捨て）。' },
     bag_of_gold: { id: 'bag_of_gold', name: '金貨袋', cost: 0, types: ['action'],
@@ -431,7 +431,7 @@
     inn: { id: 'inn', name: '宿屋', cost: 5, types: ['action'],
                  text: '+2 カード\n+2 アクション\n手札を2枚捨てる。\nこのカードを獲得したとき、自分の捨て札（このカードを含む）を見て、その中のアクションカードを好きな枚数公開し、山札に混ぜてシャッフルする。' },
     mandarin: { id: 'mandarin', name: '官吏', cost: 5, types: ['action'],
-                 text: '+3 コイン\n手札のカード1枚を山札の一番上に置く。\nこのカードを獲得したとき、場に出ているすべての財宝を好きな順で山札の一番上に置く。' },
+                 text: '+3 コイン\n手札のカード1枚を山札の一番上に置く。\n————\nこれを獲得したとき、場に出ているすべての財宝を山札の一番上に置く。' },
     margrave: { id: 'margrave', name: '辺境伯', cost: 5, types: ['action', 'attack'],
                  text: '+3 カード\n+1 購入\n他のプレイヤーは各自カードを1枚引き、その後手札が3枚になるまで捨てる。' },
     stables: { id: 'stables', name: '厩舎', cost: 5, types: ['action'],
@@ -461,7 +461,7 @@
     poor_house: { id: 'poor_house', name: '救貧院', cost: 1, types: ['action'],
                  text: '+4 コイン\n手札を公開する。\n手札の財宝1枚につき −1 コイン（コインは0未満にはならない）。' },
     squire: { id: 'squire', name: '従者', cost: 2, types: ['action'],
-                 text: '+1 コイン\n以下から1つ選ぶ：+2 アクション／+2 購入／銀貨1枚を獲得。\nこれを廃棄したとき、アタックカード1枚を獲得する。' },
+                 text: '+1 コイン\n以下から1つ選ぶ：+2 アクション／+2 購入／銀貨1枚を獲得。\n————\nこれを廃棄したとき、アタックカード1枚を獲得する。' },
     vagrant: { id: 'vagrant', name: '浮浪者', cost: 2, types: ['action'],
                  text: '+1 カード\n+1 アクション\n山札の一番上を公開する。それが呪い・廃墟・避難所・勝利点カードなら手札に加える。' },
     beggar: { id: 'beggar', name: '物乞い', cost: 2, types: ['action', 'reaction'],
@@ -475,7 +475,7 @@
     storeroom: { id: 'storeroom', name: '物置', cost: 3, types: ['action'],
                  text: '+1 購入\n手札を好きな枚数捨て、同じ枚数引く。\nその後、手札を好きな枚数捨て、1枚につき +1 コイン。' },
     urchin: { id: 'urchin', name: '浮浪児', cost: 3, types: ['action', 'attack'],
-                 text: '+1 カード\n+1 アクション\n他のプレイヤーは各自、手札が4枚になるまで捨てる。\nこれが場にあるとき別のアタックカードをプレイしたら、先にこれを廃棄して傭兵1枚を獲得してよい。' },
+                 text: '+1 カード\n+1 アクション\n他のプレイヤーは各自、手札が4枚になるまで捨てる。\n————\nこれが場にあるとき別のアタックカードをプレイしたら、先にこれを廃棄して傭兵1枚を獲得してよい。' },
     market_square: { id: 'market_square', name: '青空市場', cost: 3, types: ['action', 'reaction'],
                  text: '+1 カード\n+1 アクション\n+1 購入\n（リアクション）自分のカードが廃棄されたとき、これを手札から捨て札にして金貨1枚を獲得できる。' },
     ironmonger: { id: 'ironmonger', name: '金物商', cost: 4, types: ['action'],
@@ -487,7 +487,7 @@
     scavenger: { id: 'scavenger', name: 'ゴミあさり', cost: 4, types: ['action'],
                  text: '+2 コイン\n自分の山札を捨て札にしてもよい。\n捨て札置き場を見て、その中の1枚を山札の上に置く。' },
     fortress: { id: 'fortress', name: '城塞', cost: 4, types: ['action'],
-                 text: '+1 カード\n+2 アクション\nこれを廃棄したとき、これを手札に加える。' },
+                 text: '+1 カード\n+2 アクション\n————\nこれを廃棄したとき、これを手札に加える。' },
     rats: { id: 'rats', name: 'ネズミ', cost: 4, types: ['action'],
                  text: '+1 カード\n+1 アクション\nネズミ1枚を獲得する。\n手札のネズミ以外のカード1枚を廃棄する（手札がすべてネズミなら手札を公開する）。\n————\nこれを廃棄したとき、+1 カード。' },
     armory: { id: 'armory', name: '武器庫', cost: 4, types: ['action'],
@@ -497,7 +497,7 @@
     marauder: { id: 'marauder', name: '襲撃者', cost: 4, types: ['action', 'attack', 'looter'],
                  text: '略奪品置き場から略奪品1枚を獲得する。\n他のプレイヤーは各自、廃墟1枚を獲得する。' },
     feodum: { id: 'feodum', name: '封土', cost: 4, types: ['victory'],
-                 text: '（勝利点）\n所持している銀貨3枚につき 1 勝利点（端数切り捨て）。\nこれを廃棄したとき、銀貨3枚を獲得する。' },
+                 text: '（勝利点）\n所持している銀貨3枚につき 1 勝利点（端数切り捨て）。\n————\nこれを廃棄したとき、銀貨3枚を獲得する。' },
 
     // ===== ギルド（Guilds・段階1: 画像/カタログのみ）=====
     candlestick_maker: { id: 'candlestick_maker', name: '蝋燭職人', cost: 2, types: ['action'],
@@ -535,7 +535,7 @@
     rebuild: { id: 'rebuild', name: '建て直し', cost: 5, types: ['action'],
                  text: '+1 アクション\nカード名を1つ指定する。指定したカード以外の勝利点カードが出るまで、自分の山札の上からカードを公開する。\n公開した他のカードを捨て札にし、その勝利点カードを廃棄する。\nそのコストより $3 多いコストまでの勝利点カード1枚を獲得する。' },
     catacombs: { id: 'catacombs', name: '地下墓所', cost: 5, types: ['action'],
-                 text: '自分の山札の上から3枚を見る。次から1つを選ぶ：\nそれらを手札に加える／それらを捨て札にし +3 カード。\nこれを廃棄したとき、これよりコストの低いカード1枚を獲得する。' },
+                 text: '自分の山札の上から3枚を見る。次から1つを選ぶ：\nそれらを手札に加える／それらを捨て札にし +3 カード。\n————\nこれを廃棄したとき、これよりコストの低いカード1枚を獲得する。' },
     graverobber: { id: 'graverobber', name: '墓暴き', cost: 5, types: ['action'],
                  text: '次から1つを選ぶ：\n廃棄置き場からコスト3～6のカード1枚を獲得し、山札の一番上に置く／手札のアクションカード1枚を廃棄し、そのコストより $3 多いコストまでのカード1枚を獲得する。' },
     count: { id: 'count', name: '伯爵', cost: 5, types: ['action'],
@@ -549,11 +549,11 @@
     pillage: { id: 'pillage', name: '略奪', cost: 5, types: ['action', 'attack'],
                  text: 'これを廃棄する。そうしたら、略奪品置き場から略奪品2枚を獲得し、手札が5枚以上の他のプレイヤーは各自、手札を公開し、あなたが選んだカード1枚を捨て札にする。' },
     cultist: { id: 'cultist', name: '狂信者', cost: 5, types: ['action', 'attack', 'looter'],
-                 text: '+2 カード\n他のプレイヤーは各自、廃墟1枚を獲得する。\n手札の狂信者1枚を使用してよい。\nこれを廃棄したとき、+3 カード。' },
+                 text: '+2 カード\n他のプレイヤーは各自、廃墟1枚を獲得する。\n手札の狂信者1枚を使用してよい。\n————\nこれを廃棄したとき、+3 カード。' },
     counterfeit: { id: 'counterfeit', name: '偽造通貨', cost: 5, types: ['treasure'], coin: 1,
                  text: '1 コイン\n+1 購入\nこれを使用したとき、手札の持続でない財宝カード1枚を2回使用してよい。そうしたら、その財宝を廃棄する。' },
     hunting_grounds: { id: 'hunting_grounds', name: '狩場', cost: 6, types: ['action'],
-                 text: '+4 カード\nこれを廃棄したとき、公領1枚または屋敷3枚を獲得する。' },
+                 text: '+4 カード\n————\nこれを廃棄したとき、公領1枚または屋敷3枚を獲得する。' },
     altar: { id: 'altar', name: '祭壇', cost: 6, types: ['action'],
                  text: '手札のカード1枚を廃棄する。\nコスト5以下のカード1枚を獲得する。' },
     knights: { id: 'knights', name: '騎士', cost: 5, types: ['action', 'attack', 'knight'],
@@ -610,7 +610,7 @@
                  text: '手札からカード2枚を廃棄してよい。そうしたら、+2 カード、+2 コイン、他のプレイヤーは各自、手札が3枚になるように捨て札にする。' },
     /* ===== 冒険（Adventures）＝段階1（画像・カタログのみ。CARD_SETS 未参照＝実サプライに出ない）===== */
     coin_of_the_realm: { id: 'coin_of_the_realm', name: '法貨', cost: 2, types: ['treasure', 'reserve'], coin: 1,
-                 text: '+$1\nこれをプレイしたら酒場マットに置く。\nアクションを解決した直後、これを呼び出して +2 アクションできる。' },
+                 text: '+$1\nこれを酒場マットに置く。\n————\nアクションを解決した直後、これを呼び出して +2 アクションできる。' },
     page: { id: 'page', name: '騎士見習い', cost: 2, types: ['action', 'traveller'],
                  text: '+1 カード\n+1 アクション\nこれを場から捨てる時、トレジャーハンターと交換してよい。' },
     peasant: { id: 'peasant', name: '農民', cost: 2, types: ['action', 'traveller'],
@@ -652,7 +652,7 @@
     giant: { id: 'giant', name: '巨人', cost: 5, types: ['action', 'attack'],
                  text: '旅トークンを裏返す（表向きから始まる）。\n裏向きになったら +$1。\n表向きなら +$5、他の各プレイヤーは山札の一番上を公開し、コスト$3〜$6ならそれを廃棄、そうでなければ捨てて呪い1枚を獲得する。' },
     haunted_woods: { id: 'haunted_woods', name: '呪いの森', cost: 5, types: ['action', 'attack', 'duration'],
-                 text: '次の自分のターンまで、他のプレイヤーがカードを購入した時、その手札を全て山札の上に置く。\n次のターン開始時：+3 カード。' },
+                 text: '次の自分のターンまで、他のプレイヤーが購入したカードを獲得した時、その手札を全て好きな順で山札の上に置く。\n次のターン開始時：+3 カード。' },
     lost_city: { id: 'lost_city', name: '失われし都市', cost: 5, types: ['action'],
                  text: '+2 カード\n+2 アクション\nこれを獲得した時、他の各プレイヤーはカードを1枚引く。' },
     relic: { id: 'relic', name: '遺物', cost: 5, types: ['treasure', 'attack'], coin: 2,
@@ -664,7 +664,7 @@
     swamp_hag: { id: 'swamp_hag', name: '沼の妖婆', cost: 5, types: ['action', 'attack', 'duration'],
                  text: '次の自分のターンまで、他のプレイヤーがカードを購入した時、呪い1枚を獲得する。\n次のターン開始時：+$3。' },
     treasure_trove: { id: 'treasure_trove', name: '掘出物', cost: 5, types: ['treasure'], coin: 2,
-                 text: '+$2\nこれをプレイした時、金貨1枚と銅貨1枚を獲得する。' },
+                 text: '+$2\n金貨1枚と銅貨1枚を獲得する。' },
     wine_merchant: { id: 'wine_merchant', name: 'ワイン商', cost: 5, types: ['action', 'reserve'],
                  text: '+1 購入\n+$4\nこれを酒場マットに置く。\n購入フェイズ終了時、未使用の$2以上が残っていれば、これを酒場マットから捨ててよい。' },
     hireling: { id: 'hireling', name: '雇人', cost: 6, types: ['action', 'duration'],
@@ -1358,15 +1358,15 @@
 
     // $3 / ――― / At the start of your next turn, +2 Cards.
     figurehead: { id: 'figurehead', name: '船首像', cost: 7, types: ['treasure', 'duration', 'loot'], coin: 3,
-                 text: '3 コイン\n————\nあなたの次のターンの開始時、+2 カードを引く。' },
+                 text: '3 コイン\nあなたの次のターンの開始時、+2 カードを引く。' },
 
     // $3 / ――― / Gain a card costing up to $4.
     hammer: { id: 'hammer', name: 'ハンマー', cost: 7, types: ['treasure', 'loot'], coin: 3,
-                 text: '3 コイン\n————\nコスト4以下のカード1枚を獲得する。' },
+                 text: '3 コイン\nコスト4以下のカード1枚を獲得する。' },
 
     // $3 / ――― / This turn, when you gain a card, you may put it onto your deck.
     insignia: { id: 'insignia', name: '勲章', cost: 7, types: ['treasure', 'loot'], coin: 3,
-                 text: '3 コイン\n————\nこのターン、カード1枚を獲得したとき、それを山札の上に置いてもよい。' },
+                 text: '3 コイン\nこのターン、カード1枚を獲得したとき、それを山札の上に置いてもよい。' },
 
     // $3 / +1 Buy / ――― / At the start of your next turn, put this on the bottom of your deck.
     jewels: { id: 'jewels', name: '宝石', cost: 7, types: ['treasure', 'duration', 'loot'], coin: 3,
@@ -1384,7 +1384,7 @@
 
     // $3 / +1 Buy / ――― / You may trash a card from your hand.
     prize_goat: { id: 'prize_goat', name: '賞品のヤギ', cost: 7, types: ['treasure', 'loot'], coin: 3,
-                 text: '3 コイン\n+1 購入\n————\n手札1枚を廃棄してもよい。' },
+                 text: '3 コイン\n+1 購入\n手札1枚を廃棄してもよい。' },
 
     // $3 / +1 Buy / ――― / You may set aside a card from your hand face down. Put it into your hand at end of turn.
     puzzle_box: { id: 'puzzle_box', name: 'パズルボックス', cost: 7, types: ['treasure', 'loot'], coin: 3,
@@ -1392,7 +1392,7 @@
 
     // $3 / +1 Buy / ――― / Look at the top 5 cards of your deck. Discard any number. Put the rest back in any order.
     sextant: { id: 'sextant', name: '六分儀', cost: 7, types: ['treasure', 'loot'], coin: 3,
-                 text: '3 コイン\n+1 購入\n————\n山札の上から5枚を見る。その中の好きな枚数を捨て札にする。残りを好きな順番で山札の上に戻す。' },
+                 text: '3 コイン\n+1 購入\n山札の上から5枚を見る。その中の好きな枚数を捨て札にする。残りを好きな順番で山札の上に戻す。' },
 
     // $3 / +1 Buy / ――― / When another player plays an Attack, you may first reveal this from your hand to be unaffected.
     shield: { id: 'shield', name: '盾', cost: 7, types: ['treasure', 'reaction', 'loot'], coin: 3,
@@ -1407,11 +1407,11 @@
 
     // $3 / +1 Buy / ――― / You may play an Action from your hand.
     staff: { id: 'staff', name: '杖', cost: 7, types: ['treasure', 'loot'], coin: 3,
-                 text: '3 コイン\n+1 購入\n————\n手札からアクションカード1枚を使用してもよい。' },
+                 text: '3 コイン\n+1 購入\n手札からアクションカード1枚を使用してもよい。' },
 
     // $3 / +1 Buy / ――― / Each other player discards down to 4 cards in hand.
     sword: { id: 'sword', name: '剣', cost: 7, types: ['treasure', 'attack', 'loot'], coin: 3,
-                 text: '3 コイン\n+1 購入\n————\n他のプレイヤーは全員、手札が4枚になるように捨て札にする。' },
+                 text: '3 コイン\n+1 購入\n他のプレイヤーは全員、手札が4枚になるように捨て札にする。' },
 
     /* ========== 旭日（Rising Sun）王国カード 1/? ＝ $2〜$3 の6枚 ==========
        正本＝docs/research/risingsun_rules.md 第2章（1756行〜。多エージェント研究＋敵対検証＋完全性の批評を反映した第2稿）。
@@ -1693,7 +1693,7 @@
     trade_route: { id: 'trade_route', name: '交易路', cost: 3, types: ['action'],
                  text: '+1 購入\n手札からカード1枚を廃棄する。交易路マットのコイントークン1個につき +1 コイン。\n————\n準備：勝利点カードのサプライの山それぞれにコイントークンを1個置く。その山からカードが獲得されたとき、そのトークンを交易路マットに移す。' },
     talisman: { id: 'talisman', name: '護符', cost: 4, types: ['treasure'], coin: 1,
-                 text: '1 コイン\nこれが場に出ている間、コスト4以下の勝利点でないカードを購入したとき、同じカード1枚を獲得する。' },
+                 text: '1 コイン\n————\nこれが場に出ている間、コスト4以下の勝利点でないカードを購入したとき、同じカード1枚を獲得する。' },
     contraband: { id: 'contraband', name: '禁制品', cost: 5, types: ['treasure'], coin: 3,
                  text: '3 コイン\n+1 購入\n左隣のプレイヤーがカード1種を指定する。このターン、あなたはそのカードを購入できない。' },
     counting_house: { id: 'counting_house', name: '会計所', cost: 5, types: ['action'],
@@ -1701,7 +1701,7 @@
     mountebank: { id: 'mountebank', name: '香具師', cost: 5, types: ['action', 'attack'],
                  text: '+2 コイン\n他のプレイヤーは全員、呪い1枚を捨て札にしてもよい。そうしなかった場合、呪い1枚と銅貨1枚を獲得する。' },
     royal_seal: { id: 'royal_seal', name: '玉璽', cost: 5, types: ['treasure'], coin: 2,
-                 text: '2 コイン\nこれが場に出ている間、カードを獲得したとき、そのカードを山札の上に置いてもよい。' },
+                 text: '2 コイン\n————\nこれが場に出ている間、カードを獲得したとき、そのカードを山札の上に置いてもよい。' },
     venture: { id: 'venture', name: '投機', cost: 5, types: ['treasure'], coin: 1,
                  text: '1 コイン\n財宝カードが公開されるまで山札のカードを公開する。残りのカードを捨て札にする。その財宝カードを使用する。' },
     goons: { id: 'goons', name: 'ならず者', cost: 6, types: ['action', 'attack'],
@@ -2409,7 +2409,7 @@
     alms: { name: '施し', nameEn: 'Alms', kind: 'event', expansion: 'adventures', cost: 0, debt: 0,
       text: '1ターンに1回：場に財宝がない場合、コスト$4以下のカード1枚を獲得する。' },
     borrow: { name: '借入', nameEn: 'Borrow', kind: 'event', expansion: 'adventures', cost: 0, debt: 0,
-      text: '＋購入1。\n1ターンに1回：あなたの-1カードトークンが山札の上になければ、それを山札の上に置き、+$1。' },
+      text: '1ターンに1回：＋購入1。\nあなたの-1カードトークンが山札の上になければ、それを山札の上に置き、+$1。' },
     quest: { name: '探索', nameEn: 'Quest', kind: 'event', expansion: 'adventures', cost: 0, debt: 0,
       text: 'アタックカード1枚、呪い2枚、または任意のカード6枚を捨て札にしてもよい。\nそうしたなら、金貨1枚を獲得する。' },
     save: { name: '保存', nameEn: 'Save', kind: 'event', expansion: 'adventures', cost: 1, debt: 0,
@@ -2427,7 +2427,7 @@
     plan: { name: '立案', nameEn: 'Plan', kind: 'event', expansion: 'adventures', cost: 3, debt: 0,
       text: 'あなたの廃棄トークンを、アクションのサプライ山1つに移す。\n（その山からカードを獲得したとき、手札1枚を廃棄してもよい。）' },
     mission: { name: '使節団', nameEn: 'Mission', kind: 'event', expansion: 'adventures', cost: 4, debt: 0,
-      text: 'このターンの後に追加のターンを1回行う（3ターン連続にはできない）。\nその追加ターン中はカードを購入できない。' },
+      text: 'このターンの後に追加のターンを1回行う（3ターン連続にはできない）。\nその追加ターン中はカードを購入できない。\n（イベントは購入できる。）' },
     pilgrimage: { name: '巡礼', nameEn: 'Pilgrimage', kind: 'event', expansion: 'adventures', cost: 4, debt: 0,
       text: '1ターンに1回：あなたの旅トークンを裏返す（開始時は表向き）。\nそれが表向きになったなら、場にある名前の異なるカードを3枚まで選び、\nそれぞれのコピーを1枚ずつ獲得する。' },
     ball: { name: '舞踏会', nameEn: 'Ball', kind: 'event', expansion: 'adventures', cost: 5, debt: 0,

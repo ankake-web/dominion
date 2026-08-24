@@ -177,7 +177,7 @@
       return '勝利点・城';
     }
     if (has('treasure') && has('victory')) return '財宝・勝利点';
-    if (has('victory') && has('action')) return '勝利点・アクション';
+    if (has('victory') && has('action')) return 'アクション・勝利点';   // 公式の Type(s) は Action - Victory（貴族/大広間/風車/島）
     if (has('treasure') && has('action')) return 'アクション・財宝';                   // 帝国：冠（action+treasure）
     if (has('attack') && has('reaction')) return 'アクション・アタック・リアクション'; // 書記（action+attack+reaction）
     if (has('treasure') && has('attack')) return '財宝・アタック';                    // 山師（treasure+attack）
@@ -243,7 +243,7 @@
       return 'Victory - Castle';
     }
     if (has('treasure') && has('victory')) return 'Treasure - Victory';
-    if (has('victory') && has('action')) return 'Victory - Action';
+    if (has('victory') && has('action')) return 'Action - Victory';
     if (has('treasure') && has('action')) return 'Action - Treasure'; // Crown
     if (has('attack') && has('reaction')) return 'Action - Attack - Reaction'; // 書記
     if (has('treasure') && has('attack')) return 'Treasure - Attack';          // 山師

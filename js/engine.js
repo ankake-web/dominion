@@ -1431,7 +1431,7 @@
     // ===== 繁栄：財宝カードの「使ったとき」効果 =====
     // 銀行：場の財宝1枚につき +1コイン（これ自身も数える。inPlay には既に積んである）。
     if (card === 'bank') {
-      const cnt = p.inPlay.filter((c) => isTreasureFor(state, c)).length;
+      const cnt = p.inPlay.concat(p.durationCards || []).filter((c) => isTreasureFor(state, c)).length; // 「場」＝inPlay＋durationCards
       addCoins(state, cnt); log(state, `${p.name} は銀行を使った（場の財宝${cnt}枚 → +${cnt}コイン）。`);
     }
     // 収集品：+1購入（コイン2は coin:2 で加算済み）。アクション獲得時の+VPは triggerOnGain が処理。
@@ -1534,7 +1534,7 @@
       t.foolsGoldPlayed = true;
     }
     // 異郷：大釜＝+2コイン（coin:2）＋1購入。3回目のアクション獲得の呪い配布は triggerOnGain。
-    if (card === 'cauldron') { t.buys += 1; }
+    if (card === 'cauldron') { t.buys += 1; t.cauldronPlays = (t.cauldronPlays || 0) + 1; } // 公式FAQ＝複数枚は累積する
     // 異郷：不正利得＝銅貨1枚を手札に獲得してよい（$1 は coin:1 で計上済）。獲得時の呪い配布は triggerOnGain。
     if (card === 'ill_gotten_gains') { state.pending = { type: 'igg_play', player: pIndex }; }
     // 冒険：法貨＝+$1（coin:1 で計上済み）→ 酒場マットへ（アクション解決直後に呼び出して +2アクション）。
@@ -2400,7 +2400,11 @@
         else if (lm === 'defiled_shrine') {
           Object.keys(supply).forEach((id) => { if (plainActionPile(id)) pileVP[id] = (pileVP[id] || 0) + 2; });
         } else if (lm === 'obelisk') {
-          const cand = kingdom.filter(plainActionPile);
+          /* 公式の Setup 逐語＝`Choose a random Action Supply pile.`＝**制限なし**。
+             非集合(non-Gathering)の制限が付くのは汚された神殿だけ（`each non-Gathering Action Supply pile`）。 */
+          const obeliskPileOk = (id) => DOM.isType(id, 'action') && !NON_SUPPLY.has(id) &&
+            !SPLIT_TOP[id] && id !== 'castles' && id !== 'knights' && id !== 'ruins';
+          const cand = kingdom.filter(obeliskPileOk);
           if (cand.length) obeliskPile = cand[Math.floor(Math.random() * cand.length)];
         }
       });
@@ -4926,7 +4930,7 @@
         break;
       case 'way_of_the_mule': addActions(t, 1); addCoins(state, 1); break;
       case 'way_of_the_otter': draw(state, pi, 2); break;
-      case 'way_of_the_owl': if (p.hand.length < 6) draw(state, pi, 6 - p.hand.length); break;
+      case 'way_of_the_owl': drawUpTo(state, pi, 6); break;   // 「6枚になるまで」＝1枚ずつ（-1カードトークンで止まらない）
       case 'way_of_the_ox': addActions(t, 2); break;
       case 'way_of_the_pig': draw(state, pi, 1); addActions(t, 1); break;
       // ドブネズミ＝財宝1枚を捨て札にしてもよい。そうしたら これと同じカード1枚を獲得する。
@@ -5555,6 +5559,23 @@
   // 山札の上から pred を満たすカードが出るまでめくる（山切れは捨て札をシャッフル）。
   //   返り値 {matched, skipped}: matched=条件を満たしためくり札（無ければ null）、skipped=手前のめくり札列。
   //   めくった札はすべて山札から取り除いて返す（呼び出し側が手札/捨て札/山札上へ振り分ける）。
+  /* 「手札がN枚になるまで引く」の共通入口（2026-08-25 新設）。
+     🛑 まとめて `draw(state, pi, N - hand.length)` にすると **-1カードトークン（遺物／借入）で1枚足りずに止まる**。
+        公式（`-1 Card token` の Official rules 逐語）＝`Cards that draw up to a number of cards … skip a draw,
+        removing the token, and then keep going` ＝トークンは実質何もしない。
+     ⚠ 終端は「**山札と捨て札が両方空**」で判定する（「引けた枚数が0なら止める」だとトークンが食った回で誤って止まる＝§0-39）。
+     ⚠ カメレオンの習性は「+N カード」という**文字列**だけを変換するので、この形は変換しない＝`_chamOff` でフックを外す。 */
+  function drawUpTo(state, pi, target) {
+    const p = state.players[pi];
+    const prevCham = state._chamOff;
+    state._chamOff = true;
+    for (let g = 0; g < 60 && p.hand.length < target; g++) {
+      if (!p.deck.length && !p.discard.length) break;
+      draw(state, pi, 1);
+    }
+    state._chamOff = prevCham;
+  }
+
   function revealFromDeck(state, pi, pred) {
     const p = state.players[pi];
     const skipped = [];
@@ -6194,6 +6215,8 @@
       case 'city_quarter':
         addActions(t, 2);
         { // 手札を公開し、公開したアクション1枚につき +1カード（city_quarter 自身は場に出ているので手札にない）。
+          //   ⚠ `reveal()` を通す＝ルネサンスのパトロンが誘発し、オンラインでも公開が相手に伝わる（岐路と同じ扱い）。
+          reveal(state, pi, p.hand.slice(), '市街で手札を公開');
           const acts = p.hand.filter((c) => DOM.isType(c, 'action')).length;
           if (acts > 0) draw(state, pi, acts);
           log(state, `${p.name} は市街で手札を公開しアクション${acts}枚 → +${acts}カード。`);
@@ -6201,7 +6224,8 @@
         break;
       case 'royal_blacksmith':
         draw(state, pi, 5);
-        { // 手札を公開し銅貨をすべて捨てる（強制・引いた後の手札から）。
+        { // 手札を公開し銅貨をすべて捨てる（強制・引いた後の手札から）。⚠ `reveal()` を通す（市街と同型）。
+          reveal(state, pi, p.hand.slice(), '王室の鍛冶屋で手札を公開');
           let n = 0;
           while (removeOne(p.hand, 'copper')) { p.discard.push('copper'); n++; }
           if (n) log(state, `${p.name} は王室の鍛冶屋で手札を公開し銅貨${n}枚を捨てた。`);
@@ -6809,6 +6833,7 @@
           if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
           if (p.deck.length === 0) break;
           const c = p.deck.shift();
+          reveal(state, pi, [c], '冒険者で山札を公開');   // 公式＝`Reveal cards from your deck…`（見るではなく公開）
           if (isTreasureFor(state, c)) { p.hand.push(c); found++; } else aside.push(c);
         }
         aside.forEach((c) => p.discard.push(c));
@@ -7496,8 +7521,7 @@
         draw(state, pi, 1); addActions(t, 1); addCoins(state, 1);
         break;
       case 'watchtower':
-        // 手札が6枚になるまで引く（空なら止める）
-        { let g = 0; while (p.hand.length < 6 && g++ < 30) { const b = p.hand.length; draw(state, pi, 1); if (p.hand.length === b) break; } }
+        drawUpTo(state, pi, 6);   // 「6枚になるまで」＝1枚ずつ（-1カードトークンで1枚足りずに止まらない）
         break;
       case 'bishop':
         addCoins(state, 1); p.vpTokens = (p.vpTokens || 0) + 1;
@@ -8272,12 +8296,15 @@
         break;
       }
       // ヤギ飼い＝+1アクション、手札1枚を廃棄してもよい。右隣が直前の自分のターンに廃棄した枚数だけ +カード。
+      /* ヤギ飼い＝公式の解決順は **①手札1枚を廃棄してもよい → ②右隣が直前の手番に廃棄した枚数ぶん引く**。
+         ⚠ 2026-08-25 まで先に引いていたので、**引いたばかりのカードを廃棄できてしまう**（公式では廃棄候補は引く前の手札）。
+            ドロー枚数は右隣の廃棄枚数だけで決まるので変わらない。 */
       case 'goatherd': {
         addActions(t, 1);
         const right = state.players[(pi - 1 + state.players.length) % state.players.length];
         const n = right.trashedLastTurn || 0;
-        if (n > 0) { draw(state, pi, n); log(state, `${p.name} はヤギ飼いで +${n}カード（右隣が直前の手番に廃棄した枚数）。`); }
-        if (p.hand.length > 0) state.pending = { type: 'goatherd_trash', player: pi };
+        if (p.hand.length > 0) state.pending = { type: 'goatherd_trash', player: pi, draw: n };
+        else if (n > 0) { draw(state, pi, n); log(state, `${p.name} はヤギ飼いで +${n}カード（右隣が直前の手番に廃棄した枚数）。`); }
         break;
       }
       // 馬丁＝コスト$4以下のカード1枚を獲得。獲得したカードの種別ごとにボーナス（複合なら全部）。
@@ -8375,7 +8402,7 @@
       // 呪われた村（不運）＝+2アクション、手札が6枚になるまで引く。獲得時に自分が呪詛を1つ受ける（triggerOnGain 側）。
       case 'cursed_village':
         addActions(t, 2);
-        while (p.hand.length < 6) { if (!draw(state, pi, 1).length) break; }
+        drawUpTo(state, pi, 6);   // 同上（旧実装の「引けた枚数が0なら止める」は -1カードトークンで誤って止まる）
         break;
       /* ドルイド（幸運）＝+1購入、**脇に置かれた祝福3枚から1つを受ける**（その祝福は脇に置いたまま）。
          強制。玉座で複数回使うと1回ごとに選び直せる（命令の commandAs 流儀は適用しない）。 */
@@ -10358,9 +10385,9 @@
     }
     if (kind === 'blacksmith') {
       if (opt === 'six') {
-        const need = Math.max(0, 6 - p.hand.length);
-        const got = need > 0 ? draw(state, pi, need) : [];
-        log(state, `${nm} は蹄鉄工で手札6枚まで引いた（+${got.length}カード）。`);
+        const before = p.hand.length;
+        drawUpTo(state, pi, 6);   // 「6枚になるまで」＝1枚ずつ
+        log(state, `${nm} は蹄鉄工で手札6枚まで引いた（+${p.hand.length - before}カード）。`);
       } else if (opt === 'two') { draw(state, pi, 2); log(state, `${nm} は蹄鉄工で +2カード。`); }
       else { draw(state, pi, 1); addActions(t, 1); log(state, `${nm} は蹄鉄工で +1カード +1アクション。`); }
       return;
@@ -11284,9 +11311,11 @@
     // 大釜：自分の手番にアクションを獲得した回数を数え、3回目で（大釜が場にあれば）各相手が呪いを獲得。
     if (state.turn && pIndex === state.turn.active && DOM.isType(cardId, 'action')) {
       state.turn.actionsGainedThisTurn = (state.turn.actionsGainedThisTurn || 0) + 1;
-      if (state.turn.actionsGainedThisTurn === 3 && gp.inPlay.includes('cauldron') && state._gainDepth === 1 && !state.pending) {
-        log(state, `${gp.name} は大釜で このターン3回目のアクション獲得（各相手に呪い）。`);
-        const cq = []; for (let k = 1; k < n; k++) cq.push((pIndex + k) % n);
+      // 公式FAQ逐語＝`This is cumulative if you play multiple Cauldrons.`＝**使用回数ぶん**呪いを配る。
+      const cauldrons = (state.turn.cauldronPlays || 0);
+      if (state.turn.actionsGainedThisTurn === 3 && cauldrons > 0 && state._gainDepth === 1 && !state.pending) {
+        log(state, `${gp.name} は大釜で このターン3回目のアクション獲得（各相手に呪い${cauldrons}枚）。`);
+        const cq = []; for (let r = 0; r < cauldrons; r++) for (let k = 1; k < n; k++) cq.push((pIndex + k) % n);
         cauldronEnterVictim(state, pIndex, cq);
       }
     }
@@ -12346,7 +12375,7 @@
     // 囲郭村: クリーンアップ開始時、場のアクションが（自身を含め）2枚以下なら山札の上に戻せる。
     // 村を山札に戻すのはほぼ常に得なので自動で戻す。
     if (p.inPlay.includes('walled_village')) {
-      const actionsInPlay = p.inPlay.filter((c) => DOM.isType(c, 'action')).length;
+      const actionsInPlay = p.inPlay.concat(p.durationCards || []).filter((c) => DOM.isType(c, 'action')).length; // 「場」＝inPlay＋durationCards
       if (actionsInPlay <= 2) {
         let n = 0;
         while (removeOne(p.inPlay, 'walled_village')) { p.deck.unshift('walled_village'); n++; }
@@ -22324,9 +22353,14 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'goatherd_trash') return state;
         const card = action.card;
-        if (card == null) { state.pending = null; return state; }
+        const nd = pd.draw || 0;   // 廃棄（辞退でも）を解決してから引く＝公式の解決順
+        const after = () => {
+          state.pending = null;
+          if (nd > 0) { draw(state, pd.player, nd); log(state, `${state.players[pd.player].name} はヤギ飼いで +${nd}カード（右隣が直前の手番に廃棄した枚数）。`); }
+        };
+        if (card == null) { after(); return state; }
         if (!trashFromHand(state, pd.player, [card], 1, 'をヤギ飼いで廃棄した。')) return state;
-        state.pending = null;
+        after();
         return state;
       }
       // 馬丁＝コスト$4以下のカード1枚を獲得。獲得したカードの種別ごとにボーナス（複合種別なら全部得る）。
