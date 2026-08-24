@@ -136,13 +136,32 @@ console.log('=== 銀行：場の財宝の枚数ぶん +コイン（自身を含�
   ok(s.turn.coins === 1 + 2 + 3, '銀行：場の財宝3枚で +3 (合計 ' + s.turn.coins + ')');
 }
 
-console.log('=== 隠し財産：勝利点カードを獲得したとき金貨を獲得（購入でなくても） ===');
+console.log('=== 隠し財産：**購入した**勝利点にだけ金貨が付く（2022エラッタ＝「このターン」型）===');
+/* 公式（第2版 June 2022・印刷済み）＝`$2 / This turn, when you gain a Victory card, if you bought it, gain a Gold.`
+   公式FAQ＝`not when you gain a Victory card other ways (such as via War Chest)`。
+   2026-08-25 まで「場にある間・どの獲得でも」だったので、工房/密輸人/軍用金で勝利点を取っただけで金貨が付いていた。 */
 {
-  let s = mk(); s.turn.phase = 'buy'; s.players[0].inPlay = ['hoard'];
-  s.turn.coins = 5; s.turn.buys = 1;
-  s = reduce(s, { type: 'BUY', card: 'duchy' }); // 勝利点を購入
-  ok(count(s.players[0].discard, 'gold') === 1, '公領購入で金貨1枚を獲得（隠し財産）');
+  let s = mk(); s.turn.phase = 'buy'; s.players[0].hand = ['hoard'];
+  s.turn.buys = 1;
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'hoard' });
+  s.turn.coins = 5;
+  s = reduce(s, { type: 'BUY', card: 'duchy' }); // 勝利点を**購入**
+  ok(count(s.players[0].discard, 'gold') === 1, '公領を購入すると金貨1枚（実 ' + count(s.players[0].discard, 'gold') + '）');
   ok(count(s.players[0].discard, 'duchy') === 1, '公領も獲得');
+  // 「このターン」型＝場を離れても効く（偽造通貨で廃棄しても、そのターンの購入には付く）
+  ok((s.turn.hoardPlays || 0) === 1, '使用回数で数えている（場の枚数ではない）');
+}
+{
+  // 購入でない獲得（工房）では金貨が付かない
+  let s = mk(['workshop', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'kings_court', 'peddler', 'watchtower'], ['A', 'B']);
+  s.turn.phase = 'buy'; s.players[0].hand = ['hoard'];
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'hoard' });
+  const g0 = count(s.players[0].discard, 'gold');
+  s.turn.phase = 'action'; s.turn.actions = 1; s.players[0].hand = ['workshop'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'workshop' });
+  s = reduce(s, { type: 'WORKSHOP_GAIN', card: 'estate' });   // 勝利点を**獲得**（購入ではない）
+  ok(count(s.players[0].discard, 'estate') === 1, '工房で屋敷を獲得した');
+  ok(count(s.players[0].discard, 'gold') === g0, '購入でない獲得では金貨が付かない（実 +' + (count(s.players[0].discard, 'gold') - g0) + '）');
 }
 
 console.log('=== 宮廷：アクション1枚を3回使う ===');

@@ -294,7 +294,7 @@ console.log('=== 番犬: 相手のアタック時に先に使う（+2〜4カー�
 }
 
 /* ============ 値切り屋: 購入毎に格下げ獲得 ============ */
-console.log('=== 値切り屋: 場にある間、購入毎に そのコスト未満の非勝利点を獲得 ===');
+console.log('=== 値切り屋: **このターン**、購入したカードのコスト未満の非勝利点を獲得（2022エラッタ）===');
 {
   let s = setup(['haggler', 'oasis', 'margrave'], ['haggler']);
   s = playAct(s, 'haggler'); // +2コイン、場に値切り屋
@@ -444,7 +444,7 @@ console.log('=== 回帰: 値切り屋 呪いのみの獲得局面でCPUがルー
 {
   let s = mkK(['haggler', 'margrave', 'oasis']);
   s.turn.phase = 'buy';
-  s.players[0].inPlay = ['haggler'];
+  s.turn.hagglerPlays = 1;   // 2022エラッタ＝「このターン」型（場の枚数ではなく使用回数）
   s.supply.copper = 0; // 銅貨枯渇＝コスト1以下の非勝利点は呪いだけ
   s.turn.coins = 2; s.turn.buys = 1;
   s = reduce(s, { type: 'BUY', card: 'estate' }); // maxCost=1 → 値切り屋の獲得 pending
@@ -526,6 +526,56 @@ console.log('\n========================================');
   }
   ok(s.players[1].discard.filter((c) => c === 'gold').length + s.players[1].hand.filter((c) => c === 'gold').length >= 1,
     '軍団兵（discard_down）で坑道を捨てさせても金貨を獲得する');
+}
+
+console.log('=== 2026-08-25: カード文の全数監査で確定した [medium]（異郷）===');
+{
+  /* 街道＝2022年第2版エラッタで「場にある間」→**「このターン」**型。場を離れても軽減が続く。 */
+  let s = mkK(['highway', 'haggler', 'oasis']);
+  s.players[0].hand = ['highway']; s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'highway' });
+  ok(E.cardCost(s, 'province') === 7, '街道：属州が $7（実 ' + E.cardCost(s, 'province') + '）');
+  s.players[0].inPlay = [];            // 場から消しても「このターン」なので効き続ける
+  ok(E.cardCost(s, 'province') === 7, '街道：場を離れても このターン は $7 のまま（実 ' + E.cardCost(s, 'province') + '）');
+}
+{
+  /* 値切り屋＝同じく「このターン」型。 */
+  let s = mkK(['haggler', 'highway', 'oasis']);
+  s.players[0].hand = ['haggler']; s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'haggler' });
+  ok((s.turn.hagglerPlays || 0) === 1, '値切り屋：使用回数で数える');
+  s.players[0].inPlay = [];
+  s.turn.phase = 'buy'; s.turn.coins = 5; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'duchy' });
+  ok(s.pending && s.pending.type === 'haggler', '値切り屋：場を離れても このターン の購入で発動する');
+}
+{
+  /* 農地＝2022年第2版エラッタで「購入したとき」→**「獲得したとき」**（工房などで獲得しても働く）。 */
+  // 農地は $6 なので改築（$4 を廃棄して最大 $6 を獲得）で「購入でない獲得」を作る
+  let s = mkK(['remodel', 'farmland', 'oasis']);   // 農地を王国に入れる
+  s.players[0].hand = ['remodel', 'militia', 'copper']; s.turn.actions = 1;   // 農地の窓は手札が要る
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'remodel' });
+  s = reduce(s, { type: 'REMODEL_TRASH', card: 'militia' });
+  s = reduce(s, { type: 'REMODEL_GAIN', card: 'farmland' });
+  ok(s.pending && s.pending.type === 'farmland' && s.pending.stage === 'trash',
+     '農地：**購入でない獲得**でも廃棄→格上げの窓が開く');
+}
+{
+  /* 進路＝`When you gain, trash, or discard this, other than in Clean-up, you may play it.`
+     2026-08-25 まで捨て札の経路しか配線されていなかった。 */
+  let s = mkK(['trail', 'haggler', 'oasis']);
+  s.players[0].hand = []; s.players[0].deck = ['copper', 'copper', 'copper'];
+  s.turn.phase = 'buy'; s.turn.coins = 4; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'trail' });
+  ok(s.players[0].inPlay.includes('trail'), '進路：**獲得**したときに使える');
+  // 廃棄したときも使える
+  let u = mkK(['trail', 'chapel', 'oasis']);
+  u.players[0].hand = ['chapel', 'trail']; u.turn.actions = 1;
+  u.players[0].deck = ['copper', 'copper', 'copper'];
+  u = reduce(u, { type: 'PLAY_ACTION', card: 'chapel' });
+  u = reduce(u, { type: 'CHAPEL_RESOLVE', cards: ['trail'] });
+  ok(u.players[0].inPlay.includes('trail'), '進路：**廃棄**されたときに使える（廃棄置き場から場へ）');
+  ok(!u.trash.includes('trail'), '進路：使ったので廃棄置き場には残らない');
 }
 
 console.log('異郷テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');

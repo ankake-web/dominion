@@ -881,8 +881,10 @@
     if (t && id === 'destrier') base -= (t.gainedThisTurn || []).length; // このターン獲得した枚数ぶん安い
     if (t && id === 'fisherman' && active && (active.discard || []).length === 0) base -= 3; // 手番プレイヤーの捨て札が空なら$3安い
     // 繁栄：石切場が場にある間、アクションカードは1枚につき$2安い（$0未満にはならない）。
+    /* 繁栄：石切場＝2022年第2版エラッタで「場にある間」→**「このターン」**型（ティアラ/収集品と同じクラス）。
+       `but not less than $0` も2020年に一般ルール化されて印刷から消えている（下のクランプが担う）。 */
     if (active && DOM.isType(id, 'action')) {
-      const quarries = (active.inPlay || []).filter((x) => x === 'quarry').length;
+      const quarries = (t && t.quarryPlays) || 0;
       if (quarries) base -= 2 * quarries;
     }
     // 繁栄：行商人は購入フェイズ中、場のアクションカード1枚につき$2安い。
@@ -893,8 +895,9 @@
     // 収穫祭：王女が場にある間、全カードは1枚につき$2安くなる（$0未満にはならない・王女の枚数ぶん重なる）。
     // 収穫祭：王女＝2022エラッタで「このターン」型（`t.costReduction`＝橋と同じ）。場の枚数を見る旧形はここから撤去した。
     // 異郷：街道が場にある間、全カードは1枚につき$1安くなる（$0未満にはならない・街道の枚数ぶん重なる）。
+    /* 異郷：街道＝2022年第2版エラッタで「場にある間」→**「このターン」**型。 */
     if (active) {
-      const highways = (active.inPlay || []).filter((x) => x === 'highway').length;
+      const highways = (t && t.highwayPlays) || 0;
       if (highways) base -= highways;
     }
     // 冒険：渡し船（Ferry）の -$2 コストトークン＝手番プレイヤーが自分のトークンを置いた山だけ$2安い
@@ -1451,6 +1454,10 @@
     // 宝冠＝購入フェイズに財宝として出しても「アクション→財宝」の2段窓（フェイズに依らない＝冠と違う）。
     if (card === 'coronet') coronetStart(state, pIndex);
     if (card === 'collection') { t.buys += 1; t.collectionPlays = (t.collectionPlays || 0) + 1; }
+    /* 2022年第2版エラッタで「場にある間」→**「このターン」**型になった財宝（ティアラ/収集品と同じクラス）。
+       石切場＝アクションが $2 安い／隠し財産＝**購入した**勝利点1枚につき金貨1枚。 */
+    if (card === 'quarry') t.quarryPlays = (t.quarryPlays || 0) + 1;
+    if (card === 'hoard') t.hoardPlays = (t.hoardPlays || 0) + 1;
     // ===== ルネサンス：財宝カードの「使ったとき」効果 =====
     // 香辛料：+1購入（コイン2は coin:2 で加算済み）。獲得時の +2財源 は triggerOnGain。
     if (card === 'spices') t.buys += 1;
@@ -3484,7 +3491,18 @@
 
   // 隠し財産(Hoard): いまは「獲得時」フック(triggerOnGain)で金貨を獲得する（購入に限らず faithful）。
   // 互換のため関数は残すが何もしない（BUY/闇市場の呼び出し側は変更不要）。
-  function applyHoardOnBuy() { /* no-op: hoard は triggerOnGain で処理 */ }
+  /* 繁栄：隠し財産＝2022年第2版エラッタで「これが場にある間、勝利点カードを獲得したとき」→
+     **`This turn, when you gain a Victory card, if you bought it, gain a Gold.`**
+     ⚠ 2026-08-25 まで `triggerOnGain` で**購入以外の獲得でも**金貨を配っていた（工房/密輸人/軍用金で
+        勝利点を取っただけで金貨が付く＝公式より強い実バグ）。公式FAQ も `not when you gain a Victory card
+        other ways (such as via War Chest)` と明記。→ **購入の経路からだけ**呼ぶ。 */
+  function applyHoardOnBuy(state, pi, cardId) {
+    if (!state.turn || !DOM.isType(cardId, 'victory')) return;
+    const n = state.turn.hoardPlays || 0;   // 「このターン」型＝使用回数（場の枚数ではない）
+    for (let i = 0; i < n; i++) {
+      if (gain(state, pi, 'gold', 'discard')) log(state, `${state.players[pi].name} は隠し財産で金貨を獲得した。`);
+    }
+  }
 
   /* ---------- 選択リゾルバの共通部品（カードを足すほど効く再利用パーツ）----------
      手札からN枚を捨てる/廃棄する、強制つきでサプライから獲得する、の3定型を1か所に。
@@ -7881,9 +7899,11 @@
         break;
       case 'haggler':
         addCoins(state, 2);
+        t.hagglerPlays = (t.hagglerPlays || 0) + 1; // 「このターン」型（2022エラッタ）＝場を離れても効く
         break;
       case 'highway':
         draw(state, pi, 1); addActions(t, 1);
+        t.highwayPlays = (t.highwayPlays || 0) + 1; // 「このターン」型（2022エラッタ）＝場を離れても効く
         break;
       case 'inn':
         draw(state, pi, 2); addActions(t, 2);
@@ -11192,6 +11212,27 @@
     if (gp.hand.includes('sleigh')) {
       (state.onGainQueue = state.onGainQueue || []).push({ type: 'sleigh_react', player: pIndex, card: cardId, dest: dest || 'discard' });
     }
+    /* 2022年第2版エラッタ（いずれも印刷済み・June 2022）で「購入したとき」→**「獲得したとき」**になった3枚。
+       ⚠ 2026-08-25 まで BUY の中だけに書かれており、工房/改築/密輸人などで獲得しても働かなかった。 */
+    // 繁栄：造幣所＝これを獲得したとき、場の**持続でない**財宝をすべて廃棄する。
+    if (cardId === 'mint') {
+      const inPlayT = gp.inPlay.filter((c) => isTreasureFor(state, c) && !DOM.isType(c, 'duration'));
+      inPlayT.forEach((c) => { removeOne(gp.inPlay, c); trashCard(state, pIndex, c); });
+      if (inPlayT.length) log(state, `${gp.name} は造幣所の獲得で場の財宝 ${inPlayT.length}枚 を廃棄した。`);
+    }
+    // 冒険：港町＝これを獲得したとき、もう1枚の港町を獲得する（**その2枚目ではさらに獲得しない**）。
+    if (cardId === 'port' && !state._portChain) {
+      state._portChain = true;
+      try { if (gain(state, pIndex, 'port', 'discard')) log(state, `${gp.name} は港町の獲得でもう1枚の港町を獲得した。`); }
+      finally { delete state._portChain; }
+    }
+    // 異郷：農地＝これを獲得したとき、手札1枚を廃棄し、ちょうど$2高い**農地でない**カード1枚を獲得する。
+    if (cardId === 'farmland' && gp.hand.length > 0) {
+      if (state.pending) (state.onGainQueue = state.onGainQueue || []).push({ type: 'farmland', stage: 'trash', player: pIndex });
+      else state.pending = { type: 'farmland', stage: 'trash', player: pIndex };
+    }
+    // 異郷：進路＝これを獲得したとき、使ってよい（クリンナップ以外）。自動（純利得）。
+    if (cardId === 'trail') trailPlay(state, pIndex, 'gain');
     /* 黒猫＝**他のプレイヤー**が勝利点カードを獲得したとき、手札からこれを使用してよい（任意・アクション権を使わない）。
        公式＝`When another player gains a Victory card, you may play this from your hand.`
        ⚠ 2026-08-25 まで**この窓が存在せず**、黒猫は自分のアクションフェイズでしか出せなかった＝
@@ -11247,13 +11288,6 @@
         log(state, `${gp.name} は大釜で このターン3回目のアクション獲得（各相手に呪い）。`);
         const cq = []; for (let k = 1; k < n; k++) cq.push((pIndex + k) % n);
         cauldronEnterVictim(state, pIndex, cq);
-      }
-    }
-    // 繁栄：自分の手番に勝利点カードを獲得 → 場の隠し財産1枚につき金貨1枚（hoard）。
-    if (state.turn && pIndex === state.turn.active && DOM.isType(cardId, 'victory')) {
-      const hoards = state.players[pIndex].inPlay.filter((c) => c === 'hoard').length;
-      for (let i = 0; i < hoards; i++) {
-        if (gain(state, pIndex, 'gold', 'discard')) log(state, `${state.players[pIndex].name} は隠し財産で金貨を獲得した。`);
       }
     }
     // 帝国：庭師（groundskeeper）＝場にある庭師1枚につき、自分の手番に勝利点カードを獲得するたびVPトークン1個。
@@ -11562,9 +11596,25 @@
   }
   /* ---------- 異郷：捨て札にしたとき／廃棄したときのフック ---------- */
   // 進路／織工を（捨て札や廃棄置き場から）場に出して使う共通処理。反応で使うので +アクションは自分の手番のときだけ。
+  /* 異郷：進路＝`When you gain, trash, or discard this, other than in Clean-up, you may play it.`
+     ⚠ 2026-08-25 まで**捨て札の経路だけ**が配線されており、獲得したときも廃棄したときも使えなかった
+        （`fromZone === 'trash'` の分岐は最初からあったのに呼び出しが無かった＝書き落とし）。 */
   function trailPlay(state, pi, fromZone) {
     const p = state.players[pi];
-    const z = fromZone === 'trash' ? state.trash : p.discard;
+    const z = fromZone === 'trash' ? state.trash : (fromZone === 'gain' ? null : p.discard);
+    if (z === null) {
+      // 獲得直後＝獲得先ゾーンから取り出す（捨て札／手札／山札のどれでもよい）
+      const zones = [p.discard, p.hand, p.deck];
+      let moved = false;
+      for (const zz of zones) if (removeOne(zz, 'trail')) { moved = true; break; }
+      if (!moved) return;
+      p.inPlay.push('trail');
+      if (state.turn && pi === state.turn.active) state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
+      draw(state, pi, 1);
+      if (state.turn && pi === state.turn.active) addActions(state.turn, 1);
+      log(state, `${p.name} は進路を使った（+1カード${state.turn && pi === state.turn.active ? ' +1アクション' : ''}）。`);
+      return;
+    }
     if (!removeOne(z, 'trail')) return;
     p.inPlay.push('trail');
     if (state.turn && pi === state.turn.active) state.turn.actionsPlayed = (state.turn.actionsPlayed || 0) + 1;
@@ -11612,7 +11662,10 @@
   //   ※対話（pending）を要する on-trash（地下墓所/狩場/従者）は §カード実装バッチで on-trash キューとして追加する。
   function triggerOnTrash(state, pIndex, card, opts) {
     const p = state.players[pIndex];
-    const fromSupply = !!(opts && opts.fromSupply); // サプライの山からの廃棄（塩まき/待ち伏せ/剣闘士）＝「あなたのカード」ではない
+    const fromSupply = !!(opts && opts.fromSupply);
+    // 異郷：進路＝これが廃棄されたとき、廃棄置き場から使ってよい（クリンナップ以外）。自動（純利得）。
+    //   サプライの山からの廃棄（塩まき/待ち伏せ/剣闘士）は「あなたのカード」ではないので使えない。
+    if (card === 'trail' && !fromSupply) trailPlay(state, pIndex, 'trash'); // サプライの山からの廃棄（塩まき/待ち伏せ/剣闘士）＝「あなたのカード」ではない
     /* 暗黒時代：青空市場（リアクション）＝**自分のカード**が廃棄されたとき、手札の青空市場を捨てて金貨を獲得してよい
        （誰のターンでも・相手のアタックでの廃棄でも発動。1廃棄に複数枚反応可）。対話＝onTrashQueue へ。
        **サプライの山からの廃棄（待ち伏せ/剣闘士/塩まき）は「自分のカード」ではない＝反応しない**（公式）。
@@ -11715,7 +11768,7 @@
     return costUnder(state, id, ref.coin, ref) && !isTypeSupply(state, id, 'victory');
   }
   function maybeHagglerGains(state, pi, ref) {
-    const hagglers = state.players[pi].inPlay.filter((c) => c === 'haggler').length;
+    const hagglers = (state.turn && state.turn.hagglerPlays) || 0; // 「このターン」型（2022エラッタ）＝場を離れても効く
     if (hagglers > 0 && !state.pending &&
         anyGainable(state, (id) => hagglerCanGain(state, ref, id))) {
       state.pending = { type: 'haggler', player: pi, remaining: hagglers, maxCost: ref.coin - 1, coin: ref.coin, pot: ref.pot, debt: ref.debt };
@@ -14870,14 +14923,7 @@
         takeDebt(state, pi, card);
         gain(state, pi, card, 'discard');
         log(state, `${me.name} は「${C()[card].name}」を購入した。`);
-        // 繁栄：造幣所を購入したとき、場の財宝をすべて廃棄する。
-        if (card === 'mint') {
-          const inPlayT = me.inPlay.filter((c) => isTreasureFor(state, c));
-          inPlayT.forEach((c) => { removeOne(me.inPlay, c); trashCard(state, pi, c); });
-          if (inPlayT.length) log(state, `${me.name} は造幣所の購入で場の財宝 ${inPlayT.length}枚 を廃棄した。`);
-        }
-        // 冒険：港町を購入したとき、もう1枚の港町を獲得する（獲得＝BUY再帰しないので二重購入にならない）。
-        if (card === 'port') { if (gain(state, pi, 'port', 'discard')) log(state, `${me.name} は港町の購入でもう1枚の港町を獲得した。`); }
+        // 2026-08-25：造幣所／港町／農地は2022エラッタで「購入したとき」→**「獲得したとき」**＝triggerOnGain へ移した。
         // ギルド：商人ギルド（2021）＝財源は**購入フェイズの終了時**（`merchantGuildEndOfBuy`）にまとめて入る＝購入の瞬間には何も起きない。
         // 繁栄1版：ならず者＝場にある枚数ぶん +1VP（イベント/プロジェクトの購入は対象外）。
         goonsOnBuy(state, pi);
@@ -14887,10 +14933,6 @@
         queueEmbargoCurses(state, pi, card);
         // ギルド：過払い（overpay）＝購入時に追加でコインを払える。残コインがあれば選択待ちを立てる。
         maybeStartOverpay(state, pi, card);
-        // 異郷：農地＝購入したとき、手札1枚を廃棄し、ちょうど$2高いカード1枚を獲得。
-        if (card === 'farmland' && me.hand.length > 0 && !state.pending) {
-          state.pending = { type: 'farmland', stage: 'trash', player: pi };
-        }
         // 冒険：使者＝そのターン最初の購入なら $4以下1枚を獲得し他の各Pもコピーを獲得。
         if (card === 'messenger' && t.buysMade === 1 && !state.pending && anyGainable(state, (id) => costUpTo(state, id, 4))) {
           state.pending = { type: 'messenger_gain', player: pi };
@@ -14899,6 +14941,7 @@
         if (card === 'noble_brigand' && !state.pending) nobleBrigandAttack(state, pi);
         // 異郷：値切り屋＝場にある間、購入のたびに そのコスト未満の勝利点でないカード1枚を獲得。
         //   基準は**購入時点**のコスト3成分（混合山は gain() の shift で一番上が変わるので gain 後に測ってはいけない）。
+        applyHoardOnBuy(state, pi, card);   // 繁栄：隠し財産＝**購入した**勝利点にだけ金貨が付く（2022エラッタ）
         maybeHagglerGains(state, pi, boughtRef);
         // 冒険：呪いの森/沼の妖婆＝他Pの持続がある間、購入のたびに手札を山札の上へ/呪い獲得（購入した以上フックは必ず発動）。
         //   農地の廃棄pendingが立ったまま呪いの森が手札を空にしても、FARMLAND_TRASH が空手札を終端処理する（詰まない）。
@@ -16988,6 +17031,9 @@
           for (const c of cards) if (!removeOne(handCopy, c)) return state;
           cards.forEach((c) => { removeOne(p.hand, c); p.discard.push(c); });
           log(state, `${p.name} は手札 ${cards.length}枚 を捨てた。`);
+          // 2026-08-25：ここが `triggerOnDiscard` を呼んでいなかった＝拷問人で坑道を捨てても金貨が出なかった
+          //   （民兵・軍団兵・辺境伯は呼んでいる）。相手のアタックによる捨て札なので noPrompt=true。
+          if (cards.length) triggerOnDiscard(state, pd.player, cards, true);
         }
         advanceAttack(state, pd);
         return state;
