@@ -2,7 +2,7 @@
 
 ---
 
-## 0-41. **日本語カード名の全数監査＝50件を公式へ統一 ＋ §0-40 の宿題を完済**（2026-08-24・未push・`sw.js` v90）
+## 0-41. **日本語カード名の全数監査＝50件を公式へ統一 ＋ §0-40 の宿題を完済**（2026-08-24・**push済** `5bc080c..7438657`・`sw.js` v90）
 
 §0-40 の「未対応」に積んでいた宿題を片付けた。**日本語名は「14件」と記録していたが、全844枚を機械照合したら
 実際は 50件**だった（PROGRESS の一覧は騎士2件・基本/陰謀/海辺/錬金術/繁栄/収穫祭/プロモ を監査していなかった）。
@@ -78,6 +78,21 @@ Dominion Online では 農場(Farm) に差し替え済み**だが、`someday it 
 - **CPUソーク 54ゲーム・23,395ステップ・問題0**（cornguilds2e／random-cornguilds2e／allies／random-allies／
   mix（収穫祭2版×同盟）／mix-all／seaside1e／prosperity1e／promo-events を 2〜4人）。
 - `verify:e2e` 9/9／`verify:visual` はみ出し0／**webp 51枚を焼き直し**（50枚はモンタージュで全枚目視＋要塞1枚）。`sw.js` v89→**v90**。
+### ✅ push＝完了（2026-08-24・`5bc080c..7438657`／2コミット）＝本番反映を機械照合
+- **GitHub Pages**（Deploy success）：`sw.js` **v90**／`js/cards.js`・`engine.js`・`cpu.js`・`ui.js`・`carddata.js`・
+  `css/style.css`・`sw.js`・`manifest.webmanifest` の **8本が sha1 完全一致**（⚠ `js/ui.js` は Codex の未コミット差分があるので
+  **`git show HEAD:js/ui.js` と比較する**）／焼き直した webp 12枚を抜き取りで**バイト一致**（すべて 106〜177KB＝絵入り）／
+  **本番 `cards.js` の改名20件を実文字列で照合＝20/20 ok**（宮廷・望楼・保管庫・手先・寵臣・議事堂・官吏・襲撃者・宝冠・王冠・
+  白金貨・画策・坑道・サー・ヴァンデル・公使・ハーレム・秘密の部屋・コルセア・薬師・大市場）／
+  `POOLS.promo` から hoard が外れている・錬金術セット名・要塞の種別順・`revealFromDeck` の2度目シャッフル禁止・
+  駿馬×長老（engine と ui の両方）を確認／**旧名（王の宮廷/物見やぐら/金庫室/高級市場）は本番に1つも残っていない**。
+- **Render（オンライン）**：`GET /status` = `{"persist":true,"rooms":0}`。実 ws（`/ws`＋Origin 必須・`t:` キー）で
+  **11/11 ok**＝`prosperity1e`（宮廷が王国に・交易路トークンは勝利点の山だけ）／`cornguilds2e`（渡し守の山・褒賞各1・野盗ルール）／
+  `random-promo`（hoard を外しても正常に10山立つ）／`intrigue`（相手手札マスク）／**mix 3人戦**。
+  ⚠ push 直後は Render が再デプロイ中で ws が `ECONNRESET` になる＝**数分待ってから叩く**。
+- **本番の挙動が変わったもの**＝**カード名50件と webp 51枚**（表示のみ・機能は不変）／`random-promo` と mix の
+  プロモ母集団 13→12（hoard が抜けた）／メイソン団×「山札を掘る」5経路の忠実化／駿馬×長老／要塞の種別表示。
+
 - 🛑 **Codex が並走している** `css/style.css`・`js/ui.js`・`manifest.webmanifest`・`test/ui.test.js` は自分のコミットに混ぜていない
   （`js/ui.js` は HEAD＋自分のブロックだけを `git hash-object -w`＋`git update-index --cacheinfo` で index に直書き＝
   ステージ済みツリーを取り出して全50スイート緑を確認してからコミットした）。
@@ -3325,7 +3340,8 @@ mix を解禁すると、PROGRESS §6 / §0-10 に**「どの出荷 CARD_SET で
 最終更新: 2026-08-24 / branch `main`（最新は `git log` で確認）。
 
 **【現在地】§0-41＝日本語カード名の全数監査で50件を公式へ統一し、§0-40 の宿題（5件）を完済した**
-（`sw.js` **v90**・**未pushが2コミット**）。**Arcana 以外の公式全カード（縦型618＋横型227＝845枚）が実プレイ可能**で、
+（`sw.js` **v90**・**push 済み（2026-08-24・`5bc080c..7438657`）＝本番反映を機械照合済み**＝Pages 8本 sha1 一致＋名前20/20、Render 11/11）。
+**Arcana 以外の公式全カード（縦型618＋横型227＝845枚）が実プレイ可能**で、
 **同名カードの重複は0件**（機械検査）。
 - 直前の §0-40（未実装33種の実装＋昇格＋敵対レビュー10件）は **2026-08-24 に push 済み＝本番は v89**
   （Pages 8本 sha1 一致・マーカー11/11／Render 実 ws 23/23 ok）。
@@ -3336,7 +3352,7 @@ mix を解禁すると、PROGRESS §6 / §0-10 に**「どの出荷 CARD_SET で
   CPUソーク 54ゲーム・23,395ステップ・問題0／`verify:e2e` 9/9／`verify:visual` はみ出し0。
 - 🛑 **Codex が同じ作業ツリーで `css/style.css`・`js/ui.js`（絵文字→SVG）・`manifest.webmanifest`・`test/ui.test.js` を改修中**＝
   私のコミットは「HEAD ＋ 自分のブロック」を index に直書きして分離している（メモリ `codex-concurrent-commit-isolation`）。
-- **次＝① push（ユーザー確認）→ 本番照合／② 第18拡張 Arcana（カード名すら未公開＝着手不能）。**
+- **次＝第18拡張 Arcana（500枚・王国37山・機構＝Study/Cart/Project）だけ。⚠ カード名が1つも公開されていないので段階0すら着手不能**＝データが出るまで待ち。
 
 **【前回の現在地】§0-40＝「世の中に出ている全カード」との差分を監査＝残りは 33種 ＋ Arcana。旭日の絵50枚も回収済み**
 （`sw.js` **v83**・**push 済み（2026-08-22・46コミット・`892af1d..b747e80`）＝本番反映を機械照合済み**）。
