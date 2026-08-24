@@ -2596,7 +2596,7 @@
   }
 
   /* ---------- 公開（reveal）チャネル ----------
-     「カードを表向きにした」出来事を全員に見せるための公開情報。官吏などは自分の盤面に
+     「カードを表向きにした」出来事を全員に見せるための公開情報。役人などは自分の盤面に
      見える変化が無いため、これが無いと「何も起きていない」ように見える。
      席ごと（state.reveals[席]）に保持するので、複数の相手が公開しても全員ぶんが残り、
      UI で各プレイヤーの表示をタップすればその人の公開カードを確認できる。
@@ -4441,7 +4441,7 @@
     applyEffect(state, first, pi);
   }
 
-  /* ---------- 官吏（複数対象。各相手が勝利点1枚を山札の上へ）---------- */
+  /* ---------- 役人（複数対象。各相手が勝利点1枚を山札の上へ）---------- */
   /* ===== 段階2 第1バッチ：幽霊船／香具師の被害者ループ ===== */
   // 幽霊船＝手札4枚以上の相手だけが対象。堀持ちは react 窓→公開しなければ put 窓（役人と同型）。
   function ghostShipEnterVictim(state, source, queue) {
@@ -4693,8 +4693,8 @@
       // どの勝利点を山札の上に置くか犠牲者が選ぶ
       state.pending = { type: 'bureaucrat', stage: 'put', player: victim, source, victim, queue };
     } else {
-      log(state, `${v.name} は勝利点を持っておらず手札を公開した（官吏）。`);
-      reveal(state, victim, v.hand, '官吏：勝利点なしの手札を公開');
+      log(state, `${v.name} は勝利点を持っておらず手札を公開した（役人）。`);
+      reveal(state, victim, v.hand, '役人：勝利点なしの手札を公開');
       bureaucratEnterVictim(state, source, queue);
     }
   }
@@ -5676,7 +5676,7 @@
        - 「より安い」＝すべての成分が ≤ かつ どれか1つが厳密に < （component-wise strictly less）。
      **engine reducer / anyGainable ゲート / CPU の候補選び / UI のモーダル filter の4面が必ずこの関数を見る**こと。
      個別に `if` を足して回るのは禁止（過去の穴は全部「同じ条件を2箇所に手書きして片方で落とした」もの）。
-     ※ 例外（コスト制限が無いのが公式）＝英雄(任意の財宝)／寵臣(任意のアタック)。それでも gainableBase は通す。
+     ※ 例外（コスト制限が無いのが公式）＝英雄(任意の財宝)／従者(任意のアタック)。それでも gainableBase は通す。
      ============================================================ */
   function costOf(state, id) {                       // コストの3成分（コスト軽減は coin にだけ効く）
     const c = C()[id] || {};
@@ -7022,10 +7022,10 @@
       case 'poor_house': {
         // +$4、手札を公開し手札の財宝1枚につき-$1（コイン合計は$0未満にならない）。
         addCoins(state, 4);
-        reveal(state, pi, p.hand.slice(), '貧民街');
+        reveal(state, pi, p.hand.slice(), '救貧院');
         const tr = p.hand.filter((c) => isTreasureFor(state, c)).length;
         t.coins = Math.max(0, t.coins - tr);
-        log(state, `${p.name} は貧民街（+$4、手札の財宝${tr}枚で-$${tr}）。`);
+        log(state, `${p.name} は救貧院（+$4、手札の財宝${tr}枚で-$${tr}）。`);
         break;
       }
       case 'vagrant': {
@@ -9020,7 +9020,7 @@
       /* 狐（$5・アクション-アタック-前兆）＝+1 Sun／次から**異なる2つ**を選ぶ：
          +2アクション／+2コイン／他の全員が呪い1枚を獲得／銀貨1枚を獲得。
          ⚠ **「+1 Sun」が先頭**＝ここで予言が有効になり得る（＝来寇なら**この狐自身が +$1 を受ける**）。
-         ⚠ 「異なる2つ」＝寵臣(pawn)と同型。**選択肢はカード記載順に解決する**。
+         ⚠ 「異なる2つ」＝手先(pawn)と同型。**選択肢はカード記載順に解決する**。
          ⚠ アタックなので `ATTACKS` に登録し堀/灯台の免疫を通す（呪い配布を選んだときだけ実害があるが、
             公式は**アタックカードの使用**そのものに反応するので**選択の前に**リアクション窓を開く）。 */
       case 'kitsune':
@@ -10055,7 +10055,7 @@
      - 選択肢の1つが選択待ちを立てる場合（宿屋の主人の捨て札・改造の獲得）は、残りを `t.elderRest` に
        積んで reduce 末尾の再開網が続きを解決する。
      ⚠ **本アプリが長老で追加選択できるのは同盟の9種のみ**（下記 ELDER_CHOICE_ORDER）。
-        公式は陰謀の 玉座候補/執事/貴族/廷臣/待ち伏せ/寵臣 など計19枚も対象だが、
+        公式は陰謀の 玉座候補/執事/貴族/廷臣/待ち伏せ/手先 など計19枚も対象だが、
         それらの reducer は形がバラバラで横断改修の回帰リスクが高い＝**許容簡略化**として PROGRESS に記録する。 */
   const ELDER_CHOICE_ORDER = {
     town: ['cards', 'coins'],
@@ -11563,7 +11563,7 @@
   }
   // カードを廃棄したときのフック（誰の廃棄でも「持ち主」に発動）。trashCard から呼ぶ。
   //   戻り値 = そのカードが廃棄置き場に残ったか（城塞＝手札に戻るので false）。
-  //   ※対話（pending）を要する on-trash（地下墓所/狩場/寵臣）は §カード実装バッチで on-trash キューとして追加する。
+  //   ※対話（pending）を要する on-trash（地下墓所/狩場/従者）は §カード実装バッチで on-trash キューとして追加する。
   function triggerOnTrash(state, pIndex, card, opts) {
     const p = state.players[pIndex];
     const fromSupply = !!(opts && opts.fromSupply); // サプライの山からの廃棄（塩まき/待ち伏せ/剣闘士）＝「あなたのカード」ではない
@@ -11628,7 +11628,7 @@
     if (card === 'sir_vander') { if (gain(state, pIndex, 'gold', 'discard')) log(state, `${p.name} はサー・ヴァンデルの廃棄で金貨1枚を獲得した。`); }
     // 暗黒時代：狂信者＝廃棄されたとき +3カード（持ち主が引く。相手のアタックで廃棄されても発動）。
     if (card === 'cultist') { draw(state, pIndex, 3); log(state, `${p.name} は狂信者の廃棄で +3カード。`); }
-    // 暗黒時代：寵臣＝廃棄されたときサプライのアタックカードを1枚獲得（対話＝onTrashQueue へ）。
+    // 暗黒時代：従者＝廃棄されたときサプライのアタックカードを1枚獲得（対話＝onTrashQueue へ）。
     if (card === 'squire' && anyGainable(state, (id) => gainableBase(state, id) && isTypeSupply(state, id, 'attack'))) {
       (state.onTrashQueue = state.onTrashQueue || []).push({ type: 'squire_trash_gain', player: pIndex });
     }
@@ -14009,7 +14009,7 @@
       }
       state = runReplays(state);
     }
-    // 暗黒時代：on-trash の「対話つき」効果（地下墓所＝安い獲得／狩場＝公領or屋敷3／寵臣＝アタック獲得）は
+    // 暗黒時代：on-trash の「対話つき」効果（地下墓所＝安い獲得／狩場＝公領or屋敷3／従者＝アタック獲得）は
     //   トリガー時点で別の pending（アタック処理中・廃棄札の続きの獲得等）が走っていることがあるため、
     //   state.onTrashQueue に貯めておき、選択待ちが無くなったタイミングで1件ずつ pending 化する。
     //   誰のターンでも card の持ち主(player)が選ぶ（actor が pending.player を返す）。
@@ -14100,7 +14100,7 @@
         }
         if (q.type === 'continue_play2') {
           const cp = state.players[q.player];
-          // 侵略(invasion_play_loot) と同じ形＝**捨て札の並びを変えずに**在庫だけ見る（薬草集め/清掃が捨て札の順を見る）。
+          // 侵略(invasion_play_loot) と同じ形＝**捨て札の並びを変えずに**在庫だけ見る（薬草集め/ゴミあさりが捨て札の順を見る）。
           if (cp.discard.indexOf(q.card) >= 0) {
             playCardNoAction(state, q.player, q.card, cp.discard, '継続で');
           } else {
@@ -14304,7 +14304,7 @@
        日本語wiki の詳細なルール 逐語＝`①でのカード廃棄に対して廃棄時効果が誘発するタイミングは①の直後であり、
        ②や③の処理以降ではないので注意。… +5ドロー(=③の処理)を行った後に「手札に青空市場があるので
        リアクションする」という動きはできない。`
-       ⇒ ここで引かないと `onTrashQueue`（青空市場／呪いの鏡／リッチ／地下墓所／狩場／寵臣）の消化より先に
+       ⇒ ここで引かないと `onTrashQueue`（青空市場／呪いの鏡／リッチ／地下墓所／狩場／従者）の消化より先に
           走り、**リシャッフルの母集団そのものが変わる**（実測で最終手札が 0枚 vs 2枚）。
        ⚠ 財宝**かつ**アクションなら +2 と +5 の**両方**（公式FAQ）。 */
     if (!state.pending && !state.gameOver && state.turn &&
@@ -16395,7 +16395,7 @@
         return state;
       }
 
-      /* ---- 寵臣：4つから異なる2つ ---- */
+      /* ---- 手先：4つから異なる2つ ---- */
       case 'PAWN_RESOLVE': {
         const pd = state.pending;
         if (!pd || pd.type !== 'pawn') return state;
@@ -16409,7 +16409,7 @@
           else if (c === 'buy') t.buys += 1;
           else if (c === 'coin') addCoins(state, 1);
         });
-        log(state, `${state.players[pd.player].name} は寵臣の効果を選んだ。`);
+        log(state, `${state.players[pd.player].name} は手先の効果を選んだ。`);
         state.pending = null;
         return state;
       }
@@ -16961,7 +16961,7 @@
         witchCurse(state, pd.source, pd.victim, pd.queue);
         return state;
       }
-      /* ---- 官吏：反応せず受ける / 勝利点を山札の上へ ---- */
+      /* ---- 役人：反応せず受ける / 勝利点を山札の上へ ---- */
       case 'BUREAUCRAT_REACT': {
         const pd = state.pending;
         if (!pd || pd.type !== 'bureaucrat' || pd.stage !== 'react') return state;
@@ -16976,8 +16976,8 @@
         if (v.hand.indexOf(card) < 0 || !DOM.isType(card, 'victory')) return state; // 勝利点のみ
         removeOne(v.hand, card);
         v.deck.unshift(card);
-        reveal(state, pd.victim, [card], '官吏で公開し山札の上へ');
-        log(state, `${v.name} は「${C()[card].name}」を山札の上に置いた（官吏）。`);
+        reveal(state, pd.victim, [card], '役人で公開し山札の上へ');
+        log(state, `${v.name} は「${C()[card].name}」を山札の上に置いた（役人）。`);
         bureaucratEnterVictim(state, pd.source, pd.queue);
         return state;
       }
@@ -17963,14 +17963,14 @@
         else if (c === 'buys') { t.buys += 2; }
         else if (c === 'silver') { if (gain(state, pd.player, 'silver', 'discard')) { /* log下 */ } }
         else return state;
-        log(state, `${p.name} は寵臣で ${c === 'actions' ? '+2アクション' : c === 'buys' ? '+2購入' : '銀貨獲得'} を選んだ。`);
+        log(state, `${p.name} は従者で ${c === 'actions' ? '+2アクション' : c === 'buys' ? '+2購入' : '銀貨獲得'} を選んだ。`);
         state.pending = null;
         return state;
       }
       case 'SQUIRE_TRASH_GAIN': { // on-trash：サプライのアタックカードを1枚獲得
         const pd = state.pending;
         if (!pd || pd.type !== 'squire_trash_gain') return state;
-        finishGain(state, pd, action.card, (id) => isTypeSupply(state, id, 'attack') && !NON_SUPPLY.has(id), 'discard', 'アタックカードを獲得した（寵臣）。');
+        finishGain(state, pd, action.card, (id) => isTypeSupply(state, id, 'attack') && !NON_SUPPLY.has(id), 'discard', 'アタックカードを獲得した（従者）。');
         return state;
       }
       case 'STOREROOM_DISCARD': {
@@ -17983,11 +17983,11 @@
         if (pd.stage === 'discard1') {
           cards.forEach((c) => { removeOne(p.hand, c); p.discard.push(c); });
           draw(state, pd.player, cards.length);
-          if (cards.length) log(state, `${p.name} は倉庫で${cards.length}枚捨てて${cards.length}枚引いた。`);
+          if (cards.length) log(state, `${p.name} は物置で${cards.length}枚捨てて${cards.length}枚引いた。`);
           state.pending = { type: 'storeroom', stage: 'discard2', player: pd.player };
         } else { // discard2：捨てた枚数ぶん +$1
           cards.forEach((c) => { removeOne(p.hand, c); p.discard.push(c); });
-          if (cards.length) { addCoins(state, cards.length); log(state, `${p.name} は倉庫で${cards.length}枚捨てて +$${cards.length}。`); }
+          if (cards.length) { addCoins(state, cards.length); log(state, `${p.name} は物置で${cards.length}枚捨てて +$${cards.length}。`); }
           state.pending = null;
         }
         return state;
@@ -17998,7 +17998,7 @@
         const p = state.players[pd.player];
         if (action.discardDeck && p.deck.length > 0) {
           p.discard.push(...p.deck); p.deck = [];
-          log(state, `${p.name} は清掃で山札を全て捨て札にした。`);
+          log(state, `${p.name} はゴミあさりで山札を全て捨て札にした。`);
         }
         state.pending = p.discard.length > 0 ? { type: 'scavenger', stage: 'topdeck', player: pd.player } : null;
         return state;
@@ -18010,7 +18010,7 @@
         const card = action.card;
         if (p.discard.indexOf(card) < 0) return state;
         removeOne(p.discard, card); p.deck.unshift(card);
-        log(state, `${p.name} は清掃で「${C()[card].name}」を山札の上に置いた。`);
+        log(state, `${p.name} はゴミあさりで「${C()[card].name}」を山札の上に置いた。`);
         state.pending = null;
         return state;
       }
@@ -18020,8 +18020,8 @@
         const p = state.players[pd.player];
         const top = p.deck[0];
         if (top !== pd.card) { state.pending = null; return state; } // 山札が変わっていたら何もしない
-        reveal(state, pd.player, [top], '鉄物商');
-        if (action.discard) { p.deck.shift(); p.discard.push(top); log(state, `${p.name} は鉄物商で「${C()[top].name}」を捨てた。`); }
+        reveal(state, pd.player, [top], '金物商');
+        if (action.discard) { p.deck.shift(); p.discard.push(top); log(state, `${p.name} は金物商で「${C()[top].name}」を捨てた。`); }
         // 種別ボーナス（捨てても戻しても得る。複合種別は全て得る）
         if (DOM.isType(top, 'action')) addActions(t, 1);
         if (isTreasureFor(state, top)) addCoins(state, 1);
@@ -18665,7 +18665,7 @@
         if (!pd || pd.type !== 'warehouse') return state;
         const p = state.players[pd.player];
         const want = Math.min(3, p.hand.length);
-        if (!discardFromHand(state, pd.player, action.cards, want, '捨てた（倉庫）。')) return state;
+        if (!discardFromHand(state, pd.player, action.cards, want, '捨てた（物置）。')) return state;
         state.pending = null;
         return state;
       }
@@ -19442,7 +19442,7 @@
         snakeWitchApply(state, pd.source, pd.victim, pd.queue);
         return state;
       }
-      /* 狐＝次から**異なる2つ**を選ぶ（寵臣 pawn と同型）：+2アクション／+2コイン／
+      /* 狐＝次から**異なる2つ**を選ぶ（手先 pawn と同型）：+2アクション／+2コイン／
          他の全員が呪い1枚を獲得／銀貨1枚を獲得。⚠ **カード記載順に解決する**。 */
       case 'KITSUNE_CHOOSE': {
         const pd = state.pending;
@@ -19533,7 +19533,7 @@
            `①でのカード廃棄に対して廃棄時効果が誘発するタイミングは①の直後であり、②や③の処理以降ではない。
             例えば、札差の効果で手札の村を廃棄した際、**手札の青空市場でリアクションできるのは①の直後**である。
             +5ドロー(=③の処理)を行った後に「手札に青空市場があるのでリアクションする」という動きはできない。`
-           ⇒ ここで直接 `draw` すると `state.onTrashQueue`（青空市場／呪いの鏡／リッチ／地下墓所／狩場／寵臣）
+           ⇒ ここで直接 `draw` すると `state.onTrashQueue`（青空市場／呪いの鏡／リッチ／地下墓所／狩場／従者）
               の消化より**先に**走り、**リシャッフルの母集団そのものが変わる**（実測で最終手札が 0枚 vs 2枚）。
            ⇒ `t.riceBrokerResume` に積み、**reduce 末尾の再開網**（`cleanupWaiting` と同じガード）で引く。
            ⚠ 財宝**かつ**アクションなら +2 と +5 の**両方**（公式FAQ が明記＝排他の if/else にしない）。 */
@@ -21809,7 +21809,7 @@
         storytellerStep(state, pd.player);
         return state;
       }
-      // 公使：山札を捨て札にしてよい（プレイ効果）。
+      // 使者：山札を捨て札にしてよい（プレイ効果）。
       case 'MESSENGER_PLAY': {
         const pd = state.pending;
         if (!pd || pd.type !== 'messenger_play') return state;
@@ -21817,7 +21817,7 @@
         if (action.discard && p.deck.length) {
           const n = p.deck.length;
           p.discard.push(...p.deck); p.deck = [];
-          log(state, `${p.name} は公使で山札 ${n}枚 を捨て札にした。`);
+          log(state, `${p.name} は使者で山札 ${n}枚 を捨て札にした。`);
         }
         state.pending = null;
         return state;
@@ -21831,12 +21831,12 @@
         if (card == null) { if (anyGainable(state, canGain)) return state; state.pending = null; return state; } // 候補あれば必須
         if (!canGain(card)) return state;
         gain(state, pd.player, card, 'discard');
-        log(state, `${state.players[pd.player].name} は公使で「${C()[card].name}」を獲得した。`);
+        log(state, `${state.players[pd.player].name} は使者で「${C()[card].name}」を獲得した。`);
         // 他の各Pが手番順にコピーを獲得（在庫がある限り）。pending 保持中なので入れ子の獲得時対話は抑止。
         const n = state.players.length;
         for (let k = 1; k < n; k++) {
           const o = (pd.player + k) % n;
-          if ((state.supply[card] || 0) > 0 && gain(state, o, card, 'discard')) log(state, `${state.players[o].name} は公使で「${C()[card].name}」のコピーを獲得した。`);
+          if ((state.supply[card] || 0) > 0 && gain(state, o, card, 'discard')) log(state, `${state.players[o].name} は使者で「${C()[card].name}」のコピーを獲得した。`);
         }
         state.pending = null;
         return state;

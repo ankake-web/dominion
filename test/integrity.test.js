@@ -197,6 +197,38 @@ console.log('=== 全 pending に CPU decidePending と UI viewPendingModal の�
   ok(noUi.length === 0, 'UI viewPendingModal に分岐が無い pending（人間が詰む）: ' + noUi.join(','));
 }
 
+/* 8. UI のモーダル見出しが「自分のカードの名前」を名乗っているか（2026-08-24 新設）
+   ⚠ 実際に3件あった＝手先(pawn)の見出しが「寵臣」（同じ陰謀に実在する minion の名前）／
+      物置(storeroom)が「倉庫」（海辺 warehouse の名前）／ゴミあさり(scavenger)が「清掃」（実在しない旧名）。
+      **日本語名を一括置換したときに起きるクラス＝プレイヤーの画面に別カードの名前が出る。**
+   pending 型の多くは「カードid＋接尾辞」なので id を前方一致で引き当て、
+   **見出し（その行の最初の日本語文字列）にそのカード自身の名前が入っているか**だけを検査する
+   （説明文は「呪い1枚を獲得します」のように他のカード名を正当に含むので見ない）。 */
+console.log('=== UI のモーダル見出しが自分のカード名を名乗っている ===');
+{
+  const fsx = require('fs'), pathx = require('path');
+  const uiSrc = fsx.readFileSync(pathx.join(__dirname, '..', 'js', 'ui.js'), 'utf8').replace(/\r\n/g, '\n');
+  const cardIds = Object.keys(DOM.CARDS).concat(Object.keys(DOM.LANDSCAPES || {})).sort((a, b) => b.length - a.length);
+  const nameOf = (id) => (DOM.CARDS[id] || DOM.LANDSCAPES[id]).name;
+  /* 見出しに自分の名前を出さない窓（汎用モーダルの使い回し／相手側の受け窓／獲得元のカード名を出す窓）は除外。
+     ここを増やすときは「プレイヤーがどのカードの窓か分かるか」を必ず確かめること。 */
+  const SKIP = new Set(['discard_down', 'attack_window', 'overpay', 'traveller_exchange', 'tavern_start',
+    'after_action', 'rotate_pile', 'look_arrange', 'event_play', 'exile_discard', 'duchess_gain',
+    'trader_react', 'travelling_fair', 'sauna_chain', 'urchin_trash']);
+  const bad = [];
+  uiSrc.split('\n').forEach((L2, i) => {
+    const m = L2.match(/pd\.type === '([a-z0-9_]+)'/);
+    if (!m || SKIP.has(m[1])) return;
+    const owner = cardIds.find((id) => m[1] === id || m[1].indexOf(id + '_') === 0);
+    if (!owner) return;
+    const lits = (L2.match(/'[^']{2,40}'/g) || []).map((s2) => s2.slice(1, -1))
+      .filter((s2) => /[\u3041-\u30ff\u4e00-\u9fff]/.test(s2));
+    if (!lits.length) return;
+    if (lits[0].indexOf(nameOf(owner)) < 0) bad.push('ui.js:' + (i + 1) + ' 見出し「' + lits[0] + '」は ' + owner + '（' + nameOf(owner) + '）の窓');
+  });
+  ok(bad.length === 0, 'UI の見出しが自分のカード名を名乗っていない: ' + bad.slice(0, 10).join(' / ') + (bad.length > 10 ? ' …他' + (bad.length - 10) + '件' : ''));
+}
+
 console.log('\n========================================');
 console.log('整合性テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

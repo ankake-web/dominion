@@ -73,13 +73,13 @@ try {
   showPend({ type: 'squire_trash_gain', player: 0 });
   ok(modalOk() && byText('*', 'アタック'), 'squire_trash_gain モーダル');
   showPend({ type: 'storeroom', stage: 'discard1', player: 0 }, (s) => { s.players[0].hand = ['copper', 'estate', 'silver']; });
-  ok(modalOk() && byText('*', '倉庫'), 'storeroom モーダル');
+  ok(modalOk() && byText('*', '物置'), 'storeroom モーダル（倉庫＝海辺 warehouse の名前を名乗らない）');
   showPend({ type: 'scavenger', stage: 'deck', player: 0 });
-  ok(modalOk() && byText('*', '清掃'), 'scavenger(deck) モーダル');
+  ok(modalOk() && byText('*', 'ゴミあさり'), 'scavenger(deck) モーダル（カタログに無い旧名「清掃」を名乗らない）');
   showPend({ type: 'scavenger', stage: 'topdeck', player: 0 }, (s) => { s.players[0].discard = ['copper', 'gold']; });
   ok(modalOk(), 'scavenger(topdeck) モーダル');
   showPend({ type: 'ironmonger', player: 0, card: 'gold' });
-  ok(modalOk() && byText('*', '鉄物商'), 'ironmonger モーダル');
+  ok(modalOk() && byText('*', '金物商'), 'ironmonger モーダル');
   showPend({ type: 'minstrel', player: 0, cards: ['village', 'smithy'] });
   ok(modalOk() && byText('*', '吟遊詩人'), 'minstrel モーダル');
 

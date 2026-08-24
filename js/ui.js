@@ -2323,7 +2323,7 @@
     /* ===== 拡張: 陰謀 ===== */
     if (pd.type === 'courtyard') return modalSingleHand(p, '中庭 — 山札の上に置く', '手札から1枚を選び、山札の一番上に置きます（次のターンに引きます）。',
       () => true, (id) => dispatch({ type: 'COURTYARD_PUT', card: id }), null, '山札の上に置く');
-    if (pd.type === 'pawn') return modalChooseTwo(p);
+    if (pd.type === 'pawn') return modalChooseTwo(p, null, null, '手先');   // 見出しを明示（既定値は寵臣＝別カード）
     if (pd.type === 'steward' && pd.stage === 'choose') return modalOptions('執事', '次から1つを選びます。', [
       { label: '+2 カード', on: () => dispatch({ type: 'STEWARD_RESOLVE', choice: 'cards' }) },
       { label: '+2 コイン', on: () => dispatch({ type: 'STEWARD_RESOLVE', choice: 'coins' }) },
@@ -4322,12 +4322,12 @@
       { label: '+2 購入', on: () => dispatch({ type: 'SQUIRE_RESOLVE', choice: 'buys' }) },
       { label: '銀貨を獲得', on: () => dispatch({ type: 'SQUIRE_RESOLVE', choice: 'silver' }) }]);
     if (pd.type === 'squire_trash_gain') return modalGainSupply(state, '従者 — アタックを獲得', '（廃棄された従者）サプライのアタックカードを1枚獲得します。', (id) => isTypeSup(state, id, 'attack'), (id) => dispatch({ type: 'SQUIRE_TRASH_GAIN', card: id }), () => dispatch({ type: 'SQUIRE_TRASH_GAIN', card: null }));
-    if (pd.type === 'storeroom') return modalMultiHand(p, pd.stage === 'discard1' ? '倉庫 — 捨てて引く' : '倉庫 — 捨てて+$1', pd.stage === 'discard1' ? '好きな枚数を捨て、同じ枚数を引きます（0枚でもOK）。' : '好きな枚数を捨て、捨てた枚数ぶん +$1（0枚でもOK）。', (n) => '確定（' + n + '枚捨て）', true, (cards) => dispatch({ type: 'STOREROOM_DISCARD', cards }));
-    if (pd.type === 'scavenger' && pd.stage === 'deck') return modalOptions('清掃', '山札をすべて捨て札にできます（その後、捨て札から1枚を山札の上に置きます）。', [
+    if (pd.type === 'storeroom') return modalMultiHand(p, pd.stage === 'discard1' ? '物置 — 捨てて引く' : '物置 — 捨てて+$1', pd.stage === 'discard1' ? '好きな枚数を捨て、同じ枚数を引きます（0枚でもOK）。' : '好きな枚数を捨て、捨てた枚数ぶん +$1（0枚でもOK）。', (n) => '確定（' + n + '枚捨て）', true, (cards) => dispatch({ type: 'STOREROOM_DISCARD', cards }));
+    if (pd.type === 'scavenger' && pd.stage === 'deck') return modalOptions('ゴミあさり', '山札をすべて捨て札にできます（その後、捨て札から1枚を山札の上に置きます）。', [
       { label: '山札を捨て札にする', cls: 'btn-primary', on: () => dispatch({ type: 'SCAVENGER_DECK', discardDeck: true }) },
       { label: 'そのまま', on: () => dispatch({ type: 'SCAVENGER_DECK', discardDeck: false }) }]);
-    if (pd.type === 'scavenger' && pd.stage === 'topdeck') return modalPickList(state, '清掃 — 山札の上へ', '捨て札から1枚を選んで山札の上に置きます。', p.discard, '山札の上に置く', (id) => dispatch({ type: 'SCAVENGER_TOPDECK', card: id }));
-    if (pd.type === 'ironmonger') return modalOptions('鉄物商 — 山札の上「' + DOM.CARDS[pd.card].name + '」', '公開したカードを捨てるか山札に残すか選びます（どちらでも種別ボーナスを得ます）。', [
+    if (pd.type === 'scavenger' && pd.stage === 'topdeck') return modalPickList(state, 'ゴミあさり — 山札の上へ', '捨て札から1枚を選んで山札の上に置きます。', p.discard, '山札の上に置く', (id) => dispatch({ type: 'SCAVENGER_TOPDECK', card: id }));
+    if (pd.type === 'ironmonger') return modalOptions('金物商 — 山札の上「' + DOM.CARDS[pd.card].name + '」', '公開したカードを捨てるか山札に残すか選びます（どちらでも種別ボーナスを得ます）。', [
       { label: '山札に残す', cls: 'btn-primary', on: () => dispatch({ type: 'IRONMONGER_RESOLVE', discard: false }) },
       { label: '捨てる', on: () => dispatch({ type: 'IRONMONGER_RESOLVE', discard: true }) }]);
     if (pd.type === 'minstrel') return modalReorder('吟遊詩人 — 山札の上に戻す', 'アクションを山札の上に戻す順番をタップで選びます（最初が一番上）。', pd.cards, (order) => dispatch({ type: 'MINSTREL_RESOLVE', order }));
