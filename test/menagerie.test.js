@@ -1170,6 +1170,68 @@ console.log('\n=== CPU: 全 pending が終端する（無限ループしない�
 }
 
 console.log('\n========================================');
+console.log('\n=== 2026-08-25: 黒猫のリアクション窓／動物見本市の代替支払い（カード文の全数監査で発覚）===');
+{
+  /* 黒猫＝`When another player gains a Victory card, you may play this from your hand.`
+     ⚠ この窓が無かったため、黒猫は自分のアクションフェイズでしか出せず
+        「自分のターンでなければ他の全員が呪い」が**一度も発動しなかった**（$2で+2カードのターミナルに退化）。 */
+  const K2 = ['black_cat', 'sleigh', 'supplies', 'camel_train', 'goatherd', 'scrap', 'sheepdog', 'snowy_village', 'stockpile', 'cardinal'];
+  let s = E.createInitialState(['あなた', '相手'], K2.slice(), { startActive: 0 });
+  s.players.forEach((p) => { p.hand = []; p.deck = ['copper', 'copper', 'copper', 'copper', 'copper']; p.discard = []; p.inPlay = []; });
+  s.players[1].hand = ['black_cat'];              // 席1が黒猫を持っている
+  s.turn.phase = 'buy'; s.turn.coins = 5; s.turn.buys = 1;
+  const curse0 = s.supply.curse;
+  s = reduce(s, { type: 'BUY', card: 'duchy' });   // 席0が**勝利点**を獲得 → 席1に窓が開く
+  ok(s.pending && s.pending.type === 'black_cat_play' && s.pending.player === 1, '相手の勝利点獲得で黒猫の窓が開く');
+  const h1 = s.players[1].hand.length;
+  s = reduce(s, { type: 'BLACK_CAT_PLAY', play: true });
+  ok(s.players[1].inPlay.includes('black_cat'), '黒猫が場に出る');
+  ok(s.players[1].hand.length === h1 - 1 + 2, '+2カード（実 ' + s.players[1].hand.length + '）');
+  ok(s.players[0].discard.includes('curse'), '**自分のターンでない**ので他のプレイヤーが呪いを獲得する');
+  ok(s.supply.curse === curse0 - 1, '呪いの山が1枚減る');
+  // 使わない選択もできる
+  let u = E.createInitialState(['あなた', '相手'], K2.slice(), { startActive: 0 });
+  u.players.forEach((p) => { p.hand = []; p.deck = ['copper', 'copper', 'copper']; p.discard = []; p.inPlay = []; });
+  u.players[1].hand = ['black_cat'];
+  u.turn.phase = 'buy'; u.turn.coins = 5; u.turn.buys = 1;
+  u = reduce(u, { type: 'BUY', card: 'duchy' });
+  u = reduce(u, { type: 'BLACK_CAT_PLAY', play: false });
+  ok(!u.pending && u.players[1].hand.includes('black_cat'), '使わなければ手札に残る');
+  // 財宝の獲得では窓が開かない（勝利点カードのときだけ）
+  let v = E.createInitialState(['あなた', '相手'], K2.slice(), { startActive: 0 });
+  v.players.forEach((p) => { p.hand = []; p.deck = ['copper']; p.discard = []; p.inPlay = []; });
+  v.players[1].hand = ['black_cat'];
+  v.turn.phase = 'buy'; v.turn.coins = 6; v.turn.buys = 1;
+  v = reduce(v, { type: 'BUY', card: 'gold' });
+  ok(!v.pending, '財宝の獲得では黒猫の窓は開かない');
+}
+{
+  /* 動物見本市＝`Instead of paying this card's cost, you may trash an Action card from your hand.`
+     ⚠ engine・CPU・UI のどこにも実装が無く、$7 を払う以外に買う手段が無かった。 */
+  const K3 = ['animal_fair', 'sleigh', 'supplies', 'camel_train', 'goatherd', 'scrap', 'sheepdog', 'snowy_village', 'stockpile', 'cardinal'];
+  let s = E.createInitialState(['あなた', '相手'], K3.slice(), { startActive: 0 });
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['sleigh', 'copper'];       // 手札にアクション1枚
+  s.turn.phase = 'buy'; s.turn.coins = 0; s.turn.buys = 1;
+  ok(E.canPayWithTrash(s, 0, 'animal_fair') === true, '手札にアクションがあれば代替支払いできる');
+  const af0 = s.supply.animal_fair;
+  s = reduce(s, { type: 'BUY', card: 'animal_fair', payWithTrash: 'sleigh' });
+  ok(s.trash.includes('sleigh'), '廃棄したアクションが廃棄置き場に入る');
+  ok(s.players[0].discard.includes('animal_fair'), '$0 でも動物見本市を獲得できる');
+  ok(s.supply.animal_fair === af0 - 1 && s.turn.buys === 0, '山が減り、購入権も1消費する');
+  ok(s.turn.coins === 0, 'コインは減らない（実 ' + s.turn.coins + '）');
+  // 手札にアクションが無ければ使えない
+  let u = E.createInitialState(['あなた', '相手'], K3.slice(), { startActive: 0 });
+  u.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  u.players[0].hand = ['copper', 'estate'];
+  u.turn.phase = 'buy'; u.turn.coins = 0; u.turn.buys = 1;
+  ok(E.canPayWithTrash(u, 0, 'animal_fair') === false, '手札にアクションが無ければ代替支払いできない');
+  const before = JSON.stringify(u);
+  ok(JSON.stringify(reduce(u, { type: 'BUY', card: 'animal_fair', payWithTrash: 'copper' })) === before,
+     '財宝を廃棄して買おうとしても状態不変で拒否される');
+  ok(JSON.stringify(reduce(u, { type: 'BUY', card: 'animal_fair' })) === before, '$0 で普通に買うことはできない');
+}
+
 console.log('移動動物園テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');
 if (fail > 0) process.exit(1);

@@ -166,6 +166,10 @@
   // コイン・ポーション・繁栄の制約を全て満たして「いま買える」か。
   function affordable(state, id) {
     const t = state.turn;
+    // 移動動物園：動物見本市＝コストの代わりに手札のアクション1枚を廃棄して買える（engine の canPayWithTrash が正本）
+    if (E() && E().canPayWithTrash && E().canPayWithTrash(state, t.active, id)) {
+      return (!E().canBuyCard || E().canBuyCard(state, t.active, id));
+    }
     return effCost(state, id) <= t.coins && potCost(id) <= (t.potions || 0) &&
       (!E() || !E().canBuyCard || E().canBuyCard(state, t.active, id));
   }
@@ -1869,6 +1873,24 @@
     const canBuy = interactive && !state.pending && t.phase === 'buy' && !t.noBuyCards && (state.players[t.active].debt || 0) === 0 && (state.supply[id] || 0) > 0 && t.buys > 0 && affordable(state, id) && DOM.engine.canBuyCard(state, t.active, id);
     const label = '購入する（' + cost + 'コイン' + (pc ? '＋ポーション' + (pc > 1 ? pc : '') : '') + '）';
     // 混合山は拡大シートも一番上の実カードを見せる（購入の dispatch は山キーのまま）。
+    /* 動物見本市：$7 を払うか、手札のアクション1枚を廃棄するかを選ばせる（公式＝コストの代わりの支払い）。
+       $7 が足りないときは廃棄だけ、両方できるときは2択にする。 */
+    const afTargets = (E() && E().animalFairTrashTargets) ? E().animalFairTrashTargets(state, t.active) : [];
+    if (canBuy && id === 'animal_fair' && afTargets.length) {
+      const canCoin = cost <= t.coins;
+      if (canCoin) {
+        // $7 も払えるなら、どちらで払うかを先に選ばせる
+        showSheet(mixTop(state, id), { label: '購入する（支払い方法を選ぶ）', cls: 'btn-primary', on: () => {
+          UI.confirm = { message: '動物見本市の支払い方法を選びます。', yesLabel: cost + 'コインを払う', noLabel: '手札のアクション1枚を廃棄する',
+            onYes: () => { UI.confirm = null; UI.sheet = null; dispatch({ type: 'BUY', card: id }); },
+            onNo: () => { UI.confirm = null; UI.animalFairPick = true; render(); } };
+          render();
+        } });
+      } else {
+        showSheet(mixTop(state, id), { label: 'アクション1枚を廃棄して購入する', cls: 'btn-primary', on: () => { UI.animalFairPick = true; render(); } });
+      }
+      return;
+    }
     if (canBuy) showSheet(mixTop(state, id), { label, cls: 'btn-primary', on: () => dispatch({ type: 'BUY', card: id }) });
     else showSheet(mixTop(state, id), null);
   }
@@ -2489,6 +2511,10 @@
     // 鷹匠＝これより安いカード1枚を手札に獲得。
     if (pd.type === 'falconer_gain') return modalGainSupply(state, '鷹匠 — 獲得', '鷹匠より安いカード1枚を手札に獲得します。',
       (id) => DOM.engine.costUnder(state, id, pd.under), (id) => dispatch({ type: 'FALCONER_GAIN', card: id }));
+    if (pd.type === 'black_cat_play') return modalOptions('黒猫 — 使いますか', '他のプレイヤーが勝利点カードを獲得しました。手札の黒猫を使用できます（アクション権は使いません。+2カード＋他の全員が呪い1枚を獲得）。', [
+      { label: '使う', cls: 'btn-primary', on: () => dispatch({ type: 'BLACK_CAT_PLAY', play: true }) },
+      { label: '使わない', on: () => dispatch({ type: 'BLACK_CAT_PLAY', play: false }) },
+    ]);
     if (pd.type === 'falconer_react') return modalOptions('鷹匠 — 使いますか', '種別を2つ以上持つカードが獲得されました。手札の鷹匠を使用できます（アクション権は使いません）。', [
       { label: '鷹匠を使用する', cls: 'btn-primary', on: () => dispatch({ type: 'FALCONER_REACT', play: true }) },
       { label: '使用しない', on: () => dispatch({ type: 'FALCONER_REACT', play: false }) },
@@ -3956,7 +3982,7 @@
     if (pd.type === 'apprentice') return modalSingleHand(p, '弟子 — 廃棄', '手札から1枚を廃棄します（コスト$1につき +1カード、ポーション費用ありなら +2カード）。', () => true, (card) => dispatch({ type: 'APPRENTICE_TRASH', card }), null, '廃棄する');
 
     /* ===== 繁栄（Prosperity）===== */
-    if (pd.type === 'charlatan' && pd.stage === 'react') return modalOptions('山師を受ける', '銅貨1枚を獲得します。', reactOptions(p, pd, { type: 'CHARLATAN_REACT' }));
+    if (pd.type === 'charlatan' && pd.stage === 'react') return modalOptions('山師を受ける', '呪い1枚を獲得します。', reactOptions(p, pd, { type: 'CHARLATAN_REACT' }));
     if (pd.type === 'rabble' && pd.stage === 'react') return modalOptions('大衆を受ける', '山札の上3枚を公開し、アクションと財宝を捨てます。', reactOptions(p, pd, { type: 'RABBLE_REACT' }));
     if (pd.type === 'clerk' && pd.stage === 'react') return modalOptions('書記を受ける', '手札1枚を山札の上に置きます。', reactOptions(p, pd, { type: 'CLERK_REACT' }));
     if (pd.type === 'clerk' && pd.stage === 'topdeck') return modalSingleHand(p, '書記 — 山札の上に置く', '手札1枚を選んで山札の上に置きます。', () => true, (card) => dispatch({ type: 'CLERK_TOPDECK', card }), null, '山札の上へ');
@@ -3990,9 +4016,9 @@
     if (pd.type === 'anvil' && pd.stage === 'gain') return modalGainSupply(state, '金床 — 獲得', 'コスト4以下のカードを1枚獲得します。', (id) => canUpTo(state, id, 4), (id) => dispatch({ type: 'ANVIL_GAIN', card: id }));
     if (pd.type === 'investment' && !pd.stage) return modalOptions('出資', '次のどちらかを選びます。', [
       { label: '+1 コイン', cls: 'btn-primary', on: () => dispatch({ type: 'INVESTMENT', choice: 'coin' }) },
-      { label: '財宝1枚を廃棄して、場の財宝の種類ぶん +勝利点', on: () => dispatch({ type: 'INVESTMENT', choice: 'vp' }) },
+      { label: 'これを廃棄し、手札を公開して 異なる名前の財宝1種類につき +1 勝利点', on: () => dispatch({ type: 'INVESTMENT', choice: 'vp' }) },
     ]);
-    if (pd.type === 'investment' && pd.stage === 'trash') return modalSingleHand(p, '出資 — 財宝を廃棄', '廃棄する財宝を1枚選びます（場の財宝の種類ぶん +勝利点）。', (id) => isTreasureNow(state, id), (card) => dispatch({ type: 'INVESTMENT_TRASH', card }), null, '廃棄する');
+    if (pd.type === 'investment' && pd.stage === 'trash') return modalSingleHand(p, '出資 — 廃棄', '手札から1枚を選んで廃棄します（種類は問いません）。その後、二択に進みます。', () => true, (card) => dispatch({ type: 'INVESTMENT_TRASH', card }), null, '廃棄する');
     if (pd.type === 'crystal_ball') {
       const c = pd.card; const opts = [];
       if (DOM.isType(c, 'action') || DOM.isType(c, 'treasure')) opts.push({ label: '使う', cls: 'btn-primary', on: () => dispatch({ type: 'CRYSTAL_BALL', choice: 'play' }) });
@@ -5545,6 +5571,21 @@
       dispatch({ type: 'END_ACTION_PHASE' });
     }
   }
+  /* 移動動物園：動物見本市＝「$7 を払う」か「手札のアクション1枚を廃棄する」かを選ぶ（公式の代替支払い）。
+     engine の pending ではなくクライアント側の選択＝決めた結果を `BUY` の `payWithTrash` で送る。 */
+  function viewAnimalFair(state) {
+    const t = state.turn;
+    const cand = (E() && E().animalFairTrashTargets) ? E().animalFairTrashTargets(state, t.active) : [];
+    const close = () => { UI.animalFairPick = false; render(); };
+    return h('div', { class: 'modal-scrim', onclick: (e) => { if (e.target.classList.contains('modal-scrim')) close(); } },
+      h('div', { class: 'modal' },
+        h('h3', null, '動物見本市 — 廃棄するアクションを選ぶ'),
+        h('p', { class: 'modal-desc' }, 'コストを支払う代わりに、手札のアクションカード1枚を廃棄して購入します。'),
+        h('div', { class: 'chip-row' }, ...cand.map((id) => cardEl(id, {
+          onclick: () => { UI.animalFairPick = false; UI.sheet = null; dispatch({ type: 'BUY', card: 'animal_fair', payWithTrash: id }); } }))),
+        h('button', { class: 'btn btn-ghost btn-block', style: 'margin-top:8px', onclick: close }, 'やめる')));
+  }
+
   function viewConfirm() {
     const c = UI.confirm;
     // sticky＝背景タップで閉じない（必ず返事が要る確認。例＝オンラインの「1手もどす」の許可）
@@ -5753,6 +5794,7 @@
     }
     if (UI.pickZoom) app.appendChild(viewPickZoom()); // 廃棄/獲得カードの拡大確認（最前面）
     if (UI.lmZoom) app.appendChild(viewLandmarkZoom()); // 横型ランドマークの拡大
+    if (UI.animalFairPick && UI.view === 'game' && UI.store && UI.store.getState) app.appendChild(viewAnimalFair(UI.store.getState()));
     if (UI.confirm) app.appendChild(viewConfirm());
     // 対戦中/ロビーで切断〜再接続中はオーバーレイで操作を一旦無効化
     if (UI.reconnecting && (UI.view === 'game' || UI.view === 'lobby')) app.appendChild(viewReconnectOverlay());

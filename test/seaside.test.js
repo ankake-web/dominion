@@ -367,11 +367,10 @@ console.log('=== 封鎖+灯台: 灯台で免疫の相手は反応不要で呪い
   ok(count(s.players[1].discard, 'curse') === before, '封鎖+灯台: 灯台免疫者は呪いを受けない');
 }
 
-console.log('=== 海賊(財宝・持続): 出すと次手番に6コスト以下の財宝を手札に獲得 ===');
+console.log('=== 海賊(アクション・持続): 出すと次手番に6コスト以下の財宝を手札に獲得 ===');
 {
   let s = mkA(); s.players[0].hand = ['pirate', 'copper'];
-  s = reduce(s, { type: 'END_ACTION_PHASE' });
-  s = reduce(s, { type: 'PLAY_TREASURE', card: 'pirate' });
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'pirate' });   // アクションフェイズで使う   // 2026-08-25: 公式は**アクション**-持続-リアクション
   ok(s.players[0].inPlay.includes('pirate'), '海賊: 場に出る');
   s = endTurn(s); s = endTurn(s);
   ok(s.turn.active === 0 && !s.pending, '海賊: 次手番の財宝獲得を解決');

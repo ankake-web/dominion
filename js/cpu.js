@@ -140,7 +140,17 @@
   // 冒険：トラベラーの成長先8種も非サプライ（page/peasant の交換でのみ得る）＝汎用獲得や獲得系pendingから除外。
   // 移動動物園：馬（horse）も非サプライ＝「馬を獲得する」効果でのみ得る（購入も汎用獲得もできない）。
   // 夜想曲：精霊3種/願い/コウモリ＝非サプライ山、家宝7種/ゾンビ3種＝山そのものが無い。いずれも汎用獲得の対象外。
-  const NON_SUPPLY_SET = new Set([...PRIZE_SET, 'spoils', 'madman', 'mercenary',
+  /* 移動動物園：動物見本市＝コストの代わりに手札のアクション1枚を廃棄して買える。
+   engine の canPayWithTrash と同じ述語を見る（engine拒否×CPU提案の livelock を防ぐ）。 */
+function animalFairPay(state, pi) {
+  const E2 = DOM.engine;
+  if (!E2 || !E2.canPayWithTrash || !E2.canPayWithTrash(state, pi, 'animal_fair')) return null;
+  const cand = E2.animalFairTrashTargets(state, pi);
+  if (!cand.length) return null;
+  // いちばん要らないアクションを廃棄する（廃棄価値が低い順）
+  return cand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0];
+}
+const NON_SUPPLY_SET = new Set([...PRIZE_SET, 'spoils', 'madman', 'mercenary',
     'coronet', 'courser', 'demesne', 'housecarl', 'huge_turnip', 'renown', // 収穫祭＆ギルド第2版：褒賞(Reward)＝engine の REWARDS と同じ集合
     'treasure_hunter', 'warrior', 'hero', 'champion', 'soldier', 'fugitive', 'disciple', 'teacher', 'horse',
     'will_o_wisp', 'imp', 'ghost', 'wish', 'bat',
@@ -360,6 +370,8 @@
     if (has('caravan')) return 'caravan';                 // +1カード+1アクション（持続）
     if (has('lighthouse')) return 'lighthouse';           // +1アクション+1コイン（持続・免疫）
     if (has('sea_chart')) return 'sea_chart';             // +1カード+1アクション
+    if (has('charlatan')) return 'charlatan';             // +3コイン＋呪い撒き（アクション-アタック）
+    if (has('pirate')) return 'pirate';                   // アクション-持続（次の手番に$6以下の財宝を手札へ）
     if (has('warehouse')) return 'warehouse';             // +3カード+1アクション→3枚捨て
     if (has('tide_pools')) return 'tide_pools';           // +3カード+1アクション（次手番2捨て）
     if (has('haven')) return 'haven';                     // +1カード+1アクション（脇置き）
@@ -762,7 +774,6 @@
     if (has('expand') && p.hand.length > 1) return 'expand';
     if (has('forge') && p.hand.filter((c) => trashValue(c) < 10).length >= 1) return 'forge';
     if (has('mint') && p.hand.some((c) => isTreasure(c))) return 'mint';
-    if (has('war_chest')) return 'war_chest';
     if (has('watchtower') && p.hand.length < 6) return 'watchtower';
     // 秘密の部屋: 手札に死に札(勝利点/呪い)があればコインに変える
     if (has('secret_chamber') && p.hand.some((c) => isDead(c))) return 'secret_chamber';
@@ -2672,6 +2683,9 @@
       // 鷹匠＝これより安いカードを手札に獲得（強いものを優先）。
       case 'falconer_gain':
         return { type: 'FALCONER_GAIN', card: bestGainUnder(state, pd.under) };
+      case 'black_cat_play':
+        // 相手の勝利点獲得に反応＝+2カード＋相手全員に呪い＝常に得（アクション権も使わない）
+        return { type: 'BLACK_CAT_PLAY', play: true };
       case 'falconer_react':
         return { type: 'FALCONER_REACT', play: true };
       // ヤギ飼い＝要らない札があれば廃棄（呪い・銅貨・屋敷）。無ければ廃棄しない。
@@ -3208,7 +3222,8 @@
         if (pd.stage === 'discard') return { type: 'ANVIL_DISCARD', card: p.hand.includes('copper') ? 'copper' : null };
         return { type: 'ANVIL_GAIN', card: bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) };
       case 'investment':
-        if (pd.stage === 'trash') { const c = p.hand.filter((x) => isTreasure(x)).sort((a, b) => (C()[a].coin || 0) - (C()[b].coin || 0))[0]; return { type: 'INVESTMENT_TRASH', card: c }; }
+        // ①手札から任意の1枚を廃棄（強制）＝いちばん要らない札を捨てる ②基本は +$1（VP側は自分を廃棄する）
+        if (pd.stage === 'trash') { const c = pickTrash(p.hand, 1)[0] || p.hand[0]; return { type: 'INVESTMENT_TRASH', card: c }; }
         return { type: 'INVESTMENT', choice: 'coin' };
       case 'crystal_ball': {
         const c = pd.card;
@@ -4386,6 +4401,15 @@
     // ルネサンス：横型プロジェクト（1人2つまで・同じものは1回だけ）。engine の canBuyProject が正本（拒否されない＝無限ループ防止）。
     const prBuy = bestProjectBuy(state, subj, level, b);
     if (prBuy) return { type: 'BUY_PROJECT', project: prBuy };
+    /* 移動動物園：動物見本市＝コストの代わりに手札のアクション1枚を廃棄して買える。
+       ⚠ CPU は「他に買うものが無く、廃棄しても惜しくないアクションが手札にある」ときだけ使う（許容簡略化）。
+          engine の canPayWithTrash と同じ述語を見るので engine拒否×CPU提案の livelock にはならない。 */
+    if (!b && (state.supply.animal_fair || 0) > 0) {
+      const af = animalFairPay(state, subj.id != null ? subj.id : state.players.indexOf(subj));
+      if (af != null && trashValue(af) < 10 && DOM.engine.canBuyCard(state, t.active, 'animal_fair')) {
+        return { type: 'BUY', card: 'animal_fair', payWithTrash: af };
+      }
+    }
     return b ? { type: 'BUY', card: b } : { type: 'END_TURN' };
   }
   // 財源を何枚使うか：現状の最善買いより価値の高い買いに届く最小の財源枚数を返す（届かなければ0＝温存）。

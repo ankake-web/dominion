@@ -209,15 +209,44 @@ console.log('=== 大衆（アタック）：相手は山札の上3枚のアク�
   ok(s.players[1].deck[0] === 'estate', '屋敷（非アクション/財宝）は山札の上に残る');
 }
 
-console.log('=== 山師（財宝アタック）：相手は銅貨を獲得 ===');
+console.log('=== 山師（アクション-アタック）：+3コイン／相手は呪いを獲得／呪いは $1 の財宝でもある ===');
+/* 2026-08-25：ここは長く「財宝-アタックで銅貨を配る」という**別のカード**として実装されていた。
+   公式（第2版 2022年6月・過去版なし）＝`+$3 / Each other player gains a Curse.
+   <hr> In games using this, Curse is also a Treasure worth $1.` */
 {
   let s = mk(['charlatan', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'kings_court', 'peddler', 'watchtower'], ['A', 'B']);
-  s.turn.phase = 'buy'; s.players[0].hand = ['charlatan'];
-  const before = count(s.players[1].discard, 'copper');
-  s = reduce(s, { type: 'PLAY_TREASURE', card: 'charlatan' });
+  s.players[0].hand = ['charlatan']; s.turn.actions = 1;
+  const before = count(s.players[1].discard, 'curse');
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'charlatan' });
   s = resolveAll(s);
   ok(s.turn.coins === 3, '山師 +3コイン');
-  ok(count(s.players[1].discard, 'copper') === before + 1, '相手は銅貨1枚を獲得');
+  ok(count(s.players[1].discard, 'curse') === before + 1, '相手は**呪い**1枚を獲得（銅貨ではない）');
+  ok(s.charlatanRule === true, '山師が王国にあると常設ルールが立つ');
+  ok(E.isTreasureFor(s, 'curse') === true, '呪いは財宝として扱われる');
+  // 呪いを財宝として出すと $1 になる
+  let u = mk(['charlatan', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'kings_court', 'peddler', 'watchtower'], ['A', 'B']);
+  u.turn.phase = 'buy'; u.players[0].hand = ['curse'];
+  u = reduce(u, { type: 'PLAY_TREASURE', card: 'curse' });
+  ok(u.turn.coins === 1, '呪いを財宝として出すと +$1（実 ' + u.turn.coins + '）');
+  // 山師が王国に無ければ呪いは財宝ではない
+  const v = mk(['monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'kings_court', 'peddler', 'watchtower', 'mint'], ['A', 'B']);
+  ok(!v.charlatanRule && E.isTreasureFor(v, 'curse') === false, '山師が無いゲームでは呪いは財宝ではない');
+}
+
+console.log('=== 王の宮廷×山師：1回目のリアクション窓の後も2回目・3回目のアタックが飛ばない ===');
+/* 回帰（§0-15）：「1回目が反応待ちなら以降の再演を丸ごと飛ばす」実装だと、堀を持たない相手が呪いを1枚しか受けない。 */
+{
+  let s = mk(['charlatan', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'kings_court', 'peddler', 'watchtower'], ['A', 'B', 'C']);
+  s.players[0].hand = ['kings_court', 'charlatan']; s.turn.actions = 1;
+  s.players[1].hand = ['moat', 'estate'];    // 席1＝堀持ち（免疫）
+  s.players[2].hand = ['estate', 'estate'];  // 席2＝リアクション無し
+  const b1 = count(s.players[1].discard, 'curse'), b2 = count(s.players[2].discard, 'curse');
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'kings_court' });
+  s = reduce(s, { type: 'THRONE_CHOOSE', card: 'charlatan' });
+  s = resolveAll(s);
+  ok(s.turn.coins === 9, '山師$3 ×3 ＝ +9コイン（実 ' + s.turn.coins + '）');
+  ok(count(s.players[1].discard, 'curse') === b1, '堀の席は呪いを1枚も受けない');
+  ok(count(s.players[2].discard, 'curse') === b2 + 3, '堀無しの席は3回とも呪いを受ける（実 +' + (count(s.players[2].discard, 'curse') - b2) + '）');
 }
 
 console.log('=== 望楼（獲得時リアクション）：買ったカードを廃棄/山札上/受け取る ===');
@@ -241,20 +270,44 @@ console.log('=== 保管庫：+2カード、捨てて+コイン。相手は2枚�
   s = resolveAll(s);
 }
 
-console.log('=== 出資：これを廃棄して +1コイン ===');
+console.log('=== 出資：手札1枚を廃棄 → 二択（+$1／これを廃棄して手札の異名財宝ぶん +VP）===');
+/* 2026-08-25：ここは「使った瞬間に無条件で自分を廃棄／手札の**財宝**を廃棄／**場**の財宝の種類数で +VP」
+   という別物だった。公式＝`Trash a card from your hand. Choose one: +$1; or trash this to reveal your
+   hand for +1 VP per differently named Treasure there.` */
 {
-  let s = mk(); s.turn.phase = 'buy'; s.players[0].hand = ['investment'];
+  // ①+$1 側＝出資自身は廃棄されない（場に残る）
+  let s = mk(); s.turn.phase = 'buy'; s.players[0].hand = ['investment', 'estate', 'copper'];
   s = reduce(s, { type: 'PLAY_TREASURE', card: 'investment' });
-  ok(count(s.trash, 'investment') === 1, '出資は使うと廃棄される');
-  ok(s.pending && s.pending.type === 'investment', '出資：選択が出る');
+  ok(s.pending && s.pending.type === 'investment' && s.pending.stage === 'trash', '出資：まず手札から1枚を廃棄する窓');
+  ok(count(s.trash, 'investment') === 0, '使っただけでは出資は廃棄されない');
+  s = reduce(s, { type: 'INVESTMENT_TRASH', card: 'estate' });   // **財宝でなくてもよい**
+  ok(count(s.trash, 'estate') === 1, '手札の任意の1枚（屋敷）を廃棄できる');
+  ok(s.pending && s.pending.type === 'investment' && !s.pending.stage, '廃棄の後に二択');
   s = reduce(s, { type: 'INVESTMENT', choice: 'coin' });
-  ok(s.turn.coins === 1, '出資 +1コイン');
+  ok(s.turn.coins === 1 && count(s.trash, 'investment') === 0, '+$1 を選ぶと出資は場に残る');
+
+  // ②VP 側＝出資を廃棄し、**手札**の異なる名前の財宝の数だけ +VP
+  let u = mk(); u.turn.phase = 'buy';
+  u.players[0].hand = ['investment', 'copper', 'copper', 'silver', 'gold', 'estate'];
+  u.players[0].inPlay = ['bank', 'bank'];   // **場**の財宝を数えないことの回帰（旧実装はここを数えていた）
+  const vp0 = u.players[0].vpTokens || 0;
+  u = reduce(u, { type: 'PLAY_TREASURE', card: 'investment' });
+  u = reduce(u, { type: 'INVESTMENT_TRASH', card: 'estate' });
+  u = reduce(u, { type: 'INVESTMENT', choice: 'vp' });
+  ok(count(u.trash, 'investment') === 1, 'VP 側を選ぶと出資を廃棄する');
+  ok((u.players[0].vpTokens || 0) === vp0 + 3, '手札の異名財宝は 銅貨/銀貨/金貨＝3種 → +3VP（実 +' + ((u.players[0].vpTokens || 0) - vp0) + '）');
+
+  // ③手札が出資1枚だけ（＝出したら手札0枚）なら廃棄せず二択へ＝詰まない
+  let w = mk(); w.turn.phase = 'buy'; w.players[0].hand = ['investment'];
+  w = reduce(w, { type: 'PLAY_TREASURE', card: 'investment' });
+  ok(w.pending && w.pending.type === 'investment' && !w.pending.stage, '手札が無ければ廃棄をとばして二択');
 }
 
 console.log('=== 軍用金：左隣が指定、$5以下の未指定カードを獲得 ===');
 {
   let s = mk(); s.players[0].hand = ['war_chest'];
-  s = reduce(s, { type: 'PLAY_ACTION', card: 'war_chest' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' });               // 財宝は購入フェイズに出す
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'war_chest' });   // 2026-08-25: 公式は**財宝**
   ok(s.pending && s.pending.type === 'war_chest' && s.pending.stage === 'name' && s.pending.player === 1, '左隣(席1)が指定');
   s = reduce(s, { type: 'WAR_CHEST_NAME', card: 'gold' }); // 金貨を禁止
   ok(s.pending && s.pending.stage === 'gain' && s.pending.player === 0, '席0が獲得する番');
@@ -273,35 +326,34 @@ console.log('=== 司教：空手札でもデッドロックしない（廃棄を
   ok(s.players[0].vpTokens === 1, '司教の +1VPは入る');
 }
 
-console.log('=== ティアラ：相手の堀でも2回目のコインは取りこぼさない ===');
+console.log('=== ティアラ：相手の堀でも2回目のコインは取りこぼさない（財宝アタック＝遺物）===');
 {
-  let s = mk(['charlatan', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'kings_court', 'peddler', 'watchtower'], ['A', 'B']);
-  s.turn.phase = 'buy'; s.players[0].hand = ['tiara', 'charlatan']; s.players[1].hand = ['moat'];
+  let s = mk(['relic', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'kings_court', 'peddler', 'watchtower'], ['A', 'B']);
+  s.turn.phase = 'buy'; s.players[0].hand = ['tiara', 'relic']; s.players[1].hand = ['moat'];
   s = reduce(s, { type: 'PLAY_TREASURE', card: 'tiara' }); // +1購入、2回使う選択
   ok(s.pending && s.pending.type === 'tiara_play', 'ティアラ：2回使う選択');
-  s = reduce(s, { type: 'TIARA_PLAY', card: 'charlatan' }); // 山師を2回（相手は堀）
+  s = reduce(s, { type: 'TIARA_PLAY', card: 'relic' }); // 遺物を2回（相手は堀）
   // 2回目は state.replay に積まれ、1回目のリアクション窓が解決してから適用される（公式：1回目が
   // 完全に解決してから2回目を使う）。反応待ちの最中はまだ$3で、解決後に$6になる＝取りこぼさない。
-  ok(s.turn.coins === 3 && s.pending && s.pending.type === 'charlatan', 'ティアラ：2回目は1回目のリアクション解決後（この時点では$3）');
+  ok(s.turn.coins === 2 && s.pending && s.pending.type === 'relic', 'ティアラ：2回目は1回目のリアクション解決後（この時点では$2）');
   s = resolveAll(s);
-  ok(s.turn.coins === 6, '山師$3 ×2 ＝ +6コイン（堀でも2回目を取りこぼさない。実 ' + s.turn.coins + ')');
+  ok(s.turn.coins === 4, '遺物$2 ×2 ＝ +4コイン（堀でも2回目を取りこぼさない。実 ' + s.turn.coins + ')');
   ok(!s.pending, '解決後 pending なし');
 }
-console.log('=== ティアラ×山師（3人）：1人が堀でも、堀でない相手は2回とも銅貨を受ける ===');
+console.log('=== ティアラ×遺物（3人）：1人が堀でも、堀でない相手はアタックを受ける ===');
 {
   // 回帰：旧実装は「1回目がリアクション待ちなら2回目のアタックを丸ごと飛ばす」ため、
-  //   堀を持たない相手が銅貨を1枚しか受けなかった（2回目のアタックが消えていた）。
-  let s = mk(['charlatan', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'kings_court', 'peddler', 'watchtower'], ['A', 'B', 'C']);
-  s.turn.phase = 'buy'; s.players[0].hand = ['tiara', 'charlatan'];
+  //   堀を持たない相手が2回目のアタックを受けなかった（＋2回目のコインも消えていた）。
+  let s = mk(['relic', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'kings_court', 'peddler', 'watchtower'], ['A', 'B', 'C']);
+  s.turn.phase = 'buy'; s.players[0].hand = ['tiara', 'relic'];
   s.players[1].hand = ['moat', 'estate'];   // 席1＝堀持ち（免疫）
   s.players[2].hand = ['estate', 'estate']; // 席2＝リアクション無し
-  const b1 = count(s.players[1].discard, 'copper'), b2 = count(s.players[2].discard, 'copper');
   s = reduce(s, { type: 'PLAY_TREASURE', card: 'tiara' });
-  s = reduce(s, { type: 'TIARA_PLAY', card: 'charlatan' });
+  s = reduce(s, { type: 'TIARA_PLAY', card: 'relic' });
   s = resolveAll(s);
-  ok(s.turn.coins === 6, '3人でも +6コイン (実 ' + s.turn.coins + ')');
-  ok(count(s.players[1].discard, 'copper') === b1, '堀持ちは銅貨0枚（2回とも免疫）');
-  ok(count(s.players[2].discard, 'copper') === b2 + 2, '堀無しは銅貨2枚（2回目のアタックも発動。実 +' + (count(s.players[2].discard, 'copper') - b2) + '）');
+  ok(s.turn.coins === 4, '3人でも +4コイン (実 ' + s.turn.coins + ')');
+  ok(!s.players[1].minusCard, '堀持ちは -1カードトークンを受けない（2回とも免疫）');
+  ok(s.players[2].minusCard === true, '堀無しはアタックを受ける（2回目も発動）');
 }
 
 console.log('=== 書記：手番開始時に手札から使える（アクション消費せず）===');
@@ -318,16 +370,15 @@ console.log('=== 書記：手番開始時に手札から使える（アクショ
   s = resolveAll(s);
 }
 
-console.log('=== ティアラ×山師：2回使うと相手は銅貨2枚を獲得（堀無し・2回目のアタックも発動）===');
+console.log('=== ティアラ×遺物：2回使っても +コインを取りこぼさない（堀無し）===');
 {
-  let s = mk(['charlatan', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'kings_court', 'peddler', 'watchtower'], ['A', 'B']);
-  s.turn.phase = 'buy'; s.players[0].hand = ['tiara', 'charlatan']; s.players[1].hand = ['estate', 'estate']; // 席1はリアクション無し
-  const before = count(s.players[1].discard, 'copper');
+  let s = mk(['relic', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'kings_court', 'peddler', 'watchtower'], ['A', 'B']);
+  s.turn.phase = 'buy'; s.players[0].hand = ['tiara', 'relic']; s.players[1].hand = ['estate', 'estate']; // 席1はリアクション無し
   s = reduce(s, { type: 'PLAY_TREASURE', card: 'tiara' });
-  s = reduce(s, { type: 'TIARA_PLAY', card: 'charlatan' });
+  s = reduce(s, { type: 'TIARA_PLAY', card: 'relic' });
   s = resolveAll(s);
-  ok(s.turn.coins === 6, '山師$3×2＝+6コイン (実 ' + s.turn.coins + ')');
-  ok(count(s.players[1].discard, 'copper') === before + 2, 'ティアラ×山師：相手は銅貨2枚を獲得（実 +' + (count(s.players[1].discard, 'copper') - before) + '）');
+  ok(s.turn.coins === 4, '遺物$2×2＝+4コイン (実 ' + s.turn.coins + ')');
+  ok(s.players[1].minusCard === true, 'ティアラ×遺物：相手はアタックを受ける');
 }
 
 console.log('=== 書記：手番開始時に2枚とも使える（1枚目のアタックで選択が出ても2枚目が消えない）===');
@@ -348,13 +399,13 @@ console.log('=== 水晶球：山札上の山師を「使う」とアタックも
   let s = mk(['crystal_ball', 'charlatan', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'kings_court', 'peddler'], ['A', 'B']);
   s.turn.phase = 'buy'; s.players[0].hand = ['crystal_ball']; s.players[0].deck = ['charlatan', 'copper', 'copper'];
   s.players[1].hand = ['estate', 'estate']; // リアクション無し
-  const before = count(s.players[1].discard, 'copper');
+  const beforeC = count(s.players[1].discard, 'curse');
   s = reduce(s, { type: 'PLAY_TREASURE', card: 'crystal_ball' });
   ok(s.pending && s.pending.type === 'crystal_ball' && s.pending.card === 'charlatan', '水晶球：山札上（山師）を見る');
   s = reduce(s, { type: 'CRYSTAL_BALL', choice: 'play' });
   s = resolveAll(s);
   ok(s.players[0].inPlay.includes('charlatan'), '水晶球：山師を場に出して使った');
-  ok(count(s.players[1].discard, 'copper') === before + 1, '水晶球で使った山師のアタックで相手が銅貨獲得（実 +' + (count(s.players[1].discard, 'copper') - before) + '）');
+  ok(count(s.players[1].discard, 'curse') === beforeC + 1, '水晶球で使った山師のアタックで相手が呪いを獲得（実 +' + (count(s.players[1].discard, 'curse') - beforeC) + '）');
 }
 
 console.log('=== 「財宝を全部出す」：ティアラ/冠/偽造通貨（財宝を2回使う札）を最初に出す ===');

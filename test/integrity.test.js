@@ -167,7 +167,7 @@ console.log('=== 資本主義：財宝になるアクションの集合が固定
   ['guardian', 'raider', 'werewolf', 'vampire', 'changeling', 'monastery', 'night_watchman', 'exorcist', 'devils_workshop']
     .forEach((id) => ok(set.indexOf(id) < 0, '資本主義：' + id + ' は財宝にならない（夜行カード＝アクションではない）'));
   ok(set.every((id) => DOM.isType(id, 'action') && !DOM.isType(id, 'treasure')), '資本主義の対象は「財宝でないアクション」だけ');
-  ok(set.length === 156, '資本主義で財宝になるアクションは156枚（段階1の33種で+9＝抑留/航海士/海賊船/交易路/香具師/ならず者/店/一騎討ち/駿馬）（カタログ文を変えたらこの数を見直す。実: ' + set.length + '）');
+  ok(set.length === 157, '資本主義で財宝になるアクションは157枚（2026-08-25 に山師が財宝→アクションになり +1）（カタログ文を変えたらこの数を見直す。実: ' + set.length + '）');
 }
 
 /* ===== 4点セットの機械検算＝「engine が立てる全 pending に CPU と UI の分岐があるか」 =====
@@ -227,6 +227,42 @@ console.log('=== UI のモーダル見出しが自分のカード名を名乗っ
     if (lits[0].indexOf(nameOf(owner)) < 0) bad.push('ui.js:' + (i + 1) + ' 見出し「' + lits[0] + '」は ' + owner + '（' + nameOf(owner) + '）の窓');
   });
   ok(bad.length === 0, 'UI の見出しが自分のカード名を名乗っていない: ' + bad.slice(0, 10).join(' / ') + (bad.length > 10 ? ' …他' + (bad.length - 10) + '件' : ''));
+}
+
+/* 9. カード面の文字は `DOM.CARDS[].text` だけから作る（2026-08-25 新設）
+   ⚠ `js/carddata.js` の DISPLAY に `effects:` を書くと**カード面と UI がそれで上書きされ**、
+      `text` を直しても画像に反映されない二重管理になる（実際に玉座の間が第1版の文面のまま残っていた）。
+      CLAUDE.md の「単一ソース＝DOM.CARDS から表示・画像を自動導出」に反するので機械的に禁止する。 */
+console.log('=== カード面の文字は DOM.CARDS[].text だけから導出している ===');
+{
+  const bad = [];
+  for (const id of Object.keys(DOM.CARDS)) {
+    const d = DOM.CARD_DATA[id];
+    if (!d) continue;
+    const want = (DOM.CARDS[id].text || '').split('\n');
+    if (JSON.stringify(d.effects || []) !== JSON.stringify(want)) bad.push(id);
+  }
+  ok(bad.length === 0, 'carddata.js が text を上書きしているカード（effects: を消すこと）: ' + bad.slice(0, 10).join(',') + (bad.length > 10 ? ' …他' + (bad.length - 10) : ''));
+}
+
+/* 10. すべてのカードに webp が実在する（2026-08-25 新設）
+   `verify:e2e` は「そのプレイで実際に要求された webp」しか見ないので、盤面に出なかったカードの
+   画像欠けを構造的に検出できない。ここで 844枚ぶんを機械的に確かめる。
+   ⚠ コードが名指しする webp（例＝伏せ札の back.webp）も、参照があるなら実在を要求する。 */
+console.log('=== すべてのカードに webp が実在する ===');
+{
+  const fsx = require('fs'), pathx = require('path');
+  const root = pathx.join(__dirname, '..');
+  const noArt = Object.keys(DOM.CARDS).filter((id) => !fsx.existsSync(pathx.join(root, 'asset', 'cards', id + '.webp')));
+  ok(noArt.length === 0, 'webp が無い縦型カード: ' + noArt.slice(0, 10).join(','));
+  const noArtL = Object.keys(DOM.LANDSCAPES || {}).filter((id) => !fsx.existsSync(pathx.join(root, 'asset', 'cards', id + '.webp')));
+  ok(noArtL.length === 0, 'webp が無い横型カード: ' + noArtL.slice(0, 10).join(','));
+  const srcs = ['js/ui.js', 'js/carddata.js', 'index.html', 'cards.html']
+    .filter((f) => fsx.existsSync(pathx.join(root, f)))
+    .map((f) => fsx.readFileSync(pathx.join(root, f), 'utf8')).join('\n');
+  const named = [...new Set((srcs.match(/asset\/cards\/[a-z0-9_]+\.webp/g) || []))];
+  const missing = named.filter((rel) => !fsx.existsSync(pathx.join(root, rel)));
+  ok(missing.length === 0, 'コードが名指しするのに存在しない webp: ' + missing.join(','));
 }
 
 console.log('\n========================================');

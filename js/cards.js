@@ -85,7 +85,7 @@
     thief:     { id: 'thief',      name: '泥棒',       cost: 4, types: ['action', 'attack'],
                  text: '他のプレイヤーは山札の上2枚を公開する。\nその中の財宝1枚をあなたが選んで廃棄し、\nそれを獲得してもよい。残りは捨てる。' },
     throne_room:{ id: 'throne_room', name: '玉座の間', cost: 4, types: ['action'],
-                 text: '手札のアクションカードを1枚選び、\nそれを2回使う。' },
+                 text: '手札のアクションカード1枚を2回使ってもよい。' },
 
     /* ===== 拡張: 陰謀 (Intrigue) =====
        絵(asset/<id>.jpg・asset/thumb/<id>.jpg)は未用意。置けば自動で表示される。
@@ -254,8 +254,8 @@
                     text: '+2 コイン\n次のターン +1 カード\n他は各ターン最初の銀貨か金貨を廃棄' },
     sea_witch:    { id: 'sea_witch',    name: '海の魔女',   cost: 5, types: ['action', 'duration', 'attack'],
                     text: '+2 カード\n他は呪いを獲得\n次のターン +2 カード後、手札を2枚捨てる' },
-    pirate:       { id: 'pirate',       name: '海賊',       cost: 5, types: ['treasure', 'duration', 'reaction'],
-                    text: '次のターン、6コスト以下の財宝1枚を手札に獲得\n（リアクション）誰かが財宝を獲得時、手札から使える' },
+    pirate:       { id: 'pirate',       name: '海賊',       cost: 5, types: ['action', 'duration', 'reaction'],   // 公式は**アクション**-持続-リアクション
+                    text: '次のターンの開始時、コスト$6以下の財宝1枚を手札に獲得する。\n————\nいずれかのプレイヤーが財宝カードを獲得したとき、これを手札から使ってもよい。' },
 
     /* ===== 拡張: 錬金術（Alchemy 第二版）13種 =====
        いまは「完成形カード画像」用のカタログ追加のみ（実ゲームロジックは別途・未実装）。
@@ -286,7 +286,7 @@
     apprentice:   { id: 'apprentice',   name: '弟子',         cost: 5, types: ['action'],
                     text: '+1 アクション\n手札1枚を廃棄する。\nそのコスト$1につき +1 カード（ポーション費用ありなら +2 カード）。' },
     possession:   { id: 'possession',   name: '支配',         cost: 6, potion: 2, types: ['action'],
-                    text: '左隣はこのターンの後に追加ターンを行い、その間あなたが全ての決定を行う。\n獲得・廃棄したカードはあなたが受け取る。' },
+                    text: '左隣はこのターンの後に追加ターンを行い、その間あなたが全ての決定を行う。\nそのターンに相手が獲得するはずのカードは、代わりにあなたが受け取る。\n相手の廃棄されたカードは脇に置かれ、ターンの終了時に相手の捨て札置き場に置かれる。' },
 
     // ===== 繁栄（Prosperity 第二版）王国カード 25種 =====
     anvil:        { id: 'anvil',        name: '金床',         cost: 3, types: ['treasure'], coin: 1,
@@ -298,7 +298,7 @@
     clerk:        { id: 'clerk',        name: '書記',       cost: 4, types: ['action', 'attack', 'reaction'],
                     text: '+2 コイン\n手札が5枚以上の他のプレイヤーは各自、手札1枚を山札の上に置く。\n自分の手番開始時、これを手札から使ってよい。' },
     investment:   { id: 'investment',   name: '出資',         cost: 4, types: ['treasure'],
-                    text: 'これを廃棄する。次のうち1つ：\n「+1 コイン」／「手札の財宝1枚を廃棄し、場の財宝の種類1つにつき +1 勝利点」。' },
+                    text: '手札からカード1枚を廃棄する。次のうち1つを選ぶ：\n・+1 コイン\n・これを廃棄し、手札を公開する。その中の異なる名前の財宝1種類につき +1 勝利点' },
     monument:     { id: 'monument',     name: '記念碑',       cost: 4, types: ['action'],
                     text: '+2 コイン、+1 勝利点' },
     quarry:       { id: 'quarry',       name: '石切場',       cost: 4, types: ['treasure'], coin: 1,
@@ -307,8 +307,8 @@
                     text: '+1 購入\nこのターン、カードを獲得したとき山札の上に置いてよい。\n手札の財宝1枚を2回使ってよい。' },
     workers_village: { id: 'workers_village', name: '労働者の村', cost: 4, types: ['action'],
                     text: '+1 カード、+2 アクション、+1 購入' },
-    charlatan:    { id: 'charlatan',    name: '山師',     cost: 5, types: ['treasure', 'attack'], coin: 3,
-                    text: 'コイン +3\n他のプレイヤーは各自、銅貨1枚を獲得する。' },
+    charlatan:    { id: 'charlatan',    name: '山師',     cost: 5, types: ['action', 'attack'],   // 公式は**アクション**-アタック（2026-08-25 に財宝から修正）
+                    text: '+3 コイン\n他のプレイヤーは各自、呪い1枚を獲得する。\n————\nこれを使うゲームでは、呪いは $1 の財宝でもある。' },
     city:         { id: 'city',         name: '都市',         cost: 5, types: ['action'],
                     text: '+1 カード、+2 アクション\n空のサプライ山が1つあれば +1 カード。2つ以上なら さらに +1 購入・+1 コイン。' },
     collection:   { id: 'collection',   name: '収集品',         cost: 5, types: ['treasure'], coin: 2,
@@ -323,7 +323,7 @@
                     text: '+3 カード\n他のプレイヤーは各自、山札の上3枚を公開し、アクションと財宝を捨て、残りを好きな順で山札の上に戻す。' },
     vault:        { id: 'vault',        name: '保管庫',       cost: 5, types: ['action'],
                     text: '+2 カード\n手札を好きな枚数捨て、1枚につき +1 コイン。\n他のプレイヤーは各自、手札2枚を捨ててよい。捨てたなら1枚引く。' },
-    war_chest:    { id: 'war_chest',    name: '軍用金',       cost: 5, types: ['action'],
+    war_chest:    { id: 'war_chest',    name: '軍用金',       cost: 5, types: ['treasure'],   // 公式は**財宝**（アクション権を使わず購入フェイズに出す）
                     text: '左隣がカード名を1つ指定する。\nコスト$5以下で、このターンに軍用金で指定されていないカード1枚を獲得する。' },
     grand_market: { id: 'grand_market', name: '大市場',     cost: 6, types: ['action'],
                     text: '+1 カード、+1 アクション、+1 購入、+2 コイン\n場に銅貨があるとき、これは購入できない。' },
@@ -391,7 +391,7 @@
     crossroads: { id: 'crossroads', name: '岐路', cost: 2, types: ['action'],
                  text: '手札を公開する。\n公開した勝利点カード1枚につき +1 カード\nこのターンに最初にプレイしたクロスロードであれば、+3 アクション' },
     duchess: { id: 'duchess', name: '公爵夫人', cost: 2, types: ['action'],
-                 text: '+2 コイン\n各プレイヤー（あなたを含む）は自分の山札の一番上のカードを見て、それを捨て札にしてもよい。' },
+                 text: '+2 コイン\n各プレイヤー（あなたを含む）は自分の山札の一番上のカードを見て、それを捨て札にしてもよい。\n————\nこのカードを使うゲームでは、公領を獲得したとき、公爵夫人1枚を獲得してもよい。' },
     fools_gold: { id: 'fools_gold', name: '愚者の黄金', cost: 2, types: ['treasure', 'reaction'], coin: 1,
                  text: 'このターンに最初にプレイした愚者の黄金なら 1 コイン、そうでなければ 4 コインを生む。\n他のプレイヤーが属州を獲得したとき、このカードを手札から廃棄してもよい。そうした場合、金貨1枚を獲得し山札の一番上に置く。' },
     develop: { id: 'develop', name: '開発', cost: 3, types: ['action'],

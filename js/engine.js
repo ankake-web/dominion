@@ -414,6 +414,7 @@
       const fc = pickFerrymanCard(fresh.concat(state.baneCard ? [state.baneCard] : []));
       if (fc) state.ferrymanPile = { card: fc, cards: ferrymanPileCards(fc, n) };
     }
+    if (fresh.includes('charlatan')) state.charlatanRule = true;   // 神風で新しく配られた場合も常設ルールは立つ
     if (fresh.includes('footpad')) state.footpadRule = true;
     // (c) 廃墟＝略奪者(looter)がいれば (人数-1)×10 枚。**カードが増える**＝保存則は `kingdomEpoch` で取り直す。
     if (!Array.isArray(state.ruins) && fresh.some((k) => DOM.isType(k, 'looter'))) {
@@ -1073,6 +1074,9 @@
     //   手札/場のカードでは mixedTopCard が null を返すので素通り＝既存挙動は不変。
     id = mixedTopCard(state, id) || id;
     if (DOM.isType(id, 'treasure')) return true;
+    /* 繁栄：山師（Charlatan）＝`In games using this, Curse is also a Treasure worth $1.`
+       ⚠ **カードだけ**（山の種別は変えない＝悟り `Enlightenment only affects cards and not piles.` と同じ線引き）。 */
+    if (id === 'curse' && state && state.charlatanRule) return true;
     const t = state && state.turn;
     if (!t || !state.projects || !state.projects.length) return false;
     if (!hasMyProject(state, t.active, 'capitalism')) return false; // 「あなたのターン中」＝手番プレイヤーが資本主義を持つ
@@ -1099,6 +1103,7 @@
   function treasureCoins(state, id) {
     const base = (C()[id] && C()[id].coin) || 0;
     if (id === 'copper') return base + ((state.turn && state.turn.copperBonus) || 0);
+    if (id === 'curse' && state && state.charlatanRule) return 1;   // 繁栄：山師＝呪いは $1 の財宝でもある
     /* 夜想曲：嫉妬(Envious)＝**返した後**このターンが終わるまで銀貨と金貨は $1 しか生まない（公式）。
        判定軸は「購入フェイズか」ではなく「嫉妬を返したか」＝語り部でアクションフェイズに出した銀貨/金貨は対象外。
        冠/ティアラ/偽造通貨で2回使っても各回 $1（applyTreasureEffect が毎回ここを通る）。
@@ -1413,10 +1418,12 @@
       armDuration(state, pIndex, 'astrolabe');
       log(state, `${p.name} はアストロラーベを使った（+1コイン +1購入。次の手番にも）。`);
     }
-    // 海辺：海賊（財宝・持続）＝次の手番に6コスト以下の財宝1枚を手札に獲得。
-    if (card === 'pirate') {
-      armDuration(state, pIndex, 'pirate');
-      log(state, `${p.name} は海賊を使った（次の手番に財宝を手札に獲得）。`);
+    /* 繁栄：軍用金＝**財宝**（公式の Type(s) は Treasure。2026-08-25 にアクションから修正）。
+       左隣がカード名を1つ指定 → コスト$5以下で「このターン軍用金で指定されていない」カードを1枚獲得。
+       ⚠ 財宝なのでアクション権を使わず、購入フェイズに出す。銀行/有力者/出資の「場の財宝」にも数える。 */
+    if (card === 'war_chest') {
+      const left = (pIndex + 1) % state.players.length;
+      state.pending = { type: 'war_chest', stage: 'name', player: left, source: pIndex };
     }
     // ===== 繁栄：財宝カードの「使ったとき」効果 =====
     // 銀行：場の財宝1枚につき +1コイン（これ自身も数える。inPlay には既に積んである）。
@@ -1459,21 +1466,20 @@
     if (card === 'scepter') {
       state.pending = { type: 'scepter', stage: 'choose', player: pIndex };
     }
-    // 山師：他のプレイヤーは各自 銅貨1枚を獲得（アタック）。コイン3は coin:3 で加算済み。
-    if (card === 'charlatan') {
-      const q = [];
-      for (let k = 1; k < state.players.length; k++) q.push((pIndex + k) % state.players.length);
-      charlatanEnterVictim(state, pIndex, q);
-    }
     // 金床：財宝1枚を捨ててコスト4以下を獲得してよい（コイン1は coin:1）。
     if (card === 'anvil' && p.hand.some((c) => isTreasureFor(state, c))) {
       state.pending = { type: 'anvil', stage: 'discard', player: pIndex };
     }
     // 出資：これを廃棄。+1コイン か 「財宝1枚を廃棄して場の財宝の種類ぶん +VP」を選ぶ。
     //   2回目のプレイ（冠/ティアラの再演）では既に場を離れている＝廃棄は不発（lose track）だが選択は行う。
+    /* 出資（公式・第2版 2022年6月の1版のみ）＝`Trash a card from your hand. Choose one: +$1;
+       or trash this to reveal your hand for +1 VP per differently named Treasure there.`
+       ⚠ 2026-08-25 まで「使った瞬間に無条件で自分を廃棄／手札の**財宝**を廃棄／**場**の財宝の種類数で +VP」
+          という別物だった。正しくは ①手札の**任意の1枚**を廃棄（強制）②二択 ③VP側を選んだときだけ自分を廃棄し、
+          **手札**を公開して異なる名前の財宝の数だけ +VP。 */
     if (card === 'investment') {
-      if (removeOne(p.inPlay, 'investment')) trashCard(state, pIndex, 'investment'); // 自己廃棄も trashCard 経由（墓標/司祭/下水道/支配の退避）
-      state.pending = { type: 'investment', player: pIndex };
+      if (p.hand.length) state.pending = { type: 'investment', stage: 'trash', player: pIndex };
+      else state.pending = { type: 'investment', player: pIndex };   // 手札が無ければ廃棄せず二択へ
     }
     // 水晶球：山札の上1枚を見て 廃棄／捨て札／（アクションか財宝なら）使う（コイン1は coin:1）。
     if (card === 'crystal_ball') {
@@ -2492,6 +2498,7 @@
       lostInTheWoods: null, // 夜想曲：森の迷子（状態）の持ち主の席番号（誰も持っていなければ null・非カード）
       pileVP, // 帝国：集合（Gathering）＝サプライ山の上に置かれた勝利点トークン数 {[pileId]:個数}（公開・非カード＝保存則に無関係）。水道橋/汚された神殿の準備分もここ。
       ferrymanPile,    // 収穫祭＆ギルド2版：渡し守の山 { card: 山キー, cards: 実カードid配列 }（サプライ外・公開・**カード＝保存則に数える**・allCards には入れない）
+      charlatanRule: kingdom.includes('charlatan'), // 繁栄：山師＝「このゲームでは呪いは $1 の財宝でもある」
       footpadRule: kingdom.includes('footpad'), // 収穫祭＆ギルド2版：野盗＝「このゲームでは、アクションフェイズにカードを獲得したとき +1カード」の常設ルール
       tradeRoutePiles, // 繁栄1版：交易路＝まだトークンが乗っている勝利点の山 {[pileKey]:1}（公開・非カード）
       tradeRouteMat: 0, // 繁栄1版：交易路マットへ移ったトークン数（全員共有・公開・非カード）
@@ -3445,6 +3452,19 @@
   }
   // 繁栄：コスト/購入数/サプライ以外の「購入できない」追加制限。
   //   大市場(grand_market)＝場に銅貨があるとき購入不可。CPU/UI もこれを参照して空振りを防ぐ。
+  /* 移動動物園：動物見本市（Animal Fair・$7）＝`Instead of paying this card's cost, you may trash an
+     Action card from your hand.`（区切り線の下）。**購入したときだけ**使える代替支払い。
+     ⚠ 2026-08-25 まで engine・CPU・UI のどこにも実装が無く、$7 を払う以外に買う手段が無かった。
+     処理順は 廃棄（＋廃棄時効果）→ 購入 → 獲得（公式）。購入権は普通に1消費する。 */
+  function animalFairTrashTargets(state, pi) {
+    const p = state.players[pi];
+    if (!p) return [];
+    return p.hand.filter((c) => isActionFor(state, c) || inheritedEstate(p, c));
+  }
+  function canPayWithTrash(state, pi, id) {
+    return id === 'animal_fair' && animalFairTrashTargets(state, pi).length > 0;
+  }
+
   function canBuyCard(state, pi, id) {
     if (id === 'grand_market' && state.players[pi].inPlay.includes('copper')) return false;
     if (id === 'ruins') return false; // 暗黒時代：廃墟は購入できない（襲撃者アタック/獲得でのみ配られる）
@@ -5137,7 +5157,11 @@
     state.pending = null;
   }
 
-  /* ---------- 繁栄：山師（各相手が銅貨1枚を獲得）---------- */
+  /* ---------- 繁栄：山師（各相手が**呪い**1枚を獲得）----------
+     公式（第2版 2022年6月の1版のみ・過去版なし）＝`+$3 / Each other player gains a Curse.
+     <hr> In games using this, Curse is also a Treasure worth $1.`
+     ⚠ 2026-08-25 まで「財宝-アタック／銅貨を配る」という**別のカード**になっていた
+        （Donald X. の Secret history＝銅貨を配るアタックは没案で、呪いの山でサイズを決めた結果が Charlatan）。 */
   function charlatanEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
     queue = queue.filter((v) => !attackImmune(state, v));
@@ -5148,7 +5172,7 @@
     } else { charlatanApply(state, source, victim, rest); }
   }
   function charlatanApply(state, source, victim, queue) {
-    if ((state.supply.copper || 0) > 0) { gain(state, victim, 'copper', 'discard'); log(state, `${state.players[victim].name} は銅貨1枚を獲得した（山師）。`); }
+    if ((state.supply.curse || 0) > 0) { gain(state, victim, 'curse', 'discard'); log(state, `${state.players[victim].name} は呪い1枚を獲得した（山師）。`); }
     charlatanEnterVictim(state, source, queue);
   }
 
@@ -7495,12 +7519,23 @@
         clerkEnterVictim(state, pi, q);
         break;
       }
-      case 'war_chest': {
-        // 左隣がカード名を1つ指定 → コスト$5以下で「このターン軍用金で指定されていない」カードを1枚獲得
-        const left = (pi + 1) % state.players.length;
-        state.pending = { type: 'war_chest', stage: 'name', player: left, source: pi };
+      /* 繁栄：山師＝**アクション**-アタック（+$3／各相手が呪いを獲得）。
+         「これを使うゲームでは呪いは $1 の財宝でもある」は常設ルール＝`state.charlatanRule`。 */
+      case 'charlatan': {
+        addCoins(state, 3);
+        const q = [];
+        for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+        charlatanEnterVictim(state, pi, q);
         break;
       }
+      /* 海辺：海賊＝**アクション**-持続-リアクション（公式の Type(s)。2026-08-25 に財宝から修正）。
+         次の手番の開始時にコスト$6以下の財宝1枚を手札に獲得する。
+         ⚠ 財宝ではないので「財宝を全部出す」で勝手に出ず、銀行/投機/有力者の「場の財宝」にも数えない。
+         リアクションで手札から出す経路（PIRATE_REACT）は種別に依らないのでそのまま。 */
+      case 'pirate':
+        armDuration(state, pi, 'pirate');
+        log(state, `${p.name} は海賊を使った（次の手番に財宝を手札に獲得）。`);
+        break;
 
       /* ===== 拡張: 錬金術（Alchemy 第二版）===== */
       case 'transmute':
@@ -11157,6 +11192,17 @@
     if (gp.hand.includes('sleigh')) {
       (state.onGainQueue = state.onGainQueue || []).push({ type: 'sleigh_react', player: pIndex, card: cardId, dest: dest || 'discard' });
     }
+    /* 黒猫＝**他のプレイヤー**が勝利点カードを獲得したとき、手札からこれを使用してよい（任意・アクション権を使わない）。
+       公式＝`When another player gains a Victory card, you may play this from your hand.`
+       ⚠ 2026-08-25 まで**この窓が存在せず**、黒猫は自分のアクションフェイズでしか出せなかった＝
+          使用時の `if (t.active !== pi)` が絶対に成立せず**呪いを1枚も配れない**（$2で+2カードのターミナルに退化）。 */
+    if (DOM.isType(cardId, 'victory')) {
+      for (let o = 0; o < n; o++) {
+        if (o !== pIndex && state.players[o].hand.includes('black_cat')) {
+          (state.onGainQueue = state.onGainQueue || []).push({ type: 'black_cat_play', player: o });
+        }
+      }
+    }
     // 鷹匠＝**誰か**が種別を2つ以上持つカードを獲得したとき、手札からこれを使用してよい（全プレイヤーが対象）。
     if (((C()[cardId] || {}).types || []).length >= 2) {
       for (let o = 0; o < n; o++) {
@@ -14794,11 +14840,25 @@
         const boughtRef = costOf(state, card); // 値切り屋の基準＝**購入時点**のコスト3成分（混合山は gain 後に変わる）
         if ((state.supply[card] || 0) <= 0) return state;
         if (buysAvailable(state, pi) <= 0) return state; // 旭日：盛大な取引ならアクション権も購入権に使える
-        if (cost > t.coins) return state;
-        if (pot > (t.potions || 0)) return state; // ポーションが足りなければ買えない
+        /* 移動動物園：動物見本市＝コストを払う代わりに手札のアクション1枚を廃棄してもよい。
+           `action.payWithTrash` にその手札のカードidを入れて購入する（UI/CPU が指定する）。 */
+        const payTrash = action.payWithTrash;
+        const useTrash = payTrash != null && canPayWithTrash(state, pi, card) &&
+          me.hand.indexOf(payTrash) >= 0 && animalFairTrashTargets(state, pi).indexOf(payTrash) >= 0;
+        if (!useTrash) {
+          if (cost > t.coins) return state;
+          if (pot > (t.potions || 0)) return state; // ポーションが足りなければ買えない
+        }
         if (!canBuyCard(state, pi, card)) return state; // 繁栄：大市場は場に銅貨があると買えない
-        t.coins -= cost;
-        t.potions = (t.potions || 0) - pot;
+        if (useTrash) {
+          // 廃棄が先（廃棄時効果を解決してから購入・獲得＝公式の処理順）
+          removeOne(me.hand, payTrash);
+          trashCard(state, pi, payTrash);
+          log(state, `${me.name} は「${C()[payTrash].name}」を廃棄して動物見本市のコストを支払った。`);
+        } else {
+          t.coins -= cost;
+          t.potions = (t.potions || 0) - pot;
+        }
         spendBuy(state, pi);
         t.buysMade = (t.buysMade || 0) + 1; // 冒険：使者の「そのターン最初の購入か」判定用（購入回数）
         t.treasuresLocked = true;           // 公式：購入したら、そのターンはもう財宝を出せない
@@ -19944,25 +20004,30 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'investment' || pd.stage) return state;
         const p = state.players[pd.player];
-        if (action.choice === 'vp' && p.hand.some((c) => isTreasureFor(state, c))) {
-          state.pending = { type: 'investment', stage: 'trash', player: pd.player };
+        if (action.choice === 'vp') {
+          // これを廃棄する（場に無ければ lose track＝廃棄は失敗するが、公開と +VP は行う）
+          if (removeOne(p.inPlay, 'investment')) trashCard(state, pd.player, 'investment');
+          reveal(state, pd.player, p.hand.slice(), '出資で手札を公開');
+          const add = new Set(p.hand.filter((c) => isTreasureFor(state, c))).size;
+          if (add) p.vpTokens = (p.vpTokens || 0) + add;
+          log(state, `${p.name} は出資を廃棄し手札を公開して +${add}勝利点（手札の異なる財宝${add}種）。`);
         } else {
           addCoins(state, 1); log(state, `${p.name} は出資で +1コイン。`);
-          state.pending = null;
         }
+        state.pending = null;
         return state;
       }
+      /* 出資①＝手札から**任意の1枚**を廃棄する（手札があれば強制）。廃棄した後に二択へ進む。 */
       case 'INVESTMENT_TRASH': {
         const pd = state.pending;
         if (!pd || pd.type !== 'investment' || pd.stage !== 'trash') return state;
         const p = state.players[pd.player];
         const card = action.card;
-        if (p.hand.indexOf(card) < 0 || !isTreasureFor(state, card)) return state;
+        if (!p.hand.length) { state.pending = { type: 'investment', player: pd.player }; return state; } // 終端保証
+        if (p.hand.indexOf(card) < 0) return state;
         removeOne(p.hand, card); trashCard(state, pd.player, card);
-        const add = new Set(p.inPlay.filter((c) => isTreasureFor(state, c))).size;
-        if (add) p.vpTokens = (p.vpTokens || 0) + add;
-        log(state, `${p.name} は出資で「${C()[card].name}」を廃棄し +${add}勝利点（場の財宝${add}種）。`);
-        state.pending = null;
+        log(state, `${p.name} は出資で「${C()[card].name}」を廃棄した。`);
+        state.pending = { type: 'investment', player: pd.player };
         return state;
       }
       case 'CRYSTAL_BALL': {
@@ -22178,6 +22243,22 @@
       }
       // 鷹匠（リアクション）＝誰かが種別2つ以上のカードを獲得したとき、手札からこれを使用してよい。
       //   相手のターン中でもよい＝アクション権は消費しない（場に出たカードは自分の次のクリンナップで捨てる＝隊商の護衛と同型）。
+      /* 黒猫＝他のプレイヤーの勝利点獲得に反応して手札から使う（任意）。鷹匠(FALCONER_REACT)と同型。
+         ⚠ 相手のターン中に使うので `t.active !== pi` が成立し、呪い撒きが働く。 */
+      case 'BLACK_CAT_PLAY': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'black_cat_play') return state;
+        state.pending = null;
+        if (!action.play) return state;
+        const pl = state.players[pd.player];
+        if (!removeOne(pl.hand, 'black_cat')) return state;
+        pl.inPlay.push('black_cat');
+        if (t && pd.player === t.active) t.actionsPlayed = (t.actionsPlayed || 0) + 1;
+        log(state, `${pl.name} は黒猫を手札から使用した。`);
+        noteAllyPlay(state, pd.player, 'black_cat');
+        applyEffect(state, 'black_cat', pd.player);
+        return state;
+      }
       case 'FALCONER_REACT': {
         const pd = state.pending;
         if (!pd || pd.type !== 'falconer_react') return state;
@@ -24817,7 +24898,7 @@
     // 移動動物園（Menagerie）：追放（Exile）＋王国カード30種
     'EXILE_DISCARD', 'BARGE_CHOOSE', 'BOUNTY_HUNTER_EXILE', 'CAMEL_TRAIN_EXILE',
     'BLACK_CAT_REACT', 'CARDINAL_REACT', 'CARDINAL_PICK', 'COVEN_REACT',
-    'DISPLACE_EXILE', 'DISPLACE_GAIN', 'FALCONER_GAIN', 'FALCONER_REACT',
+    'DISPLACE_EXILE', 'DISPLACE_GAIN', 'FALCONER_GAIN', 'BLACK_CAT_PLAY', 'FALCONER_REACT',
     'GOATHERD_TRASH', 'GROOM_GAIN', 'HOSTELRY_DISCARD', 'HUNTING_LODGE_CHOOSE',
     'MASTERMIND_PLAY', 'SANCTUARY_EXILE', 'SCRAP_TRASH', 'SCRAP_CHOOSE',
     'SHEEPDOG_REACT', 'SLEIGH_REACT', 'VILLAGE_GREEN_CHOOSE', 'VILLAGE_GREEN_REACT',
@@ -24857,6 +24938,8 @@
     isGameOver,
     emptyPileCount,
     canBuyCard,
+    canPayWithTrash,
+    animalFairTrashTargets,
     // mix-all 硬化：獲得コスト述語の正本（engine reducer / CPU 候補選び / UI モーダル filter が同じ関数を見る）
     costOf,        // コストの3成分 {coin, pot, debt}（コスト軽減込み）
     gainableBase,  // サプライから獲得できる土台（非サプライ・ロック中の分割山下段・在庫切れを弾く）
