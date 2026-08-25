@@ -578,6 +578,69 @@ console.log('=== 2026-08-25: カード文の全数監査で確定した [medium]
   ok(!u.trash.includes('trail'), '進路：使ったので廃棄置き場には残らない');
 }
 
+// ==========================================================================
+// §0-43 農地＝「農地でないカード」を獲得する（公式FAQ）
+// ==========================================================================
+{
+  /* 公式FAQ 逐語＝`you gain a card from the Supply costing exactly [$2] more than the trashed card,
+     but not another copy of Farmland.` 除外が無いと $4 を廃棄して農地($6)を取り、その農地の獲得時が
+     また開いて手札がある限り連鎖する（1回の購入で何枚でも積める）。 */
+  let s = mkK(['farmland', 'smithy', 'village', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory', 'festival']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['smithy', 'smithy', 'smithy'];
+  s.turn.phase = 'buy'; s.turn.coins = 6; s.turn.buys = 1;
+  const before = s.supply.farmland;
+  s = reduce(s, { type: 'BUY', card: 'farmland' });
+  ok(s.pending && s.pending.type === 'farmland' && s.pending.stage === 'trash', '農地：購入で廃棄の窓が開く');
+  s = reduce(s, { type: 'FARMLAND_TRASH', card: 'smithy' });
+  ok(s.pending && s.pending.stage === 'gain' && s.pending.exactCost === 6, '農地：ちょうど$6の獲得へ');
+  const rej = reduce(s, { type: 'FARMLAND_GAIN', card: 'farmland' });
+  ok(JSON.stringify(rej) === JSON.stringify(s), '農地：獲得先に農地は選べない（engine が拒否）');
+  s = reduce(s, { type: 'FARMLAND_GAIN', card: 'gold' });
+  ok(before - s.supply.farmland === 1, '農地：山は1枚しか減らない（連鎖しない）');
+  ok(s.players[0].discard.includes('gold'), '農地：金貨を獲得できる');
+  let c = mkK(['farmland', 'smithy', 'village', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory', 'festival']);
+  c.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  c.players[0].hand = ['smithy'];
+  c.turn.phase = 'buy'; c.turn.coins = 6; c.turn.buys = 1;
+  c = reduce(c, { type: 'BUY', card: 'farmland' });
+  c = reduce(c, { type: 'FARMLAND_TRASH', card: 'smithy' });
+  const mv = DOM.cpu.decide(c);
+  ok(!mv || mv.card !== 'farmland', 'CPU：農地の獲得先に農地を返さない（engine拒否×CPU提案の livelock 防止）');
+}
+
+// ==========================================================================
+// §0-43 よろずや＝「手札が5枚になるまで引く」は drawUpTo（-1カードトークンで止まらない）
+// ==========================================================================
+{
+  let s = mkK(['jack_of_all_trades', 'oasis', 'village', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory', 'festival']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['jack_of_all_trades'];
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'estate'];
+  s.players[0].minusCard = true;
+  s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'jack_of_all_trades' });
+  let g = 0;
+  while (s.pending && g++ < 6) {
+    if (s.pending.type === 'jack' && s.pending.stage === 'look') s = reduce(s, { type: 'JACK_LOOK', discard: false });
+    else if (s.pending.type === 'jack') s = reduce(s, { type: 'JACK_TRASH', card: null });
+    else break;
+  }
+  ok(s.players[0].hand.length === 5, 'よろずや：-1カードトークンを持っていても手札5枚になる（実際 ' + s.players[0].hand.length + '枚）');
+}
+
+{
+  // 農地：ちょうど$2高いカードが「農地しか無い」局面では窓を開かない（ゲート側の除外＝これが無いと詰む）
+  let s = mkK(['farmland', 'smithy', 'village', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory', 'festival']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['smithy'];
+  s.supply.gold = 0;
+  s.turn.phase = 'buy'; s.turn.coins = 6; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'farmland' });
+  s = reduce(s, { type: 'FARMLAND_TRASH', card: 'smithy' });
+  ok(s.pending == null, '農地：候補が農地だけなら獲得の窓を開かない（人間が詰まない／CPUが回らない）');
+}
+
 console.log('異郷テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');
 if (fail > 0) process.exit(1);

@@ -5455,8 +5455,8 @@
   // よろずや：手札5枚まで引き、財宝でない札があれば任意で1枚廃棄。
   function jackDrawTo5(state, pi) {
     const p = state.players[pi];
-    const need = Math.max(0, 5 - p.hand.length);
-    if (need) draw(state, pi, need);
+    // 「N枚になるまで引く」は drawUpTo（素朴な一括ドローは -1カードトークンで1枚足りずに止まる）。
+    drawUpTo(state, pi, 5);
     if (p.hand.some((c) => !isTreasureFor(state, c))) state.pending = { type: 'jack', stage: 'trash', player: pi };
     else state.pending = null;
   }
@@ -11331,6 +11331,14 @@
     }
     // 繁栄：望楼（手札から公開→獲得物を廃棄か山札上へ）／ティアラ（獲得物を山札上へ）。
     // 安全側＝自分の手番・トップレベル獲得・他の対話が無いときだけ確認（船乗りと同方針）。
+    /* 繁栄：望楼＝「**あなたが**カードを獲得したとき」＝**相手の手番の獲得でも**公開できる（公式FAQ＝
+       `even on someone else's turn` / `such as ... Charlatan`）。ジャンク配りアタックへの防御がこのカードの主目的。
+       自分の手番ぶんは下の else-if 連鎖が即座に窓を開く。ここは**手番外**だけを onGainQueue に積む
+       （アタックの被害者ループが state.pending で順番を管理しているので、その場で pending を立てると攻撃が壊れる）。 */
+    if (state._gainDepth === 1 && state.turn && pIndex !== state.turn.active
+        && state.players[pIndex] && state.players[pIndex].hand.includes('watchtower')) {
+      (state.onGainQueue = state.onGainQueue || []).push({ type: 'watchtower', player: pIndex, card: cardId, dest: dest || 'discard' });
+    }
     if (state.turn && pIndex === state.turn.active && state._gainDepth === 1 && !state.pending) {
       const me = state.players[pIndex];
       if (me.hand.includes('watchtower')) state.pending = { type: 'watchtower', player: pIndex, card: cardId, dest: dest || 'discard' };
@@ -14164,6 +14172,16 @@
       while (state.onGainQueue.length) {
         const q = state.onGainQueue.shift();
         if (q.type === 'gatekeeper_exile') { applyGatekeeperExile(state, q.player, q.card, q.dest); continue; }
+        // 繁栄：望楼＝相手の手番に獲得した札（山師/魔女の呪い等）への反応窓。解決時に再検査する
+        //（望楼が手札から消えている／獲得した札が既に動かされている＝lose track なら窓を開かない）。
+        if (q.type === 'watchtower') {
+          const wp = state.players[q.player];
+          if (wp && wp.hand.includes('watchtower') && zoneOf(wp, q.dest).indexOf(q.card) >= 0) {
+            state.pending = { type: 'watchtower', player: q.player, card: q.card, dest: q.dest };
+            break;
+          }
+          continue;
+        }
         // 収穫祭＆ギルド2版：耕作者の獲得時＝手札にアクション/財宝があるときだけ窓（誰のターンでも・任意）。
         if (q.type === 'farmhands_aside') {
           const fp = state.players[q.player];
@@ -22136,7 +22154,8 @@
         const fl = costOf(state, card);
         const exact = fl.coin + 2;
         log(state, `${pl.name} は「${C()[card].name}」を廃棄した（農地）。`);
-        if (anyGainable(state, (id) => costExact(state, id, exact, fl.pot, fl.debt))) {
+        // 公式FAQ＝`gain a **non-Farmland** card costing exactly [$2] more`。除外を落とすと農地を連鎖獲得できる。
+        if (anyGainable(state, (id) => id !== 'farmland' && costExact(state, id, exact, fl.pot, fl.debt))) {
           state.pending = { type: 'farmland', stage: 'gain', player: pd.player, exactCost: exact, pot: fl.pot, debt: fl.debt };
         } else {
           state.pending = null;
@@ -22146,7 +22165,7 @@
       case 'FARMLAND_GAIN': {
         const pd = state.pending;
         if (!pd || pd.type !== 'farmland' || pd.stage !== 'gain') return state;
-        finishGain(state, pd, action.card, (id) => costExact(state, id, pd.exactCost, pd.pot, pd.debt), 'discard', '獲得した（農地）。');
+        finishGain(state, pd, action.card, (id) => id !== 'farmland' && costExact(state, id, pd.exactCost, pd.pot, pd.debt), 'discard', '獲得した（農地）。');
         return state;
       }
       case 'HAGGLER_GAIN': {

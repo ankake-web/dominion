@@ -3606,9 +3606,15 @@ const NON_SUPPLY_SET = new Set([...PRIZE_SET, 'spoils', 'madman', 'mercenary',
         return { type: 'CAULDRON_REACT' };
       case 'duchess_gain':
         return { type: 'DUCHESS_GAIN', gain: false }; // デッキを濁さないため受け取らない
-      case 'farmland':
+      case 'farmland': {
         if (pd.stage === 'trash') return { type: 'FARMLAND_TRASH', card: pickRemodelTrash(state, p) };
-        return { type: 'FARMLAND_GAIN', card: bestGainExact(state, pd.exactCost, { noVictory: true, pot: pd.pot, debt: pd.debt }) || bestGainExact(state, pd.exactCost, pd) };
+        // 公式＝農地は「農地でないカード」しか獲得できない＝engine が拒否するので CPU も返してはいけない。
+        const notFarm = (g) => (g === 'farmland' ? null : g);
+        const g = notFarm(bestGainExact(state, pd.exactCost, { noVictory: true, pot: pd.pot, debt: pd.debt }))
+          || notFarm(bestGainExact(state, pd.exactCost, pd))
+          || firstGainable(state, (id) => id !== 'farmland' && costExact(state, id, pd.exactCost, pd.pot, pd.debt));
+        return { type: 'FARMLAND_GAIN', card: g };
+      }
       case 'haggler': {
         // 「購入した札より安い・勝利点でない」＝engine と同じ述語（勝利点は engine が拒否／呪いは可＝GAIN_ORDER の最後尾）。
         const uc = (pd.coin != null) ? pd.coin : (pd.maxCost || 0) + 1;

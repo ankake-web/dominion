@@ -496,5 +496,69 @@ console.log('=== CPU対CPU：繁栄フル王国で無限ループ無く終局（
   ok(okAll, 'CPU対CPU 12戦すべて終局 (終局 ' + ended + '/12)');
 }
 
+// ==========================================================================
+// §0-43 望楼＝相手の手番の獲得にも反応できる（公式FAQ＝ジャンク配りへの防御）
+// ==========================================================================
+{
+  /* Official FAQ 逐語＝`You may reveal Watchtower whether you gained the card due to buying it,
+     or gained it some other way, such as with Expand or Charlatan.`／2010年版FAQ＝
+     `When you gain a card, even on someone elses turn, you may reveal Watchtower from your hand`。 */
+  const KW = ['charlatan', 'watchtower', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'peddler', 'moat'];
+  let s = mk(KW);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['charlatan']; s.players[1].hand = ['watchtower'];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'charlatan' });
+  ok(s.pending && s.pending.type === 'watchtower' && s.pending.player === 1, '望楼：相手の山師で得た呪いに反応できる');
+  s = reduce(s, { type: 'WATCHTOWER', choice: 'trash' });
+  ok((s.trash || []).indexOf('curse') >= 0, '望楼：呪いを廃棄できた');
+  ok(s.players[1].discard.indexOf('curse') < 0, '望楼：呪いが捨て札に残っていない');
+  ok(s.players[1].hand.indexOf('watchtower') >= 0, '望楼：公開しても手札に残る');
+
+  let w = mk(['witch', 'watchtower', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'peddler', 'village']);
+  w.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  w.players[0].hand = ['witch']; w.players[1].hand = ['watchtower'];
+  w.turn.phase = 'action'; w.turn.actions = 1;
+  w = reduce(w, { type: 'PLAY_ACTION', card: 'witch' });
+  ok(w.pending && w.pending.type === 'watchtower' && w.pending.player === 1, '望楼：相手の魔女でも反応できる');
+
+  let y = E.createInitialState(['A', 'B', 'C'], ['witch', 'watchtower', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'peddler', 'village'], { startActive: 0 });
+  y.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  y.players[0].hand = ['witch']; y.players[1].hand = ['watchtower']; y.players[2].hand = ['watchtower'];
+  y.turn.phase = 'action'; y.turn.actions = 1;
+  y = reduce(y, { type: 'PLAY_ACTION', card: 'witch' });
+  const seats = [];
+  let gw = 0;
+  while (y.pending && y.pending.type === 'watchtower' && gw++ < 5) { seats.push(y.pending.player); y = reduce(y, { type: 'WATCHTOWER', choice: 'trash' }); }
+  ok(seats.length === 2 && seats.indexOf(1) >= 0 && seats.indexOf(2) >= 0, '望楼：3人戦で望楼を持つ2人とも窓が開く');
+
+  let z = mk(KW);
+  z.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  z.players[0].hand = ['watchtower'];
+  z.turn.phase = 'buy'; z.turn.coins = 5; z.turn.buys = 1;
+  z = reduce(z, { type: 'BUY', card: 'duchy' });
+  ok(z.pending && z.pending.type === 'watchtower' && z.pending.player === 0, '望楼：自分の購入では即座に窓が開く（退行なし）');
+}
+
+{
+  // 望楼：キュー消化時の再検査（望楼が手札から消えている／獲得した札が既に動かされている＝lose track）
+  const KW2 = ['charlatan', 'watchtower', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'peddler', 'moat'];
+  let q = mk(KW2);
+  q.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  q.players[0].hand = []; q.players[1].hand = [];
+  q.players[1].discard = ['curse'];
+  q.onGainQueue = [{ type: 'watchtower', player: 1, card: 'curse', dest: 'discard' }];
+  q.turn.phase = 'action'; q.turn.actions = 1;
+  q = reduce(q, { type: 'END_ACTION_PHASE' });
+  ok(!(q.pending && q.pending.type === 'watchtower'), '望楼：手札に望楼が無ければキュー消化で窓を開かない');
+  let q2 = mk(KW2);
+  q2.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  q2.players[1].hand = ['watchtower']; q2.players[1].discard = [];
+  q2.onGainQueue = [{ type: 'watchtower', player: 1, card: 'curse', dest: 'discard' }];
+  q2.turn.phase = 'action'; q2.turn.actions = 1;
+  q2 = reduce(q2, { type: 'END_ACTION_PHASE' });
+  ok(!(q2.pending && q2.pending.type === 'watchtower'), '望楼：獲得した札が既に動かされていたら窓を開かない');
+}
+
 console.log('\n繁栄テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 process.exit(fail ? 1 : 0);
