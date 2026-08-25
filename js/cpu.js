@@ -652,7 +652,7 @@ const NON_SUPPLY_SET = new Set([...PRIZE_SET, 'spoils', 'madman', 'mercenary',
     // 建て直し＝屋敷/公領を持っているとき（勝利点を格上げ）
     if (has('rebuild') && (owned(p, 'estate') > 0 || owned(p, 'duchy') > 0)) return 'rebuild';
     // 墓暴き＝廃棄置き場に$3-6があるか、手札にアクションがあるとき（不発の無駄打ち回避）
-    if (has('graverobber') && ((state.trash || []).some((c) => { const cc = cost(state, c); return cc >= 3 && cc <= 6 && (C()[c].potion || 0) === 0; }) || p.hand.some((c) => isType(c, 'action')))) return 'graverobber';
+    if (has('graverobber') && ((state.trash || []).some((c) => DOM.engine.costRange3to6(state, c)) || p.hand.some((c) => isType(c, 'action')))) return 'graverobber';
     if (has('altar') && p.hand.some((c) => isDead(c))) return 'altar'; // 不要札を廃棄→$5獲得（捨てる札があるとき）
     if (has('storeroom')) return 'storeroom';               // +1購入（捨てて引き直し→捨ててコイン）
     if (has('forager')) return 'forager';                   // +1アクション+1購入＋廃棄→コイン
@@ -3188,7 +3188,7 @@ const NON_SUPPLY_SET = new Set([...PRIZE_SET, 'spoils', 'madman', 'mercenary',
         { const junk = p.hand.find((c) => isType(c, 'curse') || c === 'estate'); return { type: 'BISHOP_OTHER', card: junk || null }; }
       case 'vault':
         if (pd.stage === 'discard') return { type: 'VAULT_DISCARD', cards: p.hand.filter((c) => isDead(c)) };
-        { const dead = p.hand.filter((c) => isDead(c)); return { type: 'VAULT_OTHER', cards: dead.length >= 2 ? dead.slice(0, 2) : [] }; }
+        { const want = Math.min(2, p.hand.length); const dead = p.hand.filter((c) => isDead(c)); return { type: 'VAULT_OTHER', cards: (want > 0 && dead.length >= want) ? dead.slice(0, want) : [] }; }
       case 'mint': {
         const tre = p.hand.filter((c) => isTreasure(c)).sort((a, b) => (C()[b].coin || 0) - (C()[a].coin || 0))[0];
         return { type: 'MINT_REVEAL', card: (tre && (C()[tre].coin || 0) >= 2) ? tre : null };
@@ -3582,6 +3582,12 @@ const NON_SUPPLY_SET = new Set([...PRIZE_SET, 'spoils', 'madman', 'mercenary',
         // 「国境の村より安い」＝engine と同じ costUnder（pd.maxCost は cost-1）
         { const uc = (pd.maxCost || 0) + 1;
           return { type: 'BORDER_VILLAGE_GAIN', card: bestGainUnder(state, uc, { noVictory: true }) || bestGainUnder(state, uc) }; }
+      // 進路＝+1カード（自分の手番なら +1アクションも）＝ほぼ純利得なので常に使う。
+      case 'trail_react':
+        return { type: 'TRAIL_REACT', play: true };
+      // 織工＝銀貨2枚が堅実。ただしデッキが十分育っていて相手のターンなら見送る手もあるが、単純に使う。
+      case 'weaver_react':
+        return { type: 'WEAVER_REACT', play: true };
       case 'weaver':
         if (pd.stage === 'gain') return { type: 'WEAVER_GAIN', card: bestGain(state, 4, { noVictory: true }) || bestGain(state, 4) };
         return { type: 'WEAVER_MODE', mode: 'silver' }; // 銀貨2枚が堅実
@@ -3684,7 +3690,7 @@ const NON_SUPPLY_SET = new Set([...PRIZE_SET, 'spoils', 'madman', 'mercenary',
       case 'hunting_grounds_trash':
         return { type: 'HUNTING_GROUNDS_TRASH', choice: sup(state, 'duchy') > 0 ? 'duchy' : 'estates' };
       case 'graverobber': {
-        const inRange = (c) => { const cc = cost(state, c); return cc >= 3 && cc <= 6 && (C()[c].potion || 0) === 0; };
+        const inRange = (c) => DOM.engine.costRange3to6(state, c);
         if (pd.stage === 'choose') {
           if ((state.trash || []).some(inRange)) return { type: 'GRAVEROBBER_MODE', mode: 'from_trash' };
           if (p.hand.some((c) => isType(c, 'action'))) return { type: 'GRAVEROBBER_MODE', mode: 'trash_gain' };
@@ -3768,7 +3774,7 @@ const NON_SUPPLY_SET = new Set([...PRIZE_SET, 'spoils', 'madman', 'mercenary',
       case 'rogue':
         if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'ROGUE_REACT' }; }
         if (pd.stage === 'gain_from_trash') {
-          const cands = (state.trash || []).filter((c) => { const cc = cost(state, c); return cc >= 3 && cc <= 6 && (C()[c].potion || 0) === 0; }).sort((a, b) => cost(state, b) - cost(state, a));
+          const cands = (state.trash || []).filter((c) => DOM.engine.costRange3to6(state, c)).sort((a, b) => cost(state, b) - cost(state, a));
           return { type: 'ROGUE_GAIN_FROM_TRASH', card: cands[0] };
         }
         // stage 'pick'：被害者として価値の低い方を廃棄（良い方を残す）

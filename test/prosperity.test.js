@@ -560,5 +560,55 @@ console.log('=== CPU対CPU：繁栄フル王国で無限ループ無く終局（
   ok(!(q2.pending && q2.pending.type === 'watchtower'), '望楼：獲得した札が既に動かされていたら窓を開かない');
 }
 
+// ==========================================================================
+// §0-43 敵対レビュー②＝繁栄（保管庫/大衆の捨て札トリガー・行商人の「場」）
+// ==========================================================================
+{
+  // 保管庫（自分）＝捨てたカードは本物の捨て札＝坑道が誘発する
+  let s = mk(['vault', 'tunnel', 'monument', 'workers_village', 'city', 'bishop', 'peddler', 'grand_market', 'moat', 'village']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['vault', 'tunnel', 'estate'];
+  s.players[0].deck = ['copper', 'copper', 'copper'];
+  s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'vault' });
+  s = reduce(s, { type: 'VAULT_DISCARD', cards: ['tunnel'] });
+  ok(s.players[0].discard.indexOf('gold') >= 0, '保管庫：自分の捨て札で坑道が誘発する（金貨を獲得）');
+
+  // 保管庫（相手）＝手札1枚でも捨てられる（公式FAQ）。引けるのは2枚捨てたときだけ。
+  let v = mk(['vault', 'tunnel', 'monument', 'workers_village', 'city', 'bishop', 'peddler', 'grand_market', 'moat', 'village']);
+  v.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  v.players[0].hand = ['vault']; v.players[0].deck = ['copper', 'copper', 'copper'];
+  v.players[1].hand = ['tunnel']; v.players[1].deck = ['silver', 'silver'];
+  v.turn.actions = 1;
+  v = reduce(v, { type: 'PLAY_ACTION', card: 'vault' });
+  v = reduce(v, { type: 'VAULT_DISCARD', cards: [] });
+  ok(v.pending && v.pending.type === 'vault' && v.pending.stage === 'other' && v.pending.player === 1, '保管庫：手札1枚の相手にも窓が開く');
+  v = reduce(v, { type: 'VAULT_OTHER', cards: ['tunnel'] });
+  ok(v.players[1].discard.indexOf('gold') >= 0, '保管庫：1枚だけ捨てられて坑道が誘発する');
+  ok(v.players[1].hand.length === 0, '保管庫：1枚しか捨てていないのでカードは引けない（公式）');
+}
+{
+  // 大衆＝山札から捨てさせたアクション/財宝も本物の捨て札（進路が誘発する）
+  let s = mk(['rabble', 'trail', 'monument', 'workers_village', 'city', 'bishop', 'peddler', 'grand_market', 'moat', 'village']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['rabble']; s.players[0].deck = ['copper', 'copper', 'copper'];
+  s.players[1].deck = ['trail', 'estate', 'estate', 'copper'];
+  s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'rabble' });
+  let g = 0;
+  while (s.pending && g++ < 6) {
+    if (s.pending.type === 'trail_react') { s = reduce(s, { type: 'TRAIL_REACT', play: true }); break; }
+    s = reduce(s, { type: 'RABBLE_REACT' });
+  }
+  ok(s.players[1].inPlay.indexOf('trail') >= 0, '大衆：山札から捨てさせた進路が誘発する（捨て札トリガー）');
+}
+{
+  // 行商人＝「場」＝inPlay＋durationCards（前ターンから残る持続アクションも数える）
+  let s = mk(['peddler', 'caravan', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'moat', 'village']);
+  s.players[0].inPlay = []; s.players[0].durationCards = ['caravan'];
+  s.turn.phase = 'buy';
+  ok(E.cardCost(s, 'peddler') === 6, '行商人：持続アクションが場にあれば $6（実際 $' + E.cardCost(s, 'peddler') + '）');
+}
+
 console.log('\n繁栄テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 process.exit(fail ? 1 : 0);

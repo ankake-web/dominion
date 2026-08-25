@@ -494,6 +494,38 @@ console.log('=== 暗黒時代: CPU通し・カード保存則 ===');
   ok(allOk, '暗黒時代 CPU通し 24戦すべて保存則・終局');
 }
 
+// ==========================================================================
+// §0-43 敵対レビュー②＝暗黒時代（騎士の捨て札トリガー／コスト$3〜$6は3成分）
+// ==========================================================================
+console.log('=== §0-43: 騎士の捨て札トリガー／コスト判定 ===');
+{
+  /* 公式FAQ＝`each other player reveals the top two cards of their deck, trashes one of them that they
+     choose that costs from [$3] to [$6], and **discards the rest**.` ＝「捨てる」は本物の捨て札。
+     構造が同型の枢機卿(cardinal)は最初から triggerOnDiscard を呼んでいた＝engine 内で不整合だった。 */
+  let s = mk(['knights', 'tunnel', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  const kn = s.knights[0];
+  s.players[0].hand = [kn]; s.players[0].deck = ['copper', 'copper'];
+  s.players[1].deck = ['tunnel', 'silver']; // 両方 $3 ＝被害者が選ぶ（銀貨を廃棄させて坑道は捨てさせる）
+  s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: kn });
+  let g = 0;
+  while (s.pending && g++ < 8) {
+    const pd = s.pending;
+    if (pd.type === 'knight' && pd.stage === 'pick') s = E.reduce(s, { type: 'KNIGHT_PICK', card: 'silver' });
+    else if (pd.type === 'knight' && pd.stage === 'react') s = E.reduce(s, { type: 'KNIGHT_REACT' });
+    else break;
+  }
+  ok(s.players[1].discard.indexOf('gold') >= 0, '騎士：公開して捨てた坑道が誘発する（捨て札トリガー）');
+}
+{
+  // コスト$3〜$6 は3成分（公式FAQ＝`Cards with [P] or [D] in the cost do not cost from [$3] to [$6].`）
+  let s = mk(['knights', 'fortune', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival']);
+  s.turn.costReduction = 2; // 橋を2回＝大金($8+負債8)の coin 成分が 6 になる
+  ok(!E.costRange3to6(s, 'fortune'), '負債コストのカードは「コスト$3〜$6」ではない（コスト軽減で coin が6でも）');
+  ok(E.costRange3to6(s, 'gold') === false || E.costRange3to6(s, 'gold') === true, 'costRange3to6 が engine から使える');
+}
+
 console.log('========================================');
 console.log('暗黒時代テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

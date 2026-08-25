@@ -22,6 +22,19 @@ const CPU = DOM.cpu;
 
 let pass = 0, fail = 0;
 function ok(cond, msg) { if (cond) { pass++; } else { fail++; console.log('  ✗ FAIL: ' + msg); } }
+// §0-43：坑道／進路／織工は公式どおり「してもよい」の窓になった（onGainQueue → pending）。
+//   既存テストは自動発動を前提に書かれていたので、窓を「はい」で消化するヘルパを通す。
+function settle(s) {
+  let g = 0;
+  while (s && s.pending && g++ < 20) {
+    const ty = s.pending.type;
+    if (ty === 'tunnel_react') s = E.reduce(s, { type: 'TUNNEL_REACT', reveal: true });
+    else if (ty === 'trail_react') s = E.reduce(s, { type: 'TRAIL_REACT', play: true });
+    else if (ty === 'weaver_react') s = E.reduce(s, { type: 'WEAVER_REACT', play: true });
+    else break;
+  }
+  return s;
+}
 function count(arr, id) { return arr.filter((c) => c === id).length; }
 const reduce = (s, a) => E.reduce(s, a);
 const HK = DOM.POOLS.hinterlands.slice();
@@ -80,6 +93,7 @@ console.log('=== 坑道: 捨てたとき公開して金貨獲得（オアシス�
   s = playAct(s, 'oasis'); // +1カード+1アクション+1コイン、手札1枚捨てる pending
   ok(s.pending && s.pending.type === 'oasis', 'オアシスの捨て札 pending');
   s = reduce(s, { type: 'OASIS_RESOLVE', card: 'tunnel' }); // 坑道を捨てる
+  s = settle(s);
   ok(count(s.players[0].discard, 'gold') === 1, '坑道を捨てて金貨1枚を獲得');
   ok(count(s.players[0].discard, 'tunnel') === 1, '坑道本体は捨て札に');
 }
@@ -432,10 +446,13 @@ console.log('=== 回帰: 神託 自分対象＋坑道＋交易人（攻撃キュ
   s = playAct(s, 'oracle');
   ok(s.pending && s.pending.type === 'oracle' && s.pending.stage === 'decide' && s.pending.victim === 0, '神託：まず自分の上2枚を決定');
   s = reduce(s, { type: 'ORACLE_DECIDE', discard: true }); // tunnel+estate を捨てる
-  ok(count(s.players[0].discard, 'gold') === 1, '坑道で金貨を獲得');
+  /* §0-43：坑道の窓は onGainQueue に積まれ、**攻撃が全部片付いてから**開く（＝攻撃キューを壊さない）。
+     ここで pending が神託のままであること自体がその保証。 */
   ok(s.pending == null || s.pending.type === 'oracle', '獲得置換(trader_react)は立たず 神託が継続する');
   ok(s.players[0].hand.includes('trader'), '交易人は手札に残る（抑止された）');
   s = autoResolve(s);
+  s = settle(s);
+  ok(count(s.players[0].discard, 'gold') === 1, '坑道で金貨を獲得（攻撃の解決後に窓が開く）');
   ok(!s.pending, '神託が完走（攻撃キューが潰れない）');
 }
 
@@ -491,6 +508,7 @@ console.log('\n========================================');
   s.players[1].hand = ['tunnel', 'copper', 'copper', 'copper', 'estate'];
   s = E.reduce(s, { type: 'PLAY_ACTION', card: 'militia' });
   s = E.reduce(s, { type: 'MILITIA_RESOLVE', cards: ['tunnel', 'copper'] });
+  s = settle(s);
   ok(s.players[1].discard.filter((c) => c === 'gold').length === 1,
     '民兵で坑道を捨てさせたら被害者は金貨を獲得する');
 }
@@ -504,6 +522,7 @@ console.log('\n========================================');
   s = E.reduce(s, { type: 'PLAY_ACTION', card: 'forum' });
   const h = s.players[0].hand.slice();
   s = E.reduce(s, { type: 'FORUM_DISCARD', cards: ['tunnel', h.filter((c) => c !== 'tunnel')[0]] });
+  s = settle(s);
   ok(s.players[0].discard.filter((c) => c === 'gold').length === 1,
     '公共広場で坑道を捨てたら金貨を獲得する（自分の捨て札＝対話も出る経路）');
 }
@@ -522,6 +541,7 @@ console.log('\n========================================');
     if (pd.type === 'legionary_reveal') s = E.reduce(s, { type: 'LEGIONARY_REVEAL', reveal: true });
     else if (pd.type === 'discard_down' && pd.stage === 'react') s = E.reduce(s, { type: 'LINGER_REACT' });
     else if (pd.type === 'discard_down') s = E.reduce(s, { type: 'DISCARD_DOWN_RESOLVE', cards: ['tunnel', 'copper', 'copper'] });
+    else if (pd.type === 'tunnel_react') s = E.reduce(s, { type: 'TUNNEL_REACT', reveal: true });
     else break;
   }
   ok(s.players[1].discard.filter((c) => c === 'gold').length + s.players[1].hand.filter((c) => c === 'gold').length >= 1,
@@ -567,6 +587,7 @@ console.log('=== 2026-08-25: カード文の全数監査で確定した [medium]
   s.players[0].hand = []; s.players[0].deck = ['copper', 'copper', 'copper'];
   s.turn.phase = 'buy'; s.turn.coins = 4; s.turn.buys = 1;
   s = reduce(s, { type: 'BUY', card: 'trail' });
+  s = settle(s);
   ok(s.players[0].inPlay.includes('trail'), '進路：**獲得**したときに使える');
   // 廃棄したときも使える
   let u = mkK(['trail', 'chapel', 'oasis']);
@@ -574,6 +595,7 @@ console.log('=== 2026-08-25: カード文の全数監査で確定した [medium]
   u.players[0].deck = ['copper', 'copper', 'copper'];
   u = reduce(u, { type: 'PLAY_ACTION', card: 'chapel' });
   u = reduce(u, { type: 'CHAPEL_RESOLVE', cards: ['trail'] });
+  u = settle(u);
   ok(u.players[0].inPlay.includes('trail'), '進路：**廃棄**されたときに使える（廃棄置き場から場へ）');
   ok(!u.trash.includes('trail'), '進路：使ったので廃棄置き場には残らない');
 }
@@ -639,6 +661,80 @@ console.log('=== 2026-08-25: カード文の全数監査で確定した [medium]
   s = reduce(s, { type: 'BUY', card: 'farmland' });
   s = reduce(s, { type: 'FARMLAND_TRASH', card: 'smithy' });
   ok(s.pending == null, '農地：候補が農地だけなら獲得の窓を開かない（人間が詰まない／CPUが回らない）');
+}
+
+// ==========================================================================
+// §0-43 敵対レビュー②＝異郷（進路/織工/義賊/不正利得/大使館/行商人系）
+// ==========================================================================
+console.log('=== §0-43: 進路・織工の「してもよい」／義賊・不正利得の配り順 ===');
+{
+  // 進路＝`you **may** play it.` 廃棄で必ず場に戻ると、進路を廃棄してデッキを圧縮できない（公式FAQ）
+  let s = mkK(['trail', 'chapel', 'weaver', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['chapel', 'trail']; s.players[0].deck = ['copper', 'copper']; s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'chapel' });
+  s = reduce(s, { type: 'CHAPEL_RESOLVE', cards: ['trail'] });
+  ok(s.pending && s.pending.type === 'trail_react' && s.pending.from === 'trash', '進路：廃棄で「使いますか」の窓が開く');
+  const no = reduce(s, { type: 'TRAIL_REACT', play: false });
+  ok(no.trash.indexOf('trail') >= 0 && no.players[0].inPlay.indexOf('trail') < 0, '進路：使わなければ廃棄置き場に残る（デッキ圧縮ができる）');
+  const ye = reduce(s, { type: 'TRAIL_REACT', play: true });
+  ok(ye.players[0].inPlay.indexOf('trail') >= 0 && ye.trash.indexOf('trail') < 0, '進路：使えば場に戻る');
+}
+{
+  // 織工＝`you **may** play it.` 相手のアタックで捨てさせられても任意で、二択も出る（公式FAQ＝1枚ずつ解決）
+  const K = ['trail', 'weaver', 'militia', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory'];
+  let w = mkK(K);
+  w.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  w.players[0].hand = ['militia']; w.players[0].deck = ['copper', 'copper', 'copper'];
+  w.players[1].hand = ['weaver', 'weaver', 'copper', 'copper', 'estate'];
+  w.turn.actions = 1;
+  w = reduce(w, { type: 'PLAY_ACTION', card: 'militia' });
+  w = reduce(w, { type: 'MILITIA_RESOLVE', cards: ['weaver', 'weaver'] });
+  ok(w.pending && w.pending.type === 'weaver_react' && w.pending.player === 1, '織工：相手のアタックで捨てても「使いますか」の窓が開く');
+  const sb = w.supply.silver;
+  let d = reduce(w, { type: 'WEAVER_REACT', play: false });
+  let g0 = 0;
+  while (d.pending && d.pending.type === 'weaver_react' && g0++ < 4) d = reduce(d, { type: 'WEAVER_REACT', play: false });
+  ok(d.supply.silver === sb, '織工：断れば銀貨は1枚も湧かない（望まないデッキ汚染／銀貨の枯渇が起きない）');
+  let y = reduce(w, { type: 'WEAVER_REACT', play: true });
+  ok(y.pending && y.pending.type === 'weaver' && y.pending.player === 1, '織工：使うと二択（銀貨2枚 / $4以下1枚）が相手のターンでも出る');
+  y = reduce(y, { type: 'WEAVER_MODE', mode: 'silver' });
+  ok(y.players[1].discard.filter((c) => c === 'silver').length === 2, '織工：銀貨2枚を獲得');
+  ok(y.pending && y.pending.type === 'weaver_react', '織工：2枚目は別の窓として続けて開く（1枚ずつ解決）');
+}
+{
+  // 義賊＝「財宝を1枚も公開しなかった」＝銅貨も財宝（公式FAQ `did not reveal a Treasure at all`）
+  let s = mkK(['noble_brigand', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival', 'militia']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['noble_brigand']; s.players[0].deck = ['copper'];
+  s.players[1].deck = ['copper', 'copper', 'estate'];
+  s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'noble_brigand' });
+  let g = 0;
+  while (s.pending && g++ < 8) { const b = s.pending; s = reduce(s, { type: 'NOBLE_BRIGAND_PICK', card: null }); if (s.pending === b) break; }
+  ok(s.players[1].discard.filter((c) => c === 'copper').length === 2, '義賊：銅貨2枚を公開した相手は銅貨を獲得しない（公開したのは全部捨て札に戻るだけ）');
+}
+{
+  // 不正利得＝呪いが足りないときは獲得者の左隣からターン順（席0からではない）
+  let s = E.createInitialState(['A', 'B', 'C'], ['ill_gotten_gains', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival', 'militia'], { startActive: 1 });
+  s.supply.curse = 1;
+  s.turn.phase = 'buy'; s.turn.coins = 5; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'ill_gotten_gains' });
+  ok(s.players[2].discard.indexOf('curse') >= 0 && s.players[0].discard.indexOf('curse') < 0,
+    '不正利得：最後の呪いは獲得者(P1)の左隣(P2)へ（席0からではない）');
+}
+
+{
+  // 進路＝**捨て札**の経路でも任意（オアシスで捨てても「使わない」を選べる）
+  let s = mkK(['trail', 'oasis', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['oasis', 'trail', 'copper']; s.players[0].deck = ['copper', 'copper', 'copper'];
+  s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'oasis' });
+  s = reduce(s, { type: 'OASIS_RESOLVE', card: 'trail' });
+  ok(s.pending && s.pending.type === 'trail_react' && s.pending.from === 'discard', '進路：捨て札の経路でも窓が開く');
+  const no = reduce(s, { type: 'TRAIL_REACT', play: false });
+  ok(no.players[0].discard.indexOf('trail') >= 0 && no.players[0].inPlay.indexOf('trail') < 0, '進路：捨て札でも使わずに済ませられる');
 }
 
 console.log('異郷テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
