@@ -610,5 +610,30 @@ console.log('=== CPU対CPU：繁栄フル王国で無限ループ無く終局（
   ok(E.cardCost(s, 'peddler') === 6, '行商人：持続アクションが場にあれば $6（実際 $' + E.cardCost(s, 'peddler') + '）');
 }
 
+// ==========================================================================
+// §0-43 出資＝廃棄できたときだけ勝利点（公式 Other rules clarifications）
+// ==========================================================================
+{
+  /* 逐語＝`If you play the same Investment twice (e.g. with Crown) and trash it on the first play for [VP],
+     then you **can't** trash it on the second play for [VP].` */
+  let s = mk(['investment', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'peddler', 'moat', 'village']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['investment', 'gold', 'silver', 'estate'];
+  s.turn.phase = 'buy';
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'investment' });
+  ok(s.pending && s.pending.type === 'investment' && s.pending.stage === 'trash', '出資：まず手札1枚の廃棄');
+  s = reduce(s, { type: 'INVESTMENT_TRASH', card: 'estate' });
+  ok(s.pending && s.pending.type === 'investment' && !s.pending.stage, '出資：次に二択');
+  s = reduce(s, { type: 'INVESTMENT', choice: 'vp' });
+  const vp1 = s.players[0].vpTokens || 0;
+  ok(vp1 === 2, '出資：手札の異なる財宝2種で +2勝利点（実際 ' + vp1 + '）');
+  ok((s.trash || []).indexOf('investment') >= 0, '出資：廃棄されている');
+  // 2回目（場に出資が無い＝既に廃棄済み）＝勝利点は得られない
+  s.pending = { type: 'investment', player: 0 };
+  const before = s.players[0].vpTokens || 0;
+  s = reduce(s, { type: 'INVESTMENT', choice: 'vp' });
+  ok((s.players[0].vpTokens || 0) === before, '出資：2回目は廃棄できないので勝利点も得られない（実際 +' + ((s.players[0].vpTokens || 0) - before) + '）');
+}
+
 console.log('\n繁栄テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 process.exit(fail ? 1 : 0);

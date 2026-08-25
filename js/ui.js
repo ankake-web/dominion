@@ -4264,8 +4264,8 @@
       'コスト ' + pd.maxCost + ' 以下のカードを1枚獲得します。',
       (id) => canUpTo(state, id, pd.maxCost, pd), (id) => dispatch({ type: 'TANUKI_GAIN', card: id }));
     if (pd.type === 'duchess_look') {
-      const top = p.deck[0];
-      return modalOptions('公爵夫人 — 山札の上' + (top ? '「' + DOM.CARDS[top].name + '」' : ''), '自分の山札の一番上を捨てられます（捨てると次に引く札が変わります）。', [
+      const top = pd.card || p.deck[0]; // 見た札は pending に載っている（他席にはマスクされる）
+      return modalOptions('公爵夫人 — 山札の上' + (top && DOM.CARDS[top] ? '「' + DOM.CARDS[top].name + '」' : ''), '自分の山札の一番上を捨てられます（捨てると次に引く札が変わります）。', [
         { label: '捨てる', cls: 'btn-primary', on: () => dispatch({ type: 'DUCHESS_LOOK', discard: true }) },
         { label: 'そのまま', on: () => dispatch({ type: 'DUCHESS_LOOK', discard: false }) }]);
     }

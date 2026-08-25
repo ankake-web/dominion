@@ -239,10 +239,13 @@ function fresh(kingdom, names) {
     '剣：他プレイヤーに「手札4枚まで捨てる」窓（民兵型・down=4）');
   const s2 = E.reduce(s1, { type: 'DISCARD_DOWN_RESOLVE', cards: ['copper', 'copper'] });
   ok(!s2.pending && s2.players[1].hand.length === 4, '手札が4枚になった');
-  // 手札4枚以下の相手は対象外
+  /* §0-43：手札4枚以下の相手にも**窓は開く**（公式＝リアクションは「アタックカードを使用したとき」に誘発する）。
+     捨てる枚数は0枚で手札は減らない＝「5枚以上なら1枚」ではないことは変わらない。 */
   const s3 = fresh(); s3.players[1].hand = ['copper', 'copper', 'copper', 'copper'];
   const s4 = playT(s3, 0, 'sword');
-  ok(!s4.pending, '手札4枚の相手には窓を開かない（「5枚以上なら1枚」ではない）');
+  ok(s4.pending && s4.pending.type === 'discard_down' && s4.pending.player === 1, '剣：手札4枚でもリアクションの窓は開く');
+  const s5 = E.reduce(s4, { type: 'DISCARD_DOWN_RESOLVE', cards: [] });
+  ok(!s5.pending && s5.players[1].hand.length === 4, '0枚で解決＝手札は減らない（「5枚以上なら1枚」ではない）');
 }
 // --- 盾＝堀と同型の免疫リアクション（手札に残る・何度でも） ---
 {
@@ -813,8 +816,9 @@ function handPlay(s, pi, cards) {
   let s = mkP2(null, ['A', 'B']);
   s = handPlay(s, 0, ['cutthroat']);
   s.players[1].hand = ['copper', 'copper', 'copper'];
-  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'cutthroat' });   // 手札3枚以下＝窓なしで即予約
-  ok((s.players[0].delayedEffects || []).some((e) => e.nextTime === 'gain'), '被害者が3枚以下なら即予約');
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'cutthroat' });   // §0-43：3枚以下でも窓は開く（0枚で解決）
+  if (s.pending && s.pending.type === 'discard_down') s = E.reduce(s, { type: 'DISCARD_DOWN_RESOLVE', cards: [] });
+  ok((s.players[0].delayedEffects || []).some((e) => e.nextTime === 'gain'), '被害者が3枚以下でも（0枚で解決した後に）予約が張られる');
   s = E.reduce(s, { type: 'END_ACTION_PHASE' });
   s = E.reduce(s, { type: 'END_TURN' });       // → B のターン
   s.turn.phase = 'buy'; s.turn.buys = 2; s.turn.coins = 9;

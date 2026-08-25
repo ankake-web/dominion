@@ -526,6 +526,73 @@ console.log('=== §0-43: 騎士の捨て札トリガー／コスト判定 ===');
   ok(E.costRange3to6(s, 'gold') === false || E.costRange3to6(s, 'gold') === true, 'costRange3to6 が engine から使える');
 }
 
+// ==========================================================================
+// §0-43 アタックのリアクション窓は「影響を受けるか」に関係なく全相手に開く
+// ==========================================================================
+console.log('=== §0-43: 手札が少なくてもリアクションの窓は開く ===');
+{
+  /* 公式＝`Beggar`／`Horse Traders`／`Moat` はいずれも
+     `When another player **plays an Attack card**, you may first ...` ＝
+     その攻撃で自分が影響を受けるかどうかは条件ではない。
+     手札枚数で被害者リストを事前に絞ると、その席は窓を**一度も開けない**。 */
+  let s = mk(['urchin', 'beggar', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['urchin']; s.players[0].deck = ['copper', 'copper'];
+  s.players[1].hand = ['beggar', 'copper']; // 手札2枚＝浮浪児（4枚まで捨てる）の影響を受けない
+  s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'urchin' });
+  ok(s.pending && s.pending.player === 1, '浮浪児：手札2枚の相手にも窓が開く');
+  const before = s.supply.silver;
+  s = E.reduce(s, { type: 'BEGGAR_REACT' });
+  ok(before - s.supply.silver === 2, '物乞い：銀貨2枚を獲得できる（旧実装では取り逃していた）');
+  ok(s.players[1].deck[0] === 'silver', '物乞い：1枚は山札の上に置く');
+}
+{
+  // 傭兵＝「廃棄するか決める**前**に」相手が反応を決める（公式FAQ）
+  let s = mk(['mercenary', 'urchin', 'moat', 'village', 'smithy', 'market', 'cellar', 'workshop', 'laboratory', 'festival']);
+  s.supply.mercenary = 10;
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['mercenary', 'copper', 'copper']; s.players[0].deck = ['copper', 'copper'];
+  s.players[1].hand = ['moat', 'copper', 'estate']; // 手札3枚＝旧実装では窓ゼロ
+  s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'mercenary' });
+  s = E.reduce(s, { type: 'MERCENARY_TRASH', cards: ['copper', 'copper'] });
+  ok(s.pending && s.pending.type === 'discard_down' && s.pending.player === 1, '傭兵：手札3枚の相手にも窓が開く');
+}
+
+// ==========================================================================
+// §0-43 青空市場＝廃棄時効果のドローで手札に来た札にも反応できる（公式）
+// ==========================================================================
+console.log('=== §0-43: 青空市場 × 狂信者（出荷 darkages 固定セット）===');
+{
+  /* Other rules clarifications 逐語＝`Market Square **doesn't have to have been in your hand when you trash
+     a card**; you could trash Cultist, drawing one or more Market Squares, and still discard them.`
+     ＝手札条件は「窓を積むとき」ではなく「解決するとき」に見る。 */
+  let s = mk(['cultist', 'market_square', 'chapel', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['chapel', 'cultist'];
+  s.players[0].deck = ['market_square', 'copper', 'copper']; // 狂信者の廃棄で +3カード＝青空市場が手札に来る
+  s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'chapel' });
+  s = E.reduce(s, { type: 'CHAPEL_RESOLVE', cards: ['cultist'] });
+  ok(s.players[0].hand.indexOf('market_square') >= 0, '狂信者の廃棄で青空市場を引いている');
+  ok(s.pending && s.pending.type === 'market_square_react', '青空市場：引いたばかりでも反応の窓が開く');
+  const before = s.supply.gold;
+  s = E.reduce(s, { type: 'MARKET_SQUARE_REACT', discard: true });
+  ok(before - s.supply.gold === 1, '青空市場：金貨1枚を獲得できる');
+}
+{
+  // 逆に、手札に無ければ窓を開かない（解決時の再検査）
+  let s = mk(['cultist', 'market_square', 'chapel', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['chapel', 'estate'];
+  s.players[0].deck = ['copper', 'copper', 'copper'];
+  s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'chapel' });
+  s = E.reduce(s, { type: 'CHAPEL_RESOLVE', cards: ['estate'] });
+  ok(!(s.pending && s.pending.type === 'market_square_react'), '青空市場：手札に無ければ窓を開かない（解決時に再検査）');
+}
+
 console.log('========================================');
 console.log('暗黒時代テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

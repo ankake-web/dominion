@@ -3526,7 +3526,7 @@ const NON_SUPPLY_SET = new Set([...PRIZE_SET, 'spoils', 'madman', 'mercenary',
         if (pd.stage === 'trash') { const c = p.hand.slice().sort((a, b) => trashValue(a) - trashValue(b))[0]; return { type: 'TANUKI_TRASH', card: c }; }
         return { type: 'TANUKI_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true, pot: pd.pot, debt: pd.debt }) || bestGain(state, pd.maxCost, pd) };
       case 'duchess_look': {
-        const look = p.deck[0] || p.discard[0];
+        const look = pd.card || p.deck[0] || p.discard[0];
         return { type: 'DUCHESS_LOOK', discard: !!look && (isType(look, 'victory') || isType(look, 'curse')) };
       }
       case 'develop':

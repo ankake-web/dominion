@@ -337,7 +337,11 @@ console.log('=== 玉璽 ===');
 console.log('=== ならず者 ===');
 { let s=mk(['goons'].concat(F.slice(0,9)),3); s.players[0].hand=['goons']; s.players[1].hand=['a','b','c','d','e'].map(()=>'copper'); s.players[2].hand=['copper','copper','copper'];
   s=act(s,'goons'); ok(s.turn.buys===2&&s.turn.coins===2,'+1購入 +$2'); ok(s.pending&&s.pending.type==='discard_down'&&s.pending.player===1,'手札4枚以上の席1が3枚まで捨てる（discard_down）');
-  let t=E.reduce(s,{type:'DISCARD_DOWN_RESOLVE',cards:['copper','copper']}); ok(t.pending==null&&t.players[1].hand.length===3,'2枚捨てて終わり');
+  let t=E.reduce(s,{type:'DISCARD_DOWN_RESOLVE',cards:['copper','copper']});
+  // §0-43：手札3枚の席2にも**窓は開く**（公式＝リアクションはアタックの使用時に誘発）＝0枚で解決
+  ok(t.pending&&t.pending.type==='discard_down'&&t.pending.player===2,'手札3枚の相手にも窓が開く');
+  t=E.reduce(t,{type:'DISCARD_DOWN_RESOLVE',cards:[]});
+  ok(t.pending==null&&t.players[1].hand.length===3&&t.players[2].hand.length===3,'2枚捨てて終わり（3枚の相手は減らない）');
   t.turn.phase='buy'; t.turn.coins=5; t.turn.buys=2; const v0=t.players[0].vpTokens||0; t=E.reduce(t,{type:'BUY',card:'copper'}); ok((t.players[0].vpTokens||0)===v0+1,'購入1枚ごとに +1VP');
   t.turn.coins=5; t.turn.buys=1; t=E.reduce(t,{type:'BUY',card:'copper'}); ok((t.players[0].vpTokens||0)===v0+2,'2枚目も');
   // 宮廷×ならず者＝場に1枚＝+1
@@ -462,7 +466,9 @@ console.log('=== 渡し守（サプライ外の山）===');
 console.log('=== 野盗（+2財源・民兵型・常設ルール）===');
 { let s=mk(['footpad','workshop'].concat(F.slice(0,8)),3); s.players[0].hand=['footpad']; s.players[1].hand=['copper','copper','copper','copper','copper']; s.players[2].hand=['copper','copper','copper']; s=act(s,'footpad');
   ok(s.players[0].coffers===2&&s.pending&&s.pending.type==='discard_down','+2財源→手札4枚以上の相手が3枚まで');
-  s=E.reduce(s,{type:'DISCARD_DOWN_RESOLVE',cards:['copper','copper']}); ok(s.pending==null,'捨てて終わり');
+  s=E.reduce(s,{type:'DISCARD_DOWN_RESOLVE',cards:['copper','copper']});
+  while(s.pending&&s.pending.type==='discard_down') s=E.reduce(s,{type:'DISCARD_DOWN_RESOLVE',cards:[]}); // §0-43：3枚以下の席にも窓が開く
+  ok(s.pending==null,'捨てて終わり');
   // 常設ルール＝アクションフェイズの獲得で +1カード（誰でも）
   ok(s.footpadRule===true,'footpadRule');
   s.players[0].hand.push('workshop'); s.turn.actions=1; s.turn.phase='action'; const h0=s.players[0].hand.length; s=E.reduce(s,{type:'PLAY_ACTION',card:'workshop'}); s=E.reduce(s,{type:'WORKSHOP_GAIN',card:'village'});

@@ -737,6 +737,62 @@ console.log('=== §0-43: 進路・織工の「してもよい」／義賊・不�
   ok(no.players[0].discard.indexOf('trail') >= 0 && no.players[0].inPlay.indexOf('trail') < 0, '進路：捨て札でも使わずに済ませられる');
 }
 
+// ==========================================================================
+// §0-43 敵対レビュー③＝異郷（スーク／公爵夫人／大釜）
+// ==========================================================================
+console.log('=== §0-43: スーク・公爵夫人・大釜 ===');
+{
+  /* スーク＝`+1 Buy / +[$7] / –[$1] per card in your hand (you can't go below [$0]).`
+     Official FAQ＝`You can't go below [$0] **but might end up with less [$] than you started with**.` */
+  let s = mkK(['souk', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival', 'militia']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['souk'].concat(new Array(8).fill('copper')); // 使用後の手札8枚
+  s.turn.actions = 1; s.turn.coins = 5;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'souk' });
+  ok(s.turn.coins === 4, 'スーク：所持$5・手札8枚 → $4（5+7-8。持っていたコインが減る）実際 $' + s.turn.coins);
+  let z = mkK(['souk', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival', 'militia']);
+  z.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  z.players[0].hand = ['souk'].concat(new Array(9).fill('copper'));
+  z.turn.actions = 1; z.turn.coins = 0;
+  z = reduce(z, { type: 'PLAY_ACTION', card: 'souk' });
+  ok(z.turn.coins === 0, 'スーク：$0未満にはならない（実際 $' + z.turn.coins + '）');
+}
+{
+  /* 公爵夫人＝`each player **secretly looks at the top card of their deck**`／
+     2011年版FAQ＝`Any player with no cards in his deck **shuffles his discard pile first**`
+     ＝山札が空なら**見る前に**シャッフルし、見た札を pending に載せる（載せないと中身を見ずに決めさせられる）。 */
+  let s = mkK(['duchess', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival', 'militia']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['duchess'];
+  s.players[0].deck = []; s.players[0].discard = ['gold', 'estate', 'copper'];
+  s.players[1].deck = ['copper'];
+  s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'duchess' });
+  ok(s.pending && s.pending.type === 'duchess_look' && s.pending.card, '公爵夫人：見た札が pending に載る（UI がカード名を出せる）');
+  ok(s.players[0].deck.length > 0, '公爵夫人：見る前にシャッフルしている');
+  const seen = s.pending.card;
+  ok(s.players[0].deck[0] === seen, '公爵夫人：pending の札が実際の山札の一番上');
+  // 相手席にはマスクされる
+  const m = E.maskStateFor(s, 1);
+  ok(m.pending && m.pending.card === 'back', '公爵夫人：相手席には見た札を伏せる（オンラインで漏れない）');
+}
+{
+  /* 大釜＝`The **third time you gain an Action** this turn, each other player gains a Curse.`
+     獲得の経路を問わない＝別の獲得 pending の解決中（国境の村など）でも発動しなければならない。 */
+  let s = mkK(['cauldron', 'border_village', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival'], ['A', 'B']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.turn.phase = 'buy'; s.turn.cauldronPlays = 1;
+  s.turn.buys = 5; s.turn.coins = 20;
+  s = reduce(s, { type: 'BUY', card: 'village' });            // 1
+  s = reduce(s, { type: 'BUY', card: 'border_village' });     // 2 → 獲得時に安いカードを1枚（= 3枚目）
+  ok(s.pending && s.pending.type === 'border_village', '国境の村の獲得pending が開く');
+  s = reduce(s, { type: 'BORDER_VILLAGE_GAIN', card: 'village' }); // 3枚目のアクション獲得
+  let g = 0;
+  while (s.pending && s.pending.type !== 'cauldron' && g++ < 5) s = reduce(s, { type: 'CAULDRON_REACT' });
+  ok(s.players[1].discard.indexOf('curse') >= 0 || (s.pending && s.pending.type === 'cauldron'),
+    '大釜：獲得pending の解決中でもアタックが発動する（黙って消えない）');
+}
+
 console.log('異郷テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');
 if (fail > 0) process.exit(1);

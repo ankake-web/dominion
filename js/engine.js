@@ -1578,7 +1578,7 @@
       const others = [];
       for (let k = 1; k < state.players.length; k++) {
         const idx = (pIndex + k) % state.players.length;
-        if (state.players[idx].hand.length > 4 && !attackImmune(state, idx)) others.push(idx);
+        if (!attackImmune(state, idx)) others.push(idx);
       }
       if (others.length) discardDownEnter(state, pIndex, 4, others);
     }
@@ -5456,7 +5456,14 @@
       const seat = queue[0], rest = queue.slice(1);
       const sp = state.players[seat];
       if (sp.deck.length === 0 && sp.discard.length === 0) { queue = rest; continue; } // 見る札なし
-      state.pending = { type: 'duchess_look', player: seat, queue: rest };
+      /* 公式FAQ 逐語＝`each player **secretly looks at the top card of their deck**, and either discards it
+         or puts it back, their choice.`／2011年版＝`Any player with no cards in his deck **shuffles his
+         discard pile first**`。＝**見る前に**シャッフルし、見た札を pending に載せる（よろずや/水晶球と同型）。
+         載せないと UI がカード名を出せず、プレイヤーは中身を見ないまま決めることになる。
+         他席には `maskStateFor` の私的看破リストで 'back' に伏せる。 */
+      if (sp.deck.length === 0 && sp.discard.length > 0) reshuffleDeck(sp, state);
+      if (sp.deck.length === 0) { queue = rest; continue; }
+      state.pending = { type: 'duchess_look', player: seat, card: sp.deck[0], queue: rest };
       return;
     }
     state.pending = null;
@@ -6033,7 +6040,7 @@
         const others = [];
         for (let k = 1; k < state.players.length; k++) {
           const idx = (pi + k) % state.players.length;
-          if (state.players[idx].hand.length > 3 && !attackImmune(state, idx)) others.push(idx);
+          if (!attackImmune(state, idx)) others.push(idx);
         }
         discardDownEnter(state, pi, 3, others, 'cutthroat');
         break;
@@ -6602,13 +6609,18 @@
         t.buys += 1;
         addCoins(state, 1);
         break;
+      /* 🛑 アタックの被害者リストを**手札枚数で事前に絞らない**（§0-43）。
+         公式＝堀／物乞い／馬商人／番犬／隊商の護衛／外交官は「他のプレイヤーが**アタックカードを使用したとき**」に
+         誘発し、その攻撃で自分が影響を受けるかどうかは条件ではない。手札3枚以下の相手を先に外すと、
+         その席はリアクションの窓を**一度も開けない**（物乞いの銀貨2枚・馬商人の脇避難が丸ごと失われる）。
+         捨てる側の reducer は `target = Math.min(down, hand.length)` なので0枚で素通りする＝終端保証済み。 */
       case 'militia': {
         addCoins(state, 2);
         // 他の全プレイヤーは手札3枚まで捨てる（手番順に処理）
         const others = [];
         for (let k = 1; k < state.players.length; k++) {
           const idx = (pi + k) % state.players.length;
-          if (state.players[idx].hand.length > 3 && !attackImmune(state, idx)) others.push(idx);
+          if (!attackImmune(state, idx)) others.push(idx);
         }
         if (others.length) {
           state.pending = { type: 'militia', player: others[0], source: pi, queue: others.slice(1) };
@@ -7311,7 +7323,7 @@
       case 'urchin': { // +1カード +1アクション。各相手が手札4枚まで捨てる（別アタックのプレイで傭兵化トリガー）
         draw(state, pi, 1); addActions(t, 1);
         const others = [];
-        for (let k = 1; k < state.players.length; k++) { const idx = (pi + k) % state.players.length; if (state.players[idx].hand.length > 4 && !attackImmune(state, idx)) others.push(idx); }
+        for (let k = 1; k < state.players.length; k++) { const idx = (pi + k) % state.players.length; if (!attackImmune(state, idx)) others.push(idx); }
         discardDownEnter(state, pi, 4, others);
         break;
       }
@@ -7335,7 +7347,7 @@
         break;
       case 'sir_michael': { // 各相手が手札3枚まで捨てる→（連鎖して）騎士アタック
         const others = [];
-        for (let k = 1; k < state.players.length; k++) { const idx = (pi + k) % state.players.length; if (state.players[idx].hand.length > 3 && !attackImmune(state, idx)) others.push(idx); }
+        for (let k = 1; k < state.players.length; k++) { const idx = (pi + k) % state.players.length; if (!attackImmune(state, idx)) others.push(idx); }
         discardDownEnter(state, pi, 3, others, 'knight:sir_michael');
         break;
       }
@@ -7972,10 +7984,17 @@
         state.pending = { type: 'weaver', player: pi };
         break;
       case 'souk': {
+        /* 公式＝`+1 Buy / +[$7] / –[$1] per card in your hand (you can't go below [$0]).`
+           Official FAQ＝`You can't go below [$0] **but might end up with less [$] than you started with**.`
+           ＝ボーナス側で `max(0, 7 - 手札)` に丸めてはいけない（手札8枚以上のとき公式より得をする）。
+           ⚠ 「−$」は「+コイン」ではないので `addCoins` を通さない（カメレオンの習性の +カード↔+$ 変換や
+              -$1トークンの `applyCoinPenalty` に巻き込まないため）。 */
         t.buys += 1;
-        const add = Math.max(0, 7 - p.hand.length);
-        addCoins(state, add);
-        log(state, `${p.name} はスーク（+1購入、+${add}コイン）。`);
+        addCoins(state, 7);
+        const minus = p.hand.length;
+        const before = t.coins;
+        t.coins = Math.max(0, t.coins - minus);
+        log(state, `${p.name} はスーク（+1購入、+7コイン、手札${minus}枚で -${before - t.coins}コイン → $${t.coins}）。`);
         break;
       }
       case 'guard_dog':
@@ -9170,7 +9189,7 @@
         const vic = [];
         for (let k = 1; k < state.players.length; k++) {
           const idx = (pi + k) % state.players.length;
-          if (state.players[idx].hand.length > 3 && !attackImmune(state, idx)) vic.push(idx);
+          if (!attackImmune(state, idx)) vic.push(idx);
         }
         if (vic.length) discardDownEnter(state, pi, 3, vic);
         break;
@@ -9234,7 +9253,7 @@
         const svic = [];
         for (let k = 1; k < state.players.length; k++) {
           const idx = (pi + k) % state.players.length;
-          if (state.players[idx].hand.length > 3 && !attackImmune(state, idx)) svic.push(idx);
+          if (!attackImmune(state, idx)) svic.push(idx);
         }
         if (svic.length) discardDownEnter(state, pi, 3, svic);
         break;
@@ -9357,7 +9376,7 @@
         const gv = [];
         for (let k = 1; k < state.players.length; k++) {
           const idx = (pi + k) % state.players.length;
-          if (state.players[idx].hand.length > 3 && !attackImmune(state, idx)) gv.push(idx);
+          if (!attackImmune(state, idx)) gv.push(idx);
         }
         if (gv.length) discardDownEnter(state, pi, 3, gv, null, 0);
         break;
@@ -9411,7 +9430,7 @@
         const fv = [];
         for (let k = 1; k < state.players.length; k++) {
           const idx = (pi + k) % state.players.length;
-          if (state.players[idx].hand.length > 3 && !attackImmune(state, idx)) fv.push(idx);
+          if (!attackImmune(state, idx)) fv.push(idx);
         }
         if (fv.length) discardDownEnter(state, pi, 3, fv, null, 0);
         break;
@@ -11334,10 +11353,14 @@
       state.turn.actionsGainedThisTurn = (state.turn.actionsGainedThisTurn || 0) + 1;
       // 公式FAQ逐語＝`This is cumulative if you play multiple Cauldrons.`＝**使用回数ぶん**呪いを配る。
       const cauldrons = (state.turn.cauldronPlays || 0);
-      if (state.turn.actionsGainedThisTurn === 3 && cauldrons > 0 && state._gainDepth === 1 && !state.pending) {
+      /* 公式FAQ＝`It doesn't matter how many non-Action cards you gained; **the third time you gain an Action**,
+         each other player gains a Curse.`＝獲得の経路を問わない。
+         `finishGain` は `gain()` を呼んでから `state.pending = null` にするので、あらゆる「カードを獲得する」
+         pending（国境の村／値切り屋／農地／織工／狂戦士／車大工…）由来の獲得では `!state.pending` が偽になり、
+         アタックが**黙って発生しなかった**。窓はキューに積む（村有緑地/忠犬と同じ方式）。 */
+      if (state.turn.actionsGainedThisTurn === 3 && cauldrons > 0 && state._gainDepth === 1) {
         log(state, `${gp.name} は大釜で このターン3回目のアクション獲得（各相手に呪い${cauldrons}枚）。`);
-        const cq = []; for (let r = 0; r < cauldrons; r++) for (let k = 1; k < n; k++) cq.push((pIndex + k) % n);
-        cauldronEnterVictim(state, pIndex, cq);
+        (state.onGainQueue = state.onGainQueue || []).push({ type: 'cauldron_attack', player: pIndex, times: cauldrons });
       }
     }
     // 帝国：庭師（groundskeeper）＝場にある庭師1枚につき、自分の手番に勝利点カードを獲得するたびVPトークン1個。
@@ -11730,8 +11753,12 @@
        ⚠ **この関数の先頭に置くこと**。城塞(fortress)／リッチ(lich) は「廃棄置き場に残らない」ので途中で
           早期 return するが、**廃棄という事象自体は起きている**ので青空市場は反応する（公式の既知コンボ）。
           末尾に置いていたため、出荷済みの darkages 固定セット（城塞と青空市場が同居）で今日まで反応しなかった。 */
-    if (!fromSupply && p.hand.includes('market_square') && (state.supply.gold || 0) > 0) {
-      (state.onTrashQueue = state.onTrashQueue || []).push({ type: 'market_square_react', player: pIndex });
+    /* 公式 Other rules clarifications 逐語＝`Market Square **doesn't have to have been in your hand when you
+       trash a card**; you could trash Cultist, drawing one or more Market Squares, and still discard them.`
+       ＝手札条件は**窓を積むときではなく解決するときに**見る（狂信者の+3カードで引いた青空市場でも反応できる）。
+       出荷 `darkages` 固定セットは狂信者と青空市場を両方含む＝今日から効く。 */
+    if (!fromSupply) {
+      (state.onTrashQueue = state.onTrashQueue || []).push({ type: 'market_square_react', player: pIndex, always: true });
     }
     /* 略奪P3：宝飾卵＝これを廃棄したとき、戦利品1枚を獲得する（**廃棄した本人**＝誰のカードの効果で
        廃棄されたかは関係ない＝公式FAQ。自動・非対話。サプライからの廃棄は「あなたのカード」ではないが、
@@ -14179,6 +14206,11 @@
       while (state.onTrashQueue.length) {
         const q = state.onTrashQueue[0];
         if (q.type === 'lich_gain' && !lichTrashTargets(state).length) { state.onTrashQueue.shift(); continue; }
+        // 青空市場＝解決時に「今の手札」と金貨の在庫で再検査する（廃棄時効果のドローで手札に来た札も拾える）。
+        if (q.type === 'market_square_react') {
+          const mp = state.players[q.player];
+          if (!mp || mp.hand.indexOf('market_square') < 0 || (state.supply.gold || 0) <= 0) { state.onTrashQueue.shift(); continue; }
+        }
         state.pending = state.onTrashQueue.shift();
         break;
       }
@@ -14193,6 +14225,14 @@
       while (state.onGainQueue.length) {
         const q = state.onGainQueue.shift();
         if (q.type === 'gatekeeper_exile') { applyGatekeeperExile(state, q.player, q.card, q.dest); continue; }
+        // 異郷：大釜＝このターン3回目のアクション獲得で各相手が呪い（獲得pending の解決中でも必ず発動する）。
+        if (q.type === 'cauldron_attack') {
+          const nn = state.players.length;
+          const cq = []; for (let r = 0; r < (q.times || 1); r++) for (let k = 1; k < nn; k++) cq.push((q.player + k) % nn);
+          cauldronEnterVictim(state, q.player, cq);
+          if (state.pending) break;
+          continue;
+        }
         // 繁栄：望楼＝相手の手番に獲得した札（山師/魔女の呪い等）への反応窓。解決時に再検査する
         //（望楼が手札から消えている／獲得した札が既に動かされている＝lose track なら窓を開かない）。
         if (q.type === 'watchtower') {
@@ -18761,7 +18801,7 @@
         // If you did：+2カード +$2、各相手が手札3枚まで捨てる
         draw(state, pd.player, 2); addCoins(state, 2);
         const others = [];
-        for (let k = 1; k < state.players.length; k++) { const idx = (pd.player + k) % state.players.length; if (state.players[idx].hand.length > 3 && !attackImmune(state, idx)) others.push(idx); }
+        for (let k = 1; k < state.players.length; k++) { const idx = (pd.player + k) % state.players.length; if (!attackImmune(state, idx)) others.push(idx); }
         discardDownEnter(state, pd.player, 3, others);
         return state;
       }
@@ -20125,12 +20165,18 @@
         if (!pd || pd.type !== 'investment' || pd.stage) return state;
         const p = state.players[pd.player];
         if (action.choice === 'vp') {
-          // これを廃棄する（場に無ければ lose track＝廃棄は失敗するが、公開と +VP は行う）
-          if (removeOne(p.inPlay, 'investment')) trashCard(state, pd.player, 'investment');
-          reveal(state, pd.player, p.hand.slice(), '出資で手札を公開');
-          const add = new Set(p.hand.filter((c) => isTreasureFor(state, c))).size;
-          if (add) p.vpTokens = (p.vpTokens || 0) + add;
-          log(state, `${p.name} は出資を廃棄し手札を公開して +${add}勝利点（手札の異なる財宝${add}種）。`);
+          /* 公式 Other rules clarifications 逐語＝`If you play the same Investment twice (e.g. with Crown)
+             and trash it on the first play for [VP], then you **can't** trash it on the second play for [VP].`
+             ＝勝利点は「これを廃棄する」に条件づいている。場に無ければ（＝既に廃棄済み／lose track）何も起きない。 */
+          if (removeOne(p.inPlay, 'investment')) {
+            trashCard(state, pd.player, 'investment');
+            reveal(state, pd.player, p.hand.slice(), '出資で手札を公開');
+            const add = new Set(p.hand.filter((c) => isTreasureFor(state, c))).size;
+            if (add) p.vpTokens = (p.vpTokens || 0) + add;
+            log(state, `${p.name} は出資を廃棄し手札を公開して +${add}勝利点（手札の異なる財宝${add}種）。`);
+          } else {
+            log(state, `${p.name} は出資を廃棄できなかった（場に無い）＝勝利点は得られない。`);
+          }
         } else {
           addCoins(state, 1); log(state, `${p.name} は出資で +1コイン。`);
         }
@@ -21572,9 +21618,9 @@
         if (!pd || pd.type !== 'duchess_look') return state;
         const sp = state.players[pd.player];
         let discarded = null;
-        if (action.discard) {
-          if (sp.deck.length === 0 && sp.discard.length > 0) { reshuffleDeck(sp); }
-          if (sp.deck.length > 0) { discarded = sp.deck.shift(); sp.discard.push(discarded); log(state, `${sp.name} は公爵夫人で山札の上を捨てた。`); }
+        if (action.discard && sp.deck.length > 0) {
+          discarded = sp.deck.shift(); sp.discard.push(discarded);
+          log(state, `${sp.name} は公爵夫人で山札の上を捨てた。`);
         }
         // ★pending は 'duchess_look' のまま保持して捨て処理＝tunnel の金貨獲得等が獲得時対話を立てて
         //   残りのプレイヤーの窓キューを潰すのを防ぐ。織工は noPrompt で自動（銀貨）。

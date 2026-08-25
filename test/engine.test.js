@@ -120,12 +120,17 @@ s2 = E.reduce(s2, { type: 'MOAT_REVEAL' });
 ok(s2.players[1].hand.length === 5, '堀公開で手札そのまま5: ' + s2.players[1].hand.length);
 ok(s2.pending === null, '無効化で解消');
 
-console.log('=== 民兵: 相手が3枚以下なら何も起きない ===');
+/* §0-43：手札3枚以下の相手にも**窓は開く**（公式＝堀/物乞い/馬商人は「アタックカードを**使用したとき**」に
+   誘発し、影響を受けるかどうかは条件ではない）。捨てる枚数は0枚で、手札は減らない。 */
+console.log('=== 民兵: 相手が3枚以下でも窓は開く（捨てるのは0枚）===');
 s = E.createInitialState(['A', 'B']);
 s.players[0].hand = ['militia'];
 s.players[1].hand = ['copper', 'copper', 'estate'];
 s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'militia' });
-ok(s2.pending === null, '3枚以下は選択待ちなし');
+ok(s2.pending && s2.pending.type === 'militia' && s2.pending.player === 1, '3枚以下でもリアクションの窓は開く');
+s2 = E.reduce(s2, { type: 'MILITIA_RESOLVE', cards: [] });
+ok(s2.pending === null, '0枚で解決して終了');
+ok(s2.players[1].hand.length === 3, '手札は減らない: ' + s2.players[1].hand.length);
 
 console.log('=== 鉱山: 銅貨を廃棄して銀貨を手札へ ===');
 s = E.createInitialState(['A', 'B']);
@@ -441,13 +446,16 @@ s2 = E.reduce(s2, { type: 'MILITIA_RESOLVE', cards: ['estate', 'estate'] });
 ok(s2.pending === null, '全員処理で選択待ち解除');
 ok(s2.players[2].hand.length === 3, 'Cも3枚に');
 
-console.log('=== 民兵3人: 1人だけ3枚以下ならスキップ ===');
+console.log('=== 民兵3人: 3枚以下の相手にも窓が回る（手番順）===');
 s = E.createInitialState(['A', 'B', 'C']);
 s.players[0].hand = ['militia'];
-s.players[1].hand = ['copper', 'copper', 'estate']; // 3枚以下→対象外
+s.players[1].hand = ['copper', 'copper', 'estate']; // 3枚以下でも窓は開く（0枚で解決）
 s.players[2].hand = ['gold', 'gold', 'estate', 'estate', 'copper'];
 s2 = E.reduce(s, { type: 'PLAY_ACTION', card: 'militia' });
-ok(s2.pending && s2.pending.player === 2, '3枚以下のBは飛ばしてCが対象');
+ok(s2.pending && s2.pending.player === 1, 'まず左隣(B)に窓が開く');
+ok(s2.pending.queue && s2.pending.queue.length === 1, 'Cがキューに残る');
+s2 = E.reduce(s2, { type: 'MILITIA_RESOLVE', cards: [] });
+ok(s2.pending && s2.pending.player === 2, '次にCが対象');
 ok(!s2.pending.queue || s2.pending.queue.length === 0, 'キューは空');
 
 console.log('=== 4人: 手番が一周する ===');
@@ -677,8 +685,10 @@ ok(s2.turn.coins === 2, '1回目の民兵で+2コイン（この時点では2回
 ok(s2.pending && s2.pending.type === 'militia' && s2.pending.player === 1, '1回目の民兵で相手に選択待ち');
 s2 = E.reduce(s2, { type: 'MILITIA_RESOLVE', cards: ['copper', 'copper'] }); // 5→3、解決後に2回目発火
 ok(s2.turn.coins === 4, '2回目の民兵が発火して合計+4コイン: ' + s2.turn.coins);
-ok(s2.pending === null, '相手は既に3枚なので2回目は捨て直し無し→終了');
-ok(s2.players[1].hand.length === 3, '相手は3枚（1回目で捨て、2回目は対象外）: ' + s2.players[1].hand.length);
+ok(s2.pending && s2.pending.type === 'militia' && s2.pending.player === 1, '2回目も窓は開く（捨てるのは0枚）');
+s2 = E.reduce(s2, { type: 'MILITIA_RESOLVE', cards: [] });
+ok(s2.pending === null, '0枚で解決して終了');
+ok(s2.players[1].hand.length === 3, '相手は3枚（1回目で捨て、2回目は0枚）: ' + s2.players[1].hand.length);
 
 console.log('=== 官吏: 銀貨切れでも誤った獲得ログを出さない（監査修正）===');
 s = E.createInitialState(['A', 'B']);
