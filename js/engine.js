@@ -3466,6 +3466,10 @@
   }
   // 繁栄：コスト/購入数/サプライ以外の「購入できない」追加制限。
   //   大市場(grand_market)＝場に銅貨があるとき購入不可。CPU/UI もこれを参照して空振りを防ぐ。
+  /* 公式FAQ＝`A single Copper in play is enough to stop you from buying Grand Market.` ／
+     `You can **gain** Grand Market other ways ... whether or not you have Coppers in play.`
+     ＝止まるのは「購入」だけ。闇市場(Black Market)も `Buy a card` なので同じ制限が掛かる
+     （`canBuyCard` をそのまま呼ぶと NON_SUPPLY/splitLocked/supply 判定まで走るので述語を切り出す）。 */
   /* 移動動物園：動物見本市（Animal Fair・$7）＝`Instead of paying this card's cost, you may trash an
      Action card from your hand.`（区切り線の下）。**購入したときだけ**使える代替支払い。
      ⚠ 2026-08-25 まで engine・CPU・UI のどこにも実装が無く、$7 を払う以外に買う手段が無かった。
@@ -3479,8 +3483,13 @@
     return id === 'animal_fair' && animalFairTrashTargets(state, pi).length > 0;
   }
 
+  // 繁栄：大市場＝場に銅貨が1枚でもあれば「購入」できない（獲得は可）。BUY と闇市場の両方が見る。
+  function grandMarketBlocked(state, pi) {
+    const p = state.players[pi];
+    return !!p && (p.inPlay || []).indexOf('copper') >= 0;
+  }
   function canBuyCard(state, pi, id) {
-    if (id === 'grand_market' && state.players[pi].inPlay.includes('copper')) return false;
+    if (id === 'grand_market' && grandMarketBlocked(state, pi)) return false;
     if (id === 'ruins') return false; // 暗黒時代：廃墟は購入できない（襲撃者アタック/獲得でのみ配られる）
     // 混合山の中身（廃墟/騎士/城/同盟の分割山の各カード）は名指しで購入できない＝山キーで一番上だけ買える。
     //   ※そのカード自身が独立した山として置かれている場合（fuzz の全プール混成など）は普通に買える。
@@ -3875,8 +3884,8 @@
     marauder:      { onMoat: (s, pd) => marauderEnterVictim(s, pd.source, pd.queue) },
     cultist:       { onMoat: (s, pd) => cultistEnterVictim(s, pd.source, pd.queue) },
     pillage:       { onMoat: (s, pd) => pillageEnterVictim(s, pd.source, pd.queue) },
-    rogue:         { onMoat: (s, pd) => rogueEnterVictim(s, pd.source, pd.queue) },
-    discard_down:  { embedded: true, onMoat: (s, pd) => advanceDiscardDown(s, pd) },
+    rogue:         { onMoat: (s, pd) => (pd.gainAfter ? rogueReactThenGain(s, pd.source, pd.queue) : rogueEnterVictim(s, pd.source, pd.queue)) },
+    discard_down:  { embedded: true, onMoat: (s, pd) => advanceDiscardDown(s, pd, pd.player) },
     // ルネサンス：老魔女（呪い配布＋手札の呪いを廃棄してよい）・悪党（$2以上を1枚捨て／無ければ手札公開）。
     old_witch:     { onMoat: (s, pd) => oldWitchEnterVictim(s, pd.source, pd.queue) },
     villain:       { onMoat: (s, pd) => villainEnterVictim(s, pd.source, pd.queue) },
@@ -4304,6 +4313,22 @@
     }
   }
   // 盗賊：廃棄置き場に$3-6が無いとき＝各相手が山札の上2枚を公開し、$3-6の1枚を（本人が選んで）廃棄、残りを捨てる。
+  /* 公式FAQ 逐語＝`Rogue is an Attack card, **even when it is gaining cards from the trash** rather than
+     putting opponents' cards in the trash, and so an opponent can reveal a Reaction such as Diplomat
+     **when you play it even if it's not attacking them at the time**.`
+     ＝廃棄置き場から獲得する分岐でも、先に全相手の反応窓を一周してから本体を解決する。 */
+  function rogueReactThenGain(state, source, queue) {
+    queue = (queue || []).slice();
+    while (queue.length) {
+      const victim = queue[0], rest = queue.slice(1);
+      if (hasReaction(state.players[victim])) {
+        state.pending = { type: 'rogue', stage: 'react', player: victim, source, victim, queue: rest, gainAfter: true };
+        return;
+      }
+      queue = rest;
+    }
+    state.pending = { type: 'rogue', stage: 'gain_from_trash', player: source };
+  }
   function rogueEnterVictim(state, source, queue) {
     queue = (queue || []).filter((v) => !attackImmune(state, v));
     if (!queue.length) { state.pending = null; return; }
@@ -4335,28 +4360,37 @@
   }
   // 手札N枚まで捨てる汎用アタック（民兵型・embedded。浮浪児=4/傭兵=3/サー・マイケル=3）。
   //   next='knight:<id>' を渡すと、全員の捨てが終わったあとに騎士アタックへ連鎖する（サー・マイケル用）。
-  function discardDownEnter(state, source, down, victims, next, drawAfter) {
-    if (victims && victims.length) state.pending = { type: 'discard_down', player: victims[0], source, down, queue: victims.slice(1), next: next || null, drawAfter: drawAfter || 0 };
-    else discardDownDone(state, source, next);
+  /* ⚠ `immune[]` ＝この**1回のアタックの使用**に対して既に免疫を得た席（堀/盾を公開した席）。
+     サー・マイケルは「各相手が手札3枚まで捨てる」→「騎士のアタック」の2段だが、**1枚のアタックカード**なので
+     堀を公開した相手は**両方の影響を受けない**（公式＝`to be unaffected by **it**`＝そのカード全体）。
+     2段目でキューを作り直すときに `immune` を引き継がないと、同じ相手にもう一度反応窓が開いてしまう。 */
+  function discardDownEnter(state, source, down, victims, next, drawAfter, immune) {
+    if (victims && victims.length) state.pending = { type: 'discard_down', player: victims[0], source, down, queue: victims.slice(1), next: next || null, drawAfter: drawAfter || 0, immune: (immune || []).slice() };
+    else discardDownDone(state, source, next, immune);
   }
-  function advanceDiscardDown(state, pd) {
+  function advanceDiscardDown(state, pd, addImmune) {
     const q = pd.queue || [];
-    if (q.length) state.pending = { type: 'discard_down', player: q[0], source: pd.source, down: pd.down, queue: q.slice(1), next: pd.next || null, drawAfter: pd.drawAfter || 0 };
-    else discardDownDone(state, pd.source, pd.next);
+    const im = (pd.immune || []).slice();
+    if (addImmune != null && im.indexOf(addImmune) < 0) im.push(addImmune);
+    if (q.length) state.pending = { type: 'discard_down', player: q[0], source: pd.source, down: pd.down, queue: q.slice(1), next: pd.next || null, drawAfter: pd.drawAfter || 0, immune: im };
+    else discardDownDone(state, pd.source, pd.next, im);
   }
   // 暗黒時代：浮浪児＝場に浮浪児がある状態で「別の」アタックをプレイしたとき、その解決前に
   //   場の浮浪児を廃棄して傭兵を獲得してよい。true を返したら card の効果適用は URCHIN_TRASH 後に遅延する。
   function maybeUrchinTrap(state, card, pi) {
     const p = state.players[pi];
     const priorUrchins = p.inPlay.filter((c) => c === 'urchin').length - (card === 'urchin' ? 1 : 0);
+    /* 公式カード文＝`**While this is in play**, when you play another Attack card, you may first trash this.`
+       ＝場にある**各コピーが独立に**誘発する（Urchin FAQ＝`If you play two different Urchins ... playing the
+       second one will let you trash the first`）。`left` で残り回数を持ち回す。 */
     if (DOM.isType(card, 'attack') && priorUrchins > 0 && (state.supply.mercenary || 0) > 0) {
-      state.pending = { type: 'urchin_trash', player: pi, deferred: card };
+      state.pending = { type: 'urchin_trash', player: pi, deferred: card, left: priorUrchins };
       return true;
     }
     return false;
   }
-  function discardDownDone(state, source, next) {
-    if (next && next.indexOf('knight:') === 0) startKnightAttack(state, source, next.slice('knight:'.length));
+  function discardDownDone(state, source, next, immune) {
+    if (next && next.indexOf('knight:') === 0) startKnightAttack(state, source, next.slice('knight:'.length), immune);
     else if (next === 'cutthroat') {
       /* 略奪：切り裂き魔＝"next time" の予約は**他のプレイヤーが捨て終えた後**に張る（公式逐語＝
          `The "next time" effect gets set up after the other players discard.`＝坑道→金貨では誘発しない）。 */
@@ -4369,8 +4403,9 @@
   /* ---------- 暗黒時代：騎士の共通アタック（混合山） ----------
      各相手が山札の上2枚を公開→$3-6の1枚を「本人が選んで」廃棄→残りを捨てる。
      騎士が廃棄されたら、攻撃した騎士（sourceCard）も廃棄する。 */
-  function startKnightAttack(state, pi, sourceCard) {
-    const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
+  function startKnightAttack(state, pi, sourceCard, immune) {
+    const im = immune || [];
+    const q = []; for (let k = 1; k < state.players.length; k++) { const idx = (pi + k) % state.players.length; if (im.indexOf(idx) < 0) q.push(idx); }
     knightAttackEnter(state, pi, sourceCard, q);
   }
   function knightAttackEnter(state, source, sourceCard, queue) {
@@ -5352,9 +5387,15 @@
     const rest = revealed.slice();
     if (trashed) {
       removeOne(rest, trashed);
-      // 廃棄された財宝は使用者が現物を獲得する（サプライは変えない＝廃棄→回収の合成）。
-      state.players[source].discard.push(trashed);
-      log(state, `${state.players[source].name} は ${v.name} の「${C()[trashed].name}」を廃棄して獲得した（義賊）。`);
+      /* 公式＝`... **trashes** a revealed Silver or Gold you choose ... **You gain the trashed cards.**`
+         ＝本物の廃棄（被害者のカード）→使用者が廃棄置き場から獲得、の2段。
+         捨て札へ直接 push すると**被害者の廃棄時効果（青空市場・墓所(Tomb)・封土）と
+         使用者の獲得時効果が1つも発火しない**。 */
+      trashCard(state, victim, trashed);
+      if (removeOne(state.trash, trashed)) {
+        gainFromOutside(state, source, trashed, 'discard');
+        log(state, `${state.players[source].name} は ${v.name} の「${C()[trashed].name}」を廃棄して獲得した（義賊）。`);
+      }
     }
     rest.forEach((c) => v.discard.push(c));
     // 公式FAQ＝`Each of these players that did not reveal a **Treasure at all** gains a Copper`（銅貨・愚者の黄金なども財宝）
@@ -5479,12 +5520,23 @@
   }
   // 開発：ちょうど +1/-1 コストのカードを（獲得可能なものから）好きな順で山札の上へ。
   //   ポーション費用/負債コストは廃棄した札と一致していること（公式のコスト比較は成分別）。
-  function developAdvance(state, pi, hi, lo, hiDone, loDone, pot, debt) {
+  /* 公式 Other rules clarifications 逐語＝`**What matters is the cost of each card at the time you're gaining
+     cards, not at the time you play Develop.**` ／ 例＝`If you start your turn by Developing Wayfarer, and you
+     gain a Duchy (costing [$5]) as your first gain, then you could gain a Gold as your second gain. Although
+     Wayfarer cost [$6] when you trashed it, **gaining the Duchy reduced the Wayfarer's cost to [$5]**, meaning
+     your second gain must cost [$6].` ＝hi/lo は絶対値で焼き込まず、廃棄した札の id から毎回引き直す。 */
+  function developRef(state, trashedId, fallback) {
+    if (!trashedId || !C()[trashedId]) return fallback;
+    return costOf(state, trashedId);
+  }
+  function developAdvance(state, pi, hi, lo, hiDone, loDone, pot, debt, trashedId) {
+    const ref = developRef(state, trashedId, { coin: hi - 1, pot: pot || 0, debt: debt || 0 });
+    hi = ref.coin + 1; lo = ref.coin - 1; pot = ref.pot; debt = ref.debt;
     const gainable = (c) => c >= 0 && anyGainable(state, (id) => costExact(state, id, c, pot || 0, debt || 0));
     const hiOk = !hiDone && gainable(hi);
     const loOk = !loDone && gainable(lo);
     if (!hiOk && !loOk) { state.pending = null; return; }
-    state.pending = { type: 'develop', stage: 'gain', player: pi, hi, lo, hiDone, loDone, pot: pot || 0, debt: debt || 0 };
+    state.pending = { type: 'develop', stage: 'gain', player: pi, hi, lo, hiDone, loDone, pot: pot || 0, debt: debt || 0, trashedId: trashedId || null };
   }
 
   /* ---------- 繁栄：大衆（各相手が山札の上3枚を公開→アクション/財宝を捨て、残りを上に戻す）---------- */
@@ -5922,7 +5974,17 @@
     /* 同盟：命令が「サプライに残したまま」プレイしても**プレイはプレイ**＝Ally の窓が開く。
        ただし相続の屋敷は applyEffect の case 'estate' からの内部委譲＝呼び出し元が既に note 済み。 */
     if (commandId !== 'estate') noteAllyPlay(state, pi, card);
-    try { applyEffect(state, card, pi); }
+    /* 暗黒時代：浮浪児＝公式 Other rules clarifications 逐語＝`If you play an Urchin, and then you play a
+       **Command variant such as Band of Misfits that plays an Attack from the Supply** (such as another
+       Urchin), you may still trash your Urchin for a Mercenary.`
+       ＝命令の実行経路も「アタックカードをプレイした」＝窓を開く。開いたら効果は URCHIN_TRASH の後へ遅延する。 */
+    try {
+      if (maybeUrchinTrap(state, card, pi)) {
+        if (state.pending && state.pending.type === 'urchin_trash') state.pending.deferredCommand = { commandId, card };
+        return;
+      }
+      applyEffect(state, card, pi);
+    }
     finally { if (prev) state._cmd = prev; else delete state._cmd; }
   }
   // 選択待ち（倒壊/死の荷車）で「これ（this）」を廃棄できるか。**engine・CPU・UI はこの述語だけを見る**
@@ -7313,7 +7375,8 @@
         addCoins(state, 2);
         const inRange = (state.trash || []).some((c) => costRange3to6(state, c));
         if (inRange) {
-          state.pending = { type: 'rogue', stage: 'gain_from_trash', player: pi };
+          const rq = []; for (let k = 1; k < state.players.length; k++) rq.push((pi + k) % state.players.length);
+          rogueReactThenGain(state, pi, rq); // 誰も攻撃されないが「アタックの使用」＝反応窓は開く（公式FAQ）
         } else {
           const q = []; for (let k = 1; k < state.players.length; k++) q.push((pi + k) % state.players.length);
           rogueEnterVictim(state, pi, q);
@@ -7884,9 +7947,9 @@
         reveal(state, pi, p.hand, '岐路で手札を公開');
         const vics = p.hand.filter((c) => DOM.isType(c, 'victory')).length;
         if (vics) draw(state, pi, vics);
-        const first = !t.crossroadsPlayed;
+        // 印は PLAY_ACTION の入口で既に +1 されている（習性/女魔術師でも立つ）＝ここでは1回目かどうかだけ見る。
+        const first = (t.crossroadsPlayed || 0) <= 1;
         if (first) addActions(t, 3);
-        t.crossroadsPlayed = (t.crossroadsPlayed || 0) + 1;
         log(state, `${p.name} は岐路（勝利点${vics}枚 → +${vics}カード${first ? '、初回 +3アクション' : ''}）。`);
         break;
       }
@@ -9680,8 +9743,12 @@
       // 各財宝名について、他のどのプレイヤーよりも多く（同数含む）持っていれば +5。seat 自身は cards、他は state.players。
       // ※得点計算は「ターン中」ではない＝資本主義の動的な財宝化は適用しない（静的な種別で数える）。
       const treasureNames = new Set();
-      cards.forEach((c) => { if (DOM.isType(c, 'treasure')) treasureNames.add(c); });
-      state.players.forEach((pp, i) => { if (i !== seat) allCards(pp).forEach((c) => { if (DOM.isType(c, 'treasure')) treasureNames.add(c); }); });
+      /* ⚠ 資本主義（ターン中だけ財宝）は得点に効かないが、**山師(Charlatan)は効く**。
+         公式 Other rules clarifications 逐語＝`**Unlike Capitalism**, Charlatan makes Curses stay as
+         Treasures **during scoring**, so they will count for Keep.` */
+      const isTre = (c) => DOM.isType(c, 'treasure') || (state.charlatanRule && c === 'curse');
+      cards.forEach((c) => { if (isTre(c)) treasureNames.add(c); });
+      state.players.forEach((pp, i) => { if (i !== seat) allCards(pp).forEach((c) => { if (isTre(c)) treasureNames.add(c); }); });
       treasureNames.forEach((tn) => {
         const mine = names[tn] || 0;
         if (mine === 0) return;
@@ -11392,7 +11459,10 @@
         state.pending = { type: 'border_village', player: pIndex, maxCost: cardCost(state, 'border_village') - 1 };
       }
       // 異郷：宿屋＝獲得したとき、捨て札（これ自身含む）のアクションを好きな枚数、山札に混ぜてシャッフル。
-      else if (cardId === 'inn' && me.discard.some((c) => DOM.isType(c, 'action'))) {
+      /* 公式 Other rules clarifications 逐語＝`**If you don't reveal any Actions from your discard pile,
+         you still shuffle your deck.** This will still let you use effects like Star Chart and Order of Masons.`
+         ＝捨て札にアクションが無くても（＝0枚公開でも）窓を開き、シャッフルは必ず行う。 */
+      else if (cardId === 'inn') {
         state.pending = { type: 'inn_gain', player: pIndex };
       }
       // 異郷：スーク＝獲得したとき、手札から最大2枚を廃棄。
@@ -11406,7 +11476,9 @@
       // 異郷：交易人のリアクション＝獲得したカードの代わりに銀貨を獲得してよい（自分の手番の獲得・銀貨自身は対象外）。
       //   **サプライ由来でない獲得（闇市場デッキ／廃棄置き場からの獲得＝gainFromOutside）は「山に戻す」ことができない**
       //   ＝窓を開かない（開くと supply に新キーが生える／廃棄した札が山に復活して3山終了が巻き戻る）。
-      else if (me.hand.includes('trader') && cardId !== 'silver' && !state._gainOutside &&
+      /* 公式 Other rules clarifications 逐語＝`**You can use Trader to exchange a Silver for a Silver.**`
+         ＝銀貨の獲得でも窓は開く（獲得を打ち消したい局面がある＝門番/呪われた金貨など）。 */
+      else if (me.hand.includes('trader') && !state._gainOutside &&
                Object.prototype.hasOwnProperty.call(state.supply, pileKeyOf(state, cardId))) {
         state.pending = { type: 'trader_react', player: pIndex, card: cardId, dest: dest || 'discard' };
       }
@@ -13755,7 +13827,11 @@
       if (takeLandmarkVP(state, pi, 'baths', 2)) log(state, `${me.name} は浴場で +2勝利点（獲得なしで手番終了）。`);
     }
     // 暗黒時代：隠遁者＝購入フェイズ中に1枚も獲得していなければ、場の隠遁者を狂人と交換する。
-    if (me.inPlay.includes('hermit') && !state.turn.buyPhaseGained) {
+    /* 公式 Other rules clarifications 逐語＝`If you take multiple Buy phases in a turn (with e.g. Villa or
+       Cavalry), Hermit will check **each Buy phase** to see if any cards were gained in it.`
+       ⚠ `t.buyPhaseGained` は**ターン中一度立ったら落ちない**旗。購入フェイズごとに 0 に戻るのは `t.bpGained`
+          （`END_ACTION_PHASE` でリセット＝§0-38 に記録済みの区別）。 */
+    if (me.inPlay.includes('hermit') && !(state.turn.bpGained || 0)) {
       let ex = 0;
       while (me.inPlay.includes('hermit') && (state.supply.madman || 0) > 0) {
         removeOne(me.inPlay, 'hermit');
@@ -13811,6 +13887,17 @@
     Object.keys(perm).forEach((k) => { cnt[k] = (cnt[k] || 0) + perm[k]; });
     return cnt;
   }
+  /* 異郷：画策＝現行カード文（2016年12月印刷以降）＝`This turn, you may put one of your Action cards onto
+     your deck **when you discard it from play**.` ＝対象は「このターンの片付けで**場から捨てられる**
+     アクションカード」。持続を一律に除外すると、**前のターンに使い終わって今まさに捨てられる持続**
+     （埠頭など）を置けない。増築(improve) が同じ計算を持っているので共通ヘルパに切り出す。 */
+  function discardedFromPlayTargets(state, pi) {
+    const p = state.players[pi];
+    const stay = stayingCounts(state, pi);
+    const byId = {};
+    [].concat(p.inPlay, p.durationCards || []).forEach((c) => { byId[c] = (byId[c] || 0) + 1; });
+    return Object.keys(byId).filter((id) => (byId[id] - (stay[id] || 0)) > 0);
+  }
   function improveTargets(state, pi) {
     const p = state.players[pi];
     const stay = stayingCounts(state, pi);
@@ -13829,7 +13916,7 @@
     }
     // 異郷：画策＝クリンナップ開始時、場のアクション（非持続）を最大(このターンの画策の数)枚 山札の上に置ける。
     const schemes = state.turn.schemes || 0;
-    if (schemes > 0 && !state.turn.journeyKeep && me.inPlay.some((c) => DOM.isType(c, 'action') && !DOM.isType(c, 'duration'))) {
+    if (schemes > 0 && !state.turn.journeyKeep && discardedFromPlayTargets(state, pi).some((c) => DOM.isType(c, 'action'))) {
       state.pending = { type: 'scheme_cleanup', player: pi, max: schemes };
       return;
     }
@@ -14852,6 +14939,12 @@
         // ルネサンス：山砦＝このターン最初のアクション使用なら、効果解決の「後」に再演する（replay キューに積む）。
         maybeCitadel(state, pi, asInherited ? 'estate' : card);
         // 暗黒時代：浮浪児＝別アタックのプレイ時に場の浮浪児を廃棄→傭兵。効果は URCHIN_TRASH 解決後に適用。
+        /* 異郷：岐路＝`If this is the **first time you played a Crossroads** this turn, +3 Actions.`
+           公式 Other rules clarifications 逐語＝`If your first Crossroads is either **enchanted** or
+           **played as a Way**, the second one will **not** give +Actions.`
+           ＝印は `applyEffect` の中ではなく**使用の入口**で立てる（習性は applyWay へ／女魔術師は
+             置換して return するので、どちらも applyEffect を通らない）。 */
+        if (card === 'crossroads' && t) t.crossroadsPlayed = (t.crossroadsPlayed || 0) + 1;
         if (maybeUrchinTrap(state, card, pi)) return state;
         // 移動動物園：炉＝このターン、次に使うカードの**解決前**に同名を獲得してよい。
         //   窓を開いたら中断し、KILN_GAIN の解決で applyEffect（習性を使うなら applyWay）を呼ぶ。
@@ -17945,6 +18038,7 @@
            まだ返していない＝アクションフェイズで闇市場を使うぶんには普通に買える（`t.cantBuyActions` が立っていない）。 */
         if (t.cantBuyActions && pd.player === t.active && DOM.isType(card, 'action')) return state;
         if (t.contraband && t.contraband.length && pd.player === t.active && t.contraband.indexOf(card) >= 0) return state; // 繁栄1版：禁制品
+        if (card === 'grand_market' && grandMarketBlocked(state, pd.player)) return state; // 繁栄：大市場＝闇市場の購入も「購入」
         const cost = cardCost(state, card);
         if (cost > t.coins) return state; // 払えない
         t.coins -= cost; // 闇市場の購入は購入回数を消費しない
@@ -18736,6 +18830,7 @@
       case 'ROGUE_REACT': {
         const pd = state.pending;
         if (!pd || pd.type !== 'rogue' || pd.stage !== 'react') return state;
+        if (pd.gainAfter) { rogueReactThenGain(state, pd.source, pd.queue); return state; }
         rogueReveal(state, pd.source, pd.victim, pd.queue);
         return state;
       }
@@ -18814,8 +18909,27 @@
           if (gain(state, pd.player, 'mercenary', 'discard')) log(state, `${p.name} は浮浪児を廃棄して傭兵を獲得した。`);
         }
         state.pending = null;
+        // 場にまだ浮浪児が残っていれば、その1枚ぶんの窓をもう一度開く（各コピーが独立に誘発する）。
+        const leftN = (pd.left || 1) - 1;
+        if (leftN > 0 && p.inPlay.indexOf('urchin') >= 0 && (state.supply.mercenary || 0) > 0) {
+          state.pending = { type: 'urchin_trash', player: pd.player, deferred: pd.deferred, left: leftN,
+            deferredNight: pd.deferredNight, deferredCommand: pd.deferredCommand };
+          return state;
+        }
         /* 夜想曲：夜フェイズの人狼/吸血鬼/夜襲から来た場合は、**カードを場に出してから**効果を解決する
            （PLAY_NIGHT は浮浪児の窓を開く時点でまだ場に出していない）。 */
+        if (pd.deferredCommand) {
+          /* 命令（はみだし者/大君主/船長/王子）がサプライのカードを「動かさずに」使う続き。
+             ⚠ `playAsCommand` を呼び直すと `maybeUrchinTrap` がまた窓を開いて無限ループになる
+                （辞退したときは場に浮浪児が残ったままなので必ず再発する）。`_cmd` を自分で立てて
+                `applyEffect` を直接呼ぶ（`noteAllyPlay` は窓を開く前に済んでいる）。 */
+          const dc = pd.deferredCommand;
+          const prevCmd = state._cmd;
+          state._cmd = { player: pd.player, id: dc.commandId, as: dc.card };
+          try { applyEffect(state, dc.card, pd.player); }
+          finally { if (prevCmd) state._cmd = prevCmd; else delete state._cmd; }
+          return state;
+        }
         if (pd.deferredNight) {
           const t2 = state.turn;
           p.inPlay.push(pd.deferredNight);
@@ -19443,8 +19557,13 @@
         const pd = state.pending;
         if (!pd || pd.type !== 'clerk_start') return state;
         const p = state.players[pd.player];
-        if (action.play && p.hand.includes('clerk')) {
+        /* 書記の `At the start of your turn, you may play this **from your hand**.` は手札からの通常のプレイ＝
+           将軍(Warlord＝`can't play an Action **from their hand** that they have 2 or more copies of in play`)と
+           航海(Voyage＝`you can only play 3 cards **from your hand**`)の両方が掛かる（§0-32 で冠/首謀者/門下生を
+           同じ理由で直した先例）。`canPlayHandCard` が engine拒否・CPU候補・UIフィルタの共通述語。 */
+        if (action.play && p.hand.includes('clerk') && canPlayHandCard(state, pd.player, 'clerk')) {
           removeOne(p.hand, 'clerk'); p.inPlay.push('clerk');
+          notePlayFromHand(state, pd.player); // 航海の「手札から3枚まで」に数える
           t.actionsPlayed = (t.actionsPlayed || 0) + 1;
           log(state, `${p.name} は手番開始時に書記を使った。`);
           noteAllyPlay(state, pd.player, 'clerk'); // 同盟：これも「カードの使用」＝Ally の窓が開く
@@ -21638,7 +21757,7 @@
         removeOne(pl.hand, card); trashCard(state, pd.player, card);
         log(state, `${pl.name} は「${C()[card].name}」を廃棄した（開発）。`);
         const ref = costOf(state, card);
-        developAdvance(state, pd.player, ref.coin + 1, ref.coin - 1, false, false, ref.pot, ref.debt);
+        developAdvance(state, pd.player, ref.coin + 1, ref.coin - 1, false, false, ref.pot, ref.debt, card);
         return state;
       }
       case 'DEVELOP_GAIN': {
@@ -21652,7 +21771,23 @@
         else return state; // どちらのコスト帯とも一致しない
         gain(state, pd.player, card, 'deck');
         log(state, `${state.players[pd.player].name} は「${C()[card].name}」を山札の上に獲得した（開発）。`);
-        developAdvance(state, pd.player, pd.hi, pd.lo, hiDone, loDone, pd.pot, pd.debt);
+        developAdvance(state, pd.player, pd.hi, pd.lo, hiDone, loDone, pd.pot, pd.debt, pd.trashedId);
+        return state;
+      }
+      case 'ORACLE_ORDER': {
+        // 神託：戻す順番は**持ち主**が決める（order[0] が一番上）。不正な並びは公開順にフォールバック。
+        const pd = state.pending;
+        if (!pd || pd.type !== 'oracle' || pd.stage !== 'order') return state;
+        const tp = state.players[pd.victim];
+        const cards = (pd.cards || []).slice();
+        let order = Array.isArray(action.order) && action.order.length === cards.length ? action.order.slice() : cards.slice();
+        const chk = cards.slice(); let okOrder = true;
+        for (const c of order) { const i = chk.indexOf(c); if (i < 0) { okOrder = false; break; } chk.splice(i, 1); }
+        if (!okOrder) order = cards.slice();
+        for (let i = order.length - 1; i >= 0; i--) tp.deck.unshift(order[i]);
+        log(state, `${tp.name} は神託で公開された2枚を好きな順で山札の上に戻した。`);
+        state.pending = null;
+        oracleEnterTarget(state, pd.source, pd.queue);
         return state;
       }
       case 'ORACLE_REACT': {
@@ -21673,11 +21808,15 @@
           log(state, `${state.players[pd.source].name} は ${tp.name} の公開2枚を捨てさせた（神託）。`);
           triggerOnDiscard(state, pd.victim, cards, true);
         } else {
-          let order = Array.isArray(action.order) && action.order.length === cards.length ? action.order.slice() : cards.slice();
-          const chk = cards.slice(); let okOrder = true;
-          for (const c of order) { const i = chk.indexOf(c); if (i < 0) { okOrder = false; break; } chk.splice(i, 1); }
-          if (!okOrder) order = cards.slice();
-          for (let i = order.length - 1; i >= 0; i--) tp.deck.unshift(order[i]); // order[0] が一番上
+          /* 公式＝`... discards them or puts them back, your choice (**they choose the order**).`／
+             Official FAQ＝`A player putting the cards back puts them back **in any order they choose**.`
+             ＝「捨てさせるか戻させるか」は使用者、「戻す順番」は**持ち主**。2枚あって持ち主が使用者以外の
+             ときだけ順番の窓を挟む（1枚以下・自分自身のぶんは順番が意味を持たないので開かない＝終端保証）。 */
+          if (cards.length >= 2 && pd.victim !== pd.source) {
+            state.pending = { type: 'oracle', stage: 'order', player: pd.victim, source: pd.source, victim: pd.victim, cards, queue: pd.queue };
+            return state;
+          }
+          for (let i = cards.length - 1; i >= 0; i--) tp.deck.unshift(cards[i]);
           log(state, `${state.players[pd.source].name} は ${tp.name} の公開2枚を山札の上に戻した（神託）。`);
         }
         state.pending = null;
@@ -22283,9 +22422,12 @@
         const pl = state.players[pd.player];
         const cards = Array.isArray(action.cards) ? action.cards : [];
         if (cards.length > (pd.max || 0)) return state;
-        const copy = pl.inPlay.slice();
-        for (const c of cards) { if (!DOM.isType(c, 'action') || DOM.isType(c, 'duration') || !removeOne(copy, c)) return state; }
-        cards.forEach((c) => { removeOne(pl.inPlay, c); pl.deck.unshift(c); });
+        // 対象＝「このターンの片付けで場から捨てられるアクション」（解決済みの持続も含む＝現行カード文）
+        const copy = discardedFromPlayTargets(state, pd.player).slice();
+        const okIds = {};
+        [].concat(pl.inPlay, pl.durationCards || []).forEach((c) => { okIds[c] = (okIds[c] || 0) + 1; });
+        for (const c of cards) { if (!DOM.isType(c, 'action') || copy.indexOf(c) < 0 || !(okIds[c] > 0)) return state; okIds[c] -= 1; }
+        cards.forEach((c) => { if (removeOne(pl.inPlay, c) || removeOne(pl.durationCards, c)) pl.deck.unshift(c); });
         if (cards.length) log(state, `${pl.name} は画策で ${cards.length}枚 を山札の上に置いた。`);
         state.pending = null;
         cleanupAndAdvance(state);
@@ -25073,7 +25215,7 @@
     'AMASS_GAIN', 'ASCETICISM_PAY', 'ASCETICISM_TRASH', 'CREDIT_GAIN', 'KINTSUGI_TRASH', 'KINTSUGI_GAIN',
     'PRACTICE_PLAY', 'SEA_TRADE_TRASH', 'RECEIVE_TRIBUTE_GAIN', 'GATHER_GAIN', 'CONTINUE_GAIN', // 旭日 R5：イベント
     'WAR_CHEST_NAME', 'WAR_CHEST_GAIN', 'WATCHTOWER', 'TIARA_TOPDECK', 'TIARA_PLAY',
-    'TRAIL_REACT', 'WEAVER_REACT',
+    'TRAIL_REACT', 'WEAVER_REACT', 'ORACLE_ORDER',
     'ANVIL_DISCARD', 'ANVIL_GAIN', 'INVESTMENT', 'INVESTMENT_TRASH', 'CRYSTAL_BALL',
     // 収穫祭
     'HAMLET_DISCARD', 'FORTUNE_TELLER_REACT', 'HORSE_TRADERS_DISCARD', 'HORSE_TRADERS_REACT',
@@ -25151,6 +25293,7 @@
     costUnder,     // 「これより安い」（成分別 strictly less）
     costExact,     // 「ちょうど$N（ポーション/負債も一致）」
     costRange3to6, // 「コスト$3〜$6」＝3成分（枢機卿/騎士/盗賊/墓暴き。CPU・UI もこれを見る）
+    discardedFromPlayTargets, // 「このターンの片付けで場から捨てられるカード」（画策・増築が共有）
     sameCost,      // 2枚のコストが完全一致か（詐欺師/御守り）
     captainTargets, // 新プロモ：船長の対象（CPU/UIが同じ候補を参照＝engine拒否とCPU非提案のセット）
     bandOfMisfitsTargets, // 暗黒時代：はみだし者の対象（CPU/UIが同じ候補を参照）

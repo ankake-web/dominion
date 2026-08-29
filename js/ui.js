@@ -4273,6 +4273,14 @@
     if (pd.type === 'develop' && pd.stage === 'gain') return modalGainSupply(state, '開発 — 獲得', 'ちょうどコスト $' + (pd.hiDone ? pd.lo : pd.hi) + (!pd.hiDone && !pd.loDone ? '（または $' + pd.lo + '）' : '') + ' のカードを1枚、山札の上に獲得します。',
       (id) => (!pd.hiDone && canExact(state, id, pd.hi, pd.pot, pd.debt)) || (!pd.loDone && canExact(state, id, pd.lo, pd.pot, pd.debt)), (id) => dispatch({ type: 'DEVELOP_GAIN', card: id }));
     if (pd.type === 'oracle' && pd.stage === 'react') return modalOptions('神託を受ける', '山札の上2枚が公開され、相手が捨てるか山札の上に戻すか決めます。', reactOptions(p, pd, { type: 'ORACLE_REACT' }));
+    if (pd.type === 'oracle' && pd.stage === 'order') {
+      // 神託：戻す順番は**自分（持ち主）**が決める（公式＝`they choose the order`）。
+      const cs = (pd.cards || []).slice();
+      const nm = (c) => (DOM.CARDS[c] ? DOM.CARDS[c].name : c);
+      return modalOptions('神託 — 戻す順番', '山札の上に戻す順番を選びます（先に選んだほうが一番上）。', [
+        { label: '「' + nm(cs[0]) + '」を上に', cls: 'btn-primary', on: () => dispatch({ type: 'ORACLE_ORDER', order: cs.slice() }) },
+        { label: '「' + nm(cs[1]) + '」を上に', on: () => dispatch({ type: 'ORACLE_ORDER', order: cs.slice().reverse() }) }]);
+    }
     if (pd.type === 'oracle' && pd.stage === 'decide') {
       const who = pd.victim === pd.source ? '自分' : state.players[pd.victim].name;
       const names = (pd.cards || []).map((c) => DOM.CARDS[c].name).join('・');
@@ -4348,7 +4356,7 @@
     if (pd.type === 'igg_play') return modalOptions('不正利得', '銅貨1枚を手札に獲得できます。', [
       { label: '銅貨を手札に獲得', cls: 'btn-primary', on: () => dispatch({ type: 'IGG_PLAY', gain: true }) },
       { label: '獲得しない', on: () => dispatch({ type: 'IGG_PLAY', gain: false }) }]);
-    if (pd.type === 'scheme_cleanup') return modalSchemeCleanup(p, pd.max || 0);
+    if (pd.type === 'scheme_cleanup') return modalSchemeCleanup(p, pd.max || 0, state, pd.player);
 
     /* ===== 暗黒時代（Dark Ages）===== */
     // --- 単純系（既存24枚のUIもここで実装）---
@@ -4658,14 +4666,17 @@
     return modalShell('六分儀 — 山札の上5枚', 'タップして捨てるカードを選びます（選ばなかったカードは公開順のまま山札の上に戻ります）。', chips, footer);
   }
   // 異郷：画策＝場のアクション（非持続）を最大 max 枚、山札の上に置く（タップで選択・0枚でもよい）。
-  function modalSchemeCleanup(p, max) {
-    pruneSelection(p.inPlay.length);
-    const elig = p.inPlay.map((id, idx) => ({ id, idx })).filter((x) => DOM.isType(x.id, 'action') && !DOM.isType(x.id, 'duration'));
+  function modalSchemeCleanup(p, max, state, pi) {
+    // 対象＝このターンの片付けで場から捨てられるアクション（解決済みの持続も含む＝現行カード文）
+    const pool = p.inPlay.concat(p.durationCards || []);
+    const okSet = (state && E() && E().discardedFromPlayTargets) ? E().discardedFromPlayTargets(state, pi) : p.inPlay;
+    pruneSelection(pool.length);
+    const elig = pool.map((id, idx) => ({ id, idx })).filter((x) => DOM.isType(x.id, 'action') && okSet.indexOf(x.id) >= 0);
     const chips = elig.map((x) =>
       cardEl(x.id, { size: 'sm', extra: UI.selection.includes(x.idx) ? 'selected' : 'selectable',
         onClick: () => { const i = UI.selection.indexOf(x.idx); if (i >= 0) UI.selection.splice(i, 1); else if (UI.selection.length < max) UI.selection.push(x.idx); render(); } }));
     const footer = h('button', { class: 'btn btn-primary btn-block',
-      onclick: () => dispatch({ type: 'SCHEME_CLEANUP', cards: takeSelection(p.inPlay) }) },
+      onclick: () => dispatch({ type: 'SCHEME_CLEANUP', cards: takeSelection(p.inPlay.concat(p.durationCards || [])) }) },
       '確定（' + UI.selection.length + '枚 を山札の上へ）');
     return modalShell('画策 — 山札の上に置く', '最大 ' + max + ' 枚まで、場のアクションを山札の上に置けます（次のターンに引きます・0枚でもよい）。', chips, footer);
   }

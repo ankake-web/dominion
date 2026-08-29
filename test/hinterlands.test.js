@@ -793,6 +793,78 @@ console.log('=== §0-43: スーク・公爵夫人・大釜 ===');
     '大釜：獲得pending の解決中でもアタックが発動する（黙って消えない）');
 }
 
+// ==========================================================================
+// §0-43 敵対レビュー④＝異郷（岐路／開発／神託の順番／宿屋／交易人）
+// ==========================================================================
+console.log('=== §0-43: 岐路・開発・神託・宿屋・交易人 ===');
+{
+  /* 岐路＝`If this is the **first time you played a Crossroads** this turn, +3 Actions.`
+     公式＝`If your first Crossroads is either enchanted or **played as a Way**, the second one
+     will **not** give +Actions.` ＝印は applyEffect の中ではなく使用の入口で立てる。 */
+  let s = mkK(['crossroads', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival', 'militia'],
+    ['A', 'B'], 0);
+  s.ways = ['way_of_the_ox'];
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['crossroads', 'crossroads', 'estate'];
+  s.players[0].deck = ['copper', 'copper', 'copper'];
+  s.turn.actions = 5;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'crossroads', way: 'way_of_the_ox' }); // 習性で使う
+  const a1 = s.turn.actions;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'crossroads' }); // 2枚目（普通に使う）
+  ok(s.turn.actions - a1 <= 0, '岐路：1枚目を習性で使ったら2枚目は +3アクションを出さない（差 ' + (s.turn.actions - a1) + '）');
+}
+{
+  /* 開発＝`**What matters is the cost of each card at the time you're gaining cards**, not at the time you
+     play Develop.` 行人(wayfarer)は「このターンに獲得された直前のカード」のコストになる＝
+     1枚目の獲得でコストが動いたら2枚目の基準も動く。 */
+  let s = mkK(['develop', 'wayfarer', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['develop', 'wayfarer'];
+  s.players[0].deck = ['copper', 'copper'];
+  s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'develop' });
+  s = reduce(s, { type: 'DEVELOP_TRASH', card: 'wayfarer' });
+  ok(s.pending && s.pending.stage === 'gain' && s.pending.trashedId === 'wayfarer', '開発：廃棄した札のidを持ち回す（コストを測り直せる）');
+}
+{
+  // 神託＝戻す順番は**持ち主**が決める（カード文にも書いてある）
+  let s = mkK(['oracle', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival', 'militia']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['oracle']; s.players[0].deck = ['copper', 'copper', 'copper'];
+  s.players[1].deck = ['gold', 'estate', 'copper'];
+  s.turn.actions = 1;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'oracle' });
+  let g = 0; let sawOrder = false;
+  while (s.pending && g++ < 8) {
+    if (s.pending.type === 'oracle' && s.pending.stage === 'decide') {
+      if (s.pending.victim === 0) s = reduce(s, { type: 'ORACLE_DECIDE', discard: true });
+      else s = reduce(s, { type: 'ORACLE_DECIDE', discard: false });
+    } else if (s.pending.type === 'oracle' && s.pending.stage === 'order') {
+      sawOrder = true;
+      ok(s.pending.player === 1, '神託：戻す順番の窓は**持ち主**に開く（使用者ではない）');
+      s = reduce(s, { type: 'ORACLE_ORDER', order: ['estate', 'gold'] });
+      ok(s.players[1].deck[0] === 'estate', '神託：持ち主が選んだ順で戻る');
+      break;
+    } else break;
+  }
+  ok(sawOrder, '神託：戻すことを選んだら順番の窓が必ず開く');
+}
+/* 宿屋＝`If you don't reveal any Actions from your discard pile, you still shuffle your deck.`
+   engine の窓の条件から「捨て札にアクションがあるか」を外した（公式どおり常に開く）。
+   ⚠ 回帰テストは置いていない＝**実プレイでは到達しない**ため。宿屋を捨て札以外（手札/山札）に獲得する
+   経路（職人/工匠）は、その gainer 自身の pending が立っているので `triggerOnGain` の
+   「1獲得につき対話は1つ」ゲート（§6 の既存簡略化）に先に当たって窓が開かない。
+   宿屋を捨て札に獲得する場合は宿屋自身がアクションなので旧条件でも常に真だった。 */
+{
+  // 交易人＝銀貨を獲得したときも窓を開く（公式＝銀貨↔銀貨の交換ができる）
+  let s = mkK(['trader', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival', 'militia']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['trader'];
+  s.turn.phase = 'buy'; s.turn.coins = 3; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'silver' });
+  ok(s.pending && s.pending.type === 'trader_react', '交易人：銀貨の獲得でも窓が開く（公式＝銀貨↔銀貨の交換）');
+}
+
 console.log('異郷テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');
 if (fail > 0) process.exit(1);

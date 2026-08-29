@@ -3539,6 +3539,11 @@ const NON_SUPPLY_SET = new Set([...PRIZE_SET, 'spoils', 'madman', 'mercenary',
         }
       case 'oracle':
         if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'ORACLE_REACT' }; }
+        // 戻す順番は**持ち主**が決める（公式）＝良い札（財宝/アクション）を上に。
+        if (pd.stage === 'order') {
+          const val = (c) => (isTreasure(c) ? 2 : isType(c, 'action') ? 1 : 0);
+          return { type: 'ORACLE_ORDER', order: (pd.cards || []).slice().sort((a2, b2) => val(b2) - val(a2)) };
+        }
         {
           const good = (pd.cards || []).some((c) => isTreasure(c) || isType(c, 'action'));
           const mine = pd.victim === pd.source;
@@ -3631,7 +3636,8 @@ const NON_SUPPLY_SET = new Set([...PRIZE_SET, 'spoils', 'madman', 'mercenary',
       case 'igg_play':
         return { type: 'IGG_PLAY', gain: false };
       case 'scheme_cleanup': {
-        const acts = p.inPlay.filter((c) => isType(c, 'action') && !isType(c, 'duration')).sort((a, b) => throneValue(b) - throneValue(a)).slice(0, pd.max || 0);
+        // 対象＝このターンの片付けで場から捨てられるアクション（解決済みの持続も含む＝現行カード文）
+        const acts = DOM.engine.discardedFromPlayTargets(state, pd.player).filter((c) => isType(c, 'action')).sort((a, b) => throneValue(b) - throneValue(a)).slice(0, pd.max || 0);
         return { type: 'SCHEME_CLEANUP', cards: acts };
       }
 

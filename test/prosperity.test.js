@@ -635,5 +635,55 @@ console.log('=== CPU対CPU：繁栄フル王国で無限ループ無く終局（
   ok((s.players[0].vpTokens || 0) === before, '出資：2回目は廃棄できないので勝利点も得られない（実際 +' + ((s.players[0].vpTokens || 0) - before) + '）');
 }
 
+// ==========================================================================
+// §0-43 敵対レビュー④＝繁栄（書記／大市場×闇市場／山師×砦）
+// ==========================================================================
+{
+  /* 書記＝`At the start of your turn, you may play this **from your hand**.`
+     ＝手札からの通常のプレイなので 将軍(Warlord)／航海(Voyage) の制限を受ける。 */
+  const KC = ['clerk', 'warlord', 'voyage', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'laboratory'];
+  let s = mk(KC);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['clerk']; s.players[0].inPlay = ['clerk', 'clerk'];
+  s.players[1].delayedEffects = [{ type: 'warlord', card: 'warlord' }];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.turn.startQueue = [];
+  s.pending = { type: 'clerk_start', player: 0 };
+  const before = JSON.stringify(s);
+  const after = reduce(s, { type: 'CLERK_START', play: true });
+  ok(after.players[0].inPlay.filter((c) => c === 'clerk').length === 2,
+    '書記：将軍が張られていて場に同名2枚なら手番開始時にも使えない');
+  let v = mk(KC);
+  v.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  v.players[0].hand = ['clerk'];
+  v.turn.phase = 'action'; v.turn.actions = 1;
+  v.turn.voyageTurn = true; v.turn.handPlays = 3;
+  v.turn.startQueue = [];
+  v.pending = { type: 'clerk_start', player: 0 };
+  v = reduce(v, { type: 'CLERK_START', play: true });
+  ok(v.players[0].inPlay.indexOf('clerk') < 0, '書記：航海の「手札から3枚まで」を使い切っていたら使えない');
+}
+{
+  // 大市場＝闇市場からの購入も「購入」＝場に銅貨があれば買えない（公式FAQ）
+  let s = mk(['black_market', 'grand_market', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'peddler', 'moat', 'village']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].inPlay = ['copper', 'copper'];
+  s.turn.phase = 'buy'; s.turn.coins = 9;
+  s.pending = { type: 'black_market', stage: 'play', player: 0, revealed: ['grand_market'] };
+  const a = reduce(s, { type: 'BLACK_MARKET_BUY', card: 'grand_market' });
+  ok(JSON.stringify(a) === JSON.stringify(s), '大市場：場に銅貨があれば闇市場でも購入できない');
+}
+{
+  // 山師のゲームでは呪いは得点計算でも財宝＝砦(Keep)に数える（公式が資本主義と明示的に対比）
+  let s = mk(['charlatan', 'monument', 'workers_village', 'city', 'bishop', 'vault', 'grand_market', 'peddler', 'moat', 'village']);
+  s.landmarks = ['keep'];
+  s.charlatanRule = true;
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].deck = ['curse', 'curse'];
+  s.players[1].deck = ['estate'];
+  const vp = E.landmarkScoreForCards(s, ['curse', 'curse'], 0);
+  ok(vp >= 5, '山師×砦：呪いを財宝として数えて +5（実際 ' + vp + '）');
+}
+
 console.log('\n繁栄テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 process.exit(fail ? 1 : 0);

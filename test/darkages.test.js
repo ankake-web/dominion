@@ -593,6 +593,95 @@ console.log('=== §0-43: 青空市場 × 狂信者（出荷 darkages 固定セ�
   ok(!(s.pending && s.pending.type === 'market_square_react'), '青空市場：手札に無ければ窓を開かない（解決時に再検査）');
 }
 
+// ==========================================================================
+// §0-43 敵対レビュー④＝暗黒時代（浮浪児／サー・マイケル／盗賊／隠遁者／義賊）
+// ==========================================================================
+console.log('=== §0-43: 浮浪児・サー・マイケル・盗賊・隠遁者 ===');
+{
+  // 浮浪児＝場にある**各コピーが独立に**誘発する（公式カード文＝While this is in play）
+  let s = mk(['urchin', 'militia', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival']);
+  s.supply.mercenary = 10;
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].inPlay = ['urchin', 'urchin'];
+  s.players[0].hand = ['militia']; s.players[0].deck = ['copper', 'copper'];
+  s.players[1].hand = ['copper', 'copper', 'copper', 'copper', 'copper'];
+  s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'militia' });
+  ok(s.pending && s.pending.type === 'urchin_trash', '浮浪児：別のアタックで窓が開く');
+  const m0 = s.supply.mercenary;
+  s = E.reduce(s, { type: 'URCHIN_TRASH', trash: true });
+  ok(s.pending && s.pending.type === 'urchin_trash', '浮浪児：場に2枚目があればもう一度窓が開く');
+  s = E.reduce(s, { type: 'URCHIN_TRASH', trash: true });
+  ok(m0 - s.supply.mercenary === 2, '浮浪児：2枚とも廃棄して傭兵2枚（実際 ' + (m0 - s.supply.mercenary) + '枚）');
+}
+{
+  // 浮浪児×命令＝はみだし者がサプライのアタックを使ったときも窓が開く（公式）
+  let s = mk(['urchin', 'band_of_misfits', 'militia', 'village', 'smithy', 'market', 'moat', 'cellar', 'laboratory', 'festival']);
+  s.supply.mercenary = 10;
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].inPlay = ['urchin'];
+  s.players[0].hand = ['band_of_misfits']; s.players[0].deck = ['copper', 'copper'];
+  s.players[1].hand = ['copper', 'copper', 'copper', 'copper', 'copper'];
+  s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'band_of_misfits' });
+  s = E.reduce(s, { type: 'BAND_OF_MISFITS_PLAY', card: 'militia' });
+  ok(s.pending && s.pending.type === 'urchin_trash', '浮浪児：命令がサプライのアタックを使ったときも窓が開く');
+  s = E.reduce(s, { type: 'URCHIN_TRASH', trash: false });
+  ok(s.pending && s.pending.type === 'militia', '浮浪児：辞退したら命令の続き（民兵）が解決される');
+}
+{
+  // サー・マイケル＝1枚のアタックなので、捨て札段で堀を公開した席は廃棄段でも免疫
+  let s = mk(['knights', 'moat', 'village', 'smithy', 'market', 'cellar', 'workshop', 'laboratory', 'festival', 'militia']);
+  const idx = s.knights.indexOf('sir_michael');
+  if (idx >= 0) {
+    s.knights.splice(idx, 1); s.knights.unshift('sir_michael');
+    s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+    s.players[0].hand = ['sir_michael']; s.players[0].deck = ['copper', 'copper'];
+    s.players[1].hand = ['moat', 'copper', 'copper', 'copper', 'estate'];
+    s.players[1].deck = ['gold', 'gold'];
+    s.turn.actions = 1;
+    s = E.reduce(s, { type: 'PLAY_ACTION', card: 'sir_michael' });
+    s = E.reduce(s, { type: 'MOAT_REVEAL' });
+    ok(!(s.pending && s.pending.type === 'knight'), 'サー・マイケル：捨て札段で堀を公開したら廃棄段でも免疫（窓が二度開かない）');
+    ok((s.trash || []).indexOf('gold') < 0, 'サー・マイケル：金貨は廃棄されない');
+  } else { ok(true, '（この盤面にサー・マイケルが居ない＝スキップ）'); }
+}
+{
+  // 盗賊＝廃棄置き場から獲得する分岐でも「アタックの使用」＝反応窓は開く（公式FAQ）
+  let s = mk(['rogue', 'beggar', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.trash = ['silver'];
+  s.players[0].hand = ['rogue']; s.players[0].deck = ['copper', 'copper'];
+  s.players[1].hand = ['beggar', 'copper'];
+  s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'rogue' });
+  ok(s.pending && s.pending.type === 'rogue' && s.pending.stage === 'react' && s.pending.player === 1,
+    '盗賊：廃棄置き場から獲得する分岐でも相手に反応窓が開く');
+  s = E.reduce(s, { type: 'BEGGAR_REACT' });
+  ok(s.players[1].discard.filter((c) => c === 'silver').length + s.players[1].deck.filter((c) => c === 'silver').length === 2,
+    '盗賊：誰も攻撃されない分岐でも物乞いが銀貨2枚を得られる');
+  s = E.reduce(s, { type: 'ROGUE_REACT' }); // 反応を終える
+  ok(s.pending && s.pending.type === 'rogue' && s.pending.stage === 'gain_from_trash',
+    '盗賊：反応の後に廃棄置き場からの獲得へ進む');
+}
+{
+  // 義賊＝本物の廃棄を通す（被害者の青空市場が反応できる）
+  let s = mk(['noble_brigand', 'market_square', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival']);
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['noble_brigand']; s.players[0].deck = ['copper'];
+  s.players[1].hand = ['market_square']; s.players[1].deck = ['gold', 'estate'];
+  s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'noble_brigand' });
+  let g = 0;
+  while (s.pending && s.pending.type !== 'market_square_react' && g++ < 6) {
+    if (s.pending.type === 'noble_brigand') s = E.reduce(s, { type: 'NOBLE_BRIGAND_PICK', card: null });
+    else break;
+  }
+  ok(s.pending && s.pending.type === 'market_square_react',
+    '義賊：本物の廃棄なので被害者の青空市場が反応できる');
+  ok(s.players[0].discard.indexOf('gold') >= 0, '義賊：使用者が金貨を回収している');
+}
+
 console.log('========================================');
 console.log('暗黒時代テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');
