@@ -732,6 +732,118 @@ s2.turn.phase = 'buy';
 s2 = E.reduce(s2, { type: 'END_TURN' });
 ok(!s2.reveals || Object.keys(s2.reveals).length === 0, 'reveals は手番を跨ぐとクリアされる');
 
+// ==========================================================================
+// §0-44 敵対レビュー＝基本セット（捨て札トリガー／獲得窓の上書き／免疫者のリアクション）
+// ==========================================================================
+console.log('=== §0-44: 捨て札トリガー・獲得窓・免疫者のリアクション ===');
+{
+  /* 公式FAQ (Cellar)＝`Choose any number of cards from your hand; discard them all at once;
+     **then** draw as many cards as you actually discarded.` ＝正真正銘の「捨てる」。
+     坑道／村有緑地／忠犬／進路／織工が誘発しなければならない。 */
+  const F8 = ['village', 'smithy', 'market', 'moat', 'workshop', 'laboratory', 'festival', 'militia'];
+  let s = E.createInitialState(['A', 'B'], ['cellar', 'tunnel'].concat(F8), { startActive: 0 });
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['cellar', 'tunnel', 'estate'];
+  s.players[0].deck = ['copper', 'copper', 'copper'];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'cellar' });
+  s = E.reduce(s, { type: 'CELLAR_RESOLVE', cards: ['tunnel', 'estate'] });
+  ok(s.players[0].discard.indexOf('gold') >= 0, '地下貯蔵庫：坑道を捨てたら金貨を獲得する');
+  ok(s.players[0].hand.length === 2, '地下貯蔵庫：捨てた枚数ぶん引いている');
+}
+{
+  // 家臣＝山札の上を捨てる＝本物の捨て札（公式ページが Tunnel/Village Green との相互作用を明記）
+  const F8 = ['village', 'smithy', 'market', 'moat', 'workshop', 'laboratory', 'festival', 'militia'];
+  let s = E.createInitialState(['A', 'B'], ['vassal', 'tunnel'].concat(F8), { startActive: 0 });
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['vassal']; s.players[0].deck = ['tunnel', 'copper'];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'vassal' });
+  ok(s.players[0].discard.indexOf('gold') >= 0, '家臣：捨てた坑道で金貨を獲得する');
+}
+{
+  /* 山賊＝公式FAQ＝`**First** you gain a Gold ... **Then** each other player ... reveals`
+     ＝獲得を完全に解決してからアタック。望楼の窓をアタックが上書きしてはいけない。 */
+  const F8 = ['village', 'smithy', 'market', 'moat', 'workshop', 'laboratory', 'festival', 'militia'];
+  let s = E.createInitialState(['A', 'B'], ['bandit', 'watchtower'].concat(F8), { startActive: 0 });
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['bandit', 'watchtower']; s.players[0].deck = ['copper', 'copper'];
+  s.players[1].deck = ['gold', 'estate'];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'bandit' });
+  ok(s.pending && s.pending.type === 'watchtower' && s.pending.card === 'gold',
+    '山賊：獲得した金貨に望楼で反応できる（アタックが窓を上書きしない）');
+  s = E.reduce(s, { type: 'WATCHTOWER', choice: 'topdeck' });
+  ok(s.players[0].deck[0] === 'gold', '山賊：望楼で金貨を山札の上に置けた');
+}
+{
+  // 役人も同型（銀貨の獲得で開いた窓をアタックが壊さない）
+  const F8 = ['village', 'smithy', 'market', 'moat', 'workshop', 'laboratory', 'festival', 'militia'];
+  let s = E.createInitialState(['A', 'B'], ['bureaucrat', 'watchtower'].concat(F8), { startActive: 0 });
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['bureaucrat', 'watchtower']; s.players[0].deck = ['copper', 'copper'];
+  s.players[1].hand = ['estate', 'copper'];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'bureaucrat' });
+  ok(s.pending && s.pending.type === 'watchtower', '役人：獲得した銀貨に望楼で反応できる');
+}
+{
+  /* 灯台/チャンピオン/守護者で免疫の席でも**リアクションは使える**
+     （公式＝Lighthouse Official FAQ 逐語＝`This does **not** prevent you from using Reactions
+     when other players play Attacks.`）。 */
+  let s = E.createInitialState(['A', 'B'],
+    ['militia', 'lighthouse', 'beggar', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory'],
+    { startActive: 0 });
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['militia']; s.players[0].deck = ['copper', 'copper'];
+  s.players[1].hand = ['beggar', 'copper', 'copper', 'copper', 'estate'];
+  s.players[1].durationCards = ['lighthouse'];
+  s.players[1].delayedEffects = [{ card: 'lighthouse', type: 'lighthouse' }];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  const before = s.supply.silver;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'militia' });
+  ok(s.pending && s.pending.type === 'immune_react' && s.pending.player === 1,
+    '免疫の席にもリアクションの窓が開く');
+  s = E.reduce(s, { type: 'BEGGAR_REACT' });
+  ok(before - s.supply.silver === 2, '免疫でも物乞いで銀貨2枚を得られる');
+  s = E.reduce(s, { type: 'IMMUNE_REACT_DONE' });
+  ok(!s.pending, '窓を閉じられる（終端保証）');
+  ok(s.players[1].hand.length === 4, '免疫なので手札は捨てさせられていない');
+}
+{
+  // 書庫＝「見る」札はオンラインで相手に見えない（pending.card / pending.aside を伏せる）
+  const F8 = ['village', 'smithy', 'market', 'moat', 'workshop', 'laboratory', 'festival', 'militia'];
+  let s = E.createInitialState(['A', 'B'], ['library'].concat(F8, ['cellar']), { startActive: 0 });
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['library'];
+  s.players[0].deck = ['militia', 'laboratory', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'library' });
+  if (s.pending && s.pending.type === 'library') {
+    const m = E.maskStateFor(s, 1);
+    ok(m.pending.card === 'back', '書庫：引いた札は相手席に伏せられる');
+    ok(!Array.isArray(m.pending.aside) || m.pending.aside.every((c) => c === 'back'), '書庫：脇に置いた札も伏せられる');
+  } else { ok(false, '書庫の pending が開かなかった'); }
+}
+
+{
+  // 書庫＝脇に置いた札を捨てるのも本物の捨て札（坑道が誘発する）
+  const F8 = ['village', 'market', 'moat', 'workshop', 'laboratory', 'festival', 'militia', 'cellar'];
+  // 脇に置けるのは**アクション**だけ＝捨て札トリガーを持つアクション「進路(trail)」で検証する
+  let s = E.createInitialState(['A', 'B'], ['library', 'trail'].concat(F8), { startActive: 0 });
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['library'];
+  s.players[0].deck = ['trail', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'library' });
+  let g = 0;
+  while (s.pending && s.pending.type === 'library' && g++ < 12) {
+    s = E.reduce(s, { type: 'LIBRARY_RESOLVE', setAside: true });
+  }
+  ok(s.pending && s.pending.type === 'trail_react' && s.pending.from === 'discard',
+    '書庫：脇に置いて捨てた進路の捨て札トリガーが働く（脇札の捨ても本物の捨て札）');
+}
+
 console.log('\n========================================');
 console.log(`結果: ${pass} 件成功, ${fail} 件失敗`);
 console.log('========================================');

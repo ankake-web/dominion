@@ -2309,6 +2309,12 @@
       (id) => DOM.CARDS[id] && DOM.CARDS[id].types.includes('action') && (!pd.name || id === pd.name),
       (id) => dispatch({ type: 'FIRST_MATE_PLAY', card: id }),
       { label: '使わない（手札が6枚になるように引く）', on: () => dispatch({ type: 'FIRST_MATE_PLAY', card: null }) }, '使う', DOM.engine.handPlayable(state, pd.player));
+    if (pd.type === 'immune_react') return modalOptions('リアクション',
+      'あなたはこのアタックの影響を受けません（灯台／チャンピオン／守護者）。ただしリアクションは使えます。',
+      reactOptions(p, pd, { type: 'IMMUNE_REACT_DONE' }));
+    if (pd.type === 'corsair' && pd.stage === 'react') return modalOptions('コルセアを受ける',
+      '次の相手のターンの開始時まで、あなたが毎ターン最初に使う銀貨か金貨1枚が廃棄されます。',
+      reactOptions(p, pd, { type: 'LINGER_REACT' }));
     if (pd.type === 'frigate' && pd.stage === 'react') return modalOptions('フリゲート船を受ける',
       '次の相手のターンの開始時まで、あなたがアクションカードを使用するたび、その後に手札が4枚になるように捨てます。',
       reactOptions(p, pd, { type: 'LINGER_REACT' }));
@@ -3603,6 +3609,9 @@
     if (pd.type === 'swindler' && pd.stage === 'gain') return modalGainSupply(state, '詐欺師 — 相手に与える', state.players[pd.victim].name + ' に コスト ' + pd.cost + ' のカードを与えます。', (id) => canExact(state, id, pd.cost, pd.pot, pd.debt), (id) => dispatch({ type: 'SWINDLER_GAIN', card: id }));
     if (pd.type === 'saboteur' && pd.stage === 'react') return modalOptions('破壊工作員を受ける', 'コスト3以上のカードが1枚廃棄されます。', reactOptions(p, pd, { type: 'SABOTEUR_REACT' }));
     if (pd.type === 'saboteur' && pd.stage === 'gain') return modalGainSupply(state, '破壊工作員 — 獲得（任意）', 'コスト ' + pd.maxCost + ' 以下のカードを1枚獲得できます（しなくてもよい）。', (id) => canUpTo(state, id, pd.maxCost, pd), (id) => dispatch({ type: 'SABOTEUR_GAIN', card: id }), () => dispatch({ type: 'SABOTEUR_GAIN', card: null }), true);
+    if (pd.type === 'minion' && pd.stage === 'react') return modalOptions('寵臣を受ける',
+      '相手が「+2コイン」か「手札の引き直し（あなたも手札5枚以上なら引き直し）」を選ぶ前に、リアクションできます。',
+      reactOptions(p, pd, { type: 'MINION_REACT' }));
     if (pd.type === 'minion' && pd.stage === 'choose') return modalOptions('寵臣', '次から1つを選びます。', [
       { label: '+2 コイン', cls: 'btn-primary', on: () => dispatch({ type: 'MINION_RESOLVE', choice: 'coins' }) },
       { label: '手札を捨てて4枚引く（相手も引き直し）', on: () => dispatch({ type: 'MINION_RESOLVE', choice: 'attack' }) }]);

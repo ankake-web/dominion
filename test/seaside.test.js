@@ -523,6 +523,65 @@ console.log('=== CPU対CPU: 海辺の王国で最後まで止まらず終局す�
 }
 
 console.log('\n========================================');
+// ==========================================================================
+// §0-44 敵対レビュー＝海辺（コルセアはアタック／倉庫の捨て札トリガー）
+// ==========================================================================
+console.log('=== §0-44: コルセア＝アタック／倉庫の捨て札トリガー ===');
+{
+  /* コルセア＝`Action - **Duration** - **Attack**`。2026-08-30 まで `ATTACKS` に登録されておらず
+     `attackImmune` も見ていなかったため、**堀・灯台・チャンピオンのどれでも防げなかった**。 */
+  const F8 = ['village', 'smithy', 'market', 'cellar', 'workshop', 'laboratory', 'festival', 'militia'];
+  let s = E.createInitialState(['A', 'B'], ['corsair', 'moat'].concat(F8), { startActive: 0 });
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['corsair']; s.players[0].deck = ['copper', 'copper'];
+  s.players[1].hand = ['moat', 'silver'];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'corsair' });
+  ok(s.pending && s.pending.type === 'corsair' && s.pending.stage === 'react',
+    'コルセア：アタックなので相手に反応窓が開く');
+  s = E.reduce(s, { type: 'MOAT_REVEAL' });
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });
+  s.turn.phase = 'buy';
+  s.players[1].hand = ['silver'];
+  const trBefore = (s.trash || []).length;
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'silver' });
+  ok((s.trash || []).length === trBefore, 'コルセア：堀を公開した相手の銀貨は廃棄されない');
+}
+{
+  // 堀を公開しなければ廃棄される（＝アタック自体は生きている）
+  const F8 = ['village', 'smithy', 'market', 'cellar', 'workshop', 'laboratory', 'festival', 'militia'];
+  let s = E.createInitialState(['A', 'B'], ['corsair', 'moat'].concat(F8), { startActive: 0 });
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['corsair']; s.players[0].deck = ['copper', 'copper'];
+  s.players[1].hand = ['silver'];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'corsair' });
+  s = E.reduce(s, { type: 'END_ACTION_PHASE' });
+  s = E.reduce(s, { type: 'END_TURN' });
+  s.turn.phase = 'buy';
+  s.players[1].hand = ['silver'];
+  s = E.reduce(s, { type: 'PLAY_TREASURE', card: 'silver' });
+  ok((s.trash || []).indexOf('silver') >= 0, 'コルセア：防がなければ最初の銀貨が廃棄される');
+}
+{
+  /* 倉庫／潮溜り＝共通ヘルパ `discardFromHand` が捨て札トリガーを通していなかった
+     （坑道/進路/織工/村有緑地/忠犬が誘発しない）。 */
+  const F8 = ['village', 'smithy', 'market', 'moat', 'workshop', 'laboratory', 'festival', 'militia'];
+  let s = E.createInitialState(['A', 'B'], ['warehouse', 'tunnel'].concat(F8), { startActive: 0 });
+  s.players.forEach((p) => { p.hand = []; p.deck = []; p.discard = []; p.inPlay = []; });
+  s.players[0].hand = ['warehouse', 'tunnel', 'estate', 'copper'];
+  s.players[0].deck = ['copper', 'copper', 'copper'];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s = E.reduce(s, { type: 'PLAY_ACTION', card: 'warehouse' });
+  if (s.pending && s.pending.type === 'warehouse') {
+    const h = s.players[0].hand;
+    const pick = ['tunnel'].concat(h.filter((c) => c !== 'tunnel').slice(0, 2));
+    s = E.reduce(s, { type: 'WAREHOUSE_DISCARD', cards: pick });
+  }
+  ok(s.players[0].discard.indexOf('gold') >= 0, '倉庫：坑道を捨てたら金貨を獲得する（discardFromHand が捨て札トリガーを通す）');
+}
+
 console.log('海辺テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');
 if (fail > 0) process.exit(1);

@@ -1912,7 +1912,16 @@ const NON_SUPPLY_SET = new Set([...PRIZE_SET, 'spoils', 'madman', 'mercenary',
         return { type: 'FIRST_MATE_PLAY', card: pick };
       }
       // フリゲート船のリアクション＝堀/盾があれば公開、無ければ受ける。
+      // 免疫の席のリアクション窓＝使える札があれば使い、無ければ閉じる（必ず終端する）。
+      case 'immune_react': {
+        if (p.hand.includes('beggar')) return { type: 'BEGGAR_REACT' };
+        if (p.hand.includes('horse_traders')) return { type: 'HORSE_TRADERS_REACT' };
+        if (p.hand.includes('guard_dog')) return { type: 'GUARD_DOG_REACT' };
+        if (p.hand.includes('caravan_guard')) return { type: 'CARAVAN_GUARD_REACT' };
+        return { type: 'IMMUNE_REACT_DONE' };
+      }
       case 'frigate':
+      case 'corsair':
         if (immuneReveal(p)) return immuneReveal(p);
         return { type: 'LINGER_REACT' };
       case 'trickster':
@@ -2132,6 +2141,8 @@ const NON_SUPPLY_SET = new Set([...PRIZE_SET, 'spoils', 'madman', 'mercenary',
         // gain ステージ（犠牲者・任意）。上限内で最善を拾う。無ければ獲得しない(null)
         return { type: 'SABOTEUR_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true, pot: pd.pot, debt: pd.debt }) || bestGain(state, pd.maxCost, pd) };
       case 'minion':
+        // 二択の前の反応窓（公式＝選ぶ前に反応する）
+        if (pd.stage === 'react') { if (immuneReveal(p)) return immuneReveal(p); return { type: 'MINION_REACT' }; }
         // 攻撃側の選択。手札に他のアクションがあれば捨てたくない→+2コイン。
         // 手札が弱い(財宝が乏しい)なら引き直し（相手も妨害）。
         if (p.hand.some((c) => isType(c, 'action'))) return { type: 'MINION_RESOLVE', choice: 'coins' };

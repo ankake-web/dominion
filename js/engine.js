@@ -1578,7 +1578,7 @@
       const others = [];
       for (let k = 1; k < state.players.length; k++) {
         const idx = (pIndex + k) % state.players.length;
-        if (!attackImmune(state, idx)) others.push(idx);
+        if (!attackImmune(state, idx)) others.push(idx); else if (hasNonImmunityReaction(state.players[idx])) (state.onGainQueue = state.onGainQueue || []).push({ type: 'immune_react', player: idx });
       }
       if (others.length) discardDownEnter(state, pIndex, 4, others);
     }
@@ -2743,7 +2743,7 @@
   /* 旭日 R3：濡女(Snake Witch)＝山に戻せたときだけ、他の全員が呪い1枚を獲得する（アタック）。
      魔女(witch)と同型＝被害者ごとにリアクション窓を開く（堀/灯台/チャンピオンで防げる）。 */
   function snakeWitchEnterVictim(state, source, queue) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -2780,7 +2780,7 @@
     state.turn.kitsuneRest = null;
   }
   function kitsuneEnterVictim(state, source, queue) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -3285,7 +3285,7 @@
   // セイレーン＝他の全員が呪い1枚を獲得（使い魔と同型のアタック連鎖＝堀/灯台/チャンピオンで防げる）。
   function sirenEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -3304,7 +3304,7 @@
   // トリックスター＝他の全員が呪い1枚を獲得（使い魔/セイレーンと同型のアタック連鎖）。
   function tricksterEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -3533,6 +3533,10 @@
     for (const c of cards) if (!removeOne(copy, c)) return false; // 手札に無い指定は拒否
     cards.forEach((c) => { removeOne(p.hand, c); p.discard.push(c); });
     if (cards.length && note) log(state, `${p.name} は ${cards.length}枚 ${note}`);
+    /* 🛑 捨て札トリガー（坑道/進路/織工/村有緑地/忠犬）を必ず通す。`triggerOnDiscard` は `state.pending` を
+       立てず `onGainQueue` に積むだけなので、アタックの被害者ループを壊さない（§0-43 の不変条件）。
+       `noPrompt` は付けない＝自分の意思で捨てる経路（倉庫/潮溜り/村落/馬商人/魔女娘/風車…）だから。 */
+    if (cards.length) triggerOnDiscard(state, pIndex, cards.slice());
     return true;
   }
   // 手札からちょうど want 枚を廃棄（trash）へ。検証つき。
@@ -3685,7 +3689,7 @@
   // 次の犠牲者へ。堀持ちなら反応(react)を待ち、いなければ即廃棄処理へ。queue 空で終了。
   function swindlerEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    queue = attackTargets(state, queue); // 灯台：免疫の被害者は対象外
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0];
     const rest = queue.slice(1);
@@ -3720,7 +3724,7 @@
   /* ---------- 破壊工作員（複数対象。$3以上を1枚廃棄→犠牲者が任意で格下げ獲得）---------- */
   function saboteurEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    queue = attackTargets(state, queue); // 灯台：免疫の被害者は対象外
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -3744,6 +3748,7 @@
       setAside.push(c);
     }
     setAside.forEach((c) => v.discard.push(c)); // $3未満の公開札は捨てる
+    if (setAside.length) triggerOnDiscard(state, victim, setAside.slice()); // 山札からの捨て札も本物の捨て札
     if (trashed) {
       trashCard(state, victim, trashed);
       log(state, `${v.name} は山札の上から「${C()[trashed].name}」を廃棄した。`);
@@ -3757,9 +3762,33 @@
   }
 
   /* ---------- 寵臣（攻撃側の選択＋全相手に作用するアタック）---------- */
+  /* 陰謀：寵臣＝公式FAQ 逐語＝`Players may react to Minion **before you choose** which option to use.`
+     ＝二択（+2コイン／手札の引き直し＋アタック）より**前**に全相手の反応窓を1周する。
+     堀を公開した席は `immune[]` に記録し、攻撃を選んだときの被害者リストから外す
+     （海賊船 `pirateShipReactEnter` と同型）。 */
+  function minionReactThenChoose(state, source, queue, immune) {
+    queue = (queue || []).slice();
+    immune = (immune || []).slice();
+    while (queue.length) {
+      const victim = queue[0], rest = queue.slice(1);
+      if (attackImmune(state, victim)) {
+        immune.push(victim);
+        if (hasNonImmunityReaction(state.players[victim])) {
+          (state.onGainQueue = state.onGainQueue || []).push({ type: 'immune_react', player: victim });
+        }
+        queue = rest; continue;
+      }
+      if (hasReaction(state.players[victim])) {
+        state.pending = { type: 'minion', stage: 'react', player: victim, source, victim, queue: rest, immune };
+        return;
+      }
+      queue = rest;
+    }
+    state.pending = { type: 'minion', stage: 'choose', player: source, immune };
+  }
   function minionAttackEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    queue = attackTargets(state, queue); // 灯台：免疫の被害者は対象外
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -3860,7 +3889,14 @@
     familiar:      { onMoat: (s, pd) => familiarEnterVictim(s, pd.source, pd.queue) },
     siren:         { onMoat: (s, pd) => sirenEnterVictim(s, pd.source, pd.queue) },  // 略奪：セイレーン（呪い配布）
     trickster:     { onMoat: (s, pd) => tricksterEnterVictim(s, pd.source, pd.queue) }, // 略奪：トリックスター（呪い配布）
-    frigate:       { onMoat: (s, pd) => { markLingerImmune(s, pd.source, 'frigate', pd.victim, pd.rid); lingerAttackEnter(s, pd.source, 'frigate', pd.queue, pd.rid); } }, // 略奪：フリゲート船（相手のアクション使用をフック）
+    frigate:       { onMoat: (s, pd) => { markLingerImmune(s, pd.source, 'frigate', pd.victim, pd.rid); lingerAttackEnter(s, pd.source, 'frigate', pd.queue, pd.rid); } },
+    corsair:       { onMoat: (s, pd) => { markLingerImmune(s, pd.source, 'corsair', pd.victim, pd.rid); lingerAttackEnter(s, pd.source, 'corsair', pd.queue, pd.rid); } },
+    /* 擬似エントリ＝「アタック免疫の席が、免疫にならないリアクション（物乞い/馬商人/番犬/隊商の護衛/外交官）を
+       使うためだけの窓」。`isAttackReactPending` が `ATTACKS[pd.type]` を引くのでここに登録が要る。
+       堀を公開しても意味は無いが受理できるようにしておく（窓を閉じるだけ）。 */
+    immune_react:  { onMoat: (s) => { s.pending = null; } },
+    // 寵臣＝二択の**前**の反応窓。堀を公開した席はこのアタックの影響を受けない＝immune に記録して次へ。
+    minion:        { onMoat: (s, pd) => minionReactThenChoose(s, pd.source, pd.queue, (pd.immune || []).concat([pd.victim])) }, // 略奪：フリゲート船（相手のアクション使用をフック）
     fortune_teller:{ onMoat: (s, pd) => fortuneTellerEnterVictim(s, pd.source, pd.queue) },
     jester:        { onMoat: (s, pd) => jesterEnterVictim(s, pd.source, pd.queue) },
     followers:     { onMoat: (s, pd) => followersEnterVictim(s, pd.source, pd.queue) },
@@ -3959,6 +3995,7 @@
     }
     aside.forEach((x) => p.discard.push(x));
     if (aside.length) log(state, `${p.name} は脇に置いた ${aside.length}枚 を捨てた（書庫）。`);
+    if (aside.length) triggerOnDiscard(state, pi, aside.slice()); // 本物の捨て札（坑道/村有緑地/忠犬）
     state.pending = null;
   }
 
@@ -3988,7 +4025,7 @@
   /* ---------- 泥棒（他の各自が上2枚公開、使用者が財宝1枚を廃棄→獲得してよい）---------- */
   function thiefEnterVictim(state, attacker, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    queue = attackTargets(state, queue); // 灯台：免疫の被害者は対象外
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -4011,6 +4048,7 @@
       state.pending = { type: 'thief', stage: 'pick', player: attacker, source: attacker, victim, revealed, treasures, queue };
     } else {
       revealed.forEach((c) => v.discard.push(c)); // 財宝なし→全部捨てる
+    if (revealed.length) triggerOnDiscard(state, victim, revealed.slice());
       if (revealed.length) log(state, `${v.name} は公開した ${revealed.length}枚 を捨てた（泥棒）。`);
       thiefEnterVictim(state, attacker, queue);
     }
@@ -4019,7 +4057,7 @@
   /* ---------- 魔女（複数対象。各相手が呪いを獲得）---------- */
   function witchEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    queue = attackTargets(state, queue); // 灯台：免疫の被害者は対象外
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -4042,7 +4080,7 @@
      呪い山が空でも「手札の呪いを廃棄してよい」は行える（獲得だけが起きない）＝呪い枯渇後も死に札にならない。
      廃棄できるのは「もともと手札にある呪い」だけ（獲得した呪いは捨て札に入る）。 */
   function oldWitchEnterVictim(state, source, queue) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -4068,7 +4106,7 @@
      - 「$2以上」は解決時点の**現在コスト**（運河があると屋敷は$1＝捨てられない）。
      - 「捨て札にする」は公開(reveal)ではない＝パトロンは誘発しない。ただし**「手札を公開する」枝は reveal**。 */
   function villainEnterVictim(state, source, queue) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     while (queue.length && state.players[queue[0]].hand.length < 5) queue = queue.slice(1); // 手札4枚以下は何も起きない
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
@@ -4111,7 +4149,7 @@
   /* ========== 暗黒時代：アタック各種（廃墟配布/手札公開/山札上2枚廃棄/手札削り） ========== */
   // 襲撃者：各相手が廃墟を1枚獲得（魔女型・非対話）。
   function marauderEnterVictim(state, source, queue) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -4123,7 +4161,7 @@
   }
   // 狂信者：各相手が廃墟を獲得→終端で「手札の狂信者を連鎖使用してよい」。
   function cultistEnterVictim(state, source, queue) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { cultistAfter(state, source); return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -4140,7 +4178,7 @@
   /* ========== 冒険：アタック（遺物＝-1カードトークン／巨人＝公開廃棄or呪い／橋の下のトロル＝-$1トークン） ========== */
   // 遺物：各相手が -1カードトークンを受け取る（襲撃者型・非対話。堀で防げる）。
   function relicEnterVictim(state, source, queue) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -4153,7 +4191,7 @@
   }
   // 橋の下のトロル：各相手が -$1トークンを受け取る（襲撃者型・非対話。堀で防げる）。
   function bridgeTrollEnterVictim(state, source, queue) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -4166,7 +4204,7 @@
   }
   // 巨人：各相手が山札の一番上を公開＝$3〜$6なら廃棄、そうでなければ捨てて呪いを獲得（襲撃者型・自動解決）。
   function giantEnterVictim(state, source, queue) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -4198,7 +4236,7 @@
   /* ========== 冒険：トラベラーのアタック（ウォリアー＝山札上を捨て$3/$4廃棄／兵士＝手札4枚以上で1枚捨て） ========== */
   // ウォリアー：各相手は「場のトラベラー数(count)」回、山札の一番上を捨て、$3か$4なら廃棄する（襲撃者型・堀リアクション窓あり）。
   function warriorEnterVictim(state, source, queue, count) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length || count <= 0) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -4330,7 +4368,7 @@
     state.pending = { type: 'rogue', stage: 'gain_from_trash', player: source };
   }
   function rogueEnterVictim(state, source, queue) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -4409,7 +4447,7 @@
     knightAttackEnter(state, pi, sourceCard, q);
   }
   function knightAttackEnter(state, source, sourceCard, queue) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -4454,7 +4492,7 @@
   /* ---------- 錬金術：使い魔（魔女と同型。各相手が呪いを獲得）---------- */
   function familiarEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    queue = attackTargets(state, queue); // 灯台：免疫の被害者は対象外
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -4528,7 +4566,7 @@
   // 幽霊船＝手札4枚以上の相手だけが対象。堀持ちは react 窓→公開しなければ put 窓（役人と同型）。
   function ghostShipEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -4543,7 +4581,7 @@
   // 香具師＝各相手が「呪いを捨てる」か「呪いと銅貨を獲得」かを選ぶ（手札に呪いが無ければ自動で獲得）。
   function mountebankEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -4616,7 +4654,7 @@
   }
   /* ===== 海辺1版：海の妖婆（Sea Hag）＝魔女型。捨てる→捨て札トリガー→呪いを山札の上へ（呪いが尽きていても捨ては行う） ===== */
   function seaHagEnterVictim(state, source, queue) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) { state.pending = { type: 'sea_hag', stage: 'react', player: victim, source, victim, queue: rest }; return; }
@@ -4636,7 +4674,7 @@
   /* ===== 海辺1版：大使（Ambassador）の配布＝**1人ずつ別々の獲得**（onGainQueue）＝海賊/愚者の黄金の窓が人数ぶん開く。
      反応窓は被害者ごと（魔女型）。免疫の席は飛ばす。 */
   function ambassadorEnterVictim(state, source, queue, card) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) { state.pending = { type: 'ambassador', stage: 'react', player: victim, source, victim, queue: rest, card }; return; }
@@ -4759,7 +4797,7 @@
   }
   function bureaucratEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    queue = attackTargets(state, queue); // 灯台：免疫の被害者は対象外
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -4784,7 +4822,7 @@
   /* ---------- 山賊（複数対象。各相手が上2枚公開→銅貨以外の財宝1枚を廃棄）---------- */
   function banditEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    queue = attackTargets(state, queue); // 灯台：免疫の被害者は対象外
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -4825,7 +4863,7 @@
   //   使用者以外の全員が対象＝手番プレイヤーも受ける。配る順はターンプレイヤーから（applyEffect 側でキューを作る）。
   function blackCatEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) state.pending = { type: 'black_cat', stage: 'react', player: victim, source, victim, queue: rest };
@@ -4841,7 +4879,7 @@
   //   追放はサプライからではなく「公開したその札」なので、追放マットへ直接置く（獲得ではない）。
   function cardinalEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) state.pending = { type: 'cardinal', stage: 'react', player: victim, source, victim, queue: rest };
@@ -4891,7 +4929,7 @@
   //   そのプレイヤーは**自分の追放マットの呪いをすべて捨て札にする**（選択なし＝自動）。
   function covenEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) state.pending = { type: 'coven', stage: 'react', player: victim, source, victim, queue: rest };
@@ -5017,7 +5055,7 @@
   /* ---------- 身代わり（勝利点を獲得したとき他全員が呪いを獲得＝アタック）---------- */
   function replaceEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    queue = attackTargets(state, queue); // 灯台：免疫の被害者は対象外
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -5037,7 +5075,7 @@
   /* ---------- 海辺：巾着切り（各相手が銅貨1枚を捨てる／無ければ手札公開）---------- */
   function cutpurseEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -5056,7 +5094,7 @@
   /* ---------- 海辺：海の魔女（各相手が呪いを獲得＝魔女と同型）---------- */
   function seaWitchEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -5230,7 +5268,7 @@
         （Donald X. の Secret history＝銅貨を配るアタックは没案で、呪いの山でサイズを決めた結果が Charlatan）。 */
   function charlatanEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -5245,7 +5283,7 @@
   /* ---------- ギルド：収税吏のアタック（他の各自[手札5枚以上]が、廃棄された財宝と同名を1枚捨てる）---------- */
   function taxmanEnterVictim(state, source, queue, trashedName) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    queue = attackTargets(state, queue); // 灯台：免疫の被害者は対象外
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -5272,7 +5310,7 @@
   /* ---------- ギルド：予言者のアタック（各相手が呪いを獲得→獲得したら+1カード）---------- */
   function soothsayerEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v)); // 灯台：免疫の被害者は対象外
+    queue = attackTargets(state, queue); // 灯台：免疫の被害者は対象外
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -5297,7 +5335,7 @@
   // 辺境伯：+3カード +1購入（applyEffect）。各相手は +1カード → 手札3枚まで捨てる。
   function margraveEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -5357,7 +5395,7 @@
   }
   function nobleBrigandEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -5409,7 +5447,7 @@
   // 狂戦士：各相手は手札3枚まで捨てる（獲得＋攻撃は applyEffect / BERSERKER_GAIN 側で先行）。
   function berserkerEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -5435,7 +5473,7 @@
   // 魔女の小屋：使用者が公開して捨てた手札2枚が両方アクションなら、各相手が呪いを獲得。
   function witchsHutEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -5455,7 +5493,7 @@
   // 大釜：このターン3回目のアクション獲得で、各相手が呪いを獲得（大釜が場にある間）。
   function cauldronEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -5542,7 +5580,7 @@
   /* ---------- 繁栄：大衆（各相手が山札の上3枚を公開→アクション/財宝を捨て、残りを上に戻す）---------- */
   function rabbleEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -5576,7 +5614,7 @@
     // 1枚目のアタックが pending を立てても2枚目以降が startQueue に取り残されないようにする）。
     // 通常プレイ/玉座経由では startQueue は null のため popStartQueue は pending=null と等価で無害。
     if (!queue || !queue.length) { popStartQueue(state); return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { popStartQueue(state); return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -5668,7 +5706,7 @@
   /* ---------- 占い師（アタック：勝利点/呪いが出るまで公開→上に戻し他は捨てる）---------- */
   function fortuneTellerEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -5691,7 +5729,7 @@
   /* ---------- 道化師（アタック：相手の山札上を捨て、勝利点なら呪い／他は攻撃側がコピー獲得先を選ぶ）---------- */
   function jesterEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -5708,6 +5746,7 @@
     v.discard.push(top);
     reveal(state, victim, [top], '道化師で山札の上を公開');
     log(state, `${v.name} は山札の上の「${C()[top].name}」を捨てた（道化師）。`);
+    triggerOnDiscard(state, victim, [top]); // 公式FAQ が道化師×坑道／村有緑地を名指しで許している
     if (DOM.isType(top, 'victory')) {
       if ((state.supply.curse || 0) > 0) { gain(state, victim, 'curse', 'discard'); log(state, `${v.name} は呪いを獲得した（道化師）。`); }
       jesterEnterVictim(state, source, queue);
@@ -5723,7 +5762,7 @@
   /* ---------- 郎党（賞品・アタック：呪い＋手札3枚まで捨て）---------- */
   function followersEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -5750,7 +5789,7 @@
   }
   function youngWitchEnterVictim(state, source, queue) {
     if (!queue || !queue.length) { state.pending = null; return; }
-    queue = queue.filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     const bane = state.baneCard;
@@ -6102,7 +6141,7 @@
         const others = [];
         for (let k = 1; k < state.players.length; k++) {
           const idx = (pi + k) % state.players.length;
-          if (!attackImmune(state, idx)) others.push(idx);
+          if (!attackImmune(state, idx)) others.push(idx); else if (hasNonImmunityReaction(state.players[idx])) (state.onGainQueue = state.onGainQueue || []).push({ type: 'immune_react', player: idx });
         }
         discardDownEnter(state, pi, 3, others, 'cutthroat');
         break;
@@ -6682,7 +6721,7 @@
         const others = [];
         for (let k = 1; k < state.players.length; k++) {
           const idx = (pi + k) % state.players.length;
-          if (!attackImmune(state, idx)) others.push(idx);
+          if (!attackImmune(state, idx)) others.push(idx); else if (hasNonImmunityReaction(state.players[idx])) (state.onGainQueue = state.onGainQueue || []).push({ type: 'immune_react', player: idx });
         }
         if (others.length) {
           state.pending = { type: 'militia', player: others[0], source: pi, queue: others.slice(1) };
@@ -6734,7 +6773,10 @@
       case 'shanty_town':
         addActions(t, 2);
         // 手札を公開し、アクションが無ければ +2 カード（このカードは既に場にある）
-        if (!p.hand.some((c) => DOM.isType(c, 'action'))) draw(state, pi, 2);
+        // 🛑 「公開する」は必ず `reveal()` を通す（§0-22 の不変条件。通さないとパトロンが誘発せず
+        //    オンラインで相手に伝わらない）。公式FAQ＝アクションの有無に関わらず**必ず**公開する。
+        reveal(state, pi, p.hand.slice(), '貧民街で手札を公開');
+        if (!p.hand.some((c) => isActionFor(state, c) || inheritedEstate(p, c))) draw(state, pi, 2);
         break;
       case 'steward':
         state.pending = { type: 'steward', stage: 'choose', player: pi };
@@ -6783,7 +6825,7 @@
         draw(state, pi, 3);
         // 他の全プレイヤーが対象（手番順・灯台免疫は除外）
         const to = [];
-        for (let k = 1; k < state.players.length; k++) { const idx = (pi + k) % state.players.length; if (!attackImmune(state, idx)) to.push(idx); }
+        for (let k = 1; k < state.players.length; k++) { const idx = (pi + k) % state.players.length; if (!attackImmune(state, idx)) to.push(idx); else if (hasNonImmunityReaction(state.players[idx])) (state.onGainQueue = state.onGainQueue || []).push({ type: 'immune_react', player: idx }); }
         if (to.length) state.pending = { type: 'torturer', player: to[0], source: pi, queue: to.slice(1) };
         break;
       }
@@ -6844,11 +6886,15 @@
         saboteurEnterVictim(state, pi, vics);
         break;
       }
-      case 'minion':
+      case 'minion': {
+        /* 公式FAQ＝`Players may react to Minion **before you choose** which option to use.`
+           ＝二択より**前**に全相手の反応窓を回す（+2コインを選ぶ場合も窓は開く）。
+           海賊船(pirate_ship)と同じ「使った瞬間に反応窓を1周してから本体」型。 */
         addActions(t, 1);
-        // 攻撃側が「+2コイン」か「手札を捨てて+4＆相手も」を選ぶ
-        state.pending = { type: 'minion', stage: 'choose', player: pi };
+        const mq = []; for (let k = 1; k < state.players.length; k++) mq.push((pi + k) % state.players.length);
+        minionReactThenChoose(state, pi, mq, []);
         break;
+      }
       case 'masquerade': {
         draw(state, pi, 2);
         // 全員が同時に手札1枚を左隣へ渡す（手札のある人を順に集めてから一斉適用）
@@ -6900,7 +6946,9 @@
         if (gain(state, pi, 'silver', 'deck')) log(state, `${p.name} は銀貨を山札の上に獲得した。`);
         const vics = [];
         for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
-        bureaucratEnterVictim(state, pi, vics);
+        // 山賊と同型＝獲得で開いた窓（望楼/ティアラ）を上書きしない
+        if (state.pending) (state.onGainQueue = state.onGainQueue || []).push({ type: 'bureaucrat_attack', player: pi, queue: vics });
+        else bureaucratEnterVictim(state, pi, vics);
         break;
       }
       case 'council_room':
@@ -6923,6 +6971,8 @@
           if (isTreasureFor(state, c)) { p.hand.push(c); found++; } else aside.push(c);
         }
         aside.forEach((c) => p.discard.push(c));
+        if (aside.length) triggerOnDiscard(state, pi, aside.slice()); // 捨て札トリガー（坑道/進路/織工/村有緑地/忠犬）
+        if (aside.length) triggerOnDiscard(state, pi, aside.slice()); // 山札からの捨て札も本物の捨て札
         log(state, `${p.name} は冒険者で財宝 ${found}枚 を手札に加えた。`);
         break;
       }
@@ -6961,6 +7011,7 @@
         }
         if (revealed.length) reveal(state, (pi + 1) % state.players.length, revealed, '貢物で山札の上を公開');
         revealed.forEach((c) => left.discard.push(c));
+        if (revealed.length) triggerOnDiscard(state, (pi + 1) % state.players.length, revealed.slice());
         if (revealed.length) log(state, `${left.name} は山札の上 ${revealed.length}枚 を公開して捨てた。`);
         // 異なる名前ごとにボーナス（同名2枚は1回ぶん。多重タイプは各該当を独立に付与）
         const distinct = revealed.filter((c, i, a) => a.indexOf(c) === i);
@@ -6999,6 +7050,7 @@
           // 家臣は「捨てる」であって「公開する」ではない（公式）＝パトロンは誘発しない（表示のみ）。
           reveal(state, pi, [top], '家臣で山札の上を公開', { notReveal: true });
           log(state, `${p.name} は山札の上の「${C()[top].name}」を捨てた（家臣）。`);
+          triggerOnDiscard(state, pi, [top]); // 山札からの捨て札も本物の捨て札（坑道/村有緑地/忠犬が誘発する）
           if (DOM.isType(top, 'action')) state.pending = { type: 'vassal', player: pi, card: top };
         }
         break;
@@ -7012,10 +7064,15 @@
         break;
       }
       case 'bandit': {
+        /* 公式FAQ＝`**First** you gain a Gold from the Supply ... **Then** each other player, in turn order, reveals ...`
+           🛑 獲得で開いた窓（望楼／交易人／玉璽／勲章＝`state.pending` に立つ組）を、直後の `banditEnterVictim` が
+              `state.pending` ごと無条件に上書きして握りつぶしていた（手札に望楼を持っていても山賊の金貨に反応できない）。
+              窓が立っていたらアタックを `onGainQueue` に積み、窓の解決後に始める（§0-26 の要求と同型）。 */
         if (gain(state, pi, 'gold', 'discard')) log(state, `${p.name} は金貨を獲得した（山賊）。`);
         const vics = [];
         for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
-        banditEnterVictim(state, pi, vics);
+        if (state.pending) (state.onGainQueue = state.onGainQueue || []).push({ type: 'bandit_attack', player: pi, queue: vics });
+        else banditEnterVictim(state, pi, vics);
         break;
       }
       case 'sentry': {
@@ -7208,6 +7265,7 @@
         reveal(state, pi, rev.concat(found ? [found] : []), '賢者');
         if (found) { p.hand.push(found); log(state, `${p.name} は賢者で「${C()[found].name}」を手札に加えた。`); }
         rev.forEach((c) => p.discard.push(c));
+        if (rev.length) triggerOnDiscard(state, pi, rev.slice());
         break;
       }
       case 'beggar': {
@@ -7293,6 +7351,7 @@
         if (look.length) reveal(state, pi, look.slice(), '吟遊詩人');
         const acts = look.filter((c) => DOM.isType(c, 'action'));
         look.filter((c) => !DOM.isType(c, 'action')).forEach((c) => p.discard.push(c));
+        { const dsc = look.filter((c) => !DOM.isType(c, 'action')); if (dsc.length) triggerOnDiscard(state, pi, dsc.slice()); }
         if (acts.length > 1) state.pending = { type: 'minstrel', player: pi, cards: acts };
         else if (acts.length === 1) p.deck.unshift(acts[0]);
         break;
@@ -7386,7 +7445,7 @@
       case 'urchin': { // +1カード +1アクション。各相手が手札4枚まで捨てる（別アタックのプレイで傭兵化トリガー）
         draw(state, pi, 1); addActions(t, 1);
         const others = [];
-        for (let k = 1; k < state.players.length; k++) { const idx = (pi + k) % state.players.length; if (!attackImmune(state, idx)) others.push(idx); }
+        for (let k = 1; k < state.players.length; k++) { const idx = (pi + k) % state.players.length; if (!attackImmune(state, idx)) others.push(idx); else if (hasNonImmunityReaction(state.players[idx])) (state.onGainQueue = state.onGainQueue || []).push({ type: 'immune_react', player: idx }); }
         discardDownEnter(state, pi, 4, others);
         break;
       }
@@ -7410,7 +7469,7 @@
         break;
       case 'sir_michael': { // 各相手が手札3枚まで捨てる→（連鎖して）騎士アタック
         const others = [];
-        for (let k = 1; k < state.players.length; k++) { const idx = (pi + k) % state.players.length; if (!attackImmune(state, idx)) others.push(idx); }
+        for (let k = 1; k < state.players.length; k++) { const idx = (pi + k) % state.players.length; if (!attackImmune(state, idx)) others.push(idx); else if (hasNonImmunityReaction(state.players[idx])) (state.onGainQueue = state.onGainQueue || []).push({ type: 'immune_react', player: idx }); }
         discardDownEnter(state, pi, 3, others, 'knight:sir_michael');
         break;
       }
@@ -7453,16 +7512,18 @@
         break;
       case 'haven':
         draw(state, pi, 1); addActions(t, 1);
+        /* 公式＝`Set aside a card from your hand face down.` 脇に**何も置かなかった**なら
+           そのターンのクリンナップで捨てる＝持続にならない（策士と同じ扱い）。 */
         if (p.hand.length > 0) state.pending = { type: 'haven', player: pi };
-        else armDuration(state, pi, 'haven'); // 手札が空でも持続として残る（脇置きなし）
         break;
       case 'tactician':
         if (p.hand.length > 0) state.pending = { type: 'tactician', player: pi };
         // 手札が空なら何もしない＝持続化しない（捨て札へ）
         break;
       case 'salvager':
+        // 公式＝`+1 Buy / Trash a card from your hand. +$ equal to its cost.` ＝手札があれば廃棄は**強制**。
         t.buys += 1;
-        if (p.hand.length > 0) state.pending = { type: 'salvager', stage: 'trash', player: pi };
+        if (p.hand.length > 0) state.pending = { type: 'salvager', stage: 'trash', player: pi, forced: true };
         break;
       case 'lookout': {
         addActions(t, 1);
@@ -7557,10 +7618,17 @@
         break;
       case 'outpost':
         // このターン1度だけ・追加ターン中でなければ、手札3枚の追加ターン。
+        /* 公式＝`If it's your first Outpost this turn, and this isn't an extra turn, take an extra turn
+           after this one, and only draw 3 cards for your next hand.` ⚠ **「次の手札は3枚」は追加ターンが
+           得られなくても必ず適用される**（Official FAQ＝`You still only draw 3 cards for your next hand
+           even if you don't get the extra turn`）。 */
+        p.outpostDrawThree = true;
         if (!t.outpostUsed && !t.isExtraTurn) {
           t.outpostUsed = true; p.outpostExtra = true;
           armDuration(state, pi, 'outpost'); // 追加ターン中、場に残すための予約（効果は無し）
           log(state, `${p.name} は前哨地で追加ターンを得る（次の手札は3枚）。`);
+        } else {
+          log(state, `${p.name} は前哨地を使ったが追加ターンは得られない（次の手札は3枚）。`);
         }
         break;
       case 'sailor':
@@ -7574,10 +7642,19 @@
           state.pending = { type: 'blockade', stage: 'gain', player: pi };
         else armDuration(state, pi, 'blockade', { gained: null, immune: [] });
         break;
-      case 'corsair':
+      case 'corsair': {
+        /* 海辺：コルセア（アクション-持続-**アタック**）＝`Until then, each other player trashes the first
+           Silver or Gold they play each turn.` 🛑 2026-08-30 までアタックとして扱われておらず、
+           **堀・灯台・チャンピオンのどれでも防げなかった**（`ATTACKS` に未登録・`attackImmune` も見ていない）。
+           呪いの森／沼の妖婆／フリゲート船と同じ `lingerAttackEnter` 型＝使用した瞬間に全相手へ反応窓を回し、
+           免疫の席と堀を公開した席を**この予約(rid)の `immune[]`** に記録する。 */
         addCoins(state, 2);
-        armDuration(state, pi, 'corsair'); // 次手番 +1カード。窓の間、相手の最初の銀/金を廃棄
+        const rid = (t.ridSeq = (t.ridSeq || 0) + 1);
+        armDuration(state, pi, 'corsair', { immune: [], rid }); // 次手番 +1カード。窓の間、相手の最初の銀/金を廃棄
+        const cq = []; for (let k = 1; k < state.players.length; k++) cq.push((pi + k) % state.players.length);
+        lingerAttackEnter(state, pi, 'corsair', cq, rid);
         break;
+      }
 
       // ===== 繁栄（Prosperity 第二版）アクションカード =====
       case 'monument':
@@ -7729,6 +7806,7 @@
         }
         if (found.concat(aside).length) reveal(state, pi, found.concat(aside), 'ゴーレムで公開');
         aside.forEach((c) => p.discard.push(c));
+        if (aside.length) triggerOnDiscard(state, pi, aside.slice()); // 捨て札トリガー（坑道/進路/織工/村有緑地/忠犬）
         log(state, `${p.name} はゴーレムでアクション ${found.length}枚 を見つけた。`);
         if (found.length === 2) state.pending = { type: 'golem', player: pi, cards: found }; // 使う順を選ぶ
         else if (found.length === 1) golemPlay(state, pi, found[0], null);
@@ -7778,6 +7856,7 @@
         const shown = skipped.concat(matched ? [matched] : []);
         if (shown.length) reveal(state, pi, shown, '農村で公開');
         skipped.forEach((c) => p.discard.push(c));
+        if (skipped.length) triggerOnDiscard(state, pi, skipped.slice()); // 山札からの捨て札も本物の捨て札
         if (matched) { p.hand.push(matched); log(state, `${p.name} は農村で「${C()[matched].name}」を手札に加え、${skipped.length}枚を捨てた。`); }
         else log(state, `${p.name} は農村でアクション/財宝が出ず、${skipped.length}枚を捨てた。`);
         break;
@@ -7810,6 +7889,7 @@
         }
         if (revealed.length) reveal(state, pi, revealed.slice(), '収穫で公開');
         revealed.forEach((c) => p.discard.push(c));
+        if (revealed.length) triggerOnDiscard(state, pi, revealed.slice()); // 山札からの捨て札も本物の捨て札
         const distinct = new Set(revealed).size;
         addCoins(state, distinct);
         log(state, `${p.name} は収穫で${revealed.length}枚公開（異なる名前${distinct}種→+${distinct}コイン）。`);
@@ -7824,6 +7904,7 @@
         const shown = skipped.concat(matched ? [matched] : []);
         if (shown.length) reveal(state, pi, shown, '狩猟団で公開');
         skipped.forEach((c) => p.discard.push(c));
+        if (skipped.length) triggerOnDiscard(state, pi, skipped.slice()); // 山札からの捨て札も本物の捨て札
         if (matched) { p.hand.push(matched); log(state, `${p.name} は狩猟団で「${C()[matched].name}」を手札に加え、${skipped.length}枚を捨てた。`); }
         else log(state, `${p.name} は狩猟団で手札に無い札が出ず、${skipped.length}枚を捨てた。`);
         break;
@@ -9252,7 +9333,7 @@
         const vic = [];
         for (let k = 1; k < state.players.length; k++) {
           const idx = (pi + k) % state.players.length;
-          if (!attackImmune(state, idx)) vic.push(idx);
+          if (!attackImmune(state, idx)) vic.push(idx); else if (hasNonImmunityReaction(state.players[idx])) (state.onGainQueue = state.onGainQueue || []).push({ type: 'immune_react', player: idx });
         }
         if (vic.length) discardDownEnter(state, pi, 3, vic);
         break;
@@ -9316,7 +9397,7 @@
         const svic = [];
         for (let k = 1; k < state.players.length; k++) {
           const idx = (pi + k) % state.players.length;
-          if (!attackImmune(state, idx)) svic.push(idx);
+          if (!attackImmune(state, idx)) svic.push(idx); else if (hasNonImmunityReaction(state.players[idx])) (state.onGainQueue = state.onGainQueue || []).push({ type: 'immune_react', player: idx });
         }
         if (svic.length) discardDownEnter(state, pi, 3, svic);
         break;
@@ -9439,7 +9520,7 @@
         const gv = [];
         for (let k = 1; k < state.players.length; k++) {
           const idx = (pi + k) % state.players.length;
-          if (!attackImmune(state, idx)) gv.push(idx);
+          if (!attackImmune(state, idx)) gv.push(idx); else if (hasNonImmunityReaction(state.players[idx])) (state.onGainQueue = state.onGainQueue || []).push({ type: 'immune_react', player: idx });
         }
         if (gv.length) discardDownEnter(state, pi, 3, gv, null, 0);
         break;
@@ -9493,7 +9574,7 @@
         const fv = [];
         for (let k = 1; k < state.players.length; k++) {
           const idx = (pi + k) % state.players.length;
-          if (!attackImmune(state, idx)) fv.push(idx);
+          if (!attackImmune(state, idx)) fv.push(idx); else if (hasNonImmunityReaction(state.players[idx])) (state.onGainQueue = state.onGainQueue || []).push({ type: 'immune_react', player: idx });
         }
         if (fv.length) discardDownEnter(state, pi, 3, fv, null, 0);
         break;
@@ -10315,7 +10396,7 @@
     };
   }
   function barbarianEnterVictim(state, source, queue) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -10370,7 +10451,7 @@
      2段（被害者が隠す1枚を選ぶ → 使用者が捨てさせる1枚を選ぶ）＝pending の持ち主が跨ぐ。
      ⚠ 「隠した1枚」は**使用者にも他人にも見えてはいけない**（maskStateFor で伏せる）。 */
   function archerEnterVictim(state, source, queue) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     while (queue.length && state.players[queue[0]].hand.length < 5) queue = queue.slice(1); // 手札4枚以下は無事
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
@@ -10395,7 +10476,7 @@
     sorceressEnterVictim(state, pi, q);
   }
   function sorceressEnterVictim(state, source, queue) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -10408,7 +10489,7 @@
   /* 魔導士＝各相手が**先に**カード名を宣言し、**その後**自分の山札の一番上を公開する。
      外れなら呪いを獲得。**当たり外れに関わらず公開したカードは山札の上に戻す**（女魔導士と逆）。 */
   function sorcererEnterVictim(state, source, queue) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -11937,7 +12018,8 @@
     if (card !== 'silver' && card !== 'gold') return;
     const t = state.turn;
     if (!t || t.corsairTrashed || pIndex !== t.active) return; // このターン最初の銀/金のみ・出した本人の手番中
-    const someoneElse = state.players.some((p, i) => i !== pIndex && (p.delayedEffects || []).some((e) => e.type === 'corsair'));
+    // 免疫（灯台/チャンピオン）と堀を公開した席は、その予約の `immune[]` に入っている＝廃棄されない。
+    const someoneElse = state.players.some((p, i) => i !== pIndex && (p.delayedEffects || []).some((e) => e.type === 'corsair' && (e.immune || []).indexOf(pIndex) < 0));
     if (!someoneElse) return;
     if (removeOne(state.players[pIndex].inPlay, card)) {
       trashCard(state, pIndex, card); t.corsairTrashed = true;
@@ -11977,6 +12059,27 @@
     const m = (state.turn.recklessBlock = state.turn.recklessBlock || {});
     const arr = (m[pd.type] = m[pd.type] || []);
     if (arr.indexOf(pd.player) < 0) arr.push(pd.player);
+  }
+  /* 免疫でない被害者だけを返す。**免疫（灯台/チャンピオン/守護者）の席でも「免疫にならないリアクション」は使える**
+     （公式＝Lighthouse Official FAQ 逐語＝`This does **not** prevent you from using Reactions when other players
+     play Attacks.`）。免疫者は攻撃の解決に一切影響しないので、その窓は `onGainQueue` に積んで**攻撃の後**に開く
+     （順序として等価・55箇所の被害者ループを触らずに済む）。 */
+  function attackTargets(state, queue) {
+    const out = [];
+    (queue || []).forEach((v) => {
+      if (!attackImmune(state, v)) { out.push(v); return; }
+      if (hasNonImmunityReaction(state.players[v])) {
+        (state.onGainQueue = state.onGainQueue || []).push({ type: 'immune_react', player: v });
+      }
+    });
+    return out;
+  }
+  // 「免疫にはならない」リアクション（堀/盾/秘密の部屋は免疫を与えるので、既に免疫なら意味がない）。
+  function hasNonImmunityReaction(player) {
+    if (!player) return false;
+    return player.hand.includes('horse_traders') || player.hand.includes('guard_dog') ||
+      player.hand.includes('caravan_guard') || player.hand.includes('beggar') ||
+      (player.hand.includes('diplomat') && player.hand.length >= 5);
   }
   function attackImmune(state, victim) {
     const v = state.players[victim];
@@ -12358,7 +12461,7 @@
   }
   // 偶像（財宝アタック）＝偶数枚なら他のプレイヤー全員が呪いを獲得。堀/灯台/守護者で防げる。
   function idolEnterVictim(state, source, queue) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -12373,7 +12476,7 @@
      そのアタックが**相手に何もしない場合でも**窓が開く（公式）。人狼をアクションフェイズで使う（+3カード）／
      迫害者が場が空でインプを獲得する ケースがこれに当たる。窓を全部閉じてから本体の効果を解決する。 */
   function attackWindowEnter(state, source, queue, after) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     while (queue.length) {
       const v = queue[0];
       if (hasReaction(state.players[v])) {
@@ -12395,7 +12498,7 @@
   /* 夜襲（夜行・持続・アタック）＝手札5枚以上の他プレイヤーは「使用者の場にあるカードと同名の1枚」を捨てる。
      捨てられなければ手札を公開する（**本物の「捨てる」**＝忠犬/坑道などの捨て札トリガーが誘発する）。 */
   function raiderEnterVictim(state, source, queue) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v));
+    queue = attackTargets(state, queue);
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -12731,7 +12834,12 @@
     //     学者/寵臣/寄付のような「引く」効果には効かない（手札そのものを引く場面のみ＝公式）。
     //     先引きの瞬間の保持者に適用する（その後に旗が奪われても引いた枚数は返さない）。
     const flagBonus = hasArtifact(state, pi, 'flag') ? 1 : 0;
-    draw(state, pi, (extra ? 3 : 5) + (state.turn.extraDraw || 0) + flagBonus);
+    /* 前哨地＝Official FAQ＝`You still only draw 3 cards for your next hand **even if you don't get the
+       extra turn**`（追加ターン中にもう1枚使った場合など）。`p.outpostDrawThree` はこのターンに前哨地を
+       使ったかの旗＝ここで消費する。 */
+    const drawThree = extra || !!p.outpostDrawThree;
+    p.outpostDrawThree = false;
+    draw(state, pi, (drawThree ? 3 : 5) + (state.turn.extraDraw || 0) + flagBonus);
     /* 略奪：パズルボックス＝脇に伏せた札を「ターン終了時」＝**次の手札を先引きした後**に手札へ加える
        （公式FAQ逐語＝`The set-aside card goes into your hand after drawing for the next turn.`）。
        ⚠ パズルボックス自身は持続ではない＝当ターンの片付けで普通に捨てられる（何もしなくてよい）。 */
@@ -14312,6 +14420,15 @@
       while (state.onGainQueue.length) {
         const q = state.onGainQueue.shift();
         if (q.type === 'gatekeeper_exile') { applyGatekeeperExile(state, q.player, q.card, q.dest); continue; }
+        // 山賊／役人＝獲得の窓を解決してからアタックを始める（公式＝獲得を完全に解決してからアタック）。
+        if (q.type === 'bandit_attack') { banditEnterVictim(state, q.player, q.queue); if (state.pending) break; continue; }
+        /* 免疫の席のリアクション窓（公式＝免疫でもリアクションは使える）。解決時に再検査し、
+           もう使える札が無ければ開かない。 */
+        if (q.type === 'immune_react') {
+          if (hasNonImmunityReaction(state.players[q.player])) { state.pending = { type: 'immune_react', stage: 'react', player: q.player }; break; }
+          continue;
+        }
+        if (q.type === 'bureaucrat_attack') { bureaucratEnterVictim(state, q.player, q.queue); if (state.pending) break; continue; }
         // 異郷：大釜＝このターン3回目のアクション獲得で各相手が呪い（獲得pending の解決中でも必ず発動する）。
         if (q.type === 'cauldron_attack') {
           const nn = state.players.length;
@@ -15644,15 +15761,16 @@
         const p = state.players[pd.player];
         const discardCards = Array.isArray(action.cards) ? action.cards : [];
         let count = 0;
+        const moved = [];
         discardCards.forEach((c) => {
-          if (removeOne(p.hand, c)) {
-            p.discard.push(c);
-            count++;
-          }
+          if (removeOne(p.hand, c)) { p.discard.push(c); moved.push(c); count++; }
         });
-        draw(state, pd.player, count);
-        if (count) log(state, `${p.name} は ${count}枚 捨てて ${count}枚 引いた。`);
+        /* 🛑 捨て札トリガー（坑道/進路/織工/村有緑地/忠犬）を**引く前に**解決する。
+           公式FAQ＝`discard them all at once; **then** draw as many cards as you actually discarded.`
+           窓が開いたら `discardThenDraw` が reduce 末尾の再開網でドローを後回しにする。 */
         state.pending = null;
+        if (count) triggerOnDiscard(state, pd.player, moved.slice());
+        discardThenDraw(state, pd.player, count, `地下貯蔵庫で ${count}枚 捨てて引いた`);
         return state;
       }
 
@@ -16788,12 +16906,15 @@
           state.pending = null; return state;
         }
         if (!canGain(card)) return state;
+        // 🛑 混合山（城/騎士/廃墟/同盟の分割山）は `gain()` が一番上を取るので、**獲得の前に**実カードidを確定する
+        //    （後で見ると「獲得**後**の一番上」の種別になり、実際に獲得した札と食い違う）。
+        const gotId = isMixedPileKey(card) ? (mixedTopCard(state, card) || card) : card;
         gain(state, pd.player, card, 'discard');
-        log(state, `${state.players[pd.player].name} は「${C()[card].name}」を獲得した。`);
+        log(state, `${state.players[pd.player].name} は「${C()[gotId].name}」を獲得した。`);
         // 該当する種別すべてのボーナス（ハーレム=財宝+勝利点 等は両方）
-        if (isActionFor(state, card)) addActions(t, 1); // 旭日：悟りで財宝もアクション
-        if (isTreasureFor(state, card)) addCoins(state, 1);
-        if (DOM.isType(card, 'victory')) draw(state, pd.player, 1);
+        if (isActionFor(state, gotId)) addActions(t, 1); // 旭日：悟りで財宝もアクション
+        if (isTreasureFor(state, gotId)) addCoins(state, 1);
+        if (DOM.isType(gotId, 'victory')) draw(state, pd.player, 1);
         state.pending = null;
         return state;
       }
@@ -16879,6 +17000,7 @@
         rest.splice(rest.indexOf(card), 1);
         trashCard(state, pd.victim, card);
         rest.forEach((c) => v.discard.push(c));
+        if (rest.length) triggerOnDiscard(state, pd.victim, rest.slice()); // 捨て札トリガー（坑道/進路/織工/村有緑地/忠犬）
         log(state, `${v.name} の「${C()[card].name}」を廃棄した（海賊船）。`);
         if (rest.length) triggerOnDiscard(state, pd.victim, rest.slice()); // 同上（海賊船の残り）
         pirateShipAttackEnter(state, pd.source, pd.queue, true);
@@ -17365,6 +17487,7 @@
         const i = rest.indexOf(card); rest.splice(i, 1);
         trashCard(state, pd.victim, card);
         rest.forEach((c) => v.discard.push(c));
+        if (rest.length) triggerOnDiscard(state, pd.victim, rest.slice()); // 捨て札トリガー（坑道/進路/織工/村有緑地/忠犬）
         log(state, `${v.name} の「${C()[card].name}」を廃棄した（泥棒）。`);
         state.pending = { type: 'thief', stage: 'gain', player: pd.source, source: pd.source, victim: pd.victim, trashed: card, queue: pd.queue };
         return state;
@@ -17441,6 +17564,7 @@
         for (const c of cards) if (!removeOne(handCopy, c)) return state; // 手札に無い指定は拒否
         let n = 0;
         cards.forEach((c) => { if (removeOne(p.hand, c)) { p.discard.push(c); n++; } });
+        if (cards.length) triggerOnDiscard(state, pd.player, cards.slice()); // 捨て札トリガー（坑道/進路/織工/村有緑地/忠犬）
         addCoins(state, n);
         log(state, `${p.name} は ${n}枚 捨てて +${n} コイン（秘密の部屋）。`);
         state.pending = null;
@@ -17520,12 +17644,21 @@
           draw(state, pd.player, 4);
           log(state, `${p.name} は手札を捨てて4枚引いた（寵臣）。`);
           // 手札5枚以上の他プレイヤーも引き直し（堀で無効化可）
+          // 反応窓は既に1周済み＝堀を公開した席（pd.immune）は被害者から外す。
+          const im = pd.immune || [];
           const vics = [];
-          for (let k = 1; k < state.players.length; k++) vics.push((pd.player + k) % state.players.length);
+          for (let k = 1; k < state.players.length; k++) { const idx = (pd.player + k) % state.players.length; if (im.indexOf(idx) < 0) vics.push(idx); }
           minionAttackEnterVictim(state, pd.player, vics);
         } else {
           return state;
         }
+        return state;
+      }
+      // 寵臣の「二択の前の反応窓」を受ける（次の相手へ）。
+      case 'MINION_REACT': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'minion' || pd.stage !== 'react') return state;
+        minionReactThenChoose(state, pd.source, pd.queue, pd.immune);
         return state;
       }
       case 'MINION_ATTACK_REACT': {
@@ -17669,6 +17802,7 @@
         rest.splice(rest.indexOf(card), 1);
         trashCard(state, pd.victim, card);
         rest.forEach((c) => v.discard.push(c));
+        if (rest.length) triggerOnDiscard(state, pd.victim, rest.slice()); // 捨て札トリガー（坑道/進路/織工/村有緑地/忠犬）
         log(state, `${v.name} は「${C()[card].name}」を廃棄した（山賊）。`);
         banditEnterVictim(state, pd.source, pd.queue);
         return state;
@@ -17690,6 +17824,7 @@
         if (tr.length) log(state, `${p.name} は ${tr.length}枚 廃棄した（衛兵）。`);
         if (di.length) log(state, `${p.name} は ${di.length}枚 捨てた（衛兵）。`);
         state.pending = null;
+        if (di.length) triggerOnDiscard(state, pd.player, di.slice()); // 山札からの捨て札も本物の捨て札
         return state;
       }
       /* ---- 職人：コスト5以下を手札に獲得→手札1枚を山札の上へ ---- */
@@ -17822,6 +17957,7 @@
         const handCopy = p.hand.slice();
         for (const c of cards) if (!removeOne(handCopy, c)) return state;
         cards.forEach((c) => { removeOne(p.hand, c); p.discard.push(c); });
+        if (cards.length) triggerOnDiscard(state, pd.player, cards.slice());
         addCoins(state, 2);
         log(state, `${p.name} は手札2枚を捨てて +2 コイン（風車）。`);
         state.pending = null;
@@ -18290,11 +18426,13 @@
         for (const c of cards) if (!removeOne(copy, c)) return state; // 手札に無い指定は拒否
         if (pd.stage === 'discard1') {
           cards.forEach((c) => { removeOne(p.hand, c); p.discard.push(c); });
+          if (cards.length) triggerOnDiscard(state, pd.player, cards.slice());
           draw(state, pd.player, cards.length);
           if (cards.length) log(state, `${p.name} は物置で${cards.length}枚捨てて${cards.length}枚引いた。`);
           state.pending = { type: 'storeroom', stage: 'discard2', player: pd.player };
         } else { // discard2：捨てた枚数ぶん +$1
           cards.forEach((c) => { removeOne(p.hand, c); p.discard.push(c); });
+          if (cards.length) triggerOnDiscard(state, pd.player, cards.slice());
           if (cards.length) { addCoins(state, cards.length); log(state, `${p.name} は物置で${cards.length}枚捨てて +$${cards.length}。`); }
           state.pending = null;
         }
@@ -18496,6 +18634,7 @@
         }
         reveal(state, pd.player, revealed.concat(found ? [found] : []), '建て直し');
         revealed.forEach((c) => p.discard.push(c)); // 残りを捨てる
+        if (revealed.length) triggerOnDiscard(state, pd.player, revealed.slice()); // 捨て札トリガー（坑道/進路/織工/村有緑地/忠犬）
         if (found) {
           trashCard(state, pd.player, found);
           const fr = costOf(state, found);
@@ -18843,6 +18982,7 @@
         const rest = pd.revealed.slice(); removeOne(rest, card);
         trashCard(state, pd.victim, card);
         rest.forEach((c) => v.discard.push(c));
+        if (rest.length) triggerOnDiscard(state, pd.victim, rest.slice()); // 捨て札トリガー（坑道/進路/織工/村有緑地/忠犬）
         log(state, `${v.name} は盗賊で「${C()[card].name}」を廃棄した。`);
         rogueEnterVictim(state, pd.source, pd.queue);
         return state;
@@ -18896,7 +19036,7 @@
         // If you did：+2カード +$2、各相手が手札3枚まで捨てる
         draw(state, pd.player, 2); addCoins(state, 2);
         const others = [];
-        for (let k = 1; k < state.players.length; k++) { const idx = (pd.player + k) % state.players.length; if (!attackImmune(state, idx)) others.push(idx); }
+        for (let k = 1; k < state.players.length; k++) { const idx = (pd.player + k) % state.players.length; if (!attackImmune(state, idx)) others.push(idx); else if (hasNonImmunityReaction(state.players[idx])) (state.onGainQueue = state.onGainQueue || []).push({ type: 'immune_react', player: idx }); }
         discardDownEnter(state, pd.player, 3, others);
         return state;
       }
@@ -19269,6 +19409,7 @@
         if (pd.cards.indexOf(card) < 0) return state;
         const rest = pd.cards.slice(); removeOne(rest, card);
         p.discard.push(card);
+        if (card != null) triggerOnDiscard(state, pd.player, [card]);
         log(state, `${p.name} は「${C()[card].name}」を捨てた（見張り）。`);
         // 残りは山札の上へ（順序維持）
         for (let i = rest.length - 1; i >= 0; i--) p.deck.unshift(rest[i]);
@@ -20513,6 +20654,7 @@
         const handCopy = p.hand.slice();
         for (const c of discardCards) if (!removeOne(handCopy, c)) return state;
         discardCards.forEach((c) => { removeOne(p.hand, c); p.discard.push(c); });
+        if (discardCards.length) triggerOnDiscard(state, pd.player, discardCards.slice());
         log(state, `${p.name} は手札を ${discardCards.length}枚 捨てた（郎党）。`);
         followersEnterVictim(state, pd.source, pd.queue);
         return state;
@@ -21437,7 +21579,7 @@
           reveal(state, pd.player, ['gold'], '軍団兵：金貨を公開');
           log(state, `${owner.name} は軍団兵で金貨を公開した（各相手は手札2枚まで捨て→1枚引く）。`);
           const vics = [];
-          for (let k = 1; k < state.players.length; k++) { const idx = (pd.player + k) % state.players.length; if (!attackImmune(state, idx)) vics.push(idx); }
+          for (let k = 1; k < state.players.length; k++) { const idx = (pd.player + k) % state.players.length; if (!attackImmune(state, idx)) vics.push(idx); else if (hasNonImmunityReaction(state.players[idx])) (state.onGainQueue = state.onGainQueue || []).push({ type: 'immune_react', player: idx }); }
           state.pending = null;
           discardDownEnter(state, pd.player, 2, vics, null, 1);
         } else {
@@ -21499,6 +21641,7 @@
           const c = pl.deck.shift();
           if (choice === 'trash') { trashCard(state, pd.player, c); log(state, `${pl.name} は医者の過払いで「${C()[c].name}」を廃棄した。`); }
           else { pl.discard.push(c); log(state, `${pl.name} は医者の過払いで「${C()[c].name}」を捨てた。`); }
+          if (true) triggerOnDiscard(state, pd.player, [c]);
         }
         startDoctorOverpay(state, pd.player, pd.remaining - 1);
         return state;
@@ -21592,6 +21735,7 @@
         const rest = pd.cards.slice();
         rest.splice(rest.indexOf(card), 1);
         src.discard.push(card);
+        triggerOnDiscard(state, pd.source, [card]);
         rest.forEach((c) => src.hand.push(c));
         log(state, `${state.players[pd.player].name} は助言者で「${C()[card].name}」を捨てさせ、${src.name} は残り ${rest.length}枚 を手札に加えた。`);
         state.pending = null;
@@ -21707,6 +21851,7 @@
         if (revealed.length) reveal(state, pi, revealed, '熟練工で山札の上を公開');
         toHand.forEach((c) => me.hand.push(c));
         toDiscard.forEach((c) => me.discard.push(c));
+        if (toDiscard.length) triggerOnDiscard(state, pd.player, toDiscard.slice()); // 捨て札トリガー（坑道/進路/織工/村有緑地/忠犬）
         log(state, `${me.name} は熟練工で ${toHand.length}枚 を手札に加え、${toDiscard.length}枚 を捨てた（指定＝${C()[named].name}）。`);
         state.pending = null;
         return state;
@@ -22085,11 +22230,19 @@
         return state; // pending 据え置き＝この後さらに堀公開/受けるを選べる
       }
       // 冒険：呪いの森/沼の妖婆を堀を出さずに受ける（免疫は付かず・即効果は無い＝次の被害者へ）。
+      /* 免疫の席のリアクション窓を閉じる（「もう使わない」）。窓自体は物乞い/馬商人/番犬/隊商の護衛/外交官の
+         既存 reducer（`isAttackReactPending` を見る）がそのまま使える。 */
+      case 'IMMUNE_REACT_DONE': {
+        const pd = state.pending;
+        if (!pd || pd.type !== 'immune_react') return state;
+        state.pending = null;
+        return state;
+      }
       case 'LINGER_REACT': {
         const pd = state.pending;
         // 相手のターンをフックする持続アタック（呪いの森／沼の妖婆／移動動物園の門番）を「そのまま受ける」。
         // 同盟：追いはぎ／将軍も「相手のターンをフックする持続アタック」＝同じ受理経路（許可リストに足す）。
-        if (!pd || ['haunted_woods', 'swamp_hag', 'gatekeeper', 'highwayman', 'warlord', 'frigate'].indexOf(pd.type) < 0 || pd.stage !== 'react') return state;
+        if (!pd || ['haunted_woods', 'swamp_hag', 'gatekeeper', 'highwayman', 'warlord', 'frigate', 'corsair'].indexOf(pd.type) < 0 || pd.stage !== 'react') return state;
         lingerAttackEnter(state, pd.source, pd.type, pd.queue, pd.rid);
         return state;
       }
@@ -22133,6 +22286,7 @@
         const rest = pd.cards.slice(); removeOne(rest, card);
         p.hand.push(card);
         rest.forEach((c) => p.discard.push(c));
+        if (rest.length) triggerOnDiscard(state, pd.player, rest.slice()); // 捨て札トリガー（坑道/進路/織工/村有緑地/忠犬）
         log(state, `${p.name} は倒壊で「${C()[card].name}」を手札に加え、残り${rest.length}枚を捨てた。`);
         state.pending = null;
         return state;
@@ -25044,7 +25198,9 @@
     }
     // 夜想曲：ゾンビの密偵の「山札の一番上を見る」も私的情報（水晶球と同型）。
     // 段階2 第1バッチ：真珠採り＝山札の一番下（私的）＝本人と支配者だけに見せる（水晶球/ゾンビの密偵と同型）。
-    if (s.pending && (s.pending.type === 'crystal_ball' || s.pending.type === 'zombie_spy' || s.pending.type === 'pearl_diver' || s.pending.type === 'jack' || s.pending.type === 'duchess_look') && s.pending.card != null && seat !== s.pending.player && seat !== secretSeer) {
+    if (s.pending && (s.pending.type === 'crystal_ball' || s.pending.type === 'zombie_spy' || s.pending.type === 'pearl_diver' || s.pending.type === 'jack' || s.pending.type === 'duchess_look' || s.pending.type === 'library') && s.pending.card != null && seat !== s.pending.player && seat !== secretSeer) {
+      // 書庫は脇に置いた札（aside）も私的情報＝まとめて伏せる（公式＝reveal ではなく look at）。
+      if (Array.isArray(s.pending.aside)) s.pending.aside = new Array(s.pending.aside.length).fill('back');
       s.pending = Object.assign({}, s.pending, { card: 'back' });
     }
     /* 段階2：**伏せているゾーンから導いた数**も私的情報＝他席には潰す（モーダルを描くのは `pd.player` だけなので UI に影響しない）。
@@ -25104,7 +25260,7 @@
     'MINING_VILLAGE_RESOLVE', 'NOBLES_RESOLVE', 'TORTURER_RESOLVE',
     'TRADING_POST_RESOLVE', 'UPGRADE_TRASH', 'UPGRADE_GAIN', 'SCOUT_RESOLVE',
     'SWINDLER_REACT', 'SWINDLER_GAIN', 'SABOTEUR_REACT', 'SABOTEUR_GAIN',
-    'MINION_RESOLVE', 'MINION_ATTACK_REACT', 'MASQUERADE_PASS', 'MASQUERADE_TRASH',
+    'MINION_RESOLVE', 'MINION_ATTACK_REACT', 'MINION_REACT', 'MASQUERADE_PASS', 'MASQUERADE_TRASH',
     'SECRET_CHAMBER_RESOLVE', 'SECRET_CHAMBER_REVEAL', 'SECRET_CHAMBER_PUTBACK',
     'MONEYLENDER_RESOLVE', 'CHANCELLOR_RESOLVE', 'CHAPEL_RESOLVE',
     'WITCH_REACT', 'BUREAUCRAT_REACT', 'BUREAUCRAT_PUT', 'FEAST_GAIN',
@@ -25132,7 +25288,7 @@
     'WARRIOR_REACT', 'SOLDIER_REACT', 'SOLDIER_DISCARD', 'HERO_GAIN', 'FUGITIVE_DISCARD', 'DISCIPLE_PLAY', 'TRAVELLER_EXCHANGE_RESOLVE',
     'TEACHER_TOKEN', 'TEACHER_PILE',
     // 冒険：純持続/アタック（隊商の護衛リアクション／呪いの森・沼の妖婆）
-    'CARAVAN_GUARD_REACT', 'LINGER_REACT',
+    'CARAVAN_GUARD_REACT', 'LINGER_REACT', 'IMMUNE_REACT_DONE',
     // 冒険：複雑系（倒壊/工匠/語り部/使者）
     'RAZE_TRASH', 'RAZE_LOOK', 'ARTIFICER_DISCARD', 'ARTIFICER_GAIN', 'STORYTELLER_PLAY', 'MESSENGER_PLAY', 'MESSENGER_GAIN',
     // 帝国（Empires）Batch E1：負債経済

@@ -557,9 +557,13 @@ console.log('=== 寵臣: +1アクション、+2コイン か 全員引き直し 
   s.players[1].hand = ['moat', 'copper', 'copper', 'copper', 'copper']; // 5枚・堀
   s.players[1].deck = ['silver', 'silver', 'silver', 'silver'];
   s = reduce(s, { type: 'PLAY_ACTION', card: 'minion' });
-  s = reduce(s, { type: 'MINION_RESOLVE', choice: 'attack' });
-  ok(s.pending && s.pending.type === 'minion_attack' && s.pending.player === 1, '相手の反応待ち');
+  /* §0-44：公式FAQ＝`Players may react to Minion **before you choose** which option to use.`
+     ＝二択より**前**に反応窓が開く。堀を公開した席はこのアタックの影響を受けない。 */
+  ok(s.pending && s.pending.type === 'minion' && s.pending.stage === 'react' && s.pending.player === 1,
+    '寵臣：二択の前に相手の反応窓が開く');
   s = reduce(s, { type: 'MOAT_REVEAL' });
+  ok(s.pending && s.pending.type === 'minion' && s.pending.stage === 'choose', '堀の公開後に使用者が二択');
+  s = reduce(s, { type: 'MINION_RESOLVE', choice: 'attack' });
   ok(s.players[1].hand.length === 5 && s.pending === null, '堀で無効化、引き直さない');
 }
 
