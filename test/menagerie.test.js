@@ -1238,6 +1238,96 @@ console.log('\n=== 2026-08-25: 黒猫のリアクション窓／動物見本市�
      '財宝を廃棄して買おうとしても状態不変で拒否される');
   ok(JSON.stringify(reduce(u, { type: 'BUY', card: 'animal_fair' })) === before, '$0 で普通に買うことはできない');
 }
+/* §0-44 MENAGERIE: サル＝持続1枚ごとに独立して働く（枚数ぶん引く） */
+console.log('=== §0-44: サル＝2枚使えば右隣の獲得1回につき2枚引く ===');
+{
+  let s = E.createInitialState(['A', 'B', 'C'], KING.slice(), { startActive: 0 });
+  s.turn.phase = 'action'; s.turn.actions = 2;
+  s.players[0].hand = ['monkey', 'monkey'];
+  s.players[0].deck = new Array(24).fill('copper');
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'monkey' });
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'monkey' });
+  ok(s.players[0].monkeyActive === 2, 'サル2枚＝枚数で持つ（実 ' + s.players[0].monkeyActive + '）');
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' }); // C の手番
+  s = reduce(s, { type: 'END_ACTION_PHASE' });
+  const before = s.players[0].hand.length;
+  s.turn.coins = 3; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'silver' });
+  ok(s.players[0].hand.length - before === 2, '右隣(C)の獲得1回で2枚引く（実 ' + (s.players[0].hand.length - before) + '）');
+}
+{
+  // 旧スナップショット互換＝monkeyActive === true は1枚として読む
+  let s = E.createInitialState(['A', 'B', 'C'], KING.slice(), { startActive: 0 });
+  s.players[0].monkeyActive = true;
+  s.players[0].deck = new Array(10).fill('copper');
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' });
+  const before = s.players[0].hand.length;
+  s.turn.coins = 3; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'silver' });
+  ok(s.players[0].hand.length - before === 1, '旧形式（true）は1枚として読む（後方互換）');
+}
+/* §0-44：カメレオンの習性は「選択待ちを挟んでから引くカード」にも効く
+   公式（Way of the Chameleon / Other rules clarifications）逐語＝
+     `Different printings of Cellar, Oracle, Storeroom, and Storyteller have inconsistent uses of "+Cards"
+      and "draw." Go by whichever wording is printed on the cards you are using
+      (**only +Cards is affected by Way of the Chameleon**).`
+   現行の印刷＝地下貯蔵庫「+1 Card per card discarded」／神託「Then, +2 Cards」／語り部「Then, +1 Card」＝変換される。
+   **物置(Storeroom) だけは今も "draw that many"** ＝変換されない。 */
+console.log('=== §0-44: カメレオンの習性 × 選択待ちの後のドロー ===');
+{
+  const K = ['cellar', 'storeroom', 'village', 'smithy', 'market', 'militia', 'moat', 'workshop', 'laboratory', 'festival'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0, ways: ['way_of_the_chameleon'] });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['cellar', 'estate', 'estate'];
+  s.players[0].deck = ['copper', 'copper', 'copper'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'cellar', way: 'way_of_the_chameleon' });
+  s = reduce(s, { type: 'CELLAR_RESOLVE', cards: ['estate', 'estate'] });
+  ok(s.turn.coins === 2 && s.players[0].hand.length === 0,
+    '地下貯蔵庫×カメレオン＝2枚捨てて +$2（カードは引かない・実 coins=' + s.turn.coins + ' hand=' + s.players[0].hand.length + '）');
+}
+{
+  const K = ['storeroom', 'cellar', 'village', 'smithy', 'market', 'militia', 'moat', 'workshop', 'laboratory', 'festival'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0, ways: ['way_of_the_chameleon'] });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['storeroom', 'estate', 'estate'];
+  s.players[0].deck = ['copper', 'copper', 'copper'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'storeroom', way: 'way_of_the_chameleon' });
+  let g = 0;
+  while (s.pending && g++ < 6) s = reduce(s, CPU.decide(s));
+  ok(s.turn.coins === 0, '物置は "draw" なので変換されない（実 coins=' + s.turn.coins + '）');
+}
+{
+  const K = ['cellar', 'village', 'smithy', 'market', 'militia', 'moat', 'workshop', 'laboratory', 'festival', 'moneylender'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0, ways: ['way_of_the_chameleon'] });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['cellar', 'estate', 'estate'];
+  s.players[0].deck = ['copper', 'copper', 'copper'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'cellar' });   // 習性を使わない
+  s = reduce(s, { type: 'CELLAR_RESOLVE', cards: ['estate', 'estate'] });
+  ok(s.turn.coins === 0 && s.players[0].hand.length === 2, '習性を使わなければ従来どおり引く');
+}
+{
+  const K = ['oracle', 'village', 'smithy', 'market', 'militia', 'moat', 'workshop', 'laboratory', 'festival', 'moneylender'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0, ways: ['way_of_the_chameleon'] });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['oracle'];
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper'];
+  s.players[1].deck = ['estate', 'estate', 'estate'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'oracle', way: 'way_of_the_chameleon' });
+  let g = 0;
+  while (s.pending && g++ < 16) s = reduce(s, CPU.decide(s));
+  ok(s.turn.coins === 2, '神託×カメレオン＝最後の「+2 カード」が +$2 になる（実 coins=' + s.turn.coins + '）');
+}
+{
+  // 地下貯蔵庫のカード文が現行印刷（2021年7月）になっている
+  ok((DOM.CARDS.cellar.text || '').indexOf('1枚につき +1 カード') >= 0,
+    '地下貯蔵庫のカード文が現行印刷「+1 Card per card discarded」になっている');
+  ok((DOM.CARDS.storeroom.text || '').indexOf('同じ枚数引く') >= 0,
+    '物置のカード文は現行どおり "draw that many"（変換されない）');
+}
 
 console.log('移動動物園テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

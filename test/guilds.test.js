@@ -480,6 +480,41 @@ console.log('=== 過払いは獲得時対話（望楼）を握りつぶさない
 }
 
 console.log('');
+/* §0-44：石工の過払いはポーションでもできる（公式FAQ＝ポーションだけが例外） */
+console.log('=== §0-44: 石工＝ポーションで過払いできる（ポーション費用のカードを獲得）===');
+{
+  const K = ['stonemason', 'university', 'transmute', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop'];
+  let s = mkK(K, ['A', 'B'], 0);
+  s.turn.phase = 'buy'; s.turn.coins = 4; s.turn.potions = 1; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'stonemason' });
+  ok(s.pending && s.pending.type === 'overpay' && s.pending.maxPot === 1, '石工の過払いにポーション枠が出る');
+  s = reduce(s, { type: 'OVERPAY_RESOLVE', amount: 2 });
+  ok(s.pending && s.pending.stage === 'potion', 'コイン額の後にポーション段を聞く');
+  s = reduce(s, { type: 'OVERPAY_RESOLVE', amount: 1 });
+  ok(s.pending && s.pending.type === 'stonemason_overpay' && s.pending.exactPot === 1, 'ポーション成分が獲得条件に乗る');
+  s = reduce(s, { type: 'STONEMASON_OVERPAY_GAIN', card: 'university' });
+  s = reduce(s, { type: 'STONEMASON_OVERPAY_GAIN', card: 'university' });
+  ok(s.players[0].discard.filter((c) => c === 'university').length === 2,
+    '$2+P の大学を2枚獲得できる（実 ' + s.players[0].discard.filter((c) => c === 'university').length + '）');
+  ok(s.turn.potions === 0, '過払いしたポーションは消費される');
+}
+{
+  // ポーションを持っていなければ従来どおり（コインだけの1段）
+  const K = ['stonemason', 'university', 'transmute', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop'];
+  let s = mkK(K, ['A', 'B'], 0);
+  s.turn.phase = 'buy'; s.turn.coins = 4; s.turn.potions = 0; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'stonemason' });
+  s = reduce(s, { type: 'OVERPAY_RESOLVE', amount: 2 });
+  ok(!s.pending || s.pending.stage !== 'potion', 'ポーションが無ければポーション段は出ない');
+}
+{
+  // 名品はコインのみ（公式＝ポーション過払いが意味を持つのは石工だけ）
+  const K = ['masterpiece', 'university', 'transmute', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop'];
+  let s = mkK(K, ['A', 'B'], 0);
+  s.turn.phase = 'buy'; s.turn.coins = 5; s.turn.potions = 1; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'masterpiece' });
+  ok(s.pending && s.pending.type === 'overpay' && !s.pending.maxPot, '名品にはポーション枠が出ない');
+}
 console.log('========================================');
 console.log('ギルドテスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

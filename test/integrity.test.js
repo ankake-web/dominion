@@ -265,6 +265,76 @@ console.log('=== すべてのカードに webp が実在する ===');
   ok(missing.length === 0, 'コードが名指しするのに存在しない webp: ' + missing.join(','));
 }
 
+/* 11. 闇市場デッキが「準備つきカード」を1枚も含まない（2026-08-31 新設・§0-44）
+   公式（Black Market / Other rules clarifications）＝
+     `Any setup instructions or "in games using this" rules that apply to cards in the Black Market deck
+      are in effect, even if nobody ever gains (or even reveals) the relevant cards.`
+   本アプリのデッキは「サプライに無い王国カードを1枚ずつ全部」なので、これをそのまま適用すると
+   闇市場のある対局が毎回「災いカード＋廃墟＋馬＋祝福＋呪詛＋予言＋同盟＋戦利品…全機構入り」になる。
+   公式が明示的に許す構成の自由
+     `It is not necessary to include every unused Kingdom card; you may decide how many cards to include
+      in the Black Market deck, and which ones, in any way.`
+     `Dominion Online ... does not include cards with an obvious setup that would give away what's in the
+      Black Market deck, such as Joust or Baker.`
+   に従い、engine は `BM_SETUP_EXCLUDE` で準備つきカードをデッキから外すことで上の規則を構造的に満たしている。
+   ⚠ ここでは **準備つきカードを機械的に導出**し、その全部が除外集合に入っていることを検査する
+      （新しい準備つきカードを足して除外し忘れたら必ず落ちる）。 */
+console.log('=== 闇市場デッキに準備つきカードが入らない ===');
+{
+  const E = DOM.engine;
+  const EXC = E.BM_SETUP_EXCLUDE;
+  ok(EXC && typeof EXC.has === 'function' && EXC.size > 0, 'engine が BM_SETUP_EXCLUDE を公開している');
+  const BMBASE = ['village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival', 'council_room'];
+  const ref = E.createInitialState(['A', 'B'], BMBASE.concat(['harbinger']), { startActive: 0 });
+  // 王国が何であっても常に立つ基本の山＝この検査では無視する
+  const STD = new Set(Object.keys(ref.supply).filter((id) => BMBASE.concat(['harbinger']).indexOf(id) < 0));
+  const SPL = {};
+  Object.keys(DOM.SPLIT_PILES || {}).forEach((b) => { SPL[b] = DOM.SPLIT_PILES[b]; SPL[DOM.SPLIT_PILES[b]] = b; });
+  // ポーション／白金貨・植民地は「サプライの内容で決まるランダマイザ規則」＝闇市場デッキとは無関係
+  const IGNORE_PILES = new Set(['potion', 'platinum', 'colony']);
+  function setupOf(id) {
+    let st;
+    try { st = E.createInitialState(['A', 'B'], BMBASE.concat([id]), { startActive: 0 }); } catch (e) { return []; }
+    const kk = new Set(BMBASE.concat([id]));
+    const pl = st.players[0];
+    const r = [];
+    const extra = Object.keys(st.supply).filter((x) => !kk.has(x) && !STD.has(x) && !IGNORE_PILES.has(x) && x !== SPL[id]);
+    if (extra.length) r.push('pile:' + extra.join('/'));
+    if (st.baneCard) r.push('bane');
+    if (st.ferrymanPile) r.push('ferryman');
+    if (st.boons && st.boons.deck && st.boons.deck.length) r.push('boons');
+    if (st.hexes && st.hexes.deck && st.hexes.deck.length) r.push('hexes');
+    if (st.prophecy) r.push('prophecy');
+    if (st.ally) r.push('ally');
+    if (Object.keys(st.artifacts || {}).length) r.push('artifact');
+    if (st.charlatanRule) r.push('charlatanRule');
+    if (st.footpadRule) r.push('footpadRule');
+    if (Object.keys(st.tradeRoutePiles || {}).length) r.push('tradeRoute');
+    if (st.riverboatCard) r.push('riverboat');
+    if ((st.trash || []).length) r.push('trash');
+    if ((st.ruins || []).length) r.push('ruins');
+    if ((st.loot || []).length) r.push('loot');
+    if (pl.coffers) r.push('coffers');
+    if (pl.favors) r.push('favors');
+    const start = pl.deck.concat(pl.hand).slice().sort().join(',');
+    if (start !== 'copper,copper,copper,copper,copper,copper,copper,estate,estate,estate') r.push('heirloom');
+    return r;
+  }
+  const universe = [...new Set([].concat.apply([], Object.values(DOM.POOLS || {})))].filter((id) => DOM.CARDS[id]);
+  const missing = [];
+  universe.forEach((id) => { if (!EXC.has(id) && setupOf(id).length) missing.push(id + '(' + setupOf(id).join('+') + ')'); });
+  ok(missing.length === 0, '準備つきなのに BM_SETUP_EXCLUDE に無いカード: ' + missing.slice(0, 8).join(' '));
+  // 実際に闇市場デッキを作って、除外集合と分割山の下段が1枚も入っていないこと
+  const BMK = ['black_market', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory', 'festival'];
+  const bmState = E.createInitialState(['A', 'B'], BMK, { startActive: 0 });
+  const bmDeck = bmState.blackMarket || [];
+  ok(bmDeck.length > 100, '闇市場デッキが作られる (' + bmDeck.length + '枚)');
+  ok(!bmDeck.some((id) => EXC.has(id)), '闇市場デッキに準備つきカードが入っていない');
+  ok(!bmDeck.some((id) => DOM.SPLIT_PILES && DOM.SPLIT_PILES[id]), '闇市場デッキに分割山の下段が入っていない（公式＝1山につき1枚）');
+  ok(!bmState.baneCard && !bmState.ferrymanPile && !bmState.charlatanRule && !bmState.footpadRule,
+    '闇市場だけの王国で 災いカード/渡し守の山/山師・野盗の常設ルール が立たない');
+}
+
 console.log('\n========================================');
 console.log('整合性テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

@@ -342,6 +342,8 @@ console.log('=== 封鎖×2（同名）: 同じプレイヤーが同名に2つ封
     { card: 'blockade', type: 'blockade', gained: 'silver', immune: [] },
   ];
   s.players[0].durationCards = ['blockade', 'blockade'];
+  // §0-44: 封鎖は「獲得した札が今も脇にある」ことが条件（公式＝脇に残らなければ何も起きない）。
+  s.players[0].setAside = ['silver', 'silver'];
   s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' }); // →席1
   s = reduce(s, { type: 'END_ACTION_PHASE' }); // 席1 購入フェイズ
   const before = count(s.players[1].discard, 'curse');
@@ -581,6 +583,151 @@ console.log('=== §0-44: コルセア＝アタック／倉庫の捨て札トリ�
   }
   ok(s.players[0].discard.indexOf('gold') >= 0, '倉庫：坑道を捨てたら金貨を獲得する（discardFromHand が捨て札トリガーを通す）');
 }
+/* §0-44：海辺の敵対レビュー修正（灯台／船乗り／封鎖／海賊／策士／前哨地のタイブレーク） */
+console.log('=== §0-44: 灯台は「自分の次のターン中」は守らない（公式が黒猫を名指し）===');
+{
+  let s = mk(SEA_K, ['A', 'B'], 0);
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['lighthouse'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'lighthouse' });
+  ok(s.players[0].lighthouseActive === true, '灯台を使うと免疫フラグが立つ');
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  ok(s.players[0].lighthouseActive === true, '相手のターン中は免疫のまま');
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  ok(s.turn.active === 0 && s.players[0].lighthouseActive === false,
+    '自分の次のターンの開始時に免疫が切れる（公式＝Lighthouse offers no protection during your next turn）');
+}
+
+{
+  /* 灯台の免疫が「自分の次のターン中」に本当に切れているか＝公式が名指しする黒猫で確かめる。
+     公式 Other rules clarifications 逐語＝`Lighthouse offers no protection during your next turn.
+     This means that on the turn after you play a Lighthouse, you can still get attacked by another
+     player's **Black Cat**.` */
+  let s = mk(['lighthouse', 'black_cat', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'], ['A', 'B'], 0);
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['lighthouse'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'lighthouse' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });   // B の手番
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });   // A の次のターン
+  ok(s.turn.active === 0, 'A の次のターン');
+  s.players[1].hand = ['black_cat'];
+  s = reduce(s, { type: 'END_ACTION_PHASE' });
+  s.turn.coins = 5; s.turn.buys = 1;
+  const before = count(s.players[0].discard, 'curse');
+  s = reduce(s, { type: 'BUY', card: 'duchy' });
+  s = resolveAll(s);
+  ok(count(s.players[0].discard, 'curse') === before + 1,
+    '自分の次のターンに公領を買うと黒猫の呪いを受ける（灯台は守らない・実 +' + (count(s.players[0].discard, 'curse') - before) + '）');
+}
+console.log('=== §0-44: 船乗り＝工房/封鎖など「対話中の獲得」でも窓が開く（公式FAQ）===');
+{
+  let s = mk(['sailor', 'caravan', 'workshop', 'blockade', 'village', 'smithy', 'market', 'moat', 'cellar', 'laboratory'], ['A', 'B'], 0);
+  s.turn.phase = 'action'; s.turn.actions = 2;
+  s.players[0].hand = ['sailor', 'workshop'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'sailor' });
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'workshop' });
+  s = reduce(s, { type: 'WORKSHOP_GAIN', card: 'caravan' });
+  ok(s.pending && s.pending.type === 'sailor_play_gain', '工房で獲得した持続でも船乗りの窓が開く（実 ' + (s.pending && s.pending.type) + '）');
+  s = reduce(s, { type: 'SAILOR_PLAY_GAIN', play: true });
+  ok(s.players[0].inPlay.includes('caravan'), '獲得した隊商を即プレイできる');
+  ok(s.turn.sailorPlays === 0, '実際に使ったときだけ権利を消費する');
+}
+{
+  // 辞退しても権利は残る（次の獲得でまた開く）
+  let s = mk(['sailor', 'caravan', 'workshop', 'village', 'smithy', 'market', 'moat', 'cellar', 'laboratory', 'festival'], ['A', 'B'], 0);
+  s.turn.phase = 'action'; s.turn.actions = 2;
+  s.players[0].hand = ['sailor', 'workshop'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'sailor' });
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'workshop' });
+  s = reduce(s, { type: 'WORKSHOP_GAIN', card: 'caravan' });
+  s = reduce(s, { type: 'SAILOR_PLAY_GAIN', play: false });
+  ok(s.turn.sailorPlays === 1, '辞退しても権利は消費しない');
+}
+
+console.log('=== §0-44: 封鎖＝獲得した札が脇に残らなければ丸ごと失敗する（公式FAQ）===');
+{
+  // ヴィラは獲得すると自分を手札へ動かす＝封鎖は脇に留められない
+  let s = mk(['blockade', 'villa', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'], ['A', 'B'], 0);
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['blockade'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'blockade' });
+  s = reduce(s, { type: 'BLOCKADE_GAIN', card: 'villa' });
+  ok(s.players[0].setAside.length === 0 && s.players[0].hand.includes('villa'), 'ヴィラは手札へ移る（脇に残らない）');
+  ok(!(s.players[0].delayedEffects || []).some((e) => e.type === 'blockade'), '封鎖の持続予約が張られない（公式＝nothing further happens）');
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' });
+  const before = count(s.players[1].discard, 'curse');
+  s.turn.coins = 6; s.turn.buys = 1;
+  s = reduce(s, { type: 'BUY', card: 'villa' });
+  s = resolveAll(s);
+  ok(count(s.players[1].discard, 'curse') === before, '相手が同名を買っても呪いは配られない');
+}
+
+console.log('=== §0-44: 海賊＝同じ事象に手札の枚数ぶん反応できる（公式）===');
+{
+  let s = mk(KA, ['A', 'B'], 0);
+  s.turn.phase = 'buy'; s.turn.coins = 3; s.turn.buys = 1;
+  s.players[0].hand = ['pirate', 'pirate', 'copper'];
+  s = reduce(s, { type: 'BUY', card: 'silver' });
+  ok(s.pending && s.pending.type === 'pirate_react', '財宝の獲得で海賊の窓が開く');
+  s = reduce(s, { type: 'PIRATE_REACT', play: true });
+  ok(s.pending && s.pending.type === 'pirate_react' && s.pending.player === 0,
+    '1枚使った後も同じ席に再オファーされる（実 ' + (s.pending && s.pending.type) + '）');
+  s = reduce(s, { type: 'PIRATE_REACT', play: true });
+  ok(count(s.players[0].inPlay, 'pirate') === 2, '2枚とも使える');
+  ok(!s.pending, '手札に海賊が無くなれば窓が閉じる');
+}
+{
+  let s = mk(KA, ['A', 'B'], 0);
+  s.turn.phase = 'buy'; s.turn.coins = 3; s.turn.buys = 1;
+  s.players[0].hand = ['pirate', 'pirate', 'copper'];
+  s = reduce(s, { type: 'BUY', card: 'silver' });
+  s = reduce(s, { type: 'PIRATE_REACT', play: false });
+  ok(!s.pending, '辞退したら次の席へ進む（再オファーしない）');
+}
+
+console.log('=== §0-44: 策士＝手札を捨てるのは強制（公式に "you may" が無い）===');
+{
+  let s = mk(SEA_K, ['A', 'B'], 0);
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['tactician', 'gold', 'gold', 'gold'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'tactician' });
+  ok(!s.pending, '策士は使用した時点でその場で解決する（二択を出さない）');
+  ok(s.players[0].hand.length === 0, '手札は必ず全部捨てる（実 ' + s.players[0].hand.length + '枚 残った）');
+  ok((s.players[0].delayedEffects || []).some((e) => e.type === 'tactician'), '持続として予約される');
+}
+{
+  // 捨てた手札が捨て札トリガーを通る（坑道）
+  let s = mk(['tactician', 'tunnel', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'], ['A', 'B'], 0);
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['tactician', 'tunnel'];
+  const goldBefore = s.supply.gold;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'tactician' });
+  s = resolveAll(s);
+  ok(s.supply.gold < goldBefore, '策士で捨てた坑道が金貨を出す（捨て札トリガー）');
+}
+{
+  let s = mk(SEA_K, ['A', 'B'], 0);
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['tactician'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'tactician' });
+  ok(!(s.players[0].delayedEffects || []).some((e) => e.type === 'tactician'), '手札0枚なら持続しない（公式）');
+}
+
+console.log('=== §0-44: 追加ターンは同点時のタイブレークに数えない（公式 Outpost/Possession）===');
+{
+  let s = mk(SEA_K, ['A', 'B'], 0);
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['outpost'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'outpost' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  ok(s.turn.active === 0 && s.turn.isExtraTurn === true, '前哨地の追加ターンが発生する');
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  const sc = E.scoreGame(s).scores;
+  ok(sc[0].turns === 2 && sc[0].tieTurns === 1,
+    '手番数は2だがタイブレークは1（公式＝Extra turns do not count towards the tiebreaker・実 turns=' + sc[0].turns + ' tie=' + sc[0].tieTurns + '）');
+}
+
 
 console.log('海辺テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

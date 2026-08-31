@@ -35,7 +35,7 @@
 
     // 王国カード（初回おすすめセット）
     cellar:    { id: 'cellar',    name: '地下貯蔵庫', cost: 2, types: ['action'],
-                 text: '+1 アクション\n手札を好きな枚数捨て、同じ枚数引く。' },
+                 text: '+1 アクション\n手札を好きな枚数捨てる。\n1枚につき +1 カード。' },
     market:    { id: 'market',    name: '市場',       cost: 5, types: ['action'],
                  text: '+1 カード\n+1 アクション\n+1 購入\n+1 コイン' },
     militia:   { id: 'militia',   name: '民兵',       cost: 4, types: ['action', 'attack'],
@@ -286,7 +286,7 @@
     apprentice:   { id: 'apprentice',   name: '弟子',         cost: 5, types: ['action'],
                     text: '+1 アクション\n手札1枚を廃棄する。\nそのコスト$1につき +1 カード（ポーション費用ありなら +2 カード）。' },
     possession:   { id: 'possession',   name: '支配',         cost: 6, potion: 2, types: ['action'],
-                    text: '左隣はこのターンの後に追加ターンを行い、その間あなたが全ての決定を行う。\nそのターンに相手が獲得するはずのカードは、代わりにあなたが受け取る。\n相手の廃棄されたカードは脇に置かれ、ターンの終了時に相手の捨て札置き場に置かれる。' },
+                    text: '左隣はこのターンの後に追加ターンを行い（ただし2回連続の追加ターンにはならない）、\nその間あなたが全ての決定を行う。\nそのターンに相手が獲得するはずのカードや負債は、代わりにあなたが受け取る。\n相手の廃棄されたカードは脇に置かれ、ターンの終了時に相手の捨て札置き場に置かれる。' },
 
     // ===== 繁栄（Prosperity 第二版）王国カード 25種 =====
     anvil:        { id: 'anvil',        name: '金床',         cost: 3, types: ['treasure'], coin: 1,

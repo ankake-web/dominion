@@ -61,7 +61,9 @@ try {
   console.log('=== 各 pending モーダルが描画される ===');
   { let s = mk(); s.players[0].hand = ['warehouse', 'copper', 'estate']; s.players[0].deck = ['copper', 'silver', 'gold']; s = play(s, 'warehouse'); show(s); ok($('.modal') && !runtimeError, '倉庫モーダル'); }
   { let s = mk(); s.players[0].hand = ['haven', 'gold']; s.players[0].deck = ['copper', 'copper']; s = play(s, 'haven'); show(s); ok($('.modal') && byText('*', '停泊所') && !runtimeError, '停泊所モーダル'); }
-  { let s = mk(); s.players[0].hand = ['tactician', 'estate']; s = play(s, 'tactician'); show(s); ok($('.modal') && byText('button', '全て捨てる') && !runtimeError, '策士モーダル'); }
+  /* §0-44: 策士は使用した時点で engine がその場で解決する（手札を捨てるのは強制＝公式）＝モーダルは出ない。 */
+  { let s = mk(); s.players[0].hand = ['tactician', 'estate']; s = play(s, 'tactician'); show(s);
+    ok(!s.pending && s.players[0].hand.length === 0 && !runtimeError, '策士＝モーダルを出さずその場で手札を全部捨てる'); }
   { let s = mk(); s.players[0].hand = ['salvager', 'estate']; s = play(s, 'salvager'); show(s); ok($('.modal') && !runtimeError, '引揚水夫モーダル'); }
   { let s = mk(); s.players[0].hand = ['lookout']; s.players[0].deck = ['curse', 'estate', 'gold']; s = play(s, 'lookout'); show(s); ok($('.modal') && !runtimeError, '見張りモーダル'); }
   { let s = mk(); s.players[0].hand = ['island', 'province']; s = play(s, 'island'); show(s); ok($('.modal') && byText('*', '島マット') && !runtimeError, '島モーダル'); }

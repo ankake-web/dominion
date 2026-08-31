@@ -2203,6 +2203,7 @@ console.log('=== A5: CARD_SET 昇格（固定10種・random-allies・mix・闇�
   {
     const BM_K = ['black_market', 'village', 'market', 'smithy', 'moat', 'militia', 'cellar', 'laboratory', 'bauble', 'wizards'];
     let leak = '', sawAllies = 0, rounds = 0;
+    let liaisonLeak = null;
     for (let i = 0; i < 40; i += 1) {
       const s = mk(BM_K, {}, ['A', 'B']);
       const deck = s.blackMarket || [];
@@ -2211,12 +2212,20 @@ console.log('=== A5: CARD_SET 昇格（固定10種・random-allies・mix・闇�
         if ((DOM.POOLS.allies_split || []).indexOf(id) >= 0) leak = leak || ('分割山の中身 ' + id);
         if (MIX.indexOf(id) >= 0) leak = leak || ('混合山の山キー ' + id);
         if ((DOM.POOLS.allies || []).indexOf(id) >= 0) sawAllies += 1;
+        if ((DOM.ALLIES_LIAISONS || []).indexOf(id) >= 0) liaisonLeak = liaisonLeak || id;
       });
       // サプライに在る同盟の札（道化棒/魔法使い）は闇市場デッキに入らない
       if (deck.indexOf('bauble') >= 0 || deck.indexOf('wizards') >= 0) leak = leak || 'サプライにある札が入った';
     }
     ok(!leak, '闇市場デッキに分割山の中身も山キーも漏れない（' + (leak || 'ok') + '）');
-    ok(sawAllies === rounds * 24, '闇市場デッキに同盟の非分割24種（サプライの道化棒を除く）が毎回入る');
+    /* §0-44：闇市場デッキは「準備つきカード」を入れない（`BM_SETUP_EXCLUDE`）。
+       同盟の連携(Liaison)は同盟カード＋好意を出す準備を持つので除外される＝「24種が毎回入る」は成り立たない。
+       検査するのは「準備つきでない非分割カードは毎回入る／連携は1枚も入らない」。 */
+    const EXC = DOM.engine.BM_SETUP_EXCLUDE;
+    const expectPer = (DOM.POOLS.allies || []).filter((id) => !EXC.has(id) && MIX.indexOf(id) < 0 && id !== 'bauble').length;
+    ok(sawAllies === rounds * expectPer,
+      '闇市場デッキに同盟の「準備つきでない」非分割カードが毎回入る（期待 ' + expectPer + '×' + rounds + ' 実 ' + sawAllies + '）');
+    ok(!liaisonLeak, '連携(Liaison)は闇市場デッキに入らない（準備つきカードの除外・' + (liaisonLeak || 'ok') + '）');
     /* 同盟は段階2（実プレイ）なので STAGE1_POOLS に入っていてはいけない。
        ⚠ 「STAGE1_POOLS が空」で検査してはいけない＝**次の拡張を段階1で足した瞬間に落ちる**
        （実際に略奪(Plunder)の段階1で落ちた）。見るべきは「同盟のプールが入っていないこと」。 */

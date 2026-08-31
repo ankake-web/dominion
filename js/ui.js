@@ -3861,9 +3861,10 @@
     /* ===== 拡張: 海辺（Seaside 第二版）===== */
     if (pd.type === 'warehouse') return modalSelectN(p, '倉庫 — 捨てる', '手札を3枚選んで捨てます。', Math.min(3, p.hand.length), '確定（捨てる）', (cards) => dispatch({ type: 'WAREHOUSE_DISCARD', cards }));
     if (pd.type === 'haven') return modalSingleHand(p, '停泊所 — 脇に置く', '手札1枚を脇に置きます（次の手番の開始時に手札へ戻ります）。', () => true, (card) => dispatch({ type: 'HAVEN_SETASIDE', card }), null, '脇に置く');
-    if (pd.type === 'tactician') return modalOptions('策士', '手札を全て捨てると、次の手番に +5カード +1購入 +1アクション。', [
-      { label: '手札を全て捨てる', cls: 'btn-primary', on: () => dispatch({ type: 'TACTICIAN_RESOLVE', discard: true }) },
-      { label: '捨てない（持続しない）', on: () => dispatch({ type: 'TACTICIAN_RESOLVE', discard: false }) }]);
+    /* 策士は使用した時点で engine がその場で解決する（手札を捨てるのは強制＝公式）。
+       この分岐は **v95 以前のオンライン永続化スナップショットを復元したとき用**にだけ残す。 */
+    if (pd.type === 'tactician') return modalOptions('策士', '手札を全て捨てます（強制）。次の手番に +5カード +1購入 +1アクション。', [
+      { label: '手札を全て捨てる', cls: 'btn-primary', on: () => dispatch({ type: 'TACTICIAN_RESOLVE', discard: true }) }]);
     if (pd.type === 'salvager') return modalSingleHand(p, '引揚水夫 — 廃棄', '廃棄するカードを1枚選びます（そのコストぶん +コイン）。', () => true, (card) => dispatch({ type: 'SALVAGER_TRASH', card }), null, '廃棄する');
     if (pd.type === 'lookout' && pd.stage === 'trash') return modalOptions('見張り — 廃棄', '見た上3枚から廃棄する1枚を選びます。', pd.cards.map((c) => ({ label: DOM.CARDS[c].name, on: () => dispatch({ type: 'LOOKOUT_TRASH', card: c }) })));
     if (pd.type === 'lookout' && pd.stage === 'discard') return modalOptions('見張り — 捨てる', '残りから捨てる1枚を選びます（最後の1枚は山札の上に戻ります）。', pd.cards.map((c) => ({ label: DOM.CARDS[c].name, on: () => dispatch({ type: 'LOOKOUT_DISCARD', card: c }) })));
@@ -4077,15 +4078,27 @@
     ]);
     if (pd.type === 'followers' && pd.stage === 'react') return modalOptions('郎党を受ける', '呪い1枚を獲得し、手札が3枚になるまで捨てます。', reactOptions(p, pd, { type: 'FOLLOWERS_REACT' }));
     if (pd.type === 'followers' && pd.stage === 'discard') return modalSelectN(p, '郎党 — 手札を捨てる', '手札が3枚になるまで（' + (p.hand.length - 3) + '枚）捨てます。', p.hand.length - 3, '確定（捨てる）', (cards) => dispatch({ type: 'FOLLOWERS_DISCARD', cards }));
-    if (pd.type === 'trusty_steed') return modalChooseN('名馬 — 異なる2つを選ぶ', '次から異なる2つを選びます。', [
-      { v: 'cards', label: '+2 カード' },
-      { v: 'actions', label: '+2 アクション' },
-      { v: 'coins', label: '+2 コイン' },
-      { v: 'silver', label: '銀貨4枚を獲得し山札を捨て札に' },
-    ], 2, (choices) => dispatch({ type: 'TRUSTY_STEED_RESOLVE', choices }));
+    if (pd.type === 'trusty_steed') {
+      const n = pd.elder ? 3 : 2;   // 長老(Elder)で使わせたときは1つ多く選べる（公式の Elder 対象一覧に名馬がある）
+      return modalChooseN('名馬 — 異なる' + n + 'つを選ぶ', '次から異なる' + n + 'つを選びます（記載順に解決）。', [
+        { v: 'cards', label: '+2 カード' },
+        { v: 'actions', label: '+2 アクション' },
+        { v: 'coins', label: '+2 コイン' },
+        { v: 'silver', label: '銀貨4枚を獲得し山札を捨て札に' },
+      ], n, (choices) => dispatch({ type: 'TRUSTY_STEED_RESOLVE', choices }));
+    }
     if (pd.type === 'horn_of_plenty') return modalGainSupply(state, '豊穣の角笛 — 獲得', 'コスト ' + pd.maxCost + ' 以下のカードを1枚獲得します（勝利点なら豊穣の角笛を廃棄）。', (id) => canUpTo(state, id, pd.maxCost), (id) => dispatch({ type: 'HORN_OF_PLENTY_GAIN', card: id }));
 
     /* ===== 拡張: ギルド（Guilds）===== */
+    if (pd.type === 'overpay' && pd.stage === 'potion') {
+      /* 公式（Stonemason / Official FAQ）＝`Overpaying with a [P] will let you gain cards with [P] in the cost.`
+         コイン額を決めた後に、ポーションも過払いするかを聞く（石工だけ）。 */
+      return modalAmount('過払い — 「' + DOM.CARDS[pd.card].name + '」（ポーション）',
+        'ポーションも過払いできます（0＝しない）。ポーションを過払いすると、ポーション費用のカードを「ちょうどのコスト」として獲得できます。',
+        pd.maxPot, 0,
+        (n) => (n > 0 ? 'ポーション ' + n + '個 も過払いする' : 'ポーションは過払いしない'),
+        (n) => dispatch({ type: 'OVERPAY_RESOLVE', amount: n }));
+    }
     if (pd.type === 'overpay') {
       const info = {
         masterpiece: '過払い1コインにつき銀貨1枚を獲得します。',
@@ -4617,7 +4630,9 @@
   // 被攻撃側の反応オプション（堀・秘密の部屋・そのまま受ける）。proceed は通すときのアクション。
   // 外交官のリアクションが可能か（手札5枚以上で公開→2引き3捨て。1アタックにつき1回）
   function canDiplomatReact(p, pd) {
-    return p.hand.includes('diplomat') && p.hand.length >= 5 && !pd.diplomatReacted;
+    // 公式FAQ＝`If you still have at least 5 cards in hand after doing that ..., you can reveal Diplomat
+    //   again and do it again.` ＝回数制限は無い（1回で手札は差し引き1枚減るので終端する）。
+    return p.hand.includes('diplomat') && p.hand.length >= 5;
   }
   function reactOptions(p, pd, proceed) {
     const opts = [];
@@ -4902,6 +4917,7 @@
       p.hand.includes('horse_traders') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'HORSE_TRADERS_REACT' }) }, '🐴 馬商人を脇に置く（次の手番に +1カードで戻る／攻撃は受ける）') : null,
       p.hand.includes('beggar') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'BEGGAR_REACT' }) }, '🥺 物乞いを捨てて銀貨2枚を獲得（1枚は山札の上／攻撃は受ける）') : null,
       p.hand.includes('caravan_guard') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'CARAVAN_GUARD_REACT' }) }, '🛡 隊商の護衛を先にプレイ（+1カード／次手番+$1／攻撃は受ける）') : null,
+      p.hand.includes('guard_dog') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'GUARD_DOG_REACT' }) }, '🐕 番犬を先に使う（+2〜4カード／攻撃は受ける）') : null,
       h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
         onclick: () => dispatch({ type: 'MILITIA_RESOLVE', cards: takeSelection(p.hand) }) },
         remain === 0 ? '確定（捨てる）' : 'あと ' + remain + ' 枚 選ぶ'));
@@ -5021,18 +5037,22 @@
 
   // 風車: 手札2枚を捨てて+2コイン、または捨てない。
   function modalMill(p, onConfirm) {
+    /* 公式FAQ 逐語＝`You can choose to discard 2 cards even if you only have one card in hand,
+       but you only get +$2 if you actually discarded 2 cards.` ＝必要枚数は min(2, 手札)。 */
     pruneSelection(p.hand.length);
+    const millNeed = Math.min(2, p.hand.length);
     const chips = p.hand.map((id, idx) =>
       cardEl(id, { size: 'sm', extra: UI.selection.includes(idx) ? 'selected' : 'selectable',
         onClick: () => {
           const i = UI.selection.indexOf(idx);
-          if (i >= 0) UI.selection.splice(i, 1); else if (UI.selection.length < 2) UI.selection.push(idx);
+          if (i >= 0) UI.selection.splice(i, 1); else if (UI.selection.length < millNeed) UI.selection.push(idx);
           render();
         } }));
     const k = UI.selection.length;
     const footer = h('div', null,
-      h('button', { class: 'btn btn-primary btn-block', disabled: k === 2 ? null : 'disabled', style: 'margin-bottom:8px',
-        onclick: () => onConfirm(takeSelection(p.hand)) }, k === 2 ? '2枚捨てて +2 コイン' : ('捨てる2枚を選ぶ（あと ' + (2 - k) + '）')),
+      h('button', { class: 'btn btn-primary btn-block', disabled: k === millNeed ? null : 'disabled', style: 'margin-bottom:8px',
+        onclick: () => onConfirm(takeSelection(p.hand)) },
+        k === millNeed ? (millNeed === 2 ? '2枚捨てて +2 コイン' : '1枚捨てる（+コインは無し）') : ('捨てる' + millNeed + '枚を選ぶ（あと ' + (millNeed - k) + '）')),
       h('button', { class: 'btn btn-block', onclick: () => onConfirm([]) }, '捨てない'));
     return modalShell('風車', '手札を2枚捨てると +2 コイン（しなくてもよい）。', chips, footer);
   }
@@ -5107,6 +5127,11 @@
     const push = (id) => { if (DOM.CARDS[id] && names.indexOf(id) < 0) names.push(id); };
     DOM.SUPPLY_ORDER(state.kingdom).forEach((id) => { if (MIX.indexOf(id) < 0) push(id); });
     MIX.forEach((k) => { (state[k] || []).forEach(push); });
+    /* 🛑 `SUPPLY_ORDER` は「基本カード＋王国10種」しか返さないので、**ポーション**・冒険のトラベラー成長先・
+       略奪品/狂人/傭兵・賞品・馬 などが宣言候補から落ちる（engine はどのカード名でも受理する）。
+       公式（Wishing Well / Official FAQ）＝`name a card - a name, not a type` ＝サプライに限られない。
+       §0-24 で `modalGainSupply` に入れたのと同じ対処をここにも入れる。 */
+    Object.keys(state.supply || {}).forEach((id) => { if (MIX.indexOf(id) < 0) push(id); });
     const chips = names.map((id) =>
       cardEl(id, { size: 'sm', extra: 'selectable', onClick: () => openPickZoom(id, '宣言する', () => onPick(id)) }));
     return modalShell(title, desc, chips, null);
@@ -5135,6 +5160,7 @@
       p.hand.includes('horse_traders') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'HORSE_TRADERS_REACT' }) }, '🐴 馬商人を脇に置く（次の手番に +1カードで戻る／攻撃は受ける）') : null,
       p.hand.includes('beggar') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'BEGGAR_REACT' }) }, '🥺 物乞いを捨てて銀貨2枚を獲得（1枚は山札の上／攻撃は受ける）') : null,
       p.hand.includes('caravan_guard') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'CARAVAN_GUARD_REACT' }) }, '🛡 隊商の護衛を先にプレイ（+1カード／次手番+$1／攻撃は受ける）') : null,
+      p.hand.includes('guard_dog') ? h('button', { class: 'btn btn-block', style: 'margin-bottom:8px', onclick: () => dispatch({ type: 'GUARD_DOG_REACT' }) }, '🐕 番犬を先に使う（+2〜4カード／攻撃は受ける）') : null,
       h('button', { class: 'btn btn-primary btn-block', disabled: remain === 0 ? null : 'disabled',
         onclick: () => dispatch({ type: 'TORTURER_RESOLVE', choice: 'discard', cards: takeSelection(p.hand) }) },
         remain === 0 ? '手札を捨てる（確定）' : '捨てる ' + remain + ' 枚 を選ぶ'),

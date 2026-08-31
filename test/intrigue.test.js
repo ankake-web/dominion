@@ -736,6 +736,125 @@ console.log('=== 仮面舞踏会: パス中の他者の選択は配信時に伏�
   ok(s.pending.picks[0] === 'gold', '元stateのpicksは保持される（マスクは配信用複製のみ）');
 }
 
+/* §0-44：陰謀の敵対レビュー修正（廷臣の種別数／風車／外交官／鉱山の村／身代わり） */
+console.log('=== §0-44: 廷臣＝種別の数を動的に数える（山師/資本主義/悟り/相続） ===');
+{
+  // 山師(charlatan)があるゲームでは呪いは「呪い＋財宝」の2種別（公式 Other rules clarifications が名指し）
+  const K = ['courtier', 'charlatan', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];
+  let s = setup(['courtier', 'curse'], K);
+  ok(s.charlatanRule === true, '山師が王国にある＝呪いは財宝でもある（常設ルール）');
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'courtier' });
+  s = reduce(s, { type: 'COURTIER_REVEAL', card: 'curse' });
+  ok(s.pending && s.pending.n === 2, '廷臣で呪いを公開＝種類2（呪い＋財宝）を選べる（実 ' + (s.pending && s.pending.n) + '）');
+  // 対照：山師がいなければ呪いは1種別
+  const K2 = ['courtier', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory', 'festival'];
+  let t = setup(['courtier', 'curse'], K2);
+  t = reduce(t, { type: 'PLAY_ACTION', card: 'courtier' });
+  t = reduce(t, { type: 'COURTIER_REVEAL', card: 'curse' });
+  ok(t.pending && t.pending.n === 1, '山師がいなければ呪いは種類1');
+}
+
+console.log('=== §0-44: 風車＝手札1枚でも「2枚捨てる」を選べる（+$2 は2枚のときだけ） ===');
+{
+  const K = ['mill', 'tunnel', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];
+  let s = setup(['mill', 'tunnel'], K);
+  s.players[0].deck = [];
+  const goldBefore = s.supply.gold;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'mill' });
+  ok(s.pending && s.pending.type === 'mill', '手札1枚でも風車の窓が開く（公式FAQ）');
+  s = reduce(s, { type: 'MILL_RESOLVE', cards: ['tunnel'] });
+  ok(!s.pending, '1枚だけ捨てて解決できる');
+  ok(s.turn.coins === 0, '2枚に満たないので +$2 は得られない（実 ' + s.turn.coins + '）');
+  ok(s.supply.gold === goldBefore - 1, '捨てた坑道で金貨を獲得できる（捨て札トリガー）');
+}
+{
+  const K = ['mill', 'tunnel', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];
+  let s = setup(['mill', 'tunnel', 'copper'], K);
+  s.players[0].deck = [];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'mill' });
+  s = reduce(s, { type: 'MILL_RESOLVE', cards: ['tunnel', 'copper'] });
+  ok(s.turn.coins === 2, 'ちょうど2枚捨てたら +$2（実 ' + s.turn.coins + '）');
+}
+
+console.log('=== §0-44: 外交官＝手札5枚以上なら何度でも公開できる（公式FAQ） ===');
+{
+  const K = ['diplomat', 'militia', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory', 'festival'];
+  let s = setup(['militia'], K);
+  s.players[1].hand = ['diplomat', 'diplomat', 'copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s.players[1].deck = ['gold', 'gold', 'gold', 'gold', 'gold', 'gold'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'militia' });
+  s = reduce(s, { type: 'DIPLOMAT_REVEAL' });
+  s = reduce(s, { type: 'DIPLOMAT_DISCARD', cards: ['copper', 'copper', 'copper'] });
+  ok(s.players[1].hand.length >= 5, '1回目の後も手札5枚以上（実 ' + s.players[1].hand.length + '）');
+  const before = JSON.stringify(s.players[1].hand);
+  const s2 = reduce(s, { type: 'DIPLOMAT_REVEAL' });
+  ok(JSON.stringify(s2.players[1].hand) !== before, '2回目の外交官の公開が受理される（公式＝回数制限なし）');
+}
+{
+  // 捨てた3枚が捨て札トリガーを通る（坑道）
+  const K = ['diplomat', 'militia', 'tunnel', 'village', 'smithy', 'market', 'moat', 'cellar', 'workshop', 'laboratory'];
+  let s = setup(['militia'], K);
+  s.players[1].hand = ['diplomat', 'tunnel', 'copper', 'copper', 'copper'];
+  s.players[1].deck = ['gold', 'gold', 'gold'];
+  const goldBefore = s.supply.gold;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'militia' });
+  s = reduce(s, { type: 'DIPLOMAT_REVEAL' });
+  s = reduce(s, { type: 'DIPLOMAT_DISCARD', cards: ['tunnel', 'copper', 'copper'] });
+  ok(s.supply.gold < goldBefore, '外交官で捨てた坑道が金貨を出す（捨て札トリガー）');
+}
+
+console.log('=== §0-44: 鉱山の村＝「これ」はその1枚（玉座で2回使っても +$2 は1回） ===');
+{
+  const K = ['mining_village', 'throne_room', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];
+  let s = setup(['throne_room', 'mining_village'], K);
+  s.players[0].inPlay = ['mining_village'];   // 先に普通に出してある1枚
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'throne_room' });
+  s = reduce(s, { type: 'THRONE_CHOOSE', card: 'mining_village' });
+  let guard = 0;
+  while (s.pending && s.pending.type === 'mining_village' && guard++ < 4) s = reduce(s, { type: 'MINING_VILLAGE_RESOLVE', trash: true });
+  ok(s.turn.coins === 2, '玉座の間で2回使っても +$2 は1回だけ（実 ' + s.turn.coins + '）');
+  ok(count(s.trash, 'mining_village') === 1, '廃棄置き場の鉱山の村は1枚（実 ' + count(s.trash, 'mining_village') + '）');
+}
+
+console.log('=== §0-44: 身代わり＝アタックの窓は「使用した時点」で開く ===');
+{
+  const K = ['replace', 'diplomat', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];
+  let s = setup(['replace', 'copper'], K);
+  s.players[1].hand = ['horse_traders', 'copper', 'copper', 'copper', 'copper'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'replace' });
+  ok(s.pending && s.pending.type === 'attack_window' && s.pending.player === 1,
+    '使用した瞬間に相手のリアクション窓が開く（獲得するカードの種別に依らない）');
+}
+{
+  const K = ['replace', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory', 'festival'];
+  let s = setup(['replace', 'copper'], K);
+  s.players[1].hand = ['moat', 'copper', 'copper'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'replace' });
+  s = reduce(s, { type: 'MOAT_REVEAL' });
+  ok(s.pending && s.pending.type === 'replace' && s.pending.stage === 'trash', '堀を公開したら廃棄の段へ進む');
+  ok(JSON.stringify(s.turn.replaceImmune) === '[1]', '堀を公開した席が免疫として記録される');
+  s = reduce(s, { type: 'REPLACE_TRASH', card: 'copper' });
+  s = reduce(s, { type: 'REPLACE_GAIN', card: 'estate' });
+  ok(!s.players[1].discard.includes('curse'), '堀を公開した席は呪いを受けない');
+}
+{
+  const K = ['replace', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory', 'festival'];
+  let s = setup(['replace', 'copper'], K);
+  s.players[1].hand = ['copper', 'copper'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'replace' });
+  s = reduce(s, { type: 'REPLACE_TRASH', card: 'copper' });
+  s = reduce(s, { type: 'REPLACE_GAIN', card: 'estate' });
+  ok(s.players[1].discard.includes('curse'), '反応しなかった席には呪いが行く');
+}
+{
+  const K = ['replace', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory', 'festival'];
+  let s = setup(['replace'], K);
+  s.players[1].hand = ['copper'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'replace' });
+  ok(!s.pending, '手札0枚で使っても詰まない（窓を閉じて終わる）');
+}
+
 console.log('\n========================================');
 console.log('拡張テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

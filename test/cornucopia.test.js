@@ -464,6 +464,34 @@ console.log('=== 回帰: CPU vpOfPlayer が品評会を計上（勝敗読みの�
 }
 
 console.log('');
+/* §0-44：名馬も長老(Elder)の対象（公式 Elder の対象一覧に Courser と並記されている） */
+console.log('=== §0-44: 名馬＝長老(Elder)で1つ多く選べる ===');
+{
+  const K = ['tournament', 'elder', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0 });
+  s.turn.phase = 'action'; s.turn.actions = 2;
+  s.players[0].hand = ['elder', 'trusty_steed'];
+  s.players[0].deck = ['copper', 'copper', 'copper', 'copper', 'copper', 'copper'];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'elder' });
+  s = reduce(s, { type: 'ELDER_PLAY', card: 'trusty_steed' });
+  ok(s.pending && s.pending.type === 'trusty_steed' && s.pending.elder === true,
+    '長老で使った名馬の pending に elder が立つ');
+  const rejected = reduce(s, { type: 'TRUSTY_STEED_RESOLVE', choices: ['cards', 'actions'] });
+  ok(rejected.pending && rejected.pending.type === 'trusty_steed', '長老つきなら2つでは受理しない（3つ必要）');
+  const okS = reduce(s, { type: 'TRUSTY_STEED_RESOLVE', choices: ['cards', 'actions', 'coins'] });
+  ok(!okS.pending && okS.turn.coins === 4, '3つ選べる（長老の +$2 ＋ 名馬の +$2 ＝ 4・実 ' + okS.turn.coins + '）');
+  // CPU も3つ返す（engine受理 ⊇ CPU提案）
+  const cd = CPU.decide(s, 0);
+  ok(cd && cd.type === 'TRUSTY_STEED_RESOLVE' && cd.choices.length === 3, 'CPU も長老つきでは3つ返す');
+}
+{
+  // 長老が無ければ従来どおり2つ
+  let s = setup(['trusty_steed'], ['copper', 'copper', 'copper']);
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'trusty_steed' });
+  ok(s.pending && s.pending.type === 'trusty_steed' && !s.pending.elder, '長老なしなら elder は立たない');
+  const bad = reduce(s, { type: 'TRUSTY_STEED_RESOLVE', choices: ['cards', 'actions', 'coins'] });
+  ok(bad.pending && bad.pending.type === 'trusty_steed', '長老なしで3つは受理しない');
+}
 console.log('========================================');
 console.log('収穫祭テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

@@ -3292,15 +3292,20 @@ const NON_SUPPLY_SET = new Set([...PRIZE_SET, 'spoils', 'madman', 'mercenary',
           return { type: 'FOLLOWERS_REACT' };
         }
         return { type: 'FOLLOWERS_DISCARD', cards: pickDiscards(p.hand, p.hand.length - 3) };
-      case 'trusty_steed':
-        // 常に +2カードを軸に、他にアクションがあれば +2アクション、無ければ +2コイン
-        return { type: 'TRUSTY_STEED_RESOLVE', choices: ['cards', p.hand.some((c) => isType(c, 'action')) ? 'actions' : 'coins'] };
+      case 'trusty_steed': {
+        // 常に +2カードを軸に、他にアクションがあれば +2アクション、無ければ +2コイン。
+        // 長老(Elder)で使わせた名馬は3つ選ぶ（engine が枚数ちょうどでないと拒否する＝engine受理⊇CPU提案）。
+        const two = ['cards', p.hand.some((c) => isType(c, 'action')) ? 'actions' : 'coins'];
+        return { type: 'TRUSTY_STEED_RESOLVE', choices: pd.elder ? ['cards', 'actions', 'coins'] : two };
+      }
       case 'horn_of_plenty':
         // 勝利点を獲得すると豊穣の角笛自身を廃棄する＝終盤（属州が残り少ない）以外は非勝利点を選ぶ。
         return { type: 'HORN_OF_PLENTY_GAIN', card: bestGain(state, pd.maxCost, { noVictory: true }) || bestGain(state, pd.maxCost) };
 
       /* ===== 拡張: ギルド（Guilds）===== */
       case 'overpay': {
+        // ポーション過払い（石工の第2段）＝CPU は使わない。engine は 0 を受理する（engine受理⊇CPU提案）。
+        if (pd.stage === 'potion') return { type: 'OVERPAY_RESOLVE', amount: 0 };
         // いくら過払いするか。名品＝銀貨レートが良いので全額／石工＝2枚とれる最大コスト／伝令官＝捨て札の良札分／医者＝しない。
         const card = pd.card, max = pd.max;
         let amt = 0;

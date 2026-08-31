@@ -465,6 +465,107 @@ console.log('=== CPU購入: ポーション未所持なら、勝ち筋でもポ�
   ok(s2 !== s && (s2.turn.phase !== 'buy' || s2.supply.apothecary === 1), 'CPUの手で局面が前進する（no-op連発でない）');
 }
 
+/* §0-44：支配＝2023年12月エラッタ「2回連続の追加ターンにはならない」＋追加ターンはタイブレークに数えない
+   公式 Card text 逐語＝`The player to your left takes an extra turn after this one
+     (**but not a 2nd extra turn in a row**), in which you can see all cards they can and make all decisions
+     for them. Any cards **or [D]** they would gain on that turn, you gain instead; ...`
+   公式 Official FAQ 逐語（2010／2018／2021 の3版すべて）＝
+     `Possession turns (and other extra turns) do not count for the tiebreaker.`
+     `all Possessions after the first will fail.`（Unofficial FAQ 2022） */
+console.log('=== 支配：2回連続の追加ターンにはならない／タイブレークに数えない ===');
+{
+  let s = mk(['A', 'B'], ALC_K, 0);
+  s.players[0].hand = ['possession', 'possession'];
+  s.turn.actions = 2; s.turn.phase = 'action';
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'possession' });
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'possession' });
+  ok((s.extraTurns || []).length === 2, '支配2枚＝予約は2件積まれる（累積する）');
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  ok(s.turn.active === 1 && s.turn.possessedBy === 0 && s.turn.isExtraTurn === true, '1回目＝B の支配された追加ターン');
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  ok(s.turn.active === 1 && s.turn.possessedBy == null && s.turn.isExtraTurn === false,
+    '2枚目の支配は失敗し、B は自分の通常のターンを行う（2回連続の追加ターンにはできない）');
+  ok((s.extraTurns || []).length === 0, '失敗した予約はその場で捨てる（後から湧かない）');
+  ok((s.log || []).some((l) => l.indexOf('2回連続の追加ターンにはできない') >= 0), 'ログに失敗が残る');
+}
+{
+  let s = mk(['A', 'B'], ALC_K, 0);
+  s.players[0].hand = ['possession']; s.turn.actions = 1; s.turn.phase = 'action';
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'possession' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  const sc = E.scoreGame(s).scores;
+  ok(sc[0].tieTurns === 1 && sc[1].tieTurns === 0,
+    '支配された追加ターンは同点時のタイブレークに数えない（実: A=' + sc[0].tieTurns + ' B=' + sc[1].tieTurns + '）');
+  ok(s.players[1].turns === 1, '手番数（turns）自体は増える＝数えないのは freeTurns 側');
+}
+{
+  // カード文が現行（2023エラッタ）になっている
+  const tx = DOM.CARDS.possession.text || '';
+  ok(tx.indexOf('2回連続の追加ターンにはならない') >= 0, '支配のカード文に「2回連続の追加ターンにはならない」がある');
+  ok(tx.indexOf('負債') >= 0, '支配のカード文に「負債も受け取る」がある（公式＝Any cards or [D]）');
+}
+
+/* §0-44：錬金術師＝記載効果を解決したときだけ山札の上に戻せる／薬草商＝場の財宝全般が対象 */
+console.log('=== §0-44: 錬金術師＝習性(Way)で使ったら山札の上に戻せない（公式）===');
+{
+  const K = ['alchemist', 'herbalist', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0, ways: ['way_of_the_mole'] });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['alchemist'];
+  s.players[0].inPlay = ['potion'];
+  s.players[0].deck = new Array(30).fill('copper');
+  s.players[0].discard = [];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'alchemist', way: 'way_of_the_mole' });
+  ok(!s.turn.alchemists, '習性で使ったので「使用回数」が立たない');
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  ok(s.players[0].deck[0] !== 'alchemist', '山札の上に戻らない（公式＝don\'t activate its abilities なら top-deck しない）');
+  ok(s.players[0].discard.includes('alchemist'), '普通に捨て札へ行く');
+}
+{
+  // 普通に使えば従来どおり山札の上に戻る
+  const K = ['alchemist', 'herbalist', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0 });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['alchemist'];
+  s.players[0].inPlay = ['potion'];
+  s.players[0].deck = new Array(30).fill('copper');
+  s.players[0].discard = [];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'alchemist' });
+  ok(s.turn.alchemists === 1, '普通に使えば使用回数が立つ');
+  s = reduce(s, { type: 'END_ACTION_PHASE' }); s = reduce(s, { type: 'END_TURN' });
+  ok(!s.players[0].discard.includes('alchemist'), '山札の上に戻る（＝捨て札に無い）');
+}
+
+console.log('=== §0-44: 薬草商＝場の財宝全般が対象（白金貨なども山札の上に置ける）===');
+{
+  const K = ['herbalist', 'anvil', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0 });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['herbalist'];
+  s.players[0].deck = ['estate', 'estate', 'estate', 'estate', 'estate', 'estate'];
+  s.players[0].discard = [];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'herbalist' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' });
+  s.players[0].inPlay.push('platinum');
+  s = reduce(s, { type: 'END_TURN' });
+  ok(!s.players[0].discard.includes('platinum'), '白金貨が捨て札に落ちない（山札の上に置かれ、先引きで手札へ）');
+  ok(s.players[0].hand.includes('platinum'), '先引きで手札に来る（実 hand=' + JSON.stringify(s.players[0].hand) + '）');
+}
+{
+  // 銅貨は置かない（デッキを濁すだけ＝許容簡略化）
+  const K = ['herbalist', 'anvil', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0 });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['herbalist'];
+  s.players[0].deck = ['estate', 'estate', 'estate', 'estate', 'estate', 'estate'];
+  s.players[0].discard = [];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'herbalist' });
+  s = reduce(s, { type: 'END_ACTION_PHASE' });
+  s.players[0].inPlay.push('copper');
+  s = reduce(s, { type: 'END_TURN' });
+  ok(s.players[0].discard.includes('copper'), '銅貨は山札の上に置かない（自動選択の方針）');
+}
 console.log('\n========================================');
 console.log('錬金術テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

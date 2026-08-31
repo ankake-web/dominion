@@ -287,8 +287,15 @@ console.log('=== 交易路 ===');
   // 城の混合山＝castles にトークン／城を獲得すると移る／騎士は違う
   let cs=mk(['trade_route','castles','knights'].concat(F.slice(0,7))); ok(cs.tradeRoutePiles.castles===1&&!cs.tradeRoutePiles.knights,'城の山にはトークン・騎士の山には無い');
   cs.turn.phase='buy'; cs.turn.coins=9; cs.turn.buys=1; cs=E.reduce(cs,{type:'BUY',card:'castles'}); ok(cs.tradeRouteMat===1,'城（混合山）の獲得でも移る（pileKeyOf）');
-  // 闇市場に交易路があれば準備する
-  let bm=mk(['black_market'].concat(F.slice(0,9))); if (bm.blackMarket && bm.blackMarket.indexOf('trade_route')>=0) ok(Object.keys(bm.tradeRoutePiles).length>0,'闇市場に交易路＝準備される'); else ok(true,'（闇市場デッキに交易路が入らなかった＝判定不可）');
+  /* 闇市場デッキと交易路（§0-44 で方針変更）
+     公式は「闇市場デッキにある札の準備も行う」と定めるが、本アプリのデッキは「サプライに無い王国カードを
+     1枚ずつ全部」なので、そのまま適用すると闇市場のある対局が毎回「全機構入り」になる。
+     公式が明示的に許す構成の自由（`you may decide ... which ones, in any way` ／
+     Dominion Online は `does not include cards with an obvious setup ... such as Joust or Baker`）に従い、
+     **準備つきカードは闇市場デッキに入れない**（`BM_SETUP_EXCLUDE`）ことで規則を構造的に満たしている。 */
+  let bm=mk(['black_market'].concat(F.slice(0,9)));
+  ok(bm.blackMarket && bm.blackMarket.indexOf('trade_route')<0,'闇市場デッキに交易路は入らない（準備つきカードは除外）');
+  ok(Object.keys(bm.tradeRoutePiles||{}).length===0,'闇市場だけの王国では交易路の準備をしない');
   const cd=CPU.decide(Object.assign(mk(['trade_route'].concat(F.slice(0,9))),{pending:{type:'trade_route_trash',player:0}}),0); ok(cd&&cd.type==='TRADE_ROUTE_TRASH'&&cd.card,'CPU が廃棄札を返す');
 }
 
@@ -605,18 +612,24 @@ console.log('=== レビュー回帰 R4：召喚の旗はカードidで持つ（�
   ok(s.players[0].discard.includes('silver'), '「豊かな」の銀貨は普通に捨て札へ');
 }
 
-console.log('=== レビュー回帰 R5：一騎討ちが闇市場デッキに居るだけでも褒賞の山ができる ===');
+/* レビュー回帰 R5（§0-44 で方針変更）：一騎討ちは闇市場デッキに入らない
+   §0-40 では「闇市場デッキに一騎討ちが居るだけでも褒賞の山を作る」（公式の準備規則）としていたが、
+   §0-44 で **準備つきカードは闇市場デッキに入れない**（`BM_SETUP_EXCLUDE`）方針に変えた
+   ＝公式が明示的に許す構成の自由（Dominion Online も Joust / Baker をデッキに入れない）。
+   engine 側の「闇市場に一騎討ちが居たら褒賞の山を作る」ブロックは安全網として残してある。 */
+console.log('=== レビュー回帰 R5：一騎討ち／パン屋は闇市場デッキに入らない（準備つきカードの除外）===');
 {
-  let found = false;
-  for (let i = 0; i < 40 && !found; i++) {
+  let sawDeck = false;
+  for (let i = 0; i < 20; i++) {
     const s = mk(['black_market'].concat(F.slice(0, 9)));
-    if (s.blackMarket && s.blackMarket.indexOf('joust') >= 0) {
-      found = true;
-      ok(REW.every((id) => s.supply[id] === 1), '闇市場デッキの一騎討ち → 褒賞の山（2人＝各1枚）ができる（実: ' + REW.map((r) => s.supply[r]).join('') + '）');
-      ok(REW.every((id) => (s.blackMarket || []).indexOf(id) < 0), '褒賞は闇市場デッキには入らない（NON_SUPPLY）');
-    }
+    if (!s.blackMarket) continue;
+    sawDeck = true;
+    if (s.blackMarket.indexOf('joust') >= 0) ok(false, '闇市場デッキに一騎討ちが入った');
+    if (s.blackMarket.indexOf('baker') >= 0) ok(false, '闇市場デッキにパン屋が入った');
+    if (REW.some((id) => s.supply[id] != null)) ok(false, '闇市場だけの王国で褒賞の山ができた');
+    ok(REW.every((id) => s.blackMarket.indexOf(id) < 0), '褒賞は闇市場デッキには入らない（NON_SUPPLY）');
   }
-  ok(found, '40局のうち闇市場デッキに一騎討ちが入る局があった（検査が実際に走った）');
+  ok(sawDeck, '闇市場デッキが作られた（検査が実際に走った）');
 }
 
 console.log('=== レビュー回帰 R6：遊牧民の野営地＝闇市場で購入しても山札の上に獲得する（gainFromOutside）===');
