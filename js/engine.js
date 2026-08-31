@@ -4175,8 +4175,10 @@
      - 「$2以上」は解決時点の**現在コスト**（運河があると屋敷は$1＝捨てられない）。
      - 「捨て札にする」は公開(reveal)ではない＝パトロンは誘発しない。ただし**「手札を公開する」枝は reveal**。 */
   function villainEnterVictim(state, source, queue) {
+    /* 🛑 **手札の枚数で被害者リストを事前に絞らない**（§0-43 の不変条件）。
+       リアクションは「アタックカードを**使用したとき**」に誘発し、影響を受けるかどうかは条件ではない。
+       絞ってよいのは `attackImmune`（受動免疫）だけ＝`villainApply` が手札5枚未満を素通りさせる。 */
     queue = attackTargets(state, queue);
-    while (queue.length && state.players[queue[0]].hand.length < 5) queue = queue.slice(1); // 手札4枚以下は何も起きない
     if (!queue.length) { state.pending = null; return; }
     const victim = queue[0], rest = queue.slice(1);
     if (hasReaction(state.players[victim])) {
@@ -4330,14 +4332,22 @@
   }
   // 兵士：手札4枚以上の各相手はカード1枚を捨てる（本人が選ぶ・堀リアクション窓あり）。
   function soldierEnterVictim(state, source, queue) {
-    queue = (queue || []).filter((v) => !attackImmune(state, v) && state.players[v].hand.length >= 4);
-    if (!queue.length) { state.pending = null; return; }
-    const victim = queue[0], rest = queue.slice(1);
-    if (hasReaction(state.players[victim])) {
-      state.pending = { type: 'soldier', stage: 'react', player: victim, source, victim, queue: rest };
-    } else {
-      state.pending = { type: 'soldier', stage: 'discard', player: victim, source, victim, queue: rest };
+    /* 🛑 **手札の枚数で被害者リストを事前に絞らない**（§0-43 の不変条件）。冒険のアタックで唯一
+       `attackTargets` を通しておらず、免疫の席の `immune_react` も開いていなかった。 */
+    queue = attackTargets(state, queue);
+    while (queue.length) {
+      const victim = queue[0], rest = queue.slice(1);
+      if (hasReaction(state.players[victim])) {
+        state.pending = { type: 'soldier', stage: 'react', player: victim, source, victim, queue: rest };
+        return;
+      }
+      if (state.players[victim].hand.length >= 4) {
+        state.pending = { type: 'soldier', stage: 'discard', player: victim, source, victim, queue: rest };
+        return;
+      }
+      queue = rest; // 手札3枚以下は捨てるものが無い（窓は上で開いている）
     }
+    state.pending = null;
   }
 
   /* ========== 冒険：酒場マット（Reserve）＝呼び出し機構 ========== */
@@ -5212,10 +5222,10 @@
   // 帝国：女魔術師（enchantress・アタック持続）＝免疫でない各相手に enchanted フラグを立てる
   //   （その手番で最初にプレイするアクションが +1カード+1アクション に置換される）。堀で防げる。
   function enchantressEnterVictim(state, source, queue) {
-    queue = (queue || []).slice();
+    // 免疫の席にも「アタックを使用した」ことへのリアクション窓を開く（§0-44 の共通述語）。
+    queue = attackTargets(state, (queue || []).slice());
     while (queue.length) {
       const victim = queue[0];
-      if (attackImmune(state, victim)) { queue.shift(); continue; } // 灯台/チャンピオン＝免疫（置換されない）
       if (hasReaction(state.players[victim])) {
         state.pending = { type: 'enchantress', stage: 'react', player: victim, source, victim, queue: queue.slice(1) };
         return;
@@ -5238,10 +5248,10 @@
   // 投石機：廃棄カードの条件で 各相手に 呪い（コスト3以上）と 手札3枚まで捨て（財宝）を与える（アタック・堀で両方防げる）。
   function catapultEnterVictim(state, source, queue, giveCurse, treasureDiscard, discardQ) {
     discardQ = discardQ || [];
-    queue = (queue || []).slice();
+    // 免疫の席にも「アタックを使用した」ことへのリアクション窓を開く（§0-44 の共通述語）。
+    queue = attackTargets(state, (queue || []).slice());
     while (queue.length) {
       const victim = queue[0];
-      if (attackImmune(state, victim)) { queue.shift(); continue; }
       if (hasReaction(state.players[victim])) {
         state.pending = { type: 'catapult', stage: 'react', player: victim, source, victim, queue: queue.slice(1), giveCurse, treasureDiscard, discardQ };
         return;
@@ -6472,7 +6482,12 @@
       // 軍団兵：+$3。手札の金貨1枚を公開してよい（アタック）。公開したら各相手は手札2枚まで捨て、その後1枚引く。
       case 'legionary':
         addCoins(state, 3);
+        /* 公式 Official FAQ 逐語＝`Reactions like Moat are played **before you decide whether to reveal a
+           Gold**.` ＝金貨を持っていなくても／公開しなくても、**アタックカードを使用した以上 窓は開く**。
+           ⚠ 金貨を公開した場合の窓は `discard_down` の中で開く（**二重に開かない**＝§0-43 のサー・マイケル）。
+           【許容簡略化】公開しない場合の窓は「公開しないと決めた**後**」に開く（公式は決める前）。 */
         if (p.hand.includes('gold')) state.pending = { type: 'legionary_reveal', player: pi };
+        else attackWindowEnter(state, pi, othersInOrder(state, pi), null, []);
         break;
       // 女魔術師：即時効果なし（アタック持続）。次の自分の手番まで、各相手がその手番で最初にプレイするアクションは
       //   記載効果の代わりに +1カード+1アクション になる（enchanted フラグ）。次の自分の手番開始時 +2カード。堀で防げる。
@@ -8377,10 +8392,11 @@
         if (p.journeyDown) { addCoins(state, 1); log(state, `${p.name} は巨人で旅トークンを裏にして +$1。`); }
         else {
           addCoins(state, 5); log(state, `${p.name} は巨人で旅トークンを表にして +$5（アタック）。`);
-          const vics = [];
-          for (let k = 1; k < state.players.length; k++) vics.push((pi + k) % state.players.length);
-          giantEnterVictim(state, pi, vics);
+          giantEnterVictim(state, pi, othersInOrder(state, pi));
         }
+        /* 🛑 裏向き（+$1 だけ）の回でも**アタックカードを使用した**ことへの窓は開く。
+           公式 Official FAQ 逐語＝`Moat can be revealed **even if Giant will only be producing +$1 this time**.` */
+        if (p.journeyDown) attackWindowEnter(state, pi, othersInOrder(state, pi), null, []);
         break;
       // 橋の下のトロル：他の各プレイヤーは -$1トークンを受け取る（アタック）。今と次のターン開始時にそれぞれ +1購入。
       //   このターンと次のターン、カードのコストは$1安くなる（$0未満にはならない・持続）。
@@ -10573,15 +10589,22 @@
      2段（被害者が隠す1枚を選ぶ → 使用者が捨てさせる1枚を選ぶ）＝pending の持ち主が跨ぐ。
      ⚠ 「隠した1枚」は**使用者にも他人にも見えてはいけない**（maskStateFor で伏せる）。 */
   function archerEnterVictim(state, source, queue) {
+    /* 🛑 **手札の枚数で被害者リストを事前に絞らない**（§0-43 の不変条件）。
+       ⚠ 番犬は「引いた後の手札が5枚以下ならさらに +2カード」＝**手札4枚のときが最強**なので損失が大きい。 */
     queue = attackTargets(state, queue);
-    while (queue.length && state.players[queue[0]].hand.length < 5) queue = queue.slice(1); // 手札4枚以下は無事
-    if (!queue.length) { state.pending = null; return; }
-    const victim = queue[0], rest = queue.slice(1);
-    if (hasReaction(state.players[victim])) {
-      state.pending = { type: 'archer', stage: 'react', player: victim, source, victim, queue: rest };
-    } else {
-      state.pending = { type: 'archer', stage: 'hide', player: victim, source, victim, queue: rest };
+    while (queue.length) {
+      const victim = queue[0], rest = queue.slice(1);
+      if (hasReaction(state.players[victim])) {
+        state.pending = { type: 'archer', stage: 'react', player: victim, source, victim, queue: rest };
+        return;
+      }
+      if (state.players[victim].hand.length >= 5) {
+        state.pending = { type: 'archer', stage: 'hide', player: victim, source, victim, queue: rest };
+        return;
+      }
+      queue = rest; // 手札4枚以下は何も起きない（窓は上で開いている）
     }
+    state.pending = null;
   }
   /* 女魔導士＝カード名を宣言 → 自分の山札の一番上を公開して**当たり外れに関わらず手札へ** →
      当たっていたら他の全員が呪いを獲得（アタック＝免疫あり）。 */
@@ -21619,7 +21642,9 @@
         state.pending = null;
         const vics = [];
         for (let k = 1; k < state.players.length; k++) vics.push((pd.player + k) % state.players.length);
-        if (cc >= 3 || isTre) catapultEnterVictim(state, pd.player, vics, cc >= 3, isTre);
+        /* 🛑 廃棄した札が条件を満たさなくても**アタックカードを使用した**ことへの窓は開く（公式）。
+           `catapultEnterVictim` は giveCurse/treasureDiscard が両方 false でも窓だけ回して終わる。 */
+        catapultEnterVictim(state, pd.player, vics, cc >= 3, isTre);
         return state;
       }
       // 投石機：アタックを「そのまま受ける」＝この相手に呪い/捨てを適用して次へ。
@@ -21804,6 +21829,8 @@
           discardDownEnter(state, pd.player, 2, vics, null, 1);
         } else {
           state.pending = null;
+          // 金貨を公開しなくても「アタックカードを使用した」ことへのリアクション窓は開く（公式）。
+          attackWindowEnter(state, pd.player, othersInOrder(state, pd.player), null, []);
         }
         return state;
       }
@@ -23800,7 +23827,6 @@
           armDuration(state, pd.player, 'secret_cave');
           log(state, `${pl.name} は秘密の洞窟で手札3枚を捨てた（次のターン開始時 +3コイン）。`);
         } else log(state, `${pl.name} は手札が3枚未満だったので +3コイン は得られない（秘密の洞窟）。`);
-        triggerOnDiscard(state, pd.player, cards);
         return state;
       }
       // 羊飼い＝好きな枚数の勝利点カードを公開して捨て、1枚につき +2カード。

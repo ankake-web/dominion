@@ -1639,6 +1639,36 @@ console.log('=== §0-45: 夜警＝1回の「上5枚を見る」でシャッフ�
   ok(f0 - s.players[0].favors <= 1, '好意の消費は最大1個＝シャッフルは1度だけ（実 ' + (f0 - s.players[0].favors) + '個）');
 }
 
+/* §0-45：秘密の洞窟＝捨て札トリガーの二重発火（§0-44 の退行の取りこぼし）
+   `ccc9a95` で13箇所の重複を消したが、`SECRET_CAVE_DISCARD` だけ `discardFromHand` と
+   `triggerOnDiscard` の間に7行（armDuration / if-else / log）が挟まっていて機械検出から漏れていた。
+   ⇒ 恒久検査（test/integrity.test.js）の走査窓を 6行→12行に広げ、間に挟んでよい行も増やした。 */
+console.log('=== §0-45: 秘密の洞窟＝捨て札トリガーは1回だけ（二重発火の取りこぼし）===');
+{
+  const K = ['secret_cave', 'tunnel', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0 });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['secret_cave', 'tunnel', 'copper', 'copper'];
+  const g0 = s.supply.gold;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'secret_cave' });
+  s = reduce(s, { type: 'SECRET_CAVE_DISCARD', cards: ['tunnel', 'copper', 'copper'] });
+  let n = 0; while (s.pending && n++ < 20) s = reduce(s, CPU.decide(s));
+  ok(g0 - s.supply.gold === 1, '秘密の洞窟で坑道1枚を捨てたら金貨は1枚だけ（実 ' + (g0 - s.supply.gold) + '枚）');
+}
+{
+  // 忠犬も1回だけ脇に置ける（捨てていない2枚目まで置けてはいけない）
+  const K = ['secret_cave', 'faithful_hound', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0 });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['secret_cave', 'faithful_hound', 'copper', 'copper'];
+  s.players[0].discard = ['faithful_hound'];   // 前のターンから捨て札にある別のコピー
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'secret_cave' });
+  s = reduce(s, { type: 'SECRET_CAVE_DISCARD', cards: ['faithful_hound', 'copper', 'copper'] });
+  let n = 0; while (s.pending && n++ < 20) s = reduce(s, CPU.decide(s));
+  ok((s.players[0].setAside || []).filter((c) => c === 'faithful_hound').length <= 1,
+    '捨てた忠犬1枚だけが脇に置ける（実 ' + (s.players[0].setAside || []).filter((c) => c === 'faithful_hound').length + '枚）');
+}
+
 console.log('\n========================================');
 console.log(`夜想曲テスト結果: ${pass} 件成功, ${fail} 件失敗`);
 console.log('========================================');

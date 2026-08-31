@@ -348,11 +348,11 @@ console.log('=== 捨て札トリガーを二重に呼んでいない ===');
   for (let i = 0; i < srcLines.length; i++) {
     const l = srcLines[i];
     if (l.indexOf('discardFromHand(state') < 0 || l.indexOf('function ') >= 0) continue;
-    for (let j = i + 1; j < Math.min(i + 6, srcLines.length); j++) {
+    for (let j = i + 1; j < Math.min(i + 12, srcLines.length); j++) {
       const t = srcLines[j].trim();
       if (t.indexOf('triggerOnDiscard(') === 0) { dup.push((i + 1) + '→' + (j + 1)); break; }
       // コメント・log・pending 解除・コイン加算は挟まってよい。実行文が挟まったら別物とみなす。
-      if (t && !/^(\/\/|\/\*|\*|log\(|state\.pending = null;|addCoins\(|addActions\()/.test(t)) break;
+      if (t && !/^(\/\/|\/\*|\*|\}|log\(|state\.pending = null;|addCoins\(|addActions\(|armDuration\(|if \(|else )/.test(t)) break;
     }
   }
   ok(dup.length === 0, 'discardFromHand の直後に triggerOnDiscard を書いている箇所（二重発火）: ' + dup.join(' '));
