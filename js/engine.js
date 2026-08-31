@@ -1814,7 +1814,11 @@
        奇数なら祝福を1つ受ける／偶数なら他のプレイヤー全員が呪いを獲得（アタック＝堀/灯台/守護者で防げる）。 */
     if (card === 'idol') {
       const idols = p.inPlay.filter((c) => c === 'idol').length + (p.durationCards || []).filter((c) => c === 'idol').length;
-      if (idols % 2 === 1) { log(state, `${p.name} は偶像（場に${idols}枚＝奇数）で祝福を受ける。`); receiveBoon(state, pIndex, 1); }
+      /* 🛑 偶像は **財宝-アタック-幸運**。奇数（祝福を受ける）側でも「アタックカードを使用した」ことへの
+         リアクション窓は開く（公式 Werewolf 逐語＝`when you play Werewolf in the Action phase (so it doesn't
+         attack), **it's still an Attack card and activates other players' Diplomats and so on**`）。
+         同じ夜想曲の人狼・迫害者は非アタック側でも `attackWindowEnter` を開いていた＝engine 内部で不整合。 */
+      if (idols % 2 === 1) { log(state, `${p.name} は偶像（場に${idols}枚＝奇数）で祝福を受ける。`); attackWindowEnter(state, pIndex, othersInOrder(state, pIndex), 'idol_boon'); }
       else { log(state, `${p.name} は偶像（場に${idols}枚＝偶数）で他のプレイヤーに呪いを配る。`); idolEnterVictim(state, pIndex, othersInOrder(state, pIndex)); }
     }
     // 呪われた金貨（家宝）＝+3コイン（coin:3）、呪い1枚を獲得する（強制）。
@@ -8725,7 +8729,8 @@
       }
       // プーカ＝手札から「呪われた金貨以外の財宝」1枚を廃棄してよい。そうしたら +4カード。
       case 'pooka':
-        if (p.hand.some((c) => isTreasureFor(state, c) && c !== 'cursed_gold')) state.pending = { type: 'pooka_trash', player: pi };
+        // cham＝この使用がカメレオンの習性かを持ち回す（引くのが選択待ちの後になるため）
+        if (p.hand.some((c) => isTreasureFor(state, c) && c !== 'cursed_gold')) state.pending = { type: 'pooka_trash', player: pi, cham: !!t.chameleon };
         break;
       /* 聖なる木立ち（幸運）＝+1購入+3コイン、祝福を1つ受ける。
          **その祝福が +コイン を与えないなら**、他のプレイヤーも全員それを受けてよい（任意・同じ1枚）。 */
@@ -8746,16 +8751,24 @@
       // 羊飼い＝+1アクション。好きな枚数の勝利点カードを公開して捨て、1枚につき +2カード。
       case 'shepherd':
         addActions(t, 1);
-        if (p.hand.some((c) => DOM.isType(c, 'victory'))) state.pending = { type: 'shepherd_discard', player: pi };
+        // cham＝この使用がカメレオンの習性かを持ち回す（引くのが選択待ちの後になるため）
+        if (p.hand.some((c) => DOM.isType(c, 'victory'))) state.pending = { type: 'shepherd_discard', player: pi, cham: !!t.chameleon };
         else log(state, `${p.name} は羊飼いで捨てる勝利点カードが無かった。`);
         break;
       /* 迫害者（不運・アタック）＝+2コイン。**他のカードが場に無ければ**インプ1枚を獲得、
          そうでなければ他のプレイヤーは全員「次の呪詛」を1つ受ける。 */
       case 'tormentor': {
         addCoins(state, 2);
-        // **「使用したその迫害者以外のカードが場にあるか」で判定する**（同名か否かは関係ない）。
-        //   今プレイした1枚は inPlay の末尾にあるので、枚数から1を引くだけでよい。
-        const othersInPlay = Math.max(0, p.inPlay.length - 1) + (p.durationCards || []).length;
+        /* **「使用したその迫害者以外のカードが場にあるか」で判定する**（同名か否かは関係ない）。
+           🛑 **場に出ない経路では引き算をしない**＝公式 Other rules clarifications 逐語＝
+              `If you play a Tormentor but **it isn't in play**, it still checks the rest of your play area to see
+               if there are other cards. So if you play a Tormentor with **Overlord**, there are other cards in
+               play (the Overlord itself), so it gives out a Hex.`
+           命令（大君主/はみだし者/船長/王子）と廃棄置き場からの使用（ネクロマンサー）では迫害者は場に出ないので、
+           無条件に1を引くと**場にある大君主／ネクロマンサー本体を数え落として**インプ側に落ちていた。
+           ※同じ夜想曲のレプラコーンは引き算をせず実在の枚数を数えている＝engine 内部で不整合だった。 */
+        const selfInPlay = playedByCommand(state, pi, 'tormentor') ? 0 : 1;
+        const othersInPlay = Math.max(0, p.inPlay.length - selfInPlay) + (p.durationCards || []).length;
         // インプを獲得する側でも「アタックカードを使用した」ことへのリアクション窓は開く（公式）。
         if (othersInPlay === 0) attackWindowEnter(state, pi, othersInOrder(state, pi), 'tormentor_imp');
         else startHexAttack(state, pi, othersInOrder(state, pi));
@@ -8820,8 +8833,12 @@
          獲得時は手札へ（gain の GAIN_TO_HAND）。 */
       case 'night_watchman': {
         const look = [];
+        /* 「上から**N枚をまとめて**見る」型は**1回の解決でシャッフルは1度だけ**（公式 Order of Masons が
+           Sentinel を名指し）。⚠ 「条件を満たすまで**1枚ずつ**めくる」型（望楼・熟練工・幽霊・戦争）は
+           逆に2度目のシャッフルをするのが公式なので、この契約に乗せてはいけない。 */
+        let nwNoMoreShuffle = false;
         for (let i = 0; i < 5; i++) {
-          if (p.deck.length === 0) { if (p.discard.length === 0) break; reshuffleDeck(p); }
+          if (p.deck.length === 0) { if (p.discard.length === 0 || nwNoMoreShuffle) break; nwNoMoreShuffle = reshuffleDeck(p, state) === true; }
           if (p.deck.length === 0) break;
           look.push(p.deck.shift());
         }
@@ -8839,7 +8856,7 @@
       case 'werewolf':
         // 夜フェイズ以外（+3カード）でも**アタックカードなのでリアクション窓は開く**（公式）。窓はドローより前。
         if (t.phase === 'night') startHexAttack(state, pi, othersInOrder(state, pi));
-        else attackWindowEnter(state, pi, othersInOrder(state, pi), 'werewolf_draw');
+        else { t.werewolfCham = !!t.chameleon; attackWindowEnter(state, pi, othersInOrder(state, pi), 'werewolf_draw'); }
         break;
       /* 取り替え子（夜行）＝これを廃棄し、**場に出ているカード**と同じカード1枚を獲得する。
          獲得できるのは「サプライの山の一番上が同名」のときだけ（非サプライ/空山/分割山の下段は選べても何も獲得しない）。
@@ -12615,9 +12632,11 @@
   }
   function finishAttackWindow(state, source, after, immune) {
     const p = state.players[source];
-    if (after === 'werewolf_draw') draw(state, source, 3);
+    if (after === 'werewolf_draw') withCham(state, state.turn && state.turn.werewolfCham, () => draw(state, source, 3));
     else if (after === 'tormentor_imp') {
       if (gain(state, source, 'imp', 'discard')) log(state, `${p.name} は迫害者でインプ1枚を獲得した。`);
+    } else if (after === 'idol_boon') {
+      receiveBoon(state, source, 1); // 夜想曲：偶像の奇数側＝窓を閉じてから祝福を受ける
     } else if (after === 'replace_trash') {
       /* 陰謀：身代わり＝アタックカード。リアクション窓は**使用した時点**で開く（公式 Moat/Diplomat 逐語＝
          `depends on **another player playing an Attack card**, not on whether the Attack card itself has
@@ -23761,7 +23780,7 @@
         if (pl.hand.indexOf(c) < 0 || !isTreasureFor(state, c) || c === 'cursed_gold') return state;
         if (!trashFromHand(state, pd.player, [c], 1, 'をプーカで廃棄した。')) return state;
         state.pending = null;
-        draw(state, pd.player, 4);
+        withCham(state, pd.cham, () => draw(state, pd.player, 4));
         return state;
       }
       // 秘密の洞窟＝手札3枚を捨ててよい。そうしたら次の自分のターン開始時に +3コイン（＝そのときだけ持続になる）。
@@ -23798,7 +23817,7 @@
           discardFromHand(state, pd.player, cards, cards.length, 'を捨てた（羊飼い）。');
           // **順序厳守**：捨て札トリガー（坑道の金貨獲得など）を全部解決してから引く。
           //   逆にすると坑道で得た金貨がリシャッフルに入らない（公式裁定）。
-          draw(state, pd.player, cards.length * 2);
+          withCham(state, pd.cham, () => draw(state, pd.player, cards.length * 2));
           log(state, `${pl.name} は羊飼いで勝利点${cards.length}枚を捨てて +${cards.length * 2}カード。`);
         }
         return state;
@@ -24021,7 +24040,17 @@
         state.pending = null;
         if (id == null) return state;               // 場のカードが全部「山が無い」ときは何も得られない
         if (cand.indexOf(id) < 0) { state.pending = pd; return state; }
-        if (gainableBase(state, id)) {
+        /* 公式 Other rules clarifications 逐語＝`if that card's pile is empty, **or its name does not match the
+           name of the top card on that pile** (e.g. it's a split pile), ... you gain nothing.`
+           ＝**一番上と同名なら獲得できる**。`gainableBase` は `supply[id] > 0` を要求するので、
+           混合山（騎士／城／同盟の分割山）の中身は supply の数値キーを持たず常に false になっていた。
+           ⚠ 獲得は**山キー**で行う（`gain()` の `isMixed` 分岐が先頭を shift して supply を同期する）。 */
+        const chgPile = pileKeyOf(state, id);
+        const chgTopOk = isMixedPileKey(chgPile) && mixedTopCard(state, chgPile) === id;
+        if (chgTopOk) {
+          gain(state, pd.player, chgPile, 'discard');
+          log(state, `${pl.name} は取り替え子で「${C()[id].name}」を獲得した。`);
+        } else if (gainableBase(state, id)) {
           if (gain(state, pd.player, id, 'discard')) log(state, `${pl.name} は取り替え子で「${C()[id].name}」を獲得した。`);
         } else log(state, `${pl.name} は取り替え子で「${C()[id].name}」を選んだが山から獲得できなかった。`);
         return state;

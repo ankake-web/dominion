@@ -1520,6 +1520,125 @@ console.log('=== §0-45: 捨て札トリガーは1回だけ発火する（§0-44
   ok(g0 - s.supply.gold <= 1, '祝福(風の恵み)で坑道を捨てても金貨は最大1枚（実 ' + (g0 - s.supply.gold) + '枚）');
 }
 
+/* §0-45：夜想曲の敵対レビュー（確定5件） */
+console.log('=== §0-45: 迫害者＝場に出ない経路（命令／ネクロマンサー）でも「他のカードが場にある」を正しく数える ===');
+{
+  const K = ['tormentor', 'overlord', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0 });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['overlord']; s.players[0].deck = new Array(10).fill('copper');
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'overlord' });
+  s = reduce(s, { type: 'OVERLORD_PLAY', card: 'tormentor' });
+  ok(!s.players[0].discard.includes('imp'),
+    '大君主で使った迫害者はインプを獲得しない（公式の worked example＝場に大君主がある＝呪詛）');
+}
+{
+  // 対照：場に何も無ければインプ（従来どおり）
+  const K = ['tormentor', 'overlord', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0 });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['tormentor']; s.players[0].inPlay = [];
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'tormentor' });
+  let n = 0; while (s.pending && n++ < 10) s = reduce(s, CPU.decide(s));
+  ok(s.players[0].discard.includes('imp'), '場に他のカードが無ければインプを獲得（従来どおり）');
+}
+
+console.log('=== §0-45: 偶像＝奇数（祝福）側でもアタックのリアクション窓が開く ===');
+{
+  const K = ['idol', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory', 'festival'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0 });
+  s.turn.phase = 'buy';
+  s.players[0].hand = ['idol'];
+  s.players[1].hand = ['beggar', 'copper', 'copper'];
+  s = reduce(s, { type: 'PLAY_TREASURE', card: 'idol' });
+  ok(s.pending && s.pending.type === 'attack_window',
+    '偶像は財宝-アタック＝奇数側でも窓が開く（実 ' + (s.pending && s.pending.type) + '）');
+  let n = 0; while (s.pending && n++ < 10) s = reduce(s, CPU.decide(s));
+  ok(!s.pending, '窓を閉じたら祝福まで解決して終端する');
+}
+
+console.log('=== §0-45: 取り替え子＝混合山の一番上と同名なら獲得できる ===');
+{
+  const K = ['changeling', 'augurs', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0 });
+  const top = s.augurs[0];
+  const before = s.augurs.length;
+  s.turn.phase = 'night';
+  s.players[0].hand = ['changeling'];
+  s.players[0].inPlay = [top];
+  s = reduce(s, { type: 'PLAY_NIGHT', card: 'changeling' });
+  s = reduce(s, { type: 'CHANGELING_GAIN', card: top });
+  ok(s.players[0].discard.includes(top), '分割山の一番上と同名なら獲得できる（公式＝同名でないときだけ何も得られない）');
+  ok(s.augurs.length === before - 1 && s.supply.augurs === s.augurs.length,
+    '山キーで獲得する＝実カード配列と supply が同期する（保存則）');
+}
+{
+  // 一番上と同名でなければ従来どおり何も得られない
+  const K = ['changeling', 'augurs', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0 });
+  const other = s.augurs[s.augurs.length - 1];   // 一番下＝一番上とは別の名前
+  const before = s.augurs.length;
+  s.turn.phase = 'night';
+  s.players[0].hand = ['changeling'];
+  s.players[0].inPlay = [other];
+  s = reduce(s, { type: 'PLAY_NIGHT', card: 'changeling' });
+  s = reduce(s, { type: 'CHANGELING_GAIN', card: other });
+  ok(s.augurs.length === before, '一番上と同名でなければ何も獲得しない（公式）');
+}
+
+console.log('=== §0-45: カメレオンの習性が「選択待ちの後のドロー」でも効く（羊飼い／プーカ／人狼）===');
+{
+  const K = ['shepherd', 'pooka', 'werewolf', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0, ways: ['way_of_the_chameleon'] });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['shepherd', 'estate', 'estate'];
+  s.players[0].deck = new Array(10).fill('copper');
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'shepherd', way: 'way_of_the_chameleon' });
+  s = reduce(s, { type: 'SHEPHERD_DISCARD', cards: ['estate', 'estate'] });
+  ok(s.turn.coins === 4, '羊飼い×カメレオン＝勝利点2枚で +$4（実 ' + s.turn.coins + '）');
+}
+{
+  const K = ['pooka', 'shepherd', 'werewolf', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0, ways: ['way_of_the_chameleon'] });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['pooka', 'silver'];
+  s.players[0].deck = new Array(10).fill('copper');
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'pooka', way: 'way_of_the_chameleon' });
+  s = reduce(s, { type: 'POOKA_TRASH', card: 'silver' });
+  ok(s.turn.coins === 4, 'プーカ×カメレオン＝+$4（実 ' + s.turn.coins + '）');
+}
+{
+  // 人狼＝相手が反応札を持っているかで結果が割れてはいけない
+  const K = ['werewolf', 'moat', 'village', 'smithy', 'market', 'militia', 'cellar', 'workshop', 'laboratory', 'festival'];
+  const got = [];
+  for (const foeMoat of [false, true]) {
+    let s = E.createInitialState(['A', 'B'], K, { startActive: 0, ways: ['way_of_the_chameleon'] });
+    s.turn.phase = 'action'; s.turn.actions = 1;
+    s.players[0].hand = ['werewolf']; s.players[0].deck = new Array(10).fill('copper');
+    s.players[1].hand = foeMoat ? ['moat'] : ['copper'];
+    s = reduce(s, { type: 'PLAY_ACTION', card: 'werewolf', way: 'way_of_the_chameleon' });
+    let n = 0; while (s.pending && n++ < 10) s = reduce(s, CPU.decide(s));
+    got.push(s.turn.coins);
+  }
+  ok(got[0] === 3 && got[1] === 3, '人狼×カメレオン＝相手の反応札の有無に依らず +$3（実 ' + got.join('/') + '）');
+}
+
+console.log('=== §0-45: 夜警＝1回の「上5枚を見る」でシャッフルは1度だけ（メイソン団）===');
+{
+  const K = ['night_watchman', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory', 'festival'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0 });
+  s.players[0].shuffleAlly = 'order_of_masons';
+  s.players[0].favorShuffle = 1;
+  s.players[0].favors = 10;
+  s.turn.phase = 'night';
+  s.players[0].hand = ['night_watchman'];
+  s.players[0].deck = [];
+  s.players[0].discard = ['curse', 'curse', 'copper', 'gold'];
+  const f0 = s.players[0].favors;
+  s = reduce(s, { type: 'PLAY_NIGHT', card: 'night_watchman' });
+  ok(f0 - s.players[0].favors <= 1, '好意の消費は最大1個＝シャッフルは1度だけ（実 ' + (f0 - s.players[0].favors) + '個）');
+}
+
 console.log('\n========================================');
 console.log(`夜想曲テスト結果: ${pass} 件成功, ${fail} 件失敗`);
 console.log('========================================');
