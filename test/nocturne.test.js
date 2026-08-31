@@ -1487,6 +1487,39 @@ console.log('\n=== N0b: CPU が夜フェイズで詰まらない ===');
   fail++; console.log('  x 例外: ' + (e && e.stack ? e.stack : e));
 }
 
+/* §0-45：§0-44 で入った退行＝捨て札トリガーの二重発火（共通ヘルパ `discardFromHand` が内部で呼ぶように
+   なったのに、13箇所の reducer が直後にもう一度呼んでいた）。坑道で金貨が2枚出ていた。
+   ⚠ 既存の371件はこの穴を素通りしたので、**枚数で観測する**テストを置く。
+   構造的な再発防止は `test/integrity.test.js` の「捨て札トリガーを二重に呼んでいない」。 */
+console.log('=== §0-45: 捨て札トリガーは1回だけ発火する（§0-44 の退行の回帰）===');
+{
+  const K = ['tunnel', 'skulk', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0 });
+  s.hexes.deck = ['poverty'];                    // 貧困＝手札が3枚になるまで捨てる
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['skulk'];
+  s.players[1].hand = ['tunnel', 'copper', 'copper', 'copper'];
+  const g0 = s.supply.gold;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'skulk' });
+  let n = 0;
+  while (s.pending && n++ < 30) s = reduce(s, CPU.decide(s));
+  ok(g0 - s.supply.gold === 1, '呪詛(貧困)で坑道を1枚捨てたら金貨は1枚だけ（実 ' + (g0 - s.supply.gold) + '枚）');
+}
+{
+  // 恵み（風の恵み＝手札を3枚になるまで捨てる）でも1回だけ
+  const K = ['tunnel', 'bard', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory'];
+  let s = E.createInitialState(['A', 'B'], K, { startActive: 0 });
+  s.boons.deck = ['wind_gift'];
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['bard', 'tunnel', 'copper', 'copper'];
+  s.players[0].deck = new Array(10).fill('estate');
+  const g0 = s.supply.gold;
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'bard' });
+  let n = 0;
+  while (s.pending && n++ < 30) s = reduce(s, CPU.decide(s));
+  ok(g0 - s.supply.gold <= 1, '祝福(風の恵み)で坑道を捨てても金貨は最大1枚（実 ' + (g0 - s.supply.gold) + '枚）');
+}
+
 console.log('\n========================================');
 console.log(`夜想曲テスト結果: ${pass} 件成功, ${fail} 件失敗`);
 console.log('========================================');

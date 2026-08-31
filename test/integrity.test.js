@@ -335,6 +335,33 @@ console.log('=== 闇市場デッキに準備つきカードが入らない ===')
     '闇市場だけの王国で 災いカード/渡し守の山/山師・野盗の常設ルール が立たない');
 }
 
+/* 12. 捨て札トリガーを二重に呼んでいない（2026-08-31 新設・§0-45）
+   §0-44 で共通ヘルパ `discardFromHand` の**内部に** `triggerOnDiscard` を入れたが、
+   13箇所の reducer が直後にもう一度呼んでおり **捨て札トリガーが二重に発火**していた
+   （坑道で金貨が2枚出る／忠犬が2枚戻る）。既存の 371件の夜想曲テストは緑のまま素通りした。
+   ⇒ 構造で防ぐ＝`discardFromHand(...)` の直後に `triggerOnDiscard(...)` を書いたら落とす。
+   捨てさせない経路（`p.discard.push` を直に書く reducer）は従来どおり自分で呼ぶ必要があるので対象外。 */
+console.log('=== 捨て札トリガーを二重に呼んでいない ===');
+{
+  const srcLines = read('js/engine.js').split('\n');
+  const dup = [];
+  for (let i = 0; i < srcLines.length; i++) {
+    const l = srcLines[i];
+    if (l.indexOf('discardFromHand(state') < 0 || l.indexOf('function ') >= 0) continue;
+    for (let j = i + 1; j < Math.min(i + 6, srcLines.length); j++) {
+      const t = srcLines[j].trim();
+      if (t.indexOf('triggerOnDiscard(') === 0) { dup.push((i + 1) + '→' + (j + 1)); break; }
+      // コメント・log・pending 解除・コイン加算は挟まってよい。実行文が挟まったら別物とみなす。
+      if (t && !/^(\/\/|\/\*|\*|log\(|state\.pending = null;|addCoins\(|addActions\()/.test(t)) break;
+    }
+  }
+  ok(dup.length === 0, 'discardFromHand の直後に triggerOnDiscard を書いている箇所（二重発火）: ' + dup.join(' '));
+  // ヘルパ自身は必ず呼ぶ（消してしまうと今度は全経路が不発になる）
+  const helper = read('js/engine.js').split('function discardFromHand(')[1] || '';
+  ok(helper.slice(0, 1200).indexOf('triggerOnDiscard(state, pIndex, cards.slice()') >= 0,
+    'discardFromHand は自分で triggerOnDiscard を呼ぶ');
+}
+
 console.log('\n========================================');
 console.log('整合性テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

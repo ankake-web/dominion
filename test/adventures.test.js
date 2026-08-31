@@ -446,6 +446,33 @@ console.log('=== 回帰: ヴィラ/騎兵隊 × 購入フェイズ終了時効�
   ok(!s.pending && s.turn.phase === 'action' && s.turn.active === 0, '騎兵隊：mid 解決後もターンは終わらない');
 }
 
+/* §0-45：語り部×カメレオンの習性＝「払ってから引く」順序（§0-44 で withCham を入れたときの順序バグ）
+   公式 Official FAQ (2022) 逐語＝`for each [$1] you have you **lose the [$1]** and get **+1 Card**.`
+   カメレオンの習性は「+1 カード」を「+$1」に変えるので、**払うのを先にしないと変換で得たコインごと消える**。 */
+console.log('=== §0-45: 語り部 × カメレオンの習性（払ってから引く）===');
+{
+  const K = ['storyteller', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory', 'festival'];
+  // 習性なし＝従来どおり全部カードに変わる
+  let s = E.createInitialState(['A', 'B'], K.slice(), { startActive: 0 });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['storyteller', 'gold', 'gold'];
+  s.players[0].deck = new Array(20).fill('estate');
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'storyteller' });
+  s = reduce(s, { type: 'STORYTELLER_PLAY', cards: ['gold', 'gold'] });
+  ok(s.turn.coins === 0 && s.players[0].hand.length === 7,
+    '素の語り部＝$6 を全部カードに変える（基本+1 で 7枚・実 coins=' + s.turn.coins + ' hand=' + s.players[0].hand.length + '）');
+}
+{
+  const K = ['storyteller', 'village', 'smithy', 'market', 'militia', 'moat', 'cellar', 'workshop', 'laboratory', 'festival'];
+  let s = E.createInitialState(['A', 'B'], K.slice(), { startActive: 0, ways: ['way_of_the_chameleon'] });
+  s.turn.phase = 'action'; s.turn.actions = 1;
+  s.players[0].hand = ['storyteller', 'gold', 'gold'];
+  s.players[0].deck = new Array(20).fill('estate');
+  s = reduce(s, { type: 'PLAY_ACTION', card: 'storyteller', way: 'way_of_the_chameleon' });
+  s = reduce(s, { type: 'STORYTELLER_PLAY', cards: ['gold', 'gold'] });
+  ok(s.turn.coins === 7 && s.players[0].hand.length === 0,
+    'カメレオンの習性＝払った $6 が +$7 として戻る（カードは引かない・実 coins=' + s.turn.coins + ' hand=' + s.players[0].hand.length + '）');
+}
 console.log('\n========================================');
 console.log('冒険テスト結果: ' + pass + ' 件成功, ' + fail + ' 件失敗');
 console.log('========================================');

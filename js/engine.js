@@ -3584,7 +3584,7 @@
      検証（指定枚数・全て手札にある・在庫・コスト/種別条件・強制獲得時のデッドロック回避）を
      共通化し、各カードの *_RESOLVE は数行で書けるようにする。 */
   // 手札からちょうど want 枚を捨て札へ。検証OKなら実行して true、不正なら false（呼び出し側は state を据え置く）。
-  function discardFromHand(state, pIndex, cards, want, note) {
+  function discardFromHand(state, pIndex, cards, want, note, noPrompt) {
     const p = state.players[pIndex];
     cards = Array.isArray(cards) ? cards : [];
     if (cards.length !== want) return false;
@@ -3595,7 +3595,7 @@
     /* 🛑 捨て札トリガー（坑道/進路/織工/村有緑地/忠犬）を必ず通す。`triggerOnDiscard` は `state.pending` を
        立てず `onGainQueue` に積むだけなので、アタックの被害者ループを壊さない（§0-43 の不変条件）。
        `noPrompt` は付けない＝自分の意思で捨てる経路（倉庫/潮溜り/村落/馬商人/魔女娘/風車…）だから。 */
-    if (cards.length) triggerOnDiscard(state, pIndex, cards.slice());
+    if (cards.length) triggerOnDiscard(state, pIndex, cards.slice(), noPrompt);
     return true;
   }
   // 手札からちょうど want 枚を廃棄（trash）へ。検証つき。
@@ -5310,8 +5310,11 @@
     const coins = t.coins || 0;
     const cham = !!r.cham;
     t.storytellerResume = null;
-    withCham(state, cham, () => draw(state, pi, 1 + coins));
+    /* 公式FAQ＝`for each [$1] you have you **lose the [$1]** and get **+1 Card**` ＝先に払ってから引く。
+       ⚠ カメレオンの習性で「+1 カード」が「+$1」に変わるので、**払うのを先にしないと変換で得たコインごと消える**
+          （§0-44 で withCham を入れたときの順序バグ）。素の場合はどちらの順でも結果は同じ。 */
     t.coins = 0;
+    withCham(state, cham, () => draw(state, pi, 1 + coins));
     log(state, `${state.players[pi].name} は語り部で +${1 + coins}カード（基本+1＋所持コイン$${coins}）。`);
   }
   function blockadeEnterVictim(state, source, queue, gained) {
@@ -21093,8 +21096,7 @@
           const cards = [];
           for (let i = 0; i < want; i++) cards.push('copper');
           reveal(state, pd.player, cards.slice(), 'サイロ：銅貨を公開して捨てる');
-          if (!discardFromHand(state, pd.player, cards, want, `銅貨を捨てた（サイロ）。`)) return state;
-          triggerOnDiscard(state, pd.player, cards, true);
+          if (!discardFromHand(state, pd.player, cards, want, `銅貨を捨てた（サイロ）。`, true)) return state;
           draw(state, pd.player, want); // 先に全部捨ててから引く（捨てた銅貨もリシャッフルに混ざる）
           log(state, `${pl.name} はサイロで 銅貨${want}枚 を捨てて ${want}枚 引いた。`);
         }
@@ -21125,8 +21127,7 @@
         const card = action.card;
         if (card != null) {
           if (pl.hand.indexOf(card) < 0 || !DOM.isType(card, 'victory')) return state;
-          if (!discardFromHand(state, pd.player, [card], 1, `捨てた（輪作）。`)) return state;
-          triggerOnDiscard(state, pd.player, [card], true);
+          if (!discardFromHand(state, pd.player, [card], 1, `捨てた（輪作）。`, true)) return state;
           draw(state, pd.player, 2);
           log(state, `${pl.name} は輪作で勝利点1枚を捨てて +2カード。`);
         }
@@ -21405,8 +21406,7 @@
         const pl = state.players[pd.player];
         const card = action.card;
         if (!card || pl.hand.indexOf(card) < 0 || cardCost(state, card) < 2) return state;
-        if (!discardFromHand(state, pd.player, [card], 1, `捨てた（悪党）。`)) return state;
-        triggerOnDiscard(state, pd.player, [card], true); // 坑道等（相手のアタックによる捨て札＝対話は出さない）
+        if (!discardFromHand(state, pd.player, [card], 1, `捨てた（悪党）。`, true)) return state;
         villainEnterVictim(state, pd.source, pd.queue);
         return state;
       }
@@ -23519,7 +23519,6 @@
         const cards = Array.isArray(action.cards) ? action.cards : [];
         if (!discardFromHand(state, pd.player, cards, want, 'を捨てた（風の恵み）。')) return state;
         state.pending = null;
-        triggerOnDiscard(state, pd.player, cards);
         return state;
       }
       // 炎の恵み＝手札1枚を廃棄してもよい。
@@ -23542,10 +23541,9 @@
         const c = action.card;
         if (c == null) { state.pending = null; return state; }
         if (pl.hand.indexOf(c) < 0 || !isTreasureFor(state, c)) return state;
-        if (!discardFromHand(state, pd.player, [c], 1, 'を捨てた（大地の恵み）。')) return state;
+        if (!discardFromHand(state, pd.player, [c], 1, 'を捨てた（大地の恵み）。', true)) return state;
         state.pending = null;
         // この後すぐ獲得の窓を開くので、捨て札トリガーの**対話**は開かない（地図職人と同じ noPrompt 運用）。
-        triggerOnDiscard(state, pd.player, [c], true);
         // 終端保証：獲得できる山が無ければ窓を開かずに終わる。
         if (!state.pending && anyGainable(state, (id) => costUpTo(state, id, 4))) state.pending = { type: 'boon_earth_gain', player: pd.player };
         return state;
@@ -23572,7 +23570,6 @@
         state.pending = null;
         if (cards.length === 3) { if (gain(state, pd.player, 'gold', 'discard')) log(state, `${pl.name} は空の恵みで金貨1枚を獲得した。`); }
         else log(state, `${pl.name} は手札が3枚未満だったので金貨を得られなかった（空の恵み）。`);
-        triggerOnDiscard(state, pd.player, cards);
         return state;
       }
       // 月の恵み＝捨て札を全部見て、その中の1枚を山札の上に置いてもよい。
@@ -23625,7 +23622,6 @@
         const cards = Array.isArray(action.cards) ? action.cards : [];
         if (!discardFromHand(state, pd.player, cards, want, 'を捨てた（貧困）。')) return state;
         state.pending = null;
-        triggerOnDiscard(state, pd.player, cards);
         return state;
       }
       // 恐怖＝手札5枚以上ならアクションか財宝1枚を捨てる（強制）。
@@ -23639,7 +23635,6 @@
         if (!c || pl.hand.indexOf(c) < 0 || !okc(c)) return state;
         if (!discardFromHand(state, pd.player, [c], 1, 'を捨てた（恐怖）。')) return state;
         state.pending = null;
-        triggerOnDiscard(state, pd.player, [c]);
         return state;
       }
       // 憑依＝手札4枚以上なら手札1枚を山札の上に置く（強制）。
@@ -23803,7 +23798,6 @@
           discardFromHand(state, pd.player, cards, cards.length, 'を捨てた（羊飼い）。');
           // **順序厳守**：捨て札トリガー（坑道の金貨獲得など）を全部解決してから引く。
           //   逆にすると坑道で得た金貨がリシャッフルに入らない（公式裁定）。
-          triggerOnDiscard(state, pd.player, cards);
           draw(state, pd.player, cards.length * 2);
           log(state, `${pl.name} は羊飼いで勝利点${cards.length}枚を捨てて +${cards.length * 2}カード。`);
         }
@@ -23843,7 +23837,6 @@
         if (!discardFromHand(state, pd.player, [c], 1, 'を捨てた（呪いの鏡）。')) return state;
         state.pending = null;
         if (gain(state, pd.player, 'ghost', 'discard')) log(state, `${pl.name} は呪いの鏡で幽霊1枚を獲得した。`);
-        triggerOnDiscard(state, pd.player, [c]);
         return state;
       }
       // 忠犬＝クリンナップ以外で捨て札にしたとき、脇に置いてよい（このターンの終了時に手札へ戻る）。
@@ -23987,7 +23980,6 @@
         if (!c || cand.indexOf(c) < 0) return state;
         state.pending = null;
         discardFromHand(state, pd.victim, [c], 1, 'を捨てた（夜襲）。');
-        triggerOnDiscard(state, pd.victim, [c]);
         const keep = state.pending;                 // 捨て札トリガー（忠犬など）が窓を開けたら先に解決する
         state.pending = null;
         raiderEnterVictim(state, pd.source, pd.queue);
@@ -24167,7 +24159,6 @@
         if (pl.hand.indexOf(c) < 0) return state;
         if (!discardFromHand(state, pd.player, [c], 1, 'を捨てた（森の迷子）。')) return state;
         state.pending = null;
-        triggerOnDiscard(state, pd.player, [c]);
         receiveBoon(state, pd.player, 1);
         // 残りのターン開始時効果は reduce 末尾の startQueue 安全網が拾う（祝福の解決が先に入ってよい）。
         return state;
