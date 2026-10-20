@@ -17,3 +17,12 @@ _*
 
 # 絵の受け渡し用 zip（manifest 付き）。元画像は asset/art/ に展開済み＝コミットしない（138MB）
 asset/*.zip
+# Codex: 個人用の指示書・作業メモを公開しない
+AGENTS.md
+AGENTS.override.md
+CLAUDE.md
+KICKOFF.md
+MEMORY.md
+PROGRESS.md
+_memory/
+.claude/
