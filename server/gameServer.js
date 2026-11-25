@@ -134,11 +134,13 @@ function broadcastLobby(room) {
     t: 'lobby',
     code: room.code,
     players: lobbyPlayers(room),
-    canStart: humans >= 1 && total >= MIN_PLAYERS && total <= MAX_PLAYERS,
+    canStart: humans >= 1 && total >= MIN_PLAYERS && total <= MAX_PLAYERS &&
+      DOM.missingKingdomRequirements(room.kingdomSet || 'basic', room.kingdomRequirements).length === 0,
     cpuCount: room.cpuCount,
     maxCpu: Math.max(0, MAX_PLAYERS - room.members.length),
     cpuLevel: room.cpuLevel,
     kingdomSet: room.kingdomSet || 'basic',
+    kingdomRequirements: DOM.normalizeKingdomRequirements(room.kingdomRequirements),
     randomOrder: room.randomOrder !== false,
   };
   for (const m of room.members) send(m.ws, msg);
@@ -294,6 +296,7 @@ function roomSnapshot(room) {
     cpuCount: room.cpuCount,
     cpuLevel: room.cpuLevel,
     kingdomSet: room.kingdomSet || 'basic',
+    kingdomRequirements: DOM.normalizeKingdomRequirements(room.kingdomRequirements),
     randomOrder: room.randomOrder !== false,
     members: room.members.map((m) => ({ seat: m.seat, name: m.name, isHost: m.isHost, token: m.token })),
   };
@@ -315,6 +318,7 @@ function restoreRoom(snap) {
     code: snap.code, members: [], started: !!snap.started, state: snap.state || null,
     cpuCount: snap.cpuCount != null ? snap.cpuCount : 1, cpuLevel: snap.cpuLevel || 'normal',
     kingdomSet: snap.kingdomSet || 'basic', randomOrder: snap.randomOrder !== false, cpuTimer: null,
+    kingdomRequirements: DOM.normalizeKingdomRequirements(snap.kingdomRequirements),
     history: [], undoReq: null, // 巻き戻し履歴は永続化しない（復元直後は1手もどせない）
     graceMs: GRACE_MS, startedGraceMs: STARTED_GRACE_MS, cpuStepMs: CPU_STEP_MS,
   };
@@ -348,7 +352,11 @@ function startGame(room) {
   const configs = buildConfigs(room);
   if (configs.length < MIN_PLAYERS) return;
   // 王国カード（基本/陰謀/ランダム/mix）。ランダム系はサーバ権威で1度だけ確定し全員で共有する。
-  const kingdom = DOM.kingdomForSet ? DOM.kingdomForSet(room.kingdomSet || 'basic') : null;
+  if (DOM.missingKingdomRequirements(room.kingdomSet || 'basic', room.kingdomRequirements).length) {
+    room.members.forEach((m) => send(m.ws, { t: 'error', message: '選んだ拡張ではカードの必須条件を満たせません。条件か拡張を変更してください。' }));
+    return;
+  }
+  const kingdom = DOM.kingdomForSet ? DOM.kingdomForSet(room.kingdomSet || 'basic', room.kingdomRequirements) : null;
   // 横型ランドスケープ（ランドマーク/イベント/プロジェクト）もサーバ権威で1度だけ確定して全員で共有する。
   //   **landscapesForSet が唯一の入口**（3種を別々に引くと mix で「合計最大2枚」を超える）。
   const ls = DOM.landscapesForSet ? DOM.landscapesForSet(room.kingdomSet || 'basic') : { landmarks: [], events: [], projects: [], ways: [] };
@@ -492,6 +500,7 @@ function handleConnection(ws) {
         room = {
           code, members: [], started: false, state: null,
           cpuCount: 1, cpuLevel: 'normal', kingdomSet: 'basic', randomOrder: true, cpuTimer: null,
+          kingdomRequirements: DOM.normalizeKingdomRequirements(),
           history: [], undoReq: null, // 1手もどす（永続化しない＝再起動後は空）
           graceMs: GRACE_MS, startedGraceMs: STARTED_GRACE_MS, cpuStepMs: CPU_STEP_MS,
         };
@@ -568,6 +577,12 @@ function handleConnection(ws) {
         if (LEVELS.includes(msg.cpuLevel)) room.cpuLevel = msg.cpuLevel;
         if (isValidKingdomSet(msg.kingdomSet)) room.kingdomSet = msg.kingdomSet;
         if (typeof msg.randomOrder === 'boolean') room.randomOrder = msg.randomOrder;
+        if (msg.kingdomRequirements && typeof msg.kingdomRequirements === 'object' && !Array.isArray(msg.kingdomRequirements)) {
+          room.kingdomRequirements = DOM.normalizeKingdomRequirements(room.kingdomRequirements);
+          DOM.KINGDOM_REQUIREMENTS.forEach((r) => {
+            if (typeof msg.kingdomRequirements[r.key] === 'boolean') room.kingdomRequirements[r.key] = msg.kingdomRequirements[r.key];
+          });
+        }
         broadcastLobby(room);
         break;
       }

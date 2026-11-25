@@ -70,6 +70,25 @@ function mkClient(url) {
     c0.send({ t: 'setCpu', count: 0 });
     const lobby = await c0.waitFor((m) => m.t === 'lobby' && m.cpuCount === 0);
     ok(lobby.players.length === 2 && lobby.canStart, 'ロビー: 2人で開始可');
+    ok(lobby.kingdomRequirements.actions && lobby.kingdomRequirements.cards && lobby.kingdomRequirements.buys, '必須条件は既定ですべてON');
+    c0.send({ t: 'setConfig', kingdomSet: 'random', kingdomRequirements: { actions: false, cards: true, buys: false } });
+    await c0.waitFor((m) => m.t === 'lobby' && m.kingdomRequirements.actions === false);
+    const reqLobby = await c1.waitFor((m) => m.t === 'lobby' && m.kingdomRequirements.actions === false);
+    ok(reqLobby.kingdomRequirements.cards && !reqLobby.kingdomRequirements.buys, 'ホストの個別条件がゲストにも同期');
+    c1.send({ t: 'setConfig', kingdomRequirements: { cards: false } });
+    await sleep(20);
+    ok(rooms.get(code).kingdomRequirements.cards, 'ゲストから条件変更はできない');
+    c0.send({ t: 'setConfig', kingdomRequirements: { cards: 'false', actions: true, buys: true } });
+    const validReq = await c0.waitFor((m) => m.t === 'lobby' && m.kingdomRequirements.actions === true);
+    ok(validReq.kingdomRequirements.cards, '不正な型を拒否し、未指定の条件を保持');
+    c0.send({ t: 'setConfig', kingdomSet: 'random-guilds' });
+    const unavailable = await c0.waitFor((m) => m.t === 'lobby' && m.kingdomSet === 'random-guilds');
+    ok(!unavailable.canStart, '対象カードがない条件では開始不可');
+    c0.send({ t: 'start' });
+    const requirementError = await c0.waitFor((m) => m.t === 'error' && /必須条件/.test(m.message));
+    ok(requirementError && !rooms.get(code).started, '直接startを送っても必須条件を守る');
+    c0.send({ t: 'setConfig', kingdomSet: 'random' });
+    await c0.waitFor((m) => m.t === 'lobby' && m.kingdomSet === 'random');
 
     c0.send({ t: 'start' });
     const started0 = await c0.waitFor((m) => m.t === 'started');
@@ -78,6 +97,9 @@ function mkClient(url) {
 
     console.log('=== マスキング（相手の手札が伏せられる） ===');
     const s0 = started0.state;
+    const cardDefs = require('../js/cards');
+    ok(cardDefs.KINGDOM_REQUIREMENTS.every((r) => s0.kingdom.some((id) => cardDefs.kingdomCardMeetsRequirement(id, r.key))),
+      'オンラインの実際の王国も必須条件をすべて満たす');
     ok(s0.players[0].hand.every((c) => c !== 'back') && s0.players[0].hand.length === 5, '自分の手札は見える(5枚)');
     ok(s0.players[1].hand.every((c) => c === 'back') && s0.players[1].hand.length === 5, '相手の手札は伏せ(back)・枚数は5');
     ok(s0.players[1].deck.every((c) => c === 'back'), '相手の山札も伏せ');
@@ -450,8 +472,10 @@ function mkClient(url) {
     // サーバ再起動を模す: 全部屋を破棄してから、保存スナップショットだけで復元
     __reset();
     ok(!rooms.has(z1j.code), '再起動相当で一旦部屋が消える');
+    delete snap.kingdomRequirements; // 更新前の保存データも読み込める。
     restoreRoom(snap);
     ok(rooms.has(z1j.code), 'スナップショットから部屋が復元される');
+    ok(Object.values(rooms.get(z1j.code).kingdomRequirements).every((v) => v === true), '旧保存データはすべてONで復元');
     // 復元後に元プレイヤーが resume → 対戦状態が戻る
     const z2 = mkClient(URL); await z2.open();
     z2.send({ t: 'resume', code: z1j.code, you: 0, token: z1j.token });
@@ -465,11 +489,15 @@ function mkClient(url) {
     w1.send({ t: 'create', name: 'W1' });
     const w1j = await w1.waitFor((m) => m.t === 'joined');
     const lobbySnap = roomSnapshot(rooms.get(w1j.code)); // 未開始ロビーのスナップショット
+    lobbySnap.kingdomSet = 'random';
+    lobbySnap.kingdomRequirements = { actions: false, cards: true, buys: false };
     ok(lobbySnap && !lobbySnap.started && lobbySnap.state == null, 'ロビー(未開始・state無し)のスナップショット');
     w1.close();
     __reset();
     restoreRoom(lobbySnap);
     ok(rooms.has(w1j.code), '未開始ロビーは復元直後に即破棄されない（resume 猶予を残す）');
+    ok(rooms.get(w1j.code).kingdomRequirements.cards && !rooms.get(w1j.code).kingdomRequirements.actions &&
+      !rooms.get(w1j.code).kingdomRequirements.buys, '条件OFFを含めてロビー復元できる');
 
   } catch (e) {
     fail++; console.log('  ✗ 例外: ' + (e.stack || e.message));

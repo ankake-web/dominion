@@ -2131,15 +2131,60 @@
     plunder: 'encampment', emporium: 'patrician', bustling_village: 'settlers', rocks: 'catapult', fortune: 'gladiator',
   };
   // プールから重複なく n 種を選ぶ（コスト順に並べて返す）
-  DOM.randomKingdom = function (n, pool) {
+  function kingdomPool(pool) {
     let src = (pool || DOM.KINGDOM_POOL).slice();
     // 分割山は抽選で「上段（安い方）」に一本化して1山ぶんだけ枠を使う（上段が選ばれたら createInitialState が下段を自動追加する）。
     Object.keys(DOM.SPLIT_PILES).forEach((bottom) => {
       const top = DOM.SPLIT_PILES[bottom];
       if (src.includes(bottom)) { src = src.filter((id) => id !== bottom); if (!src.includes(top)) src.push(top); }
     });
+    return [...new Set(src)];
+  }
+  // カード文を正本にする。選択式・持続の効果も対象。分割山は下段も同じ1山として判定する。
+  DOM.KINGDOM_REQUIREMENTS = [
+    { key: 'actions', label: '＋2以上のアクションを持つカードを1種類以上', bonus: 'アクション', min: 2 },
+    { key: 'cards', label: '＋2枚以上のドローを持つカードを1種類以上', bonus: 'カード', min: 2 },
+    { key: 'buys', label: '＋1以上の購入（Buy）を持つカードを1種類以上', bonus: '購入', min: 1 },
+  ];
+  DOM.normalizeKingdomRequirements = function (options) {
+    const result = {};
+    DOM.KINGDOM_REQUIREMENTS.forEach((r) => { result[r.key] = !options || options[r.key] !== false; });
+    return result;
+  };
+  DOM.kingdomCardMeetsRequirement = function (id, key) {
+    const rule = DOM.KINGDOM_REQUIREMENTS.find((r) => r.key === key);
+    if (!rule) return false;
+    const members = [id].concat(Object.keys(DOM.SPLIT_PILES).filter((c) => DOM.SPLIT_PILES[c] === id),
+      DOM.ALLIES_SPLIT_PILES[id] || [], id === 'knights' || id === 'castles' ? DOM.POOLS[id] || [] : []);
+    return members.some((c) => {
+      const text = (DOM.CARDS[c] || {}).text || '';
+      return Array.from(text.matchAll(/\+(\d+)\s*(アクション|カード|購入)/g))
+        .some((m) => m[2] === rule.bonus && Number(m[1]) >= rule.min);
+    });
+  };
+  DOM.randomKingdom = function (n, pool, requirements) {
+    const src = kingdomPool(pool);
     for (let i = src.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = src[i]; src[i] = src[j]; src[j] = t; }
-    return src.slice(0, n || 10).sort((a, b) => DOM.CARDS[a].cost - DOM.CARDS[b].cost || a.localeCompare(b));
+    const count = n || 10;
+    let selected = [];
+    // 最初の抽選で条件を満たしていれば、その結果をそのまま採用する。
+    if (requirements && DOM.KINGDOM_REQUIREMENTS.some((r) => requirements[r.key] !== false &&
+      !src.slice(0, count).some((id) => DOM.kingdomCardMeetsRequirement(id, r.key)))) {
+      const rules = DOM.KINGDOM_REQUIREMENTS.filter((r) => requirements[r.key] !== false);
+      // 最大8状態の組合せで条件を覆う。再抽選ループを使わず、乱数が一定でも必ず終わる。
+      const cover = [ [] ];
+      src.forEach((id) => {
+        const bits = rules.reduce((mask, r, i) => mask | (DOM.kingdomCardMeetsRequirement(id, r.key) ? 1 << i : 0), 0);
+        cover.slice().forEach((cards, mask) => {
+          const next = mask | bits;
+          if (!cover[next] || cover[next].length > cards.length + 1) cover[next] = cards.concat(id);
+        });
+      });
+      selected = cover[(1 << rules.length) - 1];
+      if (!selected || selected.length > count) throw new Error('選んだ拡張ではカードの必須条件を満たせません。条件か拡張を変更してください。');
+    }
+    return selected.concat(src.filter((id) => !selected.includes(id))).slice(0, count)
+      .sort((a, b) => DOM.CARDS[a].cost - DOM.CARDS[b].cost || a.localeCompare(b));
   };
   /* ============================================================
      mix モード（拡張を自由に混ぜるランダム対戦）
@@ -2194,18 +2239,29 @@
     return id;
   };
   // セットID → 王国カード配列（ランダム系は毎回その場で10種を確定）
-  DOM.kingdomForSet = function (setId) {
+  DOM.kingdomPoolForSet = function (setId) {
     if (DOM.isMixSet(setId)) {
       const m = DOM.parseMixSet(setId);
       const pool = m.pools.reduce((a, ex) => a.concat(DOM.POOLS[ex] || []), []);
-      if (!pool.length) return DOM.KINGDOM.slice(); // プール未選択＝フォールバック
-      return DOM.randomKingdom(10, pool);
+      return kingdomPool(pool.length ? pool : DOM.KINGDOM);
     }
     const set = DOM.CARD_SETS.find((s) => s.id === setId);
     if (set && set.randomFrom) {
-      const pool = set.randomFrom.reduce((a, ex) => a.concat(DOM.POOLS[ex] || []), []);
-      return DOM.randomKingdom(10, pool);
+      return kingdomPool(set.randomFrom.reduce((a, ex) => a.concat(DOM.POOLS[ex] || []), []));
     }
+    return null;
+  };
+  DOM.missingKingdomRequirements = function (setId, requirements) {
+    const pool = DOM.kingdomPoolForSet(setId);
+    if (!pool) return []; // 固定・おすすめセットは収録内容を維持する。
+    const options = DOM.normalizeKingdomRequirements(requirements);
+    return DOM.KINGDOM_REQUIREMENTS.filter((r) => options[r.key] && !pool.some((id) => DOM.kingdomCardMeetsRequirement(id, r.key)));
+  };
+  DOM.kingdomForSet = function (setId, requirements) {
+    const pool = DOM.kingdomPoolForSet(setId);
+    // 既存の内部呼び出しは従来の抽選を維持。設定画面・サーバは既定ONの条件を明示して渡す。
+    if (pool) return DOM.randomKingdom(10, pool, requirements == null ? null : DOM.normalizeKingdomRequirements(requirements));
+    const set = DOM.CARD_SETS.find((s) => s.id === setId);
     if (set && set.kingdom) return set.kingdom.slice();
     // 後方互換 / 不明なIDのフォールバック
     if (setId === 'random') return DOM.randomKingdom(10);

@@ -74,6 +74,7 @@
     setup: {
       randomOrder: false,
       kingdomSet: 'basic', // 'basic' | 'intrigue' | 'random'
+      kingdomRequirements: DOM.normalizeKingdomRequirements(),
       seats: [
         { name: _humanName, type: 'human', level: 'normal' },
         { name: CPU_NAME_POOL[Math.floor(Math.random() * CPU_NAME_POOL.length)], type: 'cpu', level: 'normal' },
@@ -511,7 +512,23 @@
   // 王国カードのセット選択。上段に4分類のセグメント（王国基本／陰謀／おすすめ／ランダム）、
   // 「おすすめ」を選んだときだけテーマ別タイル、「ランダム」のときだけ抽選元チップを出す。
   // current は CARD_SETS の id。onChange(newId) で確定（ローカルは setup に保存、オンラインはサーバへ送信）。
-  function kingdomSetPicker(current, onChange) {
+  function kingdomRequirementsPicker(current, requirements, onChange) {
+    if (!DOM.kingdomPoolForSet(current)) return null;
+    const options = DOM.normalizeKingdomRequirements(requirements);
+    const missing = DOM.missingKingdomRequirements(current, options);
+    return h('div', { class: 'kingdom-requirements' },
+      h('div', { class: 'muted set-note' }, '必ず含めるカード（個別に解除できます）'),
+      DOM.KINGDOM_REQUIREMENTS.map((r) => h('label', { class: 'kingdom-requirement' },
+        h('input', { type: 'checkbox', checked: options[r.key], disabled: !onChange,
+          'data-kingdom-requirement': r.key,
+          onchange: (e) => { if (onChange) onChange(Object.assign({}, options, { [r.key]: e.target.checked })); } }),
+        h('span', null, r.label))),
+      h('p', { class: 'muted set-note' }, 'ドロー＝カードを引く効果。同じカードが複数の条件を満たしてもOK。'),
+      missing.length ? h('p', { class: 'set-note', role: 'alert' },
+        '選んだ拡張に対象カードがありません：' + missing.map((r) => r.label).join('／') + '。条件を外すか、拡張を追加してください。') : null);
+  }
+
+  function kingdomSetPicker(current, onChange, requirements, onRequirementsChange) {
     current = current || 'basic';
     const sets = DOM.CARD_SETS || [];
     const byId = (id) => sets.find((s) => s.id === id);
@@ -558,7 +575,8 @@
     const preview = (!isMix && cur.kingdom)
       ? h('p', { class: 'muted set-note' }, '収録：' + cur.kingdom.map((id) => (DOM.CARDS[id] ? DOM.CARDS[id].name : id)).join('・'))
       : null;
-    return h('div', { class: 'set-picker' }, topSeg, sub, preview);
+    return h('div', { class: 'set-picker' }, topSeg, sub,
+      kingdomRequirementsPicker(current, requirements, onRequirementsChange), preview);
   }
 
   /* ミックス（拡張を自由に混ぜるランダム対戦）の選択UI。
@@ -650,10 +668,12 @@
         h('div', { class: 'field' }, h('label', null, '人数'), countSeg),
         h('div', { class: 'seat-list' }, rows),
         h('div', { class: 'field' }, h('label', null, '使う王国カード'),
-          kingdomSetPicker(UI.setup.kingdomSet, (v) => { UI.setup.kingdomSet = v; render(); })),
+          kingdomSetPicker(UI.setup.kingdomSet, (v) => { UI.setup.kingdomSet = v; render(); },
+            UI.setup.kingdomRequirements, (v) => { UI.setup.kingdomRequirements = v; render(); })),
         h('div', { class: 'field' }, h('label', null, '手番の順番'),
           segmented([{ value: false, label: '上から順' }, { value: true, label: 'ランダム' }], UI.setup.randomOrder, (v) => { UI.setup.randomOrder = v; render(); })),
-        h('button', { class: 'btn btn-primary btn-block', onclick: () => startConfigured(null, { shuffle: UI.setup.randomOrder }) }, 'この設定で開始')
+        h('button', { class: 'btn btn-primary btn-block', disabled: DOM.missingKingdomRequirements(UI.setup.kingdomSet, UI.setup.kingdomRequirements).length > 0,
+          onclick: () => startConfigured(null, { shuffle: UI.setup.randomOrder }) }, 'この設定で開始')
       ),
       h('button', { class: 'btn btn-ghost', onclick: () => go('home') }, '戻る')
     );
@@ -735,19 +755,22 @@
             lb.cpuLevel, (v) => UI.netClient.send({ t: 'setConfig', cpuLevel: v }))),
         h('div', { class: 'field' },
           h('label', null, '使う王国カード'),
-          kingdomSetPicker(lb.kingdomSet || 'basic', (v) => UI.netClient.send({ t: 'setConfig', kingdomSet: v }))),
+          kingdomSetPicker(lb.kingdomSet || 'basic', (v) => UI.netClient.send({ t: 'setConfig', kingdomSet: v }),
+            lb.kingdomRequirements, (v) => UI.netClient.send({ t: 'setConfig', kingdomRequirements: v }))),
         h('div', { class: 'field' },
           h('label', null, '手番の順番'),
           segmented([{ value: false, label: '上から順' }, { value: true, label: 'ランダム' }],
             lb.randomOrder !== false, (v) => UI.netClient.send({ t: 'setConfig', randomOrder: v }))),
         h('button', { class: 'btn btn-primary btn-block', disabled: lb.canStart ? null : 'disabled', onclick: () => UI.netClient.send({ t: 'start' }) },
-          lb.canStart ? 'ゲーム開始' : '人間1人以上・合計2〜4人で開始'));
+          lb.canStart ? 'ゲーム開始' : DOM.missingKingdomRequirements(lb.kingdomSet || 'basic', lb.kingdomRequirements).length
+            ? '必須条件か拡張を変更してください' : '人間1人以上・合計2〜4人で開始'));
     } else if (lb) {
       // ゲスト：ホストと同じ項目を読み取り専用で表示（設定変更はホストのみ）
       controls = h('div', { class: 'lobby-host lobby-readonly' },
         h('div', { class: 'field' }, h('label', null, 'CPUの人数'), h('div', { class: 'readonly-val' }, String(lb.cpuCount))),
         h('div', { class: 'field' }, h('label', null, 'CPUの強さ'), h('div', { class: 'readonly-val' }, LEVEL_JP[lb.cpuLevel || 'normal'])),
         h('div', { class: 'field' }, h('label', null, '使う王国カード'), h('div', { class: 'readonly-val' }, setName)),
+        kingdomRequirementsPicker(lb.kingdomSet || 'basic', lb.kingdomRequirements, null),
         h('div', { class: 'field' }, h('label', null, '手番の順番'), h('div', { class: 'readonly-val' }, orderLabel)),
         h('p', { class: 'muted', style: 'text-align:center;margin-top:2px' }, 'ホストの開始を待っています…（設定の変更はホストのみ）'));
     } else {
@@ -5373,7 +5396,7 @@
       for (let i = configs.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = configs[i]; configs[i] = configs[j]; configs[j] = t; }
     }
     // 使う王国カード（基本/陰謀/ランダム）。ランダムはこの場で10種を確定して以後固定。
-    const kingdom = opts.kingdom || (DOM.kingdomForSet ? DOM.kingdomForSet(UI.setup.kingdomSet) : DOM.KINGDOM);
+    const kingdom = opts.kingdom || (DOM.kingdomForSet ? DOM.kingdomForSet(UI.setup.kingdomSet, UI.setup.kingdomRequirements) : DOM.KINGDOM);
     // 横型ランドスケープ（ランドマーク/イベント/プロジェクト）もこの場で確定して以後固定。
     //   **必ず landscapesForSet（3種を一度に決める唯一の入口）を使う**＝mix モードで「合計最大2枚」を守るため。
     const ls = (DOM.landscapesForSet ? DOM.landscapesForSet(UI.setup.kingdomSet) : { landmarks: [], events: [], projects: [], ways: [] });
