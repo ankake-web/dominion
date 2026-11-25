@@ -218,7 +218,7 @@
         h('div', { class: 'reveal-head' }, '👁 ' + p.name + '：' + (r.note || '公開')),
         h('div', { class: 'reveal-cards' }, r.cards.map((id) => {
           const def = DOM.CARDS[id] || { name: id };
-          return h('div', { class: 'reveal-card' },
+          return h('div', { class: 'reveal-card', 'data-card-preview': id },
             h('img', { class: 'reveal-img', src: 'asset/cards/' + id + '.webp', alt: def.name,
               onerror: function () { this.style.display = 'none'; if (this.parentElement) this.parentElement.classList.add('art-failed'); } }),
             h('div', { class: 'reveal-name' }, def.name));
@@ -245,6 +245,85 @@
     });
   }
 
+  /* マウスを合わせると、画像に焼き込まれた小さい文字ではなくカード正本の文章を表示する。 */
+  const cardHover = { source: null, panel: null, showTimer: null, hideTimer: null, initialized: false };
+  function hideCardHover() {
+    clearTimeout(cardHover.showTimer); clearTimeout(cardHover.hideTimer);
+    if (cardHover.panel) {
+      const source = cardHover.source;
+      if (source) {
+        if (cardHover.description == null) source.removeAttribute('aria-describedby');
+        else source.setAttribute('aria-describedby', cardHover.description);
+        if (cardHover.title != null) source.setAttribute('title', cardHover.title);
+      }
+      cardHover.panel.remove();
+    }
+    cardHover.source = cardHover.panel = cardHover.showTimer = cardHover.hideTimer = null;
+  }
+  function showCardHover(source) {
+    if (!source.isConnected || cardHover.source !== source) return;
+    const id = source.getAttribute('data-card-preview');
+    const c = DOM.CARDS[id] || (DOM.LANDSCAPES || {})[id];
+    if (!c) return;
+    const kind = DOM.CARDS[id] ? typeLabel(id) : (LS_KIND_LABEL[c.kind] || c.kind || '').split(' / ')[0];
+    const panel = h('div', { class: 'card-hover-preview', id: 'card-hover-preview', role: 'tooltip' },
+      h('div', { class: 'card-hover-name' }, c.name),
+      h('div', { class: 'card-hover-type' }, kind),
+      h('div', { class: 'card-hover-text' }, c.text || '効果テキストはありません。'));
+    cardHover.description = source.getAttribute('aria-describedby');
+    cardHover.title = source.getAttribute('title');
+    source.removeAttribute('title');
+    source.setAttribute('aria-describedby', [cardHover.description, panel.id].filter(Boolean).join(' '));
+    cardHover.panel = panel;
+    document.body.appendChild(panel);
+    const rect = source.getBoundingClientRect(), box = panel.getBoundingClientRect();
+    const gap = 12, width = document.documentElement.clientWidth || window.innerWidth;
+    const height = window.innerHeight;
+    let left = rect.right + gap;
+    if (left + box.width > width - gap) left = rect.left - gap - box.width;
+    left = Math.max(gap, Math.min(left, width - box.width - gap));
+    panel.style.left = left + 'px';
+    panel.style.top = Math.max(gap, Math.min(rect.top, height - box.height - gap)) + 'px';
+  }
+  function initCardHover() {
+    if (cardHover.initialized) return;
+    cardHover.initialized = true;
+    const canHover = () => typeof window.matchMedia === 'function' && window.matchMedia('(any-hover: hover) and (any-pointer: fine)').matches;
+    const inside = (parent, node) => !!(parent && node && node.nodeType && parent.contains(node));
+    const cancelHide = () => { clearTimeout(cardHover.hideTimer); cardHover.hideTimer = null; };
+    const scheduleHide = () => { cancelHide(); cardHover.hideTimer = setTimeout(hideCardHover, 140); };
+    const start = (source, immediate) => {
+      if (!source) { if (cardHover.source) scheduleHide(); return; }
+      if (cardHover.source === source) { cancelHide(); return; }
+      hideCardHover();
+      cardHover.source = source;
+      if (immediate) showCardHover(source);
+      else cardHover.showTimer = setTimeout(() => showCardHover(source), 260);
+    };
+    document.addEventListener('pointerover', (e) => {
+      if (e.pointerType === 'touch' || !canHover()) return;
+      if (inside(cardHover.panel, e.target)) { cancelHide(); return; }
+      start(e.target.closest && e.target.closest('[data-card-preview]'), false);
+    });
+    document.addEventListener('pointerout', (e) => {
+      if (inside(cardHover.source, e.target) || inside(cardHover.panel, e.target)) {
+        if (!inside(cardHover.source, e.relatedTarget) && !inside(cardHover.panel, e.relatedTarget)) scheduleHide();
+      }
+    });
+    document.addEventListener('focusin', (e) => {
+      if (canHover()) start(e.target.closest && e.target.closest('[data-card-preview]'), true);
+    });
+    document.addEventListener('focusout', (e) => {
+      if (inside(cardHover.source, e.target) && !inside(cardHover.source, e.relatedTarget)) scheduleHide();
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCardHover(); });
+    document.addEventListener('pointerdown', (e) => { if (!inside(cardHover.panel, e.target)) hideCardHover(); }, true);
+    document.addEventListener('scroll', (e) => { if (!inside(cardHover.panel, e.target)) hideCardHover(); }, true);
+    window.addEventListener('resize', hideCardHover);
+    window.addEventListener('blur', hideCardHover);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) hideCardHover(); });
+  }
+
   // 手札・一覧用カード。opts: {onClick, count, size('lg'|'sm'), dim, badge}
   function cardEl(id, opts) {
     opts = opts || {};
@@ -259,7 +338,7 @@
       (opts.extra ? ' ' + opts.extra : '');
     const aria = c.name + '、コスト' + c.cost + (potCost(id) ? '＋ポーション' : '') +
       (opts.count && opts.count > 1 ? '、' + opts.count + '枚' : '') + '、' + typeLabel(id);
-    return h('div', a11yBtn({ class: cls, onclick: opts.onClick }, opts.onClick, aria),
+    return h('div', a11yBtn({ class: cls, onclick: opts.onClick, 'data-card-preview': id }, opts.onClick, aria),
       h('div', { class: 'ccost' }, c.cost),
       h('div', { class: 'cname' }, c.name),
       h('div', { class: 'ctype' }, typeLabel(id)),
@@ -283,7 +362,7 @@
       (opts.recommended ? ' recommended' : '') +
       (ec < c.cost ? ' discounted' : '');
     const aria = c.name + (isMix && DOM.CARDS[id] ? '（' + DOM.CARDS[id].name + 'の山の一番上）' : '') + '、コスト' + ec + (potCost(id) ? '＋ポーション' : '') + '、残り' + n + '枚' + (opts.recommended ? '、おすすめ' : '');
-    return h('div', a11yBtn({ class: cls, onclick: opts.onClick, 'data-pile': id }, opts.onClick, aria),
+    return h('div', a11yBtn({ class: cls, onclick: opts.onClick, 'data-pile': id, 'data-card-preview': dispId }, opts.onClick, aria),
       h('div', { class: 'pcost' }, ec),
       h('div', { class: 'pname' }, c.name),
       cardArt(dispId),
@@ -347,7 +426,7 @@
     const c = DOM.CARDS[top] || { name: '廃墟', cost: 0 };
     const n = state.ruins.length;
     return h('div', { class: 'pile has-art sm ' + typeClass(top) + (n <= 0 ? ' empty' : ''),
-      'aria-label': c.name + '（廃墟の山の一番上）、残り' + n + '枚' },
+      'aria-label': c.name + '（廃墟の山の一番上）、残り' + n + '枚', 'data-card-preview': top },
       h('div', { class: 'pcost' }, 0),
       h('div', { class: 'pname' }, c.name),
       cardArt(top),
@@ -897,7 +976,7 @@
   // 横型ランドマークは DOM.CARDS に無い（DOM.LANDSCAPES が正本・cardEl/viewSheet は使えない）ので専用のミニ表示＋拡大を持つ。
   function landmarkMini(id) {
     const ls = (DOM.LANDSCAPES || {})[id] || { name: id };
-    return h('div', { class: 'landmark-mini', role: 'button', tabindex: '0',
+    return h('div', { class: 'landmark-mini', role: 'button', tabindex: '0', 'data-card-preview': id,
         style: 'cursor:pointer;text-align:center',
         onclick: () => openLandmarkZoom(id),
         onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLandmarkZoom(id); } } },
@@ -1404,7 +1483,7 @@
             if (rv != null) bits.push('残VP ' + rv);
             if (sv) bits.push('溜VP ' + sv);
             if (id === 'obelisk' && state.obeliskPile) bits.push('対象: ' + (DOM.CARDS[state.obeliskPile] ? DOM.CARDS[state.obeliskPile].name : state.obeliskPile));
-            return h('div', { class: 'mat-row landmark-row', title: (ls.text || ''),
+            return h('div', { class: 'mat-row landmark-row', title: (ls.text || ''), 'data-card-preview': id,
                 role: 'button', tabindex: '0', style: 'cursor:pointer',
                 onclick: () => openLandmarkZoom(id),
                 onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLandmarkZoom(id); } } },
@@ -1423,7 +1502,7 @@
             const ev = (DOM.LANDSCAPES || {})[id] || { name: id, text: '', cost: 0, debt: 0 };
             const costStr = '💰' + (ev.cost || 0) + (ev.debt ? ' 🟠' + ev.debt : '');
             const canBuy = buyableEvent(id);
-            return h('div', { class: 'mat-row event-row', title: (ev.text || '') },
+            return h('div', { class: 'mat-row event-row', title: (ev.text || ''), 'data-card-preview': id },
               h('img', { class: 'landmark-thumb', src: 'asset/cards/' + id + '.webp', alt: ev.name, loading: 'lazy',
                 style: 'height:40px;width:60px;object-fit:cover;border-radius:4px;flex:0 0 auto;cursor:pointer',
                 onclick: () => openLandmarkZoom(id),
@@ -1453,7 +1532,7 @@
               ? owners.map((p) => '●' + p.name + (id === 'sinister_plot' && (p.sinisterPlot || 0) > 0 ? '(🔘' + p.sinisterPlot + ')' : '')).join(' ')
               : '';
             const canBuy = buyableProject(id);
-            return h('div', { class: 'mat-row project-row', title: (pr.text || '') },
+            return h('div', { class: 'mat-row project-row', title: (pr.text || ''), 'data-card-preview': id },
               h('img', { class: 'landmark-thumb', src: 'asset/cards/' + id + '.webp', alt: pr.name, loading: 'lazy',
                 style: 'height:40px;width:60px;object-fit:cover;border-radius:4px;flex:0 0 auto;cursor:pointer',
                 onclick: () => openLandmarkZoom(id),
@@ -1477,7 +1556,7 @@
             const af = (DOM.LANDSCAPES || {})[id] || { name: id, text: '' };
             const owner = state.artifacts[id];
             const who = owner == null ? '（誰も持っていない）' : state.players[owner].name + ' が所持';
-            return h('div', { class: 'mat-row artifact-row' + (owner === viewer ? ' mine' : ''), title: (af.text || '') },
+            return h('div', { class: 'mat-row artifact-row' + (owner === viewer ? ' mine' : ''), title: (af.text || ''), 'data-card-preview': id },
               h('img', { class: 'landmark-thumb', src: 'asset/cards/' + id + '.webp', alt: af.name, loading: 'lazy',
                 style: 'height:40px;width:60px;object-fit:cover;border-radius:4px;flex:0 0 auto;cursor:pointer',
                 onclick: () => openLandmarkZoom(id),
@@ -1498,7 +1577,7 @@
             const wy = (DOM.LANDSCAPES || {})[id] || { name: id, text: '' };
             const extra = (id === 'way_of_the_mouse' && state.mouseCard)
               ? '（脇：' + ((DOM.CARDS[state.mouseCard] || {}).name || state.mouseCard) + '）' : '';
-            return h('div', { class: 'mat-row way-row', title: (wy.text || '') },
+            return h('div', { class: 'mat-row way-row', title: (wy.text || ''), 'data-card-preview': id },
               h('img', { class: 'landmark-thumb', src: 'asset/cards/' + id + '.webp', alt: wy.name, loading: 'lazy',
                 style: 'height:40px;width:60px;object-fit:cover;border-radius:4px;flex:0 0 auto;cursor:pointer',
                 onclick: () => openLandmarkZoom(id),
@@ -1519,7 +1598,7 @@
         return h('div', { class: 'supply-section' },
           h('div', { class: 'sup-title' }, '同盟（横型・好意トークンの使い道）'),
           h('div', { class: 'mats' },
-            h('div', { class: 'mat-row ally-row', title: (al.text || '') },
+            h('div', { class: 'mat-row ally-row', title: (al.text || ''), 'data-card-preview': state.ally },
               h('img', { class: 'landmark-thumb', src: 'asset/cards/' + state.ally + '.webp', alt: al.name, loading: 'lazy',
                 style: 'height:40px;width:60px;object-fit:cover;border-radius:4px;flex:0 0 auto;cursor:pointer',
                 onclick: () => openLandmarkZoom(state.ally),
@@ -1541,7 +1620,7 @@
       ? h('div', { class: 'supply-section' },
           h('div', { class: 'sup-title' }, '川船の脇（このゲームでは使わないカード＝川船が毎回これを使う）'),
           h('div', { class: 'mats' },
-            h('div', { class: 'mat-row', title: DOM.CARDS[state.riverboatCard].text || '' },
+            h('div', { class: 'mat-row', title: DOM.CARDS[state.riverboatCard].text || '', 'data-card-preview': state.riverboatCard },
               h('img', { class: 'landmark-thumb', src: 'asset/cards/' + state.riverboatCard + '.webp',
                 alt: DOM.CARDS[state.riverboatCard].name, loading: 'lazy',
                 style: 'height:40px;width:60px;object-fit:cover;border-radius:4px;flex:0 0 auto;cursor:pointer',
@@ -1562,7 +1641,7 @@
         return h('div', { class: 'supply-section' },
           h('div', { class: 'sup-title' }, '予言（横型・Sunトークンが尽きると発動）'),
           h('div', { class: 'mats' },
-            h('div', { class: 'mat-row prophecy-row', title: (pr.text || '') },
+            h('div', { class: 'mat-row prophecy-row', title: (pr.text || ''), 'data-card-preview': state.prophecy },
               h('img', { class: 'landmark-thumb', src: 'asset/cards/' + state.prophecy + '.webp', alt: pr.name, loading: 'lazy',
                 style: 'height:40px;width:60px;object-fit:cover;border-radius:4px;flex:0 0 auto;cursor:pointer',
                 onclick: () => openLandmarkZoom(state.prophecy),
@@ -1598,10 +1677,10 @@
        公開情報なので見えないと人間が判断できない。 */
     const gTok = (state.turn && state.turn.garrisonTokens) || [];
     let gTokI = 0;
-    const inPlayChips = active.inPlay.map((id) => h('div', { class: 'chip-card ' + typeClass(id) + coinClass(id) },
+    const inPlayChips = active.inPlay.map((id) => h('div', { class: 'chip-card ' + typeClass(id) + coinClass(id), 'data-card-preview': id },
       DOM.CARDS[id].name + (id === 'garrison' && gTok[gTokI] != null ? ' ●' + gTok[gTokI++] : '')));
-    const durChips = (active.durationCards || []).map((id) => h('div', { class: 'chip-card duration', title: '持続中（次の手番に効果）' }, '⏳ ' + DOM.CARDS[id].name));
-    const princeChips = (active.princes || []).map((id) => h('div', { class: 'chip-card duration', title: '王子の脇（毎ターン開始時に使用）' }, '👑 ' + DOM.CARDS[id].name));
+    const durChips = (active.durationCards || []).map((id) => h('div', { class: 'chip-card duration', title: '持続中（次の手番に効果）', 'data-card-preview': id }, '⏳ ' + DOM.CARDS[id].name));
+    const princeChips = (active.princes || []).map((id) => h('div', { class: 'chip-card duration', title: '王子の脇（毎ターン開始時に使用）', 'data-card-preview': id }, '👑 ' + DOM.CARDS[id].name));
     const allPlayChips = inPlayChips.concat(durChips, princeChips);
     const playArea = allPlayChips.length
       ? h('div', { class: 'play-area' }, allPlayChips)
@@ -1692,7 +1771,7 @@
       const bits = Object.keys(state.traits).map((tid) => {
         const tn = (DOM.LANDSCAPES[tid] || {}).name || tid;
         const pn = (DOM.CARDS[state.traits[tid]] || {}).name || state.traits[tid];
-        return h('span', { class: 'chip-card', onclick: () => openLandmarkZoom(tid) }, '🏷️ ' + tn + '：' + pn);
+        return h('span', { class: 'chip-card', 'data-card-preview': tid, onclick: () => openLandmarkZoom(tid) }, '🏷️ ' + tn + '：' + pn);
       });
       matRows.push(h('div', { class: 'mat-row' }, h('span', { class: 'mat-label' }, '特性: '), bits));
     }
@@ -5837,6 +5916,7 @@
      ルート描画
      ============================================================ */
   function render() {
+    hideCardHover(); // 再描画後のカードに古い効果説明を残さない。
     const app = document.getElementById('app');
     // カード拡大など（モーダル開閉）でページ先頭に飛ばないよう、開く直前のスクロール位置を覚えておく。
     const scroller = document.scrollingElement || document.documentElement;
@@ -6045,6 +6125,7 @@
 
   /* ---------- 起動 ---------- */
   function boot() {
+    initCardHover();
     const params = new URLSearchParams(location.search);
     const room = params.get('room');
     if (room) {

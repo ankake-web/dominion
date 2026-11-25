@@ -956,6 +956,16 @@ html.modal-open, html.modal-open body { overflow: hidden; }
 .zoom-name { margin: 0; font-size: 20px; }
 .zoom-type { font-size: 12px; color: var(--ink-dim); }
 .zoom-text { white-space: pre-line; font-size: 15px; line-height: 1.6; }
+.card-hover-preview {
+  position: fixed; z-index: 120; width: 400px; max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain;
+  padding: 16px 18px; border: 1px solid var(--gold); border-radius: 12px;
+  background: #1b1828; color: var(--ink); box-shadow: 0 8px 30px rgba(0, 0, 0, .55);
+  text-align: left; font-family: 'Noto Sans JP', 'Yu Gothic', sans-serif;
+}
+.card-hover-name { font-size: 21px; font-weight: 700; line-height: 1.4; color: var(--gold-bright); }
+.card-hover-type { font-size: 13px; line-height: 1.5; margin: 4px 0 12px; color: var(--ink-dim); }
+.card-hover-text { white-space: pre-line; overflow-wrap: anywhere; font-size: 16px; line-height: 1.7; }
 .zoom-remain { margin-top: 8px; font-size: 13px; color: var(--gold); }
 
 /* ===== レスポンシブ（狭いスマホ / タブレット・PC） ===== */
